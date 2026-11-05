@@ -7,6 +7,8 @@ import { sidebarItems } from './grouping';
 import type { ConnState, Folder, HostTarget, LocalLine, Project, Task, Term, Workspace } from './types';
 import {
   aggregate,
+  summaryParts,
+  summaryText,
   allIdle,
   applyWsEvent,
   buildTree,
@@ -26,6 +28,7 @@ import {
   wsDropTarget,
   type WsData,
 } from './workspaces';
+import { stateOfGroup } from './test-fixtures';
 
 const at = '2026-10-29T10:00:00Z';
 const ws = (id: string, path: string, over: Partial<Workspace> = {}): Workspace => ({
@@ -44,7 +47,7 @@ const ws = (id: string, path: string, over: Partial<Workspace> = {}): Workspace 
   ...over,
 });
 const folder = (id: string, over: Partial<Folder> = {}): Folder => ({ id, name: id, parentId: null, rank: 1, collapsed: false, createdAt: at, updatedAt: at, ...over });
-const item = (key: string, group: SidebarItem['group'], over: Partial<SidebarItem> = {}): SidebarItem => ({ key, kind: 'claude', group, title: key, at, ...over });
+const item = (key: string, group: SidebarItem['group'], over: Partial<SidebarItem> = {}): SidebarItem => ({ key, kind: 'claude', group, state: stateOfGroup(group), title: key, at, ...over });
 const line = (id: string, worktreePath: string, repo?: string): LocalLine => ({ line: { id, agent: 'claude', state: 'active', lastActivityAt: at, worktreePath, repo } });
 
 describe('membership', () => {
@@ -185,28 +188,61 @@ describe('membership', () => {
 });
 
 describe('status aggregation', () => {
-  it('ranks needs input over working over needs testing over idle and counts agents', () => {
+  it('ranks needs input over running over needs testing over ready and counts every agent', () => {
     const a = aggregate([
-      item('a', 'working', { status: 'Editing', at: '2026-10-29T10:05:00Z' }),
+      item('a', 'running', { status: 'Editing', at: '2026-10-29T10:05:00Z' }),
       item('b', 'needs_input', { status: 'Asking', at: '2026-10-29T10:01:00Z' }),
       item('c', 'needs_testing'),
-      item('d', 'held'),
-      item('s', 'working', { kind: 'shell' }),
+      item('d', 'paused'),
+      item('e', 'stopped'),
+      item('s', 'running', { kind: 'shell' }),
     ]);
     expect(a.state).toBe('needs_input');
-    expect(a.counts).toEqual({ needs_input: 1, working: 1, needs_testing: 1, idle: 0 });
-    expect(a.agents).toBe(3);
+    expect(a.counts).toEqual({ needs_input: 1, running: 1, needs_testing: 1, ready: 0, paused: 1, stopped: 1 });
+    expect(a.agents).toBe(5);
     expect(a.status).toBe('Asking');
     expect(a.statusKey).toBe('b');
-    expect(aggregate([item('a', 'needs_testing'), item('b', 'working')]).state).toBe('working');
+    expect(aggregate([item('a', 'needs_testing'), item('b', 'running')]).state).toBe('running');
     expect(aggregate([item('a', 'needs_testing'), item('b', 'pushed')]).state).toBe('needs_testing');
-    expect(aggregate([item('s', 'working', { kind: 'shell' })]).state).toBe('idle');
+    expect(aggregate([item('s', 'running', { kind: 'shell' })]).state).toBe('ready');
+  });
+
+  it('never reads a workspace of paused or stopped sessions as ready', () => {
+    expect(aggregate([item('a', 'paused'), item('b', 'paused')]).state).toBe('paused');
+    expect(aggregate([item('a', 'stopped')]).state).toBe('stopped');
+    expect(aggregate([item('a', 'paused'), item('b', 'stopped')]).state).toBe('paused');
+    expect(aggregate([item('a', 'ready'), item('b', 'paused')]).state).toBe('ready');
+  });
+
+  it('ignores the stale status of paused and stopped sessions while another one is live', () => {
+    const live = aggregate([item('a', 'running', { status: 'Editing' }), item('b', 'paused', { status: 'Held by you', at: '2026-10-29T11:00:00Z' })]);
+    expect(live.status).toBe('Editing');
+    expect(aggregate([item('b', 'paused', { status: 'Held by you' })]).status).toBe('Held by you');
+  });
+
+  it('summarises the two most urgent states with their counts', () => {
+    const a = aggregate([item('a', 'running'), item('b', 'paused'), item('c', 'paused'), item('d', 'stopped')]);
+    expect(summaryParts(a)).toEqual([
+      { state: 'running', count: 1 },
+      { state: 'paused', count: 2 },
+    ]);
+    expect(summaryParts(aggregate([item('a', 'ready')]))).toEqual([{ state: 'ready', count: 1 }]);
+    expect(summaryParts(aggregate([]))).toEqual([{ state: 'ready', count: 0 }]);
+    expect(summaryParts(undefined)).toEqual([{ state: 'ready', count: 0 }]);
+  });
+
+  it('writes the summary as "1 running · 2 paused", plain when a single session is alone', () => {
+    const label = (s: string) => s.replace('_', ' ');
+    expect(summaryText([{ state: 'running', count: 1 }, { state: 'paused', count: 2 }], label)).toBe('1 running · 2 paused');
+    expect(summaryText([{ state: 'needs_input', count: 1 }], label)).toBe('needs input');
+    expect(summaryText([{ state: 'running', count: 3 }], label)).toBe('3 running');
+    expect(summaryText([{ state: 'ready', count: 0 }], label)).toBe('ready');
   });
 
   it('is all idle only when every live agent is at rest', () => {
-    expect(allIdle([item('a', 'idle'), item('b', 'pushed'), item('h', 'held'), item('s', 'working', { kind: 'shell' })])).toBe(true);
-    expect(allIdle([item('a', 'idle'), item('b', 'working')])).toBe(false);
-    expect(allIdle([item('h', 'held')])).toBe(false);
+    expect(allIdle([item('a', 'ready'), item('b', 'pushed'), item('h', 'paused'), item('t', 'stopped'), item('s', 'running', { kind: 'shell' })])).toBe(true);
+    expect(allIdle([item('a', 'ready'), item('b', 'running')])).toBe(false);
+    expect(allIdle([item('h', 'paused')])).toBe(false);
   });
 });
 
@@ -279,7 +315,7 @@ describe('sidebar tree', () => {
 
 describe('workspace tabs', () => {
   it('keeps the saved order, follows term → line links and appends live members', () => {
-    const items = [item('line:a', 'idle', { termId: 't1', at: '2026-10-29T09:00:00Z' }), item('line:b', 'working'), item('term:s', 'working', { kind: 'shell' }), item('line:h', 'held')];
+    const items = [item('line:a', 'ready', { termId: 't1', at: '2026-10-29T09:00:00Z' }), item('line:b', 'running'), item('term:s', 'running', { kind: 'shell' }), item('line:h', 'paused')];
     const w = ws('w', '/w', { tabs: ['term:s', 'term:t1', 'browser:https://x.dev', 'line:gone'] });
     expect(workspaceTabs(w.tabs, items, items)).toEqual(['term:s', 'line:a', 'browser:https://x.dev', 'line:b']);
     expect(resolveTab('review:a', items)).toBe('review:a');
@@ -330,7 +366,7 @@ describe('Other sessions actions', () => {
   });
 
   it('offers no line actions for plain terminals', () => {
-    expect(lineActions(item('term:x', 'working', { termId: 'x' }), undefined)).toEqual([]);
+    expect(lineActions(item('term:x', 'running', { termId: 'x' }), undefined)).toEqual([]);
   });
 });
 
@@ -423,7 +459,7 @@ describe('Terminal pane action', () => {
     line: { id: 'l1', agent: 'claude', state, lastActivityAt: at, worktreePath: '/srv/a' },
     local,
   });
-  const session = (over: Partial<SidebarItem> = {}) => item('line:l1', 'working', { lineId: 'l1', ...over });
+  const session = (over: Partial<SidebarItem> = {}) => item('line:l1', 'running', { lineId: 'l1', ...over });
 
   it('marks a live session without Overseer term or tmux pane as external instead of resumable', () => {
     // Given a Claude session alive in an external terminal (pid, busy, no term, no tmux pane)
@@ -465,6 +501,6 @@ describe('Terminal pane action', () => {
     // Given a plain terminal item
     // When the Terminal pane asks which action to offer
     // Then it gets null
-    expect(paneAction(item('term:x', 'working', { termId: 'x' }), undefined)).toBeNull();
+    expect(paneAction(item('term:x', 'running', { termId: 'x' }), undefined)).toBeNull();
   });
 });

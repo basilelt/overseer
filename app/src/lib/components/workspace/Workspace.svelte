@@ -6,7 +6,7 @@
   import { isKnown, loadKnown, mergeKnown, saveKnown, startKnown } from '../../known-tabs';
   import { hostKey } from '../../window';
   import { pages } from '../../session-pages.svelte';
-  import type { SidebarItem } from '../../grouping';
+  import { isOff, type SidebarItem } from '../../grouping';
   import type { Workspace } from '../../types';
   import { aggregate, resolveTab, workspaceTabs } from '../../workspaces';
   import { followTerm, rememberTerms, tabInfo } from '../../tabs';
@@ -79,7 +79,7 @@
       const id = `${host()}|${key}`;
       if (!knownBy.has(id)) knownBy.set(id, startKnown(loadKnown(host(), key), savedTabs(key, ws), mem));
       const prev = knownBy.get(id);
-      const fresh = mem.filter((m) => m.group !== 'held' && !(prev && isKnown(m, prev))).map((m) => m.key);
+      const fresh = mem.filter((m) => !isOff(m) && !(prev && isKnown(m, prev))).map((m) => m.key);
       const next = mergeKnown(prev ?? new Set(), mem, items);
       knownBy.set(id, next);
       rememberTerms(termOf, items, app.data.terms);

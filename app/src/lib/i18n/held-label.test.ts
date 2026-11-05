@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { en } from './en';
 import { dict as fr } from './fr';
 
-const STOPPED_KEYS = ['group.held', 'chat.status.held'] as const;
-const PAUSED_KEYS = ['group.paused', 'chat.status.paused'] as const;
+const STOPPED_KEYS = ['group.stopped', 'wsstate.stopped', 'session.state.stopped'] as const;
+const PAUSED_KEYS = ['group.paused', 'wsstate.paused', 'session.state.paused'] as const;
 
 describe('label of a session without a live process', () => {
   it('reads Stopped in English when the process is gone, never Held', () => {
@@ -24,5 +24,9 @@ describe('label of a session without a live process', () => {
   it('reads En pause in French when the user paused it on purpose', () => {
     for (const k of PAUSED_KEYS) expect(fr[k]).toBe('En pause');
     expect(fr['chat.paused']).toBe('Session en pause');
+  });
+
+  it('reads Ready, not Idle, for a live session that waits for the next prompt', () => {
+    for (const k of ['group.ready', 'wsstate.ready', 'session.state.ready'] as const) expect([en[k], fr[k]]).toEqual(['Ready', 'Prête']);
   });
 });

@@ -2,8 +2,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { SidebarItem } from './grouping';
 import { loadKnown, MAX_KEYS, MAX_KNOWN, mergeKnown, saveKnown, startKnown } from './known-tabs';
 import { workspaceTabs } from './workspaces';
+import { stateOfGroup } from './test-fixtures';
 
-const item = (key: string, group: SidebarItem['group'] = 'working', over: Partial<SidebarItem> = {}): SidebarItem => ({ key, kind: 'claude', group, title: key, at: '2026-10-29T10:00:00Z', ...over });
+const item = (key: string, group: SidebarItem['group'] = 'running', over: Partial<SidebarItem> = {}): SidebarItem => ({ key, kind: 'claude', group, state: stateOfGroup(group), title: key, at: '2026-10-29T10:00:00Z', ...over });
 
 function memoryStorage() {
   const data = new Map<string, string>();
@@ -15,7 +16,7 @@ afterEach(() => vi.unstubAllGlobals());
 describe('tabs closed before a relaunch', () => {
   it('does not bring back a closed tab and still opens a member started after the save', () => {
     vi.stubGlobal('localStorage', memoryStorage());
-    const before = [item('line:a'), item('term:closed', 'working', { kind: 'shell' })];
+    const before = [item('line:a'), item('term:closed', 'running', { kind: 'shell' })];
     saveKnown('local', 'ws1', { known: [...mergeKnown(new Set(), before, before)] });
 
     const after = [...before, item('line:new')];
@@ -24,7 +25,7 @@ describe('tabs closed before a relaunch', () => {
   });
 
   it('keeps a held member out and a closed term out once it became a line', () => {
-    const items = [item('line:a'), item('line:y', 'idle', { termId: 'x' }), item('line:h', 'held')];
+    const items = [item('line:a'), item('line:y', 'ready', { termId: 'x' }), item('line:h', 'paused')];
     expect(workspaceTabs([], items, items, new Set(['line:a', 'term:x']))).toEqual([]);
   });
 
@@ -36,7 +37,7 @@ describe('tabs closed before a relaunch', () => {
 
   it('forgets terms that are gone, keeps closed sessions that may come back, and keeps the record per host and layout', () => {
     vi.stubGlobal('localStorage', memoryStorage());
-    const items = [item('line:a', 'idle', { termId: 't' })];
+    const items = [item('line:a', 'ready', { termId: 't' })];
     expect([...mergeKnown(new Set(['line:gone', 'term:t', 'term:dead']), [], items)]).toEqual(['line:gone', 'term:t']);
     saveKnown('local', '#other', { known: ['line:a'], tabs: ['line:a'] });
     saveKnown('ssh:box', '#other', { known: [] });

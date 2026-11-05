@@ -9,6 +9,7 @@
   import { onMount, setContext, tick, untrack } from 'svelte';
   import { DaemonError } from '../../client';
   import { t } from '../../i18n.svelte';
+  import { sessionState } from '../../session-state';
   import { app } from '../../state.svelte';
   import type { SidebarItem } from '../../grouping';
   import type { Term } from '../../types';
@@ -33,6 +34,7 @@
   const agent = $derived(line?.line.agent ?? item.kind);
   const local = $derived(line?.local);
   const alive = $derived(!!line && line.line.state !== 'held' && line.line.state !== 'hung-up' && (local?.pid !== undefined || !!item.termId));
+  const view = $derived(line ? sessionState(line, item.termId) : null);
   const waiting = $derived(!!local?.needsInput);
   const busy = $derived(!!local?.busy && !waiting);
 
@@ -360,7 +362,7 @@
 <div class="chat" class:phone>
   <header class="head">
     <span class="state {waiting ? 'input' : busy ? 'busy' : alive ? 'idle' : 'off'}"></span>
-    <span class="status">{t(waiting ? 'chat.status.waiting' : busy ? 'chat.status.working' : alive ? 'chat.status.idle' : line?.line.state === 'held' ? 'chat.status.held' : 'chat.status.stopped')}</span>
+    <span class="status">{view ? t(view.label) : ''}</span>
     {#if model}<span class="model faint">{model}</span>{/if}
     <span class="grow"></span>
     {#if alive}

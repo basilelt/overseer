@@ -18,8 +18,8 @@ describe('tab shortcuts', () => {
 
 describe('tab kinds', () => {
   const items: SidebarItem[] = [
-    { key: 'line:a', kind: 'codex', group: 'idle', title: 'A', at: '', lineId: 'a' },
-    { key: 'term:s', kind: 'shell', group: 'working', title: 'zsh', at: '', termId: 's' },
+    { key: 'line:a', kind: 'codex', group: 'ready', state: 'ready', title: 'A', at: '', lineId: 'a' },
+    { key: 'term:s', kind: 'shell', group: 'running', state: 'running', title: 'zsh', at: '', termId: 's' },
   ];
 
   it('resolves agent, shell, browser and review tabs', () => {
@@ -86,7 +86,7 @@ describe('tab titles', () => {
   const label = (kind: string, arg: string) => `${kind}:${arg}`;
 
   it('prefers the sidebar title and falls back to a label for the kind', () => {
-    const item: SidebarItem = { key: 'line:a', kind: 'codex', group: 'idle', title: 'Fix login', at: '', lineId: 'a' };
+    const item: SidebarItem = { key: 'line:a', kind: 'codex', group: 'ready', state: 'ready', title: 'Fix login', at: '', lineId: 'a' };
     expect(tabTitle(tabInfo('line:a', [item])!, label)).toBe('Fix login');
     expect(tabTitle(tabInfo(newTabKey('system', 'cpu'), [])!, label)).toBe('system:cpu');
   });
@@ -130,7 +130,7 @@ describe('followTerm', () => {
   it('follows the shell even while the held line is still listed', () => {
     const termOf = new Map<string, string>();
     rememberTerms(termOf, [line], bound);
-    expect(followTerm('line:a', [{ ...line, group: 'held' }, shell], termOf)).toBe('term:t1');
+    expect(followTerm('line:a', [{ ...line, group: 'paused', state: 'paused' }, shell], termOf)).toBe('term:t1');
   });
 
   it('does not remember a line whose term was already detached', () => {

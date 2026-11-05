@@ -270,7 +270,7 @@
           </span>
           {#if item.keys}<kbd class="keys">{item.keys}</kbd>{/if}
           {#if item.hint}
-            <span class="hint"><span class="dot" style:background="var(--st-{item.group === 'needs_input' ? 'input' : item.group === 'working' ? 'working' : item.group === 'needs_testing' ? 'testing' : 'held'})"></span>{item.hint}</span>
+            <span class="hint"><span class="dot" style:background="var(--st-{item.group === 'needs_input' ? 'input' : item.group === 'running' ? 'working' : item.group === 'needs_testing' ? 'testing' : item.group === 'paused' ? 'paused' : 'held'})"></span>{item.hint}</span>
           {/if}
         </li>
       {:else}

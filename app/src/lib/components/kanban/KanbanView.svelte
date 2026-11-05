@@ -8,6 +8,7 @@
   import Sparkles from '@lucide/svelte/icons/sparkles';
   import LoaderCircle from '@lucide/svelte/icons/loader-circle';
   import MessageSquare from '@lucide/svelte/icons/message-square';
+  import { isOff } from '../../grouping';
   import { projectName, app } from '../../state.svelte';
   import { saveSettings, settings } from '../../settings.svelte';
   import { holdAll } from '../../wsactions';
@@ -291,7 +292,7 @@
 
   function holdSession(task: Task) {
     const key = `line:${task.lineId}`;
-    if (task.lineId && app.items.some((i) => i.key === key && i.group !== 'held')) holdAll({ kind: 'items', keys: [key] }, 'hold');
+    if (task.lineId && app.items.some((i) => i.key === key && !isOff(i))) holdAll({ kind: 'items', keys: [key] }, 'hold');
   }
 
   function open(task: Task) {

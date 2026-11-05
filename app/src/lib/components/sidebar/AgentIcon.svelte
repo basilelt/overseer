@@ -4,10 +4,11 @@
   export const GROUP_COLOR: Record<GroupId, string> = {
     needs_input: 'var(--st-input)',
     needs_testing: 'var(--st-testing)',
-    working: 'var(--st-working)',
+    running: 'var(--st-working)',
     pushed: 'var(--st-done)',
-    idle: 'var(--border-strong)',
-    held: 'var(--st-held)',
+    ready: 'var(--border-strong)',
+    paused: 'var(--st-paused)',
+    stopped: 'var(--st-held)',
   };
 </script>
 
