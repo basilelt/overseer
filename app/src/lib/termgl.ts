@@ -92,7 +92,7 @@ export interface RowStyle {
   selection: SelectionCoords | null;
   hoveredLink: number;
   linkRange: LinkRange | null;
-  glyph(text: string, bold: boolean, italic: boolean): { slot: number; colored: boolean };
+  glyph(text: string, bold: boolean, italic: boolean, dark: boolean): { slot: number; colored: boolean };
   text(cell: GhosttyCell, col: number): string;
 }
 
@@ -139,7 +139,7 @@ export function packRow(cells: readonly GhosttyCell[], row: number, cols: number
     out[o + 7] = alpha;
     const cp = cell.codepoint;
     if (cp > 32 || cell.grapheme_len > 0) {
-      const g = style.glyph(style.text(cell, c), (cell.flags & BOLD) !== 0, (cell.flags & ITALIC) !== 0);
+      const g = style.glyph(style.text(cell, c), (cell.flags & BOLD) !== 0, (cell.flags & ITALIC) !== 0, fr * 299 + fg * 587 + fb * 114 < 128000);
       if (g.slot >= 0 && g.slot < NO_GLYPH) {
         u16[c * 6 + 4] = g.slot;
         u16[c * 6 + 5] = g.colored ? 1 : 0;
@@ -212,7 +212,7 @@ export interface Host {
   };
 }
 
-export type Raster = (text: string, font: string, colored: boolean, w: number, h: number, x: number, baseline: number) => TexImageSource;
+export type Raster = (text: string, font: string, colored: boolean, dark: boolean, w: number, h: number, x: number, baseline: number) => TexImageSource;
 
 const COLORED = /\p{Extended_Pictographic}/u;
 
@@ -460,14 +460,15 @@ export class GlTerm {
     return this.atlasSize;
   }
 
-  private glyph = (text: string, bold: boolean, italic: boolean): { slot: number; colored: boolean } => {
+  private glyph = (text: string, bold: boolean, italic: boolean, dark: boolean): { slot: number; colored: boolean } => {
     const colored = COLORED.test(text);
-    const key = `${bold ? 'b' : ''}${italic ? 'i' : ''}:${text}`;
+    dark &&= !colored;
+    const key = `${bold ? 'b' : ''}${italic ? 'i' : ''}${dark ? 'd' : ''}:${text}`;
     const make = (slot: number) => {
       const h = this.host;
       const font = `${italic ? 'italic ' : ''}${bold ? 'bold ' : ''}${h.fontSize}px ${h.fontFamily}`;
       const dpr = h.devicePixelRatio || 1;
-      const src = this.raster(text, font, colored, this.slotW, this.slotH, BLEED * h.metrics.width * dpr, h.metrics.baseline * dpr);
+      const src = this.raster(text, font, colored, dark, this.slotW, this.slotH, BLEED * h.metrics.width * dpr, h.metrics.baseline * dpr);
       const gl = this.gl;
       gl.bindTexture(gl.TEXTURE_2D, this.res!.atlas);
       gl.texSubImage2D(gl.TEXTURE_2D, 0, (slot % this.atlasCols) * this.slotW, Math.floor(slot / this.atlasCols) * this.slotH, gl.RGBA, gl.UNSIGNED_BYTE, src);
@@ -764,7 +765,7 @@ export function installWebglRenderer(mod: { CanvasRenderer?: { prototype: object
 
 function rasterizer(dpr: number): Raster {
   let ctx: CanvasRenderingContext2D | null = null;
-  return (text, font, colored, w, h, x, baseline) => {
+  return (text, font, colored, dark, w, h, x, baseline) => {
     if (!ctx || ctx.canvas.width !== w || ctx.canvas.height !== h) {
       const c = document.createElement('canvas');
       c.width = w;
@@ -774,7 +775,8 @@ function rasterizer(dpr: number): Raster {
     ctx.clearRect(0, 0, w, h);
     ctx.font = font.replace(/(\d+(?:\.\d+)?)px/, (_, px) => `${Number(px) * dpr}px`);
     ctx.textBaseline = 'alphabetic';
-    ctx.fillStyle = colored ? '#000' : '#fff';
+    // Text rasterizers (Skia, CoreGraphics) draw light ink heavier than dark ink; match the real text luminance or dark text renders bold.
+    ctx.fillStyle = colored || dark ? '#000' : '#fff';
     ctx.fillText(text, x, baseline);
     return ctx.canvas;
   };

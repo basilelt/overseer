@@ -63,6 +63,7 @@
     app_platform: () => { const os = new URLSearchParams(location.search).get('qaos'); return os ? { os, mobile: os === 'android' || os === 'ios' } : { os: 'linux', mobile: false }; },
     'plugin:clipboard-manager|write_text': (a) => { window.__qaClip = a.text; return null; },
     'plugin:clipboard-manager|read_text': () => window.__qaClip ?? '',
+    save_download: (a, o) => { window.__qaDownload = { name: decodeURIComponent(o?.headers?.['x-name'] ?? ''), size: a?.byteLength ?? a?.length ?? 0 }; return '/home/qa/Downloads/' + window.__qaDownload.name; },
     conn_connect: (a) => { send(a.onState, { phase: 'connected', target: a.target, version: '0.2.0' }); },
     conn_disconnect: () => null,
     ssh_hosts: () => [],
@@ -76,10 +77,10 @@
     transformCallback: (f, once) => { const id = nextCb++; cbs.set(id, (x) => { if (once) cbs.delete(id); f(x); }); return id; },
     unregisterCallback: (id) => cbs.delete(id),
     convertFileSrc: (p) => p,
-    invoke: async (cmd, args = {}) => {
+    invoke: async (cmd, args = {}, opts) => {
       const h = handlers[cmd];
       if (!h) { log('unhandled', cmd); if (cmd.startsWith('plugin:')) return null; return null; }
-      return h(args);
+      return h(args, opts);
     },
   };
   window.__TAURI_EVENT_PLUGIN_INTERNALS__ = { unregisterListener: () => {} };

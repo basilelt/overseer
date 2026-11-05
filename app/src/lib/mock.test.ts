@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { api } from './api';
 import { inject, MockDaemon } from './mock';
 import { applyEvent, type Snapshot } from './reduce';
@@ -262,6 +262,19 @@ describe('MockDaemon', () => {
     expect(seen).toEqual([0, 0.25, 0.5, 0.75, 1]);
     expect(await m.savePaste('image.png', new Uint8Array(3))).toMatch(/^\/tmp\/overseer-paste\/\d+-image\.png$/);
     expect(await m.request('POST', '/v1/uploads?name=a%20b.png')).toMatchObject({ name: 'a_b.png' });
+  });
+
+  it('downloads a file through a browser anchor and returns its name', async () => {
+    const { m } = setup();
+    const a = { href: '', download: '', click: vi.fn() };
+    vi.stubGlobal('document', { createElement: vi.fn(() => a) });
+    try {
+      expect(await m.saveDownload('icon-512.png', new Uint8Array([1, 2, 3]))).toBe('icon-512.png');
+      expect(a).toMatchObject({ href: expect.stringMatching(/^blob:/), download: 'icon-512.png' });
+      expect(a.click).toHaveBeenCalledOnce();
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it('stores the auto-organize toggle', async () => {

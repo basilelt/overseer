@@ -137,4 +137,8 @@ export function cleanable(w: Worktree): boolean {
   return w.kind === 'managed' && (w.state === 'stale' || w.state === 'missing');
 }
 
+export function unused(w: Worktree): boolean {
+  return w.kind === 'managed' && !w.lines.length && !w.termIds.length && !w.dirty && (w.state === 'missing' || (w.merged && w.state !== 'in_use'));
+}
+
 export const listFor = (listProject: string, panelProject: string): boolean => within(panelProject, listProject);

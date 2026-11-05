@@ -15,7 +15,7 @@
   import { gt, type GKey } from './strings';
   import { openReview } from '../review/open';
   import type { Worktree, WorktreeList } from './types';
-  import { cleanable, formatSize, listFor, sortWorktrees } from './view';
+  import { cleanable, formatSize, listFor, sortWorktrees, unused } from './view';
 
   let { projectPath }: { projectPath: string } = $props();
 
@@ -26,6 +26,7 @@
 
   const list = $derived(data ? sortWorktrees(data.worktrees) : []);
   const stale = $derived(list.filter(cleanable));
+  const idle = $derived(list.filter(unused));
   const err = (e: unknown) => String((e as Error)?.message ?? e);
 
   async function load() {
@@ -149,6 +150,7 @@
       <span class="faint sep">{gt('store')}</span><span class="mono faint store" title={data?.store}>{data?.store ?? '…'}</span>
     </div>
     <span class="spacer"></span>
+    <button class="btn" title={gt('cleanupUnusedHint')} disabled={!idle.length} onclick={() => (cleaning = idle)}><BrushCleaning size={13} />{gt('cleanupUnused', { n: idle.length })}</button>
     <button class="btn" disabled={!stale.length} onclick={() => (cleaning = stale)}><BrushCleaning size={13} />{gt('cleanupStale', { n: stale.length })}</button>
     <button class="btn" disabled={!data || busy !== null} onclick={newWorktree}><Plus size={13} />{gt('newWorktreeBtn')}</button>
     <button class="icon-btn" title={gt('refresh')} aria-label={gt('refresh')} onclick={load}><RefreshCw size={14} /></button>
@@ -183,6 +185,7 @@
 
 <style>
   .panel {
+    container-type: inline-size;
     display: flex;
     flex-direction: column;
     height: 100%;
@@ -193,6 +196,7 @@
     display: flex;
     align-items: center;
     gap: 8px;
+    flex-wrap: wrap;
     padding: 8px 12px;
     border-bottom: 1px solid var(--border);
   }
@@ -293,6 +297,7 @@
     align-items: center;
     min-width: 0;
     white-space: nowrap;
+    overflow: hidden;
   }
   .branch {
     font-size: 12.5px;
@@ -397,5 +402,26 @@
   }
   .err {
     color: var(--st-failed);
+  }
+  @container (max-width: 720px) {
+    .wt {
+      grid-template-columns: 72px minmax(0, 1fr) auto;
+      padding: 6px 8px 6px 12px;
+    }
+    .cols,
+    .sync,
+    .dirty,
+    .num,
+    .top .small,
+    .top .pr {
+      display: none;
+    }
+    .toolbar .meta {
+      flex-basis: 100%;
+    }
+    .branch {
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
   }
 </style>
