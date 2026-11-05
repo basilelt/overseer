@@ -105,7 +105,7 @@ its `changes` job runs, a few seconds on `ubuntu-slim`. Pushes by `github-action
 | Workflow | Job | Runner | What |
 |---|---|---|---|
 | ci | `changes` | `ubuntu-slim` | `scripts/ci-changes.sh`: which jobs the PR needs ([Path filtering](#path-filtering)) |
-| ci | `actionlint` | `ubuntu-slim` | `actionlint` (downloaded by its install script; `ubuntu-slim` has no Docker) |
+| ci | `actionlint` | `ubuntu-slim` | `actionlint` (pinned release, checksum verified; `ubuntu-slim` has no Docker) |
 | ci | `gitleaks` | `ubuntu-slim` | `gitleaks git` (pinned release, checksum verified) over the PR's commits (`base..head`); every PR, no path filter. Known false positives are fingerprinted in `.gitleaksignore` |
 | ci | `rust` | `ubuntu-24.04` | `cargo fmt --check` (root and `api/`), `make lint`, `timeout 1500 make test` |
 | ci | `app` | `ubuntu-24.04` | `make app-test` (vitest with coverage, svelte-check, Tauri crate tests and clippy) |
