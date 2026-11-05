@@ -68,21 +68,32 @@ desktop)
   [ -f "$D/daemon.pid" ] || { echo "run $0 start first" >&2; exit 1; }
   "$0" desktop-stop
   mkdir -p "$D/apphome"
-  [ -f "$MESA_EGL" ] && export __EGL_VENDOR_LIBRARY_FILENAMES="$MESA_EGL"
   setsid Xvfb ":$DISPLAY_NUM" -screen 0 1440x900x24 -nolisten tcp >> "$D/xvfb.log" 2>&1 &
   echo $! > "$D/xvfb.pid"
-  (cd "$R/app" && setsid nice -n 10 pnpm exec vite --port 1420 --strictPort >> "$D/vite.log" 2>&1 & echo $! > "$D/vite.pid")
-  i=0
-  until python3 -c 'import socket; socket.create_connection(("localhost", 1420))' 2>/dev/null; do
-    i=$((i+1))
-    [ $i -lt 100 ] || { echo "vite did not start, see $D/vite.log" >&2; exit 1; }
-    sleep 0.2
-  done
-  env -i PATH=/usr/bin:/bin DISPLAY=":$DISPLAY_NUM" HOME="$D/apphome" XDG_CONFIG_HOME="$D/apphome/.config" \
-    XDG_DATA_HOME="$D/apphome/.local/share" XDG_CACHE_HOME="$D/apphome/.cache" XDG_RUNTIME_DIR="$D/run" \
-    OVERSEER_STATE_DIR="$D/state" LANG=C.UTF-8 WEBKIT_DISABLE_DMABUF_RENDERER=1 GDK_BACKEND=x11 NO_AT_BRIDGE=1 \
-    ${__EGL_VENDOR_LIBRARY_FILENAMES:+__EGL_VENDOR_LIBRARY_FILENAMES="$__EGL_VENDOR_LIBRARY_FILENAMES"} \
-    setsid "$R/app/src-tauri/target/debug/overseer-app" >> "$D/app.log" 2>&1 &
+  # The app's devUrl is fixed at localhost:1420, which another checkout's dev server may hold; then
+  # Vite and the app share a private network namespace (the daemon and X are on Unix sockets).
+  ns=
+  if python3 -c 'import socket; socket.create_connection(("localhost", 1420))' 2>/dev/null; then
+    unshare -rn true 2>/dev/null || { echo "port 1420 is taken by another dev server" >&2; exit 1; }
+    ns="unshare -rn"
+  fi
+  [ -f "$MESA_EGL" ] || MESA_EGL=
+  export R D DISPLAY_NUM MESA_EGL
+  setsid $ns sh -c '
+    ip link set lo up 2>/dev/null || true
+    cd "$R/app" && nice -n 10 pnpm exec vite --port 1420 --strictPort >> "$D/vite.log" 2>&1 &
+    i=0
+    until python3 -c "import socket; socket.create_connection((\"localhost\", 1420))" 2>/dev/null; do
+      i=$((i+1))
+      [ $i -lt 100 ] || { echo "vite did not start, see $D/vite.log" >&2; exit 1; }
+      sleep 0.2
+    done
+    exec env -i PATH=/usr/bin:/bin DISPLAY=":$DISPLAY_NUM" HOME="$D/apphome" XDG_CONFIG_HOME="$D/apphome/.config" \
+      XDG_DATA_HOME="$D/apphome/.local/share" XDG_CACHE_HOME="$D/apphome/.cache" XDG_RUNTIME_DIR="$D/run" \
+      OVERSEER_STATE_DIR="$D/state" LANG=C.UTF-8 WEBKIT_DISABLE_DMABUF_RENDERER=1 GDK_BACKEND=x11 NO_AT_BRIDGE=1 \
+      ${MESA_EGL:+__EGL_VENDOR_LIBRARY_FILENAMES="$MESA_EGL"} \
+      "$R/app/src-tauri/target/debug/overseer-app"
+  ' >> "$D/app.log" 2>&1 &
   echo $! > "$D/app.pid"
   echo "desktop app on DISPLAY=:$DISPLAY_NUM, log $D/app.log; screenshot with: $0 shot <name>"
   ;;

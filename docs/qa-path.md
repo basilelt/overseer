@@ -81,7 +81,7 @@ Each step is **Do → Expect**. Check every screenshot for overlaps, clipped tex
 - **E2** Run `sleep 30`, press Ctrl+C, then `exit` → the command stops and the tab closes on its own.
 - **E3** Ctrl+W on a live shell → dialog "End this session?". **Cancel** keeps the tab. **End session** closes it and the terminal leaves `/v1/terms`. **Hide tab (keep running)** removes the tab while the session keeps running (visible in By status).
 - **E4** Ctrl+W on an exited terminal or a non-session tab → it closes without asking. The reopen-tab shortcut brings back the last closed tab.
-- **E5** Hover a tab with a cut title → the full title shows, and the close button stays where it was.
+- **E5** **(desktop)** Open more tabs than fit, some with long titles → inactive tabs keep a fixed width with `…`, the strip scrolls with the wheel, hovering a tab changes no width and shows its full title as a tooltip, and clicking it widens it to the full title and scrolls it into view.
 - **E6** Split the pane right and down, move tabs between panes, close a pane → the layout follows, and nothing is lost on reload.
 - **E7** Select text in a terminal → it is copied (desktop shell only; note it when it cannot be checked in Chromium).
 - **E8** Drag-select a line that touches the first or last row of a terminal with no scrollback (a fresh shell, or the prompt of an agent at the bottom) → the whole dragged range is selected and copied, not a single cell.
