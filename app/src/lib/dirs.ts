@@ -23,6 +23,10 @@ export function baseName(path: string): string {
   return trim(path.trim()).split('/').pop() ?? '';
 }
 
+export function shortPath(p: string): string {
+  return p.replace(/^\/(home|Users)\/[^/]+(?=\/|$)/, '~');
+}
+
 export function tildePath(path: string, home: string): string {
   const p = trim(path);
   const h = trim(home);
