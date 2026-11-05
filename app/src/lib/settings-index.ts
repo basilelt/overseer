@@ -1,8 +1,8 @@
 import type { Key } from './i18n.svelte';
 
 export type CategoryId = 'general' | 'terminal' | 'agents' | 'notifications' | 'connection' | 'updates' | 'help';
-export type SectionId = 'appearance' | 'links' | 'terminal' | 'keyboard' | 'defaults' | 'profiles' | 'hooks' | 'usage' | 'notifications' | 'hosts' | 'server' | 'updater' | 'apk' | 'tour' | 'diag' | 'feedback';
-export type Gate = 'desktop' | 'nonMac' | 'connected' | 'profiles' | 'hooks' | 'updater' | 'apk';
+export type SectionId = 'appearance' | 'links' | 'terminal' | 'keyboard' | 'defaults' | 'profiles' | 'hooks' | 'usage' | 'notifications' | 'hosts' | 'server' | 'updater' | 'apk' | 'tour' | 'diag' | 'feedback' | 'switchboard';
+export type Gate = 'desktop' | 'nonMac' | 'connected' | 'profiles' | 'hooks' | 'updater' | 'apk' | 'switchboard';
 export type Gates = Record<Gate, boolean>;
 
 export interface Category {
@@ -50,6 +50,7 @@ export const SECTIONS: Section[] = [
   { id: 'apk', category: 'updates', title: 'apk.section', gate: 'apk' },
   { id: 'tour', category: 'help', title: 'tour.section' },
   { id: 'diag', category: 'help', title: 'diag.section' },
+  { id: 'switchboard', category: 'help', title: 'switchboard.section', gate: 'switchboard' },
   { id: 'feedback', category: 'help', title: 'feedback.section' },
 ];
 
@@ -92,6 +93,7 @@ export const ENTRIES: Entry[] = [
   { id: 'tour', section: 'tour', keys: ['tour.again', 'tour.againHint', 'tour.take'] },
   { id: 'organize', section: 'tour', keys: ['org.title', 'org.helpHint', 'org.nudgeAction'] },
   { id: 'diag', section: 'diag', keys: ['diag.show', 'diag.sectionHint'] },
+  { id: 'switchboard', section: 'switchboard', keys: ['switchboard.title', 'switchboard.settingsHint', 'switchboard.run'] },
   { id: 'feedback', section: 'feedback', keys: ['feedback.title', 'feedback.sectionHint', 'feedback.repo', 'feedback.repoHint'] },
   { id: 'privacy', section: 'feedback', keys: ['feedback.privacy', 'feedback.privacyHint'] },
 ];

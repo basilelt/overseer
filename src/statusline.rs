@@ -119,7 +119,11 @@ fn unquote_words(s: &str) -> Vec<String> {
 }
 
 pub fn original(cmd: &str) -> Option<Option<String>> {
-    if !cmd.contains(MARKER) {
+    original_marker(cmd, MARKER)
+}
+
+pub fn original_marker(cmd: &str, marker: &str) -> Option<Option<String>> {
+    if !cmd.contains(marker) {
         return None;
     }
     let words = unquote_words(cmd);

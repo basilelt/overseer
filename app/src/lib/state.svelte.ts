@@ -27,7 +27,7 @@ import { ui } from './mobile/ui.svelte';
 import { feedback } from './feedback.svelte';
 
 export type View = 'agents' | 'kanban' | 'browser';
-export type Overlay = null | 'taskDetail' | 'palette' | 'connect' | 'settings' | 'task' | 'project' | 'review' | 'ports' | 'system' | 'usage' | 'broadcast' | 'holdAll' | 'name' | 'workspaceNew' | 'profiles' | 'shortcuts' | 'file' | 'notifications' | 'closeTab';
+export type Overlay = null | 'taskDetail' | 'palette' | 'connect' | 'settings' | 'task' | 'project' | 'review' | 'ports' | 'system' | 'usage' | 'broadcast' | 'holdAll' | 'name' | 'workspaceNew' | 'profiles' | 'shortcuts' | 'file' | 'notifications' | 'closeTab' | 'switchboardImport';
 
 export interface FileArg {
   path: string;

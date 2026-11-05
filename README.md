@@ -39,6 +39,8 @@ changes. Switch to **By status** to see at a glance who needs your input, who is
 is done. Agent tabs also have a **Chat** view rebuilt live from the agent's session file.
 Terminals can optionally be drawn on the GPU with WebGL (Settings, Terminal, **GPU rendering**,
 off by default and experimental), which keeps long output smooth.
+Coming from Switchboard, the old name of Overseer? When its data is found, Overseer offers to import
+your sessions, tasks, workspaces and settings in one click (also in Settings, Help).
 
 ![Workspaces](app/docs/screenshots/workspaces-light.png)
 

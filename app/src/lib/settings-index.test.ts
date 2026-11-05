@@ -24,8 +24,8 @@ import {
   type Text,
 } from './settings-index';
 
-const all: Gates = { desktop: true, nonMac: true, connected: true, profiles: true, hooks: true, updater: true, apk: true };
-const none: Gates = { desktop: false, nonMac: false, connected: false, profiles: false, hooks: false, updater: false, apk: false };
+const all: Gates = { desktop: true, nonMac: true, connected: true, profiles: true, hooks: true, updater: true, apk: true, switchboard: true };
+const none: Gates = { desktop: false, nonMac: false, connected: false, profiles: false, hooks: false, updater: false, apk: false, switchboard: false };
 const en2: Text = (k) => [en[k]];
 const both: Text = (k) => [(fr as Partial<Record<Key, string>>)[k] ?? en[k], en[k]];
 

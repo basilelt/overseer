@@ -59,15 +59,15 @@ pub fn hook_command(bin: &Path, state_dir: &Path, agent: &str, event: &str) -> S
     )
 }
 
-fn ours(h: &Value) -> bool {
-    h["command"].as_str().is_some_and(|c| c.contains(MARKER))
+fn ours(h: &Value, marker: &str) -> bool {
+    h["command"].as_str().is_some_and(|c| c.contains(marker))
 }
 
-fn strip(groups: &mut Vec<Value>) {
-    groups.retain(|g| !ours(g));
+fn strip(groups: &mut Vec<Value>, marker: &str) {
+    groups.retain(|g| !ours(g, marker));
     for g in groups.iter_mut() {
         if let Some(hs) = g.get_mut("hooks").and_then(Value::as_array_mut) {
-            hs.retain(|h| !ours(h));
+            hs.retain(|h| !ours(h, marker));
         }
     }
     groups.retain(|g| {
@@ -108,7 +108,7 @@ fn merge_with(
         if arr.iter().any(|g| has(g, &cmd)) {
             continue;
         }
-        strip(arr);
+        strip(arr, MARKER);
         arr.push(entry(cmd));
     }
     root
@@ -141,15 +141,22 @@ pub fn merge_flat(existing: &Value, events: &[&str], command: impl Fn(&str) -> S
 }
 
 pub fn unmerge(existing: &Value) -> Value {
+    unmerge_marker(existing, MARKER)
+}
+
+pub fn unmerge_marker(existing: &Value, marker: &str) -> Value {
     let mut root = existing.clone();
     if let Some(hooks) = root.get_mut("hooks").and_then(Value::as_object_mut) {
         let keys: Vec<String> = hooks.keys().cloned().collect();
         for k in keys {
             if let Some(arr) = hooks.get_mut(&k).and_then(Value::as_array_mut) {
                 let had = arr.iter().any(|g| {
-                    ours(g) || g["hooks"].as_array().is_some_and(|hs| hs.iter().any(ours))
+                    ours(g, marker)
+                        || g["hooks"]
+                            .as_array()
+                            .is_some_and(|hs| hs.iter().any(|h| ours(h, marker)))
                 });
-                strip(arr);
+                strip(arr, marker);
                 if had && arr.is_empty() {
                     hooks.remove(&k);
                 }

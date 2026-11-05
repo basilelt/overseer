@@ -33,6 +33,7 @@
   const planReview = () => import('./PlanReview.svelte');
   const pickUp = () => import('./PickUp.svelte');
   const closeTabDialog = () => import('./CloseTabDialog.svelte');
+  const switchboardDialog = () => import('./SwitchboardImportDialog.svelte');
 </script>
 
 {#if app.overlay === 'palette'}
@@ -71,6 +72,8 @@
   {#await notificationCenter() then { default: NotificationCenter }}<NotificationCenter onclose={close} />{/await}
 {:else if app.overlay === 'file' && app.fileArg}
   {#await fileViewer() then { default: FileViewer }}<FileViewer onclose={close} file={app.fileArg} />{/await}
+{:else if app.overlay === 'switchboardImport'}
+  {#await switchboardDialog() then { default: SwitchboardImportDialog }}<SwitchboardImportDialog onclose={close} from={app.overlayArg} />{/await}
 {:else if app.overlay === 'closeTab' && app.overlayArg}
   {#await closeTabDialog() then { default: CloseTabDialog }}<CloseTabDialog onclose={close} tabKey={app.overlayArg} />{/await}
 {:else if app.overlay === 'shortcuts' && !app.mobile && ui.layout !== 'phone'}
