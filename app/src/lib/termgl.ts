@@ -295,8 +295,24 @@ interface Res {
   u: Record<string, WebGLUniformLocation | null>;
 }
 
+interface Frame {
+  W: number;
+  H: number;
+  cols: number;
+  rows: number;
+  cellW: number;
+  cellH: number;
+  n: number;
+  dpr: number;
+  bg: RGB;
+}
+
 export class GlTerm {
   draws = 0;
+  redraws = 0;
+  settle = 0;
+  onSettle: (() => void) | null = null;
+  private frame: Frame | null = null;
   uploaded = 0;
   rowsPacked = 0;
   lost = false;
@@ -416,6 +432,7 @@ export class GlTerm {
   private alloc(cols: number, rows: number): void {
     this.cols = cols;
     this.rows = rows;
+    this.frame = null;
     this.cells = new Uint8Array(cols * rows * CELL_BYTES);
     this.decos = Array.from({ length: rows }, () => []);
     this.full = true;
@@ -592,9 +609,34 @@ export class GlTerm {
       at += d.length;
     }
     this.rectData.set(extra, at);
-    const dpr = h.devicePixelRatio || 1;
-    gl.viewport(0, 0, Math.round(W * dpr), Math.round(H * dpr));
     const bg = parseColor(h.theme.background, [0, 0, 0]);
+    const frame: Frame = { W, H, cols, rows, cellW, cellH, n, dpr: h.devicePixelRatio || 1, bg };
+    this.frame = frame;
+    this.paint(frame);
+    if (this.settle > 0) {
+      this.settle--;
+      this.onSettle?.();
+    }
+    buf.clearDirty();
+    return true;
+  }
+
+  redraw(): boolean {
+    const f = this.frame;
+    if (!f || this.lost || !this.res) return false;
+    const gl = this.gl;
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.res.cells);
+    gl.bufferSubData(gl.ARRAY_BUFFER, 0, this.cells, 0, this.cells.length);
+    this.paint(f);
+    this.redraws++;
+    return true;
+  }
+
+  private paint(f: Frame): void {
+    const { W, H, cols, rows, cellW, cellH, n, dpr, bg } = f;
+    const gl = this.gl;
+    const r = this.res!;
+    gl.viewport(0, 0, Math.round(W * dpr), Math.round(H * dpr));
     gl.clearColor(bg[0] / 255, bg[1] / 255, bg[2] / 255, 1);
     gl.clear(gl.COLOR_BUFFER_BIT);
     gl.enable(gl.BLEND);
@@ -624,8 +666,6 @@ export class GlTerm {
       this.draws++;
     }
     gl.bindVertexArray(null);
-    buf.clearDirty();
-    return true;
   }
 }
 
@@ -782,6 +822,8 @@ function rasterizer(dpr: number): Raster {
   };
 }
 
+const SETTLE_RENDERS = 3;
+
 export function attachOverlay(r: Patched, allowSoftware: boolean): ReturnType<Attach> {
   const src = r.canvas;
   if (!src?.parentNode || typeof document === 'undefined') return null;
@@ -809,6 +851,14 @@ export function attachOverlay(r: Patched, allowSoftware: boolean): ReturnType<At
     e.preventDefault();
     term.lost = true;
   };
+  let raf = 0;
+  term.onSettle = () => {
+    if (raf || typeof requestAnimationFrame !== 'function') return;
+    raf = requestAnimationFrame(() => {
+      raf = 0;
+      term.redraw();
+    });
+  };
   const restored = () => {
     try {
       term.init();
@@ -825,8 +875,11 @@ export function attachOverlay(r: Patched, allowSoftware: boolean): ReturnType<At
     resize(cols, rows) {
       place(cols, rows);
       term.resize(cols, rows);
+      term.settle = SETTLE_RENDERS;
     },
     dispose() {
+      if (raf) cancelAnimationFrame(raf);
+      raf = 0;
       term.dispose();
       c.removeEventListener('webglcontextlost', lost);
       c.removeEventListener('webglcontextrestored', restored);
