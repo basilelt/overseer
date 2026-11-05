@@ -1302,6 +1302,14 @@ pub fn run(
         }
         Err(e) => return Err(e),
     };
+    if saved.is_none() {
+        if let Some(pid) = live_other_daemon(&state_dir) {
+            return Err(format!(
+                "a daemon is already running on {} (pid {pid})",
+                state_dir.display()
+            ));
+        }
+    }
     let restarted = saved.is_some();
     let _ = std::fs::write(state_dir.join("daemon.pid"), std::process::id().to_string());
     let _wal_keeper = crate::registry::Registry::open(&state_dir).ok();
@@ -1425,6 +1433,23 @@ fn take_lock(
         return Err("hot upgrade is not supported on this platform".into());
     }
     lock(state_dir)
+}
+
+#[cfg(unix)]
+fn live_other_daemon(state_dir: &Path) -> Option<i32> {
+    let pid: i32 = std::fs::read_to_string(state_dir.join("daemon.pid"))
+        .ok()?
+        .trim()
+        .parse()
+        .ok()
+        .filter(|p| *p > 1 && *p != std::process::id() as i32)?;
+    (unsafe { libc::kill(pid, 0) } == 0 && command_line(pid).is_some_and(|c| looks_like_daemon(&c)))
+        .then_some(pid)
+}
+
+#[cfg(not(unix))]
+fn live_other_daemon(_: &Path) -> Option<i32> {
+    None
 }
 
 pub fn looks_like_daemon(cmdline: &str) -> bool {

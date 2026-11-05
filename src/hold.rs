@@ -44,7 +44,7 @@ pub fn in_tmux(pane: Option<&str>, term: Option<&str>) -> Check {
     check(
         "inTmux",
         pane.is_some() || term.is_some(),
-        "agent is neither in a tmux pane nor in a Overseer terminal",
+        "agent is neither in a tmux pane nor in an Overseer terminal",
     )
 }
 

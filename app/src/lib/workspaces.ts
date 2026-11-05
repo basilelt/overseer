@@ -367,7 +367,7 @@ export function lineActions(item: SidebarItem, line: LocalLine | undefined): Lin
 
 export type PaneAction = 'open' | 'attach' | 'resume' | 'external';
 
-// A live session with neither a Overseer term nor a tmux pane runs in another terminal:
+// A live session with neither an Overseer term nor a tmux pane runs in another terminal:
 // resuming it would start a second writer on the same transcript.
 export function paneAction(item: SidebarItem, line: LocalLine | undefined): PaneAction | null {
   if (!item.lineId) return null;
