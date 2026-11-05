@@ -346,6 +346,19 @@ fn tables(c: &Connection, schema: &str) -> Result<Vec<String>, String> {
 }
 
 fn merge_db(dest: &Path, old: &Path, fix: &str) -> Result<(), String> {
+    let mut attempt = 0;
+    loop {
+        match merge_once(dest, old, fix) {
+            Err(e) if e.contains("database is locked") && attempt < 5 => {
+                attempt += 1;
+                std::thread::sleep(Duration::from_millis(100 * attempt));
+            }
+            r => return r,
+        }
+    }
+}
+
+fn merge_once(dest: &Path, old: &Path, fix: &str) -> Result<(), String> {
     let mut c = Connection::open(dest).map_err(|e| format!("{}: {e}", dest.display()))?;
     c.busy_timeout(Duration::from_secs(10))
         .map_err(|e| e.to_string())?;
@@ -845,6 +858,7 @@ mod tests {
                 while !stop.load(std::sync::atomic::Ordering::Relaxed) {
                     n += 1;
                     line(&ours, &format!("live{}", n % 50), "sx", "live");
+                    std::thread::sleep(Duration::from_millis(1));
                 }
             })
         };
