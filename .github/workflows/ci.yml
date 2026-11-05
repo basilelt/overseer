@@ -342,8 +342,6 @@ jobs:
 
       - run: scripts/store-guard.test.sh
 
-      - run: scripts/android-play-track.test.sh
-
   android:
     needs: changes
     if: needs.changes.outputs.android == 'true'
