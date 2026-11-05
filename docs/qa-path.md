@@ -86,7 +86,7 @@ Each step is **Do → Expect**. Check every screenshot for overlaps, clipped tex
 - **E2** Run `sleep 30`, press Ctrl+C, then `exit` → the command stops and the tab closes on its own.
 - **E3** Ctrl+W on a live shell → dialog "End this session?". **Cancel** keeps the tab. **End session** closes it and the terminal leaves `/v1/terms`. **Hide tab (keep running)** removes the tab while the session keeps running (visible in By status).
 - **E4** Ctrl+W on an exited terminal or a non-session tab → it closes without asking. The reopen-tab shortcut brings back the last closed tab.
-- **E5** Hover a tab with a cut title → the full title shows, and the close button stays where it was.
+- **E5** **(desktop)** Open more tabs than fit, some with long titles → inactive tabs keep a fixed width with `…`, the strip scrolls with the wheel, hovering a tab changes no width and shows its full title as a tooltip, and clicking it widens it to the full title and scrolls it into view.
 - **E6** Split the pane right and down, move tabs between panes, close a pane → the layout follows, and nothing is lost on reload.
 - **E7** Select text in a terminal → it is copied (desktop shell only; note it when it cannot be checked in Chromium).
 - **E8** Drag-select a line that touches the first or last row of a terminal with no scrollback (a fresh shell, or the prompt of an agent at the bottom) → the whole dragged range is selected and copied, not a single cell.
@@ -120,6 +120,7 @@ Each step is **Do → Expect**. Check every screenshot for overlaps, clipped tex
 - **I2** Theme light and dark → both readable on every screen you visited.
 - **I3** Server: **Keep server running after reboot**, and **After a server reboot or restart** (Restore agent sessions, shells only, Nothing) → the choice is saved (`GET /v1/lifecycle`).
 - **I4** Notifications: **Send test**, per-event choices → saved. Profiles: **Edit…** opens and saves.
+- **I9** Profiles: in **Agents & models**, select a custom profile, open the Claude Code section, change Model, Subagent model and a named subagent's model one after the other → the section stays open after each pick and the cost index updates.
 - **I5** Sidebar: open Settings, then General, Terminal, Agents, Notifications, Connection, Updates, Help in turn → each shows only its own sections; categories with no section for this machine are absent. Change one setting per category, reload → each is kept.
 - **I6** Search: type `notif`, then `reboot` → only the matching rows stay, highlighted, with a count per category; in Notifications, Connection (server) and Updates the other rows of the section are hidden too. Type `zzzz` → an empty state. In Français, type an accented word (`échoue`) and the same without the accent → same rows. **Esc** clears the search, a second **Esc** closes Settings.
 - **I7** Language from the new layout: switch it in General → the sidebar, the search placeholder and the rows change language at once.

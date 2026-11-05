@@ -1493,7 +1493,9 @@ Held); the toggle is at the top of the sidebar.
   worktree). Shells follow their working directory. Sessions that match nothing are under
   **Other sessions**.
 - **Tabs**: selecting a workspace shows its own tab strip (agents, shells, browser, review), with
-  the agent glyph and a status dot per tab. `+` starts any installed agent or a shell in the
+  the agent glyph and a status dot per tab. Tabs keep a compact width with long titles cut, and
+  the selected tab shows its full title; when they do not fit, the strip scrolls with the mouse
+  wheel or trackpad, and hovering a tab shows its full title. `+` starts any installed agent or a shell in the
   workspace folder, opens a browser tab or **Review changes** of the selected agent. Drag tabs
   to reorder, middle-click or `×` to close (this ends the agent or shell; right-click > **Hide tab
   (keep running)** only hides it), split right or down. The
