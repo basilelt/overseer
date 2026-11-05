@@ -86,7 +86,8 @@ commit from the Kanban card when the task is in testing.
 
 A per-project git graph that stays fast on large histories, with agent branches, tasks and PRs
 on it. Worktrees live in one store outside your repositories, show whether they are in use, idle
-or stale, and are cleaned up safely.
+or stale, and are cleaned up safely: **Clean up merged** picks the merged ones with no agent left,
+and you untick the ones to keep.
 
 ![Git graph](app/docs/screenshots/graph-light.png)
 ![Worktrees](app/docs/screenshots/worktrees-dark.png)

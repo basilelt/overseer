@@ -3,7 +3,7 @@ import { api } from '../api';
 import { MockDaemon } from '../mock';
 import type { DaemonEvent } from '../types';
 import { gitApi } from './api';
-import { cleanupTargets, planLines, runCleanup } from './cleanup';
+import { chosen, cleanupTargets, planLines, runCleanup } from './cleanup';
 import { layout } from './layout';
 import { GraphLoader } from './loader';
 
@@ -113,6 +113,8 @@ describe('mock worktrees', () => {
 
     const ids = cleanupTargets(plans);
     expect(ids).toEqual([merged.id, unmerged.id]);
+    expect(chosen(ids, new Set([unmerged.id]))).toEqual([merged.id]);
+    expect(chosen(ids, new Set())).toEqual(ids);
     const r = await runCleanup(g, [...ids, busy.id]);
     expect(r.done).toHaveLength(2);
     expect(r.failed).toEqual([{ id: busy.id, error: expect.stringContaining('in use') }]);
