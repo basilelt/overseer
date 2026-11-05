@@ -876,6 +876,10 @@ impl Term {
         publish("term.updated", json!({"term": self.to_json()}));
     }
 
+    pub fn workspace_id(&self) -> Option<String> {
+        lock(&self.info).workspace_id.clone()
+    }
+
     pub fn set_workspace(&self, id: Option<String>) {
         {
             let mut i = lock(&self.info);
@@ -1125,6 +1129,11 @@ pub fn theme_changed(dark: bool) {
 
 pub fn get(id: &str) -> Option<Arc<Term>> {
     lock(&TERMS).get(id).cloned()
+}
+
+/// The workspace a term is assigned to, read without cloning its whole info.
+pub fn workspace_of(id: &str) -> Option<String> {
+    get(id)?.workspace_id()
 }
 
 pub fn all() -> Vec<Arc<Term>> {

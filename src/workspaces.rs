@@ -802,20 +802,30 @@ fn assign_line(ctx: &Ctx, q: &str, b: &Value) -> Res<Value> {
         .map_err(|e| (404, e))?
         .id
         .clone();
-    db(ctx)?
-        .set_mark(&id, "workspace_id", wid.as_deref())
-        .map_err(|e| (500, e))?;
-    // Otherwise the next scan would hand the line its term's assignment back.
+    let reg = db(ctx)?;
+    let mark = || reg.set_mark(&id, "workspace_id", wid.as_deref());
     if wid.is_none() {
         let term = lines
             .iter()
             .find(|l| l.id == id)
-            .and_then(|l| l.term_id.as_deref());
-        if let Some(t) = term.and_then(crate::term::get) {
-            t.set_workspace(None);
-        }
+            .and_then(|l| l.term_id.as_deref())
+            .and_then(crate::term::get);
+        unassign_in_order(|| term.iter().for_each(|t| t.set_workspace(None)), mark)
+    } else {
+        mark()
     }
+    .map_err(|e| (500, e))?;
     Ok(json!({"lineId": id, "workspaceId": wid}))
+}
+
+/// Clears the term before the line mark: a scan between the two would otherwise
+/// hand the line its term's assignment back.
+fn unassign_in_order(
+    clear_term: impl FnOnce(),
+    clear_mark: impl FnOnce() -> Result<(), String>,
+) -> Result<(), String> {
+    clear_term();
+    clear_mark()
 }
 
 fn assign_term(ctx: &Ctx, id: &str, b: &Value) -> Res<Value> {
@@ -1153,5 +1163,22 @@ mod tests {
         assert_eq!(s.to_json("st")["kind"], "subject");
         assert_eq!(ws("/home/u").start_dir(), "/home/u");
         assert_eq!(ws("/home/u").to_json("st")["kind"], "dir");
+    }
+
+    #[test]
+    fn unassigning_a_line_clears_its_term_before_the_mark() {
+        // Given a term assignment and a line mark to clear
+        // When both are cleared through the helper
+        // Then the term is cleared first, so a scan in between cannot re-inherit it
+        let order = std::cell::RefCell::new(vec![]);
+        unassign_in_order(
+            || order.borrow_mut().push("term"),
+            || {
+                order.borrow_mut().push("mark");
+                Ok(())
+            },
+        )
+        .unwrap();
+        assert_eq!(*order.borrow(), ["term", "mark"]);
     }
 }

@@ -901,3 +901,86 @@ fn a_term_started_for_a_subject_starts_in_its_cwd_and_its_line_inherits_the_assi
         );
     }
 }
+
+#[test]
+fn a_term_started_for_a_dir_workspace_without_a_cwd_starts_in_its_path() {
+    // Given a dir workspace on a directory other than HOME
+    // When a shell is started with its workspaceId and no cwd
+    // Then it runs in the workspace path and is assigned to it
+    let app = App::new("ws-dir-start", json!({"autoConcurrency": 0}));
+    let dir = app.fx.base.join("elsewhere");
+    std::fs::create_dir_all(&dir).unwrap();
+    let w = app.ok(
+        "POST",
+        "/v1/workspaces",
+        json!({"path": dir.to_string_lossy()}),
+    );
+    let t = app.ok(
+        "POST",
+        "/v1/terms",
+        json!({"workspaceId": w["id"], "cmd": ["/bin/sh"]}),
+    );
+    assert_eq!(t["cwd"], w["path"]);
+    assert_eq!(t["workspaceId"], w["id"]);
+    app.ok(
+        "POST",
+        &format!("/v1/terms/{}/kill", id(&t)),
+        json!({"confirm": true}),
+    );
+}
+
+#[test]
+fn patching_a_subject_cwd_to_null_is_refused_and_keeps_the_cwd() {
+    // Given a subject with a cwd
+    // When its cwd is patched to null
+    // Then the daemon answers 400 and the cwd is unchanged
+    let app = App::new("ws-subject-null-cwd", json!({"autoConcurrency": 0}));
+    let dir = app.fx.base.join("home");
+    let s = app.ok(
+        "POST",
+        "/v1/workspaces",
+        json!({"kind": "subject", "name": "S", "cwd": dir.to_string_lossy()}),
+    );
+    let (code, _) = app.req(
+        "PATCH",
+        &format!("/v1/workspaces/{}", id(&s)),
+        json!({"cwd": null}),
+    );
+    assert_eq!(code, 400);
+    let list = app.ok("GET", "/v1/workspaces", Value::Null);
+    assert_eq!(find(&list, "id", &id(&s)).unwrap()["cwd"], s["cwd"]);
+}
+
+#[test]
+fn deleting_a_subject_unassigns_its_lines_and_keeps_them_running() {
+    // Given an agent line assigned to a subject
+    // When the subject is deleted
+    // Then the line has no assignment any more and its term is still alive
+    let app = App::new("ws-subject-del-line", json!({"autoConcurrency": 0}));
+    let wt = app.fx.wt.to_string_lossy().into_owned();
+    let subject = id(&app.ok(
+        "POST",
+        "/v1/workspaces",
+        json!({"kind": "subject", "name": "Gone", "cwd": wt}),
+    ));
+    let term = id(&app.ok(
+        "POST",
+        "/v1/terms",
+        json!({"workspaceId": subject, "agent": "claude"}),
+    ));
+    let mut tws = app.ws(&term);
+    read_until(&mut tws, "❯");
+    let line = wait_for(|| line_of(&app, &term));
+    wait(|| local_of(&app, &line)["workspaceId"] == subject.as_str());
+    app.ok("DELETE", &format!("/v1/workspaces/{subject}"), Value::Null);
+    wait(|| local_of(&app, &line).get("workspaceId").is_none());
+    assert_eq!(
+        app.ok("GET", &format!("/v1/terms/{term}"), Value::Null)["exited"],
+        false
+    );
+    app.ok(
+        "POST",
+        &format!("/v1/terms/{term}/kill"),
+        json!({"confirm": true}),
+    );
+}

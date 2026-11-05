@@ -255,3 +255,32 @@ fn commit_file_lists_parse_in_linear_time() {
     );
     assert!(r < LINEAR, "parse_files ratio {r:.1}");
 }
+
+#[test]
+fn inheriting_a_term_workspace_costs_the_lines_scanned_not_the_term_state() {
+    // Given a term holding a long title and an assignment
+    // When the scan's per-line lookup runs for 1x and 10x lines
+    // Then the cost scales linearly with the lines and the lookup returns the assignment
+    let term = overseer::term::spawn(overseer::term::Spec {
+        cwd: "/".into(),
+        cmd: vec!["/bin/sh".into()],
+        title: Some("t".repeat(100_000)),
+        workspace_id: Some("w1".into()),
+        cols: 80,
+        rows: 24,
+        ..Default::default()
+    })
+    .unwrap();
+    let id = term.info().id;
+    assert_eq!(overseer::term::workspace_of(&id).as_deref(), Some("w1"));
+    let lookups = |n: usize| {
+        for _ in 0..n {
+            std::hint::black_box(overseer::term::workspace_of(&id));
+        }
+    };
+    let mut small = || lookups(100);
+    let mut big = || lookups(1000);
+    let r = scaling(&mut small, &mut big, LINEAR);
+    assert!(r < LINEAR, "lookup ratio {r:.1}");
+    term.kill().unwrap();
+}

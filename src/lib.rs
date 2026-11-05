@@ -1190,11 +1190,7 @@ fn scan_now(ctx: &Ctx) -> Result<Vec<Line>, String> {
             .map(|p| p.id.clone());
         l.id = id;
         if l.workspace_id.is_none() {
-            let from_term = l
-                .term_id
-                .as_deref()
-                .and_then(term::get)
-                .and_then(|t| t.info().workspace_id);
+            let from_term = l.term_id.as_deref().and_then(term::workspace_of);
             if let Some(w) = from_term {
                 reg.set_mark(&l.id, "workspace_id", Some(&w))?;
                 l.workspace_id = Some(w);
