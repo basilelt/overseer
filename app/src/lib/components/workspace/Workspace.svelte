@@ -82,10 +82,10 @@
       const fresh = mem.filter((m) => m.group !== 'held' && !(prev && isKnown(m, prev))).map((m) => m.key);
       const next = mergeKnown(prev ?? new Set(), mem, items);
       knownBy.set(id, next);
-      rememberTerms(termOf, items);
+      rememberTerms(termOf, items, app.data.terms);
       for (const k of allTabs(workspace.layout)) {
         if (!k.startsWith('term:') && !k.startsWith('line:')) continue;
-        const r = resolveTab(k, items) ?? followTerm(k, items, termOf);
+        const r = followTerm(k, items, termOf) ?? resolveTab(k, items);
         if (r && r !== k) {
           update((l) => renameTab(l, k, r));
           termOf.delete(k);
