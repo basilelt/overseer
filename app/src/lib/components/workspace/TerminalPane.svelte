@@ -20,7 +20,7 @@
   import { attachIme } from '../../ime';
   import { keyToInput } from '../../keys';
   import { cellAt, ModeTracker, WheelAccumulator, wheelAction } from '../../mouse';
-  import { scrollbackBytes, writeAnchored } from '../../scroll';
+  import { resetViewport, scrollbackBytes, writeAnchored } from '../../scroll';
   import { fontChain, fontFamilies, lineMetrics, sameMetrics, SYMBOL_SAMPLE } from '../../fonts';
   import { applyMods, NO_MODS, type Mods } from '../../mobile/accessory';
   import { attachRetryMs } from '../../conn';
@@ -299,7 +299,9 @@
         link = termLink({
           open: (onData, onClose) => app.client!.attachTerm(termId, onData, onClose),
           reset: () => {
-            term?.reset();
+            if (term) resetViewport(term);
+            scrolledBack = false;
+            unseen = false;
             modes.reset();
           },
           data: (bytes) => {
