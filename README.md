@@ -37,6 +37,8 @@ Workspaces group sessions by project. Each session opens in a tab with its live 
 the side panel shows what the agent is doing: last message, work log, todos, edited files and
 changes. Switch to **By status** to see at a glance who needs your input, who is running and who
 is done. Agent tabs also have a **Chat** view rebuilt live from the agent's session file.
+Terminals can optionally be drawn on the GPU with WebGL (Settings, Terminal, **GPU rendering**,
+off by default and experimental), which keeps long output smooth.
 
 ![Workspaces](app/docs/screenshots/workspaces-light.png)
 

@@ -66,7 +66,7 @@ export default defineConfig({
       include: ['src/lib/**/*.ts'],
       exclude: ['src/**/*.test.ts', 'src/**/types.ts', 'src/**/strings.ts', 'src/**/mock*.ts', 'src/lib/i18n/*.ts'],
       reporter: ['text-summary', 'json-summary'],
-      thresholds: { lines: 93, functions: 88, branches: 89, statements: 92 },
+      thresholds: { lines: 94, functions: 88, branches: 89, statements: 92 },
     },
   },
 });

@@ -873,7 +873,7 @@ On first launch, once the app is connected (immediately in local mode, after the
 connection on a phone), a welcome card offers **Take the tour** or **Skip**. The tour dims the
 window and highlights the real controls one at a time: host chip, workspaces sidebar, tabs and the
 new-session menu, the Terminal/Chat toggle, the side panel, Tasks, Review, the usage, system and ports
-chips, notifications and hooks, the command palette and Feedback, in 0.25 the Cmd/Ctrl+P palette shortcut, and in 0.27 the demo mode (on the **Demo mode** pill while in the demo, else on the host chip). Steps whose control is not on
+chips, notifications and hooks, the command palette and Feedback, in 0.25 the Cmd/Ctrl+P palette shortcut, and in 0.27 the demo mode (on the **Demo mode** pill while in the demo, else on the host chip), and in 0.28 the GPU rendering option for terminals. Steps whose control is not on
 screen (no session selected, a feature the server lacks, phone layout) are skipped. On a phone the
 card is a sheet at the bottom (or top, when the control sits low) and points at the bottom
 navigation, the session strip and the menu.
@@ -886,12 +886,18 @@ minor and major releases add steps. To see it again: Settings > Help > **Take th
 tour**, the palette command **Start the tour**, or **Show the tour again** in More on a phone.
 
 Settings (gear in the title bar, or More on a phone) has a sidebar of categories: **General**
-(appearance, links), **Terminal** (font, scrollback, keyboard), **Agents** (task defaults, profiles,
+(appearance, links), **Terminal** (font, scrollback, GPU rendering, keyboard), **Agents** (task defaults, profiles,
 hooks, usage), **Notifications**, **Connection** (hosts, server), **Updates** and **Help** (tour,
 logs, feedback). The search box at the top of the sidebar has focus when Settings opens: type part of a
 setting's name or description, in the app language or in English, and only the matching settings stay,
 highlighted, with a count per category; Esc clears the search. On a phone the categories are a list
 that opens a section, with a back button.
+
+**GPU rendering** (Settings > Terminal, off by default, experimental) draws terminals with WebGL
+instead of the normal renderer, which keeps long, fast output smooth. It needs hardware graphics
+acceleration; where WebGL is not available the terminals keep the normal renderer. Selection,
+scrolling and colours work the same with either renderer, and turning it off goes back to the normal
+renderer.
 
 ### 14.0a Demo mode
 

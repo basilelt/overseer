@@ -276,6 +276,12 @@
               <input type="number" min={MIN_SCROLLBACK_LINES} max={MAX_SCROLLBACK_LINES} step="1000" value={settings.scrollbackLines} onchange={(e) => saveSettings({ scrollbackLines: clampScrollback(e.currentTarget.valueAsNumber) })} />
             </label>
           {/if}
+          {#if row('terminal', 'gpuTerminal')}
+            <label class="row" class:hit={hit('terminal', 'gpuTerminal')}>
+              <span>{t('settings.gpuTerminal')}<small>{t('settings.gpuTerminalHint')}</small></span>
+              <input type="checkbox" class="switch" checked={settings.gpuTerminal} onchange={(e) => saveSettings({ gpuTerminal: e.currentTarget.checked })} />
+            </label>
+          {/if}
           {#if row('terminal', 'shiftEnter')}
             <label class="row" class:hit={hit('terminal', 'shiftEnter')}>
               <span>{t('settings.shiftEnterNewline')}<small>{t('settings.shiftEnterNewlineHint')} <code>bindkey '^[^M' self-insert-unmeta</code></small></span>

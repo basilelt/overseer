@@ -109,6 +109,11 @@ describe('search', () => {
     expect(r.count).toBe(1);
   });
 
+  it('finds the GPU rendering toggle by its label and its hint', () => {
+    expect(search('gpu', all, en2).hits.terminal).toEqual(['gpuTerminal']);
+    expect(search('webgl', all, en2).hits.terminal).toEqual(['gpuTerminal']);
+  });
+
   it('finds the privacy policy link under help, even without a connection', () => {
     const r = search('privacy', none, en2);
     expect(r.hits.feedback).toEqual(['privacy']);
