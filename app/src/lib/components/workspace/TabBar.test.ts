@@ -42,4 +42,10 @@ describe('tab strip', () => {
     expect(bar.slice(bar.indexOf('@container'))).toMatch(/\.tabs\s*\{[^}]*flex:\s*1 0 100%/);
     expect(rule('.actions')).toMatch(/flex:\s*none/);
   });
+
+  it('hands keyboard focus to the session after a mouse click on its tab, never on touch or Enter', () => {
+    expect(bar).toMatch(/e\.detail > 0 && !coarsePointer\(\) && tabInfo\(key, app\.items\)\?\.item/);
+    expect(bar).toMatch(/requestAnimationFrame\(\(\) => focusSession\(pane\)\)/);
+    expect(bar).toMatch(/onkeydown=\{\(e\) => e\.key === 'Enter' && activate\(key\)\}/);
+  });
 });

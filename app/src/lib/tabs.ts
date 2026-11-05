@@ -115,3 +115,12 @@ export function endTarget(key: string, items: SidebarItem[]): { line: string } |
   if (it?.termId && key.startsWith('term:')) return { term: it.termId };
   return null;
 }
+
+export function focusSession(pane: Element | null | undefined): boolean {
+  const target = pane?.querySelector<HTMLElement>('.chat .composer textarea') ?? pane?.querySelector<HTMLElement>('.keep:not(.hidden) [data-terminal]');
+  if (!target || !target.isConnected) return false;
+  target.focus({ preventScroll: true });
+  return document.activeElement === target;
+}
+
+export const coarsePointer = () => typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;

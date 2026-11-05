@@ -24,7 +24,7 @@
   import { saveSettings, settings } from '../../settings.svelte';
   import { projectName } from '../../state.svelte';
   import { ordered } from '../../agents';
-  import { newTabKey, stripScroll, tabInfo, type TabInfo } from '../../tabs';
+  import { coarsePointer, focusSession, newTabKey, stripScroll, tabInfo, type TabInfo } from '../../tabs';
   import { broadcastTo } from '../../wsactions';
   import { wsDropTarget } from '../../workspaces';
   import type { MenuItem } from '../../menu';
@@ -213,6 +213,10 @@
     }
     app.multi = new Set();
     activate(key);
+    if (e.detail > 0 && !coarsePointer() && tabInfo(key, app.items)?.item) {
+      const pane = (e.currentTarget as HTMLElement | null)?.closest('.pane');
+      requestAnimationFrame(() => focusSession(pane));
+    }
   }
 
   function tabMenu(e: MouseEvent, tab: TabInfo) {
