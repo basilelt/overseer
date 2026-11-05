@@ -1,5 +1,6 @@
 import type { app as appState } from './state.svelte';
 import type { Term } from './types';
+import { reapEnded } from './tab-edits';
 import { activeKey, closeTabAt, workspace } from './workspace.svelte';
 
 export function cleanExits(prev: Term[], next: Term[]): string[] {
@@ -8,6 +9,7 @@ export function cleanExits(prev: Term[], next: Term[]): string[] {
 }
 
 export function closeCleanExits(app: typeof appState, prev: Term[], next: Term[]) {
+  reapEnded(app, next);
   for (const id of cleanExits(prev, next)) {
     const key = `term:${id}`;
     const selected = app.selectedKey === key;

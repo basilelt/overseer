@@ -741,6 +741,7 @@ export class MockDaemon implements DaemonClient {
     if ((r = m(/^\/v1\/(workspaces|folders|groups)(?:\/([^/]+))?$/))) return this.wsRoute(method, r[1] as WsKind, r[2] && decodeURIComponent(r[2]), body);
     if (method === 'POST' && path === '/v1/broadcast') return this.broadcast(body);
     if (method === 'POST' && (r = m(/^\/v1\/ports\/([^/]+)\/kill$/))) return this.killPortProcess(decodeURIComponent(r[1]), body);
+    if (method === 'DELETE' && (r = m(/^\/v1\/terms\/([^/]+)$/))) return this.deleteTerm(decodeURIComponent(r[1]));
     if ((r = m(/^\/v1\/terms\/([^/]+)\/(resize|kill|title)$/))) return this.termAction(decodeURIComponent(r[1]), r[2], body);
     if (method === 'GET' && path === '/v1/tasks/auto-organize') return { enabled: this.autoOrganize };
     if (method === 'PUT' && path === '/v1/tasks/auto-organize') {
@@ -1012,6 +1013,14 @@ export class MockDaemon implements DaemonClient {
     }
   }
 
+  private deleteTerm(id: string): unknown {
+    const t = this.terms.find((x) => x.id === id);
+    if (!t) throw new DaemonError(404, `unknown term ${id}`);
+    if (!t.exited) throw new DaemonError(409, 'term is still running; kill it first');
+    this.terms = this.terms.filter((x) => x.id !== id);
+    return { deleted: id };
+  }
+
   private termAction(id: string, action: string, body: any): unknown {
     const t = this.terms.find((x) => x.id === id);
     if (!t) throw new DaemonError(404, `unknown term ${id}`);
@@ -1028,7 +1037,7 @@ export class MockDaemon implements DaemonClient {
       if (!body?.confirm) throw new DaemonError(400, 'confirm required');
       if (t.exited) throw new DaemonError(409, 'term already exited');
       t.exited = true;
-      t.exitCode = 130;
+      t.exitCode = 1;
       this.emit('term.exited', { term: t });
     }
     return structuredClone(t);
