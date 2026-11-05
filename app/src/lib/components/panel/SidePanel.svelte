@@ -7,7 +7,8 @@
   import { GROUP_COLOR } from '../sidebar/AgentIcon.svelte';
   import AgentGlyph from '../ui/AgentGlyph.svelte';
   import { agentName, sessionsAvailable } from '../../agents';
-  import DiffView from './DiffView.svelte';
+  import { preload } from '../../idle';
+  const diffView = preload(() => import('./DiffView.svelte'));
   import EditedFiles from './EditedFiles.svelte';
   import PanelActions from './PanelActions.svelte';
   import Section from './Section.svelte';
@@ -235,7 +236,7 @@
         {/if}
         {#if diff && diff.diff.trim()}
           {#if diff.truncated}<p class="faint small">{t('panel.diffTruncated')}</p>{/if}
-          <DiffView diff={diff.diff} />
+          {#await diffView() then { default: DiffView }}<DiffView diff={diff.diff} />{/await}
         {:else if current && changed(current)}
           <p class="faint small">{summary(current)}</p>
         {:else}
