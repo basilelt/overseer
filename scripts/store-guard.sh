@@ -23,5 +23,14 @@ for f in $(grep -rlwE 'upload_to_testflight|pilot' $existing 2>/dev/null | grep 
     fail=1
   fi
 done
-[ "$fail" -eq 0 ] && echo "store guard: TestFlight only, no store submission"
+for f in app/src-tauri/gen/apple/Assets.xcassets/AppIcon.appiconset/*.png; do
+  [ -e "$f" ] || continue
+  case $(od -An -tu1 -j25 -N1 "$f" | tr -d ' ') in
+    4|6)
+      echo "::error title=store guard::$f has an alpha channel; App Store Connect rejects it (90717)"
+      fail=1
+      ;;
+  esac
+done
+[ "$fail" -eq 0 ] && echo "store guard: TestFlight only, no store submission, opaque iOS icons"
 exit "$fail"
