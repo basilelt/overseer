@@ -1403,7 +1403,7 @@ export const en = {
   'updater.step.formula': 'Upgrading the overseer CLI…',
   'updater.err.missing': 'Homebrew was not found in /opt/homebrew, /usr/local or the PATH.',
   'updater.err.untrusted': 'Homebrew does not trust the {tap} tap yet. Trust it here, or run `brew trust {tap}`.',
-  'updater.err.stale': 'Homebrew does not see the new version yet: the tap could not be refreshed. Run the command below from a terminal.',
+  'updater.err.notInTap': 'Homebrew does not have this version yet: the tap is updated a few minutes after each release. Try again later.',
   'updater.update': 'Update',
   'updater.updated': 'Updated to Overseer {version}. Restart to finish.',
   'updater.restart': 'Restart to finish',

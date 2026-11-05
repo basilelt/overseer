@@ -1392,7 +1392,6 @@ export const dict: Partial<Dict> = {
   'updater.step.formula': 'Mise à jour de la CLI overseer…',
   'updater.err.missing': 'Homebrew est introuvable dans /opt/homebrew, /usr/local et le PATH.',
   'updater.err.untrusted': 'Homebrew ne fait pas encore confiance au tap {tap}. Approuvez-le ici, ou lancez `brew trust {tap}`.',
-  'updater.err.stale': "Homebrew ne voit pas encore la nouvelle version : le tap n'a pas pu être actualisé. Lancez la commande ci-dessous dans un terminal.",
   'updater.update': 'Mettre à jour',
   'updater.updated': 'Overseer est passé en version {version}. Redémarrez pour terminer.',
   'updater.restart': 'Redémarrer pour terminer',
