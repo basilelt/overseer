@@ -50,7 +50,7 @@ Each step is **Do → Expect**. Check every screenshot for overlaps, clipped tex
 ### B. Projects and tasks (Kanban)
 
 - **B1** Tasks → **Create Project** → type the repo path → Enter → the project appears in the project filter.
-- **B2** **Add Task**: title, description, attachments (paste or drop a file), project, agent, model, depends on, profile, effort → **Create task** → a card appears in Pending with the right project, agent and effort.
+- **B2** **Add Task**: title, description, attachments (paste or **browse**; in the browser the shim keeps the bytes and uploads them to the daemon like the desktop app, and the file lands in `$QA_DIR/home/.overseer/tasks/<id>/` and in the agent prompt after **Start**), project, agent, model, depends on, profile, effort → **Create task** → a card appears in Pending with the right project, agent and effort.
 - **B3** Drag the card to **In progress** → a `task/<n>-<slug>` worktree is created and the agent starts there (`stub.log` shows `--session-id`). The card shows progress.
 - **B4** Open a card → the detail modal shows the Urgent and Important toggles, Depends on and Messages. Send a message → it shows "delivered when it starts", or reaches the running agent.
 - **B5** **Matrix**, search, the project filter, **Hide session tasks** → the board filters as labelled. **Organize** proposes, and never moves anything without confirmation.
