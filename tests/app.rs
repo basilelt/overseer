@@ -2584,3 +2584,56 @@ fn killing_an_agent_term_closes_it_without_a_shell() {
     let term = app.ok("GET", &format!("/v1/terms/{id}"), Value::Null);
     assert_eq!(term["cmd"][0], "codex");
 }
+
+#[test]
+fn codex_line_never_takes_the_pid_of_another_terminal_of_its_repo() {
+    let app = App::new("codexpid", json!({"autoConcurrency": 0}));
+    let wt = app.fx.wt.to_string_lossy().into_owned();
+    let start = || {
+        let t = app.ok("POST", "/v1/terms", json!({"cwd": wt, "agent": "codex"}));
+        let id = t["id"].as_str().unwrap().to_string();
+        let mut ws = app.ws(&id);
+        read_until(&mut ws, "codex ready");
+        (id, t["pid"].as_u64().unwrap(), ws)
+    };
+    let (_a, pid_a, mut ws_a) = start();
+    let (_b, pid_b, mut ws_b) = start();
+    let codex_lines = || -> Vec<(u64, Option<u64>)> {
+        let v = app.ok("GET", "/v1/lines?all=true", Value::Null);
+        let mut out: Vec<(u64, Option<u64>)> = v
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|l| l["line"]["agent"] == "codex")
+            .map(|l| {
+                (
+                    l["line"]["activityMs"].as_u64().unwrap_or(0),
+                    l["local"]["pid"].as_u64(),
+                )
+            })
+            .collect();
+        out.sort();
+        out
+    };
+    send(&mut ws_a, "busy\r");
+    wait_for(|| (codex_lines().len() == 1).then_some(()));
+    for _ in 0..4 {
+        std::thread::sleep(Duration::from_millis(500));
+        let l = codex_lines();
+        assert_eq!(l.len(), 1, "{l:?}");
+        assert_eq!(l[0].1, Some(pid_a), "{l:?} a={pid_a} b={pid_b}");
+    }
+    send(&mut ws_b, "busy\r");
+    wait_for(|| (codex_lines().len() == 2).then_some(()));
+    for _ in 0..4 {
+        std::thread::sleep(Duration::from_millis(500));
+        let mut pids: Vec<Option<u64>> = codex_lines().iter().map(|l| l.1).collect();
+        pids.sort();
+        assert_eq!(pids, [Some(pid_a), Some(pid_b)]);
+    }
+    send(&mut ws_a, "busy\r");
+    std::thread::sleep(Duration::from_secs(2));
+    let mut pids: Vec<Option<u64>> = codex_lines().iter().map(|l| l.1).collect();
+    pids.sort();
+    assert_eq!(pids, [Some(pid_a), Some(pid_b)]);
+}

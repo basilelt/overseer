@@ -65,6 +65,7 @@ use registry::HookState;
 use serde_json::{json, Value};
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use sys::DirBuilderExt;
 use util::{format_rfc3339, shell_quote, ticket};
 
@@ -608,6 +609,7 @@ fn claude_found_from(
 // fresh `codex` shows no thread id: those are paired with threads in their cwd on times that do
 // not move. A fresh process only owns a thread created after it started, or one used since.
 const CODEX_SLACK_MS: i64 = 2_000;
+const CODEX_TYPED_MS: i64 = 3_000;
 
 fn codex_found(ctx: &Ctx, hooks: &HashMap<String, HookState>) -> Vec<Found> {
     let threads = codex::threads(&ctx.codex_dir, &ctx.state_dir);
@@ -645,6 +647,34 @@ fn codex_found(ctx: &Ctx, hooks: &HashMap<String, HookState>) -> Vec<Found> {
             owner[i] = Some(j);
         }
     }
+    let terms: Vec<Option<Arc<term::Term>>> = procs
+        .iter()
+        .map(|(pid, ..)| term::of_pid(*pid, ctx.probe))
+        .collect();
+    for (i, t) in threads.iter().enumerate().filter(|(_, t)| !t.archived) {
+        if owner[i].is_some() {
+            continue;
+        }
+        let hit = (0..procs.len()).find(|j| {
+            !claimed.contains(j)
+                && terms[*j].as_ref().and_then(|x| x.thread()).as_deref() == Some(&t.id)
+        });
+        if let Some(j) = hit {
+            claimed.insert(j);
+            owner[i] = Some(j);
+        }
+    }
+    let open = |i: usize| !threads[i].archived && threads[i].cwd.is_some();
+    let names_other =
+        |argv: &[String], id: &str| argv.iter().any(|a| a != id && ids.contains(a.as_str()));
+    let mut newest: Vec<usize> = (0..threads.len()).filter(|i| open(*i)).collect();
+    newest.sort_by_key(|i| std::cmp::Reverse(threads[*i].started_ms));
+    let mut recent: Vec<usize> = (0..threads.len()).filter(|i| open(*i)).collect();
+    recent.sort_by_key(|i| std::cmp::Reverse(threads[*i].activity_ms));
+    let typed_at = |j: usize, at: Option<i64>| {
+        let s = terms[j].as_ref().map_or(0, |x| x.submit_ms());
+        s > 0 && at.is_some_and(|at| (s - at).abs() <= CODEX_TYPED_MS)
+    };
     let mut cwds = BTreeMap::new();
     let mut in_cwd = |pid: u32, cwd: &str| {
         cwds.entry(pid)
@@ -652,51 +682,53 @@ fn codex_found(ctx: &Ctx, hooks: &HashMap<String, HookState>) -> Vec<Found> {
             .as_deref()
             == Some(cwd)
     };
-    let open = |i: usize| !threads[i].archived && threads[i].cwd.is_some();
-    let names_other =
-        |argv: &[String], id: &str| argv.iter().any(|a| a != id && ids.contains(a.as_str()));
-    let mut newest: Vec<usize> = (0..threads.len()).filter(|i| open(*i)).collect();
-    newest.sort_by_key(|i| std::cmp::Reverse(threads[*i].started_ms));
-    for i in newest {
+    let mut fits_new = vec![vec![false; procs.len()]; threads.len()];
+    let mut fits_used = fits_new.clone();
+    for i in newest.iter().chain(recent.iter()).copied() {
         let t = &threads[i];
-        if owner[i].is_some() {
-            continue;
-        }
         let cwd = t.cwd.as_deref().unwrap_or_default();
-        let hit = (0..procs.len()).rev().find(|j| {
-            let (pid, argv, start) = &procs[*j];
-            !claimed.contains(j)
-                && !codex::reopens(argv)
-                && !names_other(argv, &t.id)
+        for (j, (pid, argv, start)) in procs.iter().enumerate() {
+            if names_other(argv, &t.id) || !in_cwd(*pid, cwd) {
+                continue;
+            }
+            fits_new[i][j] = !codex::reopens(argv)
                 && start
                     .zip(t.started_ms)
-                    .is_none_or(|(s, c)| c + CODEX_SLACK_MS >= s)
-                && in_cwd(*pid, cwd)
-        });
-        if let Some(j) = hit {
-            claimed.insert(j);
-            owner[i] = Some(j);
+                    .is_none_or(|(s, c)| c + CODEX_SLACK_MS >= s);
+            fits_used[i][j] =
+                codex::reopens(argv) || start.is_none_or(|s| t.activity_ms + CODEX_SLACK_MS >= s);
         }
     }
-    let mut recent: Vec<usize> = (0..threads.len()).filter(|i| open(*i)).collect();
-    recent.sort_by_key(|i| std::cmp::Reverse(threads[*i].activity_ms));
-    for i in recent {
-        let t = &threads[i];
-        if owner[i].is_some() {
-            continue;
-        }
-        let cwd = t.cwd.as_deref().unwrap_or_default();
-        let hit = (0..procs.len()).find(|j| {
-            let (pid, argv, start) = &procs[*j];
-            !claimed.contains(j)
-                && !names_other(argv, &t.id)
-                && (codex::reopens(argv)
-                    || start.is_none_or(|s| t.activity_ms + CODEX_SLACK_MS >= s))
-                && in_cwd(*pid, cwd)
-        });
-        if let Some(j) = hit {
-            claimed.insert(j);
-            owner[i] = Some(j);
+    for (order, fits, stamp) in [(newest, &fits_new, true), (recent, &fits_used, false)] {
+        loop {
+            let mut moved = false;
+            for &i in &order {
+                if owner[i].is_some() {
+                    continue;
+                }
+                let free: Vec<usize> = (0..procs.len())
+                    .filter(|j| !claimed.contains(j) && fits[i][*j])
+                    .collect();
+                let at = if stamp {
+                    threads[i].started_ms
+                } else {
+                    Some(threads[i].activity_ms)
+                };
+                let typed: Vec<usize> = free.iter().copied().filter(|j| typed_at(*j, at)).collect();
+                let pick = match (free.as_slice(), typed.as_slice()) {
+                    ([j], _) | (_, [j]) => *j,
+                    _ => continue,
+                };
+                if let Some(x) = &terms[pick] {
+                    x.bind_thread(&threads[i].id);
+                }
+                claimed.insert(pick);
+                owner[i] = Some(pick);
+                moved = true;
+            }
+            if !moved {
+                break;
+            }
         }
     }
     threads

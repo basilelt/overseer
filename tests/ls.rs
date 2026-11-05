@@ -587,6 +587,17 @@ fn codex_tuis_in_one_repo_keep_their_threads_whatever_was_used_last() {
 }
 
 #[test]
+fn two_fresh_codex_tuis_and_one_thread_leave_the_pid_unset() {
+    // Given two codex TUIs in one worktree, both started before the only thread was created
+    // When the station is scanned
+    // Then the thread names neither of them
+    let fx = Fx::new();
+    codex_threads(&fx, &[("cx-a", 120, 130)]);
+    let lines = fx.scan(&tuis(&fx, &[(8001, "codex", 0), (8002, "codex", 100)]));
+    assert_eq!(pids(&lines, &["cx-a"]), [None]);
+}
+
+#[test]
 fn codex_tui_that_quits_takes_only_its_own_thread_down() {
     // Given two codex threads in one worktree whose first TUI has quit
     // When the station is scanned
