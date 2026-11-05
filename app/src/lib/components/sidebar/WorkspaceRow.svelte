@@ -159,8 +159,8 @@
     flex: none;
   }
   .name {
-    flex: 1;
-    min-width: 0;
+    flex: 1 1 auto;
+    min-width: 5em;
     font-weight: 500;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -177,6 +177,10 @@
     color: var(--text-3);
     white-space: nowrap;
     font-variant-numeric: tabular-nums;
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
   .state.hot {
     color: var(--c);

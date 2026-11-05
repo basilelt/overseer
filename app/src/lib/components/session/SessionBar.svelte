@@ -48,6 +48,12 @@
 {/each}
 
 <style>
+  .confirm,
+  .text {
+    display: inline-flex;
+    align-items: center;
+    white-space: nowrap;
+  }
   .confirm {
     color: var(--st-failed);
     width: auto;
