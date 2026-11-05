@@ -18,7 +18,7 @@
   import UpdatePill from './titlebar/UpdatePill.svelte';
   import DemoPill from './ui/DemoPill.svelte';
   import NotificationBell from './titlebar/NotificationBell.svelte';
-  import { startable } from '../kanban';
+  import { startable } from '../kanban-core';
 
   const mac = typeof navigator !== 'undefined' && /mac/i.test(navigator.platform);
   const views: { id: View; label: () => string }[] = [
