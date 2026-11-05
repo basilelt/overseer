@@ -2637,3 +2637,50 @@ fn codex_line_never_takes_the_pid_of_another_terminal_of_its_repo() {
     pids.sort();
     assert_eq!(pids, [Some(pid_a), Some(pid_b)]);
 }
+
+#[test]
+fn a_restored_feedback_session_resumes_without_its_initial_prompt() {
+    let fx = Fx::new("resume-no-prompt", 0);
+    let log = fx.base.join("stub.log");
+    let spawn = || {
+        let mut c = Command::new(bin());
+        fx.env(&mut c);
+        c.env("SB_BIN", bin())
+            .env("SB_STUB_LOG", &log)
+            .env("SHELL", "/bin/sh")
+            .args(["daemon", "--interval", "1"]);
+        let d = common::Reap::spawn(c.stderr(Stdio::null()));
+        wait(|| UnixStream::connect(&fx.sock).is_ok());
+        d
+    };
+    let stub = || std::fs::read_to_string(&log).unwrap_or_default();
+    let cwd = fx.wt.to_string_lossy().into_owned();
+    let d = spawn();
+    let body = json!({
+        "agent": "claude", "effort": "high", "cwd": cwd,
+        "body": "the app froze",
+        "prompt": "File this issue from @REPORT@ and do not ask questions",
+    });
+    let (code, out) = fx.req("POST", "/v1/feedback/start", &body.to_string());
+    assert_eq!(code, 201, "{out}");
+    let term = serde_json::from_str::<Value>(&out).unwrap()["term"]["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    wait(|| stub().contains("File this issue from"));
+    assert_eq!(stub().lines().count(), 1, "{}", stub());
+    wait(|| {
+        let (_, v) = fx.req("GET", "/v1/lines?all=true", "");
+        v.contains(&term) && v.contains("--effort")
+    });
+    std::thread::sleep(Duration::from_secs(4));
+    drop(d);
+    let _d = spawn();
+    wait(|| stub().lines().count() >= 2);
+    let log = stub();
+    let relaunch = log.lines().nth(1).unwrap();
+    assert!(relaunch.contains("--resume"), "{log}");
+    assert!(relaunch.contains("--effort high"), "{log}");
+    assert!(!relaunch.contains("File this issue"), "{log}");
+    assert!(!relaunch.contains("do not ask"), "{log}");
+}
