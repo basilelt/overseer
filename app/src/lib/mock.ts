@@ -737,7 +737,8 @@ export class MockDaemon implements DaemonClient {
     if ((r = m(/^\/v1\/lines\/([^/]+)\/chat\/agents\/([^/]+)$/))) return this.agentChat(decodeURIComponent(r[1]), decodeURIComponent(r[2]), new URLSearchParams(qs));
     if ((r = m(/^\/v1\/lines\/([^/]+)\/(chat|screen|keys|commands)$/))) return this.chatRoute(decodeURIComponent(r[1]), r[2], new URLSearchParams(qs), body);
     if (method === 'PUT' && (r = m(/^\/v1\/(lines|terms)\/([^/]+)\/workspace$/))) return this.assignWorkspace(r[1], decodeURIComponent(r[2]), body);
-    if ((r = m(/^\/v1\/lines\/([^/]+)\/(activity|diff|hold|close|resume|pin|title)$/))) return this.lineAction(decodeURIComponent(r[1]), r[2], body, !fullPath.includes('dryRun=false'));
+    if (method === 'DELETE' && (r = m(/^\/v1\/lines\/([^/]+)\/hold$/))) return this.cancelHold(decodeURIComponent(r[1]));
+    if ((r = m(/^\/v1\/lines\/([^/]+)\/(activity|diff|hold|close|resume|pin|title)$/))) return this.lineAction(decodeURIComponent(r[1]), r[2], body, !fullPath.includes('dryRun=false'), new URLSearchParams(qs).get('afterTurn') === 'true');
     if ((r = m(/^\/v1\/(workspaces|folders|groups)(?:\/([^/]+))?$/))) return this.wsRoute(method, r[1] as WsKind, r[2] && decodeURIComponent(r[2]), body);
     if (method === 'POST' && path === '/v1/broadcast') return this.broadcast(body);
     if (method === 'POST' && (r = m(/^\/v1\/ports\/([^/]+)\/kill$/))) return this.killPortProcess(decodeURIComponent(r[1]), body);
@@ -817,8 +818,45 @@ export class MockDaemon implements DaemonClient {
     return l;
   }
 
-  private lineAction(id: string, action: string, body: any, dry = false): unknown {
+  private cancelHold(id: string) {
+    const l = this.lines.find((x) => x.line.id === id);
+    if (!l) throw new DaemonError(404, `no line matches '${id}'`);
+    if (l.local?.holdPending) {
+      l.local = { ...l.local, holdPending: undefined };
+      this.emit('line.updated', { line: l.line, local: l.local });
+    }
+    return { lineId: id, holdPending: false };
+  }
+
+  /** Hold with afterTurn: queue while the turn runs or the agent waits for the user, like the daemon. */
+  private holdAfterTurn(l: LocalLine): unknown {
+    const id = l.line.id;
+    const running = l.line.state !== 'held' && l.line.state !== 'hung-up';
+    const turn = !!l.local?.busy || !!l.local?.needsInput;
+    const predicates: Record<string, { ok: boolean; detail?: string }> = {
+      alive: running ? { ok: true } : { ok: false, detail: 'no live agent process for this line' },
+      atPrompt: l.local?.busy ? { ok: false, detail: 'agent is mid-turn' } : { ok: true },
+      notPinned: l.local?.pinned ? { ok: false, detail: 'line is pinned' } : { ok: true },
+      notNeedsInput: l.local?.needsInput ? { ok: false, detail: 'agent is waiting for you' } : { ok: true },
+    };
+    if (!running || l.local?.pinned) throw new DaemonError(409, 'refused', { lineId: id, action: 'none', predicates, steps: [] });
+    if (!turn) return this.holdNow(l);
+    l.local = { ...l.local, holdPending: true };
+    this.emit('line.updated', { line: l.line, local: l.local });
+    return { lineId: id, action: 'hold-pending', predicates, steps: [`record a pending hold on ${id}`, 'hold it when the turn ends and the agent is not waiting for you'] };
+  }
+
+  private holdNow(l: LocalLine) {
+    const from = l.line.state;
+    l.line.state = 'held';
+    l.local = { ...l.local, busy: false, needsInput: false, holdPending: undefined, heldReason: 'user', heldAt: new Date().toISOString() };
+    this.emit('line.state_changed', { line: l.line, from, to: 'held', local: l.local });
+    return { lineId: l.line.id, action: 'held', predicates: {} };
+  }
+
+  private lineAction(id: string, action: string, body: any, dry = false, afterTurn = false): unknown {
     const l = this.findLine(id);
+    if (action === 'hold' && afterTurn && !dry) return this.holdAfterTurn(l);
     if (dry && (action === 'hold' || action === 'close')) {
       const running = l.line.state !== 'held' && l.line.state !== 'hung-up';
       const plan = {
@@ -839,11 +877,12 @@ export class MockDaemon implements DaemonClient {
         return { lineId: id, worktree: l.line.worktreePath ?? '', status: ' M src/term.rs\n M tests/term.rs', stat: ' 2 files changed, 21 insertions(+), 3 deletions(-)', diff: bigDiff() ? bigPatch() : DIFF, truncated: false } satisfies Diff;
       case 'hold':
       case 'close': {
+        if (action === 'hold') return this.holdNow(l);
         const from = l.line.state;
-        l.line.state = action === 'hold' ? 'held' : 'hung-up';
-        l.local = { ...l.local, busy: false, needsInput: false, heldReason: action === 'hold' ? 'user' : undefined };
-        this.emit(action === 'hold' ? 'line.state_changed' : 'line.hung_up', { line: l.line, from, to: l.line.state, local: l.local });
-        return { lineId: id, action: action === 'hold' ? 'held' : 'closed', predicates: {} };
+        l.line.state = 'hung-up';
+        l.local = { ...l.local, busy: false, needsInput: false, holdPending: undefined, heldReason: undefined, heldAt: undefined };
+        this.emit('line.hung_up', { line: l.line, from, to: l.line.state, local: l.local });
+        return { lineId: id, action: 'closed', predicates: {} };
       }
       case 'pin':
         l.local = { ...l.local, pinned: !!body?.pinned };
@@ -858,11 +897,18 @@ export class MockDaemon implements DaemonClient {
       }
       case 'resume': {
         const existing = this.terms.find((t) => t.lineId === id && !t.exited);
-        if (existing) return existing;
+        if (existing) {
+          if (l.line.state === 'held') {
+            l.line.state = 'active';
+            l.local = { ...l.local, heldReason: undefined, heldAt: undefined };
+            this.emit('line.state_changed', { line: l.line, from: 'held', to: 'active', local: l.local });
+          }
+          return existing;
+        }
         if (body?.attachOnly) throw new DaemonError(409, 'the agent is not running: resume it to start it again');
         const from = l.line.state;
         l.line.state = 'active';
-        l.local = { ...l.local, heldReason: undefined };
+        l.local = { ...l.local, heldReason: undefined, heldAt: undefined };
         this.emit('line.state_changed', { line: l.line, from, to: 'active', local: l.local });
         return this.spawn({ cwd: l.line.worktreePath ?? ROOT, cmd: [l.line.agent, '--resume', id], cols: 120, rows: 32, title: l.local?.title, lineId: id }, l.line.agent);
       }
@@ -1595,6 +1641,7 @@ export class MockDaemon implements DaemonClient {
 
   tick() {
     this.drainQueue();
+    for (const p of this.lines.filter((x) => x.local?.holdPending && !x.local.needsInput)) this.holdNow(p);
     const running = this.tasks.filter((t) => t.status === 'in_progress');
     const t = running[this.seq % Math.max(1, running.length)];
     if (t?.progress) {

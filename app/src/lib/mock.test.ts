@@ -130,6 +130,52 @@ describe('MockDaemon', () => {
     expect(events.map((e) => e.type)).toContain('line.state_changed');
   });
 
+  it('queues a hold on a busy line, applies it when the turn ends and stamps heldAt', async () => {
+    // Given a busy line
+    // When it is held with afterTurn, then the mock ticks
+    // Then the hold is pending first, then applied with heldAt, and resume clears heldAt
+    const { m, a } = setup();
+    const get = async () => (await a.lines()).find((l) => l.line.id === 'ln_06')!;
+    const r = await a.holdAfterTurn('ln_06');
+    expect(r.action).toBe('hold-pending');
+    expect((await get()).local?.holdPending).toBe(true);
+    expect((await get()).line.state).toBe('active');
+    m.tick();
+    const held = await get();
+    expect(held.line.state).toBe('held');
+    expect(held.local?.holdPending).toBeUndefined();
+    expect(Number.isNaN(Date.parse(held.local!.heldAt!))).toBe(false);
+    await a.resume('ln_06');
+    expect((await get()).local?.heldAt).toBeUndefined();
+  });
+
+  it('cancels a pending hold and answers an unknown line with 404 like the daemon', async () => {
+    // Given a pending hold
+    // When it is cancelled, then the turn ends
+    // Then the line is never held; cancelling an unknown line is a 404
+    const { m, a } = setup();
+    await a.holdAfterTurn('ln_04');
+    expect(await a.cancelHold('ln_04')).toEqual({ lineId: 'ln_04', holdPending: false });
+    m.tick();
+    const l = (await a.lines()).find((x) => x.line.id === 'ln_04')!;
+    expect(l.line.state).toBe('active');
+    expect(l.local?.holdPending).toBeUndefined();
+    await expect(a.cancelHold('nope')).rejects.toMatchObject({ status: 404, message: expect.stringContaining("no line matches 'nope'") });
+  });
+
+  it('holds an idle line at once with afterTurn and refuses a pinned or stopped one', async () => {
+    // Given an idle line, a pinned busy line and a held line
+    // When each is held with afterTurn
+    // Then the idle one is held, the others get 409 and nothing is pending
+    const { a } = setup();
+    const idle = (await a.lines()).find((l) => l.line.state === 'idle')!;
+    expect((await a.holdAfterTurn(idle.line.id)).action).toBe('held');
+    await expect(a.holdAfterTurn(idle.line.id)).rejects.toMatchObject({ status: 409 });
+    await a.pin('ln_04', true);
+    await expect(a.holdAfterTurn('ln_04')).rejects.toMatchObject({ status: 409 });
+    expect((await a.lines()).find((l) => l.line.id === 'ln_04')!.local?.holdPending).toBeUndefined();
+  });
+
   it('keeps a reducer snapshot in sync with its events', async () => {
     const { m, a, events } = setup();
     let s: Snapshot = { lines: await a.lines(), terms: await a.terms(), tasks: await a.tasks(), activity: {} };

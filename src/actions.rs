@@ -86,11 +86,13 @@ pub struct Report {
     pub action: &'static str,
     pub steps: Vec<String>,
     pub error: Option<String>,
+    /// The hold is queued for the end of the turn: the failed checks are transient.
+    pub pending: bool,
 }
 
 impl Report {
     pub fn ok(&self) -> bool {
-        self.error.is_none() && self.checks.iter().all(|c| c.ok)
+        self.error.is_none() && (self.pending || self.checks.iter().all(|c| c.ok))
     }
 
     pub fn to_json(&self) -> Value {
@@ -218,6 +220,19 @@ fn terminate(_pid: u32, t: &std::sync::Arc<crate::term::Term>) -> bool {
     t.kill().is_ok()
 }
 
+fn record_held(ctx: &Ctx, reg: &Registry, l: &Line, pid: u32) -> Result<(), String> {
+    reg.set_mark(&l.id, "held_by_user", Some(&pid.to_string()))?;
+    reg.set_mark(&l.id, "state", Some("held"))?;
+    reg.set_mark(&l.id, "held_at", Some(&format_rfc3339(ctx.now_ms)))?;
+    reg.set_mark(&l.id, "hold_pending", None)
+}
+
+fn revert_held(reg: &Registry, l: &Line) {
+    let _ = reg.set_mark(&l.id, "held_by_user", None);
+    let _ = reg.set_mark(&l.id, "held_at", l.held_at.as_deref());
+    let _ = reg.set_mark(&l.id, "state", Some(l.state));
+}
+
 fn execute_hold_term(
     ctx: &Ctx,
     reg: &Registry,
@@ -231,14 +246,12 @@ fn execute_hold_term(
     let id = t.info().id;
     let root = t.info().pid == pid || (stub && is_stub_wrapper(&t.info().cmd));
     let mut done = vec![];
-    reg.set_mark(&l.id, "held_by_user", Some(&pid.to_string()))?;
-    reg.set_mark(&l.id, "state", Some("held"))?;
+    record_held(ctx, reg, l, pid)?;
     done.push(format!("recorded {} as held(user)", l.id));
     t.hold(root);
     if !terminate(pid, t) || !wait_exit(ctx, pid, &start) {
         t.hold(false);
-        let _ = reg.set_mark(&l.id, "held_by_user", None);
-        let _ = reg.set_mark(&l.id, "state", Some(l.state));
+        revert_held(reg, l);
         return Err(format!(
             "agent pid {pid} did not exit; reverted the registry"
         ));
@@ -292,8 +305,7 @@ fn execute_hold(
     let pid = l.pid.ok_or("no pid")?;
     let start = ctx.probe.info(pid).and_then(|i| i.start);
     let mut done = vec![];
-    reg.set_mark(&l.id, "held_by_user", Some(&pid.to_string()))?;
-    reg.set_mark(&l.id, "state", Some("held"))?;
+    record_held(ctx, reg, l, pid)?;
     done.push(format!("recorded {} as held(user)", l.id));
     tmux.set_pane_option(pane, "@sb_held", Some(&l.id))?;
     done.push(format!("set @sb_held on {pane}"));
@@ -306,8 +318,7 @@ fn execute_hold(
     )
     .is_ok_and(|o| o.status.success());
     if !killed || !wait_exit(ctx, pid, &start) {
-        let _ = reg.set_mark(&l.id, "held_by_user", None);
-        let _ = reg.set_mark(&l.id, "state", Some(l.state));
+        revert_held(reg, l);
         let _ = tmux.set_pane_option(pane, "@sb_held", None);
         let _ = restore_remain();
         return Err(format!(
@@ -363,6 +374,7 @@ pub(crate) fn hold_line(ctx: &Ctx, l: &Line, apply: bool, stub: bool, shell: boo
         checks,
         action: "none",
         error: None,
+        pending: false,
     };
     if r.ok() {
         r.action = "would-hold";
@@ -388,6 +400,76 @@ pub(crate) fn hold_line(ctx: &Ctx, l: &Line, apply: bool, stub: bool, shell: boo
     r
 }
 
+/// Predicates that fail only while the agent is mid-turn and are re-checked when it ends.
+const TURN_CHECKS: [&str; 4] = ["atPrompt", "inputEmpty", "noToolRunning", "notNeedsInput"];
+
+/// Hold now when every predicate passes; otherwise queue the hold for the end of the turn
+/// when only turn-bound predicates fail. Other failures (pinned, not alive...) are refused.
+pub fn hold_after_turn(ctx: &Ctx, q: &str, apply: bool) -> Result<Report, String> {
+    let lines = scan(ctx)?;
+    let l = find_line(&lines, q)?;
+    let checks = evaluate(&hold_input(ctx, l));
+    if checks.iter().all(|c| c.ok) || !checks.iter().all(|c| c.ok || TURN_CHECKS.contains(&c.name))
+    {
+        return Ok(hold_line(ctx, l, apply, true, false));
+    }
+    let mut r = Report {
+        line_id: l.id.clone(),
+        steps: vec![
+            format!("record a pending hold on {}", l.id),
+            "hold it when the turn ends and the agent is not waiting for you".into(),
+        ],
+        checks,
+        action: "would-hold-pending",
+        error: None,
+        pending: true,
+    };
+    if apply {
+        match Registry::open(&ctx.state_dir)
+            .and_then(|reg| reg.set_mark(&l.id, "hold_pending", Some("1")))
+        {
+            Ok(()) => r.action = "hold-pending",
+            Err(e) => {
+                r.action = "none";
+                r.pending = false;
+                r.error = Some(e);
+            }
+        }
+    }
+    log_action(
+        ctx,
+        &json!({"action": "hold", "dryRun": !apply, "result": r.to_json()}),
+    );
+    Ok(r)
+}
+
+pub fn cancel_pending_hold(ctx: &Ctx, q: &str) -> Result<String, String> {
+    let lines = scan(ctx)?;
+    let l = find_line(&lines, q)?;
+    Registry::open(&ctx.state_dir)?.set_mark(&l.id, "hold_pending", None)?;
+    Ok(l.id.clone())
+}
+
+/// A pending hold fires once the turn is over and the agent is not waiting for the user.
+pub(crate) fn pending_ready(l: &Line) -> bool {
+    l.hold_pending && l.alive() && l.busy_known && !l.busy && !l.needs_input
+}
+
+/// Applies the pending holds whose turn ended; the others stay queued.
+pub fn apply_pending_holds(ctx: &Ctx, lines: &[Line]) {
+    for l in lines.iter().filter(|l| pending_ready(l)) {
+        if !evaluate(&hold_input(ctx, l)).iter().all(|c| c.ok) {
+            continue;
+        }
+        let r = hold_line(ctx, l, true, true, false);
+        if r.error.is_some() {
+            if let Ok(reg) = Registry::open(&ctx.state_dir) {
+                let _ = reg.set_mark(&l.id, "hold_pending", None);
+            }
+        }
+    }
+}
+
 pub fn close(ctx: &Ctx, q: &str, apply: bool, shell: bool) -> Result<Report, String> {
     let lines = scan(ctx)?;
     close_line(ctx, find_line(&lines, q)?, apply, shell)
@@ -407,6 +489,7 @@ pub(crate) fn close_line(ctx: &Ctx, l: &Line, apply: bool, shell: bool) -> Resul
             action: if apply { "held" } else { "would-hold" },
             steps: vec![format!("mark {} hung-up (no live process)", l.id)],
             error: None,
+            pending: false,
         }
     };
     if r.ok() {
@@ -831,6 +914,32 @@ mod tests {
             session_id: sid.into(),
             ..Default::default()
         }
+    }
+
+    #[test]
+    fn a_pending_hold_fires_only_when_idle_and_not_waiting_for_the_user() {
+        // Given a live line with a pending hold
+        // When the turn is running, ends, or the agent asks for input
+        // Then it fires only when the turn ended and the agent does not wait for the user
+        let mut l = line("a", "s");
+        l.pid = Some(1);
+        l.hold_pending = true;
+        l.busy_known = true;
+        l.busy = true;
+        assert!(!pending_ready(&l), "mid-turn");
+        l.busy = false;
+        assert!(pending_ready(&l), "turn ended");
+        l.needs_input = true;
+        assert!(!pending_ready(&l), "waiting for the user: stays pending");
+        l.needs_input = false;
+        l.busy_known = false;
+        assert!(!pending_ready(&l), "turn state unknown");
+        l.busy_known = true;
+        l.pid = None;
+        assert!(!pending_ready(&l), "hung up");
+        l.pid = Some(1);
+        l.hold_pending = false;
+        assert!(!pending_ready(&l), "nothing pending");
     }
 
     #[test]
