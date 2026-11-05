@@ -1547,7 +1547,8 @@ fn start_unit(state_dir: &Path) -> bool {
         return false;
     }
     if let Ok(exe) = std::env::current_exe() {
-        let _ = crate::install::ensure_shim(&env.shim, &exe, true);
+        let _ =
+            crate::install::ensure_shim(&env.shim, &exe, crate::install::owns_globals(state_dir));
     }
     match crate::autostart::run_cmd("systemctl", &["--user", "start", crate::autostart::UNIT]) {
         Ok(_) => true,
