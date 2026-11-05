@@ -354,7 +354,10 @@ jobs:
 
       - run: pnpm --dir app tauri android build --ci --debug --apk --target aarch64
 
-      - run: scripts/android-apk.sh debug out/overseer-debug-arm64.apk
+      - run: |
+          ANDROID_CERT_SHA256=$(keytool -list -v -keystore ~/.android/debug.keystore -storepass android | sed -n 's/^.*SHA256: *//p' | head -1)
+          test -n "$ANDROID_CERT_SHA256"
+          ANDROID_CERT_SHA256=$ANDROID_CERT_SHA256 scripts/android-apk.sh debug out/overseer-debug-arm64.apk
 
       - if: github.event_name != 'push'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7

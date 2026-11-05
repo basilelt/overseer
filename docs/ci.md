@@ -252,7 +252,7 @@ One repository variable (same page, Variables tab):
 
 | Variable | Use |
 |---|---|
-| `ANDROID_CERT_SHA256` | SHA-256 fingerprint of the Android release certificate; `scripts/android-apk.sh` fails the release APK when another key signed it. Unset: the signature is still verified, the fingerprint is not pinned |
+| `ANDROID_CERT_SHA256` | SHA-256 fingerprint of the Android release certificate; `scripts/android-apk.sh` fails the release APK when another key signed it (the PR `android` job pins the runner debug keystore the same way). Unset: the signature is still verified, the fingerprint is not pinned |
 
 `GITHUB_TOKEN` covers everything else (tags, releases, the release gate's check-run lookups).
 Release downloads need no token: the repository is public.
