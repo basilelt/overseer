@@ -1,0 +1,102 @@
+import { describe, expect, it } from 'vitest';
+import { filePath, fileKind, findPaths, mimeOf } from './files';
+
+describe('findPaths', () => {
+  it('finds absolute, relative and home paths with known extensions', () => {
+    const line = 'Saved /tmp/out/shot.png and ./docs/spec.pdf, see ~/v/clip.MP4 or notes.md:12:3.';
+    expect(findPaths(line).map((m) => m.path)).toEqual(['/tmp/out/shot.png', './docs/spec.pdf', '~/v/clip.MP4', 'notes.md']);
+  });
+
+  it('gives the range of the whole match including :line:col', () => {
+    const [m] = findPaths('x src/a.ts b.json:4:2 y');
+    expect(m).toEqual({ path: 'b.json', start: 11, end: 21 });
+  });
+
+  it('skips URLs, unknown extensions and words glued to other text', () => {
+    expect(findPaths('https://example.com/a.png')).toEqual([]);
+    expect(findPaths('main.rs lib.ts archive.zip')).toEqual([]);
+    expect(findPaths('foo.pngx')).toEqual([]);
+  });
+});
+
+describe('filePath', () => {
+  it('accepts a lone path and rejects text around it', () => {
+    expect(filePath('  /a/b/d.png ')).toBe('/a/b/d.png');
+    expect(filePath('d.png and more')).toBeNull();
+  });
+
+  it('accepts spaces inside a path with a known file kind', () => {
+    expect(filePath(' /a/b c/d.png ')).toBe('/a/b c/d.png');
+    expect(filePath('docs/J3 modifications.pdf')).toBe('docs/J3 modifications.pdf');
+    expect(filePath('docs/J3 modifications.pdf:12')).toBe('docs/J3 modifications.pdf');
+    expect(filePath('~/My Docs/report (1).pdf')).toBe('~/My Docs/report (1).pdf');
+    expect(filePath('J3 modifications.pdf')).toBe('J3 modifications.pdf');
+    expect(filePath('My Documents/report.pdf')).toBe('My Documents/report.pdf');
+    expect(filePath('~/Notes/Q3 plan.md')).toBe('~/Notes/Q3 plan.md');
+    expect(filePath('./build out/app.log')).toBe('./build out/app.log');
+  });
+
+  it('rejects a span that is a verb followed by a path', () => {
+    for (const t of ['see docs/a.pdf', 'run tests/x.py', 'Open docs/a.pdf', 'check a.pdf', 'edit src/a.ts:3', 'in docs/a.pdf', 'voir docs/a.pdf', 'ouvrir docs/a.pdf']) {
+      expect(filePath(t)).toBeNull();
+    }
+  });
+
+  it('rejects spaced text that is not a path with a known kind', () => {
+    expect(filePath('docs/J3 modifications')).toBeNull();
+    expect(filePath('docs/J3 modifications.zip')).toBeNull();
+    expect(filePath('run the tests, then a.pdf')).toBeNull();
+    expect(filePath('a.pdf  b.pdf')).toBeNull();
+    expect(filePath('docs/ a.pdf')).toBeNull();
+    expect(filePath('see https://x.com/a b.pdf')).toBeNull();
+    expect(filePath(`${'a '.repeat(300)}.pdf`)).toBeNull();
+  });
+});
+
+describe('fileKind and mimeOf', () => {
+  it('maps extensions', () => {
+    expect(fileKind('/x/a.JPG')).toBe('image');
+    expect(fileKind('a.webm')).toBe('video');
+    expect(fileKind('a.pdf')).toBe('pdf');
+    expect(fileKind('README.md')).toBe('markdown');
+    expect(fileKind('a.log')).toBe('text');
+    expect(fileKind('.png')).toBeNull();
+    expect(fileKind('a.rs')).toBeNull();
+    expect(mimeOf('a.svg')).toBe('image/svg+xml');
+    expect(mimeOf('a.yaml')).toBe('text/plain');
+  });
+});
+
+describe('findPaths on long tokens', () => {
+  const timed = (text: string) => {
+    const t0 = performance.now();
+    const out = findPaths(text);
+    return { out, ms: performance.now() - t0 };
+  };
+
+  // Given a full git SHA and a session UUID, which have no file extension
+  // When findPaths scans them
+  // Then it returns nothing quickly instead of backtracking exponentially
+  it('does not backtrack on SHAs and UUIDs', () => {
+    const { out, ms } = timed('commit 3f9a1c0d2b7e4f6a8c1d3e5f7a9b0c2d4e6f8a1b in session 0b7f2c4e-91d3-4a6b-8e2f-5c7d9a1b3e4f_resume_token');
+    expect(out).toEqual([]);
+    expect(ms).toBeLessThan(50);
+  });
+
+  // Given a very long run of path characters such as a base64 blob
+  // When findPaths scans it
+  // Then it skips it in bounded time and still finds a path next to it
+  it('stays fast on huge tokens', () => {
+    const blob = 'aB3+/x'.repeat(20_000);
+    const { out, ms } = timed(`${blob} see ./docs/spec.pdf`);
+    expect(out.map((m) => m.path)).toEqual(['./docs/spec.pdf']);
+    expect(ms).toBeLessThan(100);
+  });
+
+  // Given paths inside punctuation and a URL
+  // When findPaths scans the line
+  // Then the same matches as before are found
+  it('keeps matching paths around punctuation', () => {
+    expect(findPaths('(see ../a/b.md) "x/y.json", a//b.png, ~foo.png').map((m) => m.path)).toEqual(['../a/b.md', 'x/y.json', '~foo.png']);
+  });
+});

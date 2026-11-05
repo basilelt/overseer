@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>io.github.basilelt.overseer.daemon</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Users/USERNAME/.local/bin/overseer</string>
+    <string>daemon</string>
+    <string>--interval</string>
+    <string>5</string>
+    <string>--http</string>
+    <string>127.0.0.1:7878</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>OVERSEER_STATE_DIR</key>
+    <string>/Users/USERNAME/.local/state/overseer</string>
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+  </dict>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>StandardErrorPath</key>
+  <string>/Users/USERNAME/.local/state/overseer/daemon.log</string>
+</dict>
+</plist>

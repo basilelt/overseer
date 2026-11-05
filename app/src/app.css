@@ -1,0 +1,438 @@
+:root {
+  color-scheme: light;
+  --bg: #ffffff;
+  --bg-subtle: #fafafa;
+  --surface: #ffffff;
+  --surface-2: #f4f4f5;
+  --surface-hover: #f4f4f5;
+  --surface-active: #e4e4e7;
+  --border: #e4e4e7;
+  --border-strong: #d4d4d8;
+  --text: #18181b;
+  --text-2: #52525b;
+  --text-3: #a1a1aa;
+  --accent: #2563eb;
+  --accent-hover: color-mix(in srgb, var(--accent) 82%, black);
+  --accent-fg: #ffffff;
+  --accent-soft: color-mix(in srgb, var(--accent) 8%, transparent);
+  --focus: color-mix(in srgb, var(--accent) 45%, transparent);
+  --st-input: #16a34a;
+  --st-working: #2563eb;
+  --st-testing: #9333ea;
+  --st-failed: #dc2626;
+  --st-done: #71717a;
+  --st-held: #a1a1aa;
+  --overlay: rgba(9, 9, 11, 0.32);
+  --shadow: 0 8px 28px rgba(0, 0, 0, 0.12), 0 0 0 1px var(--border);
+  --diff-add-bg: rgba(22, 163, 74, 0.1);
+  --diff-add: #15803d;
+  --diff-del-bg: rgba(220, 38, 38, 0.08);
+  --diff-del: #b91c1c;
+  --diff-hunk: #6366f1;
+  --term-bg: var(--bg);
+  --term-fg: var(--text);
+  --lane-0: #7c7c86;
+  --lane-1: #5b7fa6;
+  --lane-2: #5f9483;
+  --lane-3: #a8804f;
+  --lane-4: #8a6fa8;
+  --lane-5: #b0655f;
+  --font: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  --radius: 6px;
+  --radius-lg: 10px;
+  --ease: 140ms cubic-bezier(0.2, 0, 0, 1);
+  --titlebar-h: 40px;
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --bg: #0b0b0c;
+  --bg-subtle: #111113;
+  --surface: #141416;
+  --surface-2: #1b1b1e;
+  --surface-hover: #1c1c1f;
+  --surface-active: #26262a;
+  --border: #232327;
+  --border-strong: #2f2f34;
+  --text: #ededef;
+  --text-2: #a1a1aa;
+  --text-3: #63636b;
+  --accent: #3b82f6;
+  --accent-hover: color-mix(in srgb, var(--accent) 70%, white);
+  --accent-fg: #ffffff;
+  --accent-soft: color-mix(in srgb, var(--accent) 12%, transparent);
+  --focus: color-mix(in srgb, var(--accent) 55%, transparent);
+  --st-input: #22c55e;
+  --st-working: #3b82f6;
+  --st-testing: #a855f7;
+  --st-failed: #ef4444;
+  --st-done: #71717a;
+  --st-held: #52525b;
+  --overlay: rgba(0, 0, 0, 0.5);
+  --shadow: 0 12px 36px rgba(0, 0, 0, 0.5), 0 0 0 1px var(--border-strong);
+  --diff-add-bg: rgba(34, 197, 94, 0.1);
+  --diff-add: #4ade80;
+  --diff-del-bg: rgba(239, 68, 68, 0.1);
+  --diff-del: #f87171;
+  --diff-hunk: #818cf8;
+  --term-bg: var(--bg);
+  --term-fg: var(--text);
+  --lane-0: #8b8b94;
+  --lane-1: #7d9cc2;
+  --lane-2: #7fb3a1;
+  --lane-3: #c49b70;
+  --lane-4: #a991c4;
+  --lane-5: #cc8580;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 13px;
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+
+button {
+  cursor: pointer;
+  background: none;
+  border: 0;
+  padding: 0;
+}
+
+:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 1px;
+}
+
+input,
+textarea,
+select {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 6px 9px;
+  transition: border-color var(--ease);
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+input:focus,
+textarea:focus,
+select:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+input.switch {
+  appearance: none;
+  position: relative;
+  flex-shrink: 0;
+  box-sizing: border-box;
+  width: 34px;
+  height: 20px;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  background: var(--surface-2);
+  cursor: pointer;
+  transition:
+    background var(--ease),
+    border-color var(--ease);
+}
+
+input.switch::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--text-3);
+  transform: translateY(-50%);
+  transition:
+    transform var(--ease),
+    background var(--ease);
+}
+
+input.switch:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+input.switch:checked {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+input.switch:checked::after {
+  background: var(--accent-fg);
+  transform: translate(14px, -50%);
+}
+
+input.switch:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+:root.phone input.switch {
+  width: 48px;
+  height: 28px;
+  min-height: 0;
+  border-radius: 14px;
+}
+
+:root.phone input.switch::after {
+  width: 22px;
+  height: 22px;
+}
+
+:root.phone input.switch:checked::after {
+  transform: translate(20px, -50%);
+}
+
+::placeholder {
+  color: var(--text-3);
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 4px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 10px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font-weight: 500;
+  white-space: nowrap;
+  transition:
+    background var(--ease),
+    border-color var(--ease);
+}
+
+.btn:hover {
+  background: var(--surface-hover);
+}
+
+.btn.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-fg);
+}
+
+.btn.primary:hover {
+  background: var(--accent-hover);
+}
+
+.btn.ghost {
+  border-color: transparent;
+  background: transparent;
+}
+
+.btn.ghost:hover {
+  background: var(--surface-hover);
+}
+
+.btn.danger {
+  color: var(--st-failed);
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.icon-btn {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius);
+  color: var(--text-2);
+  transition:
+    background var(--ease),
+    color var(--ease);
+}
+
+.icon-btn:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+.icon-btn.active {
+  color: var(--text);
+  background: var(--surface-active);
+}
+
+.dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex: none;
+}
+
+.muted {
+  color: var(--text-2);
+}
+
+.faint {
+  color: var(--text-3);
+}
+
+.mono {
+  font-family: var(--mono);
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.spin {
+  animation: spin 0.9s linear infinite;
+}
+
+:root.hidden-window *,
+:root.hidden-window *::before,
+:root.hidden-window *::after,
+:root.inactive .spin,
+:root.inactive .spin *,
+:root.inactive .pulse,
+:root.inactive .busy .dot,
+:root.inactive .busy .udot,
+:root.inactive .fill.indeterminate {
+  animation-play-state: paused !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    transition: none !important;
+    animation: none !important;
+  }
+}
+
+:root.phone {
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+  --touch: 44px;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-text-size-adjust: 100%;
+}
+
+:root.phone body {
+  font-size: 15px;
+  overscroll-behavior: none;
+}
+
+:root.phone .btn {
+  min-height: var(--touch);
+  padding: 0 14px;
+}
+
+:root.phone .icon-btn {
+  min-width: var(--touch);
+  min-height: var(--touch);
+}
+
+:root.phone input,
+:root.phone select,
+:root.phone textarea {
+  min-height: var(--touch);
+  font-size: 16px;
+}
+
+:root.phone textarea {
+  min-height: 88px;
+}
+
+:root.phone [role='menuitem'],
+:root.phone [role='option'],
+:root.phone [role='treeitem'] {
+  min-height: var(--touch);
+}
+
+@media (hover: none) {
+  :root.phone .btn:hover {
+    background: var(--surface);
+  }
+  :root.phone .btn.primary:hover {
+    background: var(--accent);
+  }
+  :root.phone .btn.ghost:hover,
+  :root.phone .icon-btn:hover {
+    background: transparent;
+  }
+  :root.phone .icon-btn.active:hover {
+    background: var(--surface-active);
+  }
+  :root.phone .btn:active,
+  :root.phone .icon-btn:active {
+    background: var(--surface-active);
+  }
+}
+
+@font-face {
+  font-family: 'Symbols Nerd Font Mono';
+  src: url('./assets/fonts/SymbolsNerdFontMono-Regular.woff2') format('woff2');
+  font-display: block;
+}

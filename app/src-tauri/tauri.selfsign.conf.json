@@ -1,0 +1,1 @@
+{ "bundle": { "macOS": { "hardenedRuntime": false } } }

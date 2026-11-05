@@ -1,0 +1,11 @@
+.state/
+target/
+.claude/worktrees/
+dist/
+app/node_modules/
+app/dist/
+app/coverage/
+app/src-tauri/target/
+app/src-tauri/gen/schemas/
+app/src-tauri/resources/
+__pycache__/

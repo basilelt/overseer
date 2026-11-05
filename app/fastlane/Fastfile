@@ -1,0 +1,83 @@
+require "base64"
+require "json"
+require "securerandom"
+require "shellwords"
+require "tmpdir"
+
+default_platform(:ios)
+
+platform :ios do
+  lane :internal_testflight do
+    app_dir = File.expand_path(ENV.fetch("OVERSEER_APP_DIR"))
+    tmp = ENV.fetch("RUNNER_TEMP", Dir.tmpdir)
+    run_number = ENV.fetch("GITHUB_RUN_NUMBER")
+    attempt = ENV.fetch("GITHUB_RUN_ATTEMPT", "1")
+    bundle_version = attempt == "1" ? run_number : "#{run_number}.#{attempt}"
+    short_version = JSON.parse(File.read(File.join(app_dir, "src-tauri/tauri.conf.json"))).fetch("version")
+    app_id = CredentialsManager::AppfileConfig.try_fetch_value(:app_identifier)
+
+    keychain = "overseer-ci"
+    keychain_password = SecureRandom.hex(24)
+    create_keychain(
+      name: keychain,
+      password: keychain_password,
+      default_keychain: true,
+      unlock: true,
+      timeout: 3600,
+      lock_when_sleeps: false
+    )
+
+    api_key = app_store_connect_api_key(
+      key_id: ENV.fetch("APPLE_KEY_ID"),
+      issuer_id: ENV.fetch("APPLE_ISSUER_ID"),
+      key_content: ENV.fetch("APPLE_KEY_CONTENT"),
+      duration: 1200,
+      in_house: false
+    )
+
+    match(
+      type: "appstore",
+      readonly: true,
+      keychain_name: keychain,
+      keychain_password: keychain_password,
+      api_key: api_key
+    )
+
+    # Tauri signs iOS builds itself from IOS_CERTIFICATE (a .p12 with the key) and
+    # IOS_MOBILE_PROVISION, so the identity match installed is exported back out.
+    p12 = File.join(tmp, "distribution.p12")
+    p12_password = SecureRandom.hex(16)
+    sh(
+      "security", "export",
+      "-k", File.expand_path("~/Library/Keychains/#{keychain}-db"),
+      "-t", "identities", "-f", "pkcs12",
+      "-P", p12_password, "-o", p12,
+      log: false
+    )
+    ENV["IOS_CERTIFICATE"] = Base64.strict_encode64(File.binread(p12))
+    ENV["IOS_CERTIFICATE_PASSWORD"] = p12_password
+    ENV["IOS_MOBILE_PROVISION"] = Base64.strict_encode64(File.binread(ENV.fetch("sigh_#{app_id}_appstore_profile-path")))
+
+    config = { bundle: { iOS: { bundleVersion: bundle_version } } }.to_json
+    sh("pnpm", "--dir", app_dir, "tauri", "ios", "build", "--ci", "--export-method", "app-store-connect", "--config", config)
+
+    ipa = Dir[File.join(app_dir, "src-tauri/gen/apple/build/**/*.ipa")].max_by { |f| File.mtime(f) }
+    UI.user_error!("no .ipa under src-tauri/gen/apple/build") unless ipa
+    plist = File.join(tmp, "Info.plist")
+    sh("unzip -p #{ipa.shellescape} 'Payload/*.app/Info.plist' > #{plist.shellescape}")
+    built_short = sh("plutil", "-extract", "CFBundleShortVersionString", "raw", plist, log: false).strip
+    built_bundle = sh("plutil", "-extract", "CFBundleVersion", "raw", plist, log: false).strip
+    UI.message("#{File.basename(ipa)}: #{built_short} (#{built_bundle})")
+    unless built_short == short_version && built_bundle == bundle_version
+      UI.user_error!("IPA is #{built_short} (#{built_bundle}), expected #{short_version} (#{bundle_version})")
+    end
+
+    upload_to_testflight(
+      api_key: api_key,
+      ipa: ipa,
+      app_platform: "ios",
+      skip_submission: true,
+      skip_waiting_for_build_processing: true
+    )
+  end
+end

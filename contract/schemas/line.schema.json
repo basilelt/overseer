@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://overseer.local/contract/line.schema.json",
+  "title": "Line",
+  "description": "One agent session working in one worktree on one station for one owner. Frozen: changes must be additive and optional, with an ADR.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "owner", "stationId", "agent", "agentSessionId", "repo", "branch", "worktreePath", "origin", "state", "lastActivityAt"],
+  "properties": {
+    "id": { "type": "string", "minLength": 1 },
+    "owner": { "type": "string", "minLength": 1, "description": "A person, or an agent account such as feedback-bot." },
+    "ticketKey": { "type": "string", "pattern": "^AS-[0-9]+$" },
+    "stationId": { "type": "string", "minLength": 1, "examples": ["mac-bob", "vm-node2-dev1", "runner-3"] },
+    "agent": { "type": "string", "enum": ["claude", "codex", "gemini", "agy", "opencode", "amp", "copilot", "cursor"] },
+    "agentSessionId": { "type": "string", "minLength": 1, "description": "Id used to resume the session (claude --resume <id>, codex resume <id>, ...). For agents without session ids it is the daemon term id. For a running Claude line it is the session its process reports now (~/.claude/sessions/<pid>.json), which can differ from the session it was started with." },
+    "repo": { "type": "string", "minLength": 1, "description": "Normalized origin URL, e.g. github.com/acme/webshop." },
+    "branch": { "type": "string" },
+    "worktreePath": { "type": "string", "minLength": 1 },
+    "prUrl": { "type": "string", "format": "uri" },
+    "envRef": { "type": "string", "description": "Opaque id on Yard's side." },
+    "origin": { "type": "string", "enum": ["dev", "feedback"] },
+    "state": { "type": "string", "enum": ["active", "idle", "held", "hung-up"] },
+    "lastActivityAt": { "type": "string", "format": "date-time" }
+  }
+}

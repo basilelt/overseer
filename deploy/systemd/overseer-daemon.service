@@ -1,0 +1,13 @@
+[Unit]
+Description=Overseer daemon (local registry, Board, relayed commands)
+
+[Service]
+Type=simple
+Environment=OVERSEER_STATE_DIR=%h/.local/state/overseer
+ExecStart=%h/.local/bin/overseer daemon --interval 5 --http 127.0.0.1:7878
+Restart=on-failure
+RestartSec=5
+OOMPolicy=continue
+
+[Install]
+WantedBy=default.target

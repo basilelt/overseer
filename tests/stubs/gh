@@ -1,0 +1,11 @@
+#!/bin/sh
+repo= head=
+for a in "$@"; do
+  case $a in
+    --repo=*) repo=${a#--repo=} ;;
+    --head=*) head=${a#--head=} ;;
+  esac
+done
+[ -n "${SB_GH_LOG:-}" ] && echo "$repo $head" >> "$SB_GH_LOG"
+f="${SB_GH_DIR:-/nonexistent}/$(printf '%s %s' "$repo" "$head" | sed 's/[^A-Za-z0-9]/_/g').json"
+if [ -f "$f" ]; then cat "$f"; else echo '[]'; fi

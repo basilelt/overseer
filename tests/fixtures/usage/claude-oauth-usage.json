@@ -1,0 +1,79 @@
+{
+  "five_hour": {
+    "utilization": 86.0,
+    "resets_at": "2026-10-30T00:20:00.095348+00:00",
+    "limit_dollars": null,
+    "used_dollars": null,
+    "remaining_dollars": null,
+    "locked_reason": null
+  },
+  "seven_day": {
+    "utilization": 48.0,
+    "resets_at": "2026-11-04T13:00:00.095369+00:00",
+    "limit_dollars": null,
+    "used_dollars": null,
+    "remaining_dollars": null,
+    "locked_reason": null
+  },
+  "seven_day_opus": null,
+  "extra_usage": {
+    "is_enabled": false,
+    "currency": "EUR",
+    "decimal_places": 2,
+    "disabled_reason": "org_level_disabled_until",
+    "credits_ever_enabled": true
+  },
+  "limits": [
+    {
+      "kind": "session",
+      "group": "session",
+      "percent": 86,
+      "severity": "warning",
+      "resets_at": "2026-10-30T00:20:00.095348+00:00",
+      "scope": null,
+      "is_active": true
+    },
+    {
+      "kind": "weekly_all",
+      "group": "weekly",
+      "percent": 48,
+      "severity": "normal",
+      "resets_at": "2026-11-04T13:00:00.095369+00:00",
+      "scope": null,
+      "is_active": false
+    },
+    {
+      "kind": "weekly_scoped",
+      "group": "weekly",
+      "percent": 0,
+      "severity": "normal",
+      "resets_at": "2026-11-04T13:00:00+00:00",
+      "scope": {
+        "model": {
+          "id": null,
+          "display_name": "Fable"
+        },
+        "surface": null
+      },
+      "is_active": false
+    }
+  ],
+  "spend": {
+    "used": {
+      "amount_minor": 0,
+      "currency": "EUR",
+      "exponent": 2
+    },
+    "percent": 0,
+    "severity": "normal",
+    "disabled_reason": "org_level_disabled_until",
+    "disclaimer": "Usage credits cover you when you hit your plan limits."
+  },
+  "weekly_scoped_shares": [
+    {
+      "limit_index": 2,
+      "used_percent_of_weekly": 0,
+      "allowance_percent_of_weekly": 50
+    }
+  ]
+}

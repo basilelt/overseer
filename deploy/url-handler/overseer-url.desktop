@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Overseer
+Comment=Open overseer:// links
+Exec=overseer open %u
+Terminal=true
+NoDisplay=true
+MimeType=x-scheme-handler/overseer;

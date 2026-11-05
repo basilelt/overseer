@@ -1,0 +1,485 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>Architecture Overseer</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Condensed:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout : une colonne de lecture, un grand schéma défilable, des tableaux de propriété. Couleurs par zone : hébergé (bleu), exécution (vert), externe (gris). */
+:root {
+  --bg: #f6f8fb;
+  --surface: #ffffff;
+  --ink: #142033;
+  --muted: #5a6678;
+  --line: #d5dce7;
+  --hosted: #1f5fbf;
+  --hosted-soft: #e7effb;
+  --exec: #1d7a5a;
+  --exec-soft: #e4f3ec;
+  --ext: #6b7280;
+  --ext-soft: #eef0f3;
+  --cord: #c26a12;
+  --f-display: "IBM Plex Sans Condensed", "Arial Narrow", sans-serif;
+  --f-body: "IBM Plex Sans", system-ui, -apple-system, sans-serif;
+  --f-mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0e141d; --surface: #151d29; --ink: #e5ebf3; --muted: #9aa6b8; --line: #2a3546;
+    --hosted: #6ea2f0; --hosted-soft: #172a45; --exec: #5cc49c; --exec-soft: #12302a;
+    --ext: #a3abb8; --ext-soft: #1f2631; --cord: #f0a453; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0e141d; --surface: #151d29; --ink: #e5ebf3; --muted: #9aa6b8; --line: #2a3546;
+  --hosted: #6ea2f0; --hosted-soft: #172a45; --exec: #5cc49c; --exec-soft: #12302a;
+  --ext: #a3abb8; --ext-soft: #1f2631; --cord: #f0a453; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--ink); font-family: var(--f-body); font-size: 15px; line-height: 1.55;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 32px 64px;
+}
+main { max-width: 1040px; margin: 0 auto; display: grid; gap: 48px; }
+.prose { max-width: 68ch; }
+h1, h2, h3 { font-family: var(--f-display); text-wrap: balance; margin: 0; line-height: 1.15; }
+h1 { font-size: 2.1rem; font-weight: 600; }
+h2 { font-size: 1.45rem; font-weight: 600; margin-bottom: 12px; }
+h3 { font-size: 1.1rem; font-weight: 600; margin-bottom: 6px; }
+p { margin: 0 0 10px; }
+.eyebrow { font-family: var(--f-mono); font-size: 0.75rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); margin-bottom: 8px; }
+.lede { color: var(--muted); font-size: 1.05rem; margin-top: 10px; }
+code, .mono { font-family: var(--f-mono); font-size: 0.86em; }
+.legend { display: flex; flex-wrap: wrap; gap: 16px; font-size: 0.85rem; color: var(--muted); margin-top: 10px; }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.sw { width: 14px; height: 14px; border-radius: 3px; border: 1.5px solid; display: inline-block; }
+.sw.h { background: var(--hosted-soft); border-color: var(--hosted); }
+.sw.e { background: var(--exec-soft); border-color: var(--exec); }
+.sw.x { background: var(--ext-soft); border-color: var(--ext); }
+.sw.c { background: none; border: none; border-top: 2px dashed var(--cord); border-radius: 0; height: 0; width: 18px; }
+.figure { overflow-x: auto; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 12px; }
+.figure svg { display: block; min-width: 860px; width: 100%; height: auto; }
+svg text { font-family: var(--f-body); fill: var(--ink); }
+svg .t { font-family: var(--f-display); font-weight: 600; font-size: 17px; }
+svg .s { font-size: 12.5px; fill: var(--muted); }
+svg .m { font-family: var(--f-mono); font-size: 11px; fill: var(--muted); }
+svg .z { font-family: var(--f-mono); font-size: 11px; letter-spacing: 0.08em; }
+svg .lbl { font-size: 11.5px; fill: var(--ink); paint-order: stroke; stroke: var(--surface); stroke-width: 4px; stroke-linejoin: round; }
+.zh { fill: none; stroke: var(--hosted); stroke-dasharray: 5 4; stroke-width: 1.2; }
+.ze { fill: none; stroke: var(--exec); stroke-dasharray: 5 4; stroke-width: 1.2; }
+.zht { fill: var(--hosted); } .zet { fill: var(--exec); } .zxt { fill: var(--ext); }
+.bh { fill: var(--hosted-soft); stroke: var(--hosted); stroke-width: 1.5; }
+.bk { fill: var(--hosted); stroke: var(--hosted); }
+.bkt { fill: var(--surface) !important; }
+.be { fill: var(--exec-soft); stroke: var(--exec); stroke-width: 1.5; }
+.bx { fill: var(--ext-soft); stroke: var(--ext); stroke-width: 1.5; }
+.ar { fill: none; stroke: var(--ink); stroke-width: 1.4; }
+.ad { fill: none; stroke: var(--cord); stroke-width: 1.6; stroke-dasharray: 6 4; }
+.ah { fill: var(--ink); } .ahc { fill: var(--cord); }
+table { width: 100%; border-collapse: collapse; font-size: 0.92rem; }
+.tbl { overflow-x: auto; }
+th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font-family: var(--f-mono); font-size: 0.74rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); font-weight: 500; }
+.chip { display: inline-block; font-family: var(--f-mono); font-size: 0.75rem; padding: 2px 8px; border-radius: 999px; border: 1px solid; white-space: nowrap; }
+.chip.h { color: var(--hosted); border-color: var(--hosted); background: var(--hosted-soft); }
+.chip.e { color: var(--exec); border-color: var(--exec); background: var(--exec-soft); }
+.chip.x { color: var(--ext); border-color: var(--ext); background: var(--ext-soft); }
+pre { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 16px; overflow-x: auto; font-family: var(--f-mono); font-size: 0.84rem; line-height: 1.6; margin: 0; }
+.cm { color: var(--muted); }
+.two { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px; }
+.two > div { min-width: 0; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 18px 20px; }
+.two ul, .steps { margin: 0; padding-left: 20px; display: grid; gap: 6px; }
+.steps { gap: 12px; padding-left: 0; list-style: none; counter-reset: s; }
+.steps li { counter-increment: s; display: grid; grid-template-columns: 34px 1fr; gap: 12px; align-items: start; }
+.steps li::before { content: counter(s); font-family: var(--f-mono); font-size: 0.85rem; width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; border: 1.5px solid var(--cord); color: var(--cord); }
+.steps li > div { min-width: 0; }
+.steps .who { margin-right: 6px; }
+.decisions { display: grid; gap: 14px; }
+.decision { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 16px 20px; }
+.decision ol { margin: 6px 0 0; padding-left: 22px; display: grid; gap: 4px; }
+.rec { color: var(--exec); font-weight: 600; }
+.specs { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; }
+.spec { min-width: 0; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 18px 20px; display: grid; gap: 10px; align-content: start; }
+.spec header { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px; }
+.spec .mission { color: var(--muted); margin: 0; }
+.spec h4 { font-family: var(--f-mono); font-size: 0.72rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); font-weight: 500; margin: 4px 0 0; }
+.spec ul { margin: 0; padding-left: 18px; display: grid; gap: 4px; }
+.spec .ok { border-top: 1px dashed var(--line); padding-top: 10px; }
+.note { border-left: 3px solid var(--cord); padding: 4px 0 4px 14px; color: var(--ink); }
+</style>
+
+<main>
+  <header class="prose">
+    <div class="eyebrow">Réflexion d'architecture · 28 octobre 2026 · suite de la réunion Bob – Alice</div>
+    <h1>Architecture Overseer</h1>
+    <p class="lede">Trois moteurs aux rôles distincts. Overseer sauvegarde les sessions Claude et Codex et se souvient d'où tourne chaque worktree. Yard fait tourner le code à tester, un environnement par PR. feedback-hub transforme un retour utilisateur en ticket qualifié. TwinFactory regarde le tout sans rien piloter.</p>
+  </header>
+
+  <section>
+    <h2>Vue d'ensemble</h2>
+    <div class="figure" role="img" aria-label="Schéma des composants hébergés, des stations d'exécution et de leurs flux">
+      <svg viewBox="0 0 1000 640" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ah" d="M0,0 L10,5 L0,10 z"/></marker>
+          <marker id="c" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ahc" d="M0,0 L10,5 L0,10 z"/></marker>
+        </defs>
+
+        <!-- Externes -->
+        <text class="z zxt" x="20" y="16">EXTERNE</text>
+        <rect class="bx" x="20" y="26" width="240" height="62" rx="8"/>
+        <text class="t" x="36" y="52">Jira</text>
+        <text class="s" x="36" y="72">vérité des tickets</text>
+        <rect class="bx" x="740" y="26" width="240" height="62" rx="8"/>
+        <text class="t" x="756" y="52">GitHub</text>
+        <text class="s" x="756" y="72">branches, PR, labels</text>
+
+        <!-- Zone hébergée -->
+        <rect class="zh" x="10" y="112" width="980" height="300" rx="12"/>
+        <text class="z zht" x="22" y="130">HÉBERGÉ COMMUN · KUBERNETES</text>
+
+
+        <rect class="bh" x="400" y="146" width="220" height="88" rx="8"/>
+        <text class="t" x="416" y="174">TwinFactory</text>
+        <text class="s" x="416" y="194">lecture seule : tickets,</text>
+        <text class="s" x="416" y="212">lignes par station, envs</text>
+
+        <rect class="bh" x="70" y="296" width="190" height="88" rx="8"/>
+        <text class="t" x="86" y="324">feedback-hub</text>
+        <text class="s" x="86" y="344">intake, preuves,</text>
+        <text class="s" x="86" y="362">dédoublonnage, triage</text>
+
+        <rect class="bk" x="400" y="296" width="220" height="88" rx="8"/>
+        <text class="t bkt" x="416" y="324">overseer-api</text>
+        <text class="s bkt" x="416" y="344">sessions claude/codex,</text>
+        <text class="s bkt" x="416" y="362">où tourne chaque worktree</text>
+
+        <rect class="bh" x="760" y="296" width="200" height="88" rx="8"/>
+        <text class="t" x="776" y="324">Yard</text>
+        <text class="s" x="776" y="344">un env par PR, TTL,</text>
+        <text class="s" x="776" y="362">création et nettoyage</text>
+
+        <!-- Zone exécution -->
+        <rect class="ze" x="10" y="440" width="980" height="190" rx="12"/>
+        <text class="z zet" x="22" y="458">EXÉCUTION · LÀ OÙ TOURNENT LE CODE ET LES AGENTS</text>
+
+        <rect class="be" x="24" y="510" width="220" height="104" rx="8"/>
+        <text class="t" x="40" y="536">Mac d'un dev</text>
+        <text class="m" x="40" y="556">station locale</text>
+        <text class="s" x="40" y="576">claude/codex, worktrees</text>
+        <rect class="bk" x="40" y="584" width="120" height="22" rx="11"/>
+        <text class="m bkt" x="100" y="599" text-anchor="middle">overseer-app</text>
+        <path class="ar" d="M150,584 L170,524" marker-end="url(#a)"/>
+
+        <rect class="be" x="270" y="510" width="210" height="104" rx="8"/>
+        <text class="t" x="286" y="536">VM de dev</text>
+        <text class="m" x="286" y="556">station SSH (PVE)</text>
+        <text class="s" x="286" y="576">mêmes capacités,</text>
+        <text class="s" x="286" y="594">à distance</text>
+
+        <rect class="be" x="506" y="510" width="214" height="104" rx="8"/>
+        <text class="t" x="522" y="536">Runner</text>
+        <text class="m" x="522" y="556">station partagée (pod)</text>
+        <text class="s" x="522" y="576">sessions des agents</text>
+        <text class="s" x="522" y="594">de feedback-hub</text>
+
+        <rect class="be" x="760" y="510" width="200" height="104" rx="8"/>
+        <text class="t" x="776" y="536">Envs éphémères</text>
+        <text class="m" x="776" y="556">namespaces kube</text>
+        <text class="s" x="776" y="576">webplatform + backend</text>
+        <text class="s" x="776" y="594">+ base copiée</text>
+
+        <!-- Flux -->
+
+        <path class="ar" d="M260,57 H470 V146" marker-end="url(#a)"/>
+        <text class="lbl" x="290" y="50">direct : tickets, statuts, sprints</text>
+
+
+        <path class="ar" d="M260,340 H400" marker-end="url(#a)"/>
+        <text class="lbl" x="268" y="332">ouvre une ligne</text>
+        <text class="lbl" x="268" y="358">agent (ticket AS)</text>
+
+        <path class="ar" d="M510,296 V234" marker-end="url(#a)"/>
+        <text class="lbl" x="518" y="270">lignes, états</text>
+
+
+        <path class="ar" d="M770,88 V118 H570 V146" marker-end="url(#a)"/>
+        <text class="lbl" x="590" y="110">direct : PR, CI, branches</text>
+
+        <path class="ar" d="M900,88 V296" marker-end="url(#a)"/>
+        <text class="lbl" x="908" y="160">PR +</text>
+        <text class="lbl" x="908" y="176">label</text>
+        <text class="lbl" x="908" y="192">preview</text>
+
+        <path class="ar" d="M800,296 V200 H620" marker-end="url(#a)"/>
+        <text class="lbl" x="660" y="192">état des envs</text>
+
+        <path class="ar" d="M760,350 H620" marker-end="url(#a)"/>
+        <text class="lbl" x="640" y="342">env.ready, URL</text>
+
+        <path class="ar" d="M860,384 V510" marker-end="url(#a)"/>
+        <text class="lbl" x="868" y="470">crée · TTL · détruit</text>
+
+        <path class="ar" d="M174,500 V488 H650 M410,500 V488 M650,500 V488 M510,488 V384" marker-end="url(#a)"/>
+        <rect class="bk" x="108" y="500" width="132" height="22" rx="11"/>
+        <text class="m bkt" x="174" y="515" text-anchor="middle">overseer-daemon</text>
+        <rect class="bk" x="344" y="500" width="132" height="22" rx="11"/>
+        <text class="m bkt" x="410" y="515" text-anchor="middle">overseer-daemon</text>
+        <rect class="bk" x="584" y="500" width="132" height="22" rx="11"/>
+        <text class="m bkt" x="650" y="515" text-anchor="middle">overseer-daemon</text>
+        <text class="lbl" x="150" y="480">connexion sortante · WebSocket via NetBird</text>
+
+        <path class="ad" d="M244,580 H270" marker-end="url(#c)"/>
+        <text class="lbl" x="247" y="572">ssh</text>
+
+        <path class="ar" d="M613,614 V632 H14 V57 H20" marker-end="url(#a)"/>
+        <text class="lbl" x="290" y="627">agent du hub · MCP Jira : crée, commente, met à jour</text>
+      </svg>
+    </div>
+    <div class="legend">
+      <span><i class="sw h"></i>hébergé commun</span>
+      <span><i class="sw e"></i>exécution</span>
+      <span><i class="sw" style="background:var(--hosted);border-color:var(--hosted);border-radius:7px;width:22px"></i>Overseer : -api (hébergé), -daemon (un par station), -app (poste du dev)</span>
+      <span><i class="sw x"></i>externe</span>
+      <span><i class="sw c"></i>flux secondaire ou attache SSH</span>
+    </div>
+  </section>
+
+  <section>
+    <h2>Un concept, un propriétaire</h2>
+    <div class="tbl">
+      <table>
+        <thead><tr><th>Concept</th><th>Propriétaire</th><th>Les autres outils</th></tr></thead>
+        <tbody>
+          <tr><td>Ticket</td><td><span class="chip x">Jira</span></td><td>stockent la clé <code>AS-…</code>, jamais une copie ; TwinFactory le lit en direct, l'agent du hub y écrit par MCP</td></tr>
+          <tr><td>Branche, PR</td><td><span class="chip x">GitHub</span></td><td>stockent l'URL de la PR ; TwinFactory le lit en direct (PR, CI, branches)</td></tr>
+          <tr><td>Session Claude ou Codex (identifiant, reprise) et son worktree (station, chemin, branche)</td><td><span class="chip h">Overseer</span></td><td>passent par son API, reçoivent ses événements</td></tr>
+          <tr><td>Environnement de test (namespace, URL, TTL)</td><td><span class="chip h">Yard</span></td><td>le demandent par un label de PR, lisent son état</td></tr>
+          <tr><td>Feedback, preuves masquées, triage</td><td><span class="chip h">feedback-hub</span></td><td>ne voient que le ticket qui en sort</td></tr>
+                    <tr><td>Vue d'ensemble</td><td><span class="chip h">TwinFactory</span></td><td>rien à faire : elle lit, n'écrit jamais</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="note" style="margin-top:16px">Overseer ne crée aucun environnement : c'est le rôle de Yard. Overseer référence seulement l'env d'une PR. Un env vit aussi longtemps que la PR, une ligne aussi longtemps que le travail d'une personne. Ce sont deux cycles de vie différents, donc deux moteurs.</p>
+  </section>
+
+  <section>
+    <h2>Overseer : sauvegarder les sessions, se souvenir des worktrees</h2>
+    <div class="prose">
+      <p>Le cœur de Overseer tient en deux missions. Tout le reste (relais de commandes, envs, vues avancées) vient après.</p>
+      <ol class="steps" style="margin-bottom:20px">
+        <li><div><strong>Sauvegarder chaque session Claude et Codex</strong> : l'agent, l'identifiant de session pour la reprendre, le ticket, les dates de début et de dernière activité. Une session survit à un redémarrage ou à une machine saturée.</div></li>
+        <li><div><strong>Se souvenir d'où tourne chaque worktree</strong> : la station (Mac, VM SSH ou pod), le chemin, le dépôt et la branche. Retrouver une session, c'est savoir où aller la reprendre.</div></li>
+      </ol>
+    </div>
+    <h3>Trois briques : overseer-daemon, overseer-api, overseer-app</h3>
+    <div class="tbl" style="margin-bottom:20px">
+      <table>
+        <thead><tr><th>Brique</th><th>Où</th><th>Rôle</th></tr></thead>
+        <tbody>
+          <tr><td><code>overseer-daemon</code></td><td><span class="chip e">chaque station</span></td><td>relève les sessions Claude et Codex et les worktrees git de la machine, capte les hooks, garde un registre local et le synchronise</td></tr>
+          <tr><td><code>overseer-api</code></td><td><span class="chip h">hébergé</span></td><td>registre central de toutes les stations, événements pour TwinFactory et JiraPulse, relais des commandes</td></tr>
+          <tr><td><code>overseer-app</code></td><td><span class="chip e">poste du dev</span></td><td>l'interface : CLI <code>overseer</code> (<code>overseer ls</code> : ticket, worktree, station, commande de reprise), puis plugin cmux avec le Board</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="two">
+      <div>
+        <h3>Par personne</h3>
+        <ul>
+          <li>Chaque ligne a un <strong>propriétaire</strong> : un humain, ou un compte agent comme <code>feedback-bot</code>.</li>
+          <li>Le Board d'un dev montre <em>ses</em> lignes, toutes stations confondues : Mac, VM SSH, runner.</li>
+          <li>TwinFactory voit toutes les lignes de tout le monde, en lecture.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Par ticket</h3>
+        <ul>
+          <li>Un ticket porte <strong>plusieurs lignes</strong> : l'agent du hub, puis le dev, puis un reviewer.</li>
+          <li>La vue ticket regroupe ses lignes, ses PR et ses envs.</li>
+          <li>Une ligne sans ticket reste permise (exploration) ; on la rattache plus tard.</li>
+        </ul>
+      </div>
+    </div>
+<pre style="margin-top:20px"><span class="cm">// le contrat central, partagé par tous les clients</span>
+interface Line {
+  id: string;
+  owner: string;                     <span class="cm">// personne ou compte agent</span>
+  ticketKey?: string;                <span class="cm">// AS-1234</span>
+  stationId: string;                 <span class="cm">// mac-bob, vm-node2-dev1, runner-3</span>
+  agent: 'claude' | 'codex';
+  agentSessionId: string;            <span class="cm">// claude --resume / codex resume</span>
+  repo: string;
+  branch: string;
+  worktreePath: string;
+  prUrl?: string;
+  envRef?: string;                   <span class="cm">// id côté Yard, jamais une copie de son état</span>
+  origin: 'dev' | 'feedback';
+  state: 'active' | 'idle' | 'held' | 'hung-up';
+  lastActivityAt: string;
+}</pre>
+  </section>
+
+  <section>
+    <h2>Parcours type : d'un feedback au merge</h2>
+    <ol class="steps">
+      <li><div><span class="chip h who">feedback-hub</span>Un utilisateur signale un problème dans l'app. Le hub capture les preuves et cherche un fix existant.</div></li>
+      <li><div><span class="chip h who">feedback-hub → Overseer</span>Le hub demande une ligne pour <code>feedback-bot</code> sur un runner. Overseer la branche. L'agent crée le ticket <code>AS-…</code> par le MCP Jira, puis corrige sur <code>feedback/AS-…</code>.</div></li>
+      <li><div><span class="chip e who">runner</span>L'agent pousse et ouvre la PR draft avec le label <code>preview</code>.</div></li>
+      <li><div><span class="chip h who">Yard</span>Il voit la PR, crée le namespace, déploie, publie <code>env.ready</code> avec l'URL. Le hub et Overseer l'affichent.</div></li>
+      <li><div><span class="chip h who">feedback-hub</span>Le rapporteur teste sur l'URL et répond ✅ ou ❌. Une réponse relance la même ligne, donc la même session agent.</div></li>
+      <li><div><span class="chip e who">Mac du dev</span>Le dev reprend : <code>overseer patch AS-…</code>. Soit il s'attache en SSH à la ligne du runner (même session), soit il ouvre sa propre ligne locale sur la même branche, avec un résumé de la conversation de l'agent.</div></li>
+      <li><div><span class="chip x who">GitHub</span>Merge. Yard détruit l'env, Overseer raccroche les lignes, TwinFactory se met à jour.</div></li>
+    </ol>
+    <p class="note" style="margin-top:16px">Une session Claude ou Codex vit dans les fichiers de la station où elle a tourné. La reprendre « telle quelle » impose d'être sur cette station, d'où l'attache SSH. Sinon on la remplace par une nouvelle ligne qui hérite du contexte.</p>
+  </section>
+
+  <section>
+    <h2>Cahier des charges par outil</h2>
+    <p class="prose">Pour chaque outil : sa mission, ce qu'il doit faire, ce qu'il ne fait pas, et le test qui dit que la première version est livrée.</p>
+    <div class="specs">
+
+      <article class="spec">
+        <header><h3><code>overseer-daemon</code></h3><span class="chip e">chaque station</span></header>
+        <p class="mission">Sur chaque machine, sauvegarder les sessions Claude et Codex et savoir où tourne chaque worktree.</p>
+        <h4>Doit</h4>
+        <ul>
+          <li>Découvrir les sessions existantes dans les fichiers de Claude Code et de Codex : identifiant, dossier de travail, dates.</li>
+          <li>Découvrir les worktrees git des dépôts suivis : chemin, dépôt, branche.</li>
+          <li>Rattacher une session à un ticket : déduit du nom de branche (<code>AS-1234</code>) ou fixé à la main.</li>
+          <li>Suivre l'état (active, idle) grâce aux hooks de Claude Code.</li>
+          <li>Garder un registre local qui fonctionne sans réseau, puis le synchroniser vers <code>overseer-api</code> par une connexion sortante.</li>
+          <li>Exécuter les commandes : reprendre, mettre en attente (arrêter le process en gardant l'identifiant), fermer.</li>
+        </ul>
+        <h4>Ne fait pas</h4>
+        <ul>
+          <li>Créer des environnements, écrire dans Jira ou GitHub.</li>
+        </ul>
+        <p class="ok"><strong>Livré quand</strong> : après un redémarrage du Mac, chaque session récente est listée avec son worktree, son ticket et sa commande de reprise, et la reprise fonctionne.</p>
+      </article>
+
+      <article class="spec">
+        <header><h3><code>overseer-api</code></h3><span class="chip h">hébergé</span></header>
+        <p class="mission">Le registre commun de toutes les stations, que les autres outils interrogent.</p>
+        <h4>Doit</h4>
+        <ul>
+          <li>Enrôler une station avec un jeton qui lui est propre.</li>
+          <li>Recevoir les inventaires et les battements de cœur des démons.</li>
+          <li>Répondre aux lectures : lignes par personne, par ticket, par station.</li>
+          <li>Publier les changements d'état des lignes à TwinFactory et feedback-hub.</li>
+          <li>Relayer une commande vers la bonne station, et garder la trace de qui l'a demandée.</li>
+        </ul>
+        <h4>Ne fait pas</h4>
+        <ul>
+          <li>Exécuter du code ou lancer un agent.</li>
+          <li>Stocker le contenu des conversations : seulement leurs métadonnées.</li>
+        </ul>
+        <p class="ok"><strong>Livré quand</strong> : les lignes de deux stations différentes (le Mac et une VM) apparaissent dans une même lecture.</p>
+      </article>
+
+      <article class="spec">
+        <header><h3><code>overseer-app</code></h3><span class="chip e">poste du dev</span></header>
+        <p class="mission">L'interface du dev pour retrouver, reprendre et ranger son travail.</p>
+        <h4>Doit</h4>
+        <ul>
+          <li>V1, en ligne de commande : <code>overseer ls</code>, <code>resume</code>, <code>hold</code>, <code>close</code>, <code>link &lt;ticket&gt;</code>.</li>
+          <li>Reprendre une session distante par SSH sans que le dev ait à savoir où elle tourne.</li>
+          <li>Montrer combien de sessions sont actives, pour éviter de saturer la RAM.</li>
+          <li>V2, en plugin cmux : un Board par ticket, l'accès au diff, au commit et au stash du worktree.</li>
+        </ul>
+        <h4>Ne fait pas</h4>
+        <ul>
+          <li>Garder son propre état : tout vient du démon local.</li>
+        </ul>
+        <p class="ok"><strong>Livré quand</strong> : <code>overseer ls</code> puis <code>overseer resume</code> rouvrent une session de la veille, en local comme sur une VM.</p>
+      </article>
+
+      <article class="spec">
+        <header><h3>Yard</h3><span class="chip h">hébergé · kube</span></header>
+        <p class="mission">Un environnement éphémère par PR sur Kubernetes, sans que personne n'ait à le demander à la main.</p>
+        <h4>Doit</h4>
+        <ul>
+          <li>Se déclencher sur le label <code>preview</code> d'une PR.</li>
+          <li>Créer un namespace, y déployer les services de la PR et une copie de base.</li>
+          <li>Publier l'état et l'URL de l'env.</li>
+          <li>Appliquer un TTL et un plafond, et tout supprimer au merge ou à la fermeture de la PR.</li>
+          <li>Refuser les images Docker sous le seuil d'efficience des couches (décision de la réunion du 28/10).</li>
+        </ul>
+        <h4>Ne fait pas</h4>
+        <ul>
+          <li>Connaître les sessions, les personnes ou les tickets.</li>
+        </ul>
+        <p class="ok"><strong>Livré quand</strong> : poser le label donne une URL qui fonctionne, et fermer la PR supprime le namespace.</p>
+      </article>
+
+      <article class="spec">
+        <header><h3>feedback-hub</h3><span class="chip h">hébergé</span></header>
+        <p class="mission">La pré-qualification : un retour utilisateur devient un ticket documenté, un fix en draft et une preview à valider.</p>
+        <h4>Doit (il garde)</h4>
+        <ul>
+          <li>Le widget, le picker, le masquage, les captures et le replay vidéo.</li>
+          <li>Les appels backend des 30 dernières secondes.</li>
+          <li>Le dédoublonnage et la recherche de fix existants.</li>
+          <li>Le triage, Slack, la page de thread. Jira passe par son agent et le MCP Jira.</li>
+          <li>Les règles de qualification : checks des dépôts, retries, verdicts.</li>
+        </ul>
+        <h4>Délègue</h4>
+        <ul>
+          <li>Les previews à <strong>Yard</strong>, par le label de PR.</li>
+          <li>Les worktrees et les sessions de l'agent à <strong>Overseer</strong>, par une ligne <code>feedback-bot</code>.</li>
+          <li>Pour migrer sans casse : un port <code>Workspace</code> et un port <code>Previews</code>, chacun avec un adaptateur <code>embedded</code> (le code actuel, en local) et un adaptateur <code>remote</code>.</li>
+        </ul>
+        <p class="ok"><strong>Livré quand</strong> : un feedback aboutit à un ticket, une PR draft et une preview Yard, sans aucun worktree ni port local côté hub.</p>
+      </article>
+
+      <article class="spec">
+        <header><h3>TwinFactory</h3><span class="chip h">hébergé</span></header>
+        <p class="mission">L'inventaire visuel de l'usine. Elle montre, elle ne pilote pas, et elle n'est pas le poste de travail des devs (décision de la réunion du 28/10).</p>
+        <h4>Doit</h4>
+        <ul>
+          <li>Lire quatre sources en direct : Jira, GitHub, <code>overseer-api</code>, Yard.</li>
+          <li>Vue ticket : ses lignes, ses PR, sa CI, son env.</li>
+          <li>Vue stations : chaque agent, où il tourne, actif, idle ou en attente.</li>
+          <li>Offrir un lien « reprendre » qui ouvre la session dans <code>overseer-app</code>.</li>
+        </ul>
+        <h4>Ne fait pas</h4>
+        <ul>
+          <li>Écrire où que ce soit, ou envoyer une commande.</li>
+        </ul>
+        <p class="ok"><strong>Livré quand</strong> : un ticket affiche ensemble sa PR, son env Yard et les sessions qui y travaillent.</p>
+      </article>
+
+    </div>
+  </section>
+
+  <section>
+    <h2>À trancher</h2>
+    <div class="decisions">
+      <div class="decision">
+        <h3>1. Comment on demande un env</h3>
+        <ol>
+          <li><span class="rec">Label sur la PR, lu par Yard (recommandé).</span> Couplage le plus faible : personne n'appelle Yard.</li>
+          <li>API de Yard, appelée par le hub ou Overseer. Utile pour un env sans PR.</li>
+          <li>Les deux : label par défaut, API pour les cas particuliers.</li>
+        </ol>
+      </div>
+      <div class="decision">
+        <h3>2. Quand le dev reprend la ligne d'un agent</h3>
+        <ol>
+          <li><span class="rec">Attache SSH par défaut, nouvelle ligne locale au choix (recommandé).</span></li>
+          <li>Toujours une nouvelle ligne locale, avec résumé.</li>
+          <li>Toujours l'attache SSH.</li>
+        </ol>
+      </div>
+      <div class="decision">
+        <h3>3. Sur quoi construire Yard</h3>
+        <ol>
+          <li><span class="rec">L'outil qu'Alice installe pour Kubernetes, enrichi d'un statut publié (recommandé).</span></li>
+          <li>Un opérateur maison avec une ressource <code>PreviewEnv</code>.</li>
+          <li>Les workflows GitHub Actions qui déploient sur label.</li>
+        </ol>
+      </div>
+    </div>
+  </section>
+</main>
+
+</body></html>

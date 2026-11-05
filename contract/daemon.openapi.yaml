@@ -1,0 +1,2784 @@
+openapi: 3.1.0
+info:
+  title: overseer-daemon local API
+  version: 0.2.0
+  description: >
+    HTTP/1.1 over a Unix socket at $STATE_DIR/daemon.sock (mode 0600, dir 0700).
+    STATE_DIR is ~/.local/state/overseer on Linux and ~/Library/Application Support/overseer on macOS.
+    The CLI and the Board are thin clients. No authentication beyond socket file permissions.
+    The Board page is GET /board (outside /v1, plus /board/board.js and /board/board.css), on the
+    socket and, with `daemon --http`, on 127.0.0.1 where every request needs the per-start ?token=
+    (ADR 0012).
+servers:
+  - url: http://unix/v1
+paths:
+  /status:
+    get:
+      summary: Daemon, station and sync status (used by overseer doctor)
+      operationId: status
+      responses:
+        "200":
+          description: Status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  stationId: { type: string }
+                  version: { type: string }
+                  apiConnected: { type: boolean }
+                  outboxPending: { type: integer }
+                  activeCount: { type: integer }
+                  memUsedBytes: { type: integer }
+                  memTotalBytes: { type: integer }
+                  idleCount: { type: integer }
+                  heldCount: { type: integer }
+                  aliveCount: { type: integer }
+                  agentRssBytes: { type: integer }
+                  orphans: { type: array, items: { type: string }, description: Line ids }
+                  duplicates: { type: array, items: { type: string }, description: Line ids }
+                  daemon: { type: boolean }
+  /lines:
+    get:
+      summary: Lines (local, or all stations through the API with scope=all)
+      operationId: listLines
+      parameters:
+        - { name: scope, in: query, schema: { type: string, enum: [local, all], default: local } }
+        - { name: all, in: query, description: Include lines older than 7 days, schema: { type: boolean, default: false } }
+        - { name: ticketKey, in: query, schema: { type: string } }
+        - { name: repo, in: query, schema: { type: string } }
+        - { name: state, in: query, schema: { type: string } }
+      responses:
+        "200":
+          description: Lines with local details
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/LocalLine" }
+  /lines/{lineId}/resume:
+    post:
+      summary: Resume a line (local relaunch, or SSH attach plan for a remote one)
+      operationId: resume
+      parameters:
+        - { name: lineId, in: path, required: true, schema: { type: string } }
+        - { name: dryRun, in: query, description: "Default true, except with target term where it defaults to false", schema: { type: boolean } }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                target: { type: string, enum: [tmux, term], default: tmux }
+                cols: { type: integer }
+                rows: { type: integer }
+                attachOnly: { type: boolean, description: "target term: attach to a running or held term only; 409 instead of starting the agent" }
+      responses:
+        "201":
+          description: "target term: the new daemon term running the resume argv (contract/app-daemon.md §4)"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Term" }
+        "400":
+          description: target term on a line of another station
+        "200":
+          description: The command that was (or would be) run
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [argv, cwd, where]
+                properties:
+                  lineId: { type: string }
+                  argv: { type: array, items: { type: string } }
+                  cwd: { type: string }
+                  where: { type: string, enum: [tmux-pane, tmux-session, term], description: "held pane, else a detached session (ADR 0016); the daemon never execs" }
+                  pane: { type: [string, "null"] }
+                  session: { type: [string, "null"] }
+        "409":
+          description: Line is running, cwd missing, or tmux failed
+  /lines/{lineId}/hold:
+    post:
+      summary: Hold a line if every safety predicate passes
+      operationId: hold
+      parameters:
+        - { name: lineId, in: path, required: true, schema: { type: string } }
+        - { name: dryRun, in: query, schema: { type: boolean, default: true } }
+      responses:
+        "200":
+          description: Predicate results and action taken
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/HoldResult" }
+        "409":
+          description: Refused
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/HoldResult" }
+  /lines/{lineId}/close:
+    post:
+      summary: Mark hung-up (does not stop a running process unless hold succeeds first)
+      operationId: close
+      parameters:
+        - { name: lineId, in: path, required: true, schema: { type: string } }
+        - { name: dryRun, in: query, schema: { type: boolean, default: true } }
+      responses:
+        "200":
+          description: Closed or would close
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/HoldResult" }
+        "409":
+          description: Refused (a hold predicate failed on a live line)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/HoldResult" }
+  /lines/{lineId}/link:
+    post:
+      summary: Link a ticket
+      operationId: link
+      parameters:
+        - { name: lineId, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ticketKey]
+              properties:
+                ticketKey: { type: string, pattern: "^AS-[0-9]+$" }
+      responses:
+        "200": { description: Linked }
+  /lines/{lineId}/pin:
+    put:
+      summary: Pin or unpin (pinned lines are never held)
+      operationId: pin
+      parameters:
+        - { name: lineId, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [pinned], properties: { pinned: { type: boolean } } }
+      responses:
+        "200": { description: Updated }
+  /lines/{lineId}/title:
+    put:
+      summary: Set or clear the line's custom title, shown instead of local.title by every client
+      operationId: setLineTitle
+      parameters:
+        - { name: lineId, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [title]
+              properties:
+                title: { type: [string, "null"], description: "Trimmed, control characters turned into spaces, capped at 80 characters; null or blank clears it" }
+      responses:
+        "200":
+          description: Updated (also published as line.updated)
+          content:
+            application/json:
+              schema: { type: object, properties: { lineId: { type: string }, titleOverride: { type: [string, "null"] } } }
+        "400": { description: title missing, or neither a string nor null }
+        "404": { description: Unknown line }
+  /lines/{lineId}/workspace:
+    put:
+      summary: Assign a line to a workspace, overriding the derived membership (null goes back to it)
+      operationId: assignLineWorkspace
+      parameters:
+        - { name: lineId, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/WorkspaceAssignment" }
+      responses:
+        "200":
+          description: Assigned
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [lineId, workspaceId]
+                properties:
+                  lineId: { type: string }
+                  workspaceId: { type: [string, "null"] }
+        "400": { description: Bad body }
+        "404": { description: Unknown line or workspace }
+  /hook-events:
+    post:
+      summary: Ingest one hook event (also accepted as a line appended to $STATE_DIR/spool/*.jsonl)
+      operationId: ingestHookEvent
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/HookEvent" }
+      responses:
+        "202": { description: Accepted }
+  /profiles:
+    get:
+      summary: Agent profiles, default, workspace scopes and what each agent CLI supports
+      operationId: getProfiles
+      responses:
+        "200":
+          description: Profiles
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Profiles" }
+    put:
+      summary: Replace the user profiles, the default and/or the scopes (fields left out are kept)
+      operationId: putProfiles
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                default: { type: string }
+                profiles: { type: array, items: { $ref: "#/components/schemas/Profile" } }
+                scopes: { type: object, additionalProperties: { type: string } }
+      responses:
+        "200":
+          description: Saved; a profiles.changed event follows
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Profiles" }
+        "400": { description: "Unsupported field for an agent, invalid value, reserved id, unknown profile or relative scope path" }
+  /profiles/subagents:
+    get:
+      summary: Subagent definitions (Claude ~/.claude/agents and <project>/.claude/agents, opencode agents)
+      operationId: listSubagents
+      parameters:
+        - { name: cwd, in: query, schema: { type: string }, description: "Project whose definitions are listed too (project wins over user)" }
+      responses:
+        "200":
+          description: Definitions
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  subagents:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        agent: { type: string }
+                        name: { type: string }
+                        scope: { type: string, enum: [user, project] }
+                        path: { type: string }
+                        model: { type: string }
+                        effort: { type: string }
+  /profiles/apply-files:
+    post:
+      summary: Write a profile's per-subagent overrides into Claude subagent frontmatter (dry run by default; .bak-<stamp> backups; only listed files)
+      operationId: applyProfileFiles
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [profile]
+              properties:
+                profile: { type: string }
+                cwd: { type: string }
+                dryRun: { type: boolean, default: true }
+                files: { type: array, items: { type: string }, description: "Required when dryRun is false: the confirmed paths" }
+      responses:
+        "200":
+          description: Planned or written files
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  dryRun: { type: boolean }
+                  files: { type: array, items: { $ref: "#/components/schemas/FileEdit" } }
+  /hooks/status:
+    get:
+      summary: Hook or plugin support and install state per agent
+      operationId: hooksStatus
+      responses:
+        "200":
+          description: Status
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/HooksStatus" }
+  /hooks/install:
+    post:
+      summary: Install Overseer hooks/plugins for the given agents (dry run by default; backups kept)
+      operationId: installHooks
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/HooksRequest" }
+      responses:
+        "200":
+          description: One result per file
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [dryRun, results]
+                properties:
+                  dryRun: { type: boolean }
+                  results: { type: array, items: { $ref: "#/components/schemas/HookResult" } }
+  /hooks/uninstall:
+    post:
+      summary: Remove Overseer's hook entries and plugin files for the given agents (dry run by default)
+      operationId: uninstallHooks
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/HooksRequest" }
+      responses:
+        "200":
+          description: One result per file
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [dryRun, results]
+                properties:
+                  dryRun: { type: boolean }
+                  results: { type: array, items: { $ref: "#/components/schemas/HookResult" } }
+  /events:
+    get:
+      summary: Local SSE stream (Board live updates); replays after Last-Event-ID (last 256 events)
+      operationId: localEvents
+      parameters:
+        - { name: Last-Event-ID, in: header, schema: { type: string } }
+      responses:
+        "200":
+          description: "Event stream: id, event (= type) and data (= envelope) per event; ': ping' every 15 s"
+          content:
+            text/event-stream:
+              schema: { $ref: "schemas/event.schema.json" }
+  /board:
+    get:
+      summary: Lines of every station for the Board (ADR 0012)
+      operationId: board
+      parameters:
+        - { name: all, in: query, schema: { type: boolean, default: false } }
+      responses:
+        "200":
+          description: Board snapshot
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [generatedAt, stationId, stations, lines]
+                properties:
+                  generatedAt: { type: string, format: date-time }
+                  stationId: { type: string }
+                  yardUrl: { type: [string, "null"] }
+                  stations:
+                    type: array
+                    items:
+                      type: object
+                      required: [stationId, local, online, lastSeenAt, activeCount]
+                      properties:
+                        stationId: { type: string }
+                        local: { type: boolean }
+                        online: { type: boolean }
+                        lastSeenAt: { type: string, format: date-time }
+                        activeCount: { type: integer }
+                  lines:
+                    type: array
+                    items:
+                      allOf:
+                        - $ref: "#/components/schemas/LocalLine"
+                        - type: object
+                          required: [online, actionable]
+                          properties:
+                            online: { type: boolean }
+                            actionable: { type: boolean }
+                            reason: { type: string }
+  /pr:
+    get:
+      summary: PR and CI of a branch, read with gh and cached 60 s
+      operationId: pullRequest
+      parameters:
+        - { name: repo, in: query, required: true, schema: { type: string } }
+        - { name: branch, in: query, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: "pr is null when there is none; error is set when gh failed"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error: { type: string }
+                  pr:
+                    type: [object, "null"]
+                    properties:
+                      number: { type: integer }
+                      url: { type: string, format: uri }
+                      state: { enum: [OPEN, CLOSED, MERGED] }
+                      isDraft: { type: boolean }
+                      title: { type: string }
+                      ci: { enum: [success, failure, pending, none] }
+  /lines/{lineId}/diff:
+    get:
+      summary: Read-only worktree diff (status, stat, diff against HEAD, capped at 512 KiB)
+      operationId: worktreeDiff
+      parameters:
+        - { name: lineId, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: "{lineId, worktree, status, stat, diff, truncated}" }
+        "404": { description: Unknown or remote line }
+        "409": { description: Worktree missing }
+  /lines/{lineId}/commit:
+    post:
+      summary: Commit every change of the worktree (git add -A; git commit -m)
+      operationId: worktreeCommit
+      parameters:
+        - { name: lineId, in: path, required: true, schema: { type: string } }
+        - { name: dryRun, in: query, schema: { type: boolean, default: true } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [message], properties: { message: { type: string, minLength: 1 } } }
+      responses:
+        "200": { description: "{lineId, dryRun, files, commit?}" }
+        "400": { description: Message missing }
+        "409": { description: "Refused: mid-turn line, clean or missing worktree, git failure" }
+  /lines/{lineId}/stash:
+    post:
+      summary: Stash every change of the worktree, untracked included
+      operationId: worktreeStash
+      parameters:
+        - { name: lineId, in: path, required: true, schema: { type: string } }
+        - { name: dryRun, in: query, schema: { type: boolean, default: true } }
+      responses:
+        "200": { description: "{lineId, dryRun, files, stash?}" }
+        "409": { description: "Refused: mid-turn line, clean or missing worktree, git failure" }
+  /version:
+    get:
+      summary: Daemon version and protocol (contract/app-daemon.md §2)
+      operationId: version
+      responses:
+        "200":
+          description: Version
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Version" }
+  /upgrade:
+    post:
+      summary: Hot-upgrade the daemon in place, keeping terms (ADR 0034)
+      operationId: upgrade
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                path: { type: string, description: New server binary }
+                version: { type: string, description: "Resolves to $HOME/.overseer/server/<version>/overseer" }
+                force: { type: boolean, default: false, description: Allow a version that is not newer }
+      responses:
+        "202": { description: "{from, to, epoch}: the daemon re-executes itself after the response" }
+        "400": { description: Missing or bad binary }
+        "409": { description: "Incompatible binary (protocol, takeover format, not newer) or an upgrade in progress" }
+        "501": { description: Not supported on this platform (Windows) }
+  /agents:
+    get:
+      summary: Agent CLIs this daemon can start, with detection (contract/app-daemon.md §2a)
+      operationId: listAgents
+      responses:
+        "200":
+          description: Agents in display order
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/Agent" } }
+  /agents/rescan:
+    post:
+      summary: Drop the detection cache and detect the agent CLIs again (contract/app-daemon.md §2a)
+      operationId: rescanAgents
+      responses:
+        "200":
+          description: Agents in display order
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/Agent" } }
+  /env:
+    get:
+      summary: The PATH the daemon uses for agent detection and spawned terms (contract/app-daemon.md §2a); no other variable is exposed
+      operationId: daemonEnv
+      responses:
+        "200":
+          description: PATH and where it came from
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [path, source]
+                properties:
+                  path: { type: string }
+                  source: { type: string, enum: [login-shell, fallback, inherited] }
+  /uploads:
+    post:
+      summary: Store a file for a term on this host and answer its absolute path (contract/app-daemon.md §3a)
+      operationId: upload
+      parameters:
+        - { name: name, in: query, required: true, description: "Percent-encoded file name; sanitised to [A-Za-z0-9._-]", schema: { type: string } }
+        - { name: Content-Length, in: header, required: true, schema: { type: integer, minimum: 0, maximum: 52428800 } }
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema: { type: string, format: binary }
+      responses:
+        "201":
+          description: "Stored as ~/.overseer/u/<6 chars>.<ext> (mode 0600), deleted after 7 days"
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [path, name, size]
+                properties:
+                  path: { type: string }
+                  short: { type: string, description: "path with the home directory written ~" }
+                  name: { type: string }
+                  size: { type: integer }
+        "400": { description: "Empty name, . or .., a name with / \\ or NUL, or a body shorter than Content-Length" }
+        "411": { description: No Content-Length (chunked bodies are refused) }
+        "413": { description: More than 50 MiB }
+  /file:
+    get:
+      summary: Raw bytes of a file on this host, for the app's preview (contract/app-daemon.md §3a-bis)
+      operationId: getFile
+      parameters:
+        - { name: path, in: query, required: true, description: "Percent-encoded path; ~ and ~/ expand to the home directory, relative paths need term", schema: { type: string } }
+        - { name: term, in: query, required: false, description: "Term whose live working directory (else its start cwd) resolves a relative path", schema: { type: string } }
+      responses:
+        "200":
+          description: "The file's bytes; Content-Type from the extension, application/octet-stream when unknown"
+          content:
+            "*/*":
+              schema: { type: string, format: binary }
+        "400": { description: "path missing, relative without a known term, or not a regular file" }
+        "403": { description: Not readable }
+        "404": { description: Does not exist }
+        "413": { description: "More than 50 MiB; the error names the size" }
+  /fs/dirs:
+    get:
+      summary: Subfolders of a folder on this host, for the New workspace folder browser (contract/app-daemon.md §3a-ter)
+      operationId: listDirs
+      parameters:
+        - { name: path, in: query, required: false, description: "Percent-encoded absolute path; absent, empty or ~ is the home directory, ~/ expands to it", schema: { type: string } }
+        - { name: hidden, in: query, required: false, description: "1 also lists names starting with a dot", schema: { type: string, enum: ["1"] } }
+      responses:
+        "200":
+          description: "The canonical folder and its subfolders, sorted case-insensitively, at most 2000"
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [path, parent, home, dirs, truncated]
+                properties:
+                  path: { type: string }
+                  parent: { type: [string, "null"] }
+                  home: { type: string }
+                  truncated: { type: boolean }
+                  dirs:
+                    type: array
+                    items:
+                      type: object
+                      required: [name, path, git]
+                      properties:
+                        name: { type: string }
+                        path: { type: string }
+                        git: { type: boolean, description: "Has a .git entry" }
+        "400": { description: "Relative path, or not a directory" }
+        "403": { description: Not readable }
+        "404": { description: Does not exist }
+  /lifecycle:
+    get:
+      summary: Start-at-boot service status and the after-reboot choice (contract/app-daemon.md, Lifecycle)
+      operationId: lifecycle
+      responses:
+        "200": { description: "{afterReboot, autostart}", content: { application/json: { schema: { type: object } } } }
+    patch:
+      summary: Change afterReboot, install or remove the service, enable lingering
+      operationId: patchLifecycle
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                afterReboot: { type: string, enum: [agents, shells, nothing] }
+                autostart: { type: boolean }
+                linger: { type: boolean, enum: [true] }
+      responses:
+        "200": { description: "Same as GET, plus error when a step failed", content: { application/json: { schema: { type: object } } } }
+        "400": { description: Unknown afterReboot }
+  /ports:
+    get:
+      summary: "TCP listeners opened by processes in daemon terms' process trees (contract/app-daemon.md §7a); changes are also sent as port.opened / port.closed events with a Port as data"
+      operationId: listPorts
+      responses:
+        "200":
+          description: Ports sorted by port number
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/Port" } }
+  /ports/{port}/kill:
+    post:
+      summary: SIGTERM the process listening on a port, only when it is the pid listed for that port in a daemon term's process tree
+      operationId: killPortProcess
+      parameters:
+        - { name: port, in: path, required: true, schema: { type: integer, minimum: 1, maximum: 65535 } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [pid, confirm], properties: { pid: { type: integer }, confirm: { const: true } } }
+      responses:
+        "202":
+          description: SIGTERM sent; port.closed follows once the process lets go of the port
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Port" }
+        "400": { description: Bad port, pid missing or confirm missing }
+        "403": { description: Not allowed to signal that process }
+        "404": { description: The pid does not listen on that port in a daemon term }
+        "410": { description: The process already exited }
+        "501": { description: Not supported on this platform }
+  /terms:
+    get:
+      summary: Daemon-owned terminals, running and exited, oldest first
+      operationId: listTerms
+      responses:
+        "200":
+          description: Terms
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/Term" } }
+    post:
+      summary: Start a program in a new PTY owned by the daemon
+      operationId: createTerm
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TermCreate" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Term" }
+        "400": { description: "Bad body, cwd not a directory, program not found" }
+  /terms/{termId}:
+    parameters:
+      - { name: termId, in: path, required: true, schema: { type: string } }
+    get:
+      summary: One term
+      operationId: getTerm
+      responses:
+        "200":
+          description: Term
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Term" }
+        "404": { description: Unknown term }
+    delete:
+      summary: Forget an exited term
+      operationId: deleteTerm
+      responses:
+        "200": { description: "{deleted: id}" }
+        "404": { description: Unknown term }
+        "409": { description: Still running }
+  /terms/{termId}/resize:
+    post:
+      summary: Resize the PTY
+      operationId: resizeTerm
+      parameters:
+        - { name: termId, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - { $ref: "#/components/schemas/Size" }
+                - { type: object, properties: { client: { type: string, description: "phone or desktop; stored as the Term's sizedBy" } } }
+      responses:
+        "200":
+          description: Term
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Term" }
+        "400": { description: Bad size }
+        "404": { description: Unknown term }
+        "409": { description: Exited }
+  /terms/{termId}/title:
+    put:
+      summary: Set or clear the term's custom title (lives as long as the term, kept across daemon upgrades)
+      operationId: setTermTitle
+      parameters:
+        - { name: termId, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [title], properties: { title: { type: [string, "null"], description: "Same rules as PUT /lines/{lineId}/title" } } }
+      responses:
+        "200":
+          description: Term (also published as term.updated)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Term" }
+        "400": { description: title missing, or neither a string nor null }
+        "404": { description: Unknown term }
+  /terms/{termId}/workspace:
+    put:
+      summary: Assign a term to a workspace, overriding the derived membership (null goes back to it)
+      operationId: assignTermWorkspace
+      parameters:
+        - { name: termId, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/WorkspaceAssignment" }
+      responses:
+        "200":
+          description: Term
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Term" }
+        "400": { description: Bad body }
+        "404": { description: Unknown term or workspace }
+  /terms/{termId}/kill:
+    post:
+      summary: Kill the program (SIGHUP, SIGKILL after 2 s)
+      operationId: killTerm
+      parameters:
+        - { name: termId, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [confirm], properties: { confirm: { const: true } } }
+      responses:
+        "202":
+          description: Kill sent; term.exited follows
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Term" }
+        "400": { description: confirm missing }
+        "404": { description: Unknown term }
+        "409": { description: Already exited }
+  /terms/{termId}/io:
+    get:
+      summary: "WebSocket: scrollback replay then live output (binary); binary in = input; text in = {\"resize\":{cols,rows},\"client\"?:\"phone\"}"
+      operationId: termIo
+      parameters:
+        - { name: termId, in: path, required: true, schema: { type: string } }
+      responses:
+        "101": { description: Switching Protocols }
+        "400": { description: Not a WebSocket upgrade }
+        "404": { description: Unknown term }
+  /lines/{lineId}/activity:
+    get:
+      summary: Side-panel activity parsed from the line's transcript (contract/app-daemon.md §6)
+      operationId: lineActivity
+      parameters:
+        - { name: lineId, in: path, required: true, schema: { type: string } }
+        - { name: since, in: query, description: Only work-log entries changed after this time, schema: { type: string, format: date-time } }
+      responses:
+        "200":
+          description: Activity
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Activity" }
+        "404": { description: Unknown line }
+        "409": { description: Transcript not found }
+  /lines/{lineId}/chat:
+    get:
+      summary: Chat view entries parsed incrementally from the line's transcript (contract/app-daemon.md §6b)
+      operationId: lineChat
+      parameters:
+        - { name: lineId, in: path, required: true, schema: { type: string } }
+        - { name: after, in: query, description: Entries created or changed after this cursor, schema: { type: integer, minimum: 0 } }
+        - { name: before, in: query, description: Entries before this seq (load earlier), schema: { type: integer, minimum: 0 } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 500, default: 200 } }
+      responses:
+        "200":
+          description: Chat page
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [lineId, agent, cursor, reset, more, entries]
+                properties:
+                  lineId: { type: string }
+                  agent: { type: string }
+                  cursor: { type: integer }
+                  reset: { type: boolean }
+                  more: { type: boolean }
+                  model: { type: [string, "null"] }
+                  entries: { type: array, items: { type: object, required: [id, seq, rev, kind] } }
+        "400": { description: Bad cursor or limit }
+        "404": { description: Unknown line }
+        "409": { description: No chat parser for this agent or transcript not found }
+  /lines/{lineId}/chat/agents/{agentId}:
+    get:
+      summary: One Claude subagent's transcript, same page shape as the chat (contract/app-daemon.md §6b)
+      operationId: lineChatAgent
+      parameters:
+        - { name: lineId, in: path, required: true, schema: { type: string } }
+        - { name: agentId, in: path, required: true, schema: { type: string, pattern: "^[A-Za-z0-9]{1,64}$" } }
+        - { name: after, in: query, schema: { type: integer, minimum: 0 } }
+        - { name: before, in: query, schema: { type: integer, minimum: 0 } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 500, default: 200 } }
+      responses:
+        "200":
+          description: Subagent chat page
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [lineId, agentId, agent, cursor, reset, more, entries]
+                properties:
+                  lineId: { type: string }
+                  agentId: { type: string }
+                  agent: { type: string }
+                  cursor: { type: integer }
+                  reset: { type: boolean }
+                  more: { type: boolean }
+                  model: { type: [string, "null"] }
+                  entries: { type: array, items: { type: object, required: [id, seq, rev, kind] } }
+        "400": { description: Bad cursor or limit }
+        "404": { description: Unknown line or subagent }
+        "409": { description: No chat parser for this agent }
+  /lines/{lineId}/commands:
+    get:
+      summary: Custom slash commands of the line's agent
+      operationId: lineCommands
+      parameters:
+        - { name: lineId, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: "{commands: [{name, description, source}]}" }
+        "404": { description: Unknown line }
+  /lines/{lineId}/screen:
+    get:
+      summary: Visible screen text of the line's terminal
+      operationId: lineScreen
+      parameters:
+        - { name: lineId, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: "{lineId, text, cols, rows, source}" }
+        "404": { description: Unknown line }
+        "409": { description: No live terminal }
+  /lines/{lineId}/keys:
+    post:
+      summary: Type named keys into the line's terminal
+      operationId: lineKeys
+      parameters:
+        - { name: lineId, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [keys]
+              properties:
+                keys: { type: array, maxItems: 32, items: { type: string } }
+      responses:
+        "200": { description: "{sent: n}" }
+        "400": { description: Unknown key or too many keys }
+        "404": { description: Unknown line }
+        "409": { description: No live terminal }
+  /tasks:
+    get:
+      summary: Tasks, by project then number
+      operationId: listTasks
+      parameters:
+        - { name: project, in: query, schema: { type: string } }
+        - { name: status, in: query, description: One status or a comma list, schema: { type: string } }
+      responses:
+        "200":
+          description: Tasks
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/Task" } }
+    post:
+      summary: Create a task
+      operationId: createTask
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TaskCreate" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Task" }
+        "400": { description: Invalid }
+  /tasks/{taskId}:
+    parameters:
+      - { name: taskId, in: path, required: true, schema: { type: string } }
+    get:
+      summary: One task
+      operationId: getTask
+      responses:
+        "200":
+          description: Task
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Task" }
+        "404": { description: Unknown task }
+    patch:
+      summary: Edit a task (status in_progress only through /start)
+      operationId: updateTask
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TaskPatch" }
+      responses:
+        "200":
+          description: Task
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Task" }
+        "400": { description: Invalid }
+        "404": { description: Unknown task }
+    delete:
+      summary: Delete a task (worktree and branch kept)
+      operationId: deleteTask
+      responses:
+        "200": { description: "{deleted: id}" }
+        "404": { description: Unknown task }
+        "409": { description: Its term is running }
+  /tasks/{taskId}/start:
+    post:
+      summary: Worktree on task/<number>-<slug> + a daemon term running the agent; prompt typed in
+      operationId: startTask
+      parameters:
+        - { name: taskId, in: path, required: true, schema: { type: string } }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                cols: { type: integer }
+                rows: { type: integer }
+                inPlace: { type: boolean, description: Run in the project checkout instead of a worktree }
+      responses:
+        "200":
+          description: Task, in_progress
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Task" }
+        "404": { description: Unknown task }
+        "409": { description: Term still running, or git failed }
+  /tasks/auto-organize:
+    get:
+      summary: Whether the tick starts the organizer agent on its own (config.json autoOrganize or the stored toggle)
+      operationId: getAutoOrganize
+      responses:
+        "200":
+          description: Current flag
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [enabled]
+                properties:
+                  enabled: { type: boolean }
+    put:
+      summary: Store the auto-organize toggle in the registry
+      operationId: setAutoOrganize
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [enabled]
+              properties:
+                enabled: { type: boolean }
+      responses:
+        "200":
+          description: Stored flag
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [enabled]
+                properties:
+                  enabled: { type: boolean }
+        "400": { description: enabled is not a boolean }
+  /tasks/organize:
+    post:
+      summary: Start the board organizer agent in place for a project, or every project with open tasks
+      operationId: organizeTasks
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                project: { type: string }
+      responses:
+        "200":
+          description: Organizer tasks started
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [started]
+                properties:
+                  started: { type: array, items: { $ref: "#/components/schemas/Task" } }
+        "409": { description: Nothing to organize, or the agent could not start }
+  /tasks/{taskId}/messages:
+    parameters:
+      - { name: taskId, in: path, required: true, schema: { type: string } }
+    get:
+      summary: Messages sent to or from the task, oldest first
+      operationId: listTaskMessages
+      responses:
+        "200":
+          description: Messages
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/TaskMessage" } }
+        "404": { description: Unknown task }
+    post:
+      summary: Send a message to the task's agent (typed in at once when its term runs, else with its next start)
+      operationId: sendTaskMessage
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [body]
+              properties:
+                body: { type: string, minLength: 1, maxLength: 8000 }
+                from: { type: string, description: Sender task id, absent for the user }
+      responses:
+        "201":
+          description: Stored message
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TaskMessage" }
+        "400": { description: Empty or too long body, from equals the task, or unknown from }
+        "404": { description: Unknown task }
+  /tasks/{taskId}/overlaps:
+    get:
+      summary: Other running tasks of the project that changed the same files
+      operationId: taskOverlaps
+      parameters:
+        - { name: taskId, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: Overlaps
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/TaskOverlap" } }
+        "404": { description: Unknown task }
+  /tasks/{taskId}/review:
+    post:
+      summary: approve → completed; reject → in_progress (+ message to the agent); commit → git commit, completed
+      operationId: reviewTask
+      parameters:
+        - { name: taskId, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [action]
+              properties:
+                action: { type: string, enum: [approve, reject, commit] }
+                message: { type: string }
+      responses:
+        "200":
+          description: Result
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [task]
+                properties:
+                  task: { $ref: "#/components/schemas/Task" }
+                  commit: { type: string }
+        "400": { description: Invalid }
+        "404": { description: Unknown task }
+        "409": { description: "No worktree, nothing to commit, term not running" }
+  /projects:
+    get:
+      summary: Git repositories known from lines, config roots/repos, tasks, added and discovered projects
+      operationId: listProjects
+      responses:
+        "200":
+          description: Projects
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  required: [path, name, repo, missing]
+                  properties:
+                    path: { type: string }
+                    name: { type: string }
+                    repo: { type: string }
+                    missing: { type: boolean, description: An added or discovered project whose directory no longer exists }
+                    defaultBranch: { type: string, description: "The repository's default branch (origin/HEAD, else main or master); absent when missing" }
+    post:
+      summary: Add a project (persisted in the daemon registry)
+      operationId: addProject
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [path]
+              properties:
+                path: { type: string, description: "Absolute path (or ~/...) inside a git repository" }
+      responses:
+        "201": { description: "Added: {path, name, repo} with path = the repository's main worktree root" }
+        "200": { description: "Already known: {path, name, repo}" }
+        "400": { description: "Missing or relative path, not a directory, not in a git repository" }
+  /projects/discover:
+    post:
+      summary: Scan discoverRoots for git repositories now and add them as projects (contract/app-daemon.md §5)
+      operationId: discoverProjects
+      responses:
+        "200":
+          description: "{added, projects}: the number of new repositories and the project list"
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [added, projects]
+                properties:
+                  added: { type: integer }
+                  projects: { type: array, items: { type: object } }
+  /workspaces:
+    get:
+      summary: Workspaces (pinned desc, rank, name); auto-creates one per existing project without a workspace or tombstone; auto workspaces whose directory is missing are left out
+      operationId: listWorkspaces
+      responses:
+        "200":
+          description: Workspaces
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/Workspace" } }
+    post:
+      summary: Add a workspace on any directory; clears a tombstone on that path
+      operationId: createWorkspace
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [path]
+              properties:
+                path: { type: string, description: "Absolute path or ~/..., canonicalised" }
+                name: { type: string, minLength: 1, maxLength: 80 }
+                folderId: { type: string }
+                pinned: { type: boolean }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Workspace" }
+        "200":
+          description: The existing workspace on that path (unarchived)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Workspace" }
+        "400": { description: "Missing or relative path, not a directory, unknown folderId, bad name" }
+  /workspaces/{workspaceId}:
+    parameters:
+      - { name: workspaceId, in: path, required: true, schema: { type: string } }
+    patch:
+      summary: Edit a workspace
+      operationId: updateWorkspace
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string, minLength: 1, maxLength: 80 }
+                folderId: { type: [string, "null"], description: null = top level }
+                pinned: { type: boolean }
+                archived: { type: boolean }
+                rank: { type: number }
+                tabs: { type: array, items: { type: string } }
+                notifyIdle: { type: boolean }
+      responses:
+        "200":
+          description: Workspace
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Workspace" }
+        "400": { description: Invalid }
+        "404": { description: Unknown workspace }
+    delete:
+      summary: Delete a workspace; its path gets a tombstone so it is not re-created automatically
+      operationId: deleteWorkspace
+      responses:
+        "200": { description: "{deleted: id}" }
+        "404": { description: Unknown workspace }
+  /folders:
+    get:
+      summary: Folders (rank, name)
+      operationId: listFolders
+      responses:
+        "200":
+          description: Folders
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/Folder" } }
+    post:
+      summary: Create a folder (one level of nesting)
+      operationId: createFolder
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string, minLength: 1, maxLength: 80 }
+                parentId: { type: string, description: A top-level folder }
+                rank: { type: number }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Folder" }
+        "400": { description: "Bad name, parent unknown or not top-level" }
+  /folders/{folderId}:
+    parameters:
+      - { name: folderId, in: path, required: true, schema: { type: string } }
+    patch:
+      summary: Edit a folder
+      operationId: updateFolder
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string, minLength: 1, maxLength: 80 }
+                parentId: { type: [string, "null"] }
+                rank: { type: number }
+                collapsed: { type: boolean }
+      responses:
+        "200":
+          description: Folder
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Folder" }
+        "400": { description: "Parent not top-level, the folder itself, or the folder has sub-folders" }
+        "404": { description: Unknown folder }
+    delete:
+      summary: Delete a folder; its workspaces and sub-folders move to its parent (or the top level)
+      operationId: deleteFolder
+      responses:
+        "200": { description: "{deleted: id}" }
+        "404": { description: Unknown folder }
+  /groups:
+    get:
+      summary: Groups (rank, name)
+      operationId: listGroups
+      responses:
+        "200":
+          description: Groups
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/Group" } }
+    post:
+      summary: Create a group
+      operationId: createGroup
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string, minLength: 1, maxLength: 80 }
+                members: { type: array, items: { $ref: "#/components/schemas/MemberKey" } }
+                rank: { type: number }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Group" }
+        "400": { description: Bad name or key }
+  /groups/{groupId}:
+    parameters:
+      - { name: groupId, in: path, required: true, schema: { type: string } }
+    patch:
+      summary: Edit a group; members (replace), then add, then remove
+      operationId: updateGroup
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string, minLength: 1, maxLength: 80 }
+                rank: { type: number }
+                members: { type: array, items: { $ref: "#/components/schemas/MemberKey" } }
+                add: { type: array, items: { $ref: "#/components/schemas/MemberKey" } }
+                remove: { type: array, items: { $ref: "#/components/schemas/MemberKey" } }
+                notifyIdle: { type: boolean }
+      responses:
+        "200":
+          description: Group
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Group" }
+        "400": { description: Invalid }
+        "404": { description: Unknown group }
+    delete:
+      summary: Delete a group
+      operationId: deleteGroup
+      responses:
+        "200": { description: "{deleted: id}" }
+        "404": { description: Unknown group }
+  /broadcast:
+    post:
+      summary: Type one text into several agents (lines or terms); never logged
+      operationId: broadcast
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [text]
+              description: Exactly one source among lineIds/termIds, workspaceId, groupId
+              properties:
+                text: { type: string, description: Trimmed, non-empty, at most 64 KiB }
+                lineIds: { type: array, items: { type: string } }
+                termIds: { type: array, items: { type: string } }
+                workspaceId: { type: string }
+                groupId: { type: string }
+                onlyIdle: { type: boolean, default: true }
+                queue: { type: boolean, default: false }
+      responses:
+        "200":
+          description: One result per target
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [id, results]
+                properties:
+                  id: { type: string }
+                  results:
+                    type: array
+                    items:
+                      type: object
+                      required: [target, result]
+                      properties:
+                        target: { $ref: "#/components/schemas/MemberKey" }
+                        result: { type: string, enum: [sent, skipped, queued, refused] }
+                        reason: { type: string }
+        "400": { description: "Not exactly one source, empty or too long text, bad types" }
+        "404": { description: Unknown workspace or group }
+  /organize/deterministic:
+    post:
+      summary: Build and store a proposal with the offline rules (cached lines and cached merged state only)
+      operationId: organizeDeterministic
+      responses:
+        "201":
+          description: Stored proposal, pending review
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Proposal" }
+  /organize/proposals:
+    get:
+      summary: The newest 20 proposals, newest first
+      operationId: listProposals
+      responses:
+        "200":
+          description: Proposals
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/Proposal" } }
+    post:
+      summary: Record an agent plan (the MCP propose_organization tool); never applies anything
+      operationId: createProposal
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [plan]
+              properties:
+                plan: { $ref: "#/components/schemas/ProposalPlan" }
+                taskId: { type: string, description: Configurator task that wrote the plan; completed on success }
+      responses:
+        "201":
+          description: Stored proposal, pending review
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Proposal" }
+        "400":
+          description: Invalid plan
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [error, problems]
+                properties:
+                  error: { type: string }
+                  problems: { type: array, items: { type: string } }
+  /organize/proposals/{proposalId}:
+    parameters:
+      - { name: proposalId, in: path, required: true, schema: { type: string } }
+    get:
+      summary: One proposal
+      operationId: getProposal
+      responses:
+        "200":
+          description: Proposal
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Proposal" }
+        "404": { description: Unknown proposal }
+    delete:
+      summary: Dismiss a proposal (status dismissed)
+      operationId: dismissProposal
+      responses:
+        "200":
+          description: Dismissed proposal
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Proposal" }
+        "404": { description: Unknown proposal }
+  /organize/proposals/{proposalId}/apply:
+    parameters:
+      - { name: proposalId, in: path, required: true, schema: { type: string } }
+    post:
+      summary: Run the checked actions in plan order; idempotent, one result per action, logged to actions.log
+      operationId: applyProposal
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [actionIds]
+              properties:
+                actionIds: { type: array, items: { type: string } }
+      responses:
+        "200":
+          description: Per-action results
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [proposalId, results]
+                properties:
+                  proposalId: { type: string }
+                  results: { type: array, items: { $ref: "#/components/schemas/ProposalResult" } }
+        "400": { description: actionIds missing or not strings }
+        "404": { description: Unknown proposal }
+  /organize/start:
+    post:
+      summary: Start a configurator agent (task origin configurator) that writes one proposal and never acts
+      operationId: organizeStart
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [agent]
+              properties:
+                agent: { type: string }
+                model: { type: string }
+                effort: { type: string, description: Defaults to high }
+      responses:
+        "201":
+          description: Started task; mcp is configured for Claude (--mcp-config per launch), manual for other agents
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [task, mcp]
+                properties:
+                  task: { $ref: "#/components/schemas/Task" }
+                  mcp: { type: string, enum: [configured, manual] }
+        "400": { description: Unknown agent or effort }
+        "409": { description: Agent not installed, a configurator already runs, or the term could not start }
+  /organize/sessions:
+    get:
+      summary: Trimmed sessions from the cached scan, old ones included (MCP list_sessions)
+      operationId: organizeSessions
+      parameters:
+        - { name: project, in: query, schema: { type: string } }
+        - { name: sinceDays, in: query, schema: { type: integer, minimum: 0 } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 300 } }
+      responses:
+        "200":
+          description: Sessions, most recent first
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [total, sessions]
+                properties:
+                  total: { type: integer, description: Matching sessions before the limit }
+                  sessions:
+                    type: array
+                    items:
+                      type: object
+                      required: [id, agent, repo, branch, worktreePath, cwdMissing, state, lastActivity, pinned]
+                      properties:
+                        id: { type: string }
+                        agent: { type: string }
+                        title: { type: string }
+                        repo: { type: string }
+                        branch: { type: string }
+                        worktreePath: { type: string }
+                        cwdMissing: { type: boolean }
+                        state: { type: string }
+                        lastActivity: { type: string, format: date-time }
+                        ticket: { type: string }
+                        pinned: { type: boolean }
+                        workspaceId: { type: string }
+                        taskId: { type: string }
+                        taskStatus: { type: string }
+  /organize/layout:
+    get:
+      summary: Workspaces, folders and groups in one call (MCP list_layout)
+      operationId: organizeLayout
+      responses:
+        "200":
+          description: Layout
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [workspaces, folders, groups]
+                properties:
+                  workspaces: { type: array, items: { $ref: "#/components/schemas/Workspace" } }
+                  folders: { type: array, items: { $ref: "#/components/schemas/Folder" } }
+                  groups: { type: array, items: { $ref: "#/components/schemas/Group" } }
+  /organize/projects:
+    get:
+      summary: Known projects from the cached scan (MCP list_projects)
+      operationId: organizeProjects
+      responses:
+        "200":
+          description: Projects, like GET /projects
+          content:
+            application/json:
+              schema: { type: array, items: { type: object } }
+  /review:
+    get:
+      summary: Changed files and hunks of a worktree against its merge base, plus uncommitted and untracked files (ADR 0030)
+      operationId: review
+      parameters:
+        - { $ref: "#/components/parameters/ReviewWorktree" }
+        - { $ref: "#/components/parameters/ReviewLine" }
+        - { $ref: "#/components/parameters/ReviewTask" }
+        - { name: base, in: query, schema: { type: string }, description: "Base ref (default: where the branch was created, task project branch, upstream on the default branch, fork point, origin/HEAD, main, master, develop, trunk)" }
+      responses:
+        "200":
+          description: Review
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Review" }
+        "400": { description: "No target, several targets, or not a git worktree" }
+        "404": { description: Unknown line or task }
+        "409": { description: "The task has no worktree yet, or git failed" }
+  /review/graph:
+    get:
+      summary: Symbols touched by the review, their uses/imports edges and a suggested review order
+      operationId: reviewGraph
+      parameters:
+        - { $ref: "#/components/parameters/ReviewWorktree" }
+        - { $ref: "#/components/parameters/ReviewLine" }
+        - { $ref: "#/components/parameters/ReviewTask" }
+        - { name: branch, in: query, schema: { type: string } }
+        - { name: base, in: query, schema: { type: string } }
+      responses:
+        "200":
+          description: Graph
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ReviewGraph" }
+        "400": { description: "No target, several targets, or not a git worktree" }
+        "404": { description: Unknown line, task or branch }
+        "409": { description: "The task has no worktree yet, or git failed" }
+  /review/file:
+    get:
+      summary: A working-tree file's lines, to expand unchanged context
+      operationId: reviewFile
+      parameters:
+        - { $ref: "#/components/parameters/ReviewWorktree" }
+        - { $ref: "#/components/parameters/ReviewLine" }
+        - { $ref: "#/components/parameters/ReviewTask" }
+        - { name: path, in: query, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: File lines
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [path, lines]
+                properties:
+                  path: { type: string }
+                  lines: { type: array, items: { type: string } }
+        "400": { description: Path outside the worktree }
+        "404": { description: Missing file }
+        "409": { description: Binary or over 2 MiB }
+  /review/bases:
+    get:
+      summary: Local and remote branches for the review's base picker, newest first, with the detected base
+      operationId: reviewBases
+      parameters:
+        - { $ref: "#/components/parameters/ReviewWorktree" }
+        - { $ref: "#/components/parameters/ReviewLine" }
+        - { $ref: "#/components/parameters/ReviewTask" }
+      responses:
+        "200":
+          description: Bases
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [base, default, branches]
+                properties:
+                  base: { type: [string, "null"] }
+                  baseSource: { $ref: "#/components/schemas/ReviewBaseSource" }
+                  default: { type: string }
+                  branches:
+                    type: array
+                    maxItems: 200
+                    items:
+                      type: object
+                      required: [name, remote, head, at, subject]
+                      properties:
+                        name: { type: string }
+                        remote: { type: boolean }
+                        head: { type: string }
+                        at: { type: string, format: date-time }
+                        subject: { type: string }
+        "400": { description: "No target, several targets, or not a git worktree" }
+        "404": { description: Unknown line or task }
+  /review/viewed:
+    put:
+      summary: Mark a file viewed at a diff hash (unviewed again when the hash changes)
+      operationId: reviewViewed
+      requestBody:
+        content:
+          application/json:
+            schema:
+              allOf:
+                - { $ref: "#/components/schemas/ReviewTarget" }
+                - type: object
+                  required: [path, hash, viewed]
+                  properties:
+                    path: { type: string }
+                    hash: { type: string }
+                    viewed: { type: boolean }
+      responses:
+        "200": { description: "{path, hash, viewed}" }
+        "400": { description: Bad body }
+  /review/comments:
+    get:
+      summary: Review threads, sorted by path then line; every worktree without a target
+      operationId: listReviewComments
+      parameters:
+        - { $ref: "#/components/parameters/ReviewWorktree" }
+        - { $ref: "#/components/parameters/ReviewLine" }
+        - { $ref: "#/components/parameters/ReviewTask" }
+        - { name: status, in: query, schema: { type: string }, description: "pending, sent, addressed, resolved, or a comma list" }
+      responses:
+        "200":
+          description: Threads
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/ReviewThread" } }
+    post:
+      summary: Start a thread on a line range, or reply to a thread; the new comment is pending
+      operationId: createReviewComment
+      requestBody:
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - allOf:
+                    - { $ref: "#/components/schemas/ReviewTarget" }
+                    - type: object
+                      required: [path, line, body]
+                      properties:
+                        path: { type: string }
+                        side: { type: string, enum: [new, old], default: new }
+                        line: { type: integer, minimum: 1 }
+                        endLine: { type: integer, minimum: 1 }
+                        body: { type: string }
+                        base: { type: string, description: "The base the review shows, for side old" }
+                - type: object
+                  required: [threadId, body]
+                  properties:
+                    threadId: { type: string }
+                    body: { type: string }
+      responses:
+        "201":
+          description: Thread
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ReviewThread" }
+        "400": { description: "Empty body, bad path, line outside the file" }
+        "404": { description: Unknown thread, line or task }
+  /review/comments/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string }, description: "Thread id (rt-…) or comment id (rc-…)" }
+    patch:
+      summary: "Thread: resolve, reopen, or addressed with the agent's note. Comment: edit a pending comment"
+      operationId: patchReviewComment
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                status: { type: string, enum: [resolved, open, addressed] }
+                note: { type: string }
+                body: { type: string }
+      responses:
+        "200":
+          description: Thread
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ReviewThread" }
+        "400": { description: Bad status or body }
+        "404": { description: Unknown id }
+        "409": { description: "addressed on a pending thread, editing a sent comment" }
+    delete:
+      summary: Discard a pending comment, or a pending thread
+      operationId: deleteReviewComment
+      responses:
+        "200": { description: "{deleted: id}" }
+        "404": { description: Unknown id }
+        "409": { description: Not pending }
+  /review/comments/{id}/apply:
+    post:
+      summary: Apply the thread's last suggestion block to the working tree and resolve it
+      operationId: applyReviewSuggestion
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: Thread (resolved)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ReviewThread" }
+        "409": { description: "No suggestion, outdated, or the lines changed since the comment" }
+  /review/submit:
+    post:
+      summary: Send every pending comment of the worktree as one instruction to its agent (typed only when idle, else queued)
+      operationId: submitReview
+      requestBody:
+        content:
+          application/json:
+            schema:
+              allOf:
+                - { $ref: "#/components/schemas/ReviewTarget" }
+                - type: object
+                  required: [kind]
+                  properties:
+                    kind: { type: string, enum: [comment, request_changes, approve] }
+                    body: { type: string }
+      responses:
+        "200":
+          description: Delivery
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [delivery, threads, text]
+                properties:
+                  delivery: { $ref: "#/components/schemas/ReviewDelivery" }
+                  threads: { type: array, items: { $ref: "#/components/schemas/ReviewThread" } }
+                  text: { type: string, description: The instruction typed into the agent }
+        "400": { description: Bad kind or target }
+        "404": { description: Unknown line or task }
+  /projects/{project}/graph:
+    get:
+      summary: Commits (date order, children first) with parents, refs, HEAD and Overseer overlays (contract 12)
+      operationId: projectGraph
+      parameters:
+        - { name: project, in: path, required: true, description: Percent-encoded absolute path, schema: { type: string } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 2000, default: 300 } }
+        - { name: before, in: query, description: The next cursor of the previous page, schema: { type: string } }
+        - { name: refs, in: query, description: "all | current | agents | comma list of refs", schema: { type: string } }
+      responses:
+        "200":
+          description: Graph page
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GraphPage" }
+        "400": { description: Not in a git repository, bad limit or cursor }
+  /projects/{project}/commits/{sha}:
+    get:
+      summary: One commit with its changed files and diff against the first parent (1 MiB max)
+      operationId: projectCommit
+      parameters:
+        - { name: project, in: path, required: true, schema: { type: string } }
+        - { name: sha, in: path, required: true, schema: { type: string, pattern: "^[0-9a-fA-F]{4,64}$" } }
+      responses:
+        "200": { description: "{sha, parents, author, email, at, committer, committedAt, subject, body, refs, files[], diff, truncated}" }
+        "400": { description: Bad sha or not a repository }
+        "404": { description: Unknown commit }
+  /projects/{project}/branches:
+    post:
+      summary: Create a branch at a commit
+      operationId: createBranch
+      parameters:
+        - { name: project, in: path, required: true, schema: { type: string } }
+      requestBody:
+        content:
+          application/json:
+            schema: { type: object, required: [name, sha], properties: { name: { type: string }, sha: { type: string } } }
+      responses:
+        "201": { description: "{name, sha}" }
+        "400": { description: Invalid name or commit }
+        "409": { description: The branch exists }
+  /projects/{project}/worktrees:
+    get:
+      summary: The main checkout, managed worktrees and orphans with their lifecycle state (contract 13)
+      operationId: listWorktrees
+      parameters:
+        - { name: project, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: Worktrees
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  project: { type: string }
+                  store: { type: string }
+                  base: { type: string }
+                  worktrees: { type: array, items: { $ref: "#/components/schemas/Worktree" } }
+                  orphans: { type: array, items: { $ref: "#/components/schemas/Worktree" } }
+  /worktrees:
+    post:
+      summary: Create a worktree in the store (sb/<agent>/<slug>, sb/<slug> or the given branch) from the base
+      operationId: createWorktree
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [project]
+              properties:
+                project: { type: string }
+                branch: { type: string }
+                base: { type: string }
+                slug: { type: string }
+                agent: { type: string }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Worktree" }
+        "400": { description: Not a repository, invalid branch or base }
+        "409": { description: Branch checked out elsewhere, directory exists, git failed }
+  /worktrees/{worktree}/cleanup:
+    post:
+      summary: Dry-run plan (default) or removal; refuses anything that would lose work
+      operationId: cleanupWorktree
+      parameters:
+        - { name: worktree, in: path, required: true, description: Percent-encoded worktree path, schema: { type: string } }
+      requestBody:
+        content:
+          application/json:
+            schema: { type: object, properties: { dryRun: { type: boolean, default: true }, project: { type: string } } }
+      responses:
+        "200": { description: "{dryRun, id, refused, remove[], keep[]}" }
+        "404": { description: Not a worktree of a known repository }
+        "409": { description: Refused (real run) }
+  /worktrees/{worktree}/merge-base:
+    post:
+      summary: Merge the base branch into the worktree (aborted on conflicts)
+      operationId: mergeBase
+      parameters:
+        - { name: worktree, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: Worktree, content: { application/json: { schema: { $ref: "#/components/schemas/Worktree" } } } }
+        "409": { description: Uncommitted changes or conflicts }
+  /worktrees/{worktree}/cherry-pick:
+    post:
+      summary: Cherry-pick a commit (-x, -m 1 for merges) into the worktree (aborted on conflicts)
+      operationId: cherryPick
+      parameters:
+        - { name: worktree, in: path, required: true, schema: { type: string } }
+      requestBody:
+        content:
+          application/json:
+            schema: { type: object, required: [sha], properties: { sha: { type: string } } }
+      responses:
+        "200": { description: "{commit, worktree}" }
+        "400": { description: Bad sha }
+        "409": { description: Uncommitted changes or conflicts }
+  /github/review-requests:
+    get:
+      summary: Open PRs where the host's gh account is a requested reviewer (direct or team), cached 60 s
+      operationId: githubReviewRequests
+      parameters:
+        - { name: refresh, in: query, schema: { type: string, enum: ["1"] }, description: Bypass the cache }
+      responses:
+        "200":
+          description: Review requests
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [login, prs, fetchedAt]
+                properties:
+                  login: { type: string }
+                  fetchedAt: { type: integer, description: Unix ms }
+                  prs: { type: array, items: { $ref: "#/components/schemas/ReviewRequest" } }
+        "424": { description: "gh missing or not logged in: {error, code: missing|auth}", content: { application/json: { schema: { $ref: "#/components/schemas/GhError" } } } }
+        "502": { description: gh failed, content: { application/json: { schema: { $ref: "#/components/schemas/GhError" } } } }
+        "504": { description: gh timed out }
+  /github/review-requests/{owner}/{repo}/{number}/review:
+    post:
+      summary: Clone if needed, check the PR head out in a review/pr-<number> worktree and start an agent that reviews it and only posts after the user confirms
+      operationId: githubStartReview
+      parameters:
+        - { name: owner, in: path, required: true, schema: { type: string } }
+        - { name: repo, in: path, required: true, schema: { type: string } }
+        - { name: number, in: path, required: true, schema: { type: integer, minimum: 1 } }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [agent]
+              properties:
+                agent: { type: string }
+                model: { type: string }
+                effort: { type: string }
+                cols: { type: integer }
+                rows: { type: integer }
+      responses:
+        "201":
+          description: Started
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [term, worktree, project, branch]
+                properties:
+                  term: { type: object, description: Term }
+                  worktree: { type: string }
+                  project: { type: string }
+                  branch: { type: string, examples: [review/pr-42] }
+        "202":
+          description: Still cloning or fetching after 20 s; the term shows up later with this title
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [pending, title]
+                properties:
+                  pending: { type: boolean, const: true }
+                  title: { type: string, examples: ["PR #42 acme/api"] }
+        "400": { description: Bad owner, repo, number, agent or effort }
+        "409": { description: Agent not installed, worktree or term failed }
+        "424": { description: gh not installed }
+        "502": { description: Clone or fetch failed }
+        "504": { description: Timed out }
+components:
+  schemas:
+    GhError:
+      type: object
+      required: [error, code]
+      properties:
+        error: { type: string }
+        code: { type: string, enum: [missing, auth, failed, timeout, bad] }
+    ReviewRequest:
+      type: object
+      required: [repo, number, title, url, updatedAt, isDraft, additions, deletions, changedFiles, reviewed]
+      properties:
+        repo: { type: string, examples: [acme/api] }
+        number: { type: integer }
+        title: { type: string }
+        url: { type: string }
+        author: { type: [string, "null"] }
+        headRefName: { type: string }
+        baseRefName: { type: string }
+        updatedAt: { type: string, format: date-time }
+        isDraft: { type: boolean }
+        additions: { type: integer }
+        deletions: { type: integer }
+        changedFiles: { type: integer }
+        reviewDecision: { type: [string, "null"], enum: [APPROVED, CHANGES_REQUESTED, REVIEW_REQUIRED, null] }
+        reviewed: { type: boolean, description: The viewer has a submitted review }
+        myState: { type: [string, "null"], description: State of the viewer's latest submitted review }
+        localPath: { type: [string, "null"], description: Known project whose origin is this repo }
+    GraphPage:
+      type: object
+      required: [project, refs, overlays, commits]
+      properties:
+        project: { type: string }
+        repo: { type: string }
+        base: { type: string }
+        head: { type: [object, "null"], properties: { sha: { type: string }, branch: { type: [string, "null"] } } }
+        refs:
+          type: array
+          items:
+            type: object
+            required: [name, kind, sha]
+            properties:
+              name: { type: string }
+              kind: { type: string, enum: [branch, remote, tag] }
+              sha: { type: string }
+              upstream: { type: string }
+              ahead: { type: integer }
+              behind: { type: integer }
+              worktree: { type: string }
+        overlays: { type: array, items: { type: object, description: "branch, sha, worktree, lineId, agent, state, busy, needsInput, taskId, taskNumber, taskStatus, ticketKey, pr" } }
+        commits:
+          type: array
+          items:
+            type: object
+            required: [sha, parents, author, at, subject]
+            properties:
+              sha: { type: string }
+              parents: { type: array, items: { type: string } }
+              author: { type: string }
+              email: { type: string }
+              at: { type: string, format: date-time }
+              subject: { type: string }
+        next: { type: string }
+    Worktree:
+      type: object
+      required: [id, path, project, kind, state]
+      properties:
+        id: { type: string }
+        path: { type: string }
+        project: { type: string }
+        branch: { type: [string, "null"] }
+        head: { type: string }
+        kind: { type: string, enum: [main, managed, orphan] }
+        base: { type: string }
+        state: { type: string, enum: [in_use, idle, stale, missing] }
+        dirty: { type: boolean }
+        changes: { type: integer }
+        ahead: { type: integer }
+        behind: { type: integer }
+        merged: { type: boolean }
+        pushed: { type: boolean }
+        unpushed: { type: integer }
+        locked: { type: boolean }
+        lines: { type: array, items: { type: object } }
+        termIds: { type: array, items: { type: string } }
+        task: { type: object }
+        ticketKey: { type: string }
+        pr: { type: object }
+        sizeBytes: { type: [integer, "null"] }
+        lastActivityAt: { type: string, format: date-time }
+    LocalLine:
+      type: object
+      required: [line]
+      properties:
+        line: { $ref: "schemas/line.schema.json" }
+        local:
+          type: object
+          description: Registry-only data, never synced.
+          properties:
+            pid: { type: integer }
+            rssBytes: { type: integer }
+            busy: { type: boolean }
+            needsInput: { type: boolean }
+            pinned: { type: boolean }
+            heldReason: { type: string, enum: [user, lost] }
+            orphan: { type: boolean }
+            duplicate: { type: boolean }
+            tmuxPane: { type: string, examples: ["%19"] }
+            tmuxSession: { type: string }
+            launchArgs: { type: array, items: { type: string } }
+            resumeCommand: { type: string }
+            title: { type: string }
+            titleOverride: { type: [string, "null"], description: "User-set title (PUT /lines/{lineId}/title); clients show it instead of title when set" }
+            termId: { type: string, description: Daemon term whose pid is the agent pid or one of its ancestors }
+            workspaceId: { type: string, description: "Workspace the line was explicitly assigned to (PUT /lines/{lineId}/workspace)" }
+    HoldResult:
+      type: object
+      required: [predicates, action]
+      properties:
+        predicates:
+          type: object
+          additionalProperties: { type: object, properties: { ok: { type: boolean }, detail: { type: string } } }
+        lineId: { type: string }
+        action: { type: string, enum: [none, would-hold, held, would-close, closed] }
+        steps: { type: array, items: { type: string }, description: Actions planned (dry run) or done }
+        error: { type: string }
+    HookEvent:
+      type: object
+      required: [agent, event, at]
+      properties:
+        agent: { type: string, enum: [claude, codex, gemini, agy, opencode, amp, copilot, cursor] }
+        event: { type: string, description: "Claude names, or the agent's own (BeforeAgent, AfterAgent, userPromptSubmitted, agentStop, beforeSubmitPrompt, stop, ...) mapped onto them", examples: [SessionStart, UserPromptSubmit, Stop, Notification, PermissionRequest, SessionEnd] }
+        at: { type: string, format: date-time }
+        sessionId: { type: string }
+        cwd: { type: string }
+        pid: { type: integer, description: Parent agent pid seen by the hook. }
+        tmuxPane: { type: string }
+        termId: { type: string, description: "OVERSEER_TERM_ID of the daemon term the agent runs in; keys agents without session files" }
+        notificationType: { type: string, description: "Notification type, e.g. idle_prompt, permission_prompt, ToolPermission, agent_completed" }
+    HooksRequest:
+      type: object
+      properties:
+        agents: { type: array, items: { type: string }, description: "Agent ids; all hookable agents when omitted" }
+        dryRun: { type: boolean, default: true }
+    HookResult:
+      type: object
+      required: [agent, path, changed, written, diff]
+      properties:
+        agent: { type: string }
+        path: { type: string }
+        changed: { type: boolean }
+        written: { type: boolean }
+        diff: { type: string, description: Unified diff of the file, empty when unchanged }
+        backup: { type: string }
+        error: { type: string }
+        skipped: { type: string, examples: ["not configured on this station", "nothing to remove"] }
+        note: { type: string, description: "Codex: re-trust the hooks in codex" }
+    HooksStatus:
+      type: object
+      required: [shim, agents]
+      properties:
+        shim: { type: string, description: "Binary the hooks call (~/.overseer/bin/overseer)" }
+        agents:
+          type: array
+          items:
+            type: object
+            required: [agent, name, mechanism, cliInstalled, configured, installed, current]
+            properties:
+              agent: { type: string }
+              name: { type: string }
+              mechanism: { type: string, enum: [hooks, plugin, polling] }
+              cliInstalled: { type: boolean }
+              configured: { type: boolean, description: CLI on PATH or its config dir exists }
+              installed: { type: boolean, description: Overseer entries present }
+              current: { type: boolean, description: Installed and identical to what install would write }
+              path: { type: string }
+              note: { type: string }
+    Version:
+      type: object
+      required: [version, commit, os, arch, protocol]
+      properties:
+        version: { type: string }
+        commit: { type: string }
+        os: { type: string, enum: [linux, macos, windows] }
+        arch: { type: string, examples: [x86_64, aarch64] }
+        protocol: { type: integer, const: 1 }
+        epoch: { type: integer, description: "0 on a fresh start, +1 per hot upgrade (GET /v1/version only)" }
+        pid: { type: integer, description: "Daemon pid (GET /v1/version only)" }
+        upgradedFrom: { type: string, description: "Previous version, only after a hot upgrade" }
+    Size:
+      type: object
+      required: [cols, rows]
+      properties:
+        cols: { type: integer, minimum: 1, maximum: 1000 }
+        rows: { type: integer, minimum: 1, maximum: 1000 }
+    Agent:
+      type: object
+      required: [id, name, installed, efforts, resume, verified, sessions, turns]
+      properties:
+        id: { type: string, enum: [claude, codex, gemini, agy, opencode, amp, copilot, cursor, shell] }
+        name: { type: string }
+        installed: { type: boolean, description: "On PATH and `<bin> --version` exits 0 within 5 s (cached 60 s)" }
+        version: { type: string, description: First line of `--version` }
+        models: { type: array, items: { type: string }, description: "Absent: free text. Empty: the agent takes no model." }
+        efforts: { type: array, items: { type: string, enum: [low, medium, high, max] }, description: Empty when the agent has no effort setting }
+        resume: { type: boolean }
+        verified: { type: boolean, description: Flags checked against the CLI's --help }
+        sessions: { type: boolean, description: Lines found in the agent's own session files (activity available) }
+        turns: { type: boolean, description: End of a turn is detected (hooks); otherwise only the agent's exit moves a task }
+        install: { type: string, description: Install command hint }
+    Port:
+      type: object
+      required: [port, addr, pid, process, termId, project, since]
+      properties:
+        port: { type: integer, minimum: 1, maximum: 65535 }
+        addr: { type: string, description: "Widest bound address: 0.0.0.0, ::, a specific address, 127.0.0.1 or ::1" }
+        pid: { type: integer }
+        process: { type: string, description: Short command name of the listening process }
+        termId: { type: string }
+        lineId: { type: string, description: Absent when the term has no line }
+        project: { type: string, description: Repository root of the term's cwd, else the cwd }
+        since: { type: string, format: date-time }
+    TermCreate:
+      type: object
+      properties:
+        cwd: { type: string, description: Default $HOME }
+        cmd: { type: array, items: { type: string }, description: Default the login shell }
+        agent: { type: string, description: "Agent id (GET /agents); the daemon builds the argv. Not with cmd." }
+        model: { type: string, description: With agent }
+        effort: { type: string, enum: [low, medium, high, max], description: With agent }
+        profile: { type: string, description: "With agent: agent profile id, or none for the CLI defaults. Omitted: the profile scoped to cwd, else the default profile. Explicit model/effort win over the profile." }
+        env: { type: object, additionalProperties: { type: string } }
+        cols: { type: integer, default: 80 }
+        rows: { type: integer, default: 24 }
+        title: { type: string }
+        lineId: { type: string }
+        taskId: { type: string }
+        worktree:
+          description: "true or {branch, base, slug}: run in a new worktree of the repository of cwd (contract 13)"
+          oneOf:
+            - { type: boolean }
+            - { type: object, properties: { branch: { type: string }, base: { type: string }, slug: { type: string } } }
+    ProfileChip:
+      type: object
+      description: What a term was started with, for display
+      properties:
+        id: { type: string }
+        name: { type: string }
+        model: { type: string }
+        effort: { type: string }
+    ProfileAgent:
+      type: object
+      properties:
+        model: { type: string }
+        effort: { type: string, enum: [low, medium, high, max] }
+        subagentModel: { type: string }
+        subagentEffort: { type: string, enum: [low, medium, high, max] }
+        subagentForce: { type: boolean }
+        smallModel: { type: string }
+        subagents:
+          type: object
+          additionalProperties:
+            type: object
+            properties:
+              model: { type: string }
+              effort: { type: string, enum: [low, medium, high, max] }
+    Profile:
+      type: object
+      required: [id, name, agents]
+      properties:
+        id: { type: string, pattern: "^[A-Za-z0-9._-]{1,64}$" }
+        name: { type: string, maxLength: 40 }
+        builtin: { type: boolean }
+        agents: { type: object, additionalProperties: { $ref: "#/components/schemas/ProfileAgent" } }
+    Profiles:
+      type: object
+      required: [default, profiles, scopes, support]
+      properties:
+        default: { type: string, description: "Profile id for new sessions and tasks; empty: CLI defaults" }
+        profiles: { type: array, items: { $ref: "#/components/schemas/Profile" }, description: Built-ins (economy, balanced, max) first }
+        scopes: { type: object, additionalProperties: { type: string }, description: "Absolute path → profile id; the longest prefix of the session cwd or task project wins" }
+        support:
+          type: object
+          description: "Per agent id, the settable fields and how each is applied: flag, env or file"
+          additionalProperties: { type: object, additionalProperties: true }
+    FileEdit:
+      type: object
+      properties:
+        path: { type: string }
+        name: { type: string }
+        scope: { type: string, enum: [user, project] }
+        changes: { type: array, items: { type: object, properties: { key: { type: string }, from: { type: string }, to: { type: string } } } }
+        written: { type: boolean }
+        backup: { type: string }
+        error: { type: string }
+    Term:
+      type: object
+      required: [id, pid, cwd, cmd, title, cols, rows, createdAt, exited]
+      properties:
+        id: { type: string }
+        pid: { type: integer }
+        cwd: { type: string }
+        cmd: { type: array, items: { type: string } }
+        title: { type: string }
+        titleOverride: { type: [string, "null"], description: "User-set title (PUT /terms/{termId}/title); clients show it instead of title when set" }
+        cols: { type: integer }
+        rows: { type: integer }
+        createdAt: { type: string, format: date-time }
+        exited: { type: boolean }
+        exitCode: { type: integer }
+        lineId: { type: string }
+        taskId: { type: string }
+        agent: { type: string, description: "Agent id when cmd[0] is an agent's binary" }
+        sizedBy: { type: string, description: "Kind of client that set the current size (phone, desktop)" }
+        profile: { $ref: "#/components/schemas/ProfileChip" }
+        workspaceId: { type: string, description: "Workspace the term was explicitly assigned to (PUT /terms/{termId}/workspace)" }
+    WorkspaceAssignment:
+      type: object
+      required: [workspaceId]
+      properties:
+        workspaceId: { type: [string, "null"], description: "Workspace id; null clears the assignment" }
+    TaskCreate:
+      type: object
+      required: [title, project]
+      properties:
+        title: { type: string, minLength: 1 }
+        description: { type: string }
+        project: { type: string, description: Path inside a git repository }
+        status: { type: string, enum: [pending, auto], default: pending }
+        agent: { type: string, enum: [claude, codex, gemini, agy, opencode, amp, copilot, cursor], default: claude }
+        rank: { type: number, description: Default the creation time in ms }
+        model: { type: string, default: "" }
+        effort: { type: string, enum: [low, medium, high, max], description: "Default high, or empty when the resolved profile sets an effort for the agent" }
+        ticketKey: { type: string, pattern: "^AS-[0-9]+$" }
+        profile: { type: string, description: "Agent profile id or none; omitted: resolved at start from the project's scope, else the default" }
+        urgent: { type: [boolean, "null"] }
+        important: { type: [boolean, "null"] }
+        origin: { type: string, enum: [user, agent], default: user }
+        parentId: { type: string, description: Id of an existing task, the one whose agent creates this task }
+        dependsOn: { type: array, items: { type: string }, description: "Ids of existing tasks this one waits on; 400 when one is unknown" }
+        inheritBranch: { type: boolean, description: "With exactly one dependency, start from its branch (default true)" }
+        attachments:
+          type: array
+          maxItems: 20
+          description: "Files from POST /v1/uploads; each moves to ~/.overseer/tasks/{id}/ (out of the 7-day upload sweep, removed with the task) and its path is listed under \"Attachments:\" at the end of the description. 400 when a path is not a file in the upload folder"
+          items:
+            type: object
+            required: [path]
+            properties:
+              path: { type: string, description: The `path` returned by POST /v1/uploads }
+              name: { type: string, description: File name to keep; sanitised like an upload name }
+    TaskPatch:
+      type: object
+      properties:
+        title: { type: string, minLength: 1 }
+        description: { type: string }
+        status: { type: string, enum: [pending, auto, in_testing, completed] }
+        agent: { type: string, enum: [claude, codex, gemini, agy, opencode, amp, copilot, cursor] }
+        model: { type: string }
+        effort: { type: string, enum: [low, medium, high, max] }
+        rank: { type: number }
+        urgent: { type: [boolean, "null"] }
+        important: { type: [boolean, "null"] }
+        ticketKey: { type: [string, "null"] }
+        profile: { type: [string, "null"] }
+        progress: { oneOf: [{ $ref: "#/components/schemas/Progress" }, { type: "null" }] }
+        dependsOn: { type: array, items: { type: string }, description: "Replaces the list; 400 on an unknown id, the task itself, or a cycle" }
+        inheritBranch: { type: [boolean, "null"] }
+    Progress:
+      type: object
+      required: [done, total]
+      properties:
+        done: { type: integer, minimum: 0 }
+        total: { type: integer, minimum: 0 }
+        note: { type: string }
+    Task:
+      type: object
+      required: [id, number, title, description, project, status, agent, model, effort, station, rank, createdAt, updatedAt]
+      properties:
+        id: { type: string }
+        number: { type: integer }
+        title: { type: string }
+        description: { type: string }
+        project: { type: string }
+        status: { type: string, enum: [pending, auto, in_progress, in_testing, completed] }
+        agent: { type: string, enum: [claude, codex, gemini, agy, opencode, amp, copilot, cursor] }
+        model: { type: string }
+        effort: { type: string, enum: [low, medium, high, max] }
+        station: { type: string }
+        rank: { type: number, description: Order inside a Kanban column (ascending) }
+        ticketKey: { type: string }
+        lineId: { type: string }
+        termId: { type: string }
+        branch: { type: string }
+        worktreePath: { type: string }
+        progress: { $ref: "#/components/schemas/Progress" }
+        error: { type: string }
+        origin: { type: string, enum: [user, session, agent, organizer, configurator], description: "session: created by the daemon for an agent session, its status follows it; agent: created by a task's agent; organizer: the board organizer run; configurator: the Organize my sessions agent (ADR 0038)" }
+        urgent: { type: boolean, description: Omitted when unset }
+        important: { type: boolean, description: Omitted when unset }
+        parentId: { type: string, description: Id of the task whose agent created this one }
+        dependsOn: { type: array, items: { type: string }, description: "Ids of the tasks this one waits on (always present, empty when none)" }
+        inheritBranch: { type: boolean, description: "Omitted when unset (= true): with exactly one dependency the worktree starts from its branch" }
+        manualStatus: { type: string, enum: [in_progress, in_testing, completed], description: Status set by hand on a session task, kept while the session state is unchanged }
+        badges: { type: array, items: { type: string, enum: [needs_input, paused] } }
+        profile: { type: string, description: Agent profile id chosen for this task }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    TaskMessage:
+      type: object
+      required: [id, taskId, from, body, createdAt, delivered]
+      properties:
+        id: { type: string }
+        taskId: { type: string, description: Recipient task }
+        from: { type: [string, "null"], description: Sender task id, null for the user }
+        fromNumber: { type: integer }
+        fromTitle: { type: string }
+        body: { type: string }
+        createdAt: { type: string, format: date-time }
+        delivered: { type: boolean }
+    TaskOverlap:
+      type: object
+      required: [task, files]
+      properties:
+        task:
+          type: object
+          properties:
+            id: { type: string }
+            number: { type: integer }
+            title: { type: string }
+            status: { type: string }
+            branch: { type: [string, "null"] }
+        files: { type: array, items: { type: string } }
+    Activity:
+      type: object
+      required: [lineId, title, goal, status, busy, needsInput, workLog, todos, editedFiles, lastAssistantText]
+      properties:
+        lineId: { type: string }
+        title: { type: string }
+        goal: { type: string }
+        status: { type: string, enum: [active, idle, held, hung-up] }
+        busy: { type: boolean }
+        needsInput: { type: boolean }
+        workLog:
+          type: array
+          items:
+            type: object
+            required: [id, kind, label, state, at, startedAt]
+            properties:
+              id: { type: string }
+              kind: { type: string, enum: [edit, bash, read, search, other] }
+              label: { type: string }
+              path: { type: string }
+              state: { type: string, enum: [running, done, failed] }
+              at: { type: string, format: date-time, description: Last change }
+              startedAt: { type: string, format: date-time }
+        todos:
+          type: array
+          items:
+            type: object
+            required: [text, state]
+            properties:
+              text: { type: string }
+              state: { type: string, enum: [pending, in_progress, completed] }
+        editedFiles: { type: array, items: { type: string } }
+        lastAssistantText: { type: string, maxLength: 500 }
+        aiTitle: { type: [string, "null"], description: Latest title the agent generated (Claude ai-title) }
+        summary: { type: [string, "null"], description: Latest summary entry (Claude compaction, Gemini chat summary) }
+        lastPrompt: { type: [string, "null"], maxLength: 500, description: Latest prompt the agent recorded (Claude last-prompt), cleaned }
+        model: { type: [string, "null"], description: Model of the latest assistant message }
+        at: { type: string, format: date-time, description: Newest entry time, the next since }
+    MemberKey:
+      type: string
+      pattern: "^(line|term):.+$"
+    Workspace:
+      type: object
+      required: [id, name, path, station, folderId, pinned, archived, auto, rank, tabs, notifyIdle, createdAt, updatedAt]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        path: { type: string }
+        station: { type: string }
+        folderId: { type: [string, "null"] }
+        pinned: { type: boolean }
+        archived: { type: boolean }
+        auto: { type: boolean, description: Created from a project }
+        rank: { type: number }
+        tabs: { type: array, items: { type: string }, description: Opaque to the daemon }
+        notifyIdle: { type: boolean, description: Stored only; the app notifies }
+        missing: { type: boolean, description: The directory no longer exists }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    Folder:
+      type: object
+      required: [id, name, parentId, rank, collapsed, createdAt, updatedAt]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        parentId: { type: [string, "null"], description: A top-level folder }
+        rank: { type: number }
+        collapsed: { type: boolean }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    Group:
+      type: object
+      required: [id, name, rank, members, notifyIdle, createdAt, updatedAt]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        rank: { type: number }
+        members: { type: array, items: { $ref: "#/components/schemas/MemberKey" } }
+        notifyIdle: { type: boolean }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    ProposalAction:
+      type: object
+      required: [id, kind]
+      description: >
+        create_folder {name, ref}; create_workspace {path, folder?, pinned?}; move_workspace
+        {workspaceId, folder}; create_group {name, lines}; hold/close/pin/track {lineId};
+        archive_workspace {workspaceId}; set_task_status {taskId, status}. folder is the ref of an
+        earlier create_folder or an existing folder id. label is filled by the daemon.
+      properties:
+        id: { type: string }
+        kind: { type: string, enum: [create_folder, create_workspace, move_workspace, create_group, hold, close, pin, archive_workspace, set_task_status, track] }
+        label: { type: string }
+        name: { type: string }
+        ref: { type: string }
+        path: { type: string }
+        folder: { type: string }
+        pinned: { type: boolean }
+        workspaceId: { type: string }
+        lines: { type: array, items: { type: string } }
+        lineId: { type: string }
+        taskId: { type: string }
+        status: { type: string, enum: [pending, in_testing, completed] }
+    PickUp:
+      type: object
+      required: [lineId, summary, why]
+      properties:
+        lineId: { type: string }
+        summary: { type: string }
+        why: { type: string, enum: [dirty, todos, recent] }
+        title: { type: string }
+        branch: { type: string }
+        repo: { type: string }
+        workspaceId: { type: string }
+        edited: { type: integer }
+        todos: { type: integer }
+    ProposalPlan:
+      type: object
+      required: [actions]
+      description: At most 500 actions with unique ids and at most 40 pickUp entries
+      properties:
+        version: { type: integer, enum: [1] }
+        summary: { type: string }
+        actions: { type: array, maxItems: 500, items: { $ref: "#/components/schemas/ProposalAction" } }
+        pickUp: { type: array, maxItems: 40, items: { $ref: "#/components/schemas/PickUp" } }
+        reasons: { type: object, additionalProperties: { type: string }, description: actionId to text }
+    ProposalResult:
+      type: object
+      required: [actionId, kind, status]
+      properties:
+        actionId: { type: string }
+        kind: { type: string }
+        status: { type: string, enum: [done, skipped, failed] }
+        detail: { type: string }
+    Proposal:
+      allOf:
+        - $ref: "#/components/schemas/ProposalPlan"
+        - type: object
+          required: [id, createdAt, status, version, source, summary, actions, pickUp, reasons]
+          properties:
+            id: { type: string }
+            createdAt: { type: string, format: date-time }
+            status: { type: string, enum: [pending_review, applied, dismissed] }
+            source: { type: string, enum: [agent, deterministic] }
+            taskId: { type: string }
+            results: { type: array, items: { $ref: "#/components/schemas/ProposalResult" } }
+    ReviewTarget:
+      type: object
+      description: Exactly one of worktree, lineId, taskId
+      properties:
+        worktree: { type: string }
+        lineId: { type: string }
+        taskId: { type: string }
+    Review:
+      type: object
+      required: [worktree, revision, truncated, files]
+      properties:
+        worktree: { type: string }
+        branch: { type: [string, "null"] }
+        base: { type: [string, "null"] }
+        baseSource: { $ref: "#/components/schemas/ReviewBaseSource" }
+        superproject: { type: [string, "null"], description: The superproject's working tree when the reviewed repository is a submodule }
+        mergeBase: { type: [string, "null"] }
+        head: { type: [string, "null"] }
+        revision: { type: string }
+        truncated: { type: boolean }
+        triage:
+          type: object
+          description: Changed lines per triage kind (contract §11, Triage)
+          properties:
+            changed: { type: integer }
+            byKind: { type: object, additionalProperties: { type: integer } }
+            lowRiskPct: { type: integer }
+        files:
+          type: array
+          items:
+            type: object
+            required: [path, oldPath, status, binary, additions, deletions, hash, viewed, truncated, hunks]
+            properties:
+              path: { type: string }
+              oldPath: { type: string }
+              status: { type: string, enum: [added, modified, deleted, renamed, copied, untracked, submodule] }
+              submodule:
+                type: object
+                description: Only for status submodule; the recorded commits, null when added or removed
+                properties:
+                  from: { type: [string, "null"] }
+                  to: { type: [string, "null"] }
+              risk: { type: integer, minimum: 0, maximum: 100 }
+              residual: { type: integer, description: Changed lines left to review (logic, test, unknown) }
+              binary: { type: boolean }
+              additions: { type: integer }
+              deletions: { type: integer }
+              hash: { type: string }
+              viewed: { type: boolean }
+              truncated: { type: boolean }
+              hunks:
+                type: array
+                items:
+                  type: object
+                  required: [header, oldStart, oldLines, newStart, newLines, lines]
+                  properties:
+                    header: { type: string }
+                    oldStart: { type: integer }
+                    oldLines: { type: integer }
+                    newStart: { type: integer }
+                    newLines: { type: integer }
+                    tags:
+                      type: array
+                      items: { $ref: "#/components/schemas/ReviewTag" }
+                    lines:
+                      type: array
+                      items:
+                        type: object
+                        required: [kind, text]
+                        properties:
+                          kind: { type: string, enum: [ctx, add, del] }
+                          old: { type: integer }
+                          new: { type: integer }
+                          text: { type: string }
+    ReviewBaseSource:
+      type: [string, "null"]
+      enum: [explicit, created, task, upstream, forkpoint, default, null]
+    ReviewTag:
+      type: object
+      required: [kind, from, to]
+      properties:
+        kind: { type: string, enum: [move, format, imports, ident, rename, generated, test, comment, logic, unknown] }
+        from: { type: integer, description: First index in the hunk's lines }
+        to: { type: integer, description: Index after the last line (exclusive) }
+        ref:
+          type: object
+          description: Where a moved block came from or went to
+          properties:
+            path: { type: string }
+            hunk: { type: integer }
+        sig: { type: boolean, description: A logic run that touches a definition line }
+    ReviewGraph:
+      type: object
+      required: [revision, nodes, edges, order, truncated]
+      properties:
+        revision: { type: string }
+        truncated: { type: boolean }
+        nodes:
+          type: array
+          items:
+            type: object
+            required: [id, kind, name, path, line, endLine, hunks, add, del, tag, risk]
+            properties:
+              id: { type: string }
+              kind: { type: string, enum: [fn, type, class, impl, mod, const, component, file] }
+              name: { type: string }
+              path: { type: string }
+              line: { type: integer }
+              endLine: { type: integer }
+              hunks:
+                type: array
+                items: { type: object, properties: { path: { type: string }, hunk: { type: integer } } }
+              add: { type: integer }
+              del: { type: integer }
+              tag: { type: string }
+              risk: { type: integer, minimum: 0, maximum: 100 }
+        edges:
+          type: array
+          items:
+            type: object
+            required: [from, to, kind]
+            properties:
+              from: { type: string }
+              to: { type: string }
+              kind: { type: string, enum: [uses, imports] }
+        order: { type: array, items: { type: string } }
+    ReviewDelivery:
+      type: object
+      required: [id, status, kind, at, threads]
+      properties:
+        id: { type: string }
+        status: { type: string, enum: [delivered, queued, none] }
+        kind: { type: string, enum: [comment, request_changes, approve] }
+        target: { type: [string, "null"], examples: ["term:01JB…", "tmux:%3"] }
+        reason: { type: [string, "null"], description: Why it is still queued }
+        at: { type: string, format: date-time }
+        threads: { type: array, items: { type: string } }
+    ReviewThread:
+      type: object
+      required: [id, worktree, path, side, line, endLine, originalLine, originalEndLine, code, status, outdated, changed, comments, createdAt, updatedAt]
+      properties:
+        id: { type: string }
+        worktree: { type: string }
+        path: { type: string }
+        side: { type: string, enum: [new, old] }
+        line: { type: integer }
+        endLine: { type: integer }
+        originalLine: { type: integer }
+        originalEndLine: { type: integer }
+        code: { type: string, description: The commented lines when the thread was written }
+        status: { type: string, enum: [pending, sent, addressed, resolved] }
+        outdated: { type: boolean }
+        changed: { type: boolean, description: The commented lines changed since the comment }
+        lineId: { type: string }
+        taskId: { type: string }
+        delivery: { $ref: "#/components/schemas/ReviewDelivery" }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        comments:
+          type: array
+          items:
+            type: object
+            required: [id, author, body, pending, createdAt, updatedAt]
+            properties:
+              id: { type: string }
+              author: { type: string, enum: [user, agent] }
+              body: { type: string }
+              pending: { type: boolean }
+              createdAt: { type: string, format: date-time }
+              updatedAt: { type: string, format: date-time }
+  parameters:
+    ReviewWorktree: { name: worktree, in: query, schema: { type: string }, description: Absolute worktree path }
+    ReviewLine: { name: line, in: query, schema: { type: string }, description: Line id }
+    ReviewTask: { name: task, in: query, schema: { type: string }, description: Task id }

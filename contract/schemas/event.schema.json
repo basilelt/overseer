@@ -1,0 +1,68 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://overseer.local/contract/event.schema.json",
+  "title": "Event",
+  "description": "Envelope for every event published by overseer-api (SSE stream and webhooks).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "type", "at", "data"],
+  "properties": {
+    "id": { "type": "string", "description": "Monotonic per API instance; used as SSE id and Last-Event-ID." },
+    "type": {
+      "type": "string",
+      "enum": [
+        "line.created",
+        "line.updated",
+        "line.state_changed",
+        "line.hung_up",
+        "station.online",
+        "station.offline",
+        "command.requested",
+        "command.completed",
+        "term.created",
+        "term.updated",
+        "term.exited",
+        "task.created",
+        "task.updated",
+        "task.deleted",
+        "line.activity",
+        "line.chat",
+        "port.opened",
+        "port.closed"
+      ],
+      "description": "term.*, task.*, line.activity, line.chat and port.* come only from a station daemon's /v1/events (contract/app-daemon.md §7), never from the API."
+    },
+    "at": { "type": "string", "format": "date-time" },
+    "data": { "type": "object" }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "type": { "enum": ["line.created", "line.updated", "line.hung_up"] } } },
+      "then": { "properties": { "data": { "type": "object", "required": ["line"], "properties": { "line": { "$ref": "line.schema.json" } } } } }
+    },
+    {
+      "if": { "properties": { "type": { "const": "line.state_changed" } } },
+      "then": {
+        "properties": {
+          "data": {
+            "type": "object",
+            "required": ["line", "from", "to"],
+            "properties": {
+              "line": { "$ref": "line.schema.json" },
+              "from": { "enum": ["active", "idle", "held", "hung-up"] },
+              "to": { "enum": ["active", "idle", "held", "hung-up"] }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "type": { "enum": ["station.online", "station.offline"] } } },
+      "then": { "properties": { "data": { "type": "object", "required": ["stationId"], "properties": { "stationId": { "type": "string" }, "lastSeenAt": { "type": "string", "format": "date-time" } } } } }
+    },
+    {
+      "if": { "properties": { "type": { "enum": ["command.requested", "command.completed"] } } },
+      "then": { "properties": { "data": { "$ref": "command.schema.json" } } }
+    }
+  ]
+}

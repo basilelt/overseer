@@ -1,0 +1,176 @@
+name: Mobile init
+
+on:
+  workflow_dispatch:
+    inputs:
+      force:
+        description: Regenerate app/src-tauri/gen/{android,apple} even when they exist
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mobile-init-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  android:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.ref_name }}
+
+      - id: need
+        env:
+          FORCE: ${{ inputs.force || false }}
+        run: |
+          if [ -d app/src-tauri/gen/android ] && [ "$FORCE" != "true" ]; then
+            echo "::notice::app/src-tauri/gen/android exists, nothing to do"
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - if: steps.need.outputs.run == 'true'
+        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - if: steps.need.outputs.run == 'true'
+        uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+
+      - if: steps.need.outputs.run == 'true'
+        uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6
+        with:
+          version: 11
+
+      - if: steps.need.outputs.run == 'true'
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: 24
+
+      - if: steps.need.outputs.run == 'true'
+        run: scripts/ci-runner-check.sh cargo rustup pnpm java env:ANDROID_HOME
+
+      - if: steps.need.outputs.run == 'true'
+        run: NDK_HOME=${ANDROID_NDK_HOME:-} scripts/android-env.sh
+
+      - if: steps.need.outputs.run == 'true'
+        run: pnpm --dir app install --frozen-lockfile
+
+      - if: steps.need.outputs.run == 'true'
+        run: |
+          rm -rf app/src-tauri/gen/android
+          pnpm --dir app tauri android init --ci
+          pnpm --dir app tauri icon src-tauri/icons/icon.png
+          git checkout -- app/src-tauri/icons
+          git clean -fdq -- app/src-tauri/icons
+
+      - if: steps.need.outputs.run == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: gen-android
+          path: app/src-tauri/gen/android
+          retention-days: 4
+
+      - if: steps.need.outputs.run == 'true'
+        env:
+          BRANCH: ${{ github.ref_name }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/src-tauri/gen/android
+          git status --short
+          if git diff --cached --quiet; then
+            echo "::notice::no change in app/src-tauri/gen/android"
+            exit 0
+          fi
+          git commit -q -m "build(app): generate the Tauri Android project"
+          git pull -q --rebase origin "$BRANCH"
+          git push origin "HEAD:refs/heads/$BRANCH"
+
+  ios:
+    needs: android
+    runs-on: macos-26
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.ref_name }}
+
+      - id: need
+        env:
+          FORCE: ${{ inputs.force || false }}
+        run: |
+          if [ -d app/src-tauri/gen/apple ] && [ "$FORCE" != "true" ]; then
+            echo "::notice::app/src-tauri/gen/apple exists, nothing to do"
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - if: steps.need.outputs.run == 'true'
+        uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90 # v1
+        with:
+          xcode-version: "26"
+
+      - if: steps.need.outputs.run == 'true'
+        uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          targets: aarch64-apple-ios, aarch64-apple-ios-sim
+
+      - if: steps.need.outputs.run == 'true'
+        uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6
+        with:
+          version: 11
+
+      - if: steps.need.outputs.run == 'true'
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: 24
+
+      - if: steps.need.outputs.run == 'true'
+        run: command -v xcodegen || brew install xcodegen
+
+      - if: steps.need.outputs.run == 'true'
+        run: pnpm --dir app install --frozen-lockfile
+
+      - if: steps.need.outputs.run == 'true'
+        run: |
+          rm -rf app/src-tauri/gen/apple
+          pnpm --dir app tauri ios init --ci
+          pnpm --dir app tauri icon src-tauri/icons/icon.png
+          git checkout -- app/src-tauri/icons
+          git clean -fdq -- app/src-tauri/icons
+
+      - if: steps.need.outputs.run == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: gen-apple
+          path: app/src-tauri/gen/apple
+          retention-days: 4
+
+      - if: steps.need.outputs.run == 'true'
+        env:
+          BRANCH: ${{ github.ref_name }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/src-tauri/gen/apple
+          git status --short
+          if git diff --cached --quiet; then
+            echo "::notice::no change in app/src-tauri/gen/apple"
+            exit 0
+          fi
+          git commit -q -m "build(app): generate the Tauri iOS project"
+          git pull -q --rebase origin "$BRANCH"
+          git push origin "HEAD:refs/heads/$BRANCH"

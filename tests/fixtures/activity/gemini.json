@@ -1,0 +1,13 @@
+{
+  "sessionId": "9b2c4e1a-0000-4000-8000-000000000002",
+  "projectHash": "ab12",
+  "startTime": "2026-10-29T10:00:00.000Z",
+  "lastUpdated": "2026-10-29T10:00:04.000Z",
+  "kind": "main",
+  "summary": "Login fix",
+  "messages": [
+    {"id": "m1", "timestamp": "2026-10-29T10:00:01.000Z", "type": "user", "content": "Fix login"},
+    {"id": "m2", "timestamp": "2026-10-29T10:00:02.000Z", "type": "gemini", "content": "Done.",
+     "toolCalls": [{"id": "write_file_1", "name": "write_file", "args": {"file_path": "/w/a.rs", "content": "x"}, "status": "success", "timestamp": "2026-10-29T10:00:03.000Z"}]}
+  ]
+}

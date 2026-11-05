@@ -1,0 +1,1 @@
+{"type":"user","sessionId":"agent-x","cwd":"{{WT_LOGIN}}","gitBranch":"feature/AS-1234-login","timestamp":"2026-10-28T09:00:30.000Z","version":"2.1.289","entrypoint":"cli","message":{"role":"user","content":"synthetic"}}

@@ -1,0 +1,15 @@
+services:
+  api:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    image: overseer-api:dev
+    ports:
+      - "127.0.0.1:8080:8080"
+    environment:
+      OVERSEER_ADMIN_TOKEN: ${OVERSEER_ADMIN_TOKEN:?export OVERSEER_ADMIN_TOKEN first}
+    volumes:
+      - api-data:/data
+
+volumes:
+  api-data:

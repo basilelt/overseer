@@ -1,0 +1,13 @@
+<key>CFBundleIdentifier</key>
+<string>io.github.basilelt.overseer.open</string>
+<key>CFBundleURLTypes</key>
+<array>
+  <dict>
+    <key>CFBundleURLName</key>
+    <string>Overseer resume link</string>
+    <key>CFBundleURLSchemes</key>
+    <array>
+      <string>overseer</string>
+    </array>
+  </dict>
+</array>

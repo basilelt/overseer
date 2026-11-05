@@ -1,0 +1,13 @@
+[Unit]
+Description=Overseer sync (push lines to overseer-api, receive relayed commands)
+After=overseer-daemon.service
+
+[Service]
+Type=simple
+Environment=OVERSEER_STATE_DIR=%h/.local/state/overseer
+ExecStart=%h/.local/bin/overseer sync
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=default.target

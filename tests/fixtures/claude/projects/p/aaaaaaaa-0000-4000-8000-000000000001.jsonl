@@ -1,0 +1,4 @@
+{"type":"permission-mode","permissionMode":"default","sessionId":"aaaaaaaa-0000-4000-8000-000000000001"}
+{"type":"user","sessionId":"aaaaaaaa-0000-4000-8000-000000000001","cwd":"{{WT_LOGIN}}","gitBranch":"feature/AS-1234-login","timestamp":"2026-10-28T09:00:00.000Z","version":"2.1.289","entrypoint":"cli","message":{"role":"user","content":"synthetic"}}
+{"type":"assistant","sessionId":"aaaaaaaa-0000-4000-8000-000000000001","cwd":"{{WT_LOGIN}}","gitBranch":"feature/AS-1234-login","timestamp":"2026-10-28T09:01:00.000Z","version":"2.1.289","entrypoint":"cli","message":{"role":"assistant","content":"synthetic"}}
+{"type":"ai-title","aiTitle":"Synthetic title","sessionId":"aaaaaaaa-0000-4000-8000-000000000001"}

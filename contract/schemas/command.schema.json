@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://overseer.local/contract/command.schema.json",
+  "title": "Command",
+  "description": "A command on a line, issued locally or relayed by the API. Audited by the API.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "lineId", "kind", "requestedBy", "requestedAt", "status"],
+  "properties": {
+    "id": { "type": "string", "description": "Idempotency key chosen by the requester." },
+    "lineId": { "type": "string" },
+    "kind": { "type": "string", "enum": ["resume", "hold", "close", "link", "relaunch", "start"], "description": "start is issued only by the API for POST /lines (ADR 0009)." },
+    "args": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "ticketKey": { "type": "string", "pattern": "^AS-[0-9]+$" },
+        "message": { "type": "string", "description": "relaunch only: prompt sent to the same agent session. Sent to the station, never stored by the API." },
+        "dryRun": { "type": "boolean", "default": true },
+        "owner": { "type": "string", "description": "start only." },
+        "repo": { "type": "string", "description": "start only." },
+        "branch": { "type": "string", "description": "start only." },
+        "agent": { "enum": ["claude", "codex"], "description": "start only." },
+        "origin": { "enum": ["dev", "feedback"], "description": "start only." },
+        "prompt": { "type": "string", "description": "start only. Sent to the station, never stored by the API." }
+      }
+    },
+    "requestedBy": { "type": "string" },
+    "requestedAt": { "type": "string", "format": "date-time" },
+    "status": { "type": "string", "enum": ["pending", "delivered", "succeeded", "refused", "failed"] },
+    "reason": { "type": "string", "description": "Refusal or failure reason, e.g. a hold predicate that failed." },
+    "completedAt": { "type": "string", "format": "date-time" }
+  }
+}

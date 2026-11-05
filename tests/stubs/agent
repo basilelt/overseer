@@ -1,0 +1,9 @@
+#!/bin/sh
+name=$(basename "$0")
+[ "${1:-}" = "--version" ] && { echo "$name 0.0.0 (stub)"; exit 0; }
+echo "$$ $name $*" >> "${SB_STUB_LOG:?}"
+printf '%s ready\r\n> ' "$name"
+while IFS= read -r l; do
+  [ "$l" = "exit" ] && exit 0
+  printf 'got: %s\r\n> ' "$l"
+done

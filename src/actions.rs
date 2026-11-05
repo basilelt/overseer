@@ -1,0 +1,879 @@
+use crate::hold::{evaluate, Check, HoldInput};
+use crate::procs::mem_bytes;
+use crate::registry::Registry;
+use crate::sys::CommandExt;
+use crate::sys::OpenOptionsExt;
+use crate::util::{format_rfc3339, shell_quote, ticket_any};
+use crate::{scan, Ctx, Line};
+use serde_json::{json, Value};
+use std::io::Write;
+use std::time::Duration;
+
+pub fn find_line<'a>(lines: &'a [Line], q: &str) -> Result<&'a Line, String> {
+    if let Some(l) = lines.iter().find(|l| l.id == q || l.session_id == q) {
+        return Ok(l);
+    }
+    let hits: Vec<&Line> = lines
+        .iter()
+        .filter(|l| {
+            l.session_id.starts_with(q)
+                || l.id.starts_with(q)
+                || l.id
+                    .rsplit('-')
+                    .next()
+                    .is_some_and(|u| u.starts_with(&q.to_ascii_uppercase()))
+        })
+        .collect();
+    match hits[..] {
+        [l] => Ok(l),
+        [] => Err(format!("no line matches '{q}'")),
+        _ => Err(format!(
+            "'{q}' matches {} lines; use more characters",
+            hits.len()
+        )),
+    }
+}
+
+pub fn log_action(ctx: &Ctx, rec: &Value) {
+    let mut rec = rec.clone();
+    rec["at"] = json!(format_rfc3339(ctx.now_ms));
+    let Ok(mut f) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .mode(0o600)
+        .open(ctx.state_dir.join("actions.log"))
+    else {
+        return;
+    };
+    let _ = writeln!(f, "{rec}");
+}
+
+pub fn hold_input(ctx: &Ctx, l: &Line) -> HoldInput {
+    let tmux = ctx.tmux.as_ref();
+    let term = l
+        .pane
+        .is_none()
+        .then(|| crate::deliver::line_term(l))
+        .flatten();
+    HoldInput {
+        agent: l.agent.to_string(),
+        alive: l.alive(),
+        busy: l.busy_known.then_some(l.busy),
+        last_event: l.hook.as_ref().map(|h| h.event.clone()),
+        pane: l.pane.clone(),
+        term: term.as_ref().map(|t| t.info().id),
+        screen: l
+            .pane
+            .as_deref()
+            .and_then(|p| tmux.and_then(|t| t.capture(p)))
+            .or_else(|| term.map(|t| t.grid().ansi())),
+        children: l
+            .pid
+            .map(|p| ctx.probe.children(p).into_iter().map(|c| c.1).collect())
+            .unwrap_or_default(),
+        mcp_hints: ctx.config.mcp_hints.clone(),
+        subagents: l.hook.as_ref().map_or(0, |h| h.subagents),
+        tasks: l.hook.as_ref().map_or(0, |h| h.tasks),
+        pinned: l.pinned,
+        needs_input: l.needs_input,
+        duplicate: l.duplicate,
+    }
+}
+
+pub struct Report {
+    pub line_id: String,
+    pub checks: Vec<Check>,
+    pub action: &'static str,
+    pub steps: Vec<String>,
+    pub error: Option<String>,
+}
+
+impl Report {
+    pub fn ok(&self) -> bool {
+        self.error.is_none() && self.checks.iter().all(|c| c.ok)
+    }
+
+    pub fn to_json(&self) -> Value {
+        let mut v = json!({
+            "lineId": self.line_id,
+            "predicates": crate::hold::to_json(&self.checks),
+            "action": self.action,
+            "steps": self.steps,
+        });
+        if let Some(e) = &self.error {
+            v["error"] = json!(e);
+        }
+        v
+    }
+
+    pub fn text(&self) -> String {
+        let mut s = String::new();
+        for c in &self.checks {
+            let mark = if c.ok { "ok  " } else { "FAIL" };
+            s.push_str(&format!(
+                "  {mark} {}{}\n",
+                c.name,
+                if c.ok {
+                    String::new()
+                } else {
+                    format!(": {}", c.detail)
+                }
+            ));
+        }
+        for st in &self.steps {
+            s.push_str(&format!("  - {st}\n"));
+        }
+        if let Some(e) = &self.error {
+            s.push_str(&format!("  error: {e}\n"));
+        }
+        s.push_str(&format!("  action: {}\n", self.action));
+        s
+    }
+}
+
+pub(crate) fn self_exe() -> String {
+    std::env::current_exe()
+        .map(|p| p.to_string_lossy().into_owned())
+        .unwrap_or_else(|_| "overseer".into())
+}
+
+pub fn stub_command(ctx: &Ctx, line_id: &str) -> String {
+    format!(
+        "trap : INT; OVERSEER_STATE_DIR={} {} stub {}; exec \"${{SHELL:-/bin/sh}}\"",
+        shell_quote(&ctx.state_dir.to_string_lossy()),
+        shell_quote(&self_exe()),
+        shell_quote(line_id)
+    )
+}
+
+fn hold_steps(ctx: &Ctx, l: &Line, stub: bool) -> Vec<String> {
+    if l.pane.is_none() {
+        if let Some(t) = crate::deliver::line_term(l) {
+            let id = t.info().id;
+            return vec![
+                format!(
+                    "record {} as held(user) with launch flags {:?}",
+                    l.id, l.launch_args
+                ),
+                format!("send SIGTERM to agent pid {}", l.pid.unwrap_or(0)),
+                "wait up to 10 s for the agent to exit (abort and revert on timeout)".into(),
+                if stub {
+                    format!(
+                        "start the held stub in term {id}: {}",
+                        stub_command(ctx, &l.id)
+                    )
+                } else {
+                    format!("close term {id}")
+                },
+            ];
+        }
+    }
+    let pane = l.pane.as_deref().unwrap_or("?");
+    vec![
+        format!(
+            "record {} as held(user) with launch flags {:?}",
+            l.id, l.launch_args
+        ),
+        format!("set tmux pane option @sb_held={} on {pane}", l.id),
+        format!("send SIGTERM to agent pid {}", l.pid.unwrap_or(0)),
+        "wait up to 10 s for the agent to exit (abort and revert on timeout)".into(),
+        format!(
+            "start the held stub in {pane}: {}",
+            stub_command(ctx, &l.id)
+        ),
+    ]
+}
+
+fn timeout() -> Duration {
+    Duration::from_millis(
+        std::env::var("OVERSEER_HOLD_TIMEOUT_MS")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(10_000),
+    )
+}
+
+fn wait_exit(ctx: &Ctx, pid: u32, start: &Option<String>) -> bool {
+    let deadline = std::time::Instant::now() + timeout();
+    loop {
+        match ctx.probe.info(pid) {
+            None => return true,
+            Some(i) if i.start != *start => return true,
+            _ => {}
+        }
+        if std::time::Instant::now() > deadline {
+            return false;
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
+}
+
+#[cfg(unix)]
+fn terminate(pid: u32, _t: &crate::term::Term) -> bool {
+    unsafe { libc::kill(pid as i32, libc::SIGTERM) == 0 }
+}
+
+#[cfg(not(unix))]
+fn terminate(_pid: u32, t: &std::sync::Arc<crate::term::Term>) -> bool {
+    t.kill().is_ok()
+}
+
+fn execute_hold_term(
+    ctx: &Ctx,
+    reg: &Registry,
+    l: &Line,
+    t: &std::sync::Arc<crate::term::Term>,
+    stub: bool,
+) -> Result<Vec<String>, String> {
+    let pid = l.pid.ok_or("no pid")?;
+    let start = ctx.probe.info(pid).and_then(|i| i.start);
+    let id = t.info().id;
+    let root = t.info().pid == pid || (stub && is_stub_wrapper(&t.info().cmd));
+    let mut done = vec![];
+    reg.set_mark(&l.id, "held_by_user", Some(&pid.to_string()))?;
+    reg.set_mark(&l.id, "state", Some("held"))?;
+    done.push(format!("recorded {} as held(user)", l.id));
+    t.hold(root);
+    if !terminate(pid, t) || !wait_exit(ctx, pid, &start) {
+        t.hold(false);
+        let _ = reg.set_mark(&l.id, "held_by_user", None);
+        let _ = reg.set_mark(&l.id, "state", Some(l.state));
+        return Err(format!(
+            "agent pid {pid} did not exit; reverted the registry"
+        ));
+    }
+    done.push(format!("agent pid {pid} exited after SIGTERM"));
+    match (root, stub) {
+        (true, true) => {
+            t.respawn(vec![
+                "/bin/sh".into(),
+                "-c".into(),
+                stub_command(ctx, &l.id),
+            ])?;
+            done.push(format!("started the held stub in term {id}"));
+        }
+        (true, false) => {
+            t.finish(None);
+            done.push(format!("closed term {id}"));
+        }
+        (false, true) => done.push(format!("term {id} runs a shell; stub not started")),
+        (false, false) => {
+            t.kill()?;
+            done.push(format!("closed term {id}"));
+        }
+    }
+    Ok(done)
+}
+
+fn execute_hold(ctx: &Ctx, reg: &Registry, l: &Line, stub: bool) -> Result<Vec<String>, String> {
+    if l.pane.is_none() {
+        if let Some(t) = crate::deliver::line_term(l) {
+            return execute_hold_term(ctx, reg, l, &t, stub);
+        }
+    }
+    let tmux = ctx.tmux.as_ref().ok_or("tmux unavailable")?;
+    let pane = l.pane.as_deref().ok_or("no pane")?;
+    let pid = l.pid.ok_or("no pid")?;
+    let start = ctx.probe.info(pid).and_then(|i| i.start);
+    let mut done = vec![];
+    reg.set_mark(&l.id, "held_by_user", Some(&pid.to_string()))?;
+    reg.set_mark(&l.id, "state", Some("held"))?;
+    done.push(format!("recorded {} as held(user)", l.id));
+    tmux.set_pane_option(pane, "@sb_held", Some(&l.id))?;
+    done.push(format!("set @sb_held on {pane}"));
+    let prev_remain = tmux.pane_option(pane, "remain-on-exit");
+    tmux.set_pane_option(pane, "remain-on-exit", Some("on"))?;
+    let restore_remain = || tmux.set_pane_option(pane, "remain-on-exit", prev_remain.as_deref());
+    let killed = crate::git::output_within(
+        std::process::Command::new("kill").args(["-TERM", &pid.to_string()]),
+        crate::git::PROBE_TIMEOUT,
+    )
+    .is_ok_and(|o| o.status.success());
+    if !killed || !wait_exit(ctx, pid, &start) {
+        let _ = reg.set_mark(&l.id, "held_by_user", None);
+        let _ = reg.set_mark(&l.id, "state", Some(l.state));
+        let _ = tmux.set_pane_option(pane, "@sb_held", None);
+        let _ = restore_remain();
+        return Err(format!(
+            "agent pid {pid} did not exit; reverted the registry and the pane option"
+        ));
+    }
+    done.push(format!("agent pid {pid} exited after SIGTERM"));
+    let now = tmux.panes().into_iter().find(|p| p.id == pane);
+    let stub = stub_command(ctx, &l.id);
+    let cwd = if l.cwd_missing { "/" } else { l.cwd.as_str() };
+    let mut args = vec!["respawn-pane", "-t", pane, "-c", cwd];
+    let env_state = format!("OVERSEER_STATE_DIR={}", ctx.state_dir.display());
+    let env_sock = tmux
+        .socket
+        .as_ref()
+        .map(|s| format!("OVERSEER_TMUX_SOCKET={s}"));
+    args.extend(["-e", env_state.as_str()]);
+    if let Some(e) = &env_sock {
+        args.extend(["-e", e.as_str()]);
+    }
+    match now {
+        Some(p) if p.dead => {
+            args.push(&stub);
+            tmux.ok(&args)?;
+            done.push(format!("started the held stub in {pane}"));
+        }
+        Some(p) if ctx.probe.children(p.pid).is_empty() => {
+            args.insert(1, "-k");
+            args.push(&stub);
+            tmux.ok(&args)?;
+            done.push(format!(
+                "replaced the idle shell in {pane} with the held stub"
+            ));
+        }
+        Some(_) => done.push(format!("{pane} runs another program; stub not started")),
+        None => done.push(format!("{pane} is gone; stub not started")),
+    }
+    let _ = restore_remain();
+    Ok(done)
+}
+
+pub fn hold(ctx: &Ctx, q: &str, apply: bool) -> Result<Report, String> {
+    let lines = scan(ctx)?;
+    let l = find_line(&lines, q)?;
+    Ok(hold_line(ctx, l, apply, true))
+}
+
+pub(crate) fn hold_line(ctx: &Ctx, l: &Line, apply: bool, stub: bool) -> Report {
+    let checks = evaluate(&hold_input(ctx, l));
+    let mut r = Report {
+        line_id: l.id.clone(),
+        steps: hold_steps(ctx, l, stub),
+        checks,
+        action: "none",
+        error: None,
+    };
+    if r.ok() {
+        r.action = "would-hold";
+        if apply {
+            match Registry::open(&ctx.state_dir).and_then(|reg| execute_hold(ctx, &reg, l, stub)) {
+                Ok(done) => {
+                    r.action = "held";
+                    r.steps = done;
+                }
+                Err(e) => {
+                    r.action = "none";
+                    r.error = Some(e);
+                }
+            }
+        }
+    }
+    log_action(
+        ctx,
+        &json!({"action": "hold", "dryRun": !apply, "result": r.to_json()}),
+    );
+    r
+}
+
+pub fn close(ctx: &Ctx, q: &str, apply: bool) -> Result<Report, String> {
+    let lines = scan(ctx)?;
+    close_line(ctx, find_line(&lines, q)?, apply)
+}
+
+pub(crate) fn close_line(ctx: &Ctx, l: &Line, apply: bool) -> Result<Report, String> {
+    let mut r = if l.alive() {
+        let mut h = hold_line(ctx, l, apply, false);
+        if h.ok() {
+            h.steps.push(format!("mark {} hung-up", l.id));
+        }
+        h
+    } else {
+        Report {
+            line_id: l.id.clone(),
+            checks: vec![],
+            action: if apply { "held" } else { "would-hold" },
+            steps: vec![format!("mark {} hung-up (no live process)", l.id)],
+            error: None,
+        }
+    };
+    if r.ok() {
+        if apply {
+            let reg = Registry::open(&ctx.state_dir)?;
+            reg.set_mark(&l.id, "closed_at", Some(&format_rfc3339(ctx.now_ms)))?;
+            reg.set_mark(&l.id, "state", Some("hung-up"))?;
+            for t in held_terms(l) {
+                if t.kill().is_ok() {
+                    r.steps.push(format!("closed held term {}", t.info().id));
+                }
+            }
+            if let (Some(t), Some(p)) = (
+                ctx.tmux.as_ref(),
+                l.held_pane.as_deref().or(l.pane.as_deref()),
+            ) {
+                let _ = t.set_pane_option(p, "@sb_held", None);
+                r.steps.push(format!("cleared @sb_held on {p}"));
+            }
+            r.action = "closed";
+        } else {
+            r.action = "would-close";
+        }
+    }
+    log_action(
+        ctx,
+        &json!({"action": "close", "dryRun": !apply, "result": r.to_json()}),
+    );
+    Ok(r)
+}
+
+fn is_stub_wrapper(cmd: &[String]) -> bool {
+    cmd.last().is_some_and(|c| c.contains(" stub "))
+}
+
+pub fn held_terms(l: &Line) -> Vec<std::sync::Arc<crate::term::Term>> {
+    if l.alive() {
+        return vec![];
+    }
+    crate::term::all()
+        .into_iter()
+        .filter(|t| {
+            let i = t.info();
+            !i.exited && i.line_id.as_deref() == Some(l.id.as_str()) && is_stub_wrapper(&i.cmd)
+        })
+        .collect()
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum Launch {
+    Terminal,
+    Detached,
+    Attach,
+}
+
+pub struct ResumePlan {
+    pub line_id: String,
+    pub argv: Vec<String>,
+    pub cwd: String,
+    pub r#where: &'static str,
+    pub pane: Option<String>,
+    pub session: Option<String>,
+}
+
+impl ResumePlan {
+    pub fn to_json(&self) -> Value {
+        json!({"lineId": self.line_id, "argv": self.argv, "cwd": self.cwd, "where": self.r#where, "pane": self.pane, "session": self.session})
+    }
+
+    pub fn shell(&self) -> String {
+        let argv: Vec<String> = self.argv.iter().map(|a| shell_quote(a)).collect();
+        format!("cd {} && {}", shell_quote(&self.cwd), argv.join(" "))
+    }
+}
+
+// Two processes resumed on one conversation both write its transcript.
+fn no_second_writer(lines: &[Line], l: &Line) -> Result<(), String> {
+    match lines.iter().find_map(|o| {
+        let pid = o.pid?;
+        (o.id != l.id && o.agent == l.agent && o.session_id == l.session_id).then_some((o, pid))
+    }) {
+        Some((o, pid)) => Err(format!(
+            "conversation {} is already running in line {} (pid {pid})",
+            l.session_id, o.id
+        )),
+        None => Ok(()),
+    }
+}
+
+pub fn resume_plan(
+    ctx: &Ctx,
+    lines: &[Line],
+    l: &Line,
+    launch: Launch,
+) -> Result<ResumePlan, String> {
+    let mut plan = ResumePlan {
+        line_id: l.id.clone(),
+        argv: crate::resume_argv(l.agent, &l.session_id, &l.launch_args),
+        cwd: l.cwd.clone(),
+        r#where: "here",
+        pane: None,
+        session: None,
+    };
+    if let Some(pid) = l.pid {
+        if let (Launch::Attach, Some(p)) = (launch, &l.pane) {
+            plan.r#where = "running";
+            plan.pane = Some(p.clone());
+            return Ok(plan);
+        }
+        let at = l
+            .pane
+            .as_deref()
+            .map(|p| format!(", tmux pane {p}"))
+            .unwrap_or_default();
+        return Err(format!("line is already running (pid {pid}{at})"));
+    }
+    no_second_writer(lines, l)?;
+    if l.cwd_missing {
+        return Err(format!(
+            "working directory {} does not exist on this station",
+            l.cwd
+        ));
+    }
+    let in_tmux = std::env::var_os("TMUX").is_some_and(|v| !v.is_empty());
+    let sock = ctx.tmux.as_ref().is_some_and(|t| t.socket.is_some());
+    (plan.r#where, plan.pane) = match &l.held_pane {
+        Some(p) if ctx.tmux.is_some() => ("tmux-pane", Some(p.clone())),
+        _ if in_tmux && launch == Launch::Terminal => ("tmux-window", None),
+        _ if sock || launch != Launch::Terminal => ("tmux-session", None),
+        _ => ("here", None),
+    };
+    Ok(plan)
+}
+
+pub fn resume(ctx: &Ctx, q: &str, dry_run: bool, launch: Launch) -> Result<ResumePlan, String> {
+    let lines = scan(ctx)?;
+    let l = find_line(&lines, q)?;
+    let mut plan = resume_plan(ctx, &lines, l, launch)?;
+    let tmux = ctx.tmux.clone().unwrap_or_default();
+    if dry_run {
+        return Ok(plan);
+    }
+    if plan.r#where == "running" {
+        plan.session = plan.pane.as_deref().and_then(|p| tmux.session_of(p));
+        return attach(&tmux, plan, launch);
+    }
+    let reg = Registry::open(&ctx.state_dir)?;
+    reg.set_mark(&l.id, "held_by_user", None)?;
+    reg.set_mark(&l.id, "closed_at", None)?;
+    log_action(
+        ctx,
+        &json!({"action": "resume", "dryRun": false, "result": plan.to_json()}),
+    );
+    let argv: Vec<String> = plan.argv.iter().map(|a| shell_quote(a)).collect();
+    let cmd = format!("{}; exec \"${{SHELL:-/bin/sh}}\"", argv.join(" "));
+    match plan.r#where {
+        "tmux-pane" => {
+            let pane = plan.pane.clone().unwrap_or_default();
+            tmux.ok(&["respawn-pane", "-k", "-t", &pane, "-c", &plan.cwd, &cmd])?;
+            tmux.set_pane_option(&pane, "@sb_held", None)?;
+            plan.session = tmux.session_of(&pane);
+        }
+        "tmux-window" => {
+            let name = l.ticket.clone().unwrap_or_else(|| l.agent.to_string());
+            tmux.ok(&["new-window", "-n", &name, "-c", &plan.cwd, &cmd])?;
+        }
+        "tmux-session" => {
+            let name = format!("sb-{}", &l.id[l.id.len().saturating_sub(6)..]);
+            tmux.ok(&["new-session", "-d", "-s", &name, "-c", &plan.cwd, &cmd])?;
+            plan.session = Some(name);
+        }
+        _ => {
+            let err = std::process::Command::new(&plan.argv[0])
+                .args(&plan.argv[1..])
+                .current_dir(&plan.cwd)
+                .exec();
+            return Err(format!("exec {}: {err}", plan.argv[0]));
+        }
+    }
+    attach(&tmux, plan, launch)
+}
+
+fn attach(
+    tmux: &crate::tmux::Tmux,
+    plan: ResumePlan,
+    launch: Launch,
+) -> Result<ResumePlan, String> {
+    use std::io::IsTerminal;
+    if launch != Launch::Attach || !std::io::stdin().is_terminal() {
+        return Ok(plan);
+    }
+    let session = plan
+        .session
+        .as_deref()
+        .ok_or("cannot find the tmux session")?;
+    if let Some(p) = &plan.pane {
+        let _ = tmux.ok(&["select-window", "-t", p]);
+        let _ = tmux.ok(&["select-pane", "-t", p]);
+    }
+    Err(format!("tmux attach: {}", tmux.attach(session)))
+}
+
+pub fn link(ctx: &Ctx, q: &str, key: &str) -> Result<(String, Option<String>), String> {
+    let lines = scan(ctx)?;
+    let l = find_line(&lines, q)?;
+    let t = match key {
+        "none" | "-" => None,
+        k => Some(
+            ticket_any(k)
+                .filter(|t| t.eq_ignore_ascii_case(k))
+                .ok_or_else(|| format!("'{k}' is not a ticket key (PROJECT-123)"))?,
+        ),
+    };
+    Registry::open(&ctx.state_dir)?.set_mark(&l.id, "ticket_override", t.as_deref())?;
+    Ok((l.id.clone(), t))
+}
+
+pub fn set_env(ctx: &Ctx, q: &str, env: &str) -> Result<(String, Option<String>), String> {
+    let lines = scan(ctx)?;
+    let l = find_line(&lines, q)?;
+    let e = match env {
+        "none" | "-" => None,
+        e if !e.is_empty() && e.len() <= 128 && !e.contains(char::is_whitespace) => Some(e),
+        e => return Err(format!("'{e}' is not an env ref")),
+    };
+    Registry::open(&ctx.state_dir)?.set_mark(&l.id, "env_ref", e)?;
+    Ok((l.id.clone(), e.map(str::to_string)))
+}
+
+pub fn pin(ctx: &Ctx, q: &str, on: bool) -> Result<String, String> {
+    let lines = scan(ctx)?;
+    let l = find_line(&lines, q)?;
+    Registry::open(&ctx.state_dir)?.set_mark(&l.id, "pinned", on.then_some("1"))?;
+    Ok(l.id.clone())
+}
+
+pub const TITLE_MAX: usize = 80;
+
+/// User-typed tab title as stored: one trimmed line, capped; blank means "back to the auto title".
+pub fn clean_title(raw: Option<&str>) -> Option<String> {
+    let one: String = raw?
+        .chars()
+        .map(|c| if c.is_control() { ' ' } else { c })
+        .collect();
+    let t: String = one.trim().chars().take(TITLE_MAX).collect();
+    Some(t.trim_end().to_string()).filter(|t| !t.is_empty())
+}
+
+pub fn set_title(ctx: &Ctx, q: &str, title: Option<&str>) -> Result<Line, (u16, String)> {
+    let lines = scan(ctx).map_err(|e| (500, e))?;
+    let mut l = find_line(&lines, q).map_err(|e| (404, e))?.clone();
+    Registry::open(&ctx.state_dir)
+        .and_then(|r| r.set_mark(&l.id, "title_override", title))
+        .map_err(|e| (500, e))?;
+    l.title_override = title.map(str::to_string);
+    Ok(l)
+}
+
+pub fn stub(ctx: &Ctx, q: &str) -> Result<(), String> {
+    let lines = scan(ctx)?;
+    let l = find_line(&lines, q)?;
+    let label = l.ticket.clone().unwrap_or_else(|| {
+        if l.branch.is_empty() {
+            l.agent.to_string()
+        } else {
+            l.branch.clone()
+        }
+    });
+    println!(
+        "\n  held — {label} — {}\n  {}\n\n  press Enter to resume (Ctrl-C for a shell)",
+        l.agent, l.cwd
+    );
+    let mut s = String::new();
+    if std::io::stdin()
+        .read_line(&mut s)
+        .map_err(|e| e.to_string())?
+        == 0
+    {
+        return Ok(());
+    }
+    let id = l.id.clone();
+    let lines = scan(ctx)?;
+    let l = find_line(&lines, &id)?;
+    let plan = resume_plan(ctx, &lines, l, Launch::Terminal)?;
+    let reg = Registry::open(&ctx.state_dir)?;
+    reg.set_mark(&l.id, "held_by_user", None)?;
+    reg.set_mark(&l.id, "closed_at", None)?;
+    if let (Some(t), Ok(p)) = (ctx.tmux.as_ref(), std::env::var("TMUX_PANE")) {
+        let _ = t.set_pane_option(&p, "@sb_held", None);
+    }
+    log_action(
+        ctx,
+        &json!({"action": "resume", "dryRun": false, "result": plan.to_json(), "via": "stub"}),
+    );
+    let err = std::process::Command::new(&plan.argv[0])
+        .args(&plan.argv[1..])
+        .current_dir(&plan.cwd)
+        .exec();
+    Err(format!("exec {}: {err}", plan.argv[0]))
+}
+
+pub fn status(ctx: &Ctx, lines: &[Line]) -> Value {
+    let count = |s: &str| lines.iter().filter(|l| l.state == s).count();
+    let rss: u64 = lines.iter().filter_map(|l| l.rss).sum();
+    let mut v = json!({
+        "stationId": ctx.config.station_id,
+        "version": env!("CARGO_PKG_VERSION"),
+        "apiConnected": false,
+        "outboxPending": 0,
+        "activeCount": count("active"),
+        "idleCount": count("idle"),
+        "heldCount": count("held"),
+        "aliveCount": lines.iter().filter(|l| l.alive()).count(),
+        "orphans": lines.iter().filter(|l| l.orphan).map(|l| l.id.clone()).collect::<Vec<_>>(),
+        "duplicates": lines.iter().filter(|l| l.duplicate).map(|l| l.id.clone()).collect::<Vec<_>>(),
+        "agentRssBytes": rss,
+    });
+    if let Some((total, avail)) = mem_bytes() {
+        v["memTotalBytes"] = json!(total);
+        if let Some(a) = avail {
+            v["memUsedBytes"] = json!(total.saturating_sub(a));
+        }
+    }
+    if let Some(threshold) = ctx.config.memory_policy {
+        v["memoryPolicy"] = memory_policy(ctx, lines, &v, threshold);
+    }
+    v
+}
+
+pub fn memory_policy(ctx: &Ctx, lines: &[Line], st: &Value, threshold: f64) -> Value {
+    let used = match (st["memUsedBytes"].as_u64(), st["memTotalBytes"].as_u64()) {
+        (Some(u), Some(t)) if t > 0 => Some(u as f64 * 100.0 / t as f64),
+        _ => None,
+    };
+    let over = used.is_some_and(|u| u > threshold);
+    let mut idle: Vec<&Line> = lines
+        .iter()
+        .filter(|l| over && l.state == "idle" && l.alive())
+        .collect();
+    idle.sort_by_key(|l| l.last_activity_ms);
+    let candidates: Vec<Value> = idle
+        .iter()
+        .map(|l| {
+            let failed: Vec<String> = evaluate(&hold_input(ctx, l))
+                .into_iter()
+                .filter(|c| !c.ok)
+                .map(|c| format!("{}: {}", c.name, c.detail))
+                .collect();
+            json!({"lineId": l.id, "holdable": failed.is_empty(), "failed": failed, "rssBytes": l.rss})
+        })
+        .collect();
+    json!({
+        "thresholdPercent": threshold,
+        "usedPercent": used.map(|u| (u * 10.0).round() / 10.0),
+        "over": over,
+        "wouldHold": candidates,
+    })
+}
+
+pub fn memory_line(v: &Value) -> Option<String> {
+    let p = v.get("memoryPolicy")?;
+    let Some(used) = p["usedPercent"].as_f64() else {
+        return Some("memory policy: enabled, but used memory is unknown on this station".into());
+    };
+    let t = p["thresholdPercent"].as_f64().unwrap_or(0.0);
+    if p["over"] != true {
+        return Some(format!("memory policy: {used}% used, under {t}%"));
+    }
+    let ids: Vec<&str> = p["wouldHold"]
+        .as_array()?
+        .iter()
+        .filter(|c| c["holdable"] == true)
+        .filter_map(|c| c["lineId"].as_str())
+        .collect();
+    Some(format!(
+        "memory policy: {used}% used, over {t}%; idle lines that would be held (report only, run overseer hold): {}",
+        if ids.is_empty() { "none".into() } else { ids.join(", ") }
+    ))
+}
+
+pub fn gib(b: u64) -> String {
+    format!("{:.1} GB", b as f64 / 1_073_741_824.0)
+}
+
+pub fn status_line(v: &Value) -> String {
+    let n = |k: &str| v[k].as_u64().unwrap_or(0);
+    let mut s = format!(
+        "station {}: {} active, {} idle, {} held in total; agents RSS {}",
+        v["stationId"].as_str().unwrap_or("?"),
+        n("activeCount"),
+        n("idleCount"),
+        n("heldCount"),
+        gib(n("agentRssBytes"))
+    );
+    if let Some(t) = v["memTotalBytes"].as_u64() {
+        match v["memUsedBytes"].as_u64() {
+            Some(u) => s.push_str(&format!("; memory {} / {}", gib(u), gib(t))),
+            None => s.push_str(&format!("; memory total {}", gib(t))),
+        }
+    }
+    let o = v["orphans"].as_array().map_or(0, Vec::len);
+    let d = v["duplicates"].as_array().map_or(0, Vec::len);
+    if o > 0 {
+        s.push_str(&format!("; {o} ORPHAN(S)"));
+    }
+    if d > 0 {
+        s.push_str(&format!("; {d} DUPLICATE(S)"));
+    }
+    if let Some(m) = memory_line(v) {
+        s.push_str(&format!("\n{m}"));
+    }
+    s
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn line(id: &str, sid: &str) -> Line {
+        Line {
+            id: id.into(),
+            session_id: sid.into(),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn custom_title_is_trimmed_capped_and_cleared_when_blank() {
+        // Given raw titles typed by a user, including blanks, control characters and a long one
+        // When each is normalised for storage
+        // Then blanks clear the title, control characters become spaces and length is capped
+        assert_eq!(
+            clean_title(Some("  Payments  ")).as_deref(),
+            Some("Payments")
+        );
+        assert_eq!(clean_title(Some("   ")), None);
+        assert_eq!(clean_title(None), None);
+        assert_eq!(clean_title(Some("a\nb\tc")).as_deref(), Some("a b c"));
+        let long = "é".repeat(200);
+        assert_eq!(clean_title(Some(&long)).unwrap().chars().count(), TITLE_MAX);
+    }
+
+    #[test]
+    fn finds_by_id_session_or_prefix() {
+        let ls = vec![line("vm-01JABCDEF", "aaaa-1"), line("vm-01JXYZ", "bbbb-2")];
+        assert_eq!(find_line(&ls, "vm-01JXYZ").unwrap().session_id, "bbbb-2");
+        assert_eq!(find_line(&ls, "aaaa").unwrap().id, "vm-01JABCDEF");
+        assert_eq!(find_line(&ls, "01jab").unwrap().id, "vm-01JABCDEF");
+        assert!(find_line(&ls, "01J").unwrap_err().contains("matches 2"));
+        assert!(find_line(&ls, "zz").is_err());
+    }
+
+    #[test]
+    fn a_stub_wrapper_command_is_recognised_whoever_the_agent_pid_is() {
+        // Given the held stub wrapper command and the plain agent command
+        // When asking whether the term runs a stub wrapper
+        // Then only the wrapper counts, so a resumed agent running under it can be held again
+        let wrapper = vec![
+            "/bin/sh".into(),
+            "-c".into(),
+            "trap : INT; /usr/bin/overseer stub 'vm-1'; exec \"${SHELL:-/bin/sh}\"".into(),
+        ];
+        let agent = vec!["claude".into(), "--resume".into(), "S".into()];
+        assert!(is_stub_wrapper(&wrapper));
+        assert!(!is_stub_wrapper(&agent));
+        assert!(!is_stub_wrapper(&[]));
+    }
+
+    #[test]
+    fn resume_is_refused_while_another_process_runs_the_same_conversation() {
+        // Given a held line on session S and another line whose live process is in S
+        // When resuming the held line, and resuming it once that process is gone
+        // Then the first resume is refused naming the running line, the second is allowed
+        let held = line("vm-held", "S");
+        let mut other = line("vm-other", "S");
+        other.pid = Some(42);
+        let elsewhere = Line {
+            agent: "codex",
+            pid: Some(43),
+            ..line("vm-codex", "S")
+        };
+        let err =
+            no_second_writer(&[held.clone(), other.clone(), elsewhere.clone()], &held).unwrap_err();
+        assert!(err.contains("vm-other") && err.contains("42"), "{err}");
+        other.pid = None;
+        assert!(no_second_writer(&[held.clone(), other, elsewhere], &held).is_ok());
+    }
+}

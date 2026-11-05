@@ -1,0 +1,8 @@
+#!/bin/sh
+set -e
+root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+bin="$root/target/release/overseer"
+: "${OVERSEER_STATE_DIR:=$root/.state}"
+export OVERSEER_STATE_DIR
+[ -x "$bin" ] || cargo build --offline --release --quiet --manifest-path "$root/Cargo.toml"
+exec "$bin" "$@"

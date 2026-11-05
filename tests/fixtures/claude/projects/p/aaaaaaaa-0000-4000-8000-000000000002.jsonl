@@ -1,0 +1,2 @@
+{"type":"user","sessionId":"aaaaaaaa-0000-4000-8000-000000000002","cwd":"{{WT_LOWER}}","gitBranch":"","timestamp":"2026-10-28T08:00:00.000Z","version":"2.1.289","entrypoint":"cli","message":{"role":"user","content":"synthetic"}}
+{"type":"assistant","sessionId":"aaaaaaaa-0000-4000-8000-000000000002","cwd":"{{WT_LOWER}}","gitBranch":"HEAD","timestamp":"2026-10-28T08:05:00.000Z","version":"2.1.289","entrypoint":"cli","message":{"role":"assistant","content":"synthetic"}}

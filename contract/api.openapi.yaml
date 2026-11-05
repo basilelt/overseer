@@ -1,0 +1,280 @@
+openapi: 3.1.0
+info:
+  title: overseer-api
+  version: 0.1.0-draft
+  description: Shared registry of stations and lines. Metadata only, never conversation content.
+servers:
+  - url: https://overseer.internal/v1
+security:
+  - userToken: []
+paths:
+  /stations:
+    post:
+      summary: Enrol a station
+      description: Admin creates a station and receives its token once. The token is stored hashed. Enrolling a revoked station issues a new token.
+      operationId: enrolStation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [stationId, kind]
+              properties:
+                stationId: { type: string }
+                kind: { type: string, enum: [mac, vm, runner] }
+                owner: { type: string }
+      responses:
+        "201":
+          description: Enrolled
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [stationId, token]
+                properties:
+                  stationId: { type: string }
+                  token: { type: string, description: Shown once. }
+        "409": { description: Station already exists }
+        "403": { description: Admin token required }
+    get:
+      summary: List stations
+      operationId: listStations
+      responses:
+        "200":
+          description: Stations
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Station" }
+  /stations/{stationId}/token:
+    delete:
+      summary: Revoke a station token
+      operationId: revokeStation
+      parameters:
+        - { name: stationId, in: path, required: true, schema: { type: string } }
+      responses:
+        "204": { description: Revoked; the open WebSocket is closed }
+  /users:
+    post:
+      summary: Issue a user token (admin)
+      description: Additive (ADR 0009). The name is recorded as requestedBy in the command audit. Token shown once, stored hashed.
+      operationId: createUser
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [name]
+              properties:
+                name: { type: string }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [name, token]
+                properties:
+                  name: { type: string }
+                  token: { type: string, description: Shown once. }
+        "409": { description: User already exists }
+  /users/{name}/token:
+    delete:
+      summary: Revoke a user token (admin)
+      operationId: revokeUser
+      parameters:
+        - { name: name, in: path, required: true, schema: { type: string } }
+      responses:
+        "204": { description: Revoked }
+  /stations/{stationId}/sync:
+    get:
+      summary: Daemon WebSocket (outbound from the station)
+      description: Upgrade to WebSocket. Frames follow schemas/sync-message.schema.json.
+      operationId: stationSync
+      security:
+        - stationToken: []
+      parameters:
+        - { name: stationId, in: path, required: true, schema: { type: string } }
+      responses:
+        "101": { description: Switching protocols }
+        "401": { description: Unknown or revoked token }
+  /lines:
+    get:
+      summary: Read lines
+      operationId: listLines
+      parameters:
+        - { name: owner, in: query, schema: { type: string } }
+        - { name: ticketKey, in: query, schema: { type: string } }
+        - { name: ticket, in: query, schema: { type: string }, description: Alias of ticketKey (TwinFactory). }
+        - { name: stationId, in: query, schema: { type: string } }
+        - { name: state, in: query, schema: { type: string, enum: [active, idle, held, hung-up] } }
+        - { name: includeHungUp, in: query, schema: { type: boolean, default: false } }
+      responses:
+        "200":
+          description: Lines with station liveness
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/LineView" }
+    post:
+      summary: Open a line on a runner (feedback-hub)
+      description: The API picks a runner station and relays a start command. Returns once the daemon accepted it.
+      operationId: createLine
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [owner, repo, agent, origin, prompt]
+              properties:
+                owner: { type: string, examples: [feedback-bot] }
+                repo: { type: string }
+                branch: { type: string, description: "Default feedback/<ticketKey> (ADR 0018)." }
+                agent: { type: string, enum: [claude, codex] }
+                origin: { type: string, enum: [dev, feedback] }
+                ticketKey: { type: string }
+                stationId: { type: string, description: Optional; otherwise any online runner. }
+                prompt: { type: string }
+                idempotencyKey: { type: string }
+                dryRun: { type: boolean, default: true, description: "The runner only reports what it would do unless false (ADR 0018)." }
+      responses:
+        "202":
+          description: Delivered to the runner; the outcome follows as a command.completed event
+          content:
+            application/json:
+              schema: { $ref: "schemas/line.schema.json" }
+        "409": { description: The runner refused the start command }
+        "503": { description: No runner online }
+        "504": { description: The runner did not accept within 10 s; retry with the same idempotencyKey }
+  /lines/{lineId}:
+    get:
+      summary: Read one line
+      operationId: getLine
+      parameters:
+        - { name: lineId, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: Line
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LineView" }
+        "404": { description: Not found }
+  /lines/{lineId}/commands:
+    post:
+      summary: Relay a command to the line's station
+      description: Audited. kind=relaunch sends a new message to the same agent session (feedback-hub).
+      operationId: relayCommand
+      parameters:
+        - { name: lineId, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [id, kind]
+              properties:
+                id: { type: string, description: Idempotency key. }
+                kind: { type: string, enum: [resume, hold, close, link, relaunch] }
+                args: { type: object }
+      responses:
+        "202":
+          description: Queued
+          content:
+            application/json:
+              schema: { $ref: "schemas/command.schema.json" }
+        "409": { description: Station offline; not queued }
+    get:
+      summary: Audit trail for a line
+      operationId: listCommands
+      parameters:
+        - { name: lineId, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: Commands
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "schemas/command.schema.json" }
+  /events:
+    get:
+      summary: State-change stream (SSE)
+      description: text/event-stream of schemas/event.schema.json. Supports Last-Event-ID replay within the retention window (7 days). Without Last-Event-ID only live events are sent.
+      operationId: streamEvents
+      parameters:
+        - { name: types, in: query, schema: { type: string, description: Comma-separated event types. } }
+        - { name: Last-Event-ID, in: header, schema: { type: string } }
+      responses:
+        "200":
+          description: Event stream
+          content:
+            text/event-stream:
+              schema: { $ref: "schemas/event.schema.json" }
+  /webhooks:
+    post:
+      summary: Register a webhook (same payload as /events, HMAC-signed)
+      operationId: createWebhook
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [url, types]
+              properties:
+                url: { type: string, format: uri }
+                types: { type: array, items: { type: string } }
+      responses:
+        "201": { description: Created; signing secret returned once }
+        "400": { description: Only http:// URLs and known event types (ADR 0009) }
+  /webhooks/{webhookId}:
+    delete:
+      summary: Remove a webhook (admin)
+      operationId: deleteWebhook
+      parameters:
+        - { name: webhookId, in: path, required: true, schema: { type: string } }
+      responses:
+        "204": { description: Removed }
+  /healthz:
+    get:
+      summary: Liveness and readiness probe (served at the root, outside /v1)
+      operationId: health
+      security: []
+      responses:
+        "200": { description: ok }
+components:
+  securitySchemes:
+    userToken: { type: http, scheme: bearer }
+    stationToken: { type: http, scheme: bearer }
+  schemas:
+    Station:
+      type: object
+      required: [stationId, kind, online]
+      properties:
+        stationId: { type: string }
+        kind: { type: string, enum: [mac, vm, runner] }
+        online: { type: boolean }
+        revoked: { type: boolean }
+        lastSeenAt: { type: string, format: date-time }
+        activeCount: { type: integer }
+        memUsedBytes: { type: integer }
+        memTotalBytes: { type: integer }
+    LineView:
+      type: object
+      required: [line, stationOnline]
+      properties:
+        line: { $ref: "schemas/line.schema.json" }
+        stationOnline: { type: boolean }
+        syncedAt: { type: string, format: date-time }

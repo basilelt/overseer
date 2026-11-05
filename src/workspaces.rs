@@ -1,0 +1,954 @@
+use crate::board::publish;
+use crate::daemon::Request;
+use crate::procs::now_ms;
+use crate::registry::Registry;
+use crate::tasks::Task;
+use crate::util::{format_rfc3339, ulid};
+use crate::{Ctx, Line};
+use rusqlite::{params, OptionalExtension, Row};
+use serde_json::{json, Value};
+use std::path::Path;
+
+pub type Res<T> = Result<T, (u16, String)>;
+
+const WS_COLS: &str = "id, name, path, folder_id, pinned, archived, auto, rank, tabs, notify_idle, created_ms, updated_ms";
+const FOLDER_COLS: &str = "id, name, parent_id, rank, collapsed, created_ms, updated_ms";
+const GROUP_COLS: &str = "id, name, rank, members, notify_idle, created_ms, updated_ms";
+
+#[derive(Clone, Debug)]
+pub struct Workspace {
+    pub id: String,
+    pub name: String,
+    pub path: String,
+    pub folder_id: Option<String>,
+    pub pinned: bool,
+    pub archived: bool,
+    pub auto: bool,
+    pub rank: f64,
+    pub tabs: Vec<String>,
+    pub notify_idle: bool,
+    pub created_ms: i64,
+    pub updated_ms: i64,
+}
+
+#[derive(Clone, Debug)]
+pub struct Folder {
+    pub id: String,
+    pub name: String,
+    pub parent_id: Option<String>,
+    pub rank: f64,
+    pub collapsed: bool,
+    pub created_ms: i64,
+    pub updated_ms: i64,
+}
+
+#[derive(Clone, Debug)]
+pub struct Group {
+    pub id: String,
+    pub name: String,
+    pub rank: f64,
+    pub members: Vec<String>,
+    pub notify_idle: bool,
+    pub created_ms: i64,
+    pub updated_ms: i64,
+}
+
+fn strings(s: String) -> Vec<String> {
+    serde_json::from_str(&s).unwrap_or_default()
+}
+
+fn ws_row(r: &Row) -> rusqlite::Result<Workspace> {
+    Ok(Workspace {
+        id: r.get(0)?,
+        name: r.get(1)?,
+        path: r.get(2)?,
+        folder_id: r.get(3)?,
+        pinned: r.get(4)?,
+        archived: r.get(5)?,
+        auto: r.get(6)?,
+        rank: r.get(7)?,
+        tabs: strings(r.get(8)?),
+        notify_idle: r.get(9)?,
+        created_ms: r.get(10)?,
+        updated_ms: r.get(11)?,
+    })
+}
+
+fn folder_row(r: &Row) -> rusqlite::Result<Folder> {
+    Ok(Folder {
+        id: r.get(0)?,
+        name: r.get(1)?,
+        parent_id: r.get(2)?,
+        rank: r.get(3)?,
+        collapsed: r.get(4)?,
+        created_ms: r.get(5)?,
+        updated_ms: r.get(6)?,
+    })
+}
+
+fn group_row(r: &Row) -> rusqlite::Result<Group> {
+    Ok(Group {
+        id: r.get(0)?,
+        name: r.get(1)?,
+        rank: r.get(2)?,
+        members: strings(r.get(3)?),
+        notify_idle: r.get(4)?,
+        created_ms: r.get(5)?,
+        updated_ms: r.get(6)?,
+    })
+}
+
+impl Workspace {
+    pub fn missing(&self) -> bool {
+        !Path::new(&self.path).is_dir()
+    }
+
+    pub fn to_json(&self, station: &str) -> Value {
+        json!({
+            "id": self.id, "name": self.name, "path": self.path, "station": station,
+            "folderId": self.folder_id, "pinned": self.pinned, "archived": self.archived,
+            "auto": self.auto, "rank": self.rank, "tabs": self.tabs, "notifyIdle": self.notify_idle,
+            "missing": self.missing(),
+            "createdAt": format_rfc3339(self.created_ms), "updatedAt": format_rfc3339(self.updated_ms),
+        })
+    }
+}
+
+impl Folder {
+    pub fn to_json(&self) -> Value {
+        json!({
+            "id": self.id, "name": self.name, "parentId": self.parent_id, "rank": self.rank,
+            "collapsed": self.collapsed,
+            "createdAt": format_rfc3339(self.created_ms), "updatedAt": format_rfc3339(self.updated_ms),
+        })
+    }
+}
+
+impl Group {
+    pub fn to_json(&self) -> Value {
+        json!({
+            "id": self.id, "name": self.name, "rank": self.rank, "members": self.members,
+            "notifyIdle": self.notify_idle,
+            "createdAt": format_rfc3339(self.created_ms), "updatedAt": format_rfc3339(self.updated_ms),
+        })
+    }
+}
+
+pub fn sql<T>(r: rusqlite::Result<T>) -> Res<T> {
+    r.map_err(|e| (500, e.to_string()))
+}
+
+pub fn db(ctx: &Ctx) -> Res<Registry> {
+    Registry::open(&ctx.state_dir).map_err(|e| (500, e))
+}
+
+pub fn bad(msg: impl Into<String>) -> (u16, String) {
+    (400, msg.into())
+}
+
+fn object(b: &Value) -> Res<&serde_json::Map<String, Value>> {
+    b.as_object().ok_or_else(|| bad("JSON object expected"))
+}
+
+fn name_of(v: &Value) -> Res<String> {
+    let n = v.as_str().map(str::trim).unwrap_or_default();
+    if (1..=80).contains(&n.chars().count()) {
+        Ok(n.to_string())
+    } else {
+        Err(bad("name must be 1 to 80 characters"))
+    }
+}
+
+fn bool_of(v: &Value, k: &str) -> Res<bool> {
+    v.as_bool()
+        .ok_or_else(|| bad(format!("{k} must be a boolean")))
+}
+
+fn rank_of(v: &Value) -> Res<f64> {
+    v.as_f64()
+        .filter(|r| r.is_finite())
+        .ok_or_else(|| bad("rank must be a finite number"))
+}
+
+fn strs_of(v: &Value, k: &str) -> Res<Vec<String>> {
+    v.as_array()
+        .and_then(|a| {
+            a.iter()
+                .map(|x| x.as_str().map(str::to_string))
+                .collect::<Option<Vec<_>>>()
+        })
+        .ok_or_else(|| bad(format!("{k} must be an array of strings")))
+}
+
+fn under(p: &str, root: &str) -> bool {
+    p == root
+        || (root == "/" && p.starts_with('/'))
+        || (p.starts_with(root) && p.as_bytes().get(root.len()) == Some(&b'/'))
+}
+
+pub fn all(reg: &Registry) -> Res<Vec<Workspace>> {
+    let mut st = sql(reg.conn.prepare(&format!(
+        "SELECT {WS_COLS} FROM workspaces ORDER BY pinned DESC, rank, name"
+    )))?;
+    let rows = sql(st.query_map([], ws_row))?;
+    sql(rows.collect())
+}
+
+pub fn get(reg: &Registry, id: &str) -> Res<Workspace> {
+    sql(reg
+        .conn
+        .query_row(
+            &format!("SELECT {WS_COLS} FROM workspaces WHERE id = ?1"),
+            [id],
+            ws_row,
+        )
+        .optional())?
+    .ok_or_else(|| (404, format!("no workspace {id}")))
+}
+
+fn by_path(reg: &Registry, path: &str) -> Res<Option<Workspace>> {
+    sql(reg
+        .conn
+        .query_row(
+            &format!("SELECT {WS_COLS} FROM workspaces WHERE path = ?1"),
+            [path],
+            ws_row,
+        )
+        .optional())
+}
+
+fn save(ctx: &Ctx, reg: &Registry, w: &mut Workspace, kind: &str) -> Res<()> {
+    w.updated_ms = now_ms();
+    sql(reg.conn.execute(
+        "UPDATE workspaces SET name = ?2, folder_id = ?3, pinned = ?4, archived = ?5, rank = ?6, tabs = ?7,
+           notify_idle = ?8, updated_ms = ?9 WHERE id = ?1",
+        params![
+            w.id,
+            w.name,
+            w.folder_id,
+            w.pinned,
+            w.archived,
+            w.rank,
+            json!(w.tabs).to_string(),
+            w.notify_idle,
+            w.updated_ms
+        ],
+    ))?;
+    publish(
+        kind,
+        json!({"workspace": w.to_json(&ctx.config.station_id)}),
+    );
+    Ok(())
+}
+
+fn ensure_auto(ctx: &Ctx, reg: &Registry, projects: &[Value]) -> Res<()> {
+    let now = now_ms();
+    for (i, p) in projects.iter().enumerate() {
+        let (Some(path), Some(name)) = (p["path"].as_str(), p["name"].as_str()) else {
+            continue;
+        };
+        if p["missing"] == true {
+            continue;
+        }
+        let n = sql(reg.conn.execute(
+            "INSERT OR IGNORE INTO workspaces (id, name, path, auto, rank, created_ms, updated_ms)
+             SELECT ?1, ?2, ?3, 1, ?4, ?5, ?5
+             WHERE NOT EXISTS (SELECT 1 FROM workspace_tombstones WHERE path = ?3)",
+            params![ulid(now), name, path, (now + i as i64) as f64, now],
+        ))?;
+        if n > 0 {
+            if let Some(w) = by_path(reg, path)? {
+                publish(
+                    "workspace.created",
+                    json!({"workspace": w.to_json(&ctx.config.station_id)}),
+                );
+            }
+        }
+    }
+    Ok(())
+}
+
+pub fn list(ctx: &Ctx) -> Res<Vec<Workspace>> {
+    let lines = crate::daemon::cached_lines(ctx, None).map_err(|e| (500, e))?;
+    let projects = crate::tasks::projects(ctx, &lines)?;
+    let reg = db(ctx)?;
+    ensure_auto(ctx, &reg, &projects)?;
+    all(&reg)
+}
+
+fn folder_exists(reg: &Registry, id: &str) -> Res<Folder> {
+    get_folder(reg, id).map_err(|(c, e)| if c == 404 { bad(e) } else { (c, e) })
+}
+
+fn folder_ref(reg: &Registry, v: &Value) -> Res<Option<String>> {
+    match v {
+        Value::Null => Ok(None),
+        Value::String(id) => folder_exists(reg, id).map(|f| Some(f.id)),
+        _ => Err(bad("folderId must be a string or null")),
+    }
+}
+
+fn canonical(path: &str) -> Res<String> {
+    let path = path.trim();
+    if path.is_empty() {
+        return Err(bad("path required"));
+    }
+    let path = match path.strip_prefix("~/") {
+        Some(rest) => crate::home().join(rest),
+        None if path == "~" => crate::home(),
+        None => Path::new(path).to_path_buf(),
+    };
+    if !path.is_absolute() {
+        return Err(bad("path must be absolute"));
+    }
+    if !path.is_dir() {
+        return Err(bad(format!("{} is not a directory", path.display())));
+    }
+    let p = path
+        .canonicalize()
+        .map_err(|e| bad(format!("{}: {e}", path.display())))?;
+    Ok(p.to_string_lossy().into_owned())
+}
+
+pub fn create(ctx: &Ctx, b: &Value) -> Res<(bool, Workspace)> {
+    object(b)?;
+    let path = canonical(b["path"].as_str().unwrap_or_default())?;
+    let reg = db(ctx)?;
+    let folder_id = folder_ref(&reg, &b["folderId"])?;
+    let name = match &b["name"] {
+        Value::Null => Path::new(&path)
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_else(|| path.clone()),
+        v => name_of(v)?,
+    };
+    let pinned = match &b["pinned"] {
+        Value::Null => false,
+        v => bool_of(v, "pinned")?,
+    };
+    sql(reg
+        .conn
+        .execute("DELETE FROM workspace_tombstones WHERE path = ?1", [&path]))?;
+    if let Some(mut w) = by_path(&reg, &path)? {
+        if w.archived {
+            w.archived = false;
+            save(ctx, &reg, &mut w, "workspace.updated")?;
+        }
+        return Ok((false, w));
+    }
+    let now = now_ms();
+    let id = ulid(now);
+    sql(reg.conn.execute(
+        "INSERT INTO workspaces (id, name, path, folder_id, pinned, auto, rank, created_ms, updated_ms)
+         VALUES (?1, ?2, ?3, ?4, ?5, 0, ?6, ?7, ?7)",
+        params![id, name, path, folder_id, pinned, now as f64, now],
+    ))?;
+    let w = get(&reg, &id)?;
+    publish(
+        "workspace.created",
+        json!({"workspace": w.to_json(&ctx.config.station_id)}),
+    );
+    Ok((true, w))
+}
+
+pub fn patch(ctx: &Ctx, id: &str, b: &Value) -> Res<Workspace> {
+    let obj = object(b)?;
+    let reg = db(ctx)?;
+    let mut w = get(&reg, id)?;
+    for (k, v) in obj {
+        match k.as_str() {
+            "name" => w.name = name_of(v)?,
+            "folderId" => w.folder_id = folder_ref(&reg, v)?,
+            "pinned" => w.pinned = bool_of(v, k)?,
+            "archived" => w.archived = bool_of(v, k)?,
+            "notifyIdle" => w.notify_idle = bool_of(v, k)?,
+            "rank" => w.rank = rank_of(v)?,
+            "tabs" => w.tabs = strs_of(v, k)?,
+            _ => {}
+        }
+    }
+    save(ctx, &reg, &mut w, "workspace.updated")?;
+    Ok(w)
+}
+
+pub fn delete(reg: &Registry, id: &str) -> Res<Value> {
+    let w = get(reg, id)?;
+    sql(reg.conn.execute(
+        "INSERT OR REPLACE INTO workspace_tombstones (path, at_ms) VALUES (?1, ?2)",
+        params![w.path, now_ms()],
+    ))?;
+    sql(reg
+        .conn
+        .execute("DELETE FROM workspaces WHERE id = ?1", [id]))?;
+    sql(reg.conn.execute(
+        "UPDATE lines SET workspace_id = NULL WHERE workspace_id = ?1",
+        [id],
+    ))?;
+    for t in crate::term::all() {
+        if t.info().workspace_id.as_deref() == Some(id) {
+            t.set_workspace(None);
+        }
+    }
+    publish("workspace.deleted", json!({"id": id}));
+    Ok(json!({"deleted": id}))
+}
+
+pub fn folders(reg: &Registry) -> Res<Vec<Folder>> {
+    let mut st = sql(reg.conn.prepare(&format!(
+        "SELECT {FOLDER_COLS} FROM folders ORDER BY rank, name"
+    )))?;
+    let rows = sql(st.query_map([], folder_row))?;
+    sql(rows.collect())
+}
+
+fn get_folder(reg: &Registry, id: &str) -> Res<Folder> {
+    sql(reg
+        .conn
+        .query_row(
+            &format!("SELECT {FOLDER_COLS} FROM folders WHERE id = ?1"),
+            [id],
+            folder_row,
+        )
+        .optional())?
+    .ok_or_else(|| (404, format!("no folder {id}")))
+}
+
+fn save_folder(reg: &Registry, f: &mut Folder, kind: &str) -> Res<()> {
+    f.updated_ms = now_ms();
+    sql(reg.conn.execute(
+        "UPDATE folders SET name = ?2, parent_id = ?3, rank = ?4, collapsed = ?5, updated_ms = ?6 WHERE id = ?1",
+        params![f.id, f.name, f.parent_id, f.rank, f.collapsed, f.updated_ms],
+    ))?;
+    publish(kind, json!({"folder": f.to_json()}));
+    Ok(())
+}
+
+fn parent_of(reg: &Registry, v: &Value, own: Option<&str>) -> Res<Option<String>> {
+    let id = match v {
+        Value::Null => return Ok(None),
+        Value::String(id) => id,
+        _ => return Err(bad("parentId must be a string or null")),
+    };
+    if own == Some(id.as_str()) {
+        return Err(bad("a folder cannot be its own parent"));
+    }
+    let p = folder_exists(reg, id)?;
+    if p.parent_id.is_some() {
+        return Err(bad(
+            "parentId must be a top-level folder: folders nest one level",
+        ));
+    }
+    Ok(Some(p.id))
+}
+
+pub fn create_folder(b: &Value, reg: &Registry) -> Res<Folder> {
+    object(b)?;
+    let name = name_of(&b["name"])?;
+    let parent_id = parent_of(reg, &b["parentId"], None)?;
+    let now = now_ms();
+    let rank = match &b["rank"] {
+        Value::Null => now as f64,
+        v => rank_of(v)?,
+    };
+    let id = ulid(now);
+    sql(reg.conn.execute(
+        "INSERT INTO folders (id, name, parent_id, rank, created_ms, updated_ms) VALUES (?1, ?2, ?3, ?4, ?5, ?5)",
+        params![id, name, parent_id, rank, now],
+    ))?;
+    let f = get_folder(reg, &id)?;
+    publish("folder.created", json!({"folder": f.to_json()}));
+    Ok(f)
+}
+
+fn children(reg: &Registry, id: &str) -> Res<Vec<Folder>> {
+    Ok(folders(reg)?
+        .into_iter()
+        .filter(|f| f.parent_id.as_deref() == Some(id))
+        .collect())
+}
+
+pub fn patch_folder(reg: &Registry, id: &str, b: &Value) -> Res<Folder> {
+    let obj = object(b)?;
+    let mut f = get_folder(reg, id)?;
+    for (k, v) in obj {
+        match k.as_str() {
+            "name" => f.name = name_of(v)?,
+            "rank" => f.rank = rank_of(v)?,
+            "collapsed" => f.collapsed = bool_of(v, k)?,
+            "parentId" => {
+                f.parent_id = parent_of(reg, v, Some(id))?;
+                if f.parent_id.is_some() && !children(reg, id)?.is_empty() {
+                    return Err(bad("a folder with sub-folders cannot get a parent"));
+                }
+            }
+            _ => {}
+        }
+    }
+    save_folder(reg, &mut f, "folder.updated")?;
+    Ok(f)
+}
+
+pub fn delete_folder(ctx: &Ctx, reg: &Registry, id: &str) -> Res<Value> {
+    let f = get_folder(reg, id)?;
+    for mut w in all(reg)?
+        .into_iter()
+        .filter(|w| w.folder_id.as_deref() == Some(id))
+    {
+        w.folder_id = f.parent_id.clone();
+        save(ctx, reg, &mut w, "workspace.updated")?;
+    }
+    for mut c in children(reg, id)? {
+        c.parent_id = f.parent_id.clone();
+        save_folder(reg, &mut c, "folder.updated")?;
+    }
+    sql(reg.conn.execute("DELETE FROM folders WHERE id = ?1", [id]))?;
+    publish("folder.deleted", json!({"id": id}));
+    Ok(json!({"deleted": id}))
+}
+
+pub fn groups(reg: &Registry) -> Res<Vec<Group>> {
+    let mut st = sql(reg.conn.prepare(&format!(
+        "SELECT {GROUP_COLS} FROM groups ORDER BY rank, name"
+    )))?;
+    let rows = sql(st.query_map([], group_row))?;
+    sql(rows.collect())
+}
+
+pub fn get_group(reg: &Registry, id: &str) -> Res<Group> {
+    sql(reg
+        .conn
+        .query_row(
+            &format!("SELECT {GROUP_COLS} FROM groups WHERE id = ?1"),
+            [id],
+            group_row,
+        )
+        .optional())?
+    .ok_or_else(|| (404, format!("no group {id}")))
+}
+
+fn keys_of(v: &Value, k: &str) -> Res<Vec<String>> {
+    let keys = strs_of(v, k)?;
+    for key in &keys {
+        let ok = matches!(key.split_once(':'), Some(("line" | "term", id)) if !id.is_empty());
+        if !ok {
+            return Err(bad(format!(
+                "{k}: {key:?} is not a line:<id> or term:<id> key"
+            )));
+        }
+    }
+    Ok(keys)
+}
+
+fn add_keys(members: &mut Vec<String>, keys: Vec<String>) {
+    for k in keys {
+        if !members.contains(&k) {
+            members.push(k);
+        }
+    }
+}
+
+fn save_group(reg: &Registry, g: &mut Group, kind: &str) -> Res<()> {
+    g.updated_ms = now_ms();
+    sql(reg.conn.execute(
+        "UPDATE groups SET name = ?2, rank = ?3, members = ?4, notify_idle = ?5, updated_ms = ?6 WHERE id = ?1",
+        params![g.id, g.name, g.rank, json!(g.members).to_string(), g.notify_idle, g.updated_ms],
+    ))?;
+    publish(kind, json!({"group": g.to_json()}));
+    Ok(())
+}
+
+pub fn create_group(reg: &Registry, b: &Value) -> Res<Group> {
+    object(b)?;
+    let name = name_of(&b["name"])?;
+    let mut members = vec![];
+    if !b["members"].is_null() {
+        add_keys(&mut members, keys_of(&b["members"], "members")?);
+    }
+    let now = now_ms();
+    let rank = match &b["rank"] {
+        Value::Null => now as f64,
+        v => rank_of(v)?,
+    };
+    let id = ulid(now);
+    sql(reg.conn.execute(
+        "INSERT INTO groups (id, name, rank, members, created_ms, updated_ms) VALUES (?1, ?2, ?3, ?4, ?5, ?5)",
+        params![id, name, rank, json!(members).to_string(), now],
+    ))?;
+    let g = get_group(reg, &id)?;
+    publish("group.created", json!({"group": g.to_json()}));
+    Ok(g)
+}
+
+pub fn patch_group(reg: &Registry, id: &str, b: &Value) -> Res<Group> {
+    let obj = object(b)?;
+    let mut g = get_group(reg, id)?;
+    for (k, v) in obj {
+        match k.as_str() {
+            "name" => g.name = name_of(v)?,
+            "rank" => g.rank = rank_of(v)?,
+            "notifyIdle" => g.notify_idle = bool_of(v, k)?,
+            _ => {}
+        }
+    }
+    if let Some(v) = obj.get("members") {
+        g.members.clear();
+        add_keys(&mut g.members, keys_of(v, "members")?);
+    }
+    if let Some(v) = obj.get("add") {
+        add_keys(&mut g.members, keys_of(v, "add")?);
+    }
+    if let Some(v) = obj.get("remove") {
+        let gone = keys_of(v, "remove")?;
+        g.members.retain(|m| !gone.contains(m));
+    }
+    save_group(reg, &mut g, "group.updated")?;
+    Ok(g)
+}
+
+pub fn delete_group(reg: &Registry, id: &str) -> Res<Value> {
+    get_group(reg, id)?;
+    sql(reg.conn.execute("DELETE FROM groups WHERE id = ?1", [id]))?;
+    publish("group.deleted", json!({"id": id}));
+    Ok(json!({"deleted": id}))
+}
+
+pub struct Index {
+    pub workspaces: Vec<Workspace>,
+    pub tasks: Vec<Task>,
+    pub projects: Vec<(String, String)>,
+}
+
+impl Index {
+    pub fn new(ctx: &Ctx, lines: &[Line]) -> Res<Index> {
+        let projects = crate::tasks::projects(ctx, lines)?
+            .into_iter()
+            .filter_map(|p| Some((p["path"].as_str()?.into(), p["repo"].as_str()?.into())))
+            .collect();
+        let reg = db(ctx)?;
+        Ok(Index {
+            workspaces: all(&reg)?,
+            tasks: crate::tasks::all(&reg)?,
+            projects,
+        })
+    }
+
+    fn of_task(&self, id: &str) -> Option<&Workspace> {
+        self.tasks
+            .iter()
+            .find(|t| t.id == id)
+            .and_then(|t| self.longest(&t.project))
+    }
+
+    fn assigned(&self, id: Option<&str>) -> Option<&Workspace> {
+        id.and_then(|id| self.workspaces.iter().find(|w| w.id == id))
+    }
+
+    fn longest(&self, p: &str) -> Option<&Workspace> {
+        self.workspaces
+            .iter()
+            .filter(|w| !p.is_empty() && under(p, &w.path))
+            .max_by_key(|w| w.path.len())
+    }
+
+    pub fn of_line(&self, l: &Line) -> Option<&Workspace> {
+        if let Some(w) = self.assigned(l.workspace_id.as_deref()) {
+            return Some(w);
+        }
+        if let Some(w) = self
+            .tasks
+            .iter()
+            .find(|t| !t.from_session() && t.line_id.as_deref() == Some(l.id.as_str()))
+            .and_then(|t| self.longest(&t.project))
+        {
+            return Some(w);
+        }
+        let path = if l.worktree_path.is_empty()
+            || (!l.cwd.is_empty() && under(&l.cwd, &l.worktree_path))
+        {
+            &l.cwd
+        } else {
+            &l.worktree_path
+        };
+        let prefix = self.longest(path);
+        let repo = self
+            .projects
+            .iter()
+            .find(|(_, r)| !l.repo.is_empty() && *r == l.repo)
+            .and_then(|(p, _)| self.longest(p));
+        match (prefix, repo) {
+            (p, Some(r)) if p.is_none_or(|p| !under(&p.path, &r.path)) => Some(r),
+            (p, _) => p,
+        }
+    }
+
+    pub fn of_term(&self, t: &crate::term::Info) -> Option<&Workspace> {
+        self.assigned(t.workspace_id.as_deref())
+            .or_else(|| t.task_id.as_deref().and_then(|id| self.of_task(id)))
+            .or_else(|| self.longest(&t.cwd))
+    }
+}
+
+fn assignment(ctx: &Ctx, b: &Value) -> Res<Option<String>> {
+    match object(b)?.get("workspaceId") {
+        Some(Value::Null) => Ok(None),
+        Some(Value::String(id)) => get(&db(ctx)?, id).map(|w| Some(w.id)),
+        _ => Err(bad("workspaceId must be a string or null")),
+    }
+}
+
+fn assign_line(ctx: &Ctx, q: &str, b: &Value) -> Res<Value> {
+    let wid = assignment(ctx, b)?;
+    let lines = crate::scan(ctx).map_err(|e| (500, e))?;
+    let id = crate::actions::find_line(&lines, q)
+        .map_err(|e| (404, e))?
+        .id
+        .clone();
+    db(ctx)?
+        .set_mark(&id, "workspace_id", wid.as_deref())
+        .map_err(|e| (500, e))?;
+    Ok(json!({"lineId": id, "workspaceId": wid}))
+}
+
+fn assign_term(ctx: &Ctx, id: &str, b: &Value) -> Res<Value> {
+    let t = crate::term::get(id).ok_or_else(|| (404, format!("no term {id}")))?;
+    t.set_workspace(assignment(ctx, b)?);
+    Ok(t.to_json())
+}
+
+fn out<T>(code: u16, r: Res<T>, f: impl FnOnce(T) -> Value) -> (u16, Value) {
+    match r {
+        Ok(v) => (code, f(v)),
+        Err((c, e)) => (c, json!({ "error": e })),
+    }
+}
+
+pub fn route(r: &Request, segs: &[&str], body: &Value, ctx: &Ctx) -> Option<(u16, Value)> {
+    let st = ctx.config.station_id.as_str();
+    let ws = |w: Workspace| w.to_json(st);
+    let reg = || db(ctx);
+    Some(match (r.method.as_str(), segs) {
+        ("GET", ["v1", "workspaces"]) => out(200, list(ctx), |v| {
+            Value::Array(
+                v.iter()
+                    .filter(|w| !(w.auto && w.missing()))
+                    .map(|w| w.to_json(st))
+                    .collect(),
+            )
+        }),
+        ("POST", ["v1", "workspaces"]) => match create(ctx, body) {
+            Ok((created, w)) => (if created { 201 } else { 200 }, w.to_json(st)),
+            Err((c, e)) => (c, json!({ "error": e })),
+        },
+        ("PATCH", ["v1", "workspaces", id]) => out(200, patch(ctx, id, body), ws),
+        ("DELETE", ["v1", "workspaces", id]) => out(200, reg().and_then(|g| delete(&g, id)), |v| v),
+        ("GET", ["v1", "folders"]) => out(200, reg().and_then(|g| folders(&g)), |v| {
+            Value::Array(v.iter().map(Folder::to_json).collect())
+        }),
+        ("POST", ["v1", "folders"]) => out(201, reg().and_then(|g| create_folder(body, &g)), |f| {
+            f.to_json()
+        }),
+        ("PATCH", ["v1", "folders", id]) => {
+            out(200, reg().and_then(|g| patch_folder(&g, id, body)), |f| {
+                f.to_json()
+            })
+        }
+        ("DELETE", ["v1", "folders", id]) => {
+            out(200, reg().and_then(|g| delete_folder(ctx, &g, id)), |v| v)
+        }
+        ("GET", ["v1", "groups"]) => out(200, reg().and_then(|g| groups(&g)), |v| {
+            Value::Array(v.iter().map(Group::to_json).collect())
+        }),
+        ("POST", ["v1", "groups"]) => out(201, reg().and_then(|g| create_group(&g, body)), |g| {
+            g.to_json()
+        }),
+        ("PATCH", ["v1", "groups", id]) => {
+            out(200, reg().and_then(|g| patch_group(&g, id, body)), |g| {
+                g.to_json()
+            })
+        }
+        ("DELETE", ["v1", "groups", id]) => {
+            out(200, reg().and_then(|g| delete_group(&g, id)), |v| v)
+        }
+        ("POST", ["v1", "broadcast"]) => out(200, crate::broadcast::post(ctx, body), |v| v),
+        ("PUT", ["v1", "lines", id, "workspace"]) => out(200, assign_line(ctx, id, body), |v| v),
+        ("PUT", ["v1", "terms", id, "workspace"]) => out(200, assign_term(ctx, id, body), |v| v),
+        _ => return None,
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn ws(path: &str) -> Workspace {
+        Workspace {
+            id: path.into(),
+            name: path.into(),
+            path: path.into(),
+            folder_id: None,
+            pinned: false,
+            archived: false,
+            auto: false,
+            rank: 0.0,
+            tabs: vec![],
+            notify_idle: false,
+            created_ms: 0,
+            updated_ms: 0,
+        }
+    }
+
+    fn line(id: &str, wt: &str, repo: &str) -> Line {
+        Line {
+            id: id.into(),
+            worktree_path: wt.into(),
+            repo: repo.into(),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn membership_prefers_task_then_prefix_inside_the_repo_then_repo() {
+        let ix = Index {
+            workspaces: vec![
+                ws("/home/u"),
+                ws("/home/u/src/app"),
+                ws("/home/u/src/app/web"),
+                ws("/home/u/src/lib"),
+            ],
+            tasks: vec![Task {
+                id: "t1".into(),
+                project: "/home/u/src/lib".into(),
+                line_id: Some("l-task".into()),
+                ..Default::default()
+            }],
+            projects: vec![
+                ("/home/u/src/app".into(), "github.com/a/app".into()),
+                ("/home/u/src/lib".into(), "github.com/a/lib".into()),
+            ],
+        };
+        let of = |l: Line| ix.of_line(&l).map(|w| w.path.clone());
+        assert_eq!(
+            of(line("l-task", "/home/u/src/app", "github.com/a/app")).as_deref(),
+            Some("/home/u/src/lib")
+        );
+        assert_eq!(
+            of(line("a", "/home/u/src/app/web/x", "github.com/a/app")).as_deref(),
+            Some("/home/u/src/app/web")
+        );
+        assert_eq!(
+            of(line("b", "/home/u/wt/app-1", "github.com/a/app")).as_deref(),
+            Some("/home/u/src/app")
+        );
+        assert_eq!(
+            of(line("c", "/home/u/notes", "")).as_deref(),
+            Some("/home/u")
+        );
+        assert_eq!(of(line("d", "/srv/x", "github.com/z/z")), None);
+        assert_eq!(
+            of(line("e", "/home/u/src/applet", "")).as_deref(),
+            Some("/home/u")
+        );
+        let mut cwd = line("f", "", "");
+        cwd.cwd = "/home/u/src/lib/sub".into();
+        assert_eq!(of(cwd).as_deref(), Some("/home/u/src/lib"));
+    }
+
+    #[test]
+    fn a_session_in_a_child_workspace_folder_belongs_to_the_child_not_the_repo_root() {
+        let ix = Index {
+            workspaces: vec![ws("/home/u/src/app"), ws("/home/u/src/app/web")],
+            tasks: vec![],
+            projects: vec![("/home/u/src/app".into(), "github.com/a/app".into())],
+        };
+        let of = |cwd: &str| {
+            let mut l = line("l", "/home/u/src/app", "github.com/a/app");
+            l.cwd = cwd.into();
+            ix.of_line(&l).map(|w| w.path.clone())
+        };
+        assert_eq!(
+            of("/home/u/src/app/web/src").as_deref(),
+            Some("/home/u/src/app/web")
+        );
+        assert_eq!(of("/home/u/src/app").as_deref(), Some("/home/u/src/app"));
+        assert_eq!(of("/srv/elsewhere").as_deref(), Some("/home/u/src/app"));
+    }
+
+    #[test]
+    fn sessions_of_a_project_inside_a_parent_workspace_join_it() {
+        let ix = Index {
+            workspaces: vec![ws("/home/u/work")],
+            tasks: vec![
+                Task {
+                    id: "t1".into(),
+                    project: "/home/u/work/webshop".into(),
+                    line_id: Some("l-task".into()),
+                    ..Default::default()
+                },
+                Task {
+                    id: "t2".into(),
+                    project: "/home/u/work/webshop".into(),
+                    ..Default::default()
+                },
+            ],
+            projects: vec![
+                ("/home/u/work/webshop".into(), "github.com/a/webshop".into()),
+                ("/home/u/work/x".into(), "local:/home/u/work/x".into()),
+            ],
+        };
+        let wt = "/home/u/.overseer/worktrees/webshop-1/task-1";
+        let of = |l: Line| ix.of_line(&l).map(|w| w.path.clone());
+        assert_eq!(of(line("l-task", wt, "")).as_deref(), Some("/home/u/work"));
+        assert_eq!(
+            of(line("r", wt, "github.com/a/webshop")).as_deref(),
+            Some("/home/u/work")
+        );
+        assert_eq!(
+            of(line("l", wt, "local:/home/u/work/x")).as_deref(),
+            Some("/home/u/work")
+        );
+        let t = crate::term::Info {
+            cwd: "/srv".into(),
+            task_id: Some("t2".into()),
+            ..Default::default()
+        };
+        assert_eq!(
+            ix.of_term(&t).map(|w| w.path.as_str()),
+            Some("/home/u/work")
+        );
+    }
+
+    #[test]
+    fn an_explicit_assignment_beats_derived_membership_and_unknown_ids_fall_back() {
+        // Given a task-linked line and a shell term, both explicitly assigned to /home/u
+        // When membership is resolved, then again once the assigned workspace is unknown
+        // Then the assignment wins over task and path, and an unknown id falls back to them
+        let mut ix = Index {
+            workspaces: vec![ws("/home/u"), ws("/home/u/src/app"), ws("/home/u/src/lib")],
+            tasks: vec![Task {
+                id: "t1".into(),
+                project: "/home/u/src/lib".into(),
+                line_id: Some("l-task".into()),
+                ..Default::default()
+            }],
+            projects: vec![],
+        };
+        let mut l = line("l-task", "/home/u/src/app", "");
+        l.workspace_id = Some("/home/u".into());
+        let t = crate::term::Info {
+            cwd: "/home/u/src/app/x".into(),
+            workspace_id: Some("/home/u".into()),
+            ..Default::default()
+        };
+        assert_eq!(ix.of_line(&l).map(|w| w.path.as_str()), Some("/home/u"));
+        assert_eq!(ix.of_term(&t).map(|w| w.path.as_str()), Some("/home/u"));
+        ix.workspaces.retain(|w| w.path != "/home/u");
+        assert_eq!(
+            ix.of_line(&l).map(|w| w.path.as_str()),
+            Some("/home/u/src/lib")
+        );
+        assert_eq!(
+            ix.of_term(&t).map(|w| w.path.as_str()),
+            Some("/home/u/src/app")
+        );
+    }
+}

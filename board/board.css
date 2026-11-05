@@ -1,0 +1,201 @@
+:root {
+  --bg: #f6f7f9;
+  --surface: #ffffff;
+  --text: #1c2026;
+  --muted: #69717d;
+  --border: #dde1e6;
+  --accent: #2f6fdf;
+  --green: #1f8a4c;
+  --blue: #5b7aa6;
+  --amber: #b7791f;
+  --red: #c53030;
+  --add: #e6f6ea;
+  --del: #fdecec;
+  --hunk: #6f42c1;
+  --code-bg: #f0f2f5;
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #14171b;
+    --surface: #1d2126;
+    --text: #e4e7eb;
+    --muted: #8d96a3;
+    --border: #2e343b;
+    --accent: #6ea0ff;
+    --green: #46c27c;
+    --blue: #8aa6cf;
+    --amber: #e3a840;
+    --red: #f06b6b;
+    --add: #183a25;
+    --del: #452020;
+    --hunk: #b392f0;
+    --code-bg: #262b31;
+    --shadow: none;
+  }
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+code, pre, .branch { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12.5px; }
+a { color: var(--accent); }
+.muted { color: var(--muted); }
+
+header {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  padding: 10px 16px;
+}
+
+.bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+h1 { font-size: 17px; margin: 0; }
+.controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-left: auto; }
+.check { display: flex; align-items: center; gap: 4px; white-space: nowrap; }
+
+input, textarea, button {
+  font: inherit;
+  color: inherit;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 8px;
+}
+
+input[type=search] { min-width: 0; width: 240px; max-width: 100%; }
+input[type=checkbox] { padding: 0; }
+button { cursor: pointer; }
+button:hover:not(:disabled) { border-color: var(--accent); }
+button:disabled { opacity: 0.45; cursor: not-allowed; }
+button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+.live { font-size: 12px; color: var(--muted); display: inline-flex; align-items: center; gap: 5px; }
+.live::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--amber); }
+.live.is-live::before { background: var(--green); }
+.live.is-reconnecting::before { background: var(--red); }
+.live.is-connecting::before { background: var(--amber); }
+
+.stations { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.chip { border: 1px solid var(--border); border-radius: 999px; padding: 1px 10px; font-size: 12px; background: var(--bg); }
+.chip.local { border-color: var(--accent); }
+.chip.offline { opacity: 0.55; }
+.chip em { color: var(--accent); font-style: normal; }
+
+main { padding: 12px 16px 48px; max-width: 1200px; margin: 0 auto; }
+.empty { color: var(--muted); text-align: center; padding: 40px 0; }
+
+.group h2 { font-size: 15px; margin: 18px 0 8px; }
+.group h2 small { color: var(--muted); font-weight: normal; margin-left: 6px; }
+
+.line {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 12px;
+  margin-bottom: 8px;
+  box-shadow: var(--shadow);
+}
+
+.line.blocked { opacity: 0.6; }
+.top, .meta, .actions { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
+.meta { margin-top: 4px; }
+.actions { margin-top: 8px; gap: 6px; }
+.actions button { font-size: 12.5px; padding: 2px 9px; }
+.when { margin-left: auto; font-size: 12px; }
+.agent { font-weight: 600; }
+.ltitle { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 40ch; }
+.repo { font-weight: 600; }
+.branch { background: var(--code-bg); padding: 0 6px; border-radius: 4px; overflow-wrap: anywhere; }
+.path { font-size: 12px; overflow-wrap: anywhere; }
+.reason { margin: 6px 0 0; font-size: 12px; color: var(--muted); }
+
+.state, .flag, .ci {
+  font-size: 11.5px;
+  border-radius: 4px;
+  padding: 0 6px;
+  border: 1px solid currentColor;
+  white-space: nowrap;
+}
+
+.state { color: #fff; border: 0; font-weight: 600; padding: 1px 7px; }
+.state-active { background: var(--green); }
+.state-idle { background: var(--blue); }
+.state-held { background: var(--amber); }
+.state-hung-up { background: var(--red); }
+.flag { color: var(--muted); }
+.flag-needsInput, .flag-cwdMissing { color: var(--red); }
+.flag-pinned { color: var(--accent); }
+.ci-success { color: var(--green); }
+.ci-failure { color: var(--red); }
+.ci-pending { color: var(--amber); }
+.ci-none { color: var(--muted); }
+.pr { font-weight: 600; }
+.pr.merged { color: var(--hunk); }
+.pr.closed { color: var(--red); }
+
+dialog {
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  width: min(900px, calc(100vw - 32px));
+  max-height: calc(100vh - 48px);
+  padding: 16px;
+}
+
+dialog::backdrop { background: rgba(0, 0, 0, 0.45); }
+dialog h2 { margin: 0 0 8px; font-size: 16px; overflow-wrap: anywhere; }
+dialog h3 { font-size: 13px; margin: 12px 0 4px; }
+dialog input, dialog textarea { width: 100%; }
+.buttons { display: flex; flex-direction: row-reverse; gap: 8px; margin-top: 14px; }
+.items { padding-left: 20px; margin: 4px 0; overflow-wrap: anywhere; }
+.error { color: var(--red); }
+
+pre.diff {
+  background: var(--code-bg);
+  border-radius: 6px;
+  padding: 8px;
+  margin: 0;
+  overflow: auto;
+  max-height: 55vh;
+}
+
+pre.diff span { display: block; white-space: pre; }
+pre.diff .add { background: var(--add); }
+pre.diff .del { background: var(--del); }
+pre.diff .hunk { color: var(--hunk); }
+
+#toast {
+  position: fixed;
+  left: 50%;
+  bottom: 16px;
+  transform: translateX(-50%) translateY(80px);
+  background: var(--text);
+  color: var(--bg);
+  padding: 8px 14px;
+  border-radius: 8px;
+  max-width: calc(100vw - 32px);
+  opacity: 0;
+  transition: transform 0.2s, opacity 0.2s;
+  z-index: 10;
+}
+
+#toast.show { transform: translateX(-50%); opacity: 1; }
+#toast.error { background: var(--red); color: #fff; }
+
+@media (max-width: 640px) {
+  .controls { margin-left: 0; width: 100%; }
+  input[type=search] { flex: 1; width: auto; }
+  .when { margin-left: 0; }
+  .ltitle { max-width: 100%; }
+}

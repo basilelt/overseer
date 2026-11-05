@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Overseer Board</title>
+<link rel="stylesheet" href="/board/board.css">
+<script src="/board/board.js" defer></script>
+</head>
+<body>
+<header>
+  <div class="bar">
+    <h1 data-i18n="title">Overseer Board</h1>
+    <span id="live" class="live"></span>
+    <div class="controls">
+      <input type="search" id="filter">
+      <label class="check"><input type="checkbox" id="showAll"> <span data-i18n="showOlder"></span></label>
+      <button type="button" id="lang" class="small"></button>
+    </div>
+  </div>
+  <div id="stations" class="stations"></div>
+</header>
+<main id="list"></main>
+<dialog id="dlg">
+  <form method="dialog">
+    <h2 id="dlgTitle"></h2>
+    <div id="dlgBody"></div>
+    <div class="buttons">
+      <button value="ok" id="dlgOk" class="primary"></button>
+      <button value="cancel" id="dlgCancel" formnovalidate></button>
+    </div>
+  </form>
+</dialog>
+<div id="toast" role="status" aria-live="polite"></div>
+</body>
+</html>

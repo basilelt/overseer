@@ -1,0 +1,365 @@
+name: CI
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  workflow_dispatch:
+  workflow_call:
+    inputs:
+      skip:
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-pr-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
+
+jobs:
+  changes:
+    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
+    runs-on: ubuntu-slim
+    timeout-minutes: 5
+    outputs:
+      rust: ${{ steps.filter.outputs.rust }}
+      app: ${{ steps.filter.outputs.app }}
+      windows: ${{ steps.filter.outputs.windows }}
+      android: ${{ steps.filter.outputs.android }}
+      macos_signing: ${{ steps.filter.outputs.macos_signing }}
+      macos_procs: ${{ steps.filter.outputs.macos_procs }}
+      actionlint: ${{ steps.filter.outputs.actionlint }}
+      store_guard: ${{ steps.filter.outputs.store_guard }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+          fetch-depth: 2
+
+      - id: filter
+        env:
+          EVENT: ${{ github.event_name }}
+          SKIP: ${{ inputs.skip }}
+        run: scripts/ci-changes.sh
+
+  actionlint:
+    needs: changes
+    if: needs.changes.outputs.actionlint == 'true'
+    runs-on: ubuntu-slim
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - run: bash <(curl -fsSL https://raw.githubusercontent.com/rhysd/actionlint/v1.7.12/scripts/download-actionlint.bash) 1.7.12
+
+      - run: ./actionlint -color
+
+  rust:
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends tmux
+
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: stable
+          components: clippy, rustfmt
+
+      - run: scripts/ci-runner-check.sh cargo cargo-fmt cargo-clippy tmux git ssh ssh-keygen
+
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('Cargo.lock', 'api/Cargo.lock', 'app/src-tauri/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-registry-
+
+      - run: cargo fetch --locked && cargo fetch --locked --manifest-path api/Cargo.toml
+
+      - run: cargo fmt --check && cargo fmt --check --manifest-path api/Cargo.toml
+
+      - run: make lint
+
+      - run: timeout 1500 make test
+
+  app:
+    needs: changes
+    if: needs.changes.outputs.app == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Free disk space
+        run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL
+
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev libsoup-3.0-dev libjavascriptcoregtk-4.1-dev libxdo-dev libssl-dev pkg-config patchelf tmux
+
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: stable
+          components: clippy
+
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6
+        with:
+          version: 11
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: app/pnpm-lock.yaml
+
+      - run: scripts/ci-runner-check.sh cargo cargo-clippy pnpm pkg:webkit2gtk-4.1 pkg:gtk+-3.0 pkg:librsvg-2.0
+
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('Cargo.lock', 'api/Cargo.lock', 'app/src-tauri/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-registry-
+
+      - run: cargo fetch --locked
+
+      - run: make app-test
+
+  perf:
+    needs: changes
+    if: needs.changes.outputs.app == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Free disk space
+        run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL
+
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev libsoup-3.0-dev libjavascriptcoregtk-4.1-dev libxdo-dev libssl-dev pkg-config patchelf xvfb dbus-x11
+
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: stable
+
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6
+        with:
+          version: 11
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: app/pnpm-lock.yaml
+
+      - run: scripts/ci-runner-check.sh cargo pnpm xvfb-run pkg:webkit2gtk-4.1 pkg:gtk+-3.0 pkg:librsvg-2.0
+
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('Cargo.lock', 'api/Cargo.lock', 'app/src-tauri/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-registry-
+
+      - run: pnpm --dir app install --frozen-lockfile
+
+      - name: Release build of the app against the mock backend
+        env:
+          VITE_MOCK: "1"
+          VITE_PERF: "1"
+          CARGO_PROFILE_RELEASE_LTO: "false"
+          CARGO_PROFILE_RELEASE_CODEGEN_UNITS: "16"
+        run: pnpm --dir app tauri build --no-bundle --ci
+
+      - name: CPU budget (30 s idle, 30 s streaming)
+        run: xvfb-run -a -s "-screen 0 1440x900x24" scripts/perf-cpu.sh app/src-tauri/target/release/overseer-app
+
+  windows:
+    needs: changes
+    if: needs.changes.outputs.windows == 'true'
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: stable
+          components: clippy
+
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('Cargo.lock', 'api/Cargo.lock', 'app/src-tauri/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-registry-
+
+      - run: cargo clippy --locked --target x86_64-pc-windows-msvc --lib --bins -- -D warnings
+
+  macos:
+    needs: changes
+    if: (github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch') && (needs.changes.outputs.macos_signing == 'true' || needs.changes.outputs.macos_procs == 'true')
+    runs-on: macos-26
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Sign two builds with a throwaway Overseer Self-Signed identity
+        if: needs.changes.outputs.macos_signing == 'true'
+        shell: bash
+        run: |
+          d=$(mktemp -d)
+          ossl=/usr/bin/openssl
+          if prefix=$(brew --prefix openssl@3 2>/dev/null) && [ -x "$prefix/bin/openssl" ]; then
+            ossl="$prefix/bin/openssl"
+          fi
+          legacy=()
+          if "$ossl" version | grep -q '^OpenSSL 3'; then
+            legacy=(-legacy)
+          fi
+          cat >"$d/cert.cnf" <<'CNF'
+          [req]
+          distinguished_name = dn
+          x509_extensions = ext
+          prompt = no
+          [dn]
+          CN = Overseer Self-Signed
+          O = Overseer CI
+          [ext]
+          basicConstraints = critical,CA:FALSE
+          keyUsage = critical,digitalSignature
+          extendedKeyUsage = critical,codeSigning
+          subjectKeyIdentifier = hash
+          CNF
+          "$ossl" req -x509 -newkey rsa:2048 -sha256 -days 2 -nodes -config "$d/cert.cnf" -keyout "$d/key.pem" -out "$d/cert.pem"
+          pw=$("$ossl" rand -hex 16)
+          "$ossl" pkcs12 -export "${legacy[@]}" -inkey "$d/key.pem" -in "$d/cert.pem" -name "Overseer Self-Signed" -out "$d/id.p12" -passout "pass:$pw"
+          rm "$d/key.pem"
+          SIGN_P12_BASE64=$(base64 -i "$d/id.p12" | tr -d '\n') SIGN_P12_PASSWORD=$pw scripts/macos-sign.sh import >"$d/identity"
+          identity=$(cat "$d/identity")
+          for v in 1 2; do
+            app="$d/v$v/Overseer.app"
+            mkdir -p "$app/Contents/MacOS"
+            cp /usr/bin/true "$app/Contents/MacOS/overseer-app"
+            printf '<?xml version="1.0" encoding="UTF-8"?>\n<plist version="1.0"><dict><key>CFBundleIdentifier</key><string>io.github.basilelt.overseer</string><key>CFBundleExecutable</key><string>overseer-app</string><key>CFBundleShortVersionString</key><string>0.0.%s</string></dict></plist>\n' "$v" >"$app/Contents/Info.plist"
+            codesign --force --timestamp -s "$identity" "$app"
+            scripts/macos-sign.sh verify "$app" selfsigned
+            codesign -d -r- "$app" 2>&1 | grep designated >"$d/dr$v"
+          done
+          cmp "$d/dr1" "$d/dr2"
+          echo "two different builds share one designated requirement: $(cat "$d/dr1")"
+
+      - if: always() && env.SIGN_KEYCHAIN != ''
+        run: security delete-keychain "$SIGN_KEYCHAIN" || true
+
+      - if: needs.changes.outputs.macos_procs == 'true'
+        uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+
+      - if: needs.changes.outputs.macos_procs == 'true'
+        run: "cargo test --lib -- procs:: ports:: review::watch::"
+
+  store-guard:
+    needs: changes
+    if: needs.changes.outputs.store_guard == 'true'
+    runs-on: ubuntu-slim
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - run: scripts/store-guard.sh
+
+  android:
+    needs: changes
+    if: needs.changes.outputs.android == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: stable
+
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6
+        with:
+          version: 11
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: app/pnpm-lock.yaml
+
+      - name: Free disk space
+        run: sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL
+
+      - run: scripts/ci-runner-check.sh cargo rustup pnpm java env:ANDROID_HOME env:JAVA_HOME
+
+      - run: NDK_HOME=${ANDROID_NDK_HOME:-} scripts/android-env.sh aarch64-linux-android
+
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('Cargo.lock', 'api/Cargo.lock', 'app/src-tauri/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-registry-
+
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ hashFiles('app/src-tauri/gen/android/**/*.gradle.kts', 'app/src-tauri/gen/android/gradle/wrapper/gradle-wrapper.properties') }}
+          restore-keys: gradle-
+
+      - run: pnpm --dir app install --frozen-lockfile
+
+      - run: pnpm --dir app tauri android build --ci --debug --apk --target aarch64
+
+      - run: scripts/android-apk.sh debug out/overseer-debug-arm64.apk
+
+      - if: github.event_name != 'push'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: android-debug-apk
+          path: out/
+          if-no-files-found: error
+          retention-days: 4

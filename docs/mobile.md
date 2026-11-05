@@ -1,0 +1,235 @@
+# Mobile app: Android and iOS
+
+The Tauri app also builds for Android and iOS (ADR 0032). The projects are generated into
+`app/src-tauri/gen/android` and `app/src-tauri/gen/apple` and committed.
+
+Both builds run on phones and tablets. The iOS target is universal (`TARGETED_DEVICE_FAMILY = "1,2"`,
+iPhone and iPad, every iPad orientation), and the Android APK installs on tablets. The layout
+follows the width: below 1024 px (a phone, a tablet in portrait, an iPad Split View) the app shows
+the phone layout; from 1024 px (a tablet in landscape) it shows the desktop layout with touch. QA
+covers each case with the `android`, `android-tablet`, `iphone`, `ipad` and `-landscape` modes of
+`scripts/qa/drive.py` (`docs/qa-path.md`).
+
+| Platform | Package | Where it goes | Who can install |
+|---|---|---|---|
+| Android | universal release APK (arm64-v8a, armeabi-v7a), signed with the Overseer release key | the GitHub Release, `Overseer_<version>_android.apk` + `.sha256` | anyone: in-app updates, Obtainium or by hand |
+| iOS | App Store IPA, signed with the team's distribution certificate (fastlane match) | TestFlight, an internal testing group | members of the App Store Connect team in that group |
+
+There is no Play Store or App Store release. The iOS build goes to TestFlight only; it is never
+submitted for App Store review, nor for external TestFlight review. `scripts/store-guard.sh` runs
+in CI and before every iOS upload, and fails if a workflow, script or fastlane file contains a
+store submission action.
+
+Bundle identifier and Android package: `io.github.basilelt.overseer`, the desktop identifier.
+
+## Install on Android with Obtainium
+
+[Obtainium](https://github.com/ImranR98/Obtainium) installs and updates apps from GitHub releases.
+The repository is public, so Obtainium needs no GitHub token.
+
+1. Add App:
+   - App source URL: `https://github.com/basilelt/overseer` (the source is detected as
+     GitHub);
+   - "Filter APKs by regular expression": `Overseer_.*_android\.apk`;
+   - leave "Include prereleases" off.
+2. Install. Android asks once to allow Obtainium to install unknown apps.
+3. Updates: Obtainium checks the latest release and offers the new APK. Allow background updates
+   in its settings if you want them applied without opening it.
+
+Every release is signed with the same key, so Android accepts each APK as an update of the
+previous one. A debug APK from a pull request (artifact `android-debug-apk`,
+`overseer-debug-arm64.apk`, never attached to a release) is signed with a debug key:
+uninstall it before installing a release APK, and the other way round.
+
+## Updates on Android
+
+Overseer updates itself from the GitHub releases (ADR 0032, addendum). Obtainium still works
+and installs the same signed APK; use one or the other.
+
+The repository is public, so checking for and downloading updates needs no GitHub token. A token
+saved under Settings > Updates is optional; it only lifts GitHub's anonymous API rate limit
+(60 requests per hour per IP address).
+
+1. When a release is newer than the installed version, an "Update x.y.z" pill appears in the top
+   bar. Tap it, read the notes, tap "Download & install". The APK is downloaded, checked against
+   the release's `.sha256`, then:
+2. The first time only, Android must allow installs from Overseer: the sheet explains it and
+   opens the setting; turn on "Allow from this source" and come back. The installer opens on its
+   own.
+3. Confirm in the Android installer. Overseer restarts on the new version.
+
+Checks run at start, every 6 hours while the app runs, when it comes back to the foreground (at
+most every 15 minutes) and from the buttons. A debug APK from a pull request is signed with
+another key: the app says so and the release APK must be installed by hand once after
+uninstalling it.
+
+## Installing the server from the phone
+
+A host without the Overseer server (or with an older one) no longer needs the desktop app
+first. When the phone connects, it maps `uname -sm` to the release asset
+(`overseer-<version>-x86_64-unknown-linux-musl`, `-aarch64-unknown-linux-musl`,
+`-x86_64-apple-darwin`, `-aarch64-apple-darwin`) of its own version, downloads it from the GitHub
+release, checks it against the release's `SHA256SUMS`, caches it in the app
+cache folder, uploads it over the SSH session and starts it. The Connect screen shows "Downloading
+server for linux/x86_64", "Installing server", "Starting". A running older daemon is hot-upgraded
+as from the desktop.
+
+The download needs no token (public releases); an optional token from Settings > Updates on
+Android, or Settings > GitHub access on iOS, is used when set.
+
+## Install on Android by hand
+
+```sh
+gh release download --repo basilelt/overseer --pattern '*android.apk*'
+sha256sum -c Overseer_*_android.apk.sha256
+adb install -r Overseer_*_android.apk
+```
+
+Or copy the APK to the phone and open it. The release `SHA256SUMS` lists the APK too.
+
+The release workflow pins the signing certificate when the repository variable
+`ANDROID_CERT_SHA256` is set; compare it with `apksigner verify --print-certs` on the downloaded
+APK.
+
+## Install on iOS with TestFlight
+
+An App Store Connect admin adds you to the team and to the internal TestFlight group.
+Install TestFlight from the App Store, accept the invitation, and install Overseer. New builds
+show up in TestFlight after Apple's processing (usually 10 to 30 minutes after the release run).
+
+## How the builds run
+
+- Pull requests: the `android` CI job builds a debug APK for arm64 (`pnpm tauri android build
+  --debug --apk --target aarch64`) so the mobile code compiles, and uploads it as the
+  `android-debug-apk` artifact. `store-guard` checks for store submissions. iOS is not built on
+  pull requests.
+- Releases (`release.yml`, push to `main`):
+  - `app-android` on `ubuntu-24.04`: stamps the version (`scripts/set-version.sh`),
+    builds `pnpm tauri android build --apk --target aarch64 --target armv7` with the release
+    keystore, checks the signature (and the certificate fingerprint when `ANDROID_CERT_SHA256` is
+    set) with `apksigner` (`scripts/android-apk.sh`), and hands the APK to `publish`. The release does not wait for it
+    to succeed.
+  - `app-ios` on `macos-26`, `continue-on-error`: runs `scripts/store-guard.sh`, writes
+    `APPLE_TEAM_ID` into the Xcode project (`gen/apple/project.yml` and `project.pbxproj` are
+    committed with an empty team), then `fastlane ios internal_testflight` from `app/`
+    (`app/fastlane/Fastfile`). The lane creates a temporary keychain, fetches the `appstore`
+    certificate and profile with `match` (readonly) from the `MATCH_GIT_URL` repository, builds with `pnpm tauri ios build
+    --export-method app-store-connect`, checks the IPA's versions, and uploads with
+    `upload_to_testflight(skip_submission: true, skip_waiting_for_build_processing: true)`.
+    `CFBundleShortVersionString` is the release version; `CFBundleVersion` is the workflow run
+    number (`<run>.<attempt>` on a re-run, so a re-run never reuses a build number).
+  - Each job is skipped, with a warning on the run, while its secrets are missing (the `tag` job
+    checks them). A release never fails because of the mobile builds.
+- Versions: Android `versionName` is the release version and `versionCode` is
+  `major * 1000000 + minor * 1000 + patch` (Tauri's default), so every release upgrades the
+  previous one.
+- The mobile bundles carry no daemon binaries (`bundle.resources` is emptied in
+  `app/src-tauri/tauri.android.conf.json` and `tauri.ios.conf.json`).
+
+### Why one universal APK
+
+One file per release is what Obtainium and `gh release download` handle without per-device
+filters. arm64-v8a covers every current phone; armeabi-v7a covers older 32-bit-only devices.
+x86 and x86_64 are left out: they are for emulators and a few Chromebooks, and each extra ABI is
+another release build of the Rust crate on the runner. Emulators can run the arm64 debug APK on
+Apple Silicon or use `pnpm tauri android dev`.
+
+## One-time setup
+
+Every secret below is optional: while a platform's set is incomplete its release job is skipped
+with a warning and the rest of the release goes on (docs/ci.md, "Secrets").
+
+### Android (once, by whoever holds the release key)
+
+Create a release keystore and keep it outside the repository, with its passwords, in a password
+manager:
+
+```sh
+keytool -genkeypair -v -storetype PKCS12 -keystore overseer-release.jks -alias overseer \
+  -keyalg RSA -keysize 4096 -validity 10000
+keytool -list -v -keystore overseer-release.jks -alias overseer | grep SHA256
+```
+
+Repository secrets and variable (Settings > Secrets and variables > Actions):
+
+| Name | Kind | Value |
+|---|---|---|
+| `ANDROID_KEYSTORE_BASE64` | secret | `base64 -w0 overseer-release.jks` |
+| `ANDROID_KEYSTORE_PASSWORD` | secret | the store password |
+| `ANDROID_KEY_ALIAS` | secret | `overseer` |
+| `ANDROID_KEY_PASSWORD` | secret | the key password (same as the store password for a PKCS12 keystore) |
+| `ANDROID_CERT_SHA256` | variable | the `SHA256:` fingerprint printed above (optional: pins the key in `scripts/android-apk.sh`) |
+
+A lost or changed key means users must uninstall the app before they can install a new release.
+Rotating the key also means updating `ANDROID_CERT_SHA256`.
+
+### iOS (once, by the Apple Developer account holder)
+
+Needs a paid Apple Developer Program membership. Nothing in the repository names a team: the
+team id comes from the `APPLE_TEAM_ID` secret at build time.
+
+1. Register the bundle id: developer.apple.com > Certificates, Identifiers & Profiles >
+   Identifiers > + > App IDs > App, description "Overseer", explicit bundle ID
+   `io.github.basilelt.overseer`. No capability is needed.
+2. Create the app record: App Store Connect > Apps > + > New App, platform iOS, name
+   "Overseer" (App Store names are global: if it is taken, pick another; it does not need to
+   match the app), primary language, bundle ID `io.github.basilelt.overseer`, SKU `overseer`.
+3. TestFlight > Internal Testing > + : a group, with automatic distribution on so every processed
+   build reaches it. Add the testers (they must be App Store Connect users of the team).
+4. Export compliance: Overseer uses encryption (SSH). Until the answer is recorded, each build
+   waits in TestFlight for "Manage" > export compliance before testers get it. Once decided, set
+   `ITSAppUsesNonExemptEncryption` accordingly in `app/src-tauri/Info.ios.plist` (Tauri merges it
+   into the iOS `Info.plist`) so builds go through on their own.
+5. Create a private Git repository for fastlane match (for example `basilelt/certificates`) and
+   a deploy key for it (read-only is enough for CI). Then, on a Mac with fastlane, from `app/` of
+   this repository:
+
+   ```sh
+   cd app
+   APPLE_TEAM_ID=<team id> MATCH_GIT_URL=git@github.com:<owner>/certificates.git \
+     MATCH_PASSWORD=<a new passphrase> fastlane match appstore --app_identifier io.github.basilelt.overseer
+   ```
+
+   It logs in to the Apple account (or pass `--api_key_path` with an App Store Connect API key
+   JSON), creates or reuses an Apple Distribution certificate, and stores it with the profile
+   `match AppStore io.github.basilelt.overseer`, encrypted with `MATCH_PASSWORD`. CI only reads
+   it (`readonly: true`).
+6. Repository secrets:
+
+   | Secret | Value |
+   |---|---|
+   | `APPLE_TEAM_ID` | the 10-character Apple Developer team id (Membership details) |
+   | `APPLE_KEY_ID` | App Store Connect API key id (Users and Access > Integrations, role App Manager or Admin) |
+   | `APPLE_ISSUER_ID` | issuer id of that key |
+   | `APPLE_KEY_CONTENT` | the `.p8` file content |
+   | `MATCH_GIT_URL` | SSH URL of the match repository, e.g. `git@github.com:<owner>/certificates.git` |
+   | `MATCH_PASSWORD` | passphrase of the match repository |
+   | `MATCH_SSH_PRIVATE_KEY` | private key of the deploy key of the match repository |
+
+   `APPLE_ITC_TEAM_ID` (App Store Connect team id) is read by `app/fastlane/Appfile` when it is in
+   the environment; it only matters for an Apple account in several App Store Connect teams, and
+   the API key already selects the team.
+
+The next release then uploads a build; it appears in TestFlight after processing. Never add
+`deliver`, `upload_to_app_store`, `submit_for_review` or external distribution to the lane:
+`store-guard` would fail the pull request.
+
+## Regenerating the projects
+
+`.github/workflows/mobile-init.yml` (manual, Actions > Mobile init > Run workflow, choose the
+branch) runs `pnpm tauri android init --ci` on `ubuntu-24.04` and `pnpm tauri ios init --ci`
+on `macos-26` (without a development team: the release job sets it at build time), regenerates the mobile icons from `app/src-tauri/icons/icon.png`, and commits
+`app/src-tauri/gen/android` and `app/src-tauri/gen/apple` to that branch as
+`github-actions[bot]`. It does nothing for a platform whose directory exists unless "force" is
+checked. After a forced Android run, re-apply the hand edits to `app/src-tauri/gen/android`:
+
+- the release signing block and the SDK level (36, preinstalled on the hosted runner) in
+  `app/build.gradle.kts`;
+- `app/src/main/java/io/github/basilelt/overseer/ApkInstallerPlugin.kt` (the in-app installer, keep the
+  file);
+- `<uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />` in
+  `app/src/main/AndroidManifest.xml`. The installer also relies on the generated `FileProvider`
+  (`${applicationId}.fileprovider`) and its `cache-path` in `res/xml/file_paths.xml`.
+
+The icons come from the 512x512 `icon.png`; the 1024x1024 App Store icon is upscaled. A
+1024x1024 source would give a sharper icon.

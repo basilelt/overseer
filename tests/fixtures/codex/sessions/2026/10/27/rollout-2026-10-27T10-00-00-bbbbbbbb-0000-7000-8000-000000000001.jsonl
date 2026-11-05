@@ -1,0 +1,2 @@
+{"timestamp":"2026-10-27T10:00:00.000Z","type":"session_meta","payload":{"id":"bbbbbbbb-0000-7000-8000-000000000001","timestamp":"2026-10-27T10:00:00.000Z","cwd":"{{WT_CHORE}}","originator":"codex_cli_rs","cli_version":"0.142.5","source":"cli","model_provider":"openai","git":{"commit_hash":"0","branch":"chore/no-ticket","repository_url":"git@github.com:Acme/widget.git"}}}
+{"timestamp":"2026-10-27T10:00:01.000Z","type":"event_msg","payload":{"type":"task_started","turn_id":"t1"}}

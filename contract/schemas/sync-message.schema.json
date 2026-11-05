@@ -1,0 +1,87 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://overseer.local/contract/sync-message.schema.json",
+  "title": "SyncMessage",
+  "description": "Frames on the daemon to API WebSocket. Daemon frames carry a per-station seq; the API acks the highest seq applied.",
+  "type": "object",
+  "required": ["kind"],
+  "oneOf": [
+    {
+      "properties": {
+        "kind": { "const": "hello" },
+        "stationId": { "type": "string" },
+        "daemonVersion": { "type": "string" },
+        "lastAckedSeq": { "type": "integer", "minimum": 0 }
+      },
+      "required": ["kind", "stationId", "daemonVersion", "lastAckedSeq"]
+    },
+    {
+      "properties": {
+        "kind": { "const": "snapshot" },
+        "seq": { "type": "integer", "minimum": 1 },
+        "lines": { "type": "array", "items": { "$ref": "line.schema.json" } }
+      },
+      "required": ["kind", "seq", "lines"]
+    },
+    {
+      "properties": {
+        "kind": { "const": "delta" },
+        "seq": { "type": "integer", "minimum": 1 },
+        "upsert": { "type": "array", "items": { "$ref": "line.schema.json" } },
+        "remove": { "type": "array", "items": { "type": "string" } }
+      },
+      "required": ["kind", "seq"]
+    },
+    {
+      "properties": {
+        "kind": { "const": "heartbeat" },
+        "seq": { "type": "integer", "minimum": 0 },
+        "activeCount": { "type": "integer", "minimum": 0 },
+        "memUsedBytes": { "type": "integer", "minimum": 0 },
+        "memTotalBytes": { "type": "integer", "minimum": 0 }
+      },
+      "required": ["kind"]
+    },
+    {
+      "properties": {
+        "kind": { "const": "ack" },
+        "seq": { "type": "integer", "minimum": 0 },
+        "resync": { "type": "boolean", "description": "API asks for a full snapshot." }
+      },
+      "required": ["kind", "seq"]
+    },
+    {
+      "description": "API reply to a heartbeat: the other stations and their non hung-up lines (ADR 0019).",
+      "properties": {
+        "kind": { "const": "stations" },
+        "stations": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["stationId", "lines"],
+            "properties": {
+              "stationId": { "type": "string" },
+              "lastSeenAt": { "type": "string", "format": "date-time" },
+              "lines": { "type": "array", "items": { "$ref": "line.schema.json" } }
+            }
+          }
+        }
+      },
+      "required": ["kind", "stations"]
+    },
+    {
+      "properties": {
+        "kind": { "const": "command" },
+        "command": { "$ref": "command.schema.json" }
+      },
+      "required": ["kind", "command"]
+    },
+    {
+      "properties": {
+        "kind": { "const": "command_result" },
+        "command": { "$ref": "command.schema.json" }
+      },
+      "required": ["kind", "command"]
+    }
+  ]
+}

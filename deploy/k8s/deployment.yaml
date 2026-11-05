@@ -1,0 +1,69 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: overseer-api
+  labels:
+    app.kubernetes.io/name: overseer-api
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: overseer-api
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: overseer-api
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: api
+          image: overseer-api:0.1.0
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            - name: OVERSEER_API_ADDR
+              value: 0.0.0.0:8080
+            - name: OVERSEER_API_DB
+              value: /data/overseer-api.db
+            - name: OVERSEER_ADMIN_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: overseer-api
+                  key: admin-token
+          volumeMounts:
+            - name: data
+              mountPath: /data
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: overseer-api-data
