@@ -266,3 +266,17 @@ describe('helpers', () => {
     expect(pillLabel({ phase: 'available', info: { version: '1.0.0' } as never, progress: null })).toBe('Mise à jour 1.0.0');
   });
 });
+
+describe('startApkUpdater', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('stays off in demo mode, so no update check or install prompt reaches the native side', async () => {
+    vi.stubGlobal('window', { __TAURI_INTERNALS__: {} });
+    vi.stubGlobal('localStorage', { getItem: (k: string) => (k === 'overseer.demo' ? '1' : null) });
+    const { apk, startApkUpdater } = await import('./apk-update.svelte');
+    const onResume = vi.fn(() => () => {});
+    startApkUpdater('android', onResume)();
+    expect(onResume).not.toHaveBeenCalled();
+    expect(apk.enabled).toBe(false);
+  });
+});

@@ -24,6 +24,11 @@ describe('MockDaemon', () => {
     expect(projects.length).toBeGreaterThan(2);
   });
 
+  it('reports the device it was given, for the demo on a real phone', async () => {
+    expect(await new MockDaemon({ live: false, platform: { os: 'ios', mobile: true } }).platform()).toEqual({ os: 'ios', mobile: true });
+    expect((await setup().m.platform()).mobile).toBe(false);
+  });
+
   it('browses host folders through the dirs route', async () => {
     const { a } = setup();
     const home = await a.dirs();

@@ -1,4 +1,5 @@
 import { isTauri } from './client';
+import { isDemo } from './demo';
 import { type Sub, t } from './i18n.svelte';
 
 export type InstallKind = 'bundle' | 'homebrew' | 'package';
@@ -319,7 +320,7 @@ const lazy: UpdaterBackend = {
   openUrl: async (u) => (await tauriBackend()).openUrl(u),
 };
 
-export const updater = new Updater(isTauri() ? lazy : null);
+export const updater = new Updater(isTauri() && !isDemo() ? lazy : null);
 
 export function startUpdater(): () => void {
   return import.meta.env.PROD ? updater.start() : (void updater.refreshStatus(), () => {});

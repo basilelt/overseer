@@ -1,4 +1,5 @@
 import { isTauri } from './client';
+import { isDemo } from './demo';
 import { t } from './i18n.svelte';
 import { center } from './notifications.svelte';
 import type { EntryInput } from './notifications';
@@ -83,6 +84,7 @@ function markAsked() {
 const plugin = (): Promise<Plugin> => import('@tauri-apps/plugin-notification');
 
 export async function permission(os: string): Promise<Perm> {
+  if (isDemo()) return permOf({ tauri: false, os, web: undefined, asked: false });
   if (!isTauri()) return permOf({ tauri: false, os, web: typeof Notification === 'undefined' ? undefined : Notification.permission, asked: false });
   if (DESKTOP_OS.includes(os)) return 'system';
   const granted = await plugin()
@@ -151,6 +153,7 @@ export interface OsNote {
 }
 
 export async function sendOs(app: AppLike, n: OsNote, fromUser = false): Promise<boolean> {
+  if (isDemo()) return false;
   const body = settings.notifyPreview ? n.body || undefined : undefined;
   if (!isTauri()) {
     if (fromUser) await requestPermission(app.os, true);
@@ -251,7 +254,7 @@ export function dispatch(app: AppLike, input: NoticeInput, show: (text: string, 
 export function startOs(app: AppLike): () => void {
   let done = false;
   let stop: (() => void) | null = null;
-  if (isTauri())
+  if (isTauri() && !isDemo())
     void plugin().then((mod) => {
       const p = listen(app, mod);
       return p.then((l) => {

@@ -1,4 +1,4 @@
-export type StepId = 'host' | 'workspaces' | 'tabs' | 'view' | 'panel' | 'kanban' | 'review' | 'chips' | 'notify' | 'profiles' | 'palette' | 'paletteKey' | 'organize' | 'settings' | 'feedback';
+export type StepId = 'host' | 'workspaces' | 'tabs' | 'view' | 'panel' | 'kanban' | 'review' | 'chips' | 'notify' | 'profiles' | 'palette' | 'paletteKey' | 'organize' | 'settings' | 'feedback' | 'demo';
 
 export interface Step {
   id: StepId;
@@ -9,6 +9,7 @@ export interface Step {
 
 export const STEPS: Step[] = [
   { id: 'host', targets: ['host'], since: '0.15' },
+  { id: 'demo', targets: ['demo', 'host'], since: '0.27' },
   { id: 'workspaces', targets: ['workspaces'], since: '0.15' },
   { id: 'tabs', targets: ['tabs'], since: '0.15' },
   { id: 'view', targets: ['view-toggle'], since: '0.15' },
