@@ -28,6 +28,10 @@ describe('review dialog layout', () => {
     expect(dialog).not.toMatch(/calc\(\d+d?vh\s*-/);
   });
 
+  it('gives the phone frame room for the review chrome plus a readable diff', () => {
+    expect(prop(rule(dialog, ':global(.phone) .frame'), 'min-height')).toBe('470px');
+  });
+
   it('keeps the dialog header from shrinking', () => {
     expect(prop(rule(dialog, '.head'), 'flex')).toBe('none');
   });

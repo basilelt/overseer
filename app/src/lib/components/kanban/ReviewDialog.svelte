@@ -103,6 +103,9 @@
     border-radius: var(--radius);
     overflow: hidden;
   }
+  :global(.phone) .frame {
+    min-height: 470px;
+  }
   .state {
     display: flex;
     align-items: center;
