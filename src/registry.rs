@@ -180,6 +180,8 @@ const ADDED_COLUMNS: &[(&str, &str, &str)] = &[
     ("lines", "session_now", "TEXT"),
     ("lines", "title_override", "TEXT"),
     ("lines", "workspace_id", "TEXT"),
+    ("workspaces", "kind", "TEXT NOT NULL DEFAULT 'dir'"),
+    ("workspaces", "cwd", "TEXT"),
     ("tasks", "rank", "REAL"),
     ("tasks", "origin", "TEXT"),
     ("tasks", "manual_status", "TEXT"),
@@ -222,7 +224,7 @@ impl Registry {
         conn.pragma_update(None, "journal_mode", "WAL")
             .map_err(|e| e.to_string())?;
         conn.execute_batch(SCHEMA).map_err(|e| e.to_string())?;
-        for table in ["lines", "tasks"] {
+        for table in ["lines", "tasks", "workspaces"] {
             let have: Vec<String> = conn
                 .prepare(&format!("SELECT name FROM pragma_table_info('{table}')"))
                 .and_then(|mut s| s.query_map([], |r| r.get(0))?.collect())

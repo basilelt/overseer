@@ -238,6 +238,7 @@ fn term_spec(b: &Value, state_dir: &std::path::Path) -> Result<crate::term::Spec
         title: s("title")?,
         line_id: s("lineId")?,
         task_id: s("taskId")?,
+        workspace_id: s("workspaceId")?,
         ..Default::default()
     };
     if let Some(id) = s("agent")? {
@@ -313,6 +314,11 @@ fn terms(r: &Request, segs: &[&str], body: &Value, ctx: &Ctx) -> Option<(u16, Va
             Value::Array(term::all().iter().map(|t| t.to_json()).collect()),
         ),
         ("POST", ["v1", "terms"]) => {
+            let started = match crate::workspaces::start_body(ctx, body) {
+                Ok(b) => b,
+                Err((c, e)) => return Some(err(c, e)),
+            };
+            let body = &started;
             match term_spec(body, &ctx.state_dir)
                 .map_err(|e| err(400, e))
                 .and_then(|mut s| {

@@ -705,9 +705,16 @@ pub fn build(ctx: &Ctx) -> Result<Value, (u16, Value)> {
         )
         .and_then(|p| crate::activity::activity(l.agent, &p, Some(ctx.now_ms)))
     };
+    // Subjects have no directory to organize or archive by.
+    let dirs: Vec<Workspace> = ix
+        .workspaces
+        .iter()
+        .filter(|w| !w.subject)
+        .cloned()
+        .collect();
     let plan = deterministic(&Input {
         lines: &lines,
-        workspaces: &ix.workspaces,
+        workspaces: &dirs,
         folders: &folders,
         groups: &groups,
         projects: &ix.projects,
@@ -1301,6 +1308,8 @@ mod tests {
             notify_idle: false,
             created_ms: NOW,
             updated_ms: NOW,
+            subject: false,
+            cwd: None,
         }
     }
 

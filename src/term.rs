@@ -186,6 +186,7 @@ pub struct Spec {
     pub flags: Vec<String>,
     pub profile: Option<crate::profiles::Chip>,
     pub id: Option<String>,
+    pub workspace_id: Option<String>,
 }
 
 static TERMS: Mutex<BTreeMap<String, Arc<Term>>> = Mutex::new(BTreeMap::new());
@@ -554,7 +555,7 @@ pub fn spawn(s: Spec) -> Result<Arc<Term>, String> {
             flags: s.flags,
             sized_by: None,
             profile: s.profile,
-            workspace_id: None,
+            workspace_id: s.workspace_id,
             resume: None,
         }),
         out: Mutex::default(),

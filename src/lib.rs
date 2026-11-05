@@ -1189,6 +1189,17 @@ fn scan_now(ctx: &Ctx) -> Result<Vec<Line>, String> {
             .find(|p| p.held.as_deref() == Some(id.as_str()) && !p.dead)
             .map(|p| p.id.clone());
         l.id = id;
+        if l.workspace_id.is_none() {
+            let from_term = l
+                .term_id
+                .as_deref()
+                .and_then(term::get)
+                .and_then(|t| t.info().workspace_id);
+            if let Some(w) = from_term {
+                reg.set_mark(&l.id, "workspace_id", Some(&w))?;
+                l.workspace_id = Some(w);
+            }
+        }
         l.resume_command = resume_command(l.agent, &l.cwd, &l.session_id, &args);
         l.launch_args = args;
         lines.push(l);
