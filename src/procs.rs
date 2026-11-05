@@ -87,10 +87,11 @@ impl Probe for System {
             let stat = std::fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
             let after = &stat[stat.rfind(')')? + 1..];
             let start = after.split_whitespace().nth(19).map(str::to_string);
+            let start_ms = start.as_deref().and_then(boot_ticks_ms);
             Some(ProcInfo {
                 start,
                 argv,
-                start_ms: None,
+                start_ms,
             })
         } else {
             #[cfg(target_os = "macos")]
@@ -394,6 +395,23 @@ pub fn parse_etime(s: &str) -> Option<i64> {
     Some(((days * 24 + h) * 60 + m) * 60 + sec)
 }
 
+fn boot_ticks_ms(ticks: &str) -> Option<i64> {
+    static BOOT_MS: std::sync::OnceLock<Option<i64>> = std::sync::OnceLock::new();
+    let boot = (*BOOT_MS.get_or_init(|| {
+        std::fs::read_to_string("/proc/stat")
+            .ok()?
+            .lines()
+            .find_map(|l| l.strip_prefix("btime "))?
+            .trim()
+            .parse::<i64>()
+            .ok()
+            .map(|s| s * 1000)
+    }))?;
+    let tck = unsafe { libc::sysconf(libc::_SC_CLK_TCK) };
+    let tck = if tck > 0 { tck as i64 } else { 100 };
+    Some(boot + ticks.parse::<i64>().ok()? * 1000 / tck)
+}
+
 pub fn same_process(started_at_ms: Option<i64>, proc_start_ms: Option<i64>) -> bool {
     match (started_at_ms, proc_start_ms) {
         (Some(a), Some(b)) => (a - b).abs() <= 60_000,
@@ -531,6 +549,23 @@ mod tests {
         assert!(mac::socket_fds(me).is_some_and(|f| f.contains(&fd)));
         let info = System.info(me).expect("info");
         assert_eq!(info.argv, argv);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn linux_info_reads_the_start_time_of_a_process() {
+        // Given a child process spawned now
+        // When its info is read
+        // Then its start time is within a few seconds of now
+        let mut child = std::process::Command::new("sleep")
+            .arg("5")
+            .spawn()
+            .unwrap();
+        let started = System.info(child.id()).and_then(|i| i.start_ms);
+        child.kill().unwrap();
+        child.wait().unwrap();
+        let started = started.expect("start_ms");
+        assert!((now_ms() - started).abs() < 5_000, "{started}");
     }
 
     fn v(s: &[&str]) -> Vec<String> {

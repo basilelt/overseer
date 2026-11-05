@@ -243,8 +243,19 @@ const VALUE_FLAGS: &[&str] = &[
     "--ask-for-approval",
 ];
 
+// codex is the program itself or the script of a JS runtime or shell. Anywhere else it is an argument:
+// the Linux sandbox runs every tool call as `bwrap … -- …/bin/codex --sandbox-policy-cwd …`.
 fn args(argv: &[String]) -> Option<&[String]> {
-    let i = argv.iter().position(|a| is_codex(a))?;
+    let runtime = argv.first().is_some_and(|a| {
+        matches!(
+            a.rsplit('/').next().unwrap_or(a),
+            "node" | "bun" | "deno" | "sh" | "bash" | "zsh" | "dash"
+        )
+    });
+    let i = argv
+        .iter()
+        .take(if runtime { 2 } else { 1 })
+        .position(|a| is_codex(a))?;
     Some(&argv[i + 1..])
 }
 
@@ -288,19 +299,28 @@ pub fn launch_flags(flags: &[String]) -> Vec<String> {
     out
 }
 
-pub fn is_session(argv: &[String]) -> bool {
-    let Some(rest) = args(argv) else {
-        return false;
-    };
+fn subcommand(rest: &[String]) -> Option<&str> {
     let mut it = rest.iter();
     while let Some(a) = it.next() {
         if VALUE_FLAGS.contains(&a.as_str()) {
             it.next();
         } else if !a.starts_with('-') {
-            return !NOT_SESSIONS.contains(&a.as_str());
+            return Some(a);
         }
     }
-    true
+    None
+}
+
+pub fn is_session(argv: &[String]) -> bool {
+    args(argv).is_some_and(|rest| subcommand(rest).is_none_or(|s| !NOT_SESSIONS.contains(&s)))
+}
+
+// `codex resume` and `codex fork` reopen a thread created before the process; anything else
+// starts a new one.
+pub fn reopens(argv: &[String]) -> bool {
+    args(argv)
+        .and_then(subcommand)
+        .is_some_and(|s| matches!(s, "resume" | "fork"))
 }
 
 #[cfg(test)]
@@ -335,6 +355,7 @@ mod tests {
             "codex --model o3",
             "codex resume 01a181a9",
             "node /n/bin/codex resume --last",
+            "/bin/sh /u/.asdf/shims/codex",
             "codex -m o3 fork --last",
             "codex fix the login bug",
             "codex -c model=o3 exec do it",
@@ -351,6 +372,9 @@ mod tests {
             "codex login",
             "codex completion zsh",
             "bash -c ls",
+            "bwrap --new-session --ro-bind / / --argv0 codex-linux-sandbox -- /u/.codex/packages/app-server-daemon/releases/0.166.0/bin/codex --sandbox-policy-cwd /r --command-cwd /r -- /bin/zsh -c ls",
+            "rg codex src",
+            "sh -c codex",
         ] {
             assert!(!session(cmd), "{cmd}");
         }
