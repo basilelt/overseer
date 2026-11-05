@@ -281,6 +281,21 @@ describe('MockDaemon', () => {
     expect((await a.terms()).find((x) => x.id === t.id)?.workspaceId ?? null).toBeNull();
   });
 
+  it('clears the term of a line when the line is unassigned and lets a line inherit its term assignment', async () => {
+    // Given a subject and a term started for it on an existing line
+    // When the line is unassigned
+    // Then the line inherited the assignment at start, and unassigning clears the term too
+    const { m, a } = setup();
+    const s = await m.request<any>('POST', '/v1/workspaces', { kind: 'subject', name: 'S', cwd: '/tmp' });
+    const line = (await a.lines()).find((x) => !x.local?.workspaceId)!.line;
+    const t = await m.request<any>('POST', '/v1/terms', { workspaceId: s.id, cmd: ['zsh'], lineId: line.id });
+    expect((await a.terms()).find((x) => x.id === t.id)?.workspaceId).toBe(s.id);
+    expect((await a.lines()).find((x) => x.line.id === line.id)?.local?.workspaceId).toBe(s.id);
+    await a.assignLineWorkspace(line.id, null);
+    expect((await a.lines()).find((x) => x.line.id === line.id)?.local?.workspaceId ?? null).toBeNull();
+    expect((await a.terms()).find((x) => x.id === t.id)?.workspaceId ?? null).toBeNull();
+  });
+
   it('keeps a missing user workspace in the list', async () => {
     const { a } = setup();
     expect((await a.workspaces()).find((w) => w.missing)).toMatchObject({ auto: false, name: 'thesis' });

@@ -1017,6 +1017,13 @@ export class MockDaemon implements DaemonClient {
       if (wid !== null && !this.workspaces.some((w) => w.id === wid)) throw new DaemonError(404, `no workspace ${wid}`);
       l.local = { ...l.local, workspaceId: wid };
       this.emit('line.updated', { line: l.line, local: l.local });
+      // Like the daemon: clearing a line also clears its term, or the scan would re-inherit it.
+      if (wid === null) {
+        for (const t of this.terms.filter((x) => x.lineId === l.line.id && x.workspaceId)) {
+          delete t.workspaceId;
+          this.emit('term.updated', { term: { ...t, workspaceId: null } });
+        }
+      }
       return { lineId: id, workspaceId: wid };
     }
     const t = this.terms.find((x) => x.id === id);
@@ -1077,7 +1084,15 @@ export class MockDaemon implements DaemonClient {
     if (!w) throw new DaemonError(404, `no workspace ${wid}`);
     const { workspaceId: _w, ...rest } = body;
     const term = this.startTerm({ ...rest, cwd: rest.cwd ?? (w.kind === 'subject' ? w.cwd! : w.path!) });
+    const stored = this.terms.find((x) => x.id === term.id);
+    if (stored) stored.workspaceId = w.id;
     term.workspaceId = w.id;
+    // Like the scan: the line of this term inherits the assignment when it has none.
+    const line = this.lines.find((x) => x.line.id === term.lineId);
+    if (line && !line.local?.workspaceId) {
+      line.local = { ...line.local, workspaceId: w.id };
+      this.emit('line.updated', { line: line.line, local: line.local });
+    }
     return term;
   }
 
