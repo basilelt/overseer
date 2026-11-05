@@ -36,8 +36,8 @@ function style(over: Partial<RowStyle> = {}): RowStyle {
     selection: null,
     hoveredLink: 0,
     linkRange: null,
-    glyph: (text, bold, italic) => {
-      const k = `${bold}${italic}${text}`;
+    glyph: (text, bold, italic, dark) => {
+      const k = `${bold}${italic}${dark}${text}`;
       if (!slots.has(k)) slots.set(k, next++);
       return { slot: slots.get(k)!, colored: text === '😀' };
     },
@@ -123,6 +123,16 @@ describe('GlyphAtlas', () => {
 });
 
 describe('packRow', () => {
+  it('asks for dark-ink glyphs only for dark foregrounds', () => {
+    const seen: boolean[] = [];
+    const s = style();
+    const glyph = s.glyph;
+    s.glyph = (t, b, i, dark) => (seen.push(dark), glyph(t, b, i, dark));
+    const { at } = packed([cell('x', { fg_r: 20, fg_g: 20, fg_b: 20 }), cell('x'), cell('x', { flags: 16 })], s);
+    expect(seen).toEqual([true, false, true]);
+    expect(at(0).slot).not.toBe(at(1).slot);
+  });
+
   it('leaves default backgrounds transparent and spaces without a glyph', () => {
     const { at } = packed([cell(' '), cell('x')]);
     expect(at(0).bg[3]).toBe(0);
@@ -575,6 +585,20 @@ describe('attachOverlay', () => {
     expect(log.textures).toBe(1);
     expect(ctx2d.font).toBe('26px monospace');
     expect(ctx2d.fillText).toHaveBeenCalledWith('a', 16, 24);
+  });
+
+  it('rasterizes dark text with dark ink so it is not thickened like light text', async () => {
+    const { attachOverlay } = await import('./termgl');
+    const { gl } = fakeGl();
+    const { r, ctx2d } = setup(gl);
+    const a = attachOverlay(r, false)!;
+    a.resize(2, 1);
+    const fills: string[] = [];
+    ctx2d.fillText.mockImplementation(() => fills.push(ctx2d.fillStyle));
+    const buf = grid(1, 2, () => 'a');
+    Object.assign(buf.lines[0][1], { fg_r: 30, fg_g: 30, fg_b: 30 });
+    a.term.render(buf);
+    expect(fills).toEqual(['#fff', '#000']);
   });
 
   it('stops drawing on context loss and redraws after restore', async () => {
