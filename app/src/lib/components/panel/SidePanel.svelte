@@ -7,12 +7,13 @@
   import { GROUP_COLOR } from '../sidebar/AgentIcon.svelte';
   import AgentGlyph from '../ui/AgentGlyph.svelte';
   import { agentName, sessionsAvailable } from '../../agents';
-  import DiffView from './DiffView.svelte';
+  import { preload } from '../../idle';
+  const diffView = preload(() => import('./DiffView.svelte'));
   import EditedFiles from './EditedFiles.svelte';
   import PanelActions from './PanelActions.svelte';
   import Section from './Section.svelte';
-  import Todos from './Todos.svelte';
-  import WorkLog from './WorkLog.svelte';
+  const todosView = preload(() => import('./Todos.svelte'));
+  const workLogView = preload(() => import('./WorkLog.svelte'));
   import SessionUsage from '../usage/SessionUsage.svelte';
   import GitPullRequest from '@lucide/svelte/icons/git-pull-request';
   import { openReview, openReviewBeside } from '../../review/open';
@@ -195,12 +196,12 @@
         {/if}
         {#if act.workLog.length}
           <Section id="log" order={orderOf('log')} title={t('panel.workLog')} meta={String(act.workLog.length)}>
-            <WorkLog steps={act.workLog} />
+            {#await workLogView() then { default: WorkLog }}<WorkLog steps={act.workLog} />{/await}
           </Section>
         {/if}
         {#if act.todos.length}
           <Section id="todos" order={orderOf('todos')} title={t('panel.todos')} meta={t('panel.todosProgress', { done: todosDone, total: act.todos.length })}>
-            <Todos todos={act.todos} />
+            {#await todosView() then { default: Todos }}<Todos todos={act.todos} />{/await}
           </Section>
         {/if}
         {#if act.editedFiles.length}
@@ -235,7 +236,7 @@
         {/if}
         {#if diff && diff.diff.trim()}
           {#if diff.truncated}<p class="faint small">{t('panel.diffTruncated')}</p>{/if}
-          <DiffView diff={diff.diff} />
+          {#await diffView() then { default: DiffView }}<DiffView diff={diff.diff} />{/await}
         {:else if current && changed(current)}
           <p class="faint small">{summary(current)}</p>
         {:else}

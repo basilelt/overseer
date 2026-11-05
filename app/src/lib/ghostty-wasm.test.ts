@@ -65,6 +65,40 @@ describe('ghostty-web wasm', () => {
 });
 
 describe('blank resize', () => {
+  it('keeps every hyperlinked line once and in order across resizes that replay a growing stream', async () => {
+    expect(installBlankResize(mod)).toBe(true);
+    const term = headless(await load(), 120, 40);
+    const enc = new TextEncoder();
+    const row = (i: number) => enc.encode(`\x1b]8;;https://example.com\x07/rc ${i}\x1b]8;;\x07\r\n`);
+    const parts: Uint8Array[] = [];
+    const feed = (bytes: Uint8Array, step: number) => {
+      for (let k = 0; k < bytes.length; k += step) term.write(bytes.slice(k, k + step));
+    };
+    const joined = () => Uint8Array.from(parts.flatMap((p) => Array.from(p)));
+    const sizes: [number, number][] = [[120, 40], [90, 40], [150, 36], [100, 44]];
+    let n = 0;
+    for (let s = 0; s < 30; s++) {
+      for (let k = 0; k < 17 && n < 500; k++) {
+        parts.push(row(++n));
+        feed(parts[parts.length - 1], 7);
+      }
+      const [c, r] = sizes[s % sizes.length];
+      term.resize(c, r);
+      feed(joined(), 331);
+    }
+    while (n < 500) {
+      parts.push(row(++n));
+      feed(parts[parts.length - 1], 7);
+    }
+    const t = term.wasmTerm!;
+    t.update();
+    const rows: string[] = [];
+    const cells = (cs: { codepoint: number }[] | null) => (cs ?? []).map((c) => (c.codepoint ? String.fromCodePoint(c.codepoint) : ' ')).join('').trimEnd();
+    for (let y = 0; y < t.getScrollbackLength(); y++) rows.push(cells(t.getScrollbackLine(y)));
+    for (let y = 0; y < t.getDimensions().rows; y++) rows.push(text(t, y));
+    expect(rows.filter((l) => l.startsWith('/rc'))).toEqual(Array.from({ length: 500 }, (_, i) => `/rc ${i + 1}`));
+  });
+
   it('replays hyperlinked output cleanly after a resize', async () => {
     expect(installBlankResize(mod)).toBe(true);
     const term = headless(await load(), 80, 24);

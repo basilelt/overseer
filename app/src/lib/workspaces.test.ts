@@ -439,8 +439,8 @@ describe('Terminal pane action', () => {
     expect(paneAction(session(), live({ pid: 7, tmuxPane: '%3', busy: false, needsInput: false }))).toBe('attach');
   });
 
-  it('keeps open for a session with a Overseer term', () => {
-    // Given a live session that owns a Overseer term
+  it('keeps open for a session with an Overseer term', () => {
+    // Given a live session that owns an Overseer term
     // When the Terminal pane asks which action to offer
     // Then it gets 'open'
     expect(paneAction(session({ termId: 't1' }), live({ pid: 8, busy: true, needsInput: false }))).toBe('open');
