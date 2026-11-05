@@ -169,6 +169,7 @@ pub struct Term {
     gen: AtomicU64,
     holding: AtomicBool,
     killed: AtomicBool,
+    thread: Mutex<Option<String>>,
 }
 
 #[derive(Default)]
@@ -564,6 +565,7 @@ pub fn spawn(s: Spec) -> Result<Arc<Term>, String> {
         gen: AtomicU64::new(0),
         holding: AtomicBool::new(false),
         killed: AtomicBool::new(false),
+        thread: Mutex::new(None),
     });
     lock(&TERMS).insert(id, term.clone());
     publish("term.created", json!({"term": term.to_json()}));
@@ -831,6 +833,14 @@ impl Term {
         lock(&self.out).submit_ms
     }
 
+    pub fn thread(&self) -> Option<String> {
+        lock(&self.thread).clone()
+    }
+
+    pub fn bind_thread(&self, id: &str) {
+        *lock(&self.thread) = Some(id.to_string());
+    }
+
     pub fn screen(&self) -> Vec<u8> {
         lock(&self.out).ring.iter().copied().collect()
     }
@@ -1085,6 +1095,7 @@ pub fn adopt(s: crate::upgrade::SavedTerm) -> Result<Arc<Term>, String> {
         gen: AtomicU64::new(0),
         holding: AtomicBool::new(false),
         killed: AtomicBool::new(false),
+        thread: Mutex::new(None),
     });
     lock(&TERMS).insert(s.id, term.clone());
     if live {
@@ -1152,6 +1163,10 @@ pub fn owner_of(pid: u32, probe: &dyn Probe) -> Option<String> {
         p = probe.ppid(p).filter(|&q| q > 1 && q != p)?;
     }
     None
+}
+
+pub fn of_pid(pid: u32, probe: &dyn Probe) -> Option<Arc<Term>> {
+    owner_of(pid, probe).and_then(|id| get(&id))
 }
 
 pub fn trim_exited(now: i64) -> usize {
