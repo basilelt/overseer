@@ -111,7 +111,7 @@ jobs:
         id: optional
         env:
           ANDROID: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' && secrets.ANDROID_KEYSTORE_PASSWORD != '' && secrets.ANDROID_KEY_ALIAS != '' && secrets.ANDROID_KEY_PASSWORD != '' }}
-          IOS: ${{ secrets.APPLE_TEAM_ID != '' && secrets.APPLE_KEY_ID != '' && secrets.APPLE_ISSUER_ID != '' && secrets.APPLE_KEY_CONTENT != '' && secrets.MATCH_GIT_URL != '' && secrets.MATCH_PASSWORD != '' && secrets.MATCH_SSH_PRIVATE_KEY != '' }}
+          IOS: ${{ secrets.APPLE_TEAM_ID != '' && secrets.APPLE_KEY_ID != '' && secrets.APPLE_ISSUER_ID != '' && secrets.APPLE_KEY_CONTENT != '' && secrets.IOS_CERTIFICATE != '' && secrets.IOS_CERTIFICATE_PASSWORD != '' && secrets.IOS_MOBILE_PROVISION != '' }}
           TAP: ${{ secrets.HOMEBREW_TAP_DEPLOY_KEY != '' }}
           MSIX: ${{ secrets.WINDOWS_SELF_SIGN_PFX_BASE64 != '' && secrets.WINDOWS_SELF_SIGN_PFX_PASSWORD != '' }}
           UPDATER: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY != '' }}
@@ -129,7 +129,7 @@ jobs:
             echo "::warning title=app-android skipped::ANDROID_KEYSTORE_BASE64, ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS or ANDROID_KEY_PASSWORD is not set: no Android APK in this release (docs/mobile.md)"
           fi
           if [ "$IOS" != "true" ]; then
-            echo "::warning title=app-ios skipped::APPLE_TEAM_ID, APPLE_KEY_ID, APPLE_ISSUER_ID, APPLE_KEY_CONTENT, MATCH_GIT_URL, MATCH_PASSWORD or MATCH_SSH_PRIVATE_KEY is not set: no TestFlight build (docs/mobile.md)"
+            echo "::warning title=app-ios skipped::APPLE_TEAM_ID, APPLE_KEY_ID, APPLE_ISSUER_ID, APPLE_KEY_CONTENT, IOS_CERTIFICATE, IOS_CERTIFICATE_PASSWORD or IOS_MOBILE_PROVISION is not set: no TestFlight build (docs/mobile.md)"
           fi
           if [ "$TAP" != "true" ]; then
             echo "::warning title=tap skipped::HOMEBREW_TAP_DEPLOY_KEY is not set: the Homebrew tap is not updated (docs/ci.md)"
@@ -792,30 +792,18 @@ jobs:
           sed -i '' -E "s/DEVELOPMENT_TEAM: .*/DEVELOPMENT_TEAM: $APPLE_TEAM_ID/" project.yml
           grep -c "$APPLE_TEAM_ID" overseer-app.xcodeproj/project.pbxproj
 
-      - env:
-          MATCH_SSH_PRIVATE_KEY: ${{ secrets.MATCH_SSH_PRIVATE_KEY }}
-        run: |
-          mkdir -p ~/.ssh
-          chmod 700 ~/.ssh
-          printf '%s\n' "$MATCH_SSH_PRIVATE_KEY" > ~/.ssh/match_certificates
-          chmod 600 ~/.ssh/match_certificates
-          ssh-keyscan github.com >> ~/.ssh/known_hosts 2>/dev/null
-          printf 'Host github.com\n  IdentityFile ~/.ssh/match_certificates\n  IdentitiesOnly yes\n' >> ~/.ssh/config
-
       - working-directory: app
         env:
           OVERSEER_APP_DIR: ${{ github.workspace }}/app
           APPLE_KEY_ID: ${{ secrets.APPLE_KEY_ID }}
           APPLE_ISSUER_ID: ${{ secrets.APPLE_ISSUER_ID }}
           APPLE_KEY_CONTENT: ${{ secrets.APPLE_KEY_CONTENT }}
-          MATCH_GIT_URL: ${{ secrets.MATCH_GIT_URL }}
-          MATCH_PASSWORD: ${{ secrets.MATCH_PASSWORD }}
+          IOS_CERTIFICATE: ${{ secrets.IOS_CERTIFICATE }}
+          IOS_CERTIFICATE_PASSWORD: ${{ secrets.IOS_CERTIFICATE_PASSWORD }}
+          IOS_MOBILE_PROVISION: ${{ secrets.IOS_MOBILE_PROVISION }}
           FASTLANE_SKIP_UPDATE_CHECK: "1"
           FASTLANE_HIDE_CHANGELOG: "1"
         run: fastlane ios internal_testflight
-
-      - if: always()
-        run: rm -f ~/.ssh/match_certificates
 
   publish:
     needs: [tag, servers, servers-macos, app-linux, app-windows, app-windows-msix, app-windows-arm, app-macos, app-android]
