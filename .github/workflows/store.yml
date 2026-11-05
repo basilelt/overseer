@@ -194,9 +194,9 @@ jobs:
       - name: Free disk space
         run: sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL
 
-      - run: scripts/ci-runner-check.sh cargo rustup pnpm java gem env:ANDROID_HOME env:JAVA_HOME
+      - run: scripts/ci-runner-check.sh cargo rustup pnpm java env:ANDROID_HOME env:JAVA_HOME
 
-      - run: NDK_HOME=${ANDROID_NDK_HOME:-} scripts/android-env.sh aarch64-linux-android armv7-linux-androideabi
+      - run: NDK_HOME=${ANDROID_NDK_LATEST_HOME:-${ANDROID_NDK_HOME:-}} scripts/android-env.sh aarch64-linux-android armv7-linux-androideabi
 
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
@@ -228,21 +228,24 @@ jobs:
           echo "ANDROID_KEYSTORE_PATH=$RUNNER_TEMP/release.jks" >> "$GITHUB_ENV"
 
       - env:
+          OVERSEER_DISTRIBUTION: play
+          VERSION: ${{ needs.resolve.outputs.version }}
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-        run: pnpm --dir app tauri android build --ci --aab --target aarch64 --target armv7
+          ANDROID_CERT_SHA256: ${{ vars.ANDROID_CERT_SHA256 }}
+        run: |
+          pnpm --dir app tauri android build --ci --aab --target aarch64 --target armv7
+          scripts/android-aab.sh "play/Overseer_${VERSION}_android.aab"
+          scripts/android-16k.sh "play/Overseer_${VERSION}_android.aab"
 
-      - run: sudo gem install fastlane --no-document
-
-      - working-directory: app
-        env:
-          OVERSEER_APP_DIR: ${{ github.workspace }}/app
-          TRACK: ${{ inputs.track }}
-          PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
-          FASTLANE_SKIP_UPDATE_CHECK: "1"
-          FASTLANE_HIDE_CHANGELOG: "1"
-        run: fastlane android play_store
+      - uses: r0adkll/upload-google-play@e738b9dd8f2476ea806d921b64aacd24f34515a5 # v1.1.5
+        with:
+          serviceAccountJsonPlainText: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+          packageName: io.github.basilelt.overseer
+          releaseFiles: play/*.aab
+          track: ${{ inputs.track }}
+          status: completed
 
       - if: always()
         run: rm -f "$RUNNER_TEMP/release.jks"

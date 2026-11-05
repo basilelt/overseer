@@ -4,6 +4,7 @@ set -euo pipefail
 usage() {
   echo "usage: $0 import            (env SIGN_P12_BASE64, SIGN_P12_PASSWORD; prints the identity hash)" >&2
   echo "       $0 verify <app> [selfsigned|developerid]" >&2
+  echo "       $0 sign-resources <dir> <identity>   (Developer ID + hardened runtime on every Mach-O under dir)" >&2
   exit 2
 }
 
@@ -37,9 +38,12 @@ import() {
   done < <(security list-keychains -d user)
   security list-keychains -d user -s "$kc" "${existing[@]}"
 
-  security find-certificate -a -p "$kc" >"$cert"
-  if ! sudo -n security add-trusted-cert -d -r trustRoot -p codeSign -k /Library/Keychains/System.keychain "$cert" >&2; then
-    echo "::warning title=macOS signing::could not mark the certificate trusted for code signing; codesign may still accept it" >&2
+  # An Apple-issued identity must chain to Apple's root: a local trustRoot override would break "anchor apple generic".
+  if [ "${SIGN_TRUST:-1}" = 1 ]; then
+    security find-certificate -a -p "$kc" >"$cert"
+    if ! sudo -n security add-trusted-cert -d -r trustRoot -p codeSign -k /Library/Keychains/System.keychain "$cert" >&2; then
+      echo "::warning title=macOS signing::could not mark the certificate trusted for code signing; codesign may still accept it" >&2
+    fi
   fi
 
   identity=$(security find-identity -v -p codesigning "$kc" | awk '/^ *[0-9]+\) [0-9A-F]{40} /{print $2; exit}')
@@ -52,6 +56,18 @@ import() {
     echo "SIGN_KEYCHAIN=$kc" >>"$GITHUB_ENV"
   fi
   echo "$identity"
+}
+
+sign_resources() {
+  local dir=${1:-} identity=${2:-} f n=0
+  if [ ! -d "$dir" ] || [ -z "$identity" ]; then usage; fi
+  while IFS= read -r -d '' f; do
+    if file -b "$f" | grep -q '^Mach-O'; then
+      codesign --force --options runtime --timestamp --sign "$identity" "$f" || fail "codesign failed for $f"
+      n=$((n + 1))
+    fi
+  done < <(find "$dir" -type f -print0)
+  echo "signed $n Mach-O file(s) under $dir"
 }
 
 verify() {
@@ -74,6 +90,10 @@ verify() {
       ;;
     developerid)
       grep -q '^Authority=Developer ID Application' <<<"$info" || fail "$app is not signed with a Developer ID"
+      xcrun stapler validate "$app" || fail "$app has no stapled notarization ticket"
+      gk=$(spctl --assess --type execute --verbose=4 "$app" 2>&1) || fail "Gatekeeper rejects $app: $gk"
+      echo "$gk"
+      grep -q 'source=Notarized Developer ID' <<<"$gk" || fail "Gatekeeper does not accept $app as notarized"
       ;;
     *) usage ;;
   esac
@@ -83,5 +103,6 @@ verify() {
 case "${1:-}" in
   import) import ;;
   verify) shift; verify "$@" ;;
+  sign-resources) shift; sign_resources "$@" ;;
   *) usage ;;
 esac

@@ -13,6 +13,8 @@ platform :ios do
     bundle_version = attempt == "1" ? run_number : "#{run_number}.#{attempt}"
     short_version = JSON.parse(File.read(File.join(app_dir, "src-tauri/tauri.conf.json"))).fetch("version")
 
+    %w[IOS_CERTIFICATE IOS_CERTIFICATE_PASSWORD IOS_MOBILE_PROVISION].each { |k| ENV.fetch(k) }
+
     api_key = app_store_connect_api_key(
       key_id: ENV.fetch("APPLE_KEY_ID"),
       issuer_id: ENV.fetch("APPLE_ISSUER_ID"),
@@ -54,26 +56,6 @@ platform :ios do
         add_id_info_uses_idfa: false,
         export_compliance_uses_encryption: false
       }
-    )
-  end
-end
-
-platform :android do
-  lane :play_store do
-    app_dir = File.expand_path(ENV.fetch("OVERSEER_APP_DIR"))
-    aabs = Dir[File.join(app_dir, "src-tauri/gen/android/app/build/outputs/bundle/**/*.aab")]
-    UI.user_error!("expected one .aab under src-tauri/gen/android/app/build/outputs/bundle, found #{aabs.size}") unless aabs.size == 1
-
-    upload_to_play_store(
-      track: ENV.fetch("TRACK"),
-      aab: aabs.first,
-      json_key_data: ENV.fetch("PLAY_SERVICE_ACCOUNT_JSON"),
-      release_status: "completed",
-      skip_upload_apk: true,
-      skip_upload_metadata: true,
-      skip_upload_changelogs: true,
-      skip_upload_images: true,
-      skip_upload_screenshots: true
     )
   end
 end

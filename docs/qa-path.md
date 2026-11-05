@@ -19,7 +19,7 @@ scripts/qa/sandbox.sh stop     # stop everything; `clean` also deletes $QA_DIR
 ```
 
 - `QA_DIR` defaults to `/tmp/sbqa`. Keep it short: a unix socket path must stay under about 100 bytes.
-- The daemon runs with its own `HOME`, state dir, runtime dir, Claude and Codex config, `GIT_CONFIG_GLOBAL=/dev/null`, and `tests/stubs` first on `PATH`. Sessions therefore start real processes from the stub CLIs: they print a `❯` prompt, echo what you type (`got: …`), and log their command line to `$QA_DIR/stub.log`. Typing `done` ends a turn, so a task moves to In testing.
+- The daemon runs with its own `HOME`, state dir, runtime dir, Claude and Codex config, `GIT_CONFIG_GLOBAL=/dev/null`, and `tests/stubs` first on `PATH`. Sessions therefore start real processes from the stub CLIs: they print a `❯` prompt, echo what you type (`got: …`), and log their command line to `$QA_DIR/stub.log`. Typing `done` ends a turn, so a task moves to In testing. The `codex` stub behaves like Codex 0.165+: it creates its thread (a rollout under `$QA_DIR/home/.codex/sessions`) on the first `busy`, not at launch, reports its hooks with a pid that is not its own (real Codex runs hooks from a shared `codex app-server`), Ctrl+C makes it quit cleanly like Codex, and `tool` runs for 8 s a process with the argv of Codex's Linux sandbox (`bwrap … -- …/bin/codex --sandbox-policy-cwd …`).
 - A sample git repository is created at `$QA_DIR/home/proj`. Add files there as a step needs them.
 - Drive the app with Playwright and `scripts/qa/drive.py`: `launch(p, mode=...)` opens a browser with `scripts/qa/shim.js`, which replaces the Tauri IPC with calls to the proxy (requests, `/v1/events` SSE, terminal websockets, ports). `open_app(pg, "?theme=light")` loads it and dismisses the welcome tour. Set `QA_CHROME` to use a specific Chromium binary.
 - **Modes**: QA runs in every mode a user can be in. `mode` (or `QA_MODE`) picks one:
@@ -66,6 +66,12 @@ Each step is **Do → Expect**. Check every screenshot for overlaps, clipped tex
 - **C5** Hold a session, then click **Resume** in the side panel header (not in the terminal) → the session is active again, the button shows **Hold**, and `stub.log` shows `--resume <same session>`. The held terminal's "press Enter to resume" prompt is answered by the click.
 - **C6** Hold and resume the same session three times in a row (side panel **Hold**, then **Resume**) → the state flips each time, the terminal shows "press Enter to resume" while held and the agent prompt after, and `stub.log` has one `--resume <same session>` per cycle. Repeat with `sandbox.sh crash` and `start` while held and while active: the state survives.
 
+- **C7** Codex, several sessions in one repository: start two Codex sessions in `proj` and one in another repository (`POST /v1/terms {"cwd": …, "agent": "codex"}`), and leave an older Codex session of `proj` held → opening them wakes no held session. Type `busy` in each, one after the other → each gets its own session line with its own pid, and the held one stays held.
+- **C8** In one Codex session type `tool`, then `done` → for the 8 s of the tool no other session of the repository turns active, appears or disappears; only the busy dot of the session that ran it changes.
+- **C9** Type `busy` again in the oldest Codex session, so it is the most recent one → no pid moves between session lines (`/v1/lines?all=true`). Open a fourth Codex session in `proj` and type `busy` → only its new line appears. Type `exit` in the first one → only its own line is held.
+- **C10** In a Codex session press Ctrl+C (or type `exit`) → the tab stays open and shows `codex exited. Session <id>, resume with: … codex resume <id>`, then a shell prompt in the same folder that runs commands. Close that tab with Ctrl+W → it closes. Close a tab whose Codex is still running (**End session**) → it closes without a shell left behind.
+- **C11** Real CLIs: the stubs never fail the way a real CLI does. On a release, or when a change touches agent launch or resume, start a daemon like the sandbox's but with the real CLIs first on `PATH` (still its own `HOME` and state dir), and start each installed agent from **+** (Claude Code, Codex, Gemini CLI, Antigravity, Copilot CLI, opencode, Amp, Cursor Agent) → each keeps running in its tab (a login screen is fine), gets one session line on that tab, and Ctrl+C leaves the shell with its session and resume command. An agent shown greyed out in the **+** menu is not installed, or its `--version` fails: run its install hint and check it again.
+
 ### D. Review
 
 - **D1** Click an In testing card → the review dialog shows the diff, file tree, Viewed checkboxes, Unified or Split, List or Graph, and the commits since main.
@@ -81,10 +87,13 @@ Each step is **Do → Expect**. Check every screenshot for overlaps, clipped tex
 - **E2** Run `sleep 30`, press Ctrl+C, then `exit` → the command stops and the tab closes on its own.
 - **E3** Ctrl+W on a live shell → dialog "End this session?". **Cancel** keeps the tab. **End session** closes it and the terminal leaves `/v1/terms`. **Hide tab (keep running)** removes the tab while the session keeps running (visible in By status).
 - **E4** Ctrl+W on an exited terminal or a non-session tab → it closes without asking. The reopen-tab shortcut brings back the last closed tab.
-- **E5** Hover a tab with a cut title → the full title shows, and the close button stays where it was.
+- **E5** **(desktop)** Open more tabs than fit, some with long titles → inactive tabs keep a fixed width with `…`, the strip scrolls with the wheel, hovering a tab changes no width and shows its full title as a tooltip, and clicking it widens it to the full title and scrolls it into view.
 - **E6** Split the pane right and down, move tabs between panes, close a pane → the layout follows, and nothing is lost on reload.
 - **E7** Select text in a terminal → it is copied (desktop shell only; note it when it cannot be checked in Chromium).
 - **E8** Drag-select a line that touches the first or last row of a terminal with no scrollback (a fresh shell, or the prompt of an agent at the bottom) → the whole dragged range is selected and copied, not a single cell.
+- **E9** In a shell, run a script that prints a few hundred lines each ending in an OSC 8 hyperlink (`printf '\e]8;;https://example.com\a/rc %s\e]8;;\a\n'`), then resize the window several times while it keeps printing → every line stays whole and in order, no text from one line shows inside another, and typing still reaches the shell (`stty size` shows the new size).
+- **E10** Settings → Terminal → turn **GPU rendering** on (off by default) → open terminals redraw with WebGL: `seq 100000` scrolls smoothly, the wheel and Shift+wheel scroll the scrollback, drag-select copies the text, colours and the cursor look as before in both themes. Reload: the option is kept. Turn it off → terminals return to the normal renderer with their content and scrollback intact. Where WebGL is unavailable (`--disable-gpu`), turning it on still draws terminals with the normal renderer.
+- **E11** **(desktop)** Repeat E10 in the desktop app under Xvfb: with GPU rendering on, select text and check it with `xclip`, scroll a long output, resize the window and split a pane → no blank or garbled terminal; turn it off → the normal renderer is back.
 
 ### F. Chat
 
@@ -114,10 +123,13 @@ Each step is **Do → Expect**. Check every screenshot for overlaps, clipped tex
 - **I2** Theme light and dark → both readable on every screen you visited.
 - **I3** Server: **Keep server running after reboot**, and **After a server reboot or restart** (Restore agent sessions, shells only, Nothing) → the choice is saved (`GET /v1/lifecycle`).
 - **I4** Notifications: **Send test**, per-event choices → saved. Profiles: **Edit…** opens and saves.
+- **I9** Profiles: in **Agents & models**, select a custom profile, open the Claude Code section, change Model, Subagent model and a named subagent's model one after the other → the section stays open after each pick and the cost index updates.
 - **I5** Sidebar: open Settings, then General, Terminal, Agents, Notifications, Connection, Updates, Help in turn → each shows only its own sections; categories with no section for this machine are absent. Change one setting per category, reload → each is kept.
 - **I6** Search: type `notif`, then `reboot` → only the matching rows stay, highlighted, with a count per category; in Notifications, Connection (server) and Updates the other rows of the section are hidden too. Type `zzzz` → an empty state. In Français, type an accented word (`échoue`) and the same without the accent → same rows. **Esc** clears the search, a second **Esc** closes Settings.
 - **I7** Language from the new layout: switch it in General → the sidebar, the search placeholder and the rows change language at once.
 - **I8** Phone (`?phone=1`): Settings opens on a list of categories; a category opens its rows with a back button; searching shows results across categories; no horizontal scroll at 390 px.
+- **I10** Help → **Privacy policy** → **Open** opens `https://github.com/basilelt/overseer/blob/main/PRIVACY.md` in the system browser (desktop) or a new tab (web). Search `privacy` → Help is the only category and the **Privacy policy** row is highlighted.
+- **I11** (Android, real device) The GitHub APK shows **Software update** in Settings and **Check for updates** in More; the Google Play build (installed from a Play testing track, uploaded by Actions > Store) shows neither, no update pill, and no **Check for updates** in the command palette.
 
 ### J. Feedback
 
@@ -139,10 +151,22 @@ Each step is **Do → Expect**. Check every screenshot for overlaps, clipped tex
 
 ### M. Life events
 
-- **M1** With an agent session, a shell (in a workspace, renamed) and a task in progress: `sandbox.sh crash`, then `start` → the log says `daemon restarted; restored N agent sessions and M shells`. Terminals keep their ids, workspace and title, and the agent is relaunched with `--resume <same session>` (`stub.log`).
+- **M1** With an agent session, a shell (in a workspace, renamed) and a task in progress: `sandbox.sh crash`, then `start` → the log says `daemon restarted; restored N agent sessions and M shells`. Terminals keep their ids, workspace and title, and the agent is relaunched with `--resume <same session>` (`stub.log`). Leave the app open through the crash: each terminal reconnects on its own, shows the restored session without rows of the old screen left in it, and keeps one connection per terminal.
 - **M2** Reload the app → tabs, workspaces and the selected session come back. The resumed agent answers input.
 - **M3** Set **After a server reboot or restart** to Nothing, then crash and start → nothing is restored.
 - **M4** Idle: leave the app untouched for 70 s with a session open → no DOM changes and no repaints (count `MutationObserver` records over 10 s).
+- **M5** With the Codex sessions of **C7**–**C9** running: `sandbox.sh crash`, then `start` → `stub.log` shows one `codex resume <id>` per live session, each with its own thread id, and each comes back on its own line, active.
+
+### N. Demo mode
+
+Run in `android` and `iphone` at least, and in `web`. Start from a fresh browser context, so the connect screen shows real data first.
+
+- **N1** Open the connect screen (with `?qaos=android` or `?qaos=ios` it opens at start, as on a phone with no saved host; otherwise from the host chip) → under the host list, "No server yet?…" and **Try the demo**.
+- **N2** **Try the demo** → the app reloads on sample data, connected with no host key or password prompt. A **Demo mode** pill shows in the title bar (phone: next to the host chip, with an exit icon). The host chip shows **Workstation** when the platform reports a phone (the real apps, or `?qaos=android` / `?qaos=ios`, which makes the shim's `app_platform` report one) and **Local** otherwise. No error toast, and `window.__qaLog` lists no Tauri command except `app_platform` and the clipboard.
+- **N3** In the demo: Agents lists sessions; open one → its terminal shows output and echoes what you type. Tasks → **Add Task** → a card appears; drag or move it to **In progress**. Review: open a review → the diff shows. Switch a session to Chat → the transcript and composer show. Open Settings and change the theme.
+- **N4** Reload the app (a relaunch) → still in the demo, with the theme set in **N3**.
+- **N5** **Exit demo** on the pill → the app reloads on the real connect flow: the real daemon's sessions (or the connect screen on a phone), the real theme, and no **Demo mode** pill. `localStorage` holds no `overseer.demo` key and the real `overseer.settings` is byte for byte what it was before **N2**.
+- **N6** Enter the demo again, open the connect screen → **Exit demo** is offered there, and not **Try the demo**. Connect to a real host that fails (outside the demo) → **Try the demo** is offered next to **Retry**.
 
 ## Keeping the path current
 

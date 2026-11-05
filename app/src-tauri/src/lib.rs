@@ -1,3 +1,4 @@
+#[cfg(self_update)]
 #[cfg_attr(desktop, allow(dead_code))]
 mod apk_update;
 pub mod askpass;
@@ -11,6 +12,8 @@ mod conn;
 mod daemon_it;
 pub mod diag;
 mod direct;
+#[cfg(test)]
+mod distribution;
 mod forward;
 mod http;
 mod install;
@@ -22,6 +25,7 @@ mod mux;
 #[cfg_attr(desktop, allow(dead_code))]
 mod native;
 pub mod relay;
+mod release_http;
 #[cfg(all(test, unix))]
 mod remote_it;
 mod server_fetch;
@@ -140,62 +144,67 @@ pub fn run() {
             native::start_dictation,
             native::open_notification_settings,
         ]);
+    #[cfg(all(target_os = "android", self_update))]
+    let builder = builder.plugin(apk_update::installer_plugin());
     #[cfg(target_os = "android")]
-    let builder = builder
-        .plugin(apk_update::installer_plugin())
-        .plugin(native::plugin());
+    let builder = builder.plugin(native::plugin());
+    #[cfg(all(mobile, self_update))]
+    let builder = builder.manage(apk_update::ApkState::default());
     #[cfg(mobile)]
-    let builder = builder
-        .manage(apk_update::ApkState::default())
-        .invoke_handler(tauri::generate_handler![
-            commands::daemon_request,
-            commands::daemon_bytes,
-            commands::daemon_events,
-            commands::daemon_events_stop,
-            commands::term_attach,
-            commands::term_write,
-            commands::term_resize,
-            commands::term_background,
-            commands::term_detach,
-            commands::conn_connect,
-            commands::conn_disconnect,
-            commands::conn_answer,
-            commands::conn_wake,
-            commands::conn_restart_server,
-            commands::upload_file,
-            commands::save_paste,
-            commands::ports_watch,
-            commands::ports_watch_stop,
-            commands::ports_configure,
-            commands::ports_forward,
-            commands::ports_unforward,
-            direct::app_platform,
-            direct::direct_device_key,
-            direct::direct_hosts,
-            direct::direct_host_save,
-            direct::direct_host_delete,
-            direct::direct_host_forget_key,
-            direct::open_external,
-            apk_update::apk_update_status,
-            apk_update::apk_update_check,
-            apk_update::apk_update_download,
-            apk_update::apk_update_install,
-            apk_update::apk_update_allow_install,
-            native::mobile_minimize,
-            native::mobile_system_dark,
-            native::mobile_system_bars,
-            native::mobile_clipboard_image,
-            native::open_notification_settings,
-            diag::diag_log,
-            diag::diag_pong,
-            diag::diag_visibility,
-            diag::diag_session_end,
-            diag::diag_previous,
-            diag::diag_dismiss,
-            diag::diag_tail,
-            diag::diag_info,
-            diag::diag_save,
-        ]);
+    let builder = builder.invoke_handler(tauri::generate_handler![
+        commands::daemon_request,
+        commands::daemon_bytes,
+        commands::daemon_events,
+        commands::daemon_events_stop,
+        commands::term_attach,
+        commands::term_write,
+        commands::term_resize,
+        commands::term_background,
+        commands::term_detach,
+        commands::conn_connect,
+        commands::conn_disconnect,
+        commands::conn_answer,
+        commands::conn_wake,
+        commands::conn_restart_server,
+        commands::upload_file,
+        commands::save_paste,
+        commands::ports_watch,
+        commands::ports_watch_stop,
+        commands::ports_configure,
+        commands::ports_forward,
+        commands::ports_unforward,
+        direct::app_platform,
+        direct::direct_device_key,
+        direct::direct_hosts,
+        direct::direct_host_save,
+        direct::direct_host_delete,
+        direct::direct_host_forget_key,
+        direct::open_external,
+        #[cfg(self_update)]
+        apk_update::apk_update_status,
+        #[cfg(self_update)]
+        apk_update::apk_update_check,
+        #[cfg(self_update)]
+        apk_update::apk_update_download,
+        #[cfg(self_update)]
+        apk_update::apk_update_install,
+        #[cfg(self_update)]
+        apk_update::apk_update_allow_install,
+        native::mobile_minimize,
+        native::mobile_system_dark,
+        native::mobile_system_bars,
+        native::mobile_clipboard_image,
+        native::open_notification_settings,
+        diag::diag_log,
+        diag::diag_pong,
+        diag::diag_visibility,
+        diag::diag_session_end,
+        diag::diag_previous,
+        diag::diag_dismiss,
+        diag::diag_tail,
+        diag::diag_info,
+        diag::diag_save,
+    ]);
     #[allow(unused_mut)]
     let mut ctx = tauri::generate_context!();
     #[cfg(target_os = "macos")]

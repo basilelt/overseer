@@ -22,6 +22,7 @@ export interface Settings {
   terminalFont: string;
   lineHeight: number;
   scrollbackLines: number;
+  gpuTerminal: boolean;
   sidebarWidth: number;
   panelWidth: number;
   panelOrder: string[];
@@ -80,6 +81,7 @@ export const DEFAULT_SETTINGS: Settings = {
   terminalFont: '',
   lineHeight: 1,
   scrollbackLines: DEFAULT_SCROLLBACK_LINES,
+  gpuTerminal: false,
   sidebarWidth: 288,
   panelWidth: 340,
   panelOrder: [],
@@ -122,7 +124,7 @@ function load(): Settings {
     const raw = globalThis.localStorage?.getItem(KEY);
     if (!raw) return { ...DEFAULT_SETTINGS };
     const parsed = JSON.parse(raw);
-    return { ...DEFAULT_SETTINGS, ...parsed, locale: isLocale(parsed.locale) ? parsed.locale : DEFAULT_SETTINGS.locale, notifyKinds: migrateKinds(parsed), notifyQuiet: { ...DEFAULT_QUIET, ...parsed.notifyQuiet } };
+    return { ...DEFAULT_SETTINGS, ...parsed, locale: isLocale(parsed.locale) ? parsed.locale : DEFAULT_SETTINGS.locale, gpuTerminal: parsed.gpuTerminal === true, notifyKinds: migrateKinds(parsed), notifyQuiet: { ...DEFAULT_QUIET, ...parsed.notifyQuiet } };
   } catch {
     return { ...DEFAULT_SETTINGS };
   }

@@ -159,6 +159,16 @@ describe('connecting', () => {
     expect(app.connected).toBe(false);
   });
 
+  it('starts a phone demo connected to a sample host, with no prompt', async () => {
+    setClient(new MockDaemon({ live: false, delayMs: 0, platform: { os: 'android', mobile: true } }));
+    await app.init();
+    expect(app.mobile).toBe(true);
+    expect(app.conn).toMatchObject({ phase: 'connected', target: { kind: 'direct', host: 'h1' } });
+    expect(app.conn.prompt).toBeUndefined();
+    expect(app.overlay).toBeNull();
+    expect(app.items.length).toBeGreaterThan(0);
+  });
+
   it('connects the desktop to the local daemon and loads everything', async () => {
     await app.init();
     expect(app.connected).toBe(true);

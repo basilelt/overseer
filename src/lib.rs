@@ -602,53 +602,110 @@ fn claude_found_from(
     by_sid.into_values().collect()
 }
 
+// Codex TUIs share one app-server that runs the hooks, so a hook pid never names a TUI and a
+// fresh `codex` shows no thread id: those are paired with threads in their cwd on times that do
+// not move. A fresh process only owns a thread created after it started, or one used since.
+const CODEX_SLACK_MS: i64 = 2_000;
+
 fn codex_found(ctx: &Ctx, hooks: &HashMap<String, HookState>) -> Vec<Found> {
-    let mut threads = codex::threads(&ctx.codex_dir, &ctx.state_dir);
-    threads.sort_by_key(|t| -t.activity_ms);
-    let procs = codex::fold_wrappers(
+    let threads = codex::threads(&ctx.codex_dir, &ctx.state_dir);
+    let mut procs: Vec<(u32, Vec<String>, Option<i64>)> = codex::fold_wrappers(
         ctx.probe
             .list()
             .into_iter()
             .filter(|(_, argv)| codex::is_session(argv))
             .collect(),
         |pid| ctx.probe.ppid(pid),
-    );
+    )
+    .into_iter()
+    .map(|(pid, argv)| {
+        let start = ctx.probe.info(pid).and_then(|i| i.start_ms);
+        (pid, argv, start)
+    })
+    .collect();
+    procs.sort_by_key(|p| (p.2, p.0));
+    let ids: HashSet<&str> = threads.iter().map(|t| t.id.as_str()).collect();
+    let mut owner: Vec<Option<usize>> = vec![None; threads.len()];
     let mut claimed = HashSet::new();
+    for (i, t) in threads.iter().enumerate().filter(|(_, t)| !t.archived) {
+        let free = |j: &usize| !claimed.contains(j);
+        let hit = hooks
+            .get(&t.id)
+            .and_then(|h| h.pid)
+            .and_then(|p| (0..procs.len()).filter(free).find(|j| procs[*j].0 == p))
+            .or_else(|| {
+                (0..procs.len())
+                    .filter(free)
+                    .find(|j| procs[*j].1.contains(&t.id))
+            });
+        if let Some(j) = hit {
+            claimed.insert(j);
+            owner[i] = Some(j);
+        }
+    }
     let mut cwds = BTreeMap::new();
+    let mut in_cwd = |pid: u32, cwd: &str| {
+        cwds.entry(pid)
+            .or_insert_with(|| ctx.probe.cwd(pid))
+            .as_deref()
+            == Some(cwd)
+    };
+    let open = |i: usize| !threads[i].archived && threads[i].cwd.is_some();
+    let names_other =
+        |argv: &[String], id: &str| argv.iter().any(|a| a != id && ids.contains(a.as_str()));
+    let mut newest: Vec<usize> = (0..threads.len()).filter(|i| open(*i)).collect();
+    newest.sort_by_key(|i| std::cmp::Reverse(threads[*i].started_ms));
+    for i in newest {
+        let t = &threads[i];
+        if owner[i].is_some() {
+            continue;
+        }
+        let cwd = t.cwd.as_deref().unwrap_or_default();
+        let hit = (0..procs.len()).rev().find(|j| {
+            let (pid, argv, start) = &procs[*j];
+            !claimed.contains(j)
+                && !codex::reopens(argv)
+                && !names_other(argv, &t.id)
+                && start
+                    .zip(t.started_ms)
+                    .is_none_or(|(s, c)| c + CODEX_SLACK_MS >= s)
+                && in_cwd(*pid, cwd)
+        });
+        if let Some(j) = hit {
+            claimed.insert(j);
+            owner[i] = Some(j);
+        }
+    }
+    let mut recent: Vec<usize> = (0..threads.len()).filter(|i| open(*i)).collect();
+    recent.sort_by_key(|i| std::cmp::Reverse(threads[*i].activity_ms));
+    for i in recent {
+        let t = &threads[i];
+        if owner[i].is_some() {
+            continue;
+        }
+        let cwd = t.cwd.as_deref().unwrap_or_default();
+        let hit = (0..procs.len()).find(|j| {
+            let (pid, argv, start) = &procs[*j];
+            !claimed.contains(j)
+                && !names_other(argv, &t.id)
+                && (codex::reopens(argv)
+                    || start.is_none_or(|s| t.activity_ms + CODEX_SLACK_MS >= s))
+                && in_cwd(*pid, cwd)
+        });
+        if let Some(j) = hit {
+            claimed.insert(j);
+            owner[i] = Some(j);
+        }
+    }
     threads
         .into_iter()
-        .map(|t| {
+        .zip(owner)
+        .map(|(t, j)| {
             let mut f = Found::new("codex", t.id.clone());
             let hook = hooks.get(&t.id);
-            if !t.archived {
-                let hit = hook
-                    .and_then(|h| h.pid)
-                    .and_then(|p| {
-                        procs
-                            .iter()
-                            .find(|(pid, _)| *pid == p && !claimed.contains(pid))
-                    })
-                    .or_else(|| {
-                        procs
-                            .iter()
-                            .find(|(pid, argv)| !claimed.contains(pid) && argv.contains(&t.id))
-                    })
-                    .or_else(|| {
-                        let cwd = t.cwd.as_deref()?;
-                        procs.iter().find(|(pid, _)| {
-                            !claimed.contains(pid)
-                                && cwds
-                                    .entry(*pid)
-                                    .or_insert_with(|| ctx.probe.cwd(*pid))
-                                    .as_deref()
-                                    == Some(cwd)
-                        })
-                    });
-                if let Some((pid, argv)) = hit {
-                    claimed.insert(*pid);
-                    let flags = flags_after(argv, codex::is_codex).unwrap_or_default();
-                    f.alive = Some((*pid, codex::launch_flags(&flags)));
-                }
+            if let Some((pid, argv, _)) = j.map(|j| &procs[j]) {
+                let flags = flags_after(argv, codex::is_codex).unwrap_or_default();
+                f.alive = Some((*pid, codex::launch_flags(&flags)));
             }
             if let Some(h) = hook {
                 f.busy = h.busy;

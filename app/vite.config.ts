@@ -1,9 +1,10 @@
 import { defineConfig, type Plugin } from 'vitest/config';
 import { svelte } from '@sveltejs/vite-plugin-svelte';
+import { selfUpdate } from './src/lib/mobile/self-update';
 
 // ghostty-web inlines its WASM as a base64 data URL inside Ghostty.load(); terminal.ts loads the
 // emitted ghostty-vt.wasm asset with Ghostty.load(url) instead, so that literal is dead weight.
-// The other patches remove document listeners that ghostty-web 0.4.0 never detaches, which kept
+// The other patches remove document listeners that ghostty-web never detaches, which kept
 // every disposed terminal alive.
 const PATCHES: [string | RegExp, string][] = [
   [/data:application\/wasm;base64,[A-Za-z0-9+/=]+/, 'data:application/wasm;base64,'],
@@ -11,7 +12,7 @@ const PATCHES: [string | RegExp, string][] = [
     'this.isOpen && typeof document < "u" && document.removeEventListener("mouseup", this.handleMouseUp)',
     'typeof document < "u" && document.removeEventListener("mouseup", this.handleMouseUp)',
   ],
-  ['document.addEventListener("mousedown", (B) => {', 'document.addEventListener("mousedown", this.boundDocumentMouseDownHandler = (B) => {'],
+  [/document\.addEventListener\("mousedown", \((\w+)\) => \{/, 'document.addEventListener("mousedown", this.boundDocumentMouseDownHandler = ($1) => {'],
   [
     'this.selectionChangedEmitter.dispose(), this.stopAutoScroll()',
     'this.selectionChangedEmitter.dispose(), this.stopAutoScroll(), this.boundDocumentMouseDownHandler && (document.removeEventListener("mousedown", this.boundDocumentMouseDownHandler), this.boundDocumentMouseDownHandler = null)',
@@ -41,6 +42,7 @@ function ghosttyPatches(): Plugin {
 export default defineConfig({
   plugins: [svelte(), ghosttyPatches()],
   clearScreen: false,
+  define: { __SELF_UPDATE__: JSON.stringify(selfUpdate()) },
   server: { port: 1420, strictPort: true, watch: { ignored: ['**/src-tauri/**'] } },
   build: {
     target: 'es2022',
@@ -64,7 +66,7 @@ export default defineConfig({
       include: ['src/lib/**/*.ts'],
       exclude: ['src/**/*.test.ts', 'src/**/types.ts', 'src/**/strings.ts', 'src/**/mock*.ts', 'src/lib/i18n/*.ts'],
       reporter: ['text-summary', 'json-summary'],
-      thresholds: { lines: 93, functions: 87, branches: 89, statements: 92 },
+      thresholds: { lines: 94, functions: 88, branches: 89, statements: 92 },
     },
   },
 });

@@ -37,6 +37,8 @@ Workspaces group sessions by project. Each session opens in a tab with its live 
 the side panel shows what the agent is doing: last message, work log, todos, edited files and
 changes. Switch to **By status** to see at a glance who needs your input, who is running and who
 is done. Agent tabs also have a **Chat** view rebuilt live from the agent's session file.
+Terminals can optionally be drawn on the GPU with WebGL (Settings, Terminal, **GPU rendering**,
+off by default and experimental), which keeps long output smooth.
 
 ![Workspaces](app/docs/screenshots/workspaces-light.png)
 
@@ -110,6 +112,9 @@ on a TCP port on the server.
     <img src="app/docs/screenshots/android-tablet-portrait-dark.png" height="420" alt="An agent asking a question, on an Android tablet in portrait">
     <img src="app/docs/screenshots/android-tablet-landscape-light.png" height="420" alt="Agents on an Android tablet in landscape">
   </p>
+- **Demo mode**: no server yet? **Try the demo** on the connect screen runs the whole app on sample
+  sessions, tasks, reviews and chats, on the desktop or a phone, with nothing installed. A **Demo
+  mode** pill stays in the title bar; **Exit demo** returns to your own hosts and settings, untouched.
 - **Notifications** when an agent needs input or finishes, from agent hooks Overseer can
   install for you.
 - **Usage and system monitor**: agent quotas, token usage, CPU and RAM in the title bar.
@@ -136,8 +141,10 @@ brew install overseer
 
 Upgrade with `brew update && brew upgrade --cask overseer && brew upgrade overseer`.
 
-The app is not signed yet. If macOS refuses to open it, run
-`xattr -dr com.apple.quarantine /Applications/Overseer.app` once.
+The app is signed with a Developer ID and notarized by Apple, so macOS opens it without a
+warning. Each release asset carries a build provenance attestation:
+`gh attestation verify <file> --repo basilelt/overseer` checks a download came from this
+repository's release workflow.
 
 ### Linux and Windows
 
@@ -157,10 +164,12 @@ need nothing: the app installs the daemon over SSH on first connection.
 
 ### Android and iOS
 
-Android: install and update the APK from the releases with Obtainium, or download it with
-`gh release download --repo basilelt/overseer --pattern '*android.apk'`; Google Play gets a
-release now and then. iOS: install from the App Store. Store versions are shipped by hand and lag
-behind the GitHub releases. See [docs/mobile.md](docs/mobile.md).
+Android: install and update the APK from the releases with Obtainium
+([add it in one tap](https://apps.obtainium.imranr.dev/redirect?r=obtainium://app/%7B%22id%22%3A%22io.github.basilelt.overseer%22%2C%22url%22%3A%22https%3A%2F%2Fgithub.com%2Fbasilelt%2Foverseer%22%2C%22author%22%3A%22basilelt%22%2C%22name%22%3A%22Overseer%22%2C%22preferredApkIndex%22%3A0%2C%22additionalSettings%22%3A%22%7B%5C%22includePrereleases%5C%22%3Afalse%2C%5C%22apkFilterRegEx%5C%22%3A%5C%22Overseer_.%2A_android%5C%5C%5C%5C.apk%5C%22%2C%5C%22invertAPKFilter%5C%22%3Afalse%7D%22%2C%22overrideSource%22%3A%22GitHub%22%7D), settings prefilled), or download it with
+`gh release download --repo basilelt/overseer --pattern '*android.apk'`. Google Play gets a
+release now and then, shipped by hand; Play builds are updated by Play instead of the in-app
+updater. iOS: install from the App Store. Store versions lag behind the GitHub releases. See
+[docs/mobile.md](docs/mobile.md).
 
 #### Google Play (closed testing)
 
@@ -181,9 +190,9 @@ and get updates there:
 
 No server yet? Tap **Try the demo** on the first screen to explore the app with sample data.
 
-Already using the APK from the releases? Both builds are signed with the same key, so Play
-installs over it and keeps your servers; from then on Play updates the app instead of the in-app
-updater.
+Already using the APK from the releases? The Play build is signed with a different key, so
+Android will not install it over the APK: uninstall the APK first (your servers have to be added
+again). From then on Play updates the app instead of the in-app updater.
 
 ### Updates
 

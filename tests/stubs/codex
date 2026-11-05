@@ -1,1 +1,42 @@
-agent
+#!/bin/sh
+[ "${1:-}" = "--version" ] && { echo "codex-cli 0.0.0 (stub)"; exit 0; }
+echo "$$ codex $*" >> "${SB_STUB_LOG:?}"
+sid=
+prev=
+for a in "$@"; do
+  [ "$prev" = "resume" ] && [ "$a" != "--last" ] && sid=$a
+  prev=$a
+done
+dir=${CODEX_HOME:?}
+day=$(date -u +%Y/%m/%d)
+mkdir -p "$dir/sessions/$day"
+rollout=
+thread() {
+  [ -n "$sid" ] || sid=$(cat /proc/sys/kernel/random/uuid)
+  rollout=$(ls "$dir"/sessions/*/*/*/rollout-*-"$sid".jsonl 2>/dev/null | head -1)
+  [ -n "$rollout" ] && return
+  rollout="$dir/sessions/$day/rollout-$(date -u +%Y-%m-%dT%H-%M-%S)-$sid.jsonl"
+  printf '{"timestamp":"%s","type":"session_meta","payload":{"id":"%s","timestamp":"%s","cwd":"%s","source":"vscode"}}\n' \
+    "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$sid" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$PWD" > "$rollout"
+}
+hook() {
+  printf '{"session_id":"%s","cwd":"%s","hook_event_name":"%s"}' "$sid" "$PWD" "$1" |
+    "${SB_BIN:?}" hook codex "$1" 1
+}
+[ -n "$sid" ] && thread && hook SessionStart
+tool=
+cleanup() { [ -n "$tool" ] && kill "$tool" 2>/dev/null; exit 0; }
+trap cleanup TERM HUP
+trap 'exit 0' INT
+printf 'codex ready\r\n› '
+while IFS= read -r l; do
+  case $l in
+    exit) cleanup ;;
+    busy) [ -n "$rollout" ] || { thread; hook SessionStart; }; echo '{}' >> "$rollout"; hook UserPromptSubmit ;;
+    done) [ -n "$rollout" ] && { echo '{}' >> "$rollout"; hook Stop; } ;;
+    tool) sh -c 'sleep 8' bwrap --argv0 codex-linux-sandbox -- /x/bin/codex --sandbox-policy-cwd "$PWD" & tool=$! ;;
+    *) printf 'got: %s\r\n' "$l" ;;
+  esac
+  printf '› '
+done
+cleanup
