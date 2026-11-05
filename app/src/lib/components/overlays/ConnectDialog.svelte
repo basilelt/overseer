@@ -16,11 +16,15 @@
   import { app } from '../../state.svelte';
   import { settings } from '../../settings.svelte';
   import { isBusy, steps } from '../../conn';
+  import { exitDemo, isDemo, startDemo } from '../../demo';
   import { localNetworkView } from '../../localnet';
   import { fuzzy } from '../../fuzzy';
   import type { ConnPhase, HostTarget, SshHost } from '../../types';
 
   let { onclose }: { onclose: () => void } = $props();
+
+  const demo = isDemo();
+  const canDemo = $derived(!demo && !!app.client && app.client.kind !== 'mock');
 
   interface Row {
     key: string;
@@ -135,6 +139,12 @@
         <li class="empty" role="presentation">{t('connect.noHosts')}</li>
       {/if}
     </ul>
+    {#if demo || canDemo}
+      <div class="demo">
+        <span>{t(demo ? 'demo.exitHint' : 'demo.tryHint')}</span>
+        <button class="btn" onclick={() => (demo ? exitDemo() : startDemo(app.client))}>{t(demo ? 'demo.exit' : 'demo.try')}</button>
+      </div>
+    {/if}
   {:else}
     <div class="progress">
       <div class="target">
@@ -164,6 +174,7 @@
           <pre>{app.conn.error}</pre>
         </div>
         <div class="actions">
+          {#if canDemo}<button class="btn" onclick={() => startDemo(app.client)}>{t('demo.try')}</button>{/if}
           <button class="btn" onclick={() => (started = false)}>{t('common.back')}</button>
           <button class="btn primary" onclick={() => connect(lastTarget ?? undefined)}>{t('common.retry')}</button>
         </div>
@@ -292,6 +303,20 @@
     color: var(--text-2);
     user-select: text;
     -webkit-user-select: text;
+  }
+  .demo {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-top: 10px;
+    padding: 10px 10px 2px;
+    border-top: 1px solid var(--border);
+    font-size: 12px;
+    color: var(--text-3);
+    line-height: 1.4;
+  }
+  .demo .btn {
+    flex: none;
   }
   .actions {
     display: flex;

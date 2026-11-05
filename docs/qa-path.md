@@ -155,6 +155,17 @@ Each step is **Do → Expect**. Check every screenshot for overlaps, clipped tex
 - **M4** Idle: leave the app untouched for 70 s with a session open → no DOM changes and no repaints (count `MutationObserver` records over 10 s).
 - **M5** With the Codex sessions of **C7**–**C9** running: `sandbox.sh crash`, then `start` → `stub.log` shows one `codex resume <id>` per live session, each with its own thread id, and each comes back on its own line, active.
 
+### N. Demo mode
+
+Run in `android` and `iphone` at least, and in `web`. Start from a fresh browser context, so the connect screen shows real data first.
+
+- **N1** Open the connect screen (with `?qaos=android` or `?qaos=ios` it opens at start, as on a phone with no saved host; otherwise from the host chip) → under the host list, "No server yet?…" and **Try the demo**.
+- **N2** **Try the demo** → the app reloads on sample data, connected with no host key or password prompt. A **Demo mode** pill shows in the title bar (phone: next to the host chip, with an exit icon). The host chip shows **Workstation** when the platform reports a phone (the real apps, or `?qaos=android` / `?qaos=ios`, which makes the shim's `app_platform` report one) and **Local** otherwise. No error toast, and `window.__qaLog` lists no Tauri command except `app_platform` and the clipboard.
+- **N3** In the demo: Agents lists sessions; open one → its terminal shows output and echoes what you type. Tasks → **Add Task** → a card appears; drag or move it to **In progress**. Review: open a review → the diff shows. Switch a session to Chat → the transcript and composer show. Open Settings and change the theme.
+- **N4** Reload the app (a relaunch) → still in the demo, with the theme set in **N3**.
+- **N5** **Exit demo** on the pill → the app reloads on the real connect flow: the real daemon's sessions (or the connect screen on a phone), the real theme, and no **Demo mode** pill. `localStorage` holds no `overseer.demo` key and the real `overseer.settings` is byte for byte what it was before **N2**.
+- **N6** Enter the demo again, open the connect screen → **Exit demo** is offered there, and not **Try the demo**. Connect to a real host that fails (outside the demo) → **Try the demo** is offered next to **Retry**.
+
 ## Keeping the path current
 
 The path describes the app as it ships, so it changes with the app. A PR that changes what the user can do updates this file in the same PR.

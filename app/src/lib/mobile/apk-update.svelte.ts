@@ -1,4 +1,5 @@
 import { isTauri } from '../client';
+import { isDemo } from '../demo';
 import { type Sub, t } from '../i18n.svelte';
 
 export const CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
@@ -284,7 +285,7 @@ const lazy: ApkBackend = {
 export const apk = /* @__PURE__ */ new ApkUpdater(null);
 
 export function startApkUpdater(os: string, onResume: (fn: () => void) => () => void): () => void {
-  if ((os !== 'android' && os !== 'ios') || !isTauri()) return () => {};
+  if ((os !== 'android' && os !== 'ios') || !isTauri() || isDemo()) return () => {};
   apk.updates = os === 'android';
   apk.backend = lazy;
   const stop = apk.start();

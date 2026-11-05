@@ -873,7 +873,7 @@ On first launch, once the app is connected (immediately in local mode, after the
 connection on a phone), a welcome card offers **Take the tour** or **Skip**. The tour dims the
 window and highlights the real controls one at a time: host chip, workspaces sidebar, tabs and the
 new-session menu, the Terminal/Chat toggle, the side panel, Tasks, Review, the usage, system and ports
-chips, notifications and hooks, the command palette and Feedback, and in 0.25 the Cmd/Ctrl+P palette shortcut. Steps whose control is not on
+chips, notifications and hooks, the command palette and Feedback, in 0.25 the Cmd/Ctrl+P palette shortcut, and in 0.28 the demo mode (on the **Demo mode** pill while in the demo, else on the host chip). Steps whose control is not on
 screen (no session selected, a feature the server lacks, phone layout) are skipped. On a phone the
 card is a sheet at the bottom (or top, when the control sits low) and points at the bottom
 navigation, the session strip and the menu.
@@ -892,6 +892,21 @@ logs, feedback). The search box at the top of the sidebar has focus when Setting
 setting's name or description, in the app language or in English, and only the matching settings stay,
 highlighted, with a count per category; Esc clears the search. On a phone the categories are a list
 that opens a section, with a back button.
+
+### 14.0a Demo mode
+
+**Try the demo** lets you use the whole app without a server, for example to look around before
+installing the daemon. It is on the connect screen: at the bottom of the host list on the desktop
+(**Connect to host**), under **Add server** on a phone, and next to **Retry** when a connection fails.
+The app reloads on sample data: sessions with live terminals, a task board, reviews with diffs,
+chats, ports and saved hosts. Everything is simulated inside the app; nothing is installed, no SSH
+connection is made and no notification or update check reaches the system.
+
+While the demo runs, a **Demo mode** pill sits in the title bar (next to the host chip on a phone)
+with **Exit demo**. The demo keeps its own settings, layouts and drafts apart from yours, and it
+survives closing or backgrounding the app: it stays on until you exit it. **Exit demo** (on the pill
+or on the connect screen) deletes the demo's data and reloads the app on your own hosts, settings
+and sessions, exactly as you left them.
 
 ### 14.1 Terminals
 

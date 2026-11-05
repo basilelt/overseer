@@ -19,6 +19,7 @@
   import Workspace from '../workspace/Workspace.svelte';
   import SidePanel from '../panel/SidePanel.svelte';
   import ConnBanner from '../ui/ConnBanner.svelte';
+  import DemoPill from '../ui/DemoPill.svelte';
   import MobileChips from './MobileChips.svelte';
   import MobileReviews from './MobileReviews.svelte';
   import MobileMore from './MobileMore.svelte';
@@ -146,6 +147,7 @@
     {#if __SELF_UPDATE__ && updateLabel}
       <button class="upd" class:busy={apk.busy} onclick={() => (apk.sheet = true)}><span class="udot"></span>{updateLabel}</button>
     {/if}
+    <DemoPill compact />
     <button class="host" data-tour="host" onclick={() => app.open('connect')} aria-label={t('host.connect')}>
       <span class="dot" style:background={connPhase === 'connected' ? 'var(--st-input)' : connPhase === 'error' ? 'var(--st-failed)' : connPhase === 'idle' ? 'var(--st-held)' : 'var(--st-working)'}></span>
       <span class="hl">{hostLabel}</span>

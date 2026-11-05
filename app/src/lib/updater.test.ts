@@ -378,3 +378,26 @@ describe('updater strings', () => {
     expect(pillLabel(u)).toBe('Mise à jour 0.3.0');
   });
 });
+
+describe('the shared updater', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.resetModules();
+  });
+
+  const native = (demo: boolean) => {
+    vi.stubGlobal('window', { __TAURI_INTERNALS__: {} });
+    vi.stubGlobal('localStorage', { getItem: (k: string) => (demo && k === 'overseer.demo' ? '1' : null), setItem: () => {} });
+    vi.resetModules();
+  };
+
+  it('checks for updates in the native app', async () => {
+    native(false);
+    expect((await import('./updater.svelte')).updater.enabled).toBe(true);
+  });
+
+  it('is disabled in demo mode', async () => {
+    native(true);
+    expect((await import('./updater.svelte')).updater.enabled).toBe(false);
+  });
+});

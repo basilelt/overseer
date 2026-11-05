@@ -83,27 +83,39 @@ describe('tour versioning', () => {
 
   it('shows the organize step to users who saw the 0.15 tour', () => {
     expect(modeFor(1)).toBe('whatsNew');
-    expect(stepsFor('whatsNew', 1).map((s) => s.id)).toEqual(['organize', 'settings', 'paletteKey']);
+    expect(stepsFor('whatsNew', 1).map((s) => s.id)).toEqual(['organize', 'settings', 'paletteKey', 'demo']);
     expect(stepsFor('full', undefined).map((s) => s.id)).toContain('organize');
     expect(targetOf(STEPS.find((s) => s.id === 'organize')!, (n) => n === 'workspaces')).toBe('workspaces');
   });
 
   it('shows only the settings step to users who saw 0.24', () => {
     expect(modeFor('0.24')).toBe('whatsNew');
-    expect(stepsFor('whatsNew', '0.24').map((s) => s.id)).toEqual(['settings', 'paletteKey']);
+    expect(stepsFor('whatsNew', '0.24').map((s) => s.id)).toEqual(['settings', 'paletteKey', 'demo']);
     expect(stepsFor('full', undefined).map((s) => s.id)).toContain('settings');
     expect(targetOf(STEPS.find((s) => s.id === 'settings')!, (n) => n === 'settings')).toBe('settings');
+  });
+
+  it('shows only the demo step to users who saw 0.27', () => {
+    expect(TOUR_VERSION).toBe('0.28');
+    expect(modeFor('0.27')).toBe('whatsNew');
+    expect(stepsFor('whatsNew', '0.27').map((s) => s.id)).toEqual(['demo']);
+    expect(modeFor('0.28')).toBeNull();
+  });
+
+  it('points the demo step at the Demo mode pill in the demo, else at the host chip', () => {
+    const demo = STEPS.find((s) => s.id === 'demo')!;
+    expect(targetOf(demo, (n) => n === 'demo' || n === 'host')).toBe('demo');
+    expect(targetOf(demo, (n) => n === 'host')).toBe('host');
   });
 
   it('points the settings step at the More tab on a phone', () => {
     expect(targetOf(STEPS.find((s) => s.id === 'settings')!, (n) => n === 'palette')).toBe('palette');
   });
 
-  it('shows the 0.25 steps to users who saw the 0.17 tour', () => {
+  it('shows the steps added after 0.17 to users who saw the 0.17 tour', () => {
     expect(modeFor('0.17')).toBe('whatsNew');
-    expect(stepsFor('whatsNew', '0.17').map((s) => s.id)).toEqual(['settings', 'paletteKey']);
+    expect(stepsFor('whatsNew', '0.17').map((s) => s.id)).toEqual(['settings', 'paletteKey', 'demo']);
     expect(STEPS.find((s) => s.id === 'paletteKey')?.since).toBe('0.25');
-    expect(TOUR_VERSION).toBe('0.25');
   });
 
   it('shows nothing once the current release was seen', () => {

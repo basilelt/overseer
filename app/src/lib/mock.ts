@@ -513,6 +513,7 @@ interface MockOptions {
   delayMs?: number;
   scale?: number;
   storm?: number;
+  platform?: PlatformInfo;
 }
 
 const urlNumber = (k: string) => (typeof location !== 'undefined' ? Number(new URLSearchParams(location.search).get(k)) || 0 : 0);
@@ -625,6 +626,7 @@ export class MockDaemon implements DaemonClient {
   private promptSeq = 0;
   hosts: SavedHost[] = structuredClone(MOCK_SAVED_HOSTS);
   private trusted = new Set<string>(['h1']);
+  private devicePlatform: PlatformInfo | undefined;
   private sinks = new Map<string, (s: string) => void>();
 
   constructor(opts: MockOptions = {}) {
@@ -642,6 +644,7 @@ export class MockDaemon implements DaemonClient {
     ({ workspaces: this.workspaces, folders: this.folders, groups: this.groups } = seedWs(now));
     this.live = opts.live ?? true;
     this.delayMs = opts.delayMs ?? 300;
+    this.devicePlatform = opts.platform;
   }
 
   emit(type: EventType, data: unknown) {
@@ -1741,6 +1744,7 @@ export class MockDaemon implements DaemonClient {
   }
 
   async platform(): Promise<PlatformInfo> {
+    if (this.devicePlatform) return { ...this.devicePlatform };
     const phone = typeof location !== 'undefined' && phoneParam(location.search);
     return { os: phone ? 'android' : 'linux', mobile: phone };
   }
