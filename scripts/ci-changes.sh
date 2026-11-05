@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -uo pipefail
 
-jobs="rust app windows android macos_signing macos_procs actionlint store_guard"
+jobs="rust app windows android macos_signing macos_procs actionlint store_guard tap"
 for j in $jobs; do declare "$j=false"; done
 all=false
 wide=false
@@ -42,6 +42,9 @@ else
     esac
     case $f in
       .github/*) actionlint=true ;;
+    esac
+    case $f in
+      scripts/update-tap.sh | scripts/update-tap.test.sh) tap=true ;;
     esac
     case $f in
       .github/* | app/fastlane/* | scripts/* | Makefile) store_guard=true ;;
