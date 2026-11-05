@@ -32,6 +32,7 @@
   import { replayTour } from '../../tour/replay';
   import { clampScrollback, MAX_SCROLLBACK_LINES, MIN_SCROLLBACK_LINES } from '../../scroll';
   import { browsers } from '../../browsers.svelte';
+  import { toHex6 } from '../../color-hex';
   import { updater } from '../../updater.svelte';
   import { apk } from '../../mobile/apk-update.svelte';
   import { en } from '../../i18n/en';
@@ -46,7 +47,7 @@
   const colorValues = $derived.by(() => {
     const own = customColors(base);
     const css = getComputedStyle(document.documentElement);
-    return Object.fromEntries(COLOR_TOKENS.map((k) => [k, own[k] ?? css.getPropertyValue(`--${k}`).trim()])) as Record<ColorToken, string>;
+    return Object.fromEntries(COLOR_TOKENS.map((k) => [k, toHex6(own[k] ?? css.getPropertyValue(`--${k}`))])) as Record<ColorToken, string>;
   });
   const setColors = (colors: Settings['colors'][typeof base]) => saveSettings({ colors: { ...settings.colors, [base]: colors } });
   let colorTimer: ReturnType<typeof setTimeout> | undefined;
