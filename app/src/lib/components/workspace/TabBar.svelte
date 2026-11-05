@@ -196,27 +196,10 @@
 
   let suppress = false;
 
-  // Only a tab whose title is cut gets the hover overlay; measured on enter, not on every render.
-  // The overlay grows leftwards from the end of the title so the close button never moves; with no
-  // room on the left of the strip, the native tooltip shows the title instead. 11 and 400 mirror
-  // the padding, border and max-width of TabFullTitle.
-  let clipped = $state<string | null>(null);
-  function isClipped(tab: HTMLElement) {
-    const name = tab.querySelector<HTMLElement>('.name');
-    if (!name || name.scrollWidth <= name.clientWidth) return false;
-    const strip = tab.closest('.tabs')?.getBoundingClientRect().left ?? 0;
-    return name.getBoundingClientRect().right - strip >= Math.min(name.scrollWidth + 11, 400);
-  }
-
-  // The rename input and the full-title overlay load in the first idle moment, or on first use if sooner.
+  // The rename input loads in the first idle moment, or on first use if sooner.
   let Extra = $state.raw<typeof import('./TabTitleExtra.svelte').default | null>(null);
   const loadExtra = () => (Extra ? Promise.resolve() : tabLazy().then((m) => void (Extra = m.TabTitleExtra)));
   $effect(() => whenIdle(() => void loadExtra().catch(() => {})));
-
-  function hover(tab: HTMLElement, key: string) {
-    clipped = isClipped(tab) ? key : null;
-    if (clipped) void loadExtra();
-  }
 
   function click(e: MouseEvent, key: string) {
     if (suppress) return;
@@ -320,9 +303,7 @@
         data-tab={key}
         role="tab"
         tabindex="0"
-        title={tab.item?.status && tab.item.status !== label(tab) ? tab.item.status : clipped === key ? undefined : label(tab)}
-        onpointerenter={(e) => hover(e.currentTarget, key)}
-        onpointerleave={() => clipped === key && (clipped = null)}
+        title={tab.item?.status && tab.item.status !== label(tab) ? tab.item.status : label(tab)}
         aria-selected={pane.active === key}
         onclick={(e) => click(e, key)}
         onkeydown={(e) => e.key === 'Enter' && activate(key)}
@@ -345,14 +326,13 @@
         {/if}
         <span class="label">
           <span class="name">{label(tab)}</span>
-          {#if Extra && (editing?.key === key || clipped === key)}
-            <Extra tabKey={key} name={label(tab)} edit={editing?.key === key ? editing : null} ondone={() => editing?.key === key && (editing = null)} />
+          {#if Extra && editing?.key === key}
+            <Extra tabKey={key} edit={editing} ondone={() => editing?.key === key && (editing = null)} />
           {/if}
         </span>
         {#if chipOf(tab)}{@const chip = chipOf(tab)}<span class="chip mono" title={chipLabel(chip, effortLabel)}>{chipShort(chip)}</span>{/if}
         <ReviewBadge tabKey={key} />
-        {#if i < 9}<span class="num faint">{i + 1}</span>{/if}
-        <button class="x" aria-label={t('common.close')} onclick={(e) => close(e, key)}><svg class="i" width="12" height="12" aria-hidden="true"><use href="#sbi-x" /></svg></button>
+        <span class="slot"><span class="num faint">{i < 9 ? i + 1 : ''}</span><button class="x" aria-label={t('common.close')} onclick={(e) => close(e, key)}><svg class="i" width="12" height="12" aria-hidden="true"><use href="#sbi-x" /></svg></button></span>
       </div>
     {/each}
     <div class="end" class:drop={dropAt === tabs.length}></div>
@@ -433,8 +413,8 @@
     overflow-x: auto;
     scrollbar-width: none;
   }
-  .tabs:hover {
-    scrollbar-width: thin;
+  .tabs::-webkit-scrollbar {
+    display: none;
   }
   .tabbar.wrap {
     height: auto;
@@ -456,9 +436,8 @@
     gap: 6px;
     height: 34px;
     padding: 0 6px 0 10px;
-    max-width: 220px;
-    min-width: 112px;
-    flex: 0 1 auto;
+    max-width: 180px;
+    flex: none;
     border-right: 1px solid var(--border);
     color: var(--text-2);
     cursor: pointer;
@@ -467,6 +446,10 @@
   }
   .tab:hover {
     background: var(--surface-hover);
+  }
+  .tab.active,
+  .tab:has(:global(.name-input)) {
+    max-width: none;
   }
   .tab.active {
     background: var(--bg);
@@ -498,6 +481,13 @@
   }
   .tab:has(:global(.name-input)) {
     min-width: 200px;
+  }
+  .slot {
+    display: grid;
+    flex: none;
+  }
+  .slot > * {
+    grid-area: 1 / 1;
   }
   /* While renaming, the input takes the title's place. */
   .label:has(:global(.name-input)) > .name {
@@ -548,12 +538,13 @@
     color: var(--text-2);
   }
   .num {
+    place-self: center;
     font-size: 10.5px;
     font-variant-numeric: tabular-nums;
   }
   .tab:hover .num,
   .tab.active .num {
-    display: none;
+    visibility: hidden;
   }
   .actions {
     display: flex;
