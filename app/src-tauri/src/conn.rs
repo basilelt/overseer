@@ -168,6 +168,7 @@ pub struct ConnManager {
     session: Mutex<Option<Session>>,
     cancelled: std::sync::atomic::AtomicBool,
     wake: tokio::sync::Notify,
+    watch_pace: fn(u32) -> Duration,
 }
 
 impl Default for ConnManager {
@@ -179,6 +180,7 @@ impl Default for ConnManager {
             session: Mutex::new(None),
             cancelled: Default::default(),
             wake: Default::default(),
+            watch_pace: backoff,
         }
     }
 }
@@ -333,10 +335,9 @@ impl ConnManager {
                     ..ConnState::new("connected", &target)
                 });
                 let me = self.clone();
-                *self.monitor.lock().unwrap() =
-                    Some(tokio::spawn(
-                        async move { me.monitor(target, rep, ctx).await },
-                    ));
+                *self.monitor.lock().unwrap() = Some(tokio::spawn(async move {
+                    me.monitor(target, rep, ctx, None).await
+                }));
                 Ok(())
             }
             Err(e) => {
@@ -344,31 +345,68 @@ impl ConnManager {
                     error: Some(e.clone()),
                     ..ConnState::new("error", &target)
                 });
+                if is_local(&target) {
+                    let me = self.clone();
+                    let lost = e.clone();
+                    *self.monitor.lock().unwrap() = Some(tokio::spawn(async move {
+                        me.monitor(target, rep, ctx, Some(lost)).await
+                    }));
+                }
                 Err(e)
             }
         }
     }
 
-    async fn monitor(self: Arc<Self>, target: Target, rep: Arc<Reporter>, ctx: Ctx) {
+    async fn local_returns(&self) {
+        let mut attempt = 0;
         loop {
-            let Some(conn) = self.current() else { return };
-            let reason = match &*conn {
-                DaemonConn::Tunnel(t) => t.mux.dead().await,
-                _ => loop {
-                    tokio::time::sleep(Duration::from_secs(5)).await;
-                    if tokio::time::timeout(
-                        Duration::from_secs(5),
-                        conn.request("GET", "/v1/version", None),
-                    )
-                    .await
-                    .is_ok_and(|r| r.is_ok())
-                    {
-                        continue;
-                    }
-                    break "the daemon stopped answering".to_string();
-                },
+            tokio::select! {
+                _ = tokio::time::sleep((self.watch_pace)(attempt)) => {}
+                _ = self.wake.notified() => attempt = 0,
+            }
+            attempt += 1;
+            let alive = match transport::local() {
+                Ok(c) => wait_version(&c, 1).await.is_ok(),
+                Err(_) => false,
             };
-            drop(conn);
+            if alive {
+                return;
+            }
+        }
+    }
+
+    async fn monitor(
+        self: Arc<Self>,
+        target: Target,
+        rep: Arc<Reporter>,
+        ctx: Ctx,
+        mut lost: Option<String>,
+    ) {
+        loop {
+            let reason = if let Some(r) = lost.take() {
+                self.local_returns().await;
+                r
+            } else {
+                let Some(conn) = self.current() else { return };
+                let reason = match &*conn {
+                    DaemonConn::Tunnel(t) => t.mux.dead().await,
+                    _ => loop {
+                        tokio::time::sleep(Duration::from_secs(5)).await;
+                        if tokio::time::timeout(
+                            Duration::from_secs(5),
+                            conn.request("GET", "/v1/version", None),
+                        )
+                        .await
+                        .is_ok_and(|r| r.is_ok())
+                        {
+                            continue;
+                        }
+                        break "the daemon stopped answering".to_string();
+                    },
+                };
+                drop(conn);
+                reason
+            };
             crate::diag::warn(
                 "conn",
                 format!("{} connection lost: {reason}", target_label(&target)),
@@ -404,16 +442,24 @@ impl ConnManager {
                         }
                         Next::GiveUp => {
                             rep.set(ConnState {
-                                error: Some(e),
+                                error: Some(e.clone()),
                                 ..ConnState::new("error", &target)
                             });
-                            return;
+                            if !is_local(&target) {
+                                return;
+                            }
+                            lost = Some(e);
+                            break;
                         }
                     },
                 }
             }
         }
     }
+}
+
+fn is_local(t: &Target) -> bool {
+    !matches!(t.kind.as_str(), "ssh" | "direct")
 }
 
 fn target_label(t: &Target) -> String {
@@ -900,6 +946,74 @@ mod tests {
     async fn current_within_gives_up_after_the_bound() {
         let m = ConnManager::default();
         assert!(m.current_within(Duration::from_millis(20)).await.is_none());
+    }
+
+    static ENV: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
+    async fn serve_version(path: &Path) {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let l = tokio::net::UnixListener::bind(path).unwrap();
+        let body = format!("{{\"version\":\"{SERVER_VERSION}\"}}");
+        loop {
+            let (mut s, _) = l.accept().await.unwrap();
+            let body = body.clone();
+            tokio::spawn(async move {
+                let mut buf = [0u8; 1024];
+                let _ = s.read(&mut buf).await;
+                let head = format!(
+                    "HTTP/1.1 200 OK\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
+                    body.len()
+                );
+                let _ = s.write_all(head.as_bytes()).await;
+            });
+        }
+    }
+
+    #[tokio::test]
+    async fn a_local_daemon_that_comes_back_after_the_spawn_failed_is_reconnected_without_retry() {
+        let _g = ENV.lock().await;
+        let dir = std::env::temp_dir().join(format!("ov-watch-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let sock = dir.join("d.sock");
+        let old = (
+            std::env::var_os("OVERSEER_SOCKET"),
+            std::env::var_os("PATH"),
+        );
+        std::env::set_var("OVERSEER_SOCKET", &sock);
+        std::env::set_var("PATH", &dir);
+        let m = Arc::new(ConnManager {
+            watch_pace: |_| Duration::from_millis(20),
+            ..Default::default()
+        });
+        let phases = Arc::new(Mutex::new(Vec::<&'static str>::new()));
+        let seen = phases.clone();
+        let emit: Emit = Arc::new(move |s| seen.lock().unwrap().push(s.phase));
+        let target = Target {
+            kind: "local".into(),
+            host: None,
+            label: "Local".into(),
+        };
+        let err = m.connect(target, emit, Ctx::default()).await.unwrap_err();
+        assert!(err.contains("no overseer binary"), "{err}");
+        assert_eq!(phases.lock().unwrap().last(), Some(&"error"));
+        assert!(m.current().is_none());
+        let server = tokio::spawn({
+            let sock = sock.clone();
+            async move { serve_version(&sock).await }
+        });
+        assert!(m.current_within(Duration::from_secs(10)).await.is_some());
+        assert_eq!(phases.lock().unwrap().last(), Some(&"connected"));
+        m.disconnect();
+        server.abort();
+        match old.0 {
+            Some(v) => std::env::set_var("OVERSEER_SOCKET", v),
+            None => std::env::remove_var("OVERSEER_SOCKET"),
+        }
+        if let Some(v) = old.1 {
+            std::env::set_var("PATH", v);
+        }
+        let _ = std::fs::remove_dir_all(dir);
     }
 
     #[test]
