@@ -353,6 +353,9 @@ fn run_tool(name: &str, a: &Value, own: Option<&str>, call: &mut Call) -> Result
                 &format!("/v1/lines/{}/activity", encode(id)),
                 None,
             )?;
+            if v["transcript"] == false {
+                return Err(format!("no transcript for line {id}"));
+            }
             let mut b = pick(&v, &["title", "goal", "lastPrompt", "todos", "editedFiles"]);
             b["id"] = json!(id);
             b["lastMessage"] = v["lastAssistantText"].clone();
@@ -972,6 +975,14 @@ mod tests {
         let b = &out.unwrap()["result"]["structuredContent"];
         assert_eq!(b["lastMessage"], "bye");
         assert!(b.get("workLog").is_none());
+        let (out, _) = with_fake(
+            tool("get_session_brief", json!({"id": "L1"})),
+            None,
+            |_, _| (200, json!({"transcript": false, "workLog": []})),
+        );
+        let r = &out.unwrap()["result"];
+        assert_eq!(r["isError"], true);
+        assert_eq!(r["content"][0]["text"], "no transcript for line L1");
         let (out, log) = with_fake(
             tool("list_worktrees", json!({"project": "/r"})),
             None,

@@ -294,6 +294,7 @@ export interface Activity {
   todos: Todo[];
   editedFiles: string[];
   lastAssistantText: string;
+  transcript?: boolean;
 }
 
 export interface Diff {

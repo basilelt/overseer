@@ -644,9 +644,11 @@ fn activity(ctx: &Ctx, r: &Request, id: &str) -> (u16, Value) {
         &l.session_id,
     )
     .and_then(|p| crate::activity::activity(l.agent, &p, since));
-    let Some(mut a) = a else {
-        return err(409, format!("no transcript for line {}", l.id));
-    };
+    let transcript = a.is_some();
+    let mut a = a.unwrap_or_else(
+        || json!({"workLog": [], "todos": [], "editedFiles": [], "lastAssistantText": ""}),
+    );
+    a["transcript"] = json!(transcript);
     if let Some(t) = &l.title {
         a["title"] = json!(t);
     }
@@ -869,7 +871,13 @@ pub fn handle(ctx: &Ctx, r: &Request) -> (u16, Value) {
             Err(e) => err(404, e),
         },
         ("POST", ["v1", "lines", id, "close"]) => {
-            match actions::close(ctx, id, !dry_run(r), q(r, "shell") == Some("true")) {
+            match actions::close(
+                ctx,
+                id,
+                !dry_run(r),
+                q(r, "shell") == Some("true"),
+                q(r, "force") == Some("true"),
+            ) {
                 Ok(rep) => (if rep.ok() { 200 } else { 409 }, rep.to_json()),
                 Err(e) => err(404, e),
             }
@@ -1065,6 +1073,11 @@ pub fn conn(mut s: impl Stream, token: Option<&str>) {
     let (code, v) = handle(&ctx, &req);
     if changes_lines(&req.method, &req.path, code) {
         crate::scanner::poke();
+        if settles_lines(&req.method, &req.path) {
+            if let Ok(lines) = crate::scan(&ctx) {
+                crate::lifecycle::persist(&ctx.state_dir, &lines);
+            }
+        }
     }
     let extra = if crate::scanner::take_scanning() {
         "X-Overseer-Scanning: 1\r\n"
@@ -1078,6 +1091,16 @@ pub fn conn(mut s: impl Stream, token: Option<&str>) {
         extra,
         &serde_json::to_vec(&v).unwrap_or_default(),
     );
+}
+
+fn settles_lines(method: &str, path: &str) -> bool {
+    let segs: Vec<&str> = path.trim_matches('/').split('/').collect();
+    method == "PUT"
+        && matches!(
+            segs.as_slice(),
+            ["v1", "lines", _, "pin" | "title" | "workspace"]
+                | ["v1", "terms", _, "title" | "workspace"]
+        )
 }
 
 fn changes_lines(method: &str, path: &str, code: u16) -> bool {
@@ -1097,6 +1120,7 @@ fn changes_lines(method: &str, path: &str, code: u16) -> bool {
             ]
         ) | ("POST", ["v1", "terms"])
             | ("POST", ["v1", "terms", _, "kill"])
+            | ("PUT", ["v1", "terms", _, "title" | "workspace"])
             | ("DELETE", ["v1", "terms" | "workspaces", _])
             | ("POST", ["v1", "tasks", _, "start"])
             | ("POST", ["v1", "tasks", "organize"])
@@ -1296,6 +1320,14 @@ pub fn run(
         }
         Err(e) => return Err(e),
     };
+    if saved.is_none() {
+        if let Some(pid) = live_other_daemon(&state_dir) {
+            return Err(format!(
+                "a daemon is already running on {} (pid {pid})",
+                state_dir.display()
+            ));
+        }
+    }
     let restarted = saved.is_some();
     let _ = std::fs::write(state_dir.join("daemon.pid"), std::process::id().to_string());
     let _wal_keeper = crate::registry::Registry::open(&state_dir).ok();
@@ -1419,6 +1451,23 @@ fn take_lock(
         return Err("hot upgrade is not supported on this platform".into());
     }
     lock(state_dir)
+}
+
+#[cfg(unix)]
+fn live_other_daemon(state_dir: &Path) -> Option<i32> {
+    let pid: i32 = std::fs::read_to_string(state_dir.join("daemon.pid"))
+        .ok()?
+        .trim()
+        .parse()
+        .ok()
+        .filter(|p| *p > 1 && *p != std::process::id() as i32)?;
+    (unsafe { libc::kill(pid, 0) } == 0 && command_line(pid).is_some_and(|c| looks_like_daemon(&c)))
+        .then_some(pid)
+}
+
+#[cfg(not(unix))]
+fn live_other_daemon(_: &Path) -> Option<i32> {
+    None
 }
 
 pub fn looks_like_daemon(cmdline: &str) -> bool {
@@ -1745,6 +1794,12 @@ mod tests {
         assert!(changes_lines("PUT", "/v1/lines/x/pin", 200));
         assert!(changes_lines("PUT", "/v1/lines/x/title", 200));
         assert!(changes_lines("PUT", "/v1/lines/x/workspace", 200));
+        assert!(changes_lines("PUT", "/v1/terms/x/title", 200));
+        assert!(changes_lines("PUT", "/v1/terms/x/workspace", 200));
+        assert!(settles_lines("PUT", "/v1/lines/x/pin"));
+        assert!(settles_lines("PUT", "/v1/terms/x/title"));
+        assert!(!settles_lines("POST", "/v1/terms"));
+        assert!(!settles_lines("PUT", "/v1/lines/x/hold"));
         assert!(changes_lines("DELETE", "/v1/workspaces/w", 200));
         assert!(!changes_lines("POST", "/v1/terms", 400));
         assert!(!changes_lines("GET", "/v1/lines", 200));

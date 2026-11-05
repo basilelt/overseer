@@ -1392,11 +1392,11 @@ fn agents_are_detected_and_launched_from_the_table() {
     assert_eq!(l["line"]["agentSessionId"], sid.as_str());
     assert_eq!(l["local"]["resumeVerified"], true);
     let lid = l["line"]["id"].as_str().unwrap().to_string();
-    assert_eq!(
-        app.req("GET", &format!("/v1/lines/{lid}/activity"), Value::Null)
-            .0,
-        409
-    );
+    let (code, act) = app.req("GET", &format!("/v1/lines/{lid}/activity"), Value::Null);
+    assert_eq!(code, 200);
+    assert_eq!(act["transcript"], false);
+    assert_eq!(act["lineId"], lid.as_str());
+    assert!(act["workLog"].as_array().unwrap().is_empty());
     app.ok(
         "POST",
         &format!("/v1/terms/{ctid}/kill"),
@@ -2145,6 +2145,95 @@ fn a_daemon_killed_like_an_oom_kill_restores_its_sessions_when_it_restarts() {
 }
 
 #[test]
+fn a_pin_or_title_is_visible_in_the_very_next_lines_read() {
+    // Given a codex session in a term
+    // When it is pinned and renamed, each time reading /v1/lines right after the PUT returns
+    // Then that read already shows the new value, every time
+    let app = App::new("pinvisible", json!({}));
+    let wt = app.fx.wt.to_string_lossy().into_owned();
+    let t = app.ok(
+        "POST",
+        "/v1/terms",
+        json!({"cwd": wt, "agent": "codex", "cols": 120, "rows": 24}),
+    );
+    let id = t["id"].as_str().unwrap().to_string();
+    let mut ws = app.ws(&id);
+    read_until(&mut ws, "codex ready");
+    send(&mut ws, "busy\r");
+    let lid = wait_for(|| line_of(&app, &id))["line"]["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let local = |key: &str| {
+        app.ok("GET", "/v1/lines?all=true", Value::Null)
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|l| l["line"]["id"] == lid.as_str())
+            .map(|l| l["local"][key].clone())
+            .unwrap()
+    };
+    for i in 0..20 {
+        let on = i % 2 == 0;
+        app.ok(
+            "PUT",
+            &format!("/v1/lines/{lid}/pin"),
+            json!({"pinned": on}),
+        );
+        assert_eq!(local("pinned"), json!(on), "round {i}");
+        let title = format!("name {i}");
+        app.ok(
+            "PUT",
+            &format!("/v1/lines/{lid}/title"),
+            json!({"title": title}),
+        );
+        assert_eq!(local("titleOverride"), json!(title), "round {i}");
+    }
+    app.ok(
+        "POST",
+        &format!("/v1/terms/{id}/kill"),
+        json!({"confirm": true}),
+    );
+}
+
+#[test]
+fn a_term_rename_survives_a_daemon_kill_right_after_it() {
+    // Given a shell term
+    // When it is renamed and the daemon dies immediately, without waiting for any scan
+    // Then the restarted daemon restores the shell with its new title
+    let fx = Fx::new("rename-crash", 0);
+    let call = |m: &str, t: &str, b: Value| {
+        let body = if b.is_null() {
+            String::new()
+        } else {
+            b.to_string()
+        };
+        let (code, out) = fx.req(m, t, &body);
+        (
+            code,
+            serde_json::from_str::<Value>(&out).unwrap_or(Value::Null),
+        )
+    };
+    let cwd = fx.wt.to_string_lossy().into_owned();
+    let d = fx.daemon(false);
+    let (code, t) = call("POST", "/v1/terms", json!({"cwd": cwd, "cmd": ["/bin/sh"]}));
+    assert_eq!(code, 201, "{t}");
+    let id = t["id"].as_str().unwrap().to_string();
+    std::thread::sleep(Duration::from_secs(3));
+    let (code, v) = call(
+        "PUT",
+        &format!("/v1/terms/{id}/title"),
+        json!({"title": "build"}),
+    );
+    assert_eq!(code, 200, "{v}");
+    drop(d);
+    let _d = fx.daemon(false);
+    wait(|| call("GET", &format!("/v1/terms/{id}"), Value::Null).0 == 200);
+    let t = call("GET", &format!("/v1/terms/{id}"), Value::Null).1;
+    assert_eq!(t["titleOverride"], "build", "{t}");
+}
+
+#[test]
 fn file_route_resolves_relative_paths_against_the_line_cwd() {
     use std::io::{Read, Write};
     let sid = "cccccccc-0000-4000-8000-000000000057";
@@ -2411,6 +2500,46 @@ fn an_agent_that_quits_leaves_a_shell_with_its_session_in_the_tab() {
         &format!("/v1/terms/{id}/kill"),
         json!({"confirm": true}),
     );
+    wait(|| app.ok("GET", &format!("/v1/terms/{id}"), Value::Null)["exited"] == true);
+}
+
+#[test]
+fn ending_a_busy_agent_session_needs_force_and_then_ends_its_term() {
+    // Given a codex session in a term that is busy with a turn
+    // When the session is closed as ending its tab does, first without and then with force=true
+    // Then the plain close is refused and keeps the term running, and the forced one ends the term
+    let app = App::new("endbusy", json!({}));
+    let wt = app.fx.wt.to_string_lossy().into_owned();
+    let t = app.ok(
+        "POST",
+        "/v1/terms",
+        json!({"cwd": wt, "agent": "codex", "cols": 120, "rows": 24}),
+    );
+    let id = t["id"].as_str().unwrap().to_string();
+    let mut ws = app.ws(&id);
+    read_until(&mut ws, "codex ready");
+    send(&mut ws, "busy\r");
+    let line = wait_for(|| line_of(&app, &id));
+    let lid = line["line"]["id"].as_str().unwrap().to_string();
+    wait(|| line_of(&app, &id).is_some_and(|l| l["local"]["busy"] == true));
+    let (code, r) = app.req(
+        "POST",
+        &format!("/v1/lines/{lid}/close?dryRun=false"),
+        Value::Null,
+    );
+    assert_eq!(code, 409, "{r}");
+    assert_eq!(r["predicates"]["atPrompt"]["ok"], false, "{r}");
+    assert_eq!(
+        app.ok("GET", &format!("/v1/terms/{id}"), Value::Null)["exited"],
+        false
+    );
+    let (code, r) = app.req(
+        "POST",
+        &format!("/v1/lines/{lid}/close?dryRun=false&force=true"),
+        Value::Null,
+    );
+    assert_eq!(code, 200, "{r}");
+    assert_eq!(r["action"], "closed", "{r}");
     wait(|| app.ok("GET", &format!("/v1/terms/{id}"), Value::Null)["exited"] == true);
 }
 

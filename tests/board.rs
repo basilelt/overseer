@@ -231,6 +231,48 @@ fn board_end_to_end() {
 }
 
 #[test]
+fn pinning_a_line_announces_the_pin_in_the_line_update() {
+    // Given a daemon with one local session line and a client listening to events
+    // When the line is pinned
+    // Then the line list shows the pin at once and the announced update carries it
+    let fx = Fx::new("pinevent", 1);
+    let _d = fx.daemon(false);
+    let mut s = UnixStream::connect(&fx.sock).unwrap();
+    write!(s, "GET /v1/events HTTP/1.1\r\nHost: unix\r\n\r\n").unwrap();
+    let (tx, rx) = mpsc::channel();
+    std::thread::spawn(move || {
+        for l in BufReader::new(s).lines() {
+            let Ok(l) = l else { return };
+            if let Some(d) = l.strip_prefix("data: ") {
+                if tx.send(js(d)).is_err() {
+                    return;
+                }
+            }
+        }
+    });
+    let id = js(&fx.req("GET", "/v1/lines", "").1)[0]["line"]["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let (code, v) = fx.req("PUT", &format!("/v1/lines/{id}/pin"), r#"{"pinned":true}"#);
+    assert_eq!(code, 200, "{v}");
+    assert_eq!(
+        js(&fx.req("GET", "/v1/lines", "").1)[0]["local"]["pinned"],
+        true
+    );
+    let end = Instant::now() + Duration::from_secs(10);
+    loop {
+        let ev = rx
+            .recv_timeout(Duration::from_millis(200))
+            .unwrap_or(Value::Null);
+        if ev["type"] == "line.updated" && ev["data"]["local"]["pinned"] == true {
+            break;
+        }
+        assert!(Instant::now() < end, "no line.updated carrying the pin");
+    }
+}
+
+#[test]
 fn line_title_override_is_set_shared_and_cleared() {
     // Given a daemon with one local session line and a client listening to events
     // When a client renames the line, then clears the custom title
@@ -264,8 +306,7 @@ fn line_title_override_is_set_shared_and_cleared() {
             .unwrap()["local"]
             .clone()
     };
-    // The line list is refreshed by the rescan the write asks for, not inside the request.
-    wait(|| local(&id)["titleOverride"] == "Payments refactor");
+    assert_eq!(local(&id)["titleOverride"], "Payments refactor");
     assert_eq!(local(&id)["title"], auto);
     let (code, v) = fx.req("PUT", &path, r#"{"title":null}"#);
     assert_eq!((code, js(&v)["titleOverride"].clone()), (200, Value::Null));
