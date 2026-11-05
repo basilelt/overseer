@@ -53,10 +53,10 @@ Cutting a release, when enough has been batched on `next`:
    ([Versioning](#versioning)): one `feat` anywhere in it makes a minor release. Then the builds,
    the Android APK (Obtainium), the GitHub Release and the Homebrew tap follow. A docs-only merge
    makes no release.
-3. `main` now has a merge commit that `next` lacks, and strict checks would mark the next release
-   PR "out of date". Sync right away with a PR from `main` to `next`, merged with a merge commit:
-   the trees are equal, so CI runs only `changes`. The `next` ruleset blocks pushing to `next`,
-   so "Update branch" on a release PR (which pushes to `next`) does not work.
+3. `main` now has a merge commit that `next` lacks. Sync right away with a PR from `main` to
+   `next`, merged with a merge commit: the trees are equal, so CI runs only `changes`. Without the
+   sync the next release PR is behind `main`, and the release gate runs CI again on `main` before
+   tagging.
 
 Store releases are separate and manual: Actions > Store > Run workflow, on `main`
 ([Store releases](#store-releases)).
@@ -412,8 +412,11 @@ checks that a download was built by this workflow from this repository.
   `gh api repos/basilelt/overseer/rulesets --jq '.[] | [.id, .name] | @tsv'`). `main` and `next`
   each require a PR, merge commits only, and the `CI` checks (`changes`, `actionlint`, `rust`,
   `app`, `perf`, `windows`, `android`, `store-guard`, `macos`, `gitleaks`; `integration_id` 15368 is the
-  GitHub Actions app), up to date with the target branch; jobs skipped by path filtering count as
-  passed. Both name their branch literally (`refs/heads/main`, `refs/heads/next`), not
+  GitHub Actions app); jobs skipped by path filtering count as passed. A PR does not need to be up
+  to date with its base: when it is behind, the merged tree differs from the tested one, and for
+  `main` the release gate then runs CI again before tagging. Repository admins can bypass the `next`
+  ruleset when merging a PR (`bypass_mode: pull_request`: no direct push), for exceptional cases;
+  `main` has no bypass. Both name their branch literally (`refs/heads/main`, `refs/heads/next`), not
   `~DEFAULT_BRANCH`, since the default branch is `next`. `release-tags` forbids deleting `v*` and
   `latest` (repository admins can bypass); moving them is an update, so the `tag` job still can.
 - The secrets and the variables above, as each feature is wanted.

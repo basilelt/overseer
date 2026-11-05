@@ -19,7 +19,10 @@ forbade any store submission.
   The release gate, the automatic `vX.Y.Z` tag from the Conventional Commits of the whole batch,
   the GitHub Release, the desktop bundles, the Obtainium APK and the Homebrew tap are unchanged.
   `main` then has a merge commit `next` lacks; a PR from `main` to `next` syncs it right after
-  each release (strict status checks require it, and the ruleset forbids pushing to `next`).
+  each release, so the next release PR is not behind `main` and the gate can skip CI. Status checks
+  are not strict (a PR need not be up to date to merge); the gate reruns CI on `main` whenever the
+  merged tree differs from the tested PR head. Admins can bypass the `next` ruleset through a PR
+  merge for exceptional cases; `main` has no bypass.
 - **Rulesets**: `main` and `next` each require a PR, merge commits and the CI checks
   (`.github/rulesets/main.json`, `next.json`). Both name their branch literally, since
   `~DEFAULT_BRANCH` now means `next`.
