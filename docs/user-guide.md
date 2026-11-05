@@ -873,7 +873,7 @@ On first launch, once the app is connected (immediately in local mode, after the
 connection on a phone), a welcome card offers **Take the tour** or **Skip**. The tour dims the
 window and highlights the real controls one at a time: host chip, workspaces sidebar, tabs and the
 new-session menu, the Terminal/Chat toggle, the side panel, Tasks, Review, the usage, system and ports
-chips, notifications and hooks, the command palette and Feedback, in 0.25 the Cmd/Ctrl+P palette shortcut, and in 0.27 the demo mode (on the **Demo mode** pill while in the demo, else on the host chip), and in 0.28 the GPU rendering option for terminals. Steps whose control is not on
+chips, notifications and hooks, the command palette and Feedback, in 0.25 the Cmd/Ctrl+P palette shortcut, and in 0.27 the demo mode (on the **Demo mode** pill while in the demo, else on the host chip), in 0.28 the GPU rendering option for terminals, and in 0.29 the import from Switchboard (on its button in Settings, Help, or on the Settings button). Steps whose control is not on
 screen (no session selected, a feature the server lacks, phone layout) are skipped. On a phone the
 card is a sheet at the bottom (or top, when the control sits low) and points at the bottom
 navigation, the session strip and the menu.
@@ -898,6 +898,17 @@ instead of the normal renderer, which keeps long, fast output smooth. It needs h
 acceleration; where WebGL is not available the terminals keep the normal renderer. Selection,
 scrolling and colours work the same with either renderer, and turning it off goes back to the normal
 renderer.
+
+**Import from Switchboard.** Overseer was called Switchboard before. When the daemon finds the old
+Switchboard data on its machine and it is not imported yet, a dialog appears once after the app
+connects. It shows how many sessions, tasks and workspaces will come over, and tells you when the
+old Switchboard daemon is still running: it is stopped and its sessions are handed over to
+Overseer, and the agent hooks move too. **Import** runs it, applies the settings of the old app
+(theme, fonts, layout and so on, overwriting the current ones) and reloads Overseer. **Not now**
+closes the dialog until the next launch; **Don't ask again** stops the offer for good. If the
+import fails, the reason is shown in the dialog and nothing else changes. Until the import is done,
+Settings, Help, **Import from Switchboard** opens the same dialog, also after **Don't ask again**.
+Once imported the entry is gone, so newer Overseer data is never overwritten by the old one.
 
 ### 14.0a Demo mode
 

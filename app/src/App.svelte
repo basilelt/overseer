@@ -7,6 +7,7 @@
   import SidePanel from './lib/components/panel/SidePanel.svelte';
   import Overlays from './lib/components/overlays/Overlays.svelte';
   import Toast from './lib/components/ui/Toast.svelte';
+  import { offerSwitchboard, switchboard } from './lib/switchboard.svelte';
   import ConnBanner from './lib/components/ui/ConnBanner.svelte';
   import { startNotifications } from './lib/notify';
   import { startPorts } from './lib/ports.svelte';
@@ -64,7 +65,10 @@
     tour.setReady(ui.layout !== 'phone');
   });
   $effect(() => {
-    if (tour.ready && app.connected && !app.overlay && !feedback.open && !diag.mode && !ui.drawer && tour.pending()) tour.offer();
+    if (tour.ready && app.connected && switchboard.checked && !app.overlay && !feedback.open && !diag.mode && !ui.drawer && tour.pending()) tour.offer();
+  });
+  $effect(() => {
+    if (app.connected && app.conn.phase === 'connected') untrack(() => void offerSwitchboard());
   });
   const browser = () => import('./lib/components/browser/BrowserView.svelte');
   const mobileShell = () => import('./lib/components/mobile/MobileShell.svelte');

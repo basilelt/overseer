@@ -811,6 +811,7 @@ pub fn handle(ctx: &Ctx, r: &Request) -> (u16, Value) {
         .or_else(|| crate::worktrees::routes(ctx, &r.method, &segs, &body))
         .or_else(|| crate::install::routes(&r.method, &segs, &body, &ctx.state_dir))
         .or_else(|| crate::statusline::routes(&r.method, &segs, &body, &ctx.state_dir))
+        .or_else(|| crate::import::routes(&r.method, &segs, &body, &ctx.state_dir))
         .or_else(|| crate::lifecycle::routes(&r.method, &segs, &body, &ctx.state_dir))
         .or_else(|| crate::termtheme::routes(&r.method, &segs, &body))
         .or_else(|| crate::feedback::routes(ctx, &r.method, &segs, &body))
@@ -1097,6 +1098,7 @@ fn changes_lines(method: &str, path: &str, code: u16) -> bool {
             | ("DELETE", ["v1", "terms" | "workspaces", _])
             | ("POST", ["v1", "tasks", _, "start"])
             | ("POST", ["v1", "tasks", "organize"])
+            | ("POST", ["v1", "import", "switchboard"])
     )
 }
 

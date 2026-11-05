@@ -446,6 +446,27 @@ export interface HookAgentStatus {
   note?: string;
 }
 
+export interface SwitchboardStatus {
+  found: boolean;
+  dir: string | null;
+  imported: boolean;
+  running: boolean;
+  sessions: number;
+  tasks: number;
+  workspaces: number;
+  hooks: boolean;
+  settings: Record<string, string>;
+}
+
+export interface SwitchboardResult {
+  imported: boolean;
+  sessions: number;
+  tasks: number;
+  workspaces: number;
+  stopped: boolean;
+  hooks: boolean;
+}
+
 export interface HooksStatus {
   shim: string;
   agents: HookAgentStatus[];
