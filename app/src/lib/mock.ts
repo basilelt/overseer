@@ -829,7 +829,7 @@ export class MockDaemon implements DaemonClient {
   }
 
   /** Hold with afterTurn: queue while the turn runs or the agent waits for the user, like the daemon. */
-  private holdAfterTurn(l: LocalLine): unknown {
+  private holdAfterTurn(l: LocalLine, dry: boolean): unknown {
     const id = l.line.id;
     const running = l.line.state !== 'held' && l.line.state !== 'hung-up';
     const turn = !!l.local?.busy || !!l.local?.needsInput;
@@ -840,7 +840,8 @@ export class MockDaemon implements DaemonClient {
       notNeedsInput: l.local?.needsInput ? { ok: false, detail: 'agent is waiting for you' } : { ok: true },
     };
     if (!running || l.local?.pinned) throw new DaemonError(409, 'refused', { lineId: id, action: 'none', predicates, steps: [] });
-    if (!turn) return this.holdNow(l);
+    if (!turn) return dry ? { lineId: id, action: 'would-hold', predicates, steps: [`SIGTERM ${l.local?.pid ?? '?'}`] } : this.holdNow(l);
+    if (dry) return { lineId: id, action: 'would-hold-pending', predicates, steps: [`record a pending hold on ${id}`, 'hold it when the turn ends and the agent is not waiting for you'] };
     l.local = { ...l.local, holdPending: true };
     this.emit('line.updated', { line: l.line, local: l.local });
     return { lineId: id, action: 'hold-pending', predicates, steps: [`record a pending hold on ${id}`, 'hold it when the turn ends and the agent is not waiting for you'] };
@@ -856,7 +857,7 @@ export class MockDaemon implements DaemonClient {
 
   private lineAction(id: string, action: string, body: any, dry = false, afterTurn = false): unknown {
     const l = this.findLine(id);
-    if (action === 'hold' && afterTurn && !dry) return this.holdAfterTurn(l);
+    if (action === 'hold' && afterTurn) return this.holdAfterTurn(l, dry);
     if (dry && (action === 'hold' || action === 'close')) {
       const running = l.line.state !== 'held' && l.line.state !== 'hung-up';
       const plan = {
@@ -1641,7 +1642,14 @@ export class MockDaemon implements DaemonClient {
 
   tick() {
     this.drainQueue();
-    for (const p of this.lines.filter((x) => x.local?.holdPending && !x.local.needsInput)) this.holdNow(p);
+    // Like the daemon: a pending hold is applied by the scan after the turn ended and only
+    // when the agent is not waiting for the user; a busy turn ends on this tick.
+    for (const p of this.lines.filter((x) => x.local?.holdPending)) {
+      if (p.local?.busy) {
+        p.local = { ...p.local, busy: false };
+        this.emit('line.updated', { line: p.line, local: p.local });
+      } else if (!p.local?.needsInput) this.holdNow(p);
+    }
     const running = this.tasks.filter((t) => t.status === 'in_progress');
     const t = running[this.seq % Math.max(1, running.length)];
     if (t?.progress) {
