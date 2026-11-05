@@ -59,6 +59,7 @@ export default defineConfig({
   },
   test: {
     environment: 'node',
+    setupFiles: ['src/test/pin-platform.ts'],
     include: ['src/**/*.test.ts'],
     css: { include: [/\.css\?raw$/] },
     coverage: {
