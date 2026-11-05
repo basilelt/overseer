@@ -353,7 +353,9 @@ fn merge_db(dest: &Path, old: &Path, fix: &str) -> Result<(), String> {
         .map_err(|e| format!("{}: {e}", old.display()))?;
     let mine = tables(&c, "main")?;
     let theirs = tables(&c, "old")?;
-    let tx = c.transaction().map_err(|e| e.to_string())?;
+    let tx = c
+        .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
+        .map_err(|e| e.to_string())?;
     for t in theirs {
         if !mine.contains(&t) || t.starts_with("sync_") || SKIP_TABLES.contains(&t.as_str()) {
             continue;
@@ -824,6 +826,33 @@ mod tests {
             .query_row("SELECT COUNT(*) FROM spool_offsets", [], |r| r.get(0))
             .unwrap();
         assert_eq!(spool, 0);
+    }
+
+    #[test]
+    fn merge_survives_concurrent_writes_to_the_destination() {
+        let ours_dir = tmp("mc");
+        let old_dir = tmp("mcn");
+        let dest = ours_dir.join("overseer.db");
+        let ours = db(&dest);
+        let old = db(&old_dir.join("overseer.db"));
+        line(&old, "theirs", "s3", "old");
+        drop(old);
+        let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let writer = {
+            let stop = stop.clone();
+            std::thread::spawn(move || {
+                let mut n = 0u64;
+                while !stop.load(std::sync::atomic::Ordering::Relaxed) {
+                    n += 1;
+                    line(&ours, &format!("live{}", n % 50), "sx", "live");
+                }
+            })
+        };
+        for _ in 0..200 {
+            merge_db(&dest, &old_dir.join("overseer.db"), FIX_REGISTRY).unwrap();
+        }
+        stop.store(true, std::sync::atomic::Ordering::Relaxed);
+        writer.join().unwrap();
     }
 
     #[test]
