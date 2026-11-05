@@ -4,6 +4,7 @@
   import { t } from '../../i18n.svelte';
   import { lingerOff } from '../../lifecycle';
   import { lifecycle, loadLifecycle, patchLifecycle } from '../../lifecycle.svelte';
+  import { toggleAutostart } from '../../lifecycle-switch';
   import type { AfterReboot } from '../../types';
 
   let { row = () => true, hit = () => false }: { row?: (id: string) => boolean; hit?: (id: string) => boolean } = $props();
@@ -28,7 +29,7 @@
               >{t('settings.keepRunningHint', { platform: auto.platform })}{auto.platform === 'launchd' ? ` ${t('settings.keepRunningMac')}` : ''}</small
             ></span
           >
-          <input type="checkbox" class="switch" checked={auto.enabled} disabled={lifecycle.busy} onchange={(e) => patchLifecycle({ autostart: e.currentTarget.checked })} />
+          <input type="checkbox" class="switch" checked={auto.enabled} disabled={lifecycle.busy} onchange={(e) => toggleAutostart(e.currentTarget)} />
         </label>
         {#if lingerOff(s)}
           <div class="row warn">
