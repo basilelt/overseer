@@ -333,9 +333,9 @@ daemon binaries for macOS and Linux, both arches). The `tap` job, after `publish
 3. commits `overseer <version>` as `github-actions[bot]` and force-pushes it to
    `bump/overseer-<version>`, or does nothing when the files did not change, so re-runs are safe;
 4. the tap's `.github/workflows/tests.yml` then runs on that branch: `brew style`,
-   `brew audit --strict --online` of the formula and the cask (`--signing` on macOS: the app must
-   pass Gatekeeper as notarized), `brew install` and `brew test` on macOS arm64, macOS Intel and
-   Linux, and `brew install --cask` on macOS. Only when every job is green does it fast-forward
+   `brew audit --strict --online` of the formula (and of the cask on macOS), `brew install` and
+   `brew test` on macOS arm64, macOS Intel and Linux, and on macOS `brew install --cask` followed
+   by `spctl --assess`, which fails unless Gatekeeper accepts the installed app. Only when every job is green does it fast-forward
    `main` to the branch and delete it, so users never get a formula or cask that fails brew's checks.
 
 The tap repository must exist first (public, with one commit on its default branch; the job
