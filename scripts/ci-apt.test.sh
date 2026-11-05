@@ -5,16 +5,15 @@ root=$(cd "$(dirname "$0")/.." && pwd)
 image=${CI_APT_TEST_IMAGE:-ubuntu:24.04}
 pkgs="tmux xvfb pkg-config libssl-dev"
 work=$(mktemp -d)
-trap 'docker run --rm -v "$work:/w" "$image" rm -rf /w/archive /w/lists; rm -rf "$work"' EXIT
+trap 'docker run --rm -v "$work:/w" "$image" rm -rf /w/archive; rm -rf "$work"' EXIT
 
 run() {
   docker run --rm "$@" -v "$root/scripts:/s:ro" -v "$work:/w" "$image" bash -c '
     set -e
-    [ -d /w/lists ] && cp -a /w/lists/. /var/lib/apt/lists/
     /s/ci-apt.sh /w/archive '"$pkgs"' >&2
     for c in tmux Xvfb pkg-config; do command -v $c >/dev/null; done
     pkg-config --exists openssl
-    mkdir -p /w/lists && cp -a /var/lib/apt/lists/. /w/lists/
+    test -d /w/archive/lists
     test ! -e /w/archive/partial
     ls /w/archive/*.deb | wc -l'
 }

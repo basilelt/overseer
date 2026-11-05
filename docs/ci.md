@@ -193,10 +193,11 @@ branch) and restored everywhere: a pull request reads the caches of `main`.
 | cargo-xwin | fixed (`cargo-xwin-x86_64-v1`) | servers, app-windows |
 | actionlint binary | its version | actionlint |
 
-`scripts/ci-apt.sh` installs with the image's own package lists and without `apt-get update`, from
-the restored archive (`Dir::Cache::Archives`), with the man-db trigger off and `dpkg
---force-unsafe-io`. A warm run downloads nothing. When the archive or the image's lists are stale
-the install fails, the script runs `apt-get update` and installs again, and the next `main` run
+`scripts/ci-apt.sh` installs without `apt-get update` from the restored archive
+(`Dir::Cache::Archives`) and the package lists saved with it (so the lists want exactly the
+`.deb` files the archive holds), with the man-db trigger off and `dpkg
+--force-unsafe-io`. A warm run downloads nothing. When the archive is missing a `.deb` (cold cache,
+new package) the install fails, the script runs `apt-get update` and installs again, and the next `main` run
 saves the new archive. `scripts/ci-apt.test.sh` proves it in Docker: a cold install fills the
 archive, a second install succeeds with `--network none`, and a missing `.deb` falls back to the
 network.
