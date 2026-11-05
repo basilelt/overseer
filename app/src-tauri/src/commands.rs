@@ -106,6 +106,8 @@ impl AppState {
     }
 }
 
+const RECONNECT_WAIT: Duration = Duration::from_secs(60);
+
 fn win(state: &AppState, window: &Window) -> Arc<WindowConn> {
     state.window(window.label())
 }
@@ -135,15 +137,17 @@ pub async fn daemon_request(
         ),
         Duration::MAX,
     );
-    let conn = win(&state, &window)
-        .conn
-        .current()
-        .ok_or("not connected to a daemon")?;
     let bytes = body
         .filter(|b| !b.is_null())
         .map(|b| b.to_string().into_bytes());
-    let res = conn
-        .request(&method.to_ascii_uppercase(), &path, bytes.as_deref())
+    let res = win(&state, &window)
+        .conn
+        .request(
+            &method.to_ascii_uppercase(),
+            &path,
+            bytes.as_deref(),
+            RECONNECT_WAIT,
+        )
         .await?;
     Ok(RawResponse {
         status: res.head.status,
@@ -185,7 +189,8 @@ pub async fn daemon_bytes(
     );
     let conn = win(&state, &window)
         .conn
-        .current()
+        .current_within(RECONNECT_WAIT)
+        .await
         .ok_or("not connected to a daemon")?;
     let res = conn
         .request_within("GET", &path, None, Duration::from_secs(120))
@@ -239,7 +244,8 @@ pub async fn upload_file(
         .unwrap_or_else(|| "file".into());
     let conn = win(&state, &window)
         .conn
-        .current()
+        .current_within(RECONNECT_WAIT)
+        .await
         .ok_or("not connected to a daemon")?;
     let file = tokio::fs::File::open(&path)
         .await
@@ -454,9 +460,11 @@ async fn attach(
     term_id: &str,
     on_data: Channel<InvokeResponseBody>,
 ) -> Result<u32, String> {
-    let conn = tokio::time::timeout(Duration::from_secs(60), w.conn.wait_current())
+    let conn = w
+        .conn
+        .current_within(RECONNECT_WAIT)
         .await
-        .map_err(|_| "not connected to a daemon")?;
+        .ok_or("not connected to a daemon")?;
     let io = conn.open().await.map_err(|e| e.to_string())?;
     let path = format!("/v1/terms/{}/io", term_id.replace(['/', '?', '#'], ""));
     let socket = tokio::time::timeout(Duration::from_secs(15), ws::connect(io, &conn.path(&path)))

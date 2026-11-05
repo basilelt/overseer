@@ -108,6 +108,28 @@ impl DaemonConn {
             let io = self.open().await?;
             http::request(io, method, &self.path(path), body).await
         };
+        self.timed(method, path, limit, fut).await
+    }
+
+    pub async fn request_on(
+        &self,
+        io: BoxIo,
+        method: &str,
+        path: &str,
+        body: Option<&[u8]>,
+    ) -> Result<http::Response, String> {
+        let full = self.path(path);
+        let fut = http::request(io, method, &full, body);
+        self.timed(method, path, Duration::from_secs(30), fut).await
+    }
+
+    async fn timed(
+        &self,
+        method: &str,
+        path: &str,
+        limit: Duration,
+        fut: impl std::future::Future<Output = std::io::Result<http::Response>>,
+    ) -> Result<http::Response, String> {
         let started = std::time::Instant::now();
         let res = match tokio::time::timeout(limit, fut).await {
             Ok(r) => r.map_err(|e| e.to_string()),
