@@ -47,7 +47,7 @@ else
       scripts/update-tap.sh | scripts/update-tap.test.sh) tap=true ;;
     esac
     case $f in
-      .github/* | app/fastlane/* | scripts/* | Makefile) store_guard=true ;;
+      .github/* | app/fastlane/* | app/src-tauri/gen/apple/Assets.xcassets/* | scripts/* | Makefile) store_guard=true ;;
     esac
   done <<<"$files"
 fi
