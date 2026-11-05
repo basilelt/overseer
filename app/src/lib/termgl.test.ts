@@ -230,6 +230,11 @@ describe('webglMode and softwareGl', () => {
     expect(softwareGl(fakeGl({ renderer: 'llvmpipe (LLVM 17)' }).gl)).toBe(true);
     expect(softwareGl(fakeGl({ renderer: 'ANGLE (AMD Radeon)' }).gl)).toBe(false);
   });
+
+  it('cannot tell software from hardware when WebKit masks the renderer', () => {
+    expect(softwareGl(fakeGl({ renderer: 'Apple GPU' }).gl)).toBe(false);
+    expect(softwareGl(fakeGl({ renderer: 'WebKit WebGL' }).gl)).toBe(false);
+  });
 });
 
 describe('GlTerm', () => {
@@ -570,6 +575,13 @@ describe('attachOverlay', () => {
     expect(overlayOf(r).getContext).toHaveBeenCalledWith('webgl2', expect.objectContaining({ failIfMajorPerformanceCaveat: true }));
     expect(src.after).not.toHaveBeenCalled();
     expect(attachOverlay(setup(fakeGl({ renderer: 'SwiftShader' }).gl).r, true)).not.toBeNull();
+  });
+
+  it('keeps the drawing buffer so WebKit never presents a stale frame after a resize', async () => {
+    const { attachOverlay } = await import('./termgl');
+    const { r, overlay } = setup(fakeGl().gl);
+    expect(attachOverlay(r, false)).not.toBeNull();
+    expect(overlay.getContext).toHaveBeenCalledWith('webgl2', expect.objectContaining({ preserveDrawingBuffer: true }));
   });
 
   it('sizes the overlay over the canvas and rasterizes glyphs at device scale', async () => {

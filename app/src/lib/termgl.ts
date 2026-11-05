@@ -836,7 +836,7 @@ export function attachOverlay(r: Patched, allowSoftware: boolean): ReturnType<At
   if (!src?.parentNode || typeof document === 'undefined') return null;
   const c = document.createElement('canvas');
   c.style.cssText = 'display:block;position:relative;pointer-events:none;';
-  const gl = c.getContext('webgl2', { alpha: false, antialias: false, depth: false, stencil: false, premultipliedAlpha: true, failIfMajorPerformanceCaveat: !allowSoftware });
+  const gl = c.getContext('webgl2', { alpha: false, antialias: false, depth: false, stencil: false, premultipliedAlpha: true, preserveDrawingBuffer: true, failIfMajorPerformanceCaveat: !allowSoftware });
   if (!gl) return null;
   if (!allowSoftware && softwareGl(gl)) {
     console.warn('webgl terminal: software GL, using canvas');
