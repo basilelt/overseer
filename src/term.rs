@@ -651,7 +651,8 @@ impl Term {
     pub fn to_shell(self: &Arc<Self>, verb: &str) -> Result<(), String> {
         let i = self.info();
         let agent = i.agent.clone().unwrap_or_default();
-        let note = match i.resume.clone() {
+        let resume = i.resume.clone().or_else(|| crate::session_at_exit(&i));
+        let note = match resume {
             Some((session, cmd)) => {
                 format!("{agent} {verb}. Session {session}, resume with: {cmd}")
             }
