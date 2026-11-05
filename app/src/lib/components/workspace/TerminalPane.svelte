@@ -40,7 +40,7 @@
   import { openFile } from '../../preview';
   import type { UploadResult } from '../../types';
   import { basename, bracketed, insertText, planDrop, planPaste, PROGRESS_FROM, uploadedPath, type Refusal } from '../../uploads';
-  import AccessoryBar from '../mobile/AccessoryBar.svelte';
+  const accessoryBar = () => import('../mobile/AccessoryBar.svelte');
 
   let { termId, focused }: { termId: string; focused: boolean } = $props();
 
@@ -653,7 +653,7 @@
     <div class="exited">{t('term.exited', { code: info?.exitCode ?? '–' })}</div>
   {/if}
   {#if phone && !exited}
-    <AccessoryBar bind:mods onsend={write} onpaste={paste} onupload={() => picker?.click()} oncompose={() => (composing = true)} />
+    {#await accessoryBar() then { default: AccessoryBar }}<AccessoryBar bind:mods onsend={write} onpaste={paste} onupload={() => picker?.click()} oncompose={() => (composing = true)} />{/await}
     <input class="picker" type="file" multiple bind:this={picker} onchange={picked} />
   {/if}
 </div>

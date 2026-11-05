@@ -2,7 +2,6 @@
   import { app } from '../../state.svelte';
   import { preload } from '../../idle';
   import Menu from '../ui/Menu.svelte';
-  import NameDialog from './NameDialog.svelte';
   import { ui } from '../../mobile/ui.svelte';
   import { diag } from '../../diag.svelte';
   import { feedback } from '../../feedback.svelte';
@@ -32,6 +31,7 @@
   const organizeDialog = () => import('./OrganizeDialog.svelte');
   const planReview = () => import('./PlanReview.svelte');
   const pickUp = () => import('./PickUp.svelte');
+  const nameDialog = () => import('./NameDialog.svelte');
   const closeTabDialog = () => import('./CloseTabDialog.svelte');
   const switchboardDialog = () => import('./SwitchboardImportDialog.svelte');
 </script>
@@ -57,7 +57,7 @@
 {:else if app.overlay === 'holdAll'}
   {#await holdAllDialog() then { default: HoldAllDialog }}<HoldAllDialog onclose={close} />{/await}
 {:else if app.overlay === 'name'}
-  <NameDialog onclose={close} />
+  {#await nameDialog() then { default: NameDialog }}<NameDialog onclose={close} />{/await}
 {:else if app.overlay === 'workspaceNew'}
   {#await workspaceDialog() then { default: WorkspaceDialog }}<WorkspaceDialog onclose={close} />{/await}
 {:else if app.overlay === 'profiles'}
