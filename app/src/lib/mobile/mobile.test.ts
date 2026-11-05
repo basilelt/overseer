@@ -3,7 +3,7 @@ import { applyMods, ctrlChar, NO_MODS, nextModState, pressKey, type Mods } from 
 import { composeOutcome, composeRequest, composeTarget } from './compose';
 import { movedTooFar, pinchFontSize, swipeDirection } from './gestures';
 import { columnAfterSwipe, keyboardInset, layoutFor, mobileUserAgent, phoneParam, tabForView } from './layout';
-import { canResize, isAgentTerm, shouldReassert, sizedElsewhere } from './termsize';
+import { canResize, fitTo, isAgentTerm, shouldReassert, sizedElsewhere } from './termsize';
 
 describe('layout', () => {
   it('switches to the phone layout under the breakpoint', () => {
@@ -174,5 +174,30 @@ describe('terminal size between clients', () => {
     expect(sizedElsewhere({ cols: 120, rows: 40, sizedBy: 'desktop', lineId: 'ln_1' }, { cols: 46, rows: 30 }, 'phone')).toBeNull();
     expect(sizedElsewhere({ cols: 120, rows: 40, sizedBy: 'desktop', agent: 'codex' }, { cols: 46, rows: 30 }, 'phone')).toBeNull();
     expect(sizedElsewhere({ cols: 46, rows: 30, sizedBy: 'phone', lineId: 'ln_1' }, { cols: 120, rows: 40 }, 'desktop')).toBe('phone');
+  });
+});
+
+describe('fitTo', () => {
+  const term = (cols: number, rows: number) => {
+    const calls: [number, number][] = [];
+    return { cols, rows, calls, resize(c: number, r: number) { calls.push([c, r]); this.cols = c; this.rows = r; } };
+  };
+
+  it('resizes when the proposal differs from the terminal, even if it matches an earlier proposal', () => {
+    const t = term(88, 40);
+    expect(fitTo(t, { cols: 46, rows: 40 })).toBe(true);
+    expect(t.calls).toEqual([[46, 40]]);
+  });
+
+  it('does nothing when the terminal already has the proposed size', () => {
+    const t = term(46, 40);
+    expect(fitTo(t, { cols: 46, rows: 40 })).toBe(false);
+    expect(t.calls).toEqual([]);
+  });
+
+  it('does nothing without a proposal', () => {
+    const t = term(46, 40);
+    expect(fitTo(t, undefined)).toBe(false);
+    expect(t.calls).toEqual([]);
   });
 });
