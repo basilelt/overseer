@@ -17,7 +17,7 @@ import { isNoRoute } from './localnet';
 import { startupTarget } from './conn';
 import { activeKey, allTabs, EMPTY_LAYOUT, forgetLayouts, onTabClosed, openInFocused, update, workspace } from './workspace.svelte';
 import { newTabKey } from './tabs';
-import { aggregate, applyWsEvent, EMPTY_WS, isGhost, itemWorkspaces, resolveTab, sameMap, synthesize, upsert, type Aggregate, type WsData } from './workspaces';
+import { aggregate, applyWsEvent, EMPTY_WS, isGhost, itemWorkspaces, resolveTab, sameMap, synthesize, upsert, within, type Aggregate, type WsData } from './workspaces';
 import type { Workspace } from './types';
 import type { MenuItem, OpenMenu } from './menu';
 import { isWebLink, resolveLink, type LinkFrom, type LinkGesture, type LinkRoute } from './links';
@@ -563,7 +563,8 @@ class AppState {
   async newSession(agent: string, opts: { cwd?: string; model?: string; effort?: Effort; worktree?: boolean; profile?: string } = {}): Promise<Term> {
     const scoped = this.sidebarMode === 'workspaces' ? this.currentWorkspace : null;
     // A subject has no directory: the daemon starts the term in its cwd and assigns it.
-    const subject = !opts.cwd && scoped?.kind === 'subject' ? scoped.id : undefined;
+    // A repo workspace is assigned too: the term runs in a worktree outside its path until it reports a line.
+    const subject = scoped && (!opts.cwd || (scoped.kind !== 'subject' && !!scoped.path && within(opts.cwd, scoped.path))) ? scoped.id : undefined;
     const cwd = opts.cwd ?? scoped?.path ?? undefined;
     const worktree = (opts.worktree ?? (agent !== 'shell' && !settings.sessionsInCheckout)) && this.inProject(cwd ?? (subject ? (scoped?.cwd ?? undefined) : undefined));
     const size = { cols: 120, rows: 32, ...(worktree ? { worktree: true } : {}) };
