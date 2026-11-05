@@ -36,6 +36,8 @@ while IFS= read -r line; do
     done) status idle; hook Stop ;;
     tool) sh -c ': shell-snapshots/snapshot-sh-1.sh; sleep 60; :' & tool=$! ;;
     untool) kill "$tool"; tool= ;;
+    mcp) set -m; sh -c ': mcp-server; sleep 300; :' & echo $! > "$SB_STUB_LOG.mcp"; set +m ;;
+    mcpstubborn) set -m; sh -c ': mcp-server; trap "" TERM; while :; do sleep 1; done' & echo $! > "$SB_STUB_LOG.mcpstubborn"; set +m ;;
     ask) hook PermissionRequest ;;
     approved) hook PostToolUse ;;
     sub) hook SubagentStart ;;

@@ -946,6 +946,51 @@ fn after_turn_holds_an_idle_line_now_and_still_refuses_a_pinned_one() {
     );
 }
 
+fn child_pid(app: &App, name: &str) -> i32 {
+    let f = app.fx.base.join(format!("stub.log.{name}"));
+    wait_for(|| std::fs::read_to_string(&f).ok()?.trim().parse().ok())
+}
+
+fn gone(pid: i32) -> bool {
+    unsafe { libc::kill(pid, 0) != 0 }
+}
+
+#[test]
+fn holding_a_line_stops_the_processes_its_agent_left_behind() {
+    // Given an idle agent whose MCP-like children outlive it, one of them ignoring SIGTERM
+    // When the line is held
+    // Then both children are gone, and the term still runs the held stub
+    let sid = "dddddddd-0000-4000-8000-000000000005";
+    let app = App::with_env(
+        "holdtree",
+        json!({}),
+        &[("OVERSEER_HOLD_TIMEOUT_MS", "1500")],
+    );
+    let (tid, line) = claude_term(&app, json!(["claude", "--session-id", sid]), sid);
+    let mut ws = app.ws(&tid);
+    read_until(&mut ws, "❯");
+    send(&mut ws, "mcp\r");
+    let polite = child_pid(&app, "mcp");
+    send(&mut ws, "mcpstubborn\r");
+    let stubborn = child_pid(&app, "mcpstubborn");
+    assert!(!gone(polite) && !gone(stubborn));
+    let held = app.ok(
+        "POST",
+        &format!("/v1/lines/{line}/hold?dryRun=false"),
+        Value::Null,
+    );
+    assert_eq!(held["action"], "held", "{held}");
+    assert!(held["steps"].to_string().contains("got SIGKILL"), "{held}");
+    wait(|| gone(polite) && gone(stubborn));
+    let mut ws = app.ws(&tid);
+    read_until(&mut ws, "press Enter to resume");
+    app.ok(
+        "POST",
+        &format!("/v1/terms/{tid}/kill"),
+        json!({"confirm": true}),
+    );
+}
+
 #[test]
 fn holding_without_after_turn_still_refuses_a_busy_line() {
     // Given a busy claude session

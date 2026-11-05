@@ -233,6 +233,69 @@ fn revert_held(reg: &Registry, l: &Line) {
     let _ = reg.set_mark(&l.id, "state", Some(l.state));
 }
 
+/// Every process below `pid`, with its start stamp so a reused pid is never signalled.
+/// Collected before the agent exits: its children are re-parented to init afterwards.
+fn descendants(ctx: &Ctx, pid: u32) -> Vec<(u32, Option<String>)> {
+    let mut seen = std::collections::HashSet::from([pid]);
+    let mut out = vec![];
+    let mut todo = vec![pid];
+    while let Some(p) = todo.pop() {
+        for (c, _) in ctx.probe.children(p) {
+            if out.len() < 4096 && seen.insert(c) {
+                out.push((c, ctx.probe.info(c).and_then(|i| i.start)));
+                todo.push(c);
+            }
+        }
+    }
+    out
+}
+
+#[cfg(unix)]
+fn signal_tree(ctx: &Ctx, tree: &[(u32, Option<String>)], sig: i32) -> usize {
+    let mut live = 0;
+    for (p, start) in tree {
+        if ctx.probe.info(*p).is_some_and(|i| i.start == *start) {
+            live += 1;
+            unsafe { libc::kill(*p as i32, sig) };
+        }
+    }
+    live
+}
+
+/// SIGTERM what the agent left behind, SIGKILL what survives the hold timeout.
+#[cfg(unix)]
+fn stop_tree(ctx: &Ctx, tree: &[(u32, Option<String>)]) -> Vec<String> {
+    let signalled = signal_tree(ctx, tree, libc::SIGTERM);
+    if signalled == 0 {
+        return vec![];
+    }
+    let deadline = std::time::Instant::now() + timeout();
+    let gone = |ctx: &Ctx| {
+        tree.iter()
+            .all(|(p, s)| ctx.probe.info(*p).is_none_or(|i| i.start != *s))
+    };
+    while !gone(ctx) && std::time::Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    let killed = if gone(ctx) {
+        0
+    } else {
+        signal_tree(ctx, tree, libc::SIGKILL)
+    };
+    let mut done = vec![format!(
+        "stopped {signalled} process(es) the agent left running"
+    )];
+    if killed > 0 {
+        done.push(format!("{killed} ignored SIGTERM and got SIGKILL"));
+    }
+    done
+}
+
+#[cfg(not(unix))]
+fn stop_tree(_: &Ctx, _: &[(u32, Option<String>)]) -> Vec<String> {
+    vec![]
+}
+
 fn execute_hold_term(
     ctx: &Ctx,
     reg: &Registry,
@@ -246,6 +309,7 @@ fn execute_hold_term(
     let id = t.info().id;
     let root = t.info().pid == pid || (stub && is_stub_wrapper(&t.info().cmd));
     let mut done = vec![];
+    let tree = descendants(ctx, pid);
     record_held(ctx, reg, l, pid)?;
     done.push(format!("recorded {} as held(user)", l.id));
     t.hold(root);
@@ -257,6 +321,7 @@ fn execute_hold_term(
         ));
     }
     done.push(format!("agent pid {pid} exited after SIGTERM"));
+    done.extend(stop_tree(ctx, &tree));
     let shell = shell && cfg!(unix) && t.info().task_id.is_none();
     match (root, stub) {
         (true, true) => {
@@ -304,6 +369,7 @@ fn execute_hold(
     let pane = l.pane.as_deref().ok_or("no pane")?;
     let pid = l.pid.ok_or("no pid")?;
     let start = ctx.probe.info(pid).and_then(|i| i.start);
+    let tree = descendants(ctx, pid);
     let mut done = vec![];
     record_held(ctx, reg, l, pid)?;
     done.push(format!("recorded {} as held(user)", l.id));
@@ -326,6 +392,7 @@ fn execute_hold(
         ));
     }
     done.push(format!("agent pid {pid} exited after SIGTERM"));
+    done.extend(stop_tree(ctx, &tree));
     let now = tmux.panes().into_iter().find(|p| p.id == pane);
     let stub = stub_command(ctx, &l.id);
     let cwd = if l.cwd_missing { "/" } else { l.cwd.as_str() };
