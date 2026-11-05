@@ -32,7 +32,8 @@ sha() {
   echo "$s"
 }
 
-dmg=Overseer_${version}_aarch64.dmg
+dmg_arm=Overseer_${version}_aarch64.dmg
+dmg_intel=Overseer_${version}_x64.dmg
 mac_arm=overseer-$version-aarch64-apple-darwin
 mac_intel=overseer-$version-x86_64-apple-darwin
 linux_arm=overseer-$version-aarch64-unknown-linux-musl
@@ -46,21 +47,58 @@ done
 
 mkdir -p "$tap/Casks" "$tap/Formula"
 
-if jq -e --arg n "$dmg" 'any(.[]; .name == $n)' <<<"$assets" >/dev/null; then
-  url[$dmg]=$(asset_url "$dmg")
-  sum[$dmg]=$(sha "$dmg")
+has_asset() {
+  jq -e --arg n "$1" 'any(.[]; .name == $n)' <<<"$assets" >/dev/null
+}
+
+cask_arch() {
+  local arm=$1 intel=$2
+  if [ -n "$arm" ] && [ -n "$intel" ]; then
+    cat <<RUBY
+  on_arm do
+    sha256 "${sum[$arm]}"
+    url "${url[$arm]}"
+  end
+  on_intel do
+    sha256 "${sum[$intel]}"
+    url "${url[$intel]}"
+  end
+RUBY
+  else
+    local d=${arm:-$intel} a=arm64
+    [ -n "$arm" ] || a=x86_64
+    cat <<RUBY
+  sha256 "${sum[$d]}"
+  url "${url[$d]}"
+  depends_on arch: :$a
+RUBY
+  fi
+}
+
+dmgs=()
+for d in "$dmg_arm" "$dmg_intel"; do
+  if has_asset "$d"; then
+    url[$d]=$(asset_url "$d")
+    sum[$d]=$(sha "$d")
+    dmgs+=("$d")
+  else
+    echo "warning: release v$version has no $d" >&2
+    [ "$d" = "$dmg_arm" ] && dmg_arm= || dmg_intel=
+  fi
+done
+
+if [ ${#dmgs[@]} -gt 0 ]; then
   cat >"$tap/Casks/overseer.rb" <<RUBY
 cask "overseer" do
   version "$version"
-  sha256 "${sum[$dmg]}"
 
-  url "${url[$dmg]}"
+$(cask_arch "$dmg_arm" "$dmg_intel")
+
   name "Overseer"
   desc "Desktop client for Overseer agent sessions"
   homepage "https://github.com/$repo"
 
   depends_on :macos
-  depends_on arch: :arm64
 
   app "Overseer.app"
 
@@ -74,7 +112,7 @@ cask "overseer" do
 end
 RUBY
 else
-  echo "warning: release v$version has no $dmg, Casks/overseer.rb left unchanged" >&2
+  echo "warning: release v$version has no .dmg, Casks/overseer.rb left unchanged" >&2
 fi
 
 formula_url() {
