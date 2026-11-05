@@ -311,6 +311,7 @@ export class GlTerm {
   draws = 0;
   redraws = 0;
   settle = 0;
+  private inked = false;
   onSettle: (() => void) | null = null;
   private frame: Frame | null = null;
   uploaded = 0;
@@ -566,6 +567,7 @@ export class GlTerm {
         if (!cells) continue;
         packing = y;
         packRow(cells, y, cols, style, this.cells, this.decos[y]);
+        if (this.settle > 0 && !this.inked) for (const c of cells) if (c.codepoint > 32) this.inked = true;
         this.rowsPacked++;
         lo = Math.min(lo, y);
         hi = Math.max(hi, y);
@@ -613,12 +615,17 @@ export class GlTerm {
     const frame: Frame = { W, H, cols, rows, cellW, cellH, n, dpr: h.devicePixelRatio || 1, bg };
     this.frame = frame;
     this.paint(frame);
-    if (this.settle > 0) {
-      this.settle--;
+    if (this.settle > 0 && hi >= lo) {
+      if (this.settle > 1 || this.inked) this.settle--;
       this.onSettle?.();
     }
     buf.clearDirty();
     return true;
+  }
+
+  startSettle(renders: number): void {
+    this.settle = renders;
+    this.inked = false;
   }
 
   redraw(): boolean {
@@ -875,7 +882,7 @@ export function attachOverlay(r: Patched, allowSoftware: boolean): ReturnType<At
     resize(cols, rows) {
       place(cols, rows);
       term.resize(cols, rows);
-      term.settle = SETTLE_RENDERS;
+      term.startSettle(SETTLE_RENDERS);
     },
     dispose() {
       if (raf) cancelAnimationFrame(raf);
