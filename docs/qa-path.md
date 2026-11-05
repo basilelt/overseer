@@ -19,7 +19,7 @@ scripts/qa/sandbox.sh stop     # stop everything; `clean` also deletes $QA_DIR
 ```
 
 - `QA_DIR` defaults to `/tmp/sbqa`. Keep it short: a unix socket path must stay under about 100 bytes.
-- The daemon runs with its own `HOME`, state dir, runtime dir, Claude and Codex config, `GIT_CONFIG_GLOBAL=/dev/null`, and `tests/stubs` first on `PATH`. Sessions therefore start real processes from the stub CLIs: they print a `❯` prompt, echo what you type (`got: …`), and log their command line to `$QA_DIR/stub.log`. Typing `done` ends a turn, so a task moves to In testing.
+- The daemon runs with its own `HOME`, state dir, runtime dir, Claude and Codex config, `GIT_CONFIG_GLOBAL=/dev/null`, and `tests/stubs` first on `PATH`. Sessions therefore start real processes from the stub CLIs: they print a `❯` prompt, echo what you type (`got: …`), and log their command line to `$QA_DIR/stub.log`. Typing `done` ends a turn, so a task moves to In testing. The `codex` stub behaves like Codex 0.165+: it creates its thread (a rollout under `$QA_DIR/home/.codex/sessions`) on the first `busy`, not at launch, reports its hooks with a pid that is not its own (real Codex runs hooks from a shared `codex app-server`), Ctrl+C makes it quit cleanly like Codex, and `tool` runs for 8 s a process with the argv of Codex's Linux sandbox (`bwrap … -- …/bin/codex --sandbox-policy-cwd …`).
 - A sample git repository is created at `$QA_DIR/home/proj`. Add files there as a step needs them.
 - Drive the app with Playwright and `scripts/qa/drive.py`: `launch(p, mode=...)` opens a browser with `scripts/qa/shim.js`, which replaces the Tauri IPC with calls to the proxy (requests, `/v1/events` SSE, terminal websockets, ports). `open_app(pg, "?theme=light")` loads it and dismisses the welcome tour. Set `QA_CHROME` to use a specific Chromium binary.
 - **Modes**: QA runs in every mode a user can be in. `mode` (or `QA_MODE`) picks one:
@@ -65,6 +65,11 @@ Each step is **Do → Expect**. Check every screenshot for overlaps, clipped tex
 - **C4** Start a session in a folder that is not a git repository (for example the agent started by the feedback sheet) and select it → the side panel shows **CHANGES** with "Not a git repository, so there are no changes to show" and no **Open review** button. The browser console has no errors and the network log has no 4xx. Select a session in a git repository → **CHANGES** and **Open review** are back.
 - **C5** Hold a session, then click **Resume** in the side panel header (not in the terminal) → the session is active again, the button shows **Hold**, and `stub.log` shows `--resume <same session>`. The held terminal's "press Enter to resume" prompt is answered by the click.
 - **C6** Hold and resume the same session three times in a row (side panel **Hold**, then **Resume**) → the state flips each time, the terminal shows "press Enter to resume" while held and the agent prompt after, and `stub.log` has one `--resume <same session>` per cycle. Repeat with `sandbox.sh crash` and `start` while held and while active: the state survives.
+
+- **C7** Codex, several sessions in one repository: start two Codex sessions in `proj` and one in another repository (`POST /v1/terms {"cwd": …, "agent": "codex"}`), and leave an older Codex session of `proj` held → opening them wakes no held session. Type `busy` in each, one after the other → each gets its own session line with its own pid, and the held one stays held.
+- **C8** In one Codex session type `tool`, then `done` → for the 8 s of the tool no other session of the repository turns active, appears or disappears; only the busy dot of the session that ran it changes.
+- **C9** Type `busy` again in the oldest Codex session, so it is the most recent one → no pid moves between session lines (`/v1/lines?all=true`). Open a fourth Codex session in `proj` and type `busy` → only its new line appears. Type `exit` in the first one → only its own line is held.
+- **C10** In a Codex session press Ctrl+C (or type `exit`) → the tab stays open and shows `codex exited. Session <id>, resume with: … codex resume <id>`, then a shell prompt in the same folder that runs commands. Close that tab with Ctrl+W → it closes. Close a tab whose Codex is still running (**End session**) → it closes without a shell left behind.
 
 ### D. Review
 
@@ -145,6 +150,7 @@ Each step is **Do → Expect**. Check every screenshot for overlaps, clipped tex
 - **M2** Reload the app → tabs, workspaces and the selected session come back. The resumed agent answers input.
 - **M3** Set **After a server reboot or restart** to Nothing, then crash and start → nothing is restored.
 - **M4** Idle: leave the app untouched for 70 s with a session open → no DOM changes and no repaints (count `MutationObserver` records over 10 s).
+- **M5** With the Codex sessions of **C7**–**C9** running: `sandbox.sh crash`, then `start` → `stub.log` shows one `codex resume <id>` per live session, each with its own thread id, and each comes back on its own line, active.
 
 ## Keeping the path current
 
