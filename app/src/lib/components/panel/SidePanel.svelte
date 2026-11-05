@@ -185,7 +185,7 @@
       {#key line.line.id}<SessionUsage lineId={line.line.id} />{/key}
       {#if chip}<p class="profile faint" title={t('profile.label')}>{chipLabel(chip, (e) => t('profile.effortOf', { effort: t(`effort.${e}` as Key).toLowerCase() }))}</p>{/if}
     </header>
-    <PanelActions {item} {line} />
+    <PanelActions {line} />
     <div class="scroll" role="presentation" onpointerdown={dragDown} onclickcapture={swallowClick}>
       {#if act}
         {#if act.lastAssistantText}

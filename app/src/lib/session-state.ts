@@ -64,3 +64,10 @@ export function sessionState(l: LocalLine, termId?: string | null): SessionView 
     },
   };
 }
+
+// Whole days a session has been paused, or null when it is under a day or the time is unknown.
+export function pausedDays(since: string | undefined, now: number): number | null {
+  const at = since ? Date.parse(since) : NaN;
+  const days = Math.floor((now - at) / 86_400_000);
+  return days >= 1 ? days : null;
+}

@@ -26,4 +26,13 @@ describe('SidePanel last message', () => {
     expect(html).toContain('Run pnpm test then pnpm lint');
     expect(html).not.toContain('`');
   });
+
+  it('keeps pin in the panel and leaves pause, resume and close to the chat header', async () => {
+    // Given a selected session
+    // When the panel renders
+    // Then it offers Pin but none of the session-state actions
+    const html = await rendered('hello');
+    expect(html).toContain('Pin');
+    for (const label of ['Hold', 'Resume', 'Close line']) expect(html).not.toContain(label);
+  });
 });
