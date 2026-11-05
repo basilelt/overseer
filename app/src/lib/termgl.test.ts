@@ -601,6 +601,99 @@ describe('attachOverlay', () => {
     expect(fills).toEqual(['#fff', '#000']);
   });
 
+  function frames() {
+    const queue = new Map<number, () => void>();
+    let id = 0;
+    vi.stubGlobal('requestAnimationFrame', (fn: () => void) => {
+      queue.set(++id, fn);
+      return id;
+    });
+    vi.stubGlobal('cancelAnimationFrame', (h: number) => void queue.delete(h));
+    return {
+      queue,
+      flush() {
+        const fns = [...queue.values()];
+        queue.clear();
+        for (const fn of fns) fn();
+      },
+    };
+  }
+
+  it('redraws the last frame after the renders that follow a resize, then stays idle', async () => {
+    const { attachOverlay } = await import('./termgl');
+    const { gl, log } = fakeGl();
+    const { r } = setup(gl);
+    const raf = frames();
+    const a = attachOverlay(r, false)!;
+    a.resize(10, 2);
+    expect(raf.queue.size).toBe(0);
+    for (let i = 0; i < 3; i++) {
+      a.term.render(grid(2, 10));
+      expect(raf.queue.size).toBe(1);
+      const before = log.draws;
+      const bytes = log.bytes;
+      raf.flush();
+      expect(a.term.redraws).toBe(i + 1);
+      expect(log.draws).toBeGreaterThan(before);
+      expect(log.bytes - bytes).toBe(10 * 2 * 12);
+    }
+    a.term.render(grid(2, 10));
+    expect(raf.queue.size).toBe(0);
+    expect(a.term.redraws).toBe(3);
+  });
+
+  it('coalesces the redraw when several renders land in one frame', async () => {
+    const { attachOverlay } = await import('./termgl');
+    const { r } = setup(fakeGl().gl);
+    const raf = frames();
+    const a = attachOverlay(r, false)!;
+    a.resize(4, 2);
+    a.term.render(grid(2, 4));
+    a.term.render(grid(2, 4));
+    expect(raf.queue.size).toBe(1);
+    raf.flush();
+    expect(a.term.redraws).toBe(1);
+  });
+
+  it('restarts the redraw window on every resize and cancels it on dispose', async () => {
+    const { attachOverlay } = await import('./termgl');
+    const { r } = setup(fakeGl().gl);
+    const raf = frames();
+    const a = attachOverlay(r, false)!;
+    a.resize(4, 2);
+    for (let i = 0; i < 3; i++) {
+      a.term.render(grid(2, 4));
+      raf.flush();
+    }
+    a.term.render(grid(2, 4));
+    expect(raf.queue.size).toBe(0);
+    a.resize(6, 2);
+    a.term.render(grid(2, 6));
+    expect(raf.queue.size).toBe(1);
+    a.dispose();
+    expect(raf.queue.size).toBe(0);
+  });
+
+  it('does not redraw before a frame exists, after a resize reallocation, or while the context is lost', async () => {
+    const { attachOverlay } = await import('./termgl');
+    const { gl, log } = fakeGl();
+    const { r, overlay } = setup(gl);
+    frames();
+    const a = attachOverlay(r, false)!;
+    expect(a.term.redraw()).toBe(false);
+    a.resize(4, 2);
+    a.term.render(grid(2, 4));
+    expect(a.term.redraw()).toBe(true);
+    a.resize(5, 2);
+    log.draws = 0;
+    expect(a.term.redraw()).toBe(false);
+    a.term.render(grid(2, 5));
+    overlay.on.get('webglcontextlost')!({ preventDefault() {} });
+    log.draws = 0;
+    expect(a.term.redraw()).toBe(false);
+    expect(log.draws).toBe(0);
+  });
+
   it('stops drawing on context loss and redraws after restore', async () => {
     const { attachOverlay } = await import('./termgl');
     const { gl, log } = fakeGl();
