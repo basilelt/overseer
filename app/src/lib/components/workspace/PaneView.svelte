@@ -13,7 +13,6 @@
   import { app } from '../../state.svelte';
   import { focusPane, update, type Pane } from '../../workspace.svelte';
   import TabBar from './TabBar.svelte';
-  import EmptyPane from './EmptyPane.svelte';
   import TerminalPane from './TerminalPane.svelte';
   import GitCompare from '@lucide/svelte/icons/git-compare';
   import { renameTab } from '../../workspace.svelte';
@@ -26,6 +25,7 @@
   import { claim, KEEP_TERMS, KEEP_TERMS_PHONE, retain, same, type Claim } from '../../keepalive';
 
   const browser = () => import('../browser/BrowserView.svelte');
+  const emptyPane = () => import('./EmptyPane.svelte');
   const chatView = () => import('../chat/ChatView.svelte');
   const sessionWeb = () => import('../browser/SessionWeb.svelte');
   const review = () => TAB_KINDS.review?.load?.() ?? Promise.resolve(null);
@@ -130,7 +130,7 @@
           {/if}
         </div>
       {:else if !item}
-        <EmptyPane />
+        {#await emptyPane() then { default: EmptyPane }}<EmptyPane />{/await}
       {:else if !item.termId}
         <div class="empty">
           <SquareTerminal size={28} strokeWidth={1.5} />
