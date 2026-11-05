@@ -26,7 +26,7 @@
   import { attachRetryMs } from '../../conn';
   import { termLink, type TermLink } from '../../termlink';
   import { LONG_PRESS_MS, movedTooFar, pinchFontSize, touchDistance } from '../../mobile/gestures';
-  import { canResize, isAgentTerm, shouldReassert, sizedElsewhere } from '../../mobile/termsize';
+  import { canResize, fitTo, isAgentTerm, shouldReassert, sizedElsewhere } from '../../mobile/termsize';
   import { ui } from '../../mobile/ui.svelte';
   import { isNativeAndroid, native } from '../../mobile/native';
   import { customColors, resolvedTheme, saveSettings, settings } from '../../settings.svelte';
@@ -291,8 +291,9 @@
         if (area) quietInput(area);
         refit = () => {
           const tm = term;
-          if (!fixed) return fit.fit();
-          if (tm && info && (tm.cols !== info.cols || tm.rows !== info.rows)) tm.resize(info.cols, info.rows);
+          if (!tm) return;
+          if (!fixed) return void fitTo(tm, fit.proposeDimensions());
+          if (info && (tm.cols !== info.cols || tm.rows !== info.rows)) tm.resize(info.cols, info.rows);
         };
         applyFont();
         link = termLink({
