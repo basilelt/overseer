@@ -96,10 +96,14 @@
   }
   .frame {
     display: flex;
-    height: min(62vh, 760px);
+    height: min(calc(76vh - 200px), 760px);
+    min-height: 220px;
     border: 1px solid var(--border);
     border-radius: var(--radius);
     overflow: hidden;
+  }
+  :global(.phone) .frame {
+    height: min(calc(90dvh - 330px), 760px);
   }
   .state {
     display: flex;
