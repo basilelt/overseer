@@ -294,8 +294,12 @@
         };
         applyFont();
         let since = 0;
+        let gen = 0;
+        let linking = false;
         const attach = async (attempt: number): Promise<void> => {
           if (disposed || !term) return;
+          const g = ++gen;
+          linking = true;
           term.reset();
           modes.reset();
           let conn: TermIO;
@@ -303,6 +307,7 @@
             conn = await app.client!.attachTerm(
               termId,
               (bytes) => {
+                if (g !== gen) return;
                 modes.feed(bytes);
                 if (!term) return;
                 writing = true;
@@ -313,12 +318,15 @@
                   writing = false;
                 }
               },
-              () => onDetached(attempt),
+              () => g === gen && onDetached(attempt),
             );
           } catch (e) {
+            if (g !== gen) return;
+            linking = false;
             return retry(attempt, e);
           }
-          if (disposed) return conn.close();
+          if (disposed || g !== gen) return conn.close();
+          linking = false;
           since = Date.now();
           error = null;
           io = conn;
@@ -374,8 +382,12 @@
           return true;
         });
         term.onResize(({ cols, rows }) => {
-          if (!fixed) io?.resize(cols, rows);
           mine = { cols, rows };
+          if (!io && !linking) return;
+          const old = io;
+          io = null;
+          attach(0).catch((err) => (error = message(err)));
+          old?.close();
         });
         await attach(0);
         ro = new ResizeObserver(([e]) => {

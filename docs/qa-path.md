@@ -85,6 +85,7 @@ Each step is **Do → Expect**. Check every screenshot for overlaps, clipped tex
 - **E6** Split the pane right and down, move tabs between panes, close a pane → the layout follows, and nothing is lost on reload.
 - **E7** Select text in a terminal → it is copied (desktop shell only; note it when it cannot be checked in Chromium).
 - **E8** Drag-select a line that touches the first or last row of a terminal with no scrollback (a fresh shell, or the prompt of an agent at the bottom) → the whole dragged range is selected and copied, not a single cell.
+- **E9** In a shell, run a script that prints a few hundred lines each ending in an OSC 8 hyperlink (`printf '\e]8;;https://example.com\a/rc %s\e]8;;\a\n'`), then resize the window several times while it keeps printing → every line stays whole and in order, no text from one line shows inside another, and typing still reaches the shell (`stty size` shows the new size).
 
 ### F. Chat
 

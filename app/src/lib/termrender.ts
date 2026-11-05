@@ -67,6 +67,10 @@ export class FrameScheduler {
     return this.entries.size;
   }
 
+  has(t: PaintTarget): boolean {
+    return this.entries.has(t);
+  }
+
   add(t: PaintTarget): void {
     if (this.entries.has(t)) return;
     this.entries.set(t, { last: -Infinity, onScreen: true, shown: this.state().visible, watchers: new Set(), cleanup: [] });
@@ -288,7 +292,7 @@ export function installOnDemandRendering(mod: GhosttyClasses, sched: FrameSchedu
   if (term[PATCHED]) return true;
   term[PATCHED] = true;
   term.startRenderLoop = function (this: PaintTarget) {
-    attach(this, sched);
+    if (!sched.has(this)) attach(this, sched);
   };
   for (const name of TRIGGERS) {
     const orig = term[name];
@@ -307,6 +311,33 @@ export function installOnDemandRendering(mod: GhosttyClasses, sched: FrameSchedu
   const sel = mod.SelectionManager!.prototype as Proto;
   sel.requestRender = function (this: { terminal?: PaintTarget }) {
     if (this.terminal) sched.invalidate(this.terminal);
+  };
+  return true;
+}
+
+const BLANK_RESIZE = Symbol.for('overseer.blankResize');
+
+interface Resizable {
+  cols: number;
+  rows: number;
+  isOpen: boolean;
+  reset(): void;
+  resize(cols: number, rows: number): void;
+}
+
+// ghostty-web reflows its pages on resize, and once rows carrying OSC 8 hyperlinks are in the
+// history that reflow corrupts the terminal (0.4.0 traps with "memory access out of bounds",
+// later builds silently drop text and newlines). Start from an empty terminal instead and let the
+// caller replay the daemon's output at the new size.
+export function installBlankResize(mod: GhosttyClasses): boolean {
+  const term = mod.Terminal?.prototype as (Proto & { [BLANK_RESIZE]?: boolean }) | undefined;
+  if (!term || typeof term.resize !== 'function' || typeof term.reset !== 'function') return false;
+  if (term[BLANK_RESIZE]) return true;
+  term[BLANK_RESIZE] = true;
+  const resize = term.resize as Resizable['resize'];
+  term.resize = function (this: Resizable, cols: number, rows: number) {
+    if (this.isOpen && (cols !== this.cols || rows !== this.rows)) this.reset();
+    return resize.call(this, cols, rows);
   };
   return true;
 }
