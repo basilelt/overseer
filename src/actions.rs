@@ -557,12 +557,12 @@ pub fn apply_pending_holds(ctx: &Ctx, lines: &[Line]) {
         if !evaluate(&hold_input(ctx, l)).iter().all(|c| c.ok) {
             continue;
         }
-        let r = hold_line(ctx, l, true, true, false);
-        if r.error.is_some() {
-            if let Ok(reg) = Registry::open(&ctx.state_dir) {
-                let _ = reg.set_mark(&l.id, "hold_pending", None);
-            }
+        // DELETE or a manual hold may have cleared it since the scan: only the claimer holds.
+        let claimed = Registry::open(&ctx.state_dir).and_then(|r| r.claim_hold_pending(&l.id));
+        if claimed != Ok(true) {
+            continue;
         }
+        hold_line(ctx, l, true, true, false);
     }
 }
 

@@ -365,6 +365,17 @@ impl Registry {
             .map_err(|e| e.to_string())
     }
 
+    /// Atomically takes a pending hold: true only for the caller that cleared it.
+    pub fn claim_hold_pending(&self, id: &str) -> Result<bool, String> {
+        self.conn
+            .execute(
+                "UPDATE lines SET hold_pending = 0 WHERE id = ?1 AND hold_pending = 1",
+                params![id],
+            )
+            .map(|n| n == 1)
+            .map_err(|e| e.to_string())
+    }
+
     pub fn set_mark(&self, id: &str, col: &str, value: Option<&str>) -> Result<(), String> {
         let sql = match col {
             "ticket_override" => "UPDATE lines SET ticket_override = ?2 WHERE id = ?1",
@@ -582,7 +593,12 @@ mod tests {
         let m = reg.marks("claude", "s1").unwrap();
         assert!(m.hold_pending);
         assert_eq!(m.held_at.as_deref(), Some("2026-01-02T03:04:05Z"));
-        reg.set_mark(&id, "hold_pending", None).unwrap();
+        assert!(reg.claim_hold_pending(&id).unwrap(), "first claim wins");
+        assert!(
+            !reg.claim_hold_pending(&id).unwrap(),
+            "a pending hold is taken once"
+        );
+        assert!(!reg.marks("claude", "s1").unwrap().hold_pending);
         reg.set_mark(&id, "held_at", None).unwrap();
         let m = reg.marks("claude", "s1").unwrap();
         assert!(!m.hold_pending && m.held_at.is_none());
