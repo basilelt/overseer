@@ -1,58 +1,22 @@
-use std::path::{Path, PathBuf};
-use std::sync::Mutex;
-use std::time::Duration;
-
-use reqwest::{Client, Response, StatusCode};
+use reqwest::{Client, StatusCode};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 use tauri::ipc::Channel;
 use tauri::{AppHandle, Manager, State};
 use tokio::io::AsyncWriteExt;
 
-pub const REPO: &str = "basilelt/overseer";
+use crate::release_http::{
+    asset_url, client, failed, get, hex, network, status_error, ApkError, REPO,
+};
+
 const GITHUB: &str = "https://github.com";
 const DOWNLOADS: &str = "updates";
 const PROGRESS_STEP: u64 = 256 * 1024;
-pub const DISTRIBUTION: &str = env!("OVERSEER_DISTRIBUTION");
-const PLAY_MANAGED: &str = "Google Play installs updates for this app";
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-#[serde(tag = "kind", rename_all = "lowercase")]
-pub enum ApkError {
-    Network { message: String },
-    Checksum,
-    Failed { message: String },
-}
-
-fn failed(e: impl ToString) -> ApkError {
-    ApkError::Failed {
-        message: e.to_string(),
-    }
-}
-
-fn network(e: reqwest::Error) -> ApkError {
-    ApkError::Network {
-        message: e.without_url().to_string(),
-    }
-}
-
-pub fn updates_supported(android: bool, distribution: &str) -> bool {
-    android && distribution != "play"
-}
-
-fn ensure_supported() -> Result<(), ApkError> {
-    if DISTRIBUTION == "play" {
-        return Err(failed(PLAY_MANAGED));
-    }
-    Ok(())
-}
 
 pub(crate) fn manifest_url(base: &str) -> String {
     format!("{base}/{REPO}/releases/latest/download/latest.json")
-}
-
-pub(crate) fn asset_url(base: &str, version: &str, name: &str) -> String {
-    format!("{base}/{REPO}/releases/download/v{version}/{name}")
 }
 
 pub(crate) fn release_url(base: &str, version: &str) -> String {
@@ -80,10 +44,6 @@ struct Found {
     sha256: String,
     notes: String,
     date: Option<String>,
-}
-
-fn status_error(status: StatusCode) -> Option<ApkError> {
-    (!status.is_success()).then(|| failed(format!("GitHub answered {status}")))
 }
 
 pub(crate) fn checksum_outcome(
@@ -120,10 +80,6 @@ pub fn parse_sha256(text: &str, file: &str) -> Option<String> {
         Some(name) if name.trim_start_matches('*') != file => None,
         _ => Some(hex.to_ascii_lowercase()),
     }
-}
-
-pub fn hex(bytes: &[u8]) -> String {
-    bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
 
 pub fn is_download(path: &Path) -> bool {
@@ -193,25 +149,6 @@ pub enum InstallOutcome {
     Signature,
 }
 
-pub(crate) fn client() -> Result<Client, ApkError> {
-    let _ = rustls::crypto::ring::default_provider().install_default();
-    let roots = webpki_root_certs::TLS_SERVER_ROOT_CERTS
-        .iter()
-        .filter_map(|c| reqwest::Certificate::from_der(c.as_ref()).ok());
-    Client::builder()
-        .user_agent("overseer-android-updater")
-        .connect_timeout(Duration::from_secs(15))
-        .read_timeout(Duration::from_secs(60))
-        .tls_certs_only(roots)
-        .build()
-        .map_err(failed)
-}
-
-pub(crate) async fn get(client: &Client, url: &str) -> Result<Response, ApkError> {
-    let res = client.get(url).send().await.map_err(network)?;
-    status_error(res.status()).map_or(Ok(res), Err)
-}
-
 async fn find_update(
     client: &Client,
     base: &str,
@@ -263,7 +200,7 @@ fn current_version(app: &AppHandle) -> String {
 pub async fn apk_update_status(app: AppHandle) -> Result<ApkStatus, ApkError> {
     Ok(ApkStatus {
         current: current_version(&app),
-        supported: updates_supported(cfg!(target_os = "android"), DISTRIBUTION),
+        supported: cfg!(target_os = "android"),
     })
 }
 
@@ -272,7 +209,6 @@ pub async fn apk_update_check(
     app: AppHandle,
     state: State<'_, ApkState>,
 ) -> Result<CheckResult, ApkError> {
-    ensure_supported()?;
     crate::diag::info("updater", "checking for an APK update");
     let current = current_version(&app);
     let Some(found) = find_update(&client()?, GITHUB, &current).await? else {
@@ -307,7 +243,6 @@ pub async fn apk_update_download(
     state: State<'_, ApkState>,
     on_progress: Channel<DownloadEvent>,
 ) -> Result<(), ApkError> {
-    ensure_supported()?;
     crate::diag::info("updater", "downloading the APK update");
     let pending = state
         .pending
@@ -369,7 +304,6 @@ pub async fn apk_update_install(
     app: AppHandle,
     state: State<'_, ApkState>,
 ) -> Result<InstallOutcome, ApkError> {
-    ensure_supported()?;
     crate::diag::info("updater", "opening the Android installer");
     let path = state
         .pending
@@ -384,7 +318,6 @@ pub async fn apk_update_install(
 
 #[tauri::command]
 pub async fn apk_update_allow_install(app: AppHandle) -> Result<(), ApkError> {
-    ensure_supported()?;
     installer::open_settings(&app)
 }
 
@@ -471,67 +404,9 @@ mod installer {
 }
 
 #[cfg(test)]
-pub(crate) mod testhttp {
-    use tokio::io::{AsyncReadExt, AsyncWriteExt};
-    use tokio::net::TcpListener;
-
-    pub type Reply<'a> = (u16, Vec<(&'static str, &'static str)>, &'a str);
-
-    pub async fn serve_once(
-        status: u16,
-        body: &'static str,
-    ) -> (String, tokio::task::JoinHandle<String>) {
-        let (base, task) = serve_script(vec![(status, vec![], body)]).await;
-        let task = tokio::spawn(async move { task.await.unwrap().remove(0) });
-        (base, task)
-    }
-
-    pub async fn serve_script(
-        replies: Vec<Reply<'_>>,
-    ) -> (String, tokio::task::JoinHandle<Vec<String>>) {
-        let replies: Vec<(u16, Vec<_>, String)> = replies
-            .into_iter()
-            .map(|(s, h, b)| (s, h, b.to_string()))
-            .collect();
-        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let base = format!("http://{}", listener.local_addr().unwrap());
-        let task = tokio::spawn(async move {
-            let mut seen = Vec::new();
-            for (status, headers, body) in replies {
-                let (mut sock, _) = listener.accept().await.unwrap();
-                let mut buf = vec![0u8; 8192];
-                let n = sock.read(&mut buf).await.unwrap();
-                let extra: String = headers
-                    .iter()
-                    .map(|(k, v)| format!("{k}: {v}\r\n"))
-                    .collect();
-                let reply = format!("HTTP/1.1 {status} X\r\ncontent-type: application/json\r\n{extra}content-length: {}\r\nconnection: close\r\n\r\n{body}", body.len());
-                sock.write_all(reply.as_bytes()).await.unwrap();
-                seen.push(String::from_utf8_lossy(&buf[..n]).to_ascii_lowercase());
-            }
-            seen
-        });
-        (base, task)
-    }
-}
-
-#[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn only_the_github_android_build_updates_itself() {
-        assert!(updates_supported(true, "github"));
-        assert!(!updates_supported(true, "play"));
-        assert!(!updates_supported(false, "github"));
-        assert!(!updates_supported(false, "play"));
-    }
-
-    #[test]
-    fn a_default_build_is_the_github_distribution() {
-        assert_eq!(DISTRIBUTION, "github");
-        assert_eq!(ensure_supported(), Ok(()));
-    }
+    use crate::release_http::testhttp;
 
     #[test]
     fn compares_release_tags_as_semver() {
@@ -643,73 +518,6 @@ mod tests {
             checksum_outcome(StatusCode::OK, "nonsense", "a.apk"),
             Err(ApkError::Failed { .. })
         ));
-    }
-
-    #[test]
-    fn errors_serialize_with_a_lowercase_kind() {
-        let json = |e: ApkError| serde_json::to_string(&e).unwrap();
-        assert_eq!(
-            json(ApkError::Network {
-                message: "x".into()
-            }),
-            r#"{"kind":"network","message":"x"}"#
-        );
-        assert_eq!(json(ApkError::Checksum), r#"{"kind":"checksum"}"#);
-        assert_eq!(json(failed("y")), r#"{"kind":"failed","message":"y"}"#);
-    }
-
-    #[tokio::test]
-    async fn get_sends_no_authorization_and_returns_the_body() {
-        let (base, req) = testhttp::serve_once(200, "bytes").await;
-        let res = get(&client().unwrap(), &format!("{base}/x")).await.unwrap();
-        assert_eq!(res.text().await.unwrap(), "bytes");
-        let req = req.await.unwrap();
-        assert!(req.starts_with("get /x "), "{req}");
-        assert!(!req.contains("authorization"), "{req}");
-    }
-
-    #[tokio::test]
-    async fn get_follows_the_github_redirects() {
-        let (base, reqs) = testhttp::serve_script(vec![
-            (302, vec![("location", "/second")], ""),
-            (302, vec![("location", "/third")], ""),
-            (200, vec![], "payload"),
-        ])
-        .await;
-        let res = get(&client().unwrap(), &format!("{base}/first"))
-            .await
-            .unwrap();
-        assert_eq!(res.text().await.unwrap(), "payload");
-        let reqs = reqs.await.unwrap();
-        assert_eq!(reqs.len(), 3);
-        assert!(reqs[1].starts_with("get /second ") && reqs[2].starts_with("get /third "));
-        assert!(reqs.iter().all(|r| !r.contains("authorization")));
-    }
-
-    #[tokio::test]
-    async fn get_maps_a_non_success_status_to_failed() {
-        for status in [403u16, 404, 429, 500] {
-            let (base, _req) = testhttp::serve_once(status, "{}").await;
-            let err = get(&client().unwrap(), &format!("{base}/x"))
-                .await
-                .unwrap_err();
-            let ApkError::Failed { message } = err else {
-                panic!("{status}")
-            };
-            assert!(message.starts_with("GitHub answered "), "{message}");
-            assert!(message.contains(&status.to_string()), "{message}");
-        }
-    }
-
-    #[tokio::test]
-    async fn an_unreachable_host_is_a_network_error() {
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let base = format!("http://{}", listener.local_addr().unwrap());
-        drop(listener);
-        let err = get(&client().unwrap(), &format!("{base}/x"))
-            .await
-            .unwrap_err();
-        assert!(matches!(err, ApkError::Network { .. }), "{err:?}");
     }
 
     fn manifest(version: &str) -> String {

@@ -179,7 +179,7 @@
     ...(connected ? [action('ports', 'palette.ports', EthernetPort, () => app.open('ports'))] : []),
     ...(connected && app.conn.target.kind !== 'local' ? [action('forward-port', 'palette.forwardPort', EthernetPort, () => app.open('ports', 'forward'))] : []),
     ...(updater.enabled && !app.mobile ? [{ id: 'updates', label: ut('check'), icon: RefreshCw, section: 'actions' as const, run: () => updater.check(true) }] : []),
-    ...(apk.enabled && apk.updates ? [{ id: 'apk-updates', label: at('check'), icon: RefreshCw, section: 'actions' as const, run: () => apk.check(true) }] : []),
+    ...(__SELF_UPDATE__ && apk.enabled && apk.updates ? [{ id: 'apk-updates', label: at('check'), icon: RefreshCw, section: 'actions' as const, run: () => apk.check(true) }] : []),
     ...desktopActions,
   ] as Cmd[]).map((c) => (desktop && KEYED[c.id] ? { ...c, keys: hint(KEYED[c.id]) || undefined } : c));
 

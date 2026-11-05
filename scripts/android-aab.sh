@@ -34,6 +34,14 @@ if printf '%s\n' "$manifest" | grep -q 'REQUEST_INSTALL_PACKAGES'; then
   echo "::error title=android aab::$aabs declares REQUEST_INSTALL_PACKAGES; Google Play apps may not install updates themselves (build it with OVERSEER_DISTRIBUTION=play)"
   exit 1
 fi
+if unzip -p "$aabs" 'base/dex/*.dex' | grep -aq 'io/github/basilelt/overseer/ApkInstallerPlugin'; then
+  echo "::error title=android aab::$aabs contains ApkInstallerPlugin; the Google Play build must not ship the in-app APK installer"
+  exit 1
+fi
+if printf '%s\n' "$manifest" | grep -q 'androidx.core.content.FileProvider'; then
+  echo "::error title=android aab::$aabs declares the APK installer's FileProvider"
+  exit 1
+fi
 mkdir -p "$(dirname "$out")"
 cp "$aabs" "$out"
 (cd "$(dirname "$out")" && sha256sum "$(basename "$out")" >"$(basename "$out").sha256")

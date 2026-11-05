@@ -39,6 +39,10 @@ if ! "$aapt2" dump permissions "$apks" | grep -q 'android.permission.REQUEST_INS
   echo "::error title=android apk::$apks lacks REQUEST_INSTALL_PACKAGES, so its in-app updater cannot install updates (was it built with OVERSEER_DISTRIBUTION=play?)"
   exit 1
 fi
+if ! unzip -p "$apks" 'classes*.dex' | grep -aq 'io/github/basilelt/overseer/ApkInstallerPlugin'; then
+  echo "::error title=android apk::$apks does not contain ApkInstallerPlugin, so its in-app updater cannot install updates"
+  exit 1
+fi
 mkdir -p "$(dirname "$out")"
 cp "$apks" "$out"
 (cd "$(dirname "$out")" && sha256sum "$(basename "$out")" >"$(basename "$out").sha256")

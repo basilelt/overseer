@@ -110,22 +110,34 @@ on Play stays out of CI.
   key with Play App Signing and uses it as the upload key, so the GitHub APK and the Play build
   share one signing certificate. The AAB is the `play-android` artifact, not an `app-*` one, so it
   is never attached to the GitHub Release.
-- **No self-update on Play.** Play policy forbids an app it distributes from installing updates
-  itself. The Play build drops `REQUEST_INSTALL_PACKAGES` and never shows or runs the in-app
-  updater. One switch, `OVERSEER_DISTRIBUTION=play`, set only on the AAB step, drives both:
-  - Gradle points the `release` source set's manifest at `src/play/AndroidManifest.xml`, which
-    removes the permission through the manifest merger (`tools:node="remove"`);
-  - `build.rs` turns it into the compile-time `OVERSEER_DISTRIBUTION` env (`github` or `play`);
-    `apk_update_status` then reports `supported: false`, and the check, download and install
-    commands refuse to run. The web view starts the updater only after `apk_update_status`
-    confirms it is supported, so no update entry (pill, Settings row, More row, command palette)
-    is shown on a Play build and GitHub is never asked.
+- **No self-update on Play, removed at build time.** Play policy forbids an app it distributes
+  from installing updates itself, so the Play build does not contain the in-app updater at all;
+  hiding it at run time is not enough. One switch, `OVERSEER_DISTRIBUTION=play`, set only on the
+  AAB step, drives every layer:
+  - Rust: `build.rs` sets the `self_update` cfg unless the distribution is `play` or the target
+    is iOS (`src/distribution.rs`, shared with the build script and unit-tested). `apk_update`
+    (the release check, download, checksum, installer plugin and its five commands) is compiled
+    only under `self_update`; the HTTP helpers the server download to a host also uses live in
+    `release_http`, which every build keeps.
+  - Kotlin: `ApkInstallerPlugin.kt` lives in `app/src/selfupdate/java`, a source directory Gradle
+    adds only when the distribution is not `play`. The Play build's `release` manifest is
+    `app/src/play/AndroidManifest.xml`, which removes `REQUEST_INSTALL_PACKAGES` and the
+    installer's `FileProvider` through the manifest merger (`tools:node="remove"`).
+  - Web view: `vite.config.ts` defines `__SELF_UPDATE__` from the same variable and from
+    `TAURI_ENV_PLATFORM` (false for `play` and for iOS). Every entry point (update pill, Settings
+    row, More row, command palette, the updater start and its sheet) is behind that constant, so
+    the bundler drops `apk-update.svelte.ts` and the `ApkUpdate*` components from those builds.
+    `app/src/lib/perf/bundle.test.ts` builds the Play and iOS bundles and checks that no updater
+    module or command name is left.
+  - Checks on the artifacts: `scripts/android-aab.sh` fails if the AAB declares
+    `REQUEST_INSTALL_PACKAGES` or the `FileProvider`, or if its dex contains
+    `ApkInstallerPlugin`; `scripts/android-apk.sh` fails if the GitHub APK lacks either.
 
-  A product flavor was the alternative. Tauri already uses the `abi` flavor dimension and looks
-  for its outputs by path; a second dimension would rename every output and need CLI plumbing.
-  An environment variable keeps the paths, and the manifest and the Rust side read the same value.
-  `scripts/android-apk.sh` fails if the GitHub APK lacks the permission; `scripts/android-aab.sh`
-  fails if the AAB declares it.
+  iOS never used the updater (`apk_update_status` reported it unsupported); it is now left out of
+  the iOS build the same way. A Cargo feature or a Gradle product flavor was the alternative.
+  Tauri already uses the `abi` flavor dimension and finds its outputs by path, and the Tauri CLI
+  would need a feature flag on one of two builds; an environment variable read by `build.rs`,
+  Gradle and Vite keeps the output paths and gives the three layers one source of truth.
 - **16 KB pages.** Play requires 16 KB aligned native libraries for apps targeting Android 15+.
   Both Android jobs build with the newest NDK on the runner (`ANDROID_NDK_LATEST_HOME`, r28 or
   later, whose linker aligns to 16 KB by default), and `scripts/android-16k.sh` checks every

@@ -113,8 +113,9 @@ show up in TestFlight after Apple's processing (usually 10 to 30 minutes after t
     set) with `apksigner` (`scripts/android-apk.sh`), checks 16 KB page alignment
     (`scripts/android-16k.sh`), and hands the APK to `publish`. The release does not wait for it
     to succeed. It then builds the Google Play App Bundle with `OVERSEER_DISTRIBUTION=play`
-    (`pnpm tauri android build --aab --target aarch64 --target armv7`, no
-    `REQUEST_INSTALL_PACKAGES`, no in-app updater), checks its signature, permissions and
+    (`pnpm tauri android build --aab --target aarch64 --target armv7`; the in-app updater is
+    not compiled into it: no Rust module, no Kotlin plugin, no web view code, no
+    `REQUEST_INSTALL_PACKAGES`), checks its signature, manifest, dex and
     alignment (`scripts/android-aab.sh`, `scripts/android-16k.sh`) and keeps it as the
     `play-android` artifact. A failure there does not fail the job or the APK.
   - `app-android-play` on `ubuntu-slim`, after `app-android`: checks `PLAY_TRACK` and
@@ -266,8 +267,8 @@ checked. After a forced Android run, re-apply the hand edits to `app/src-tauri/g
 
 - the release signing block and the SDK level (36, preinstalled on the hosted runner) in
   `app/build.gradle.kts`;
-- `app/src/main/java/io/github/basilelt/overseer/ApkInstallerPlugin.kt` (the in-app installer, keep the
-  file);
+- `app/src/selfupdate/java/io/github/basilelt/overseer/ApkInstallerPlugin.kt` (the in-app installer,
+  outside `src/main` so the Google Play build leaves it out; keep the file);
 - `<uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />` in
   `app/src/main/AndroidManifest.xml`, and the `OVERSEER_DISTRIBUTION` block in
   `app/build.gradle.kts` with `app/src/play/AndroidManifest.xml` (removes it for Google Play). The installer also relies on the generated `FileProvider`

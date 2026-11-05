@@ -1,5 +1,6 @@
 import { defineConfig, type Plugin } from 'vitest/config';
 import { svelte } from '@sveltejs/vite-plugin-svelte';
+import { selfUpdate } from './src/lib/mobile/self-update';
 
 // ghostty-web inlines its WASM as a base64 data URL inside Ghostty.load(); terminal.ts loads the
 // emitted ghostty-vt.wasm asset with Ghostty.load(url) instead, so that literal is dead weight.
@@ -41,6 +42,7 @@ function ghosttyPatches(): Plugin {
 export default defineConfig({
   plugins: [svelte(), ghosttyPatches()],
   clearScreen: false,
+  define: { __SELF_UPDATE__: JSON.stringify(selfUpdate()) },
   server: { port: 1420, strictPort: true, watch: { ignored: ['**/src-tauri/**'] } },
   build: {
     target: 'es2022',

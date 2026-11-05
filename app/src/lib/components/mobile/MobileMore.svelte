@@ -106,7 +106,7 @@
     {#each tools as tool, i (i)}
       <button class="row" disabled={tool.disabled?.()} onclick={tool.run}><tool.icon size={18} /><span class="label">{tool.label()}</span>{#if tool.badge?.()}<span class="badge">{tool.badge()}</span>{/if}<ChevronRight size={16} /></button>
     {/each}
-    {#if apk.enabled && apk.updates}
+    {#if __SELF_UPDATE__ && apk.enabled && apk.updates}
       {@const pending = pillLabel(apk)}
       <button class="row" onclick={() => (pending ? (apk.sheet = true) : apk.check(true))}>
         <Download size={18} />

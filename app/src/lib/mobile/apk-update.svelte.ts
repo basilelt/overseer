@@ -281,7 +281,7 @@ const lazy: ApkBackend = {
   openUrl: async (u) => (await tauriBackend()).openUrl(u),
 };
 
-export const apk = new ApkUpdater(null);
+export const apk = /* @__PURE__ */ new ApkUpdater(null);
 
 export function startApkUpdater(os: string, onResume: (fn: () => void) => () => void): () => void {
   if ((os !== 'android' && os !== 'ios') || !isTauri()) return () => {};
