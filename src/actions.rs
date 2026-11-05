@@ -352,11 +352,22 @@ fn execute_hold(
 pub fn hold(ctx: &Ctx, q: &str, apply: bool) -> Result<Report, String> {
     let lines = scan(ctx)?;
     let l = find_line(&lines, q)?;
-    Ok(hold_line(ctx, l, apply, true, false))
+    Ok(hold_line(ctx, l, apply, true, false, false))
 }
 
-pub(crate) fn hold_line(ctx: &Ctx, l: &Line, apply: bool, stub: bool, shell: bool) -> Report {
-    let checks = evaluate(&hold_input(ctx, l));
+pub(crate) fn hold_line(
+    ctx: &Ctx,
+    l: &Line,
+    apply: bool,
+    stub: bool,
+    shell: bool,
+    force: bool,
+) -> Report {
+    let checks = if force {
+        vec![]
+    } else {
+        evaluate(&hold_input(ctx, l))
+    };
     let mut r = Report {
         line_id: l.id.clone(),
         steps: hold_steps(ctx, l, stub),
@@ -388,14 +399,20 @@ pub(crate) fn hold_line(ctx: &Ctx, l: &Line, apply: bool, stub: bool, shell: boo
     r
 }
 
-pub fn close(ctx: &Ctx, q: &str, apply: bool, shell: bool) -> Result<Report, String> {
+pub fn close(ctx: &Ctx, q: &str, apply: bool, shell: bool, force: bool) -> Result<Report, String> {
     let lines = scan(ctx)?;
-    close_line(ctx, find_line(&lines, q)?, apply, shell)
+    close_line(ctx, find_line(&lines, q)?, apply, shell, force)
 }
 
-pub(crate) fn close_line(ctx: &Ctx, l: &Line, apply: bool, shell: bool) -> Result<Report, String> {
+pub(crate) fn close_line(
+    ctx: &Ctx,
+    l: &Line,
+    apply: bool,
+    shell: bool,
+    force: bool,
+) -> Result<Report, String> {
     let mut r = if l.alive() {
-        let mut h = hold_line(ctx, l, apply, false, shell);
+        let mut h = hold_line(ctx, l, apply, false, shell, force);
         if h.ok() {
             h.steps.push(format!("mark {} hung-up", l.id));
         }

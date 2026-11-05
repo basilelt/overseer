@@ -7,6 +7,7 @@ pub mod broadcast;
 pub mod chat;
 pub mod claude;
 pub mod claude_limits;
+pub mod cli;
 pub mod codex;
 pub mod daemon;
 pub mod deliver;

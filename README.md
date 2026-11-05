@@ -10,6 +10,20 @@
 </p>
 
 <p align="center">
+  <a href="https://github.com/basilelt/overseer/releases/latest"><img src="https://img.shields.io/badge/GitHub-Latest_release-181717?style=for-the-badge&logo=github&logoColor=white" alt="GitHub Latest release"></a>
+  <a href="https://apps.obtainium.imranr.dev/redirect?r=obtainium://app/%7B%22id%22%3A%22io.github.basilelt.overseer%22%2C%22url%22%3A%22https%3A%2F%2Fgithub.com%2Fbasilelt%2Foverseer%22%2C%22author%22%3A%22basilelt%22%2C%22name%22%3A%22Overseer%22%2C%22preferredApkIndex%22%3A0%2C%22additionalSettings%22%3A%22%7B%5C%22includePrereleases%5C%22%3Afalse%2C%5C%22apkFilterRegEx%5C%22%3A%5C%22Overseer_.%2A_android%5C%5C%5C%5C.apk%5C%22%2C%5C%22invertAPKFilter%5C%22%3Afalse%7D%22%2C%22overrideSource%22%3A%22GitHub%22%7D"><img src="https://img.shields.io/badge/Obtainium-Android-5C2D91?style=for-the-badge&logo=obtainium&logoColor=white" alt="Obtainium Android"></a>
+  <a href="#google-play-closed-testing"><img src="https://img.shields.io/badge/Google_Play-Beta-01875F?style=for-the-badge&logo=googleplay&logoColor=white" alt="Google Play Beta"></a>
+  <a href="https://testflight.apple.com/join/DZgZFcMk"><img src="https://img.shields.io/badge/TestFlight-iOS_beta-0D96F6?style=for-the-badge&logo=apple&logoColor=white" alt="TestFlight iOS beta"></a>
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/App_Store-Coming_soon-lightgrey?style=for-the-badge&logo=appstore&logoColor=white" alt="App Store Coming soon">
+  <img src="https://img.shields.io/badge/Google_Play-Coming_soon-lightgrey?style=for-the-badge&logo=googleplay&logoColor=white" alt="Google Play Coming soon">
+  <img src="https://img.shields.io/badge/Mac_App_Store-Coming_soon-lightgrey?style=for-the-badge&logo=apple&logoColor=white" alt="Mac App Store Coming soon">
+  <img src="https://img.shields.io/badge/Microsoft_Store-Coming_soon-lightgrey?style=for-the-badge&logoColor=white" alt="Microsoft Store Coming soon">
+</p>
+
+<p align="center">
   <a href="#install">Install</a> ·
   <a href="#features">Features</a> ·
   <a href="docs/user-guide.md">User guide</a> ·
@@ -260,6 +274,29 @@ and [AGENTS.md](AGENTS.md) holds the rules every change follows (stability, ener
 draft PR per feature). [app/README.md](app/README.md) covers the app's development loop and the
 mock daemon. `make test` and `make lint` run offline; tmux tests use an isolated server. Report
 security problems privately, as described in [SECURITY.md](SECURITY.md).
+
+### Develop while using the installed app
+
+`scripts/dev.sh` runs Overseer built from your checkout next to the Overseer you use every day,
+without touching it: the dev daemon gets its own `HOME`, state directory and tmux server under
+`~/.overseer-dev` (`OVERSEER_DEV_DIR` changes it), and the dev desktop app runs under its own
+bundle id, `io.github.basilelt.overseer.dev`, so its settings, windows and macOS permissions are
+separate too.
+
+```sh
+scripts/dev.sh up       # build the daemon from this checkout and start it
+scripts/dev.sh app      # desktop app in dev mode (pnpm tauri dev) on the dev daemon
+scripts/dev.sh status   # is the dev daemon running?
+scripts/dev.sh down     # stop the dev daemon; its tmux sessions keep running
+scripts/dev.sh reset    # stop everything dev and delete ~/.overseer-dev
+```
+
+No code signing is needed: `tauri dev` runs an unbundled binary you built, which Gatekeeper does
+not block. Signing only concerns the released `.app` (see [docs/ci.md](docs/ci.md#macos-signing)).
+The dev app is a different app to macOS, so it may ask for Local Network access on its own. The dev `HOME` starts
+with a copy of your `~/.gitconfig` and nothing else: agents started from the dev daemon are not
+logged in until you log in from one of its terminals (for example `claude`, then `/login`). For UI work
+alone, `pnpm dev` in `app/` runs the frontend in a browser on the mock daemon.
 
 ## Documentation
 

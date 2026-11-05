@@ -443,6 +443,26 @@ describe('runShortcut: tabs', () => {
     expect(workspace.layout.panes[0].tabs).toEqual(['browser:a']);
   });
 
+  it('skips closed terminals that were deleted from the daemon', () => {
+    app.items = [{ key: 'term:t1', termId: 't1', kind: 'shell' }];
+    app.data.terms = [{ id: 't1', exited: true }];
+    setLayout(layoutFromTabs(['term:t1', 'browser:a'], 'term:t1'));
+    closeTabKey('term:t1', true);
+    app.data.terms = [];
+    runShortcut({ id: 'reopenTab' });
+    expect(workspace.layout.panes[0].tabs).toEqual(['browser:a']);
+    expect(app.select).not.toHaveBeenCalledWith('term:t1');
+  });
+
+  it('reopens a closed terminal that still exists', () => {
+    app.items = [{ key: 'term:t1', termId: 't1', kind: 'shell' }];
+    app.data.terms = [{ id: 't1', exited: false }];
+    setLayout(layoutFromTabs(['term:t1', 'browser:a'], 'term:t1'));
+    closeTabKey('term:t1', false);
+    runShortcut({ id: 'reopenTab' });
+    expect(workspace.layout.panes[0].tabs).toContain('term:t1');
+  });
+
   it('re-attaches a reopened live session that has no terminal yet', async () => {
     const item = { key: 'line:a', lineId: 'a' };
     app.items = [item];

@@ -737,10 +737,11 @@ export class MockDaemon implements DaemonClient {
     if ((r = m(/^\/v1\/lines\/([^/]+)\/chat\/agents\/([^/]+)$/))) return this.agentChat(decodeURIComponent(r[1]), decodeURIComponent(r[2]), new URLSearchParams(qs));
     if ((r = m(/^\/v1\/lines\/([^/]+)\/(chat|screen|keys|commands)$/))) return this.chatRoute(decodeURIComponent(r[1]), r[2], new URLSearchParams(qs), body);
     if (method === 'PUT' && (r = m(/^\/v1\/(lines|terms)\/([^/]+)\/workspace$/))) return this.assignWorkspace(r[1], decodeURIComponent(r[2]), body);
-    if ((r = m(/^\/v1\/lines\/([^/]+)\/(activity|diff|hold|close|resume|pin|title)$/))) return this.lineAction(decodeURIComponent(r[1]), r[2], body, !fullPath.includes('dryRun=false'));
+    if ((r = m(/^\/v1\/lines\/([^/]+)\/(activity|diff|hold|close|resume|pin|title)$/))) return this.lineAction(decodeURIComponent(r[1]), r[2], body, !fullPath.includes('dryRun=false'), fullPath.includes('force=true'));
     if ((r = m(/^\/v1\/(workspaces|folders|groups)(?:\/([^/]+))?$/))) return this.wsRoute(method, r[1] as WsKind, r[2] && decodeURIComponent(r[2]), body);
     if (method === 'POST' && path === '/v1/broadcast') return this.broadcast(body);
     if (method === 'POST' && (r = m(/^\/v1\/ports\/([^/]+)\/kill$/))) return this.killPortProcess(decodeURIComponent(r[1]), body);
+    if (method === 'DELETE' && (r = m(/^\/v1\/terms\/([^/]+)$/))) return this.deleteTerm(decodeURIComponent(r[1]));
     if ((r = m(/^\/v1\/terms\/([^/]+)\/(resize|kill|title)$/))) return this.termAction(decodeURIComponent(r[1]), r[2], body);
     if (method === 'GET' && path === '/v1/tasks/auto-organize') return { enabled: this.autoOrganize };
     if (method === 'PUT' && path === '/v1/tasks/auto-organize') {
@@ -816,7 +817,7 @@ export class MockDaemon implements DaemonClient {
     return l;
   }
 
-  private lineAction(id: string, action: string, body: any, dry = false): unknown {
+  private lineAction(id: string, action: string, body: any, dry = false, force = false): unknown {
     const l = this.findLine(id);
     if (dry && (action === 'hold' || action === 'close')) {
       const running = l.line.state !== 'held' && l.line.state !== 'hung-up';
@@ -831,13 +832,19 @@ export class MockDaemon implements DaemonClient {
     }
     switch (action) {
       case 'activity':
-        if (!this.agents.find((a) => a.id === l.line.agent)?.sessions) throw new DaemonError(409, `no session files for ${l.line.agent}`);
-        return structuredClone(this.activity[id]);
+        if (!this.agents.find((a) => a.id === l.line.agent)?.sessions || !this.activity[id]) {
+          return { lineId: id, title: l.local?.title ?? '', goal: '', status: l.line.state, needsInput: !!l.local?.needsInput, busy: !!l.local?.busy, workLog: [], todos: [], editedFiles: [], lastAssistantText: '', transcript: false } satisfies Activity;
+        }
+        return { ...structuredClone(this.activity[id]), transcript: true };
       case 'diff':
         if (l.line.repo === 'unknown') throw new DaemonError(409, 'fatal: not a git repository (or any of the parent directories): .git');
         return { lineId: id, worktree: l.line.worktreePath ?? '', status: ' M src/term.rs\n M tests/term.rs', stat: ' 2 files changed, 21 insertions(+), 3 deletions(-)', diff: bigDiff() ? bigPatch() : DIFF, truncated: false } satisfies Diff;
       case 'hold':
       case 'close': {
+        if (l.local?.busy && !force) {
+          const plan = { lineId: id, action: 'none', steps: [], predicates: { atPrompt: { ok: false, detail: 'turn in progress' } } };
+          throw new DaemonError(409, 'HTTP 409', plan);
+        }
         const from = l.line.state;
         l.line.state = action === 'hold' ? 'held' : 'hung-up';
         l.local = { ...l.local, busy: false, needsInput: false, heldReason: action === 'hold' ? 'user' : undefined };
@@ -1012,6 +1019,14 @@ export class MockDaemon implements DaemonClient {
     }
   }
 
+  private deleteTerm(id: string): unknown {
+    const t = this.terms.find((x) => x.id === id);
+    if (!t) throw new DaemonError(404, `unknown term ${id}`);
+    if (!t.exited) throw new DaemonError(409, 'term is still running; kill it first');
+    this.terms = this.terms.filter((x) => x.id !== id);
+    return { deleted: id };
+  }
+
   private termAction(id: string, action: string, body: any): unknown {
     const t = this.terms.find((x) => x.id === id);
     if (!t) throw new DaemonError(404, `unknown term ${id}`);
@@ -1028,7 +1043,7 @@ export class MockDaemon implements DaemonClient {
       if (!body?.confirm) throw new DaemonError(400, 'confirm required');
       if (t.exited) throw new DaemonError(409, 'term already exited');
       t.exited = true;
-      t.exitCode = 130;
+      t.exitCode = 1;
       this.emit('term.exited', { term: t });
     }
     return structuredClone(t);
@@ -1918,7 +1933,7 @@ export class MockDaemon implements DaemonClient {
     if (!Number.isInteger(pid) || pid < 0 || pid > 0xffffffff) throw new DaemonError(400, 'pid (number) required');
     if (body?.confirm !== true) throw new DaemonError(400, 'kill needs {"confirm":true}');
     const p = this.detected.find((x) => x.port === port && x.pid === pid);
-    if (!p) throw new DaemonError(404, `no process ${pid} listening on port ${port} in a Overseer terminal`);
+    if (!p) throw new DaemonError(404, `no process ${pid} listening on port ${port} in an Overseer terminal`);
     this.detected = this.detected.filter((x) => x !== p);
     this.publishPorts();
     return structuredClone(p);

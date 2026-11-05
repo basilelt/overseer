@@ -71,7 +71,29 @@
       ws.onclose = () => send(ch, []);
     });
   }
+  const MAX_UPLOAD = 50 << 20, pastes = new Map();
+  const bytesOf = (b) => b instanceof Uint8Array ? b : b instanceof ArrayBuffer ? new Uint8Array(b) : Array.isArray(b) ? Uint8Array.from(b) : null;
   const handlers = {
+    save_paste: (a, o) => {
+      const bytes = bytesOf(a); if (!bytes) throw 'expected bytes';
+      if (bytes.length > MAX_UPLOAD) throw 'larger than the 50 MiB upload limit';
+      const raw = decodeURIComponent((o?.headers ?? {})['x-name'] ?? '');
+      const base = raw.split(/[\\/]/).pop().replace(/[^\w.\- ]/g, '_').replace(/^\.+/, '') || 'paste';
+      const path = '/tmp/overseer-paste/' + Date.now() + '-' + base;
+      pastes.set(path, bytes);
+      return path;
+    },
+    upload_file: async (a) => {
+      const bytes = pastes.get(a.path);
+      if (!bytes) throw a.path + ': No such file or directory (os error 2)';
+      send(a.onProgress, { sent: 0, total: bytes.length });
+      const name = a.path.split('/').pop();
+      const r = await fetch(BASE + '/v1/uploads?name=' + encodeURIComponent(name), { method: 'POST', body: bytes });
+      const t = await r.text(); let b = null; try { b = t ? JSON.parse(t) : null; } catch {}
+      if (!r.ok) throw (b && typeof b.error === 'string' && b.error) || 'upload failed: HTTP ' + r.status;
+      send(a.onProgress, { sent: bytes.length, total: bytes.length });
+      return b;
+    },
     daemon_request: (a) => req(a.method, a.path, a.body),
     daemon_bytes: async (a) => { const r = await fetch(BASE + a.path); if (!r.ok) { const t = await r.text(); let e = `HTTP ${r.status}`; try { e = JSON.parse(t).error || e; } catch {} throw { status: r.status, error: e }; } send(a.onData, Array.from(new Uint8Array(await r.arrayBuffer()))); },
     daemon_events: (a) => events(a.onEvent),
@@ -88,6 +110,18 @@
     app_platform: () => { const os = new URLSearchParams(location.search).get('qaos'); return os ? { os, mobile: os === 'android' || os === 'ios' } : { os: 'linux', mobile: false }; },
     'plugin:clipboard-manager|write_text': (a) => { window.__qaClip = a.text; return null; },
     'plugin:clipboard-manager|read_text': () => window.__qaClip ?? '',
+    browsers_list: () => [{ id: 'qa-browser', name: 'QA Browser' }],
+    browser_open_with: (a) => { (window.__qaOpened ??= []).push({ via: a.id, url: a.url }); return null; },
+    open_external: (a) => { (window.__qaOpened ??= []).push({ via: 'system', url: a.url }); return null; },
+    local_network_status: (a) => ({ status: 'notApplicable', host: a?.host ?? null, addresses: [], private: false }),
+    diag_pong: () => null,
+    diag_previous: () => null,
+    mobile_system_dark: () => null,
+    mobile_system_bars: () => null,
+    'plugin:window|set_badge_count': () => null,
+    'plugin:window|theme': () => 'dark',
+    'plugin:app|register_listener': () => null,
+    'plugin:notification|register_listener': () => null,
     save_download: (a, o) => { window.__qaDownload = { name: decodeURIComponent(o?.headers?.['x-name'] ?? ''), size: a?.byteLength ?? a?.length ?? 0 }; return '/home/qa/Downloads/' + window.__qaDownload.name; },
     conn_connect: async (a) => { if (watch) watch.stop = true; send(a.onState, { phase: 'connected', target: a.target, version: (await alive()) ?? '0.2.0' }); monitor(a.onState, a.target); },
     conn_disconnect: () => { if (watch) watch.stop = true; watch = null; wake?.(); wake = null; up = Promise.resolve(); return null; },

@@ -4,7 +4,7 @@
   import { app } from '../state.svelte';
   import { gitApi } from './api';
   import { SvelteSet } from 'svelte/reactivity';
-  import { chosen, cleanupTargets, planLines, runCleanup } from './cleanup';
+  import { chosen, cleanedMessage, cleanupTargets, planLines, runCleanup } from './cleanup';
   import { gt } from './strings';
   import type { CleanupPlan, Worktree } from './types';
 
@@ -32,7 +32,7 @@
     const r = await runCleanup(gitApi(app.client!), picked, (id) => byId.get(id)?.project);
     busy = false;
     if (r.failed.length) app.notify(r.failed.map((f) => f.error).join(' · '), 'error');
-    if (r.done.length) app.notify(gt('cleaned', { n: r.done.length }));
+    if (r.done.length) app.notify(cleanedMessage(r.done.length));
     ondone?.();
     onclose();
   }

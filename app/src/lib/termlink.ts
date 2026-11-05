@@ -16,6 +16,7 @@ export interface LinkDeps {
 export interface TermLink {
   attach(): Promise<void>;
   reattach(): void;
+  resume(): void;
   dispose(): void;
 }
 
@@ -29,6 +30,7 @@ export function termLink(deps: LinkDeps): TermLink {
   let since = 0;
   let timer: ReturnType<typeof setTimeout> | undefined;
   let disposed = false;
+  let stalled = false;
 
   const drop = () => {
     const prev = io;
@@ -44,6 +46,7 @@ export function termLink(deps: LinkDeps): TermLink {
     if (error !== undefined) deps.failed(error);
     const wait = deps.retryMs(attempt, error);
     if (wait === null) {
+      stalled = error !== undefined;
       if (error === undefined) deps.ended();
       return;
     }
@@ -60,6 +63,7 @@ export function termLink(deps: LinkDeps): TermLink {
     if (disposed) return;
     clearTimeout(timer);
     timer = undefined;
+    stalled = false;
     const g = ++gen;
     drop();
     pending = true;
@@ -97,6 +101,10 @@ export function termLink(deps: LinkDeps): TermLink {
     attach: () => attach(0),
     reattach() {
       if (disposed || (!io && !pending)) return;
+      void attach(0);
+    },
+    resume() {
+      if (disposed || !stalled) return;
       void attach(0);
     },
     dispose() {
