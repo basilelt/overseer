@@ -115,6 +115,7 @@ Each step is **Do → Expect**. Check every screenshot for overlaps, clipped tex
 - **I2** Theme light and dark → both readable on every screen you visited.
 - **I3** Server: **Keep server running after reboot**, and **After a server reboot or restart** (Restore agent sessions, shells only, Nothing) → the choice is saved (`GET /v1/lifecycle`).
 - **I4** Notifications: **Send test**, per-event choices → saved. Profiles: **Edit…** opens and saves.
+- **I9** Profiles: in **Agents & models**, select a custom profile, open the Claude Code section, change Model, Subagent model and a named subagent's model one after the other → the section stays open after each pick and the cost index updates.
 - **I5** Sidebar: open Settings, then General, Terminal, Agents, Notifications, Connection, Updates, Help in turn → each shows only its own sections; categories with no section for this machine are absent. Change one setting per category, reload → each is kept.
 - **I6** Search: type `notif`, then `reboot` → only the matching rows stay, highlighted, with a count per category; in Notifications, Connection (server) and Updates the other rows of the section are hidden too. Type `zzzz` → an empty state. In Français, type an accented word (`échoue`) and the same without the accent → same rows. **Esc** clears the search, a second **Esc** closes Settings.
 - **I7** Language from the new layout: switch it in General → the sidebar, the search placeholder and the rows change language at once.
