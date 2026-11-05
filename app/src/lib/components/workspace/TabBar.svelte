@@ -117,7 +117,7 @@
       update((l) => openInFocused({ ...l, focused: index }, key));
       app.selectedKey = key;
     };
-    const project = app.projectFor(app.sidebarMode === 'workspaces' ? app.currentWorkspace?.path : undefined) ?? app.projectFor(activeItem?.lineId ? app.data.lines.find((l) => l.line.id === activeItem.lineId)?.line.worktreePath : undefined) ?? app.projects[0]?.path;
+    const project = app.projectFor(app.sidebarMode === 'workspaces' ? app.currentWorkspace?.path ?? undefined : undefined) ?? app.projectFor(activeItem?.lineId ? app.data.lines.find((l) => l.line.id === activeItem.lineId)?.line.worktreePath : undefined) ?? app.projects[0]?.path;
     return [
       ...agents.map((a) => ({ label: a.name, agent: a.id, default: a.id === settings.defaultAgent, disabled: !a.installed, hint: a.installed ? undefined : (a.install ?? t('agents.notInstalled')), run: start(a.id) })),
       { label: t('tabs.inCheckout'), checked: settings.sessionsInCheckout, run: () => saveSettings({ sessionsInCheckout: !settings.sessionsInCheckout }) },

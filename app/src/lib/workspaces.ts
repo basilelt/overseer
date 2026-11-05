@@ -38,7 +38,8 @@ const prefixIndexes = new WeakMap<Workspace[], PrefixIndex>();
 function prefixIndex(workspaces: Workspace[]): PrefixIndex {
   let ix = prefixIndexes.get(workspaces);
   if (!ix) {
-    ix = { roots: workspaces.map((w) => ({ w, dir: w.path.replace(/\/+$/, '') || '/' })), hits: new Map() };
+    // A subject has no directory, so it never matches by path.
+    ix = { roots: workspaces.filter((w) => w.path != null).map((w) => ({ w, dir: w.path!.replace(/\/+$/, '') || '/' })), hits: new Map() };
     prefixIndexes.set(workspaces, ix);
   }
   return ix;
@@ -49,9 +50,13 @@ function longestPrefix(path: string | undefined, workspaces: Workspace[]): Works
   const ix = prefixIndex(workspaces);
   if (ix.hits.has(path)) return ix.hits.get(path);
   let best: Workspace | undefined;
+  let bestLen = -1;
   for (const { w, dir } of ix.roots) {
     const inside = path === dir || path.startsWith(dir === '/' ? '/' : `${dir}/`);
-    if (inside && (!best || w.path.length > best.path.length)) best = w;
+    if (inside && w.path!.length > bestLen) {
+      best = w;
+      bestLen = w.path!.length;
+    }
   }
   if (ix.hits.size > 4096) ix.hits.clear();
   ix.hits.set(path, best);
@@ -108,7 +113,7 @@ export function lineWorkspace(l: LocalLine, ix: MemberIndex): Workspace | undefi
   const path = cwd && wt && within(cwd, wt) ? cwd : wt || cwd;
   const p = longestPrefix(path, ix.workspaces);
   const r = longestPrefix(l.line.repo ? repoRoot(ix.repoRoots.get(l.line.repo), path) : undefined, ix.workspaces);
-  if (r && (!p || !within(p.path, r.path))) return r;
+  if (r && (!p || !within(p.path!, r.path!))) return r;
   return p;
 }
 

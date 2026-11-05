@@ -76,7 +76,7 @@
         <hr />
         <div class="profile">
           <span class="faint">{t('profile.next')}</span>
-          <ProfileSelect value={app.nextProfile ?? ''} cwd={app.currentWorkspace?.path} onchange={(id) => (app.nextProfile = id || null)} />
+          <ProfileSelect value={app.nextProfile ?? ''} cwd={app.currentWorkspace?.path ?? app.currentWorkspace?.cwd ?? undefined} onchange={(id) => (app.nextProfile = id || null)} />
         </div>
       {/if}
     </div>

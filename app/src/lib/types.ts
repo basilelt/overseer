@@ -158,6 +158,7 @@ export interface NewTerm {
   title?: string;
   lineId?: string;
   taskId?: string;
+  workspaceId?: string;
   worktree?: boolean | { branch?: string; base?: string; slug?: string };
 }
 
@@ -612,7 +613,11 @@ export interface SshHost {
 export interface Workspace {
   id: string;
   name: string;
-  path: string;
+  /** Null for a subject, which has no directory of its own. */
+  path: string | null;
+  kind?: 'dir' | 'subject';
+  /** Default working directory of a subject; null for a dir. */
+  cwd?: string | null;
   station?: string;
   folderId: string | null;
   pinned: boolean;

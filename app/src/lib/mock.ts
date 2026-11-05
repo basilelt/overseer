@@ -1076,7 +1076,7 @@ export class MockDaemon implements DaemonClient {
     const w = this.workspaces.find((x) => x.id === wid) as (Workspace & { kind?: string; cwd?: string | null }) | undefined;
     if (!w) throw new DaemonError(404, `no workspace ${wid}`);
     const { workspaceId: _w, ...rest } = body;
-    const term = this.startTerm({ ...rest, cwd: rest.cwd ?? (w.kind === 'subject' ? w.cwd! : w.path) });
+    const term = this.startTerm({ ...rest, cwd: rest.cwd ?? (w.kind === 'subject' ? w.cwd! : w.path!) });
     term.workspaceId = w.id;
     return term;
   }

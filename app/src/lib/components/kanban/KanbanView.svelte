@@ -33,7 +33,7 @@
   const FALLBACK = ['#64748b', '#0891b2', '#7c3aed', '#db2777', '#65a30d', '#ea580c'];
 
   let search = $state('');
-  let project = $state(app.sidebarMode === 'workspaces' && app.currentWorkspace ? app.currentWorkspace.path : '');
+  let project = $state(app.sidebarMode === 'workspaces' && app.currentWorkspace ? (app.currentWorkspace.path ?? '') : '');
   let collapsed = $state<Record<string, boolean>>({ completed: true });
   let refreshing = $state(false);
   let live = $state('');
