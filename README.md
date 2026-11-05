@@ -136,8 +136,10 @@ brew install overseer
 
 Upgrade with `brew update && brew upgrade --cask overseer && brew upgrade overseer`.
 
-The app is not signed yet. If macOS refuses to open it, run
-`xattr -dr com.apple.quarantine /Applications/Overseer.app` once.
+The app is signed with a Developer ID and notarized by Apple, so macOS opens it without a
+warning. Each release asset carries a build provenance attestation:
+`gh attestation verify <file> --repo basilelt/overseer` checks a download came from this
+repository's release workflow.
 
 ### Linux and Windows
 

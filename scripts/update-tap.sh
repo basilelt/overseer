@@ -49,18 +49,19 @@ mkdir -p "$tap/Casks" "$tap/Formula"
 if jq -e --arg n "$dmg" 'any(.[]; .name == $n)' <<<"$assets" >/dev/null; then
   url[$dmg]=$(asset_url "$dmg")
   sum[$dmg]=$(sha "$dmg")
+  v='#{version}'
   cat >"$tap/Casks/overseer.rb" <<RUBY
 cask "overseer" do
   version "$version"
   sha256 "${sum[$dmg]}"
 
-  url "${url[$dmg]}"
+  url "${url[$dmg]//$version/$v}"
   name "Overseer"
   desc "Desktop client for Overseer agent sessions"
   homepage "https://github.com/$repo"
 
-  depends_on :macos
   depends_on arch: :arm64
+  depends_on :macos
 
   app "Overseer.app"
 
@@ -88,7 +89,6 @@ cat >"$tap/Formula/overseer.rb" <<RUBY
 class Overseer < Formula
   desc "Daemon and CLI that supervise coding agent sessions"
   homepage "https://github.com/$repo"
-  version "$version"
 
   on_macos do
     on_arm do
