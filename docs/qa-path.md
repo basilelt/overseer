@@ -87,6 +87,7 @@ Each step is **Do → Expect**. Check every screenshot for overlaps, clipped tex
 - **E1** Tab bar **+** → **Shell** → a shell tab opens in the workspace folder. Type `echo hi` → output appears.
 - **E2** Run `sleep 30`, press Ctrl+C, then `exit` → the command stops and the tab closes on its own.
 - **E3** Ctrl+W on a live shell → dialog "End this session?". **Cancel** keeps the tab. **End session** closes it and the terminal leaves `/v1/terms`. **Hide tab (keep running)** removes the tab while the session keeps running (visible in By status).
+- **E3b** Open a Codex session, type `busy` (the turn stays in progress), Ctrl+W → **End session**. The tab closes, the terminal exits, the session shows as closed and no terminal is left under **Other sessions**.
 - **E4** Ctrl+W on an exited terminal or a non-session tab → it closes without asking. The reopen-tab shortcut brings back the last closed tab.
 - **E5** **(desktop)** Open more tabs than fit, some with long titles → inactive tabs keep a fixed width with `…`, the strip scrolls with the wheel, hovering a tab changes no width and shows its full title as a tooltip, and clicking it widens it to the full title and scrolls it into view.
 - **E6** Split the pane right and down, move tabs between panes, close a pane → the layout follows, and nothing is lost on reload.

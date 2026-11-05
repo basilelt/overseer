@@ -869,7 +869,13 @@ pub fn handle(ctx: &Ctx, r: &Request) -> (u16, Value) {
             Err(e) => err(404, e),
         },
         ("POST", ["v1", "lines", id, "close"]) => {
-            match actions::close(ctx, id, !dry_run(r), q(r, "shell") == Some("true")) {
+            match actions::close(
+                ctx,
+                id,
+                !dry_run(r),
+                q(r, "shell") == Some("true"),
+                q(r, "force") == Some("true"),
+            ) {
                 Ok(rep) => (if rep.ok() { 200 } else { 409 }, rep.to_json()),
                 Err(e) => err(404, e),
             }

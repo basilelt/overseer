@@ -2415,6 +2415,46 @@ fn an_agent_that_quits_leaves_a_shell_with_its_session_in_the_tab() {
 }
 
 #[test]
+fn ending_a_busy_agent_session_needs_force_and_then_ends_its_term() {
+    // Given a codex session in a term that is busy with a turn
+    // When the session is closed as ending its tab does, first without and then with force=true
+    // Then the plain close is refused and keeps the term running, and the forced one ends the term
+    let app = App::new("endbusy", json!({}));
+    let wt = app.fx.wt.to_string_lossy().into_owned();
+    let t = app.ok(
+        "POST",
+        "/v1/terms",
+        json!({"cwd": wt, "agent": "codex", "cols": 120, "rows": 24}),
+    );
+    let id = t["id"].as_str().unwrap().to_string();
+    let mut ws = app.ws(&id);
+    read_until(&mut ws, "codex ready");
+    send(&mut ws, "busy\r");
+    let line = wait_for(|| line_of(&app, &id));
+    let lid = line["line"]["id"].as_str().unwrap().to_string();
+    wait(|| line_of(&app, &id).is_some_and(|l| l["local"]["busy"] == true));
+    let (code, r) = app.req(
+        "POST",
+        &format!("/v1/lines/{lid}/close?dryRun=false"),
+        Value::Null,
+    );
+    assert_eq!(code, 409, "{r}");
+    assert_eq!(r["predicates"]["atPrompt"]["ok"], false, "{r}");
+    assert_eq!(
+        app.ok("GET", &format!("/v1/terms/{id}"), Value::Null)["exited"],
+        false
+    );
+    let (code, r) = app.req(
+        "POST",
+        &format!("/v1/lines/{lid}/close?dryRun=false&force=true"),
+        Value::Null,
+    );
+    assert_eq!(code, 200, "{r}");
+    assert_eq!(r["action"], "closed", "{r}");
+    wait(|| app.ok("GET", &format!("/v1/terms/{id}"), Value::Null)["exited"] == true);
+}
+
+#[test]
 fn killing_an_agent_term_closes_it_without_a_shell() {
     // Given a codex session running in a term
     // When the term is killed, as closing its tab does
