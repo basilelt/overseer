@@ -1504,6 +1504,17 @@ Each target answers `sent`, `skipped` (busy or waiting for a permission answer),
 (typed when the agent becomes idle, within an hour, unless the daemon restarts) or `refused`
 (not running, no terminal). `actions.log` records the outcome and the text length, never the text.
 
+A **subject** is a workspace without a directory of its own, for work organised by topic rather than
+by folder. Create it with `POST /v1/workspaces` and `{"kind":"subject","name":"Acme deal","cwd":"~/code/app"}`
+(`folderId` and `pinned` optional); `cwd` is its default working directory, `~` accepted, and several
+subjects may share one. The list returns `kind` (`dir` or `subject`), `cwd`, and a `null` path for subjects;
+`PATCH` accepts `name` and `cwd`. Discovery never creates subjects. A session joins one through the usual
+`PUT /v1/lines/<id>/workspace` and `PUT /v1/terms/<id>/workspace`, which beat its directory, so a session
+inside a folder workspace assigned to a subject shows only in the subject. `POST /v1/terms` takes an
+optional `workspaceId`: the term is assigned at creation, starts in the workspace's `cwd` when none is
+given, and the agent line created from it inherits the assignment. Deleting a subject unassigns its
+sessions and kills nothing.
+
 ### 14.7 Workspaces in the app
 
 A workspace is one project on one host: a repository or any folder, with every agent, shell,

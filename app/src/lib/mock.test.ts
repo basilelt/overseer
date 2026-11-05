@@ -255,6 +255,32 @@ describe('MockDaemon', () => {
     expect((await a.terms()).find((t) => t.id === sh.id)?.workspaceId ?? null).toBeNull();
   });
 
+  it('creates subjects like the daemon: no path, a shared cwd, strict validation, terms started in it', async () => {
+    // Given the mock daemon
+    // When two subjects share a cwd, bad bodies are sent and a shell starts for a subject without a cwd
+    // Then both exist with a null path, bad input is a 400, the term takes the cwd and the workspace, and cwd patches only apply to subjects
+    const { m, a } = setup();
+    const post = (b: object) => m.request<any>('POST', '/v1/workspaces', b);
+    const s1 = await post({ kind: 'subject', name: 'Deal A', cwd: '~/shared' });
+    const s2 = await post({ kind: 'subject', name: 'Deal B', cwd: s1.cwd });
+    expect(s1).toMatchObject({ kind: 'subject', path: null });
+    expect(s1.cwd).toMatch(/\/shared$/);
+    expect(s2.cwd).toBe(s1.cwd);
+    for (const b of [{ kind: 'subject', cwd: '/x' }, { kind: 'subject', name: 'x' }, { kind: 'subject', name: 'x', cwd: 'rel' }, { kind: 'subject', name: 'x', cwd: '/x', path: '/x' }, { kind: 'folder', path: '/x' }, { path: '/x', cwd: '/x' }]) {
+      await expect(post(b)).rejects.toMatchObject({ status: 400 });
+    }
+    const t = await m.request<any>('POST', '/v1/terms', { workspaceId: s1.id, cmd: ['zsh'] });
+    expect(t).toMatchObject({ cwd: s1.cwd, workspaceId: s1.id });
+    await expect(m.request('POST', '/v1/terms', { workspaceId: 'nope' })).rejects.toMatchObject({ status: 404 });
+    await expect(m.request('POST', '/v1/terms', { workspaceId: 3 })).rejects.toMatchObject({ status: 400 });
+    const p = await m.request<any>('PATCH', `/v1/workspaces/${s1.id}`, { cwd: '/tmp' });
+    expect(p.cwd).toBe('/tmp');
+    const dir = (await a.workspaces()).find((x) => !x.auto)!;
+    await expect(m.request('PATCH', `/v1/workspaces/${dir.id}`, { cwd: '/tmp' })).rejects.toMatchObject({ status: 400 });
+    await a.deleteWorkspace(s1.id);
+    expect((await a.terms()).find((x) => x.id === t.id)?.workspaceId ?? null).toBeNull();
+  });
+
   it('keeps a missing user workspace in the list', async () => {
     const { a } = setup();
     expect((await a.workspaces()).find((w) => w.missing)).toMatchObject({ auto: false, name: 'thesis' });

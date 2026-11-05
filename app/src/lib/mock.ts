@@ -485,6 +485,8 @@ function seedWs(now: number): { workspaces: Workspace[]; folders: Folder[]; grou
       name,
       path,
       station: 'atlas',
+      kind: 'dir',
+      cwd: null,
       folderId,
       pinned,
       archived: false,
@@ -884,12 +886,19 @@ export class MockDaemon implements DaemonClient {
     if (method === 'POST' && !id) {
       const name = String(body?.name ?? '').trim();
       let item: Workspace | Folder | Group;
-      if (kind === 'workspaces') {
+      if (kind === 'workspaces' && body?.kind === 'subject') {
+        if (body.path != null) throw new DaemonError(400, 'a subject has no path, give cwd');
+        if (!name) throw new DaemonError(400, 'name required');
+        const cwd = this.subjectCwd(body.cwd);
+        item = { id: `ws_${Math.random().toString(36).slice(2, 8)}`, name, path: null, kind: 'subject', cwd, station: 'atlas', folderId: body?.folderId ?? null, pinned: !!body?.pinned, archived: false, auto: false, rank: Date.now(), tabs: [], notifyIdle: false, createdAt: now, updatedAt: now } as unknown as Workspace;
+      } else if (kind === 'workspaces') {
+        if (body?.kind != null && body.kind !== 'dir') throw new DaemonError(400, 'kind must be "dir" or "subject"');
+        if (body?.cwd != null) throw new DaemonError(400, 'cwd is only for subjects');
         const path = String(body?.path ?? '').trim().replace(/^~(?=\/|$)/, HOME).replace(/\/+$/, '');
         if (!path.startsWith('/')) throw new DaemonError(400, 'path must be absolute');
         const existing = this.workspaces.find((w) => w.path === path);
         if (existing) return structuredClone(existing);
-        item = { id: `ws_${Math.random().toString(36).slice(2, 8)}`, name: name || path.split('/').pop() || path, path, station: 'atlas', folderId: body?.folderId ?? null, pinned: !!body?.pinned, archived: false, auto: false, rank: Date.now(), tabs: [], notifyIdle: false, createdAt: now, updatedAt: now };
+        item = { id: `ws_${Math.random().toString(36).slice(2, 8)}`, name: name || path.split('/').pop() || path, path, station: 'atlas', kind: 'dir', cwd: null, folderId: body?.folderId ?? null, pinned: !!body?.pinned, archived: false, auto: false, rank: Date.now(), tabs: [], notifyIdle: false, createdAt: now, updatedAt: now } as unknown as Workspace;
       } else {
         if (!name) throw new DaemonError(400, 'name required');
         if (kind === 'folders') {
@@ -913,6 +922,10 @@ export class MockDaemon implements DaemonClient {
     }
     if (method === 'PATCH') {
       const { add, remove, id: _i, ...patch } = body ?? {};
+      if (kind === 'workspaces' && 'cwd' in patch) {
+        if ((item as any).kind !== 'subject') throw new DaemonError(400, 'cwd is only for subjects');
+        patch.cwd = this.subjectCwd(patch.cwd);
+      }
       Object.assign(item, patch, { updatedAt: now });
       if (kind === 'groups') {
         const g = item as Group;
@@ -922,6 +935,13 @@ export class MockDaemon implements DaemonClient {
       return structuredClone(item);
     }
     return structuredClone(item);
+  }
+
+  private subjectCwd(raw: unknown): string {
+    const cwd = String(raw ?? '').trim().replace(/^~(?=\/|$)/, HOME).replace(/\/+$/, '');
+    if (!cwd) throw new DaemonError(400, 'cwd required');
+    if (!cwd.startsWith('/')) throw new DaemonError(400, 'cwd must be absolute');
+    return cwd;
   }
 
   private targetsOf(b: BroadcastRequest): string[] {
@@ -1049,7 +1069,19 @@ export class MockDaemon implements DaemonClient {
     return structuredClone(t);
   }
 
-  private createTerm(body: NewTerm): Term {
+  private createTerm(body: NewTerm & { workspaceId?: unknown }): Term {
+    const wid = body?.workspaceId;
+    if (wid == null) return this.startTerm(body);
+    if (typeof wid !== 'string') throw new DaemonError(400, 'workspaceId must be a string');
+    const w = this.workspaces.find((x) => x.id === wid) as (Workspace & { kind?: string; cwd?: string | null }) | undefined;
+    if (!w) throw new DaemonError(404, `no workspace ${wid}`);
+    const { workspaceId: _w, ...rest } = body;
+    const term = this.startTerm({ ...rest, cwd: rest.cwd ?? (w.kind === 'subject' ? w.cwd! : w.path) });
+    term.workspaceId = w.id;
+    return term;
+  }
+
+  private startTerm(body: NewTerm): Term {
     const scopeCwd = body?.cwd;
     const project = body?.worktree && this.projects.find((p) => p.path === body.cwd);
     if (project) {

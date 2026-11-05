@@ -680,6 +680,7 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/Term" }
         "400": { description: "Bad body, cwd not a directory, program not found" }
+        "404": { description: Unknown workspaceId }
   /terms/{termId}:
     parameters:
       - { name: termId, in: path, required: true, schema: { type: string } }
@@ -1195,9 +1196,10 @@ paths:
           application/json:
             schema:
               type: object
-              required: [path]
               properties:
-                path: { type: string, description: "Absolute path or ~/..., canonicalised" }
+                kind: { type: string, enum: [dir, subject], description: "Default dir. A subject has no directory of its own: name and cwd are required, path is refused" }
+                path: { type: string, description: "dir only: absolute path or ~/..., canonicalised (required)" }
+                cwd: { type: string, description: "subject only: default working directory, absolute or ~/..., canonicalised; several subjects may share it (required)" }
                 name: { type: string, minLength: 1, maxLength: 80 }
                 folderId: { type: string }
                 pinned: { type: boolean }
@@ -1212,7 +1214,7 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Workspace" }
-        "400": { description: "Missing or relative path, not a directory, unknown folderId, bad name" }
+        "400": { description: "Missing or relative path or cwd, not a directory, unknown kind, path on a subject or cwd on a dir, unknown folderId, bad name" }
   /workspaces/{workspaceId}:
     parameters:
       - { name: workspaceId, in: path, required: true, schema: { type: string } }
@@ -1227,6 +1229,7 @@ paths:
               type: object
               properties:
                 name: { type: string, minLength: 1, maxLength: 80 }
+                cwd: { type: string, description: "subjects only (400 on a dir): new default working directory" }
                 folderId: { type: [string, "null"], description: null = top level }
                 pinned: { type: boolean }
                 archived: { type: boolean }
@@ -1242,7 +1245,7 @@ paths:
         "400": { description: Invalid }
         "404": { description: Unknown workspace }
     delete:
-      summary: Delete a workspace; its path gets a tombstone so it is not re-created automatically
+      summary: Delete a workspace; its path gets a tombstone so it is not re-created automatically (a subject has none). Sessions assigned to it are unassigned, never killed
       operationId: deleteWorkspace
       responses:
         "200": { description: "{deleted: id}" }
@@ -2254,7 +2257,7 @@ components:
     TermCreate:
       type: object
       properties:
-        cwd: { type: string, description: Default $HOME }
+        cwd: { type: string, description: "Default: the cwd of workspaceId when given, else $HOME" }
         cmd: { type: array, items: { type: string }, description: Default the login shell }
         agent: { type: string, description: "Agent id (GET /agents); the daemon builds the argv. Not with cmd." }
         model: { type: string, description: With agent }
@@ -2266,6 +2269,7 @@ components:
         title: { type: string }
         lineId: { type: string }
         taskId: { type: string }
+        workspaceId: { type: string, description: "Assign the term to this workspace at creation; the agent line later created from it inherits the assignment" }
         worktree:
           description: "true or {branch, base, slug}: run in a new worktree of the repository of cwd (contract 13)"
           oneOf:
@@ -2505,11 +2509,13 @@ components:
       pattern: "^(line|term):.+$"
     Workspace:
       type: object
-      required: [id, name, path, station, folderId, pinned, archived, auto, rank, tabs, notifyIdle, createdAt, updatedAt]
+      required: [id, name, path, kind, cwd, station, folderId, pinned, archived, auto, rank, tabs, notifyIdle, createdAt, updatedAt]
       properties:
         id: { type: string }
         name: { type: string }
-        path: { type: string }
+        path: { type: [string, "null"], description: "null for a subject" }
+        kind: { type: string, enum: [dir, subject] }
+        cwd: { type: [string, "null"], description: "Default working directory of a subject, null for a dir" }
         station: { type: string }
         folderId: { type: [string, "null"] }
         pinned: { type: boolean }
