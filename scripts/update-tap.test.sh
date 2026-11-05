@@ -36,7 +36,8 @@ check() {
   if brew style overseer-ci/tap &&
     brew audit --strict --formula overseer-ci/tap/overseer &&
     brew audit --strict --cask overseer-ci/tap/overseer &&
-    grep -q 'url "https://github.com/basilelt/overseer/releases/download/v#{version}/' "$tap_dir/Casks/overseer.rb"; then
+    grep -q 'url "https://github.com/basilelt/overseer/releases/download/v#{version}/' "$tap_dir/Casks/overseer.rb" &&
+    grep -q 'strategy :github_latest' "$tap_dir/Casks/overseer.rb"; then
     echo "ok   $name"
   else
     echo "FAIL $name"

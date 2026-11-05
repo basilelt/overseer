@@ -114,6 +114,12 @@ describe('search', () => {
     expect(search('webgl', all, en2).hits.terminal).toEqual(['gpuTerminal']);
   });
 
+  it('finds the privacy policy link under help, even without a connection', () => {
+    const r = search('privacy', none, en2);
+    expect(r.hits.feedback).toEqual(['privacy']);
+    expect(r.categories).toEqual(['help']);
+  });
+
   it('finds a setting by its hint text', () => {
     const r = search('zsh', all, en2);
     expect(r.hits.terminal).toEqual(['shiftEnter']);

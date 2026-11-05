@@ -93,6 +93,7 @@ export const ENTRIES: Entry[] = [
   { id: 'organize', section: 'tour', keys: ['org.title', 'org.helpHint', 'org.nudgeAction'] },
   { id: 'diag', section: 'diag', keys: ['diag.show', 'diag.sectionHint'] },
   { id: 'feedback', section: 'feedback', keys: ['feedback.title', 'feedback.sectionHint', 'feedback.repo', 'feedback.repoHint'] },
+  { id: 'privacy', section: 'feedback', keys: ['feedback.privacy', 'feedback.privacyHint'] },
 ];
 
 export type Text = (key: Key) => string[];

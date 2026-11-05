@@ -227,7 +227,7 @@ export function brewMessage(err: BrewError): string {
     case 'untrusted':
       return ut('err.untrusted', { tap: err.tap });
     case 'stale':
-      return ut('err.stale');
+      return ut('err.notInTap');
     case 'failed':
       return err.message;
   }

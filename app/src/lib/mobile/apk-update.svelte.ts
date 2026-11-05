@@ -77,12 +77,16 @@ export class ApkUpdater {
     return this.total ? Math.min(1, this.downloaded / this.total) : null;
   }
 
-  async refreshStatus() {
-    if (!this.backend) return;
+  async refreshStatus(): Promise<boolean | null> {
+    if (!this.backend) return null;
     try {
       const s = await this.backend.status();
       this.current = s.current;
-    } catch {}
+      if (!s.supported) this.updates = false;
+      return s.supported;
+    } catch {
+      return null;
+    }
   }
 
   async check(manual = false) {
@@ -177,10 +181,19 @@ export class ApkUpdater {
       void this.refreshStatus();
       return () => {};
     }
-    void this.refreshStatus();
-    void this.check();
-    const id = setInterval(() => void this.check(), intervalMs);
-    return () => clearInterval(id);
+    this.updates = false;
+    let stopped = false;
+    let id: ReturnType<typeof setInterval> | undefined;
+    void this.refreshStatus().then((supported) => {
+      if (stopped || supported === false) return;
+      this.updates = true;
+      void this.check();
+      id = setInterval(() => void this.check(), intervalMs);
+    });
+    return () => {
+      stopped = true;
+      clearInterval(id);
+    };
   }
 }
 
@@ -268,7 +281,7 @@ const lazy: ApkBackend = {
   openUrl: async (u) => (await tauriBackend()).openUrl(u),
 };
 
-export const apk = new ApkUpdater(null);
+export const apk = /* @__PURE__ */ new ApkUpdater(null);
 
 export function startApkUpdater(os: string, onResume: (fn: () => void) => () => void): () => void {
   if ((os !== 'android' && os !== 'ios') || !isTauri()) return () => {};

@@ -81,7 +81,7 @@
         stopLayout = startLayout(true);
       }
       openReviewFromHash();
-      if (app.mobile) void import('./lib/mobile/apk-update.svelte').then((m) => stops.push(m.startApkUpdater(app.os, onResume)));
+      if (app.mobile && __SELF_UPDATE__) void import('./lib/mobile/apk-update.svelte').then((m) => stops.push(m.startApkUpdater(app.os, onResume)));
     });
     const stops = [startPresence(), startTextDefaults(), stopDiag, startCenter(app), startNotifications(app), startPorts(app), onResume(() => app.wake()), () => stopLayout()];
     if (!ui.mobileOs && isMainWindow()) stops.push(startUpdater());
@@ -183,7 +183,7 @@
 {#if tour.phase}
   {#await tourView() then { default: Tour }}<Tour />{/await}
 {/if}
-{#if app.mobile}{#await apkHost() then { default: ApkUpdateHost }}<ApkUpdateHost />{/await}{/if}
+{#if app.mobile && __SELF_UPDATE__}{#await apkHost() then { default: ApkUpdateHost }}<ApkUpdateHost />{/await}{/if}
 <Toast />
 
 <style>
