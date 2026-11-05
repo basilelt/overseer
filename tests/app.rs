@@ -2504,6 +2504,27 @@ fn an_agent_that_quits_leaves_a_shell_with_its_session_in_the_tab() {
 }
 
 #[test]
+fn an_agent_that_quits_right_after_starting_a_turn_still_leaves_its_session() {
+    // Given a codex session whose first turn just started, before any scan linked it to the term
+    // When codex quits at once
+    // Then the shell note still carries the session and how to resume it
+    let app = App::new("agentquitfast", json!({}));
+    let wt = app.fx.wt.to_string_lossy().into_owned();
+    let t = app.ok(
+        "POST",
+        "/v1/terms",
+        json!({"cwd": wt, "agent": "codex", "cols": 120, "rows": 24}),
+    );
+    let id = t["id"].as_str().unwrap().to_string();
+    let mut ws = app.ws(&id);
+    read_until(&mut ws, "codex ready");
+    send(&mut ws, "busy\r");
+    send(&mut ws, "exit\r");
+    let shown = read_until(&mut ws, ", resume with:");
+    assert!(shown.contains("codex exited. Session "), "{shown:?}");
+}
+
+#[test]
 fn ending_a_busy_agent_session_needs_force_and_then_ends_its_term() {
     // Given a codex session in a term that is busy with a turn
     // When the session is closed as ending its tab does, first without and then with force=true
@@ -2562,4 +2583,57 @@ fn killing_an_agent_term_closes_it_without_a_shell() {
     wait(|| app.ok("GET", &format!("/v1/terms/{id}"), Value::Null)["exited"] == true);
     let term = app.ok("GET", &format!("/v1/terms/{id}"), Value::Null);
     assert_eq!(term["cmd"][0], "codex");
+}
+
+#[test]
+fn codex_line_never_takes_the_pid_of_another_terminal_of_its_repo() {
+    let app = App::new("codexpid", json!({"autoConcurrency": 0}));
+    let wt = app.fx.wt.to_string_lossy().into_owned();
+    let start = || {
+        let t = app.ok("POST", "/v1/terms", json!({"cwd": wt, "agent": "codex"}));
+        let id = t["id"].as_str().unwrap().to_string();
+        let mut ws = app.ws(&id);
+        read_until(&mut ws, "codex ready");
+        (id, t["pid"].as_u64().unwrap(), ws)
+    };
+    let (_a, pid_a, mut ws_a) = start();
+    let (_b, pid_b, mut ws_b) = start();
+    let codex_lines = || -> Vec<(u64, Option<u64>)> {
+        let v = app.ok("GET", "/v1/lines?all=true", Value::Null);
+        let mut out: Vec<(u64, Option<u64>)> = v
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|l| l["line"]["agent"] == "codex")
+            .map(|l| {
+                (
+                    l["line"]["activityMs"].as_u64().unwrap_or(0),
+                    l["local"]["pid"].as_u64(),
+                )
+            })
+            .collect();
+        out.sort();
+        out
+    };
+    send(&mut ws_a, "busy\r");
+    wait_for(|| (codex_lines().len() == 1).then_some(()));
+    for _ in 0..4 {
+        std::thread::sleep(Duration::from_millis(500));
+        let l = codex_lines();
+        assert_eq!(l.len(), 1, "{l:?}");
+        assert_eq!(l[0].1, Some(pid_a), "{l:?} a={pid_a} b={pid_b}");
+    }
+    send(&mut ws_b, "busy\r");
+    wait_for(|| (codex_lines().len() == 2).then_some(()));
+    for _ in 0..4 {
+        std::thread::sleep(Duration::from_millis(500));
+        let mut pids: Vec<Option<u64>> = codex_lines().iter().map(|l| l.1).collect();
+        pids.sort();
+        assert_eq!(pids, [Some(pid_a), Some(pid_b)]);
+    }
+    send(&mut ws_a, "busy\r");
+    std::thread::sleep(Duration::from_secs(2));
+    let mut pids: Vec<Option<u64>> = codex_lines().iter().map(|l| l.1).collect();
+    pids.sort();
+    assert_eq!(pids, [Some(pid_a), Some(pid_b)]);
 }

@@ -4,6 +4,7 @@ import { DaemonError, setClient } from './client';
 import { t } from './i18n.svelte';
 import { MockDaemon } from './mock';
 import { center } from './notifications.svelte';
+import { setPresence } from './presence';
 import { pages } from './session-pages.svelte';
 import { settings, workspaceFor } from './settings.svelte';
 import { app, NO_WORKSPACE, projectName, statusLine } from './state.svelte';
@@ -449,6 +450,32 @@ describe('daemon events', () => {
     m.emit('workspace.created', { workspace: w });
     expect(app.ws.workspaces.some((x) => x.id === 'ws_new')).toBe(true);
     expect(changed).not.toHaveBeenCalled();
+  });
+
+  it('adds a project announced after the connection', () => {
+    const p: Project = { path: '/late/repo', name: 'repo', repo: 'late/repo' };
+    m.emit('project.added', { project: p });
+    expect(app.projects.some((x) => x.path === '/late/repo')).toBe(true);
+    m.emit('project.added', { project: p });
+    expect(app.projects.filter((x) => x.path === '/late/repo')).toHaveLength(1);
+    m.emit('project.added', {});
+  });
+
+  it('rechecks the workspaces when the window comes back to the foreground', async () => {
+    setPresence({ focused: false });
+    const before = m.calls.filter((c) => c === 'GET /v1/workspaces').length;
+    m.override['GET /v1/workspaces'] = () => [{ ...app.ws.workspaces[0], missing: true }];
+    setPresence({ focused: true });
+    await vi.waitFor(() => expect(app.ws.workspaces[0].missing).toBe(true));
+    expect(m.calls.filter((c) => c === 'GET /v1/workspaces').length).toBe(before + 1);
+  });
+
+  it('stops rechecking the workspaces once disconnected', async () => {
+    await app.disconnect();
+    const before = m.calls.length;
+    setPresence({ focused: false });
+    setPresence({ focused: true });
+    expect(m.calls.length).toBe(before);
   });
 
   it('reloads the profiles when they change', async () => {

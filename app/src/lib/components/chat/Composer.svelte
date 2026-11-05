@@ -18,6 +18,7 @@
   import { app } from '../../state.svelte';
   import type { CustomCommand, LineLocal, UploadResult } from '../../types';
   import { basename, insertText, planDrop, planPaste, PROGRESS_FROM, uploadedPath, type Refusal } from '../../uploads';
+  import { requirePath, savePasted } from '../../task-attachments';
   import { applySlash, commandsFor, enterAction, lineCount, sendRequest, sendResult, slashMatches, slashQuery, startMode, type SendMode, type SlashCommand } from '../../chat/composer';
 
   let { lineId, agent, local, phone, history = [], onsent }: { lineId: string; agent: string; local: LineLocal | undefined; phone: boolean; history?: string[]; onsent?: (text: string) => void } = $props();
@@ -207,6 +208,7 @@
       try {
         let big = false;
         const r = await app.client!.uploadFile(p, ({ sent, total }) => total > PROGRESS_FROM && ((big = true), app.progress(t('upload.progress', { name }), sent / total)));
+        requirePath(r?.path);
         done.push(r);
         if (big) app.notice({ kind: 'upload', title: t('upload.done', { name, path: uploadedPath(r) }) });
       } catch (e) {
@@ -225,7 +227,7 @@
     for (const f of files) {
       const name = f.name || 'paste.png';
       try {
-        saved.push(await app.client!.savePaste(name, new Uint8Array(await f.arrayBuffer())));
+        saved.push(await savePasted(app.client!, name, new Uint8Array(await f.arrayBuffer())));
       } catch (e) {
         return app.notify(t('upload.pasteFailed', { name, error: message(e) }), 'error');
       }

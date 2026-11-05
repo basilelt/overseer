@@ -315,7 +315,7 @@ export function resolveTab(key: string, items: SidebarItem[]): string | null {
   return null;
 }
 
-function upsert<T extends { id: string }>(list: T[], item: T): T[] {
+export function upsert<T extends { id: string }>(list: T[], item: T): T[] {
   const i = list.findIndex((x) => x.id === item.id);
   if (i < 0) return [...list, item];
   const next = list.slice();

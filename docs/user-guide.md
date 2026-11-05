@@ -750,6 +750,7 @@ fake consumer against the API and checks every payload against the schemas.
 
 | Symptom | Cause and fix |
 |---|---|
+| Hooks stopped reaching the installed daemon after running a dev build | A daemon on a non-default state dir (checkout `.state`) used to rewrite the global hooks and `~/.overseer/bin/overseer`. Now only the daemon on the default state dir repairs them, and a daemon on another state dir logs `not repairing hooks` and leaves hooks that call another state dir alone; the default daemon heals hijacked hooks on its next start. Run dev daemons with their own `HOME` (`scripts/dev.sh`, `scripts/qa/sandbox.sh`). |
 | CLI, services or hooks see different lines | They resolve different state dirs (e.g. `bin/overseer` uses `<checkout>/.state`). Set the same `OVERSEER_STATE_DIR` everywhere and rerun `hooks install --apply`. |
 | `board`: `daemon not reachable` | Start `overseer daemon --http 127.0.0.1:0` (or the service). `no loopback board`: restart it with `--http`. |
 | Board answers 403 | Missing or stale token (new at each daemon start): open the URL from `overseer board`; use `127.0.0.1`/`localhost` as host. |
@@ -1520,7 +1521,7 @@ sessions and kills nothing.
 A workspace is one project on one host: a repository or any folder, with every agent, shell,
 browser and review tab that belongs to it. The sidebar shows **Workspaces** (default) or
 **By status** (the session list grouped by Needs input, Needs testing, Working, Pushed, Idle,
-Held); the toggle is at the top of the sidebar.
+Stopped: no live agent process, resumable); the toggle is at the top of the sidebar.
 
 - **Tree**: pinned workspaces on top, then your folders (one level of sub-folders) and the
   workspaces outside any folder. Every project the daemon knows gets a workspace: the

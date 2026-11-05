@@ -107,12 +107,12 @@ Each step is **Do → Expect**. Check every screenshot for overlaps, clipped tex
 
 ### G. Sidebar and workspaces
 
-- **G1** Workspaces versus **By status** → the lists match the sessions. By status groups by Working, Idle and Held.
+- **G1** Workspaces versus **By status** → the lists match the sessions. By status groups by Working, Idle and Stopped (sessions with no live process).
 - **G2** Add a workspace for a parent folder and one for a child folder, then open a shell in the child → it counts under the child, not the parent. Task sessions stay in their project's workspace, and no stray **Other sessions** group appears.
 - **G3** Groups: Cmd/Ctrl+click several sessions → Add to group → the group lists them and broadcast reaches them.
 - **G4** Drag the sidebar narrow → the mode tabs stay on one line, cut with an ellipsis. Drag it back.
 - **G5** Filter workspaces or sessions → the list narrows. Archive and restore a workspace.
-- **G6** Add a workspace for a folder with no sessions and open it → the pane shows the workspace name, its path and "No sessions in this workspace yet", with **New <agent> session**, **Shell** and **More…**. Each button starts its session in that folder (or opens the new tab menu); with the folder deleted, the two start buttons are disabled and the pane says the folder no longer exists. After `sandbox.sh crash`, the buttons stay enabled while the app reconnects, and a click starts the session once the daemon is back. **By status** with nothing open shows the generic "Nothing open here" pane.
+- **G6** Add a workspace for a folder with no sessions and open it → the pane shows the workspace name, its path and "No sessions in this workspace yet", with **New <agent> session**, **Shell** and **More…**. Each button starts its session in that folder (or opens the new tab menu); with the folder deleted, the two start buttons are disabled and the pane says the folder no longer exists, as soon as the window is focused again after the folder went away. A project added through the API while the app is open shows up at once with its workspace. After `sandbox.sh crash`, the buttons stay enabled while the app reconnects, and a click starts the session once the daemon is back. **By status** with nothing open shows the generic "Nothing open here" pane.
 
 ### H. Ports
 

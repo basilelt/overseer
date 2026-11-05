@@ -1,6 +1,6 @@
 import { activityDelay } from './activity';
 import { FALLBACK_AGENTS, sessionsAvailable } from './agents';
-import { presence } from './presence';
+import { onPresence, presence } from './presence';
 import { api, type Api } from './api';
 import { DaemonError, getClient, type DaemonClient } from './client';
 import { groupItems, sidebarItems, stableItems, type SidebarItem } from './grouping';
@@ -17,7 +17,7 @@ import { isNoRoute } from './localnet';
 import { startupTarget } from './conn';
 import { activeKey, allTabs, EMPTY_LAYOUT, forgetLayouts, onTabClosed, openInFocused, update, workspace } from './workspace.svelte';
 import { newTabKey } from './tabs';
-import { aggregate, applyWsEvent, EMPTY_WS, isGhost, itemWorkspaces, resolveTab, sameMap, synthesize, type Aggregate, type WsData } from './workspaces';
+import { aggregate, applyWsEvent, EMPTY_WS, isGhost, itemWorkspaces, resolveTab, sameMap, synthesize, upsert, type Aggregate, type WsData } from './workspaces';
 import type { Workspace } from './types';
 import type { MenuItem, OpenMenu } from './menu';
 import { isWebLink, resolveLink, type LinkFrom, type LinkGesture, type LinkRoute } from './links';
@@ -319,7 +319,7 @@ class AppState {
     }, WS_RETRY_MS[this.wsAttempt++]);
   }
 
-  private async reloadWs() {
+  async reloadWs() {
     if (!this.connected) return;
     const attempt = this.wsAttempt;
     try {
@@ -384,8 +384,7 @@ class AppState {
   }
 
   upsertWorkspace(w: Workspace) {
-    const has = this.ws.workspaces.some((x) => x.id === w.id);
-    this.ws = { ...this.ws, workspaces: has ? this.ws.workspaces.map((x) => (x.id === w.id ? w : x)) : [...this.ws.workspaces, w] };
+    this.ws = { ...this.ws, workspaces: upsert(this.ws.workspaces, w) };
   }
 
   async patchWorkspace(id: string, patch: Parameters<Api['patchWorkspace']>[1]) {
@@ -443,8 +442,9 @@ class AppState {
       this.loadProfiles();
       return;
     }
-    if (/^(workspace|folder|group)\./.test(e.type)) {
-      this.ws = applyWsEvent(this.ws, e);
+    if (/^(workspace|folder|group|project)\./.test(e.type)) {
+      if (e.data?.project) this.addProject(e.data.project);
+      else this.ws = applyWsEvent(this.ws, e);
       return;
     }
     if (e.type === 'broadcast.delivered') {
@@ -734,6 +734,7 @@ function withColors(projects: Project[], colors: Record<string, string>): Projec
 }
 
 export const app = new AppState();
+onPresence((p) => p.focused && app.reloadWs());
 
 /** Tab rename, move and full-title code, kept out of the startup bundle. */
 let tabMod: typeof import('./tab-lazy') | null = null;
