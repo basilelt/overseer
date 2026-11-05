@@ -552,6 +552,10 @@
   }
 
   $effect(() => {
+    if (app.conn.phase === 'connected') untrack(() => link?.resume());
+  });
+
+  $effect(() => {
     if (!focused || phone) return;
     const onAction = (e: Event) => {
       const action = (e as CustomEvent).detail;
