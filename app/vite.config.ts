@@ -3,7 +3,7 @@ import { svelte } from '@sveltejs/vite-plugin-svelte';
 
 // ghostty-web inlines its WASM as a base64 data URL inside Ghostty.load(); terminal.ts loads the
 // emitted ghostty-vt.wasm asset with Ghostty.load(url) instead, so that literal is dead weight.
-// The other patches remove document listeners that ghostty-web 0.4.0 never detaches, which kept
+// The other patches remove document listeners that ghostty-web never detaches, which kept
 // every disposed terminal alive.
 const PATCHES: [string | RegExp, string][] = [
   [/data:application\/wasm;base64,[A-Za-z0-9+/=]+/, 'data:application/wasm;base64,'],
@@ -11,7 +11,7 @@ const PATCHES: [string | RegExp, string][] = [
     'this.isOpen && typeof document < "u" && document.removeEventListener("mouseup", this.handleMouseUp)',
     'typeof document < "u" && document.removeEventListener("mouseup", this.handleMouseUp)',
   ],
-  ['document.addEventListener("mousedown", (B) => {', 'document.addEventListener("mousedown", this.boundDocumentMouseDownHandler = (B) => {'],
+  [/document\.addEventListener\("mousedown", \((\w+)\) => \{/, 'document.addEventListener("mousedown", this.boundDocumentMouseDownHandler = ($1) => {'],
   [
     'this.selectionChangedEmitter.dispose(), this.stopAutoScroll()',
     'this.selectionChangedEmitter.dispose(), this.stopAutoScroll(), this.boundDocumentMouseDownHandler && (document.removeEventListener("mousedown", this.boundDocumentMouseDownHandler), this.boundDocumentMouseDownHandler = null)',

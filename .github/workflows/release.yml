@@ -111,7 +111,7 @@ jobs:
         id: optional
         env:
           ANDROID: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' && secrets.ANDROID_KEYSTORE_PASSWORD != '' && secrets.ANDROID_KEY_ALIAS != '' && secrets.ANDROID_KEY_PASSWORD != '' }}
-          IOS: ${{ secrets.APPLE_TEAM_ID != '' && secrets.APPLE_KEY_ID != '' && secrets.APPLE_ISSUER_ID != '' && secrets.APPLE_KEY_CONTENT != '' && secrets.MATCH_GIT_URL != '' && secrets.MATCH_PASSWORD != '' && secrets.MATCH_SSH_PRIVATE_KEY != '' }}
+          IOS: ${{ secrets.APPLE_TEAM_ID != '' && secrets.APPLE_KEY_ID != '' && secrets.APPLE_ISSUER_ID != '' && secrets.APPLE_KEY_CONTENT != '' && secrets.IOS_CERTIFICATE != '' && secrets.IOS_CERTIFICATE_PASSWORD != '' && secrets.IOS_MOBILE_PROVISION != '' }}
           TAP: ${{ secrets.HOMEBREW_TAP_DEPLOY_KEY != '' }}
           MSIX: ${{ secrets.WINDOWS_SELF_SIGN_PFX_BASE64 != '' && secrets.WINDOWS_SELF_SIGN_PFX_PASSWORD != '' }}
           UPDATER: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY != '' }}
@@ -129,7 +129,7 @@ jobs:
             echo "::warning title=app-android skipped::ANDROID_KEYSTORE_BASE64, ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS or ANDROID_KEY_PASSWORD is not set: no Android APK in this release (docs/mobile.md)"
           fi
           if [ "$IOS" != "true" ]; then
-            echo "::warning title=app-ios skipped::APPLE_TEAM_ID, APPLE_KEY_ID, APPLE_ISSUER_ID, APPLE_KEY_CONTENT, MATCH_GIT_URL, MATCH_PASSWORD or MATCH_SSH_PRIVATE_KEY is not set: no TestFlight build (docs/mobile.md)"
+            echo "::warning title=app-ios skipped::APPLE_TEAM_ID, APPLE_KEY_ID, APPLE_ISSUER_ID, APPLE_KEY_CONTENT, IOS_CERTIFICATE, IOS_CERTIFICATE_PASSWORD or IOS_MOBILE_PROVISION is not set: no TestFlight build (docs/mobile.md)"
           fi
           if [ "$TAP" != "true" ]; then
             echo "::warning title=tap skipped::HOMEBREW_TAP_DEPLOY_KEY is not set: the Homebrew tap is not updated (docs/ci.md)"
@@ -572,11 +572,15 @@ jobs:
         shell: bash
         env:
           DEVELOPER_ID: ${{ secrets.APPLE_CERTIFICATE != '' && secrets.APPLE_CERTIFICATE_PASSWORD != '' && secrets.APPLE_SIGNING_IDENTITY != '' }}
+          DEV_ID_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          DEV_ID_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
           SIGN_P12_BASE64: ${{ secrets.MACOS_SELF_SIGN_P12_BASE64 }}
           SIGN_P12_PASSWORD: ${{ secrets.MACOS_SELF_SIGN_P12_PASSWORD }}
         run: |
           if [ "$DEVELOPER_ID" = true ]; then
+            identity=$(SIGN_TRUST=0 SIGN_P12_BASE64="$DEV_ID_CERTIFICATE" SIGN_P12_PASSWORD="$DEV_ID_CERTIFICATE_PASSWORD" scripts/macos-sign.sh import)
             echo "kind=developerid" >> "$GITHUB_OUTPUT"
+            echo "identity=$identity" >> "$GITHUB_OUTPUT"
           elif [ -n "$SIGN_P12_BASE64" ] && [ -n "$SIGN_P12_PASSWORD" ]; then
             identity=$(scripts/macos-sign.sh import)
             echo "kind=selfsigned" >> "$GITHUB_OUTPUT"
@@ -590,10 +594,10 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           SIGN_KIND: ${{ steps.codesign.outputs.kind }}
-          SELF_SIGN_IDENTITY: ${{ steps.codesign.outputs.identity }}
-          DEV_ID_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          DEV_ID_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          DEV_ID_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          SIGN_IDENTITY: ${{ steps.codesign.outputs.identity }}
+          NOTARY_KEY_ID: ${{ secrets.APPLE_KEY_ID }}
+          NOTARY_ISSUER_ID: ${{ secrets.APPLE_ISSUER_ID }}
+          NOTARY_KEY_CONTENT: ${{ secrets.APPLE_KEY_CONTENT }}
           TARGET: ${{ matrix.target }}
         shell: bash
         run: |
@@ -603,10 +607,18 @@ jobs:
           fi
           case "$SIGN_KIND" in
             developerid)
-              export APPLE_CERTIFICATE="$DEV_ID_CERTIFICATE" APPLE_CERTIFICATE_PASSWORD="$DEV_ID_CERTIFICATE_PASSWORD" APPLE_SIGNING_IDENTITY="$DEV_ID_IDENTITY"
+              export APPLE_SIGNING_IDENTITY="$SIGN_IDENTITY"
+              scripts/macos-sign.sh sign-resources app/src-tauri/resources/server "$SIGN_IDENTITY"
+              if [ -z "$NOTARY_KEY_ID" ] || [ -z "$NOTARY_ISSUER_ID" ] || [ -z "$NOTARY_KEY_CONTENT" ]; then
+                echo "::error title=macOS notarization::APPLE_KEY_ID, APPLE_ISSUER_ID and APPLE_KEY_CONTENT are required with a Developer ID (docs/ci.md)"
+                exit 1
+              fi
+              umask 077
+              printf '%s' "$NOTARY_KEY_CONTENT" > "$RUNNER_TEMP/notary.p8"
+              export APPLE_API_KEY="$NOTARY_KEY_ID" APPLE_API_ISSUER="$NOTARY_ISSUER_ID" APPLE_API_KEY_PATH="$RUNNER_TEMP/notary.p8"
               ;;
             selfsigned)
-              export APPLE_SIGNING_IDENTITY="$SELF_SIGN_IDENTITY"
+              export APPLE_SIGNING_IDENTITY="$SIGN_IDENTITY"
               extra+=(--config "$GITHUB_WORKSPACE/app/src-tauri/tauri.selfsign.conf.json")
               ;;
           esac
@@ -631,6 +643,10 @@ jobs:
         if: always() && env.SIGN_KEYCHAIN != ''
         shell: bash
         run: security delete-keychain "$SIGN_KEYCHAIN" || true
+
+      - if: always()
+        shell: bash
+        run: rm -f "$RUNNER_TEMP/notary.p8"
 
       - working-directory: app/src-tauri/target/${{ matrix.target }}/release/bundle
         shell: bash
@@ -792,30 +808,18 @@ jobs:
           sed -i '' -E "s/DEVELOPMENT_TEAM: .*/DEVELOPMENT_TEAM: $APPLE_TEAM_ID/" project.yml
           grep -c "$APPLE_TEAM_ID" overseer-app.xcodeproj/project.pbxproj
 
-      - env:
-          MATCH_SSH_PRIVATE_KEY: ${{ secrets.MATCH_SSH_PRIVATE_KEY }}
-        run: |
-          mkdir -p ~/.ssh
-          chmod 700 ~/.ssh
-          printf '%s\n' "$MATCH_SSH_PRIVATE_KEY" > ~/.ssh/match_certificates
-          chmod 600 ~/.ssh/match_certificates
-          ssh-keyscan github.com >> ~/.ssh/known_hosts 2>/dev/null
-          printf 'Host github.com\n  IdentityFile ~/.ssh/match_certificates\n  IdentitiesOnly yes\n' >> ~/.ssh/config
-
       - working-directory: app
         env:
           OVERSEER_APP_DIR: ${{ github.workspace }}/app
           APPLE_KEY_ID: ${{ secrets.APPLE_KEY_ID }}
           APPLE_ISSUER_ID: ${{ secrets.APPLE_ISSUER_ID }}
           APPLE_KEY_CONTENT: ${{ secrets.APPLE_KEY_CONTENT }}
-          MATCH_GIT_URL: ${{ secrets.MATCH_GIT_URL }}
-          MATCH_PASSWORD: ${{ secrets.MATCH_PASSWORD }}
+          IOS_CERTIFICATE: ${{ secrets.IOS_CERTIFICATE }}
+          IOS_CERTIFICATE_PASSWORD: ${{ secrets.IOS_CERTIFICATE_PASSWORD }}
+          IOS_MOBILE_PROVISION: ${{ secrets.IOS_MOBILE_PROVISION }}
           FASTLANE_SKIP_UPDATE_CHECK: "1"
           FASTLANE_HIDE_CHANGELOG: "1"
         run: fastlane ios internal_testflight
-
-      - if: always()
-        run: rm -f ~/.ssh/match_certificates
 
   publish:
     needs: [tag, servers, servers-macos, app-linux, app-windows, app-windows-msix, app-windows-arm, app-macos, app-android]
@@ -832,6 +836,8 @@ jobs:
     timeout-minutes: 15
     permissions:
       contents: write
+      id-token: write
+      attestations: write
     env:
       HAS_UPDATER_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY != '' }}
     steps:
@@ -850,6 +856,10 @@ jobs:
 
       - working-directory: assets
         run: sha256sum -- * > SHA256SUMS
+
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-checksums: assets/SHA256SUMS
 
       - uses: ncipollo/release-action@339a81892b84b4eeb0f6e744e4574d79d0d9b8dd # v1
         with:
@@ -905,4 +915,4 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add Casks Formula
           git commit -m "overseer $VERSION"
-          git push
+          git push --force origin "HEAD:refs/heads/bump/overseer-$VERSION"

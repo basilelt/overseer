@@ -1266,11 +1266,11 @@ fn agents_are_detected_and_launched_from_the_table() {
     );
     let ctid = c["id"].as_str().unwrap().to_string();
     let cmd = strs(&c["cmd"]);
-    let sid = cmd[1].strip_prefix("--resume=").unwrap().to_string();
+    let sid = cmd[1].strip_prefix("--session-id=").unwrap().to_string();
     assert_eq!(cmd[2..], ["--model", "gpt-5.2", "--effort", "xhigh"]);
     wait(|| {
         stub_log(&app).contains(&format!(
-            "copilot --resume={sid} --model gpt-5.2 --effort xhigh"
+            "copilot --session-id={sid} --model gpt-5.2 --effort xhigh"
         ))
     });
 
@@ -2260,4 +2260,64 @@ fn ctrl_c_interrupts_the_job_and_exit_reports_the_sigint_status() {
         app.req("GET", &format!("/v1/terms/{id}"), Value::Null).0,
         404
     );
+}
+
+#[test]
+fn an_agent_that_quits_leaves_a_shell_with_its_session_in_the_tab() {
+    // Given a codex session started in a term, linked to its line
+    // When codex quits on its own
+    // Then the term keeps running a shell that shows the session and how to resume it,
+    // and killing the term still ends it
+    let app = App::new("agentquit", json!({}));
+    let wt = app.fx.wt.to_string_lossy().into_owned();
+    let t = app.ok(
+        "POST",
+        "/v1/terms",
+        json!({"cwd": wt, "agent": "codex", "cols": 120, "rows": 24}),
+    );
+    let id = t["id"].as_str().unwrap().to_string();
+    let mut ws = app.ws(&id);
+    read_until(&mut ws, "codex ready");
+    send(&mut ws, "busy\r");
+    let line = wait_for(|| line_of(&app, &id));
+    let sid = line["line"]["agentSessionId"].as_str().unwrap().to_string();
+    send(&mut ws, "exit\r");
+    read_until(
+        &mut ws,
+        &format!("codex exited. Session {sid}, resume with:"),
+    );
+    let term = app.ok("GET", &format!("/v1/terms/{id}"), Value::Null);
+    assert_eq!(
+        (&term["exited"], &term["agent"], &term["lineId"]),
+        (&json!(false), &Value::Null, &Value::Null)
+    );
+    send(&mut ws, "echo SHELL-$((40+2))\r");
+    read_until(&mut ws, "SHELL-42");
+    app.ok(
+        "POST",
+        &format!("/v1/terms/{id}/kill"),
+        json!({"confirm": true}),
+    );
+    wait(|| app.ok("GET", &format!("/v1/terms/{id}"), Value::Null)["exited"] == true);
+}
+
+#[test]
+fn killing_an_agent_term_closes_it_without_a_shell() {
+    // Given a codex session running in a term
+    // When the term is killed, as closing its tab does
+    // Then the term exits and no shell is started in it
+    let app = App::new("agentkill", json!({}));
+    let wt = app.fx.wt.to_string_lossy().into_owned();
+    let t = app.ok("POST", "/v1/terms", json!({"cwd": wt, "agent": "codex"}));
+    let id = t["id"].as_str().unwrap().to_string();
+    let mut ws = app.ws(&id);
+    read_until(&mut ws, "codex ready");
+    app.ok(
+        "POST",
+        &format!("/v1/terms/{id}/kill"),
+        json!({"confirm": true}),
+    );
+    wait(|| app.ok("GET", &format!("/v1/terms/{id}"), Value::Null)["exited"] == true);
+    let term = app.ok("GET", &format!("/v1/terms/{id}"), Value::Null);
+    assert_eq!(term["cmd"][0], "codex");
 }

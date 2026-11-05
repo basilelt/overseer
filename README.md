@@ -138,8 +138,10 @@ brew install overseer
 
 Upgrade with `brew update && brew upgrade --cask overseer && brew upgrade overseer`.
 
-The app is not signed yet. If macOS refuses to open it, run
-`xattr -dr com.apple.quarantine /Applications/Overseer.app` once.
+The app is signed with a Developer ID and notarized by Apple, so macOS opens it without a
+warning. Each release asset carries a build provenance attestation:
+`gh attestation verify <file> --repo basilelt/overseer` checks a download came from this
+repository's release workflow.
 
 ### Linux and Windows
 
@@ -159,7 +161,8 @@ need nothing: the app installs the daemon over SSH on first connection.
 
 ### Android and iOS
 
-Android: install and update the APK from the releases with Obtainium, or download it with
+Android: install and update the APK from the releases with Obtainium
+([add it in one tap](https://apps.obtainium.imranr.dev/redirect?r=obtainium://app/%7B%22id%22%3A%22io.github.basilelt.overseer%22%2C%22url%22%3A%22https%3A%2F%2Fgithub.com%2Fbasilelt%2Foverseer%22%2C%22author%22%3A%22basilelt%22%2C%22name%22%3A%22Overseer%22%2C%22preferredApkIndex%22%3A0%2C%22additionalSettings%22%3A%22%7B%5C%22includePrereleases%5C%22%3Afalse%2C%5C%22apkFilterRegEx%5C%22%3A%5C%22Overseer_.%2A_android%5C%5C%5C%5C.apk%5C%22%2C%5C%22invertAPKFilter%5C%22%3Afalse%7D%22%2C%22overrideSource%22%3A%22GitHub%22%7D), settings prefilled), or download it with
 `gh release download --repo basilelt/overseer --pattern '*android.apk'`. iOS: not distributed
 publicly; building it needs your own Apple developer account and TestFlight. See
 [docs/mobile.md](docs/mobile.md).

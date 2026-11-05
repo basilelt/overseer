@@ -7,7 +7,7 @@
   const label = $derived(t(ports.chip.forwarded ? 'ports.chipForwarded' : 'ports.chipOpen', { n: ports.chip.n }));
 </script>
 
-{#if ports.chip.n > 0}
+{#if app.connected}
   {#key ports.flash}
     <button class="chip" class:flash={ports.flash > 0} data-tour="chips" title={label} aria-label={label} onclick={() => app.open('ports')}>
       <EthernetPort size={13} />
