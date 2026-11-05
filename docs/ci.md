@@ -106,6 +106,7 @@ its `changes` job runs, a few seconds on `ubuntu-slim`. Pushes by `github-action
 |---|---|---|---|
 | ci | `changes` | `ubuntu-slim` | `scripts/ci-changes.sh`: which jobs the PR needs ([Path filtering](#path-filtering)) |
 | ci | `actionlint` | `ubuntu-slim` | `actionlint` (downloaded by its install script; `ubuntu-slim` has no Docker) |
+| ci | `gitleaks` | `ubuntu-slim` | `gitleaks git` (pinned release, checksum verified) over the PR's commits (`base..head`); every PR, no path filter. Known false positives are fingerprinted in `.gitleaksignore` |
 | ci | `rust` | `ubuntu-24.04` | `cargo fmt --check` (root and `api/`), `make lint`, `timeout 1500 make test` |
 | ci | `app` | `ubuntu-24.04` | `make app-test` (vitest with coverage, svelte-check, Tauri crate tests and clippy) |
 | ci | `perf` | `ubuntu-24.04` | release build of the app against the mock backend, `scripts/perf-cpu.sh` CPU budget (30 s idle, 30 s streaming) under Xvfb |
@@ -359,7 +360,7 @@ checks that a download was built by this workflow from this repository.
   with `gh api -X POST repos/basilelt/overseer/rulesets --input <file>` (later changes:
   `gh api -X PUT repos/basilelt/overseer/rulesets/<id> --input <file>`). `main` requires a PR,
   merge commits only, and the `CI` checks (`changes`, `actionlint`, `rust`, `app`, `perf`,
-  `windows`, `android`, `store-guard`, `macos`; `integration_id` 15368 is the GitHub Actions
+  `windows`, `android`, `store-guard`, `macos`, `gitleaks`; `integration_id` 15368 is the GitHub Actions
   app); jobs skipped by path filtering count as passed. `release-tags` forbids deleting `v*` and
   `latest` (repository admins can bypass); moving them is an update, so the `tag` job still can.
 - The secrets and the variables above, as each feature is wanted.
