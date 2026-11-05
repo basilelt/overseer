@@ -7,13 +7,10 @@
     needs_testing: 'var(--st-testing)',
     idle: 'var(--border-strong)',
   };
-
-  export function shortPath(p: string): string {
-    return p.replace(/^\/(home|Users)\/[^/]+(?=\/|$)/, '~');
-  }
 </script>
 
 <script lang="ts">
+  import { shortPath } from '../../dirs';
   import Zap from '@lucide/svelte/icons/zap';
   import Pin from '@lucide/svelte/icons/pin';
   import type { Aggregate } from '../../workspaces';

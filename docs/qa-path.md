@@ -71,6 +71,7 @@ Each step is **Do → Expect**. Check every screenshot for overlaps, clipped tex
 - **C9** Type `busy` again in the oldest Codex session, so it is the most recent one → no pid moves between session lines (`/v1/lines?all=true`). Open a fourth Codex session in `proj` and type `busy` → only its new line appears. Type `exit` in the first one → only its own line is held.
 - **C10** In a Codex session press Ctrl+C (or type `exit`) → the tab stays open and shows `codex exited. Session <id>, resume with: … codex resume <id>`, then a shell prompt in the same folder that runs commands. Close that tab with Ctrl+W → it closes. Close a tab whose Codex is still running (**End session**) → it closes without a shell left behind.
 - **C11** Real CLIs: the stubs never fail the way a real CLI does. On a release, or when a change touches agent launch or resume, start a daemon like the sandbox's but with the real CLIs first on `PATH` (still its own `HOME` and state dir), and start each installed agent from **+** (Claude Code, Codex, Gemini CLI, Antigravity, Copilot CLI, opencode, Amp, Cursor Agent) → each keeps running in its tab (a login screen is fine), gets one session line on that tab, and Ctrl+C leaves the shell with its session and resume command. An agent shown greyed out in the **+** menu is not installed, or its `--version` fails: run its install hint and check it again.
+- **C12** In a running Claude session click **Close** in the side panel (confirm) → the tab stays open and shows `claude closed. Session <id>, resume with: …`, then a shell prompt that runs commands; the session shows hung-up. Start `claude` by hand from a shell tab and close it the same way → the shell stays, no new note. Close the chat of a session from its chat view → same as the panel.
 
 ### D. Review
 
@@ -99,7 +100,7 @@ Each step is **Do → Expect**. Check every screenshot for overlaps, clipped tex
 
 - **F1** Switch a session to **Chat** → messages, timestamps and assistant text render. An image the user sent shows as a preview.
 - **F2** A `!command` step shows as `! cmd`, and expanding it shows the command and its output. Typing `!echo x` in the composer sends it to the agent.
-- **F3** Click a file path in assistant text (relative, as agents write it; a path with spaces, such as `docs/J3 modifications.pdf`, is a link when it is written as a whole `code span`, and stays plain text in ordinary prose) → the file viewer opens: a PDF renders, an image shows, text shows. A missing file gives a clear not-found error. **Copy path** copies it.
+- **F3** Click a file path in assistant text (relative, as agents write it; a path with spaces, such as `docs/J3 modifications.pdf`, is a link when it is written as a whole `code span`, and stays plain text in ordinary prose) → the file viewer opens: a PDF renders, an image shows, text shows. A missing file gives a clear not-found error. **Copy path** copies it. **Download** saves the file into Downloads (an existing name gets a ` (1)` suffix, never overwritten) and a toast shows the saved path; in a browser it downloads through the browser. **(desktop)**
 - **F4** Expand a Read, Edit or Write tool step → click its path → the same viewer opens.
 - **F5** Composer: Enter sends, Shift+Enter adds a line, `/` lists commands, attaching a file works. A slash-command picker such as `/advisor` shows as a prompt card (needs a real agent; say so when only the stub was available).
 
@@ -110,6 +111,7 @@ Each step is **Do → Expect**. Check every screenshot for overlaps, clipped tex
 - **G3** Groups: Cmd/Ctrl+click several sessions → Add to group → the group lists them and broadcast reaches them.
 - **G4** Drag the sidebar narrow → the mode tabs stay on one line, cut with an ellipsis. Drag it back.
 - **G5** Filter workspaces or sessions → the list narrows. Archive and restore a workspace.
+- **G6** Add a workspace for a folder with no sessions and open it → the pane shows the workspace name, its path and "No sessions in this workspace yet", with **New <agent> session**, **Shell** and **More…**. Each button starts its session in that folder (or opens the new tab menu); with the daemon down or the folder deleted, the two start buttons are disabled. **By status** with nothing open shows the generic "Nothing open here" pane.
 
 ### H. Ports
 
@@ -129,7 +131,10 @@ Each step is **Do → Expect**. Check every screenshot for overlaps, clipped tex
 - **I7** Language from the new layout: switch it in General → the sidebar, the search placeholder and the rows change language at once.
 - **I8** Phone (`?phone=1`): Settings opens on a list of categories; a category opens its rows with a back button; searching shows results across categories; no horizontal scroll at 390 px.
 - **I10** Help → **Privacy policy** → **Open** opens `https://github.com/basilelt/overseer/blob/main/PRIVACY.md` in the system browser (desktop) or a new tab (web). Search `privacy` → Help is the only category and the **Privacy policy** row is highlighted.
-- **I11** (Android, real device) The GitHub APK shows **Software update** in Settings and **Check for updates** in More; the Google Play build (installed from the internal testing track) shows neither, no update pill, and no **Check for updates** in the command palette.
+- **I11** (Android, real device) The GitHub APK shows **Software update** in Settings and **Check for updates** in More; the Google Play build (installed from a Play testing track, uploaded by Actions > Store) shows neither, no update pill, and no **Check for updates** in the command palette.
+
+- **I12** Import from Switchboard (mock: add `?switchboard=1`; real: put old Switchboard data under the sandbox `HOME`): after connecting, the **Import from Switchboard** dialog opens once with the sessions, tasks and workspaces counts, the note that the old daemon is stopped and handed over when it runs, and **Import**, **Not now**, **Don't ask again**. **Not now** closes it; reload → it opens again. **Don't ask again**, reload → it stays closed. Phone (`?phone=1`): the dialog is a bottom sheet with every button reachable.
+- **I13** In **I12** click **Import** → the button reads Importing, then a success line with the counts (and that the old daemon was stopped), then the app reloads by itself (or on **Reload now**); the sessions, tasks and workspaces are there and the old settings (theme) applied. Settings, Help no longer lists **Import from Switchboard** (before the import, after **Don't ask again**, it does, and opens the dialog with Import and Cancel only). Script: `OLD_BIN=<switchboard-ide build> QA_DIR=/tmp/sbimport scripts/qa/switchboard-import.sh` runs a real Switchboard daemon with a live claude session, imports it and checks the handover (PASS). With the daemon down or no data (404 `no switchboard data found`), **Import** shows the error inline and the dialog stays usable. With no old data the dialog never opens and the Settings entry is hidden.
 
 ### J. Feedback
 
@@ -140,6 +145,7 @@ Each step is **Do → Expect**. Check every screenshot for overlaps, clipped tex
 ### K. Other views
 
 - **K1** Tab bar **+** → Browser, Review changes, Git graph, Worktrees, System, Usage, PR reviews → each opens with content or a clear empty state, and no console errors.
+- **K1b** Worktrees tab with a merged, agentless worktree and a busy one → **Clean up merged (n)** counts only the merged one; the dialog lists it ticked; untick → the confirm button disables; tick → **Clean up 1** removes it and its branch, the busy one stays.
 - **K2** The command palette lists and runs commands. Keyboard shortcuts in Settings match what they do. Ctrl+P (Cmd+P on macOS) opens the palette outside a terminal and Escape closes it; in a shell terminal Ctrl+P reaches the shell (history recall) and Ctrl+Shift+P opens the palette; Cmd/Ctrl+K still works. The Settings shortcut list shows Ctrl+K, Ctrl+Shift+P and Ctrl+P for the palette.
 - **K3** PR reviews while offline: put a `gh` stub first on the daemon's `PATH` whose `api graphql` fails with a connection error and whose `auth token` succeeds (`auth status` fails, as the real one does without a network), restart the daemon, open **PR reviews** → "Could not load review requests" with "GitHub could not be reached: …" and the connection error, no sign-in hint. With `auth token` failing too → "GitHub CLI not signed in" and `gh auth login`.
 

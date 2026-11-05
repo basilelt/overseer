@@ -169,7 +169,7 @@
 
 <aside class="panel" aria-label={t('panel.title')} data-tour="panel">
   {#if !item || !line}
-    <p class="empty faint">{item ? t('panel.noActivity') : t('term.empty')}</p>
+    <p class="empty faint">{item ? t('panel.noActivity') : t('panel.noSelection')}</p>
   {:else}
     <header>
       <div class="title">

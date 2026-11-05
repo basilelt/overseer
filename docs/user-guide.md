@@ -873,7 +873,7 @@ On first launch, once the app is connected (immediately in local mode, after the
 connection on a phone), a welcome card offers **Take the tour** or **Skip**. The tour dims the
 window and highlights the real controls one at a time: host chip, workspaces sidebar, tabs and the
 new-session menu, the Terminal/Chat toggle, the side panel, Tasks, Review, the usage, system and ports
-chips, notifications and hooks, the command palette and Feedback, in 0.25 the Cmd/Ctrl+P palette shortcut, and in 0.27 the demo mode (on the **Demo mode** pill while in the demo, else on the host chip), and in 0.28 the GPU rendering option for terminals. Steps whose control is not on
+chips, notifications and hooks, the command palette and Feedback, in 0.25 the Cmd/Ctrl+P palette shortcut, and in 0.27 the demo mode (on the **Demo mode** pill while in the demo, else on the host chip), and in 0.28 the GPU rendering option for terminals, and in 0.29 the clean up of unused worktrees and the import from Switchboard (on its button in Settings, Help, or on the Settings button). Steps whose control is not on
 screen (no session selected, a feature the server lacks, phone layout) are skipped. On a phone the
 card is a sheet at the bottom (or top, when the control sits low) and points at the bottom
 navigation, the session strip and the menu.
@@ -898,6 +898,17 @@ instead of the normal renderer, which keeps long, fast output smooth. It needs h
 acceleration; where WebGL is not available the terminals keep the normal renderer. Selection,
 scrolling and colours work the same with either renderer, and turning it off goes back to the normal
 renderer.
+
+**Import from Switchboard.** Overseer was called Switchboard before. When the daemon finds the old
+Switchboard data on its machine and it is not imported yet, a dialog appears once after the app
+connects. It shows how many sessions, tasks and workspaces will come over, and tells you when the
+old Switchboard daemon is still running: it is stopped and its sessions are handed over to
+Overseer, and the agent hooks move too. **Import** runs it, applies the settings of the old app
+(theme, fonts, layout and so on, overwriting the current ones) and reloads Overseer. **Not now**
+closes the dialog until the next launch; **Don't ask again** stops the offer for good. If the
+import fails, the reason is shown in the dialog and nothing else changes. Until the import is done,
+Settings, Help, **Import from Switchboard** opens the same dialog, also after **Don't ask again**.
+Once imported the entry is gone, so newer Overseer data is never overwritten by the old one.
 
 ### 14.0a Demo mode
 
@@ -937,6 +948,10 @@ curl --unix-socket "$S" -X POST -d '{"confirm":true}' http://unix/v1/terms/<id>/
 When an agent quits on its own in a tab (Ctrl+C, `/quit`, `exit`), the tab stays open: it prints
 the session the agent ran and the command that resumes it, then starts your shell there. Killing the
 term, closing the tab or holding the session ends it as before, and task terms are not kept.
+**Close** on a session (side panel or chat) does the same: the agent stops, and its tab keeps a
+shell with `<agent> closed. Session <id>, resume with: …`; an agent started from a shell leaves that
+shell. This is `POST /v1/lines/<id>/close?dryRun=false&shell=true`; without `shell=true` (closing
+the tab, the CLI, the organizer) the term ends with the agent.
 
 `GET /v1/terms/<id>/io` is a WebSocket: the last 2 MiB of output first, then live output (binary
 frames); binary frames sent are typed into the program, `{"resize":{"cols":…,"rows":…}}` text
@@ -1028,7 +1043,9 @@ Markdown is rendered and text-like files (txt, log, JSON, YAML, TOML, CSV, XML) 
 up to 1 MiB displayed. Relative paths resolve against the terminal's current directory; `~` is the
 host's home. The daemon serves any regular file the host user can read, up to 50 MiB, through
 `GET /v1/file`; directories, devices and larger files are refused with a message. **Copy path** puts
-the full path on the clipboard.
+the full path on the clipboard, and **Download** saves a copy of the file into your Downloads
+folder on the device running the app (a file of the same name is kept and the copy gets a ` (1)`
+suffix).
 
 On a phone, long-press a tab in the session strip for **Pin/Unpin** (agent tabs) and **Close**.
 
@@ -1749,6 +1766,10 @@ opt out). One place, outside your repositories:
   whose branch has commits that are neither pushed nor in the base. The branch is deleted only
   when every commit of it is in the base (or its PR is merged and the tip pushed); otherwise it
   is kept. Nothing is ever forced.
+- **Clean up merged (n)** in the Worktrees toolbar picks the worktrees nobody needs any more: merged
+  into the base (or missing on disk), with no agent session, no terminal and no uncommitted change.
+  The dialog lists each one with a checkbox, all ticked; untick the ones to keep, then confirm.
+  **Clean up stale** and the row's **Clean up** use the same checkboxes.
 
 ```
 P=$(python3 -c 'import urllib.parse,sys;print(urllib.parse.quote(sys.argv[1],safe=""))' ~/src/app)

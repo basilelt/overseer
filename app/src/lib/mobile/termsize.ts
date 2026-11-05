@@ -28,3 +28,9 @@ export function sizedElsewhere(term: TermSize | undefined, mine: { cols: number;
 export function shouldReassert(visible: boolean, focused: boolean, hint: ReturnType<typeof sizedElsewhere>, resizable = true): boolean {
   return resizable && visible && focused && hint !== null;
 }
+
+export function fitTo(term: { cols: number; rows: number; resize(cols: number, rows: number): void }, want: { cols: number; rows: number } | undefined): boolean {
+  if (!want || (want.cols === term.cols && want.rows === term.rows)) return false;
+  term.resize(want.cols, want.rows);
+  return true;
+}

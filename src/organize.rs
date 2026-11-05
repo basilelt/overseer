@@ -370,17 +370,14 @@ pub fn deterministic(i: &Input) -> Value {
     let local = |l: &Line| l.station_id.is_empty() || l.station_id == i.station;
     let live = |l: &&Line| l.state != "hung-up" && !l.duplicate;
     let repo_root = |l: &Line| {
-        i.projects
-            .iter()
-            .find(|(_, r)| !l.repo.is_empty() && *r == l.repo)
-            .map(|(p, _)| p.clone())
-            .unwrap_or_else(|| {
-                if l.worktree_path.is_empty() {
-                    l.cwd.clone()
-                } else {
-                    l.worktree_path.clone()
-                }
-            })
+        let path = if l.worktree_path.is_empty() {
+            &l.cwd
+        } else {
+            &l.worktree_path
+        };
+        workspaces::repo_root(i.projects, &l.repo, path)
+            .unwrap_or(path)
+            .to_string()
     };
     let mut roots: BTreeMap<String, (String, usize)> = BTreeMap::new();
     for l in i.lines.iter().filter(live) {
@@ -812,10 +809,10 @@ impl Ops for Live<'_, '_> {
         }
     }
     fn hold(&self, l: &Line) -> Result<(), String> {
-        report(Ok(crate::actions::hold_line(self.0, l, true, true)))
+        report(Ok(crate::actions::hold_line(self.0, l, true, true, false)))
     }
     fn close(&self, l: &Line) -> Result<(), String> {
-        report(crate::actions::close_line(self.0, l, true))
+        report(crate::actions::close_line(self.0, l, true, false))
     }
     fn create_workspace(&self, b: &Value) -> Res<(bool, Workspace)> {
         workspaces::create(self.0, b)
@@ -1348,6 +1345,37 @@ mod tests {
             landed: &landed,
             activity,
         })
+    }
+
+    #[test]
+    fn sessions_in_a_second_clone_of_a_repo_propose_that_clone_as_workspace() {
+        let lines = [
+            line("a", "github.com/o/pkg", "/w/atk", 1),
+            line("b", "github.com/o/pkg", "/w/atk2/src", 1),
+        ];
+        let projects = [
+            ("/w/atk".to_string(), "github.com/o/pkg".to_string()),
+            ("/w/atk2".to_string(), "github.com/o/pkg".to_string()),
+        ];
+        let p = deterministic(&Input {
+            lines: &lines,
+            workspaces: &[],
+            folders: &[],
+            groups: &[],
+            projects: &projects,
+            tasks: &[],
+            station: "st",
+            now_ms: NOW,
+            stale_days: STALE_DAYS,
+            member: &|_| None,
+            landed: &|_| None,
+            activity: &|_| None,
+        });
+        let created: Vec<Value> = kinds(&p, "create_workspace")
+            .iter()
+            .map(|a| a["path"].clone())
+            .collect();
+        assert_eq!(created, [json!("/w/atk"), json!("/w/atk2")]);
     }
 
     fn kinds(p: &Value, kind: &str) -> Vec<Value> {

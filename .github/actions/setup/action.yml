@@ -1,5 +1,5 @@
 name: Setup
-description: Installs and caches what an Overseer CI or release job needs. Caches are saved from main only and restored everywhere.
+description: Installs and caches what an Overseer CI or release job needs. Caches are saved outside pull requests (pushes to next, releases on main, manual runs) and restored everywhere.
 
 inputs:
   free-disk:
@@ -46,7 +46,7 @@ runs:
       shell: bash
       env:
         APT: ${{ inputs.apt }}
-        SAVE: ${{ github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch' }}
+        SAVE: ${{ github.event_name != 'pull_request' }}
       run: |
         pkgs=$(tr ' ' '\n' <<<"$APT" | sed '/^$/d' | sort -u | tr '\n' ' ')
         echo "save=$SAVE" >>"$GITHUB_OUTPUT"

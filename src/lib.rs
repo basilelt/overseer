@@ -23,6 +23,7 @@ pub mod gitgraph;
 pub mod github;
 pub mod hold;
 pub mod hooks;
+pub mod import;
 pub mod inbox;
 pub mod install;
 pub mod lifecycle;

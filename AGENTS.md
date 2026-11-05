@@ -52,15 +52,18 @@ Tests check what their author thought of; a user clicks everything. In v0.23.0 e
 
 ## Branches, PRs and releases
 
-One feature or fix = one branch = one PR to `main` (docs/ci.md, "Workflow"):
+Two long-lived branches: `next` collects every feature and fix, `main` only moves when a release is cut (docs/ci.md, "Workflow"). One feature or fix = one branch = one PR to `next`:
 
-- Work on a `<type>/<description>` branch from an up-to-date `main`. Push it only after the local checks below pass, batching fixes into one push.
-- Open the PR as a draft (`gh pr create --draft`) with a Conventional Commits title. CI does not run on drafts.
+- Work on a `<type>/<description>` branch from an up-to-date `next` (hotfixes too). Push it only after the local checks below pass, batching fixes into one push.
+- Open the PR to `next` as a draft (`gh pr create --draft --base next`) with a Conventional Commits title. CI does not run on drafts.
 - Mark it ready when the branch is complete: CI runs once, only the jobs the changed paths need. Further pushes rerun it.
-- Before merging, merge `main` into the branch if `main` moved and wait for CI to be green.
-- Merge with a merge commit (not squash, not rebase), so the release gate sees the tested tree and does not run CI again on `main`.
-- `main` is protected by the `main` ruleset (`.github/rulesets/main.json`): no direct push, force push or deletion; a PR with every CI job green and up to date with `main`; merge commits only. Release tags (`v*`, `latest`) cannot be deleted (`.github/rulesets/release-tags.json`); the release workflow still creates and moves them. Change a ruleset by editing its file and applying it with `gh api -X PUT repos/basilelt/overseer/rulesets/<id> --input <file>`.
-- Each merge to `main` is a release: the next `vX.Y.Z` tag is computed from the Conventional Commits since the current tag (`feat` = minor, `fix` and others = patch, `!` = major), then the builds and the GitHub Release follow. Docs-only merges make no release.
+- A PR does not have to be up to date with its base to merge; merge the base into it only on a conflict.
+- Merge with a merge commit (not squash, not rebase). Merging into `next` releases nothing.
+- A release is a PR from `next` to `main`, opened by the maintainer when enough work has been batched: draft first, run the full QA path of `docs/qa-path.md` on it (it merges several branches), mark it ready, merge with a merge commit so the release gate sees the tested tree and does not run CI again on `main`. Then sync `next` with a PR from `main` to `next` (same tree, so CI runs only `changes`), merged with a merge commit: otherwise the next release PR is behind `main` and the release gate runs CI again on `main`.
+- Never open a PR from a feature branch to `main`, and never push to `main` or `next` directly.
+- `main` and `next` are protected by the `main` and `next` rulesets (`.github/rulesets/main.json`, `.github/rulesets/next.json`): no direct push, force push or deletion; a PR with every CI job green (not required to be up to date with the branch); merge commits only. Repository admins can bypass the `next` ruleset when merging a PR ("Merge without waiting for requirements"), for exceptional cases only; never on `main`. Release tags (`v*`, `latest`) cannot be deleted (`.github/rulesets/release-tags.json`); the release workflow still creates and moves them. Change a ruleset by editing its file and applying it with `gh api -X PUT repos/basilelt/overseer/rulesets/<id> --input <file>`.
+- Each merge to `main` is a release: the next `vX.Y.Z` tag is computed from the Conventional Commits since the current tag, the whole batch from `next` included (`feat` = minor, `fix` and others = patch, `!` = major), then the builds, the Android APK (Obtainium), the GitHub Release and the Homebrew tap follow. Docs-only merges make no release.
+- The App Store and Play Store are never released automatically: the maintainer runs Actions > Store (`.github/workflows/store.yml`, `workflow_dispatch` from `main`) for the release tag to ship. Store submissions (`upload_to_app_store`, `submit_for_review`, `upload_to_play_store`, ...) live only in `store.yml` and `app/fastlane/`; `scripts/store-guard.sh` fails CI otherwise.
 
 ## Local checks before pushing
 
@@ -73,9 +76,9 @@ Keep Docker, the full `make test` and release builds in CI.
 
 ## Tour of the update
 
-Every minor or major release (`x.y.0` or `x.0.0`) ships a tour of what it adds; patch releases (`x.y.z`) do not touch the tour. Since each merge to `main` is a release, any `feat` (or `!`) PR with a user-visible feature carries its own tour of the update:
+Every minor or major release (`x.y.0` or `x.0.0`) ships a tour of what it adds; patch releases (`x.y.z`) do not touch the tour. Any `feat` (or `!`) PR to `next` with a user-visible feature carries its own tour of the update:
 
-- Add one step per new feature to `STEPS` in `app/src/lib/tour/steps.ts`, with `since` set to the release it ships in as `'x.y'` (the latest `v*` tag with the minor bumped, or the major for a `!` change; check it again after merging `main` into the branch, since another `feat` may have taken that number) and its `data-tour` target on the real control. `TOUR_VERSION` follows from the newest `since`.
+- Add one step per new feature to `STEPS` in `app/src/lib/tour/steps.ts`, with `since` set to the release it ships in as `'x.y'`: the latest `v*` tag with the minor bumped (or the major for a `!` change), which every `feat` batched on `next` for the same release shares. Check it again on the release PR from `next` to `main`, since a `!` in the batch or a release cut meanwhile changes that number. Put its `data-tour` target on the real control. `TOUR_VERSION` follows from the newest `since`.
 - Write its `tour.<id>.title` and `tour.<id>.body` (plus `tour.<id>.phone` when the phone layout differs) in `app/src/lib/i18n/en.ts`, as in "UI strings" below.
 - The app records the newest release whose tour the user saw (`tourSeen`). After an update it shows every step newer than that under **What's new**, oldest release first, each labelled "New in x.y": a user going from 0.22 to 0.26 sees the steps of 0.23 to 0.26 in one tour. New users get every step in the full tour.
 - Extend `app/src/lib/tour/steps.test.ts` to pin that `stepsFor('whatsNew', '<previous release>')` returns exactly the new steps, and screenshot the step (desktop and phone) as in the visual check below.
@@ -103,5 +106,5 @@ For any change to what the app shows, build the frontend in mock mode (`VITE_MOC
 ## Git
 
 - Conventional commits; branch names `<type>/<description>`.
-- Every PR to `main` is opened as a draft and marked ready when the branch is complete.
+- Feature and fix PRs target `next`; only release PRs target `main`. Every PR is opened as a draft and marked ready when the branch is complete.
 - The user is the only author: no Co-Authored-By or any Claude/session attribution in commits, PRs or comments.

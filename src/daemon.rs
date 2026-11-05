@@ -811,6 +811,7 @@ pub fn handle(ctx: &Ctx, r: &Request) -> (u16, Value) {
         .or_else(|| crate::worktrees::routes(ctx, &r.method, &segs, &body))
         .or_else(|| crate::install::routes(&r.method, &segs, &body, &ctx.state_dir))
         .or_else(|| crate::statusline::routes(&r.method, &segs, &body, &ctx.state_dir))
+        .or_else(|| crate::import::routes(&r.method, &segs, &body, &ctx.state_dir))
         .or_else(|| crate::lifecycle::routes(&r.method, &segs, &body, &ctx.state_dir))
         .or_else(|| crate::termtheme::routes(&r.method, &segs, &body))
         .or_else(|| crate::feedback::routes(ctx, &r.method, &segs, &body))
@@ -867,10 +868,12 @@ pub fn handle(ctx: &Ctx, r: &Request) -> (u16, Value) {
             Ok(rep) => (if rep.ok() { 200 } else { 409 }, rep.to_json()),
             Err(e) => err(404, e),
         },
-        ("POST", ["v1", "lines", id, "close"]) => match actions::close(ctx, id, !dry_run(r)) {
-            Ok(rep) => (if rep.ok() { 200 } else { 409 }, rep.to_json()),
-            Err(e) => err(404, e),
-        },
+        ("POST", ["v1", "lines", id, "close"]) => {
+            match actions::close(ctx, id, !dry_run(r), q(r, "shell") == Some("true")) {
+                Ok(rep) => (if rep.ok() { 200 } else { 409 }, rep.to_json()),
+                Err(e) => err(404, e),
+            }
+        }
         ("POST", ["v1", "lines", id, "resume"]) => {
             match actions::resume(ctx, id, dry_run(r), actions::Launch::Detached) {
                 Ok(p) => (200, p.to_json()),
@@ -1097,6 +1100,7 @@ fn changes_lines(method: &str, path: &str, code: u16) -> bool {
             | ("DELETE", ["v1", "terms" | "workspaces", _])
             | ("POST", ["v1", "tasks", _, "start"])
             | ("POST", ["v1", "tasks", "organize"])
+            | ("POST", ["v1", "import", "switchboard"])
     )
 }
 

@@ -8,7 +8,7 @@ wide=false
 
 if [ "${SKIP:-}" = true ]; then
   echo "::notice title=ci changes::skipped by the release gate"
-elif [ "${EVENT:-pull_request}" != pull_request ]; then
+elif [ "${EVENT:-pull_request}" != pull_request ] && [ "$EVENT:${REF:-}" != push:refs/heads/next ]; then
   all=true
 elif ! files=$(git diff --name-only "${1:-HEAD^1}" "${2:-HEAD}"); then
   echo "::warning title=ci changes::git diff failed, running every job"

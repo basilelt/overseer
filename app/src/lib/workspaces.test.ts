@@ -20,6 +20,7 @@ import {
   planWorkspaceDrop,
   rankAt,
   resolveTab,
+  repoRoot,
   within,
   workspaceTabs,
   wsDropTarget,
@@ -120,6 +121,30 @@ describe('membership', () => {
     const lines = [line('w', '/home/u/.overseer/worktrees/webshop-1/task-1', 'github.com/o/webshop')];
     const m = itemWorkspaces(sidebarItems(lines, [], []), { lines, terms: [], tasks: [] }, [work, wts], projects);
     expect(m.get('line:w')).toBe('work');
+  });
+
+  it('keeps sessions of a second clone of a repository in that clone workspace, not in the first clone', () => {
+    const atk = ws('atk', '/home/u/work/atk');
+    const atk2 = ws('atk2', '/home/u/work/atk2');
+    const wts = ws('wts', '/home/u/.overseer/worktrees');
+    const clones: Project[] = [
+      { path: '/home/u/work/atk', name: 'atk', repo: 'github.com/o/pkg' },
+      { path: '/home/u/work/atk2', name: 'atk2', repo: 'github.com/o/pkg' },
+    ];
+    const lines = [line('one', '/home/u/work/atk', 'github.com/o/pkg'), line('two', '/home/u/work/atk2', 'github.com/o/pkg'), line('wt', '/home/u/.overseer/worktrees/atk-1/feat', 'github.com/o/pkg'), line('lost', '/srv/feat', 'github.com/o/pkg')];
+    const m = itemWorkspaces(sidebarItems(lines, [], []), { lines, terms: [], tasks: [] }, [atk, atk2, wts], clones);
+    expect(m.get('line:one')).toBe('atk');
+    expect(m.get('line:two')).toBe('atk2');
+    expect(m.get('line:wt')).toBe('wts');
+    expect(m.has('line:lost')).toBe(false);
+  });
+
+  it('picks the repository root of a line among its clones by path, or the only clone', () => {
+    expect(repoRoot(['/a/atk', '/a/atk2'], '/a/atk2/src')).toBe('/a/atk2');
+    expect(repoRoot(['/a/atk', '/a/atk2'], '/w/atk-1/feat')).toBeUndefined();
+    expect(repoRoot(['/a/atk'], '/w/atk-1/feat')).toBe('/a/atk');
+    expect(repoRoot(undefined, '/a/atk')).toBeUndefined();
+    expect(repoRoot(['/a/atk'], undefined)).toBe('/a/atk');
   });
 
   it('puts an explicitly assigned line or term in its workspace before task and path rules', () => {

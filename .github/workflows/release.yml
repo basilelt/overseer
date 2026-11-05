@@ -71,8 +71,6 @@ jobs:
       tag: ${{ steps.tag_version.outputs.new_tag }}
       version: ${{ steps.tag_version.outputs.new_version }}
       android: ${{ steps.optional.outputs.android }}
-      play: ${{ steps.optional.outputs.play }}
-      ios: ${{ steps.optional.outputs.ios }}
       tap: ${{ steps.optional.outputs.tap }}
       msix: ${{ steps.optional.outputs.msix }}
     steps:
@@ -112,16 +110,12 @@ jobs:
         id: optional
         env:
           ANDROID: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' && secrets.ANDROID_KEYSTORE_PASSWORD != '' && secrets.ANDROID_KEY_ALIAS != '' && secrets.ANDROID_KEY_PASSWORD != '' }}
-          IOS: ${{ secrets.APPLE_TEAM_ID != '' && secrets.APPLE_KEY_ID != '' && secrets.APPLE_ISSUER_ID != '' && secrets.APPLE_KEY_CONTENT != '' && secrets.IOS_CERTIFICATE != '' && secrets.IOS_CERTIFICATE_PASSWORD != '' && secrets.IOS_MOBILE_PROVISION != '' }}
           TAP: ${{ secrets.HOMEBREW_TAP_DEPLOY_KEY != '' }}
           MSIX: ${{ secrets.WINDOWS_SELF_SIGN_PFX_BASE64 != '' && secrets.WINDOWS_SELF_SIGN_PFX_PASSWORD != '' }}
           UPDATER: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY != '' }}
-          PLAY: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON != '' }}
         run: |
           {
             echo "android=$ANDROID"
-            echo "play=$PLAY"
-            echo "ios=$IOS"
             echo "tap=$TAP"
             echo "msix=$MSIX"
           } >> "$GITHUB_OUTPUT"
@@ -130,12 +124,6 @@ jobs:
           fi
           if [ "$ANDROID" != "true" ]; then
             echo "::warning title=app-android skipped::ANDROID_KEYSTORE_BASE64, ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS or ANDROID_KEY_PASSWORD is not set: no Android APK in this release (docs/mobile.md)"
-          fi
-          if [ "$ANDROID" = "true" ] && [ "$PLAY" != "true" ]; then
-            echo "::warning title=Google Play skipped::PLAY_SERVICE_ACCOUNT_JSON is not set: the Android App Bundle is built but not uploaded to Google Play (docs/mobile.md)"
-          fi
-          if [ "$IOS" != "true" ]; then
-            echo "::warning title=app-ios skipped::APPLE_TEAM_ID, APPLE_KEY_ID, APPLE_ISSUER_ID, APPLE_KEY_CONTENT, IOS_CERTIFICATE, IOS_CERTIFICATE_PASSWORD or IOS_MOBILE_PROVISION is not set: no TestFlight build (docs/mobile.md)"
           fi
           if [ "$TAP" != "true" ]; then
             echo "::warning title=tap skipped::HOMEBREW_TAP_DEPLOY_KEY is not set: the Homebrew tap is not updated (docs/ci.md)"
@@ -590,8 +578,6 @@ jobs:
     if: needs.tag.outputs.tag != '' && needs.tag.outputs.android == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 120
-    outputs:
-      aab: ${{ steps.aab.outcome }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -641,113 +627,8 @@ jobs:
           if-no-files-found: error
           retention-days: 4
 
-      - name: Google Play bundle
-        id: aab
-        continue-on-error: true
-        env:
-          OVERSEER_DISTRIBUTION: play
-          VERSION: ${{ needs.tag.outputs.version }}
-          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-          ANDROID_CERT_SHA256: ${{ vars.ANDROID_CERT_SHA256 }}
-        run: |
-          pnpm --dir app tauri android build --ci --aab --target aarch64 --target armv7
-          scripts/android-aab.sh "play/Overseer_${VERSION}_android.aab"
-          scripts/android-16k.sh "play/Overseer_${VERSION}_android.aab"
-
-      - if: steps.aab.outcome == 'success'
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
-        with:
-          name: play-android
-          path: play/
-          if-no-files-found: error
-          retention-days: 4
-
       - if: always()
         run: rm -f "$RUNNER_TEMP/release.jks"
-
-  app-android-play:
-    needs: [tag, app-android]
-    if: ${{ !cancelled() && needs.tag.outputs.play == 'true' && needs.app-android.outputs.aab == 'success' }}
-    runs-on: ubuntu-slim
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          persist-credentials: false
-
-      - id: play
-        env:
-          PLAY_TRACK: ${{ vars.PLAY_TRACK }}
-          PLAY_RELEASE_STATUS: ${{ vars.PLAY_RELEASE_STATUS }}
-        run: scripts/android-play-track.sh
-
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
-        with:
-          name: play-android
-          path: play
-
-      - uses: r0adkll/upload-google-play@e738b9dd8f2476ea806d921b64aacd24f34515a5 # v1.1.5
-        with:
-          serviceAccountJsonPlainText: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
-          packageName: io.github.basilelt.overseer
-          releaseFiles: play/*.aab
-          track: ${{ steps.play.outputs.track }}
-          status: ${{ steps.play.outputs.status }}
-
-  app-ios:
-    needs: tag
-    if: needs.tag.outputs.tag != '' && needs.tag.outputs.ios == 'true'
-    runs-on: macos-26
-    timeout-minutes: 60
-    continue-on-error: true
-    env:
-      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-      APPLE_DEVELOPMENT_TEAM: ${{ secrets.APPLE_TEAM_ID }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          persist-credentials: false
-
-      - run: scripts/store-guard.sh
-
-      - uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90 # v1
-        with:
-          xcode-version: "26"
-
-      - uses: ./.github/actions/setup
-        with:
-          rust: "true"
-          rust-targets: aarch64-apple-ios
-          rust-workspaces: app/src-tauri -> target
-          node: "true"
-
-      - run: command -v fastlane || brew install fastlane
-
-      - env:
-          VERSION: ${{ needs.tag.outputs.version }}
-        run: scripts/set-version.sh "$VERSION"
-
-      - name: Set the Apple team in the Xcode project
-        working-directory: app/src-tauri/gen/apple
-        run: |
-          sed -i '' -E "s/(DEVELOPMENT_TEAM|DevelopmentTeam) = [^;]*;/\1 = $APPLE_TEAM_ID;/" overseer-app.xcodeproj/project.pbxproj
-          sed -i '' -E "s/DEVELOPMENT_TEAM: .*/DEVELOPMENT_TEAM: $APPLE_TEAM_ID/" project.yml
-          grep -c "$APPLE_TEAM_ID" overseer-app.xcodeproj/project.pbxproj
-
-      - working-directory: app
-        env:
-          OVERSEER_APP_DIR: ${{ github.workspace }}/app
-          APPLE_KEY_ID: ${{ secrets.APPLE_KEY_ID }}
-          APPLE_ISSUER_ID: ${{ secrets.APPLE_ISSUER_ID }}
-          APPLE_KEY_CONTENT: ${{ secrets.APPLE_KEY_CONTENT }}
-          IOS_CERTIFICATE: ${{ secrets.IOS_CERTIFICATE }}
-          IOS_CERTIFICATE_PASSWORD: ${{ secrets.IOS_CERTIFICATE_PASSWORD }}
-          IOS_MOBILE_PROVISION: ${{ secrets.IOS_MOBILE_PROVISION }}
-          FASTLANE_SKIP_UPDATE_CHECK: "1"
-          FASTLANE_HIDE_CHANGELOG: "1"
-        run: fastlane ios internal_testflight
 
   publish:
     needs: [tag, servers, servers-macos, app-linux, app-windows, app-windows-msix, app-windows-arm, app-macos, app-android]

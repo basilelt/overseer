@@ -1,21 +1,25 @@
 # CI and releases
 
-Three workflows in `.github/workflows/` (ADR 0027; mobile builds ADR 0032 and
+Four workflows in `.github/workflows/` (ADR 0027; mobile builds ADR 0032 and
 [docs/mobile.md](mobile.md)). Every job runs on a GitHub-hosted runner; the repository needs no
 self-hosted runner.
 
 | Workflow | Trigger | Purpose |
 |---|---|---|
 | `ci.yml` | non-draft pull requests (`opened`, `synchronize`, `reopened`, `ready_for_review`), manual (`workflow_dispatch`), and called by `release.yml` | lint, tests, Windows check, debug APK |
-| `release.yml` | push to `main` | CI, version tag, binaries, app bundles, GitHub Release, TestFlight, Homebrew tap |
+| `release.yml` | push to `main` | CI, version tag, binaries, app bundles, Android APK, GitHub Release, Homebrew tap |
+| `store.yml` | manual, from `main` only | App Store submission (iOS) and Play Store upload (Android) of a release tag |
 | `mobile-init.yml` | manual | generates `app/src-tauri/gen/{android,apple}` and commits them to the branch |
 
 Concurrency: `ci-pr-<PR number or ref>` cancels the previous run of the same PR;
-`release-refs/heads/main` never cancels a running release (a newer push waits).
+`release-refs/heads/main` never cancels a running release (a newer push waits); `store` never
+cancels a running store upload.
 
 Runner budget: CI runs nothing on draft PRs, only the jobs the change needs on ready PRs
 ([Path filtering](#path-filtering)), and is not repeated on `main` when the merged PR already passed
-it ([Release gate](#release-gate)). See [Workflow](#workflow) for how branches reach `main`.
+it ([Release gate](#release-gate)). Features and fixes collect on the `next` integration branch
+and reach `main` in batches, so a release (and its full build) happens only when the maintainer
+decides. See [Workflow](#workflow) for how branches reach `main`.
 
 A release run with no secret configured goes green: it publishes the daemon binaries and the
 desktop bundles, unsigned or ad-hoc signed, and skips with a warning everything that needs a
@@ -23,19 +27,39 @@ secret ([Secrets](#secrets)).
 
 ## Workflow
 
-One feature or fix = one branch = one PR:
+Two long-lived branches: `next`, the integration branch (the default branch on GitHub, so pull
+requests target it unless told otherwise), and `main`, which only moves when a release is cut.
+Every push to `main` is a release; `next` collects the work in between.
 
-1. Branch `<type>/<description>` from an up-to-date `main`. Push once the local checks of
+One feature or fix = one branch = one PR to `next`:
+
+1. Branch `<type>/<description>` from an up-to-date `next`. Push once the local checks of
    `AGENTS.md` pass, batching fixes into one push.
-2. Open a draft PR to `main` with a Conventional Commits title: no CI runs while it is a draft.
+2. Open a draft PR to `next` with a Conventional Commits title: no CI runs while it is a draft.
 3. Mark it ready when the branch is complete, so CI runs once. Further pushes rerun it (the
    previous run is cancelled).
-4. Merge with a merge commit (not squash, not rebase), after merging `main` into the branch if
-   `main` moved and CI is green again. The release then skips CI (the gate sees the same tree
-   already passed).
-5. Each merge to `main` makes one release: `tag` bumps the current `vX.Y.Z` tag from the
-   Conventional Commits of the merge ([Versioning](#versioning)), then the builds and the GitHub
-   Release follow. A docs-only merge makes no release.
+4. Merge with a merge commit (not squash, not rebase), after merging `next` into the branch if
+   `next` moved and CI is green again. Merging into `next` releases nothing.
+
+Hotfixes take the same path: a `fix/` branch from `next`, a PR to `next`, then a release PR.
+
+Cutting a release, when enough has been batched on `next`:
+
+1. Open a draft PR from `next` to `main` (title such as `chore: release`), run the full QA path of
+   [docs/qa-path.md](qa-path.md) on the merged tree, then mark it ready: CI runs once on the whole
+   batch.
+2. Merge with a merge commit. The release then skips CI (the gate sees the same tree already
+   passed). `tag` bumps the current `vX.Y.Z` tag from every Conventional Commit of the batch
+   ([Versioning](#versioning)): one `feat` anywhere in it makes a minor release. Then the builds,
+   the Android APK (Obtainium), the GitHub Release and the Homebrew tap follow. A docs-only merge
+   makes no release.
+3. `main` now has a merge commit that `next` lacks. Sync right away with a PR from `main` to
+   `next`, merged with a merge commit: the trees are equal, so CI runs only `changes`. Without the
+   sync the next release PR is behind `main`, and the release gate runs CI again on `main` before
+   tagging.
+
+Store releases are separate and manual: Actions > Store > Run workflow, on `main`
+([Store releases](#store-releases)).
 
 Actions > CI > Run workflow runs every job of `ci.yml` on any branch, `macos` included, without a
 pull request.
@@ -57,7 +81,7 @@ base) and sets one output per job. Each job `needs: changes` and runs only when 
 | `macos` (signing steps) | `.github/workflows/release.yml`, `scripts/macos-sign.sh`, `app/src-tauri/tauri*.conf.json`, `app/src-tauri/Info.plist` |
 | `macos` (`procs`/`ports`/`review::watch` tests) | `src/procs.rs`, `src/ports.rs`, `src/review/watch.rs`, `Cargo.toml` |
 | `actionlint` | `.github/` |
-| `store-guard` | what `scripts/store-guard.sh` scans: `.github/`, `app/fastlane/`, `scripts/`, `Makefile` |
+| `store-guard` | `.github/`, `scripts/`, `Makefile` (what `scripts/store-guard.sh` scans), `app/fastlane/` and the iOS app icons |
 | `tap` | `scripts/update-tap.sh`, `scripts/update-tap.test.sh` |
 | `ci-scripts` | `.github/actions/`, `scripts/ci-*.sh` (runs `scripts/ci-changes.test.sh`, `scripts/ci-apt.test.sh` and the setup action with apt packages) |
 
@@ -67,6 +91,8 @@ base) and sets one output per job. Each job `needs: changes` and runs only when 
   trigger every job except `macos`, which only follows its own paths: macOS runners are the
   scarcest and slowest to start, so it runs on pull requests and manual runs only, as one job.
 - A failed `git diff` runs every job.
+- A push to `next` (a merged PR) is filtered the same way on `HEAD^1..HEAD`, the merged PR's
+  changes, and saves the caches of the jobs it runs ([Caches](#caches)).
 - Called from `release.yml` (`workflow_call`), every job runs except `macos`, unless the gate
   passes `skip: true`. A manual run runs every job.
 - A draft PR skips `changes`, so every job is skipped; `ready_for_review` starts the real run.
@@ -106,15 +132,16 @@ its `changes` job runs, a few seconds on `ubuntu-slim`. Pushes by `github-action
 | Workflow | Job | Runner | What |
 |---|---|---|---|
 | ci | `changes` | `ubuntu-slim` | `scripts/ci-changes.sh`: which jobs the PR needs ([Path filtering](#path-filtering)) |
-| ci | `actionlint` | `ubuntu-slim` | `actionlint` (downloaded once by its install script and cached by version; `ubuntu-slim` has no Docker) |
+| ci | `actionlint` | `ubuntu-slim` | `actionlint` (pinned release, checksum verified, cached by version; `ubuntu-slim` has no Docker) |
 | ci | `ci-scripts` | `ubuntu-24.04` | `scripts/ci-changes.test.sh` (path filter), `scripts/ci-apt.test.sh` (offline apt install in Docker), the setup action on real apt packages |
+| ci | `gitleaks` | `ubuntu-slim` | `gitleaks git` (pinned release, checksum verified) over the PR's commits (`base..head`); every PR, no path filter. Known false positives are fingerprinted in `.gitleaksignore` |
 | ci | `rust` | `ubuntu-24.04` | `cargo fmt --check` (root and `api/`), `make lint`, `timeout 1500 make test` |
 | ci | `app` | `ubuntu-24.04` | `make app-test` (vitest with coverage, svelte-check, Tauri crate tests and clippy) |
 | ci | `perf` | `ubuntu-24.04` | release build of the app against the mock backend, `scripts/perf-cpu.sh` CPU budget (30 s idle, 30 s streaming) under Xvfb |
 | ci | `windows` | `windows-latest` | native `cargo clippy --target x86_64-pc-windows-msvc --lib --bins -- -D warnings` |
 | ci | `android` | `ubuntu-24.04` | debug APK for arm64 (`pnpm tauri android build --debug --apk --target aarch64`), 16 KB page alignment (`scripts/android-16k.sh` and its test), artifact `android-debug-apk` |
 | ci | `macos` | `macos-26` | throwaway self-signed identity on two builds must give one designated requirement; `cargo test --lib -- procs:: ports:: review::watch::`; pull requests and manual runs only |
-| ci | `store-guard` | `ubuntu-slim` | `scripts/store-guard.sh`: no App Store submission and no Google Play production release anywhere; `scripts/store-guard.test.sh` and `scripts/android-play-track.test.sh` |
+| ci | `store-guard` | `ubuntu-slim` | `scripts/store-guard.sh`: App Store / Play Store submission only in `store.yml`, `store.yml` only runs on `workflow_dispatch`, opaque iOS icons; then `scripts/store-guard.test.sh` |
 | ci | `tap` | `ubuntu-24.04` | `scripts/update-tap.test.sh`: runs `scripts/update-tap.sh` on a fake release and requires `brew style` and `brew audit --strict` to pass on the generated formula and cask |
 | release | `gate` | `ubuntu-slim` | `scripts/release-gate.sh` and the tagged-`HEAD` check ([Release gate](#release-gate)); skipped for `github-actions[bot]` and `[skip ci]` |
 | release | `ci` | calls `ci.yml` | the jobs above, or `changes` alone when the gate says `skip_ci` |
@@ -126,11 +153,11 @@ its `changes` job runs, a few seconds on `ubuntu-slim`. Pushes by `github-action
 | release | `app-windows-msix` | `windows-latest` | `Overseer_<v>_x64.msix` from the `app-windows` executable (`scripts/msix.sh`); skipped without the MSIX secrets |
 | release | `app-windows-arm` | `windows-11-arm` | NSIS installer `*_arm64-setup.exe` and `Overseer_<v>_arm64.msix`, built natively |
 | release | `app-macos` | `macos-26` | `.dmg` for Apple Silicon (`aarch64-apple-darwin`) and Intel (`x86_64-apple-darwin`, cross-built) |
-| release | `app-android` | `ubuntu-24.04` | signed universal APK (arm64-v8a, armeabi-v7a) `Overseer_<v>_android.apk` + `.sha256`, then the signed Google Play App Bundle (artifact `play-android`, not attached to the release; `continue-on-error`); skipped without the keystore secrets |
-| release | `app-android-play` | `ubuntu-slim` | uploads the App Bundle to the Google Play track `PLAY_TRACK` (default `internal`, never `production`) with `r0adkll/upload-google-play`; skipped without `PLAY_SERVICE_ACCOUNT_JSON`; `publish` does not wait for it |
-| release | `app-ios` | `macos-26` | fastlane `internal_testflight` lane: `tauri ios build` signed with `IOS_CERTIFICATE`/`IOS_MOBILE_PROVISION`, `upload_to_testflight` with `skip_submission`; `continue-on-error`, skipped without the Apple secrets |
+| release | `app-android` | `ubuntu-24.04` | signed universal APK (arm64-v8a, armeabi-v7a) `Overseer_<v>_android.apk` + `.sha256`, for Obtainium and the GitHub Release; skipped without the keystore secrets |
 | release | `publish` | `ubuntu-slim` | GitHub Release with generated release notes, every artifact and `SHA256SUMS`, then the updater manifest `latest.json` when the updater key is set |
 | release | `tap` | `ubuntu-24.04` | `scripts/update-tap.sh` writes the cask and formula of `basilelt/homebrew-tap` and pushes `overseer <version>` to `bump/overseer-<version>`; the tap's own CI audits it and fast-forwards `main`; skipped without `HOMEBREW_TAP_DEPLOY_KEY` |
+| store | `ios` | `macos-26` | fastlane `app_store` lane: `tauri ios build` signed from `IOS_CERTIFICATE` and `IOS_MOBILE_PROVISION`, `upload_to_app_store` with `submit_for_review` (manual release after approval) |
+| store | `android` | `ubuntu-24.04` | signed Google Play App Bundle (`pnpm tauri android build --aab` with `OVERSEER_DISTRIBUTION=play`, checked by `scripts/android-aab.sh` and `scripts/android-16k.sh`), uploaded with `r0adkll/upload-google-play` to the chosen track, status `completed` |
 
 The app jobs get the server binaries from the `servers*` artifacts and copy them into
 `app/src-tauri/resources/server/<os>-<arch>/overseer` (`scripts/app-resources.sh`, also `make app-resources`), so every app
@@ -162,12 +189,11 @@ The Tauri Linux libraries are `libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-app
 librsvg2-dev libsoup-3.0-dev libjavascriptcoregtk-4.1-dev libxdo-dev libssl-dev pkg-config
 patchelf` (plus `tmux` for the daemon's terminal tests, `xvfb dbus-x11` for perf, `file` for
 app-linux). The cross builds add `mlugg/setup-zig@v2` and `taiki-e/install-action@v2` with
-`cargo-zigbuild,cargo-xwin`; iOS adds `maxim-lobanov/setup-xcode@v1` and `brew install fastlane`
-when missing. The Android SDK and NDK are preinstalled on `ubuntu-24.04` (`ANDROID_HOME`, platform
+`cargo-zigbuild,cargo-xwin`; The Android SDK and NDK are preinstalled on `ubuntu-24.04` (`ANDROID_HOME`, platform
 36, build-tools); `scripts/android-env.sh` runs with `NDK_HOME=$ANDROID_NDK_LATEST_HOME` (the
 newest NDK on the image, r28 or later, whose linker aligns native libraries to 16 KB pages for
 Google Play; `$ANDROID_NDK_HOME` when unset) and adds the Rust Android targets.
-`mobile-init.yml` runs once per platform and keeps its own uncached setup.
+`mobile-init.yml` runs once per platform and `store.yml` checks out the release tag, which may predate the setup action, so both keep their own setup.
 
 `git`, `ssh`, `ssh-keygen`, `curl`, `jq`, `gh` and Docker come with the images. The daemon's
 Docker remote tests run only with `OVERSEER_DOCKER_TESTS=1` (`make test-remote`), not in CI.
@@ -180,9 +206,9 @@ Docker remote tests run only with `OVERSEER_DOCKER_TESTS=1` (`make test-remote`)
 
 The repository has 10 GB of Actions cache, evicted least recently used first. A cache saved on a
 pull request belongs to that pull request only, and every pull request used to save its own copy
-of the same 554 MB Gradle cache. So **caches are saved from `main` only** (the CI run the release
-workflow calls on each merge, plus manual `workflow_dispatch` runs, which save to their own
-branch) and restored everywhere: a pull request reads the caches of `main`.
+of the same 554 MB Gradle cache. So **pull requests only restore caches**; they are saved by the
+CI run on each push to `next` (the default branch, whose caches every pull request can read), by
+the release jobs on `main`, and by manual runs (to their own branch).
 
 | Cache | Key | Saved by |
 |---|---|---|
@@ -257,8 +283,28 @@ it runs):
    same run (`needs: tag`), not by an `on: push: tags` workflow.
 
 `publish` creates the GitHub Release `Overseer vX.Y.Z` once the server, Linux and Windows jobs
-succeeded; the macOS bundle and the Android APK are attached when their jobs succeeded. The
-TestFlight upload is independent of `publish`.
+succeeded; the macOS bundle and the Android APK are attached when their jobs succeeded. Nothing
+goes to the App Store or the Play Store from a release run.
+
+### Store releases
+
+Store reviews are slow and every submission needs Apple's and Google's approval, so stores get a
+release only when the maintainer asks for one: Actions > Store > Run workflow, branch `main`.
+Inputs:
+
+- `tag`: the release to ship, default the latest `vX.Y.Z` tag on `main`. The run fails unless it
+  was started from `main` and the tag is an ancestor of `main`.
+- `ios`, `android`: which stores to ship to (both by default).
+- `track`: the Play track, `internal`, `alpha`, `beta` or `production` (default `production`).
+
+Both jobs check out the tag and stamp its version with `scripts/set-version.sh`. `ios` builds the
+IPA and submits it for App Store review with `automatic_release: false`: after approval, release it
+by hand in App Store Connect. The listing (description, screenshots, privacy) lives in App Store
+Connect and is not uploaded. The same build is available to the internal TestFlight testers.
+`android` builds the Play App Bundle with `OVERSEER_DISTRIBUTION=play` (no in-app updater), checks
+it with `scripts/android-aab.sh` and `scripts/android-16k.sh`, and uploads it with
+`r0adkll/upload-google-play` to the chosen track (`alpha` is closed testing), status `completed`. One-time setup for both is
+in [docs/mobile.md](mobile.md#one-time-setup).
 
 ### When a release job fails
 
@@ -270,7 +316,8 @@ and stop at `gate`, building nothing.
 
 Settings > Secrets and variables > Actions. None is required: each one turns a feature on, and a
 job that needs a missing one is skipped or builds unsigned, with a warning annotation from the
-`tag` job (or from the macOS signing step).
+`tag` job (or from the macOS signing step). The store jobs are the exception: they run only when
+asked, so a missing secret fails them.
 
 | Secret | Enables | Without it |
 |---|---|---|
@@ -279,19 +326,19 @@ job that needs a missing one is skipped or builds unsigned, with a warning annot
 | `MACOS_SELF_SIGN_P12_BASE64`, `MACOS_SELF_SIGN_P12_PASSWORD` | stable self-signed macOS code signature ([macOS signing](#macos-signing)) | ad-hoc signature: macOS forgets the Local Network grant on every update |
 | `APPLE_CERTIFICATE`, `APPLE_CERTIFICATE_PASSWORD`, `APPLE_SIGNING_IDENTITY` | Developer ID signature of the macOS app (wins over the self-signed one) | self-signed or ad-hoc, as above |
 | `WINDOWS_SELF_SIGN_PFX_BASE64`, `WINDOWS_SELF_SIGN_PFX_PASSWORD` | self-signed `.msix` packages for x64 and arm64 and `overseer-msix.cer` in the release ([MSIX](#msix)) | no `.msix`, the NSIS installers ship as before |
-| `APPLE_KEY_ID`, `APPLE_ISSUER_ID`, `APPLE_KEY_CONTENT` | App Store Connect API key (Developer role; `APPLE_KEY_CONTENT` is the `.p8` text): notarization of the Developer ID app, and TestFlight | with a Developer ID set, `app-macos` fails instead of shipping an app Gatekeeper blocks |
+| `APPLE_KEY_ID`, `APPLE_ISSUER_ID`, `APPLE_KEY_CONTENT` | App Store Connect API key (Developer role; `APPLE_KEY_CONTENT` is the `.p8` text): notarization of the Developer ID app, and the store `ios` job (App Manager or Admin role to submit for review) | with a Developer ID set, `app-macos` fails instead of shipping an app Gatekeeper blocks |
 | `HOMEBREW_TAP_DEPLOY_KEY` | the `tap` job: the private half of an SSH deploy key with write access on `basilelt/homebrew-tap` only (create with `ssh-keygen -t ed25519`, add the public half under the tap's Settings > Deploy keys with "Allow write access") | `tap` skipped, the tap keeps the previous version |
 | `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD` | `app-android`: signed release APK ([docs/mobile.md](mobile.md#android-once-by-whoever-holds-the-release-key)) | `app-android` skipped, no APK in the release |
-| `PLAY_SERVICE_ACCOUNT_JSON` | `app-android-play`: upload of the App Bundle to a Google Play testing track ([docs/mobile.md](mobile.md#google-play-once-by-the-play-console-account-holder)) | `app-android-play` skipped; the bundle is still built as the `play-android` artifact |
-| `APPLE_TEAM_ID`, `APPLE_KEY_ID`, `APPLE_ISSUER_ID`, `APPLE_KEY_CONTENT`, `IOS_CERTIFICATE`, `IOS_CERTIFICATE_PASSWORD`, `IOS_MOBILE_PROVISION` | `app-ios`: TestFlight upload ([docs/mobile.md](mobile.md#ios-once-by-the-apple-developer-account-holder)) | `app-ios` skipped |
+| `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD` | also the store `android` job: the AAB is signed with the same key, the Play upload key | store `android` fails |
+| `PLAY_SERVICE_ACCOUNT_JSON` | store `android`: upload of the App Bundle to Google Play ([docs/mobile.md](mobile.md#google-play-once-by-the-play-console-account-holder)) | store `android` fails |
+| `APPLE_TEAM_ID`, `APPLE_KEY_ID`, `APPLE_ISSUER_ID`, `APPLE_KEY_CONTENT`, `IOS_CERTIFICATE`, `IOS_CERTIFICATE_PASSWORD`, `IOS_MOBILE_PROVISION` | store `ios`: App Store submission ([docs/mobile.md](mobile.md#ios-once-by-the-apple-developer-account-holder)) | store `ios` fails |
 
-Repository variables (same page, Variables tab):
+Repository variables (same page, Variables tab; `PLAY_TRACK` and `PLAY_RELEASE_STATUS`, used by
+the former automatic Play upload, are no longer read and can be deleted):
 
 | Variable | Use |
 |---|---|
 | `ANDROID_CERT_SHA256` | SHA-256 fingerprint of the Android release certificate; `scripts/android-apk.sh` fails the release APK when another key signed it (the PR `android` job pins the runner debug keystore the same way). Unset: the signature is still verified, the fingerprint is not pinned |
-| `PLAY_TRACK` | Google Play track for `app-android-play`: `internal` (default), `alpha`, `beta` or a closed testing track; `production` fails the job (`scripts/android-play-track.sh`) |
-| `PLAY_RELEASE_STATUS` | `completed` (default) or `draft` |
 
 `GITHUB_TOKEN` covers everything else (tags, releases, the release gate's check-run lookups).
 Release downloads need no token: the repository is public.
@@ -387,12 +434,23 @@ checks that a download was built by this workflow from this repository.
 - Settings > Actions > General: Actions allowed, and "Workflow permissions" not capped below what
   the jobs request (`contents: write` on `tag`, `publish` and `mobile-init.yml`; every other job
   has `contents: read`).
-- Rulesets: create them from `.github/rulesets/main.json` and `.github/rulesets/release-tags.json`
-  with `gh api -X POST repos/basilelt/overseer/rulesets --input <file>` (later changes:
-  `gh api -X PUT repos/basilelt/overseer/rulesets/<id> --input <file>`). `main` requires a PR,
-  merge commits only, and the `CI` checks (`changes`, `actionlint`, `rust`, `app`, `perf`,
-  `windows`, `android`, `store-guard`, `macos`; `integration_id` 15368 is the GitHub Actions
-  app); jobs skipped by path filtering count as passed. `release-tags` forbids deleting `v*` and
+- Branches: `next` created from `main` (`git push origin main:next`) and set as the default
+  branch (Settings > General > Default branch, or
+  `gh api -X PATCH repos/basilelt/overseer -f default_branch=next`), so pull requests and
+  Dependabot target it.
+- Rulesets: create them from `.github/rulesets/main.json`, `.github/rulesets/next.json` and
+  `.github/rulesets/release-tags.json` with
+  `gh api -X POST repos/basilelt/overseer/rulesets --input <file>` (later changes:
+  `gh api -X PUT repos/basilelt/overseer/rulesets/<id> --input <file>`, ids from
+  `gh api repos/basilelt/overseer/rulesets --jq '.[] | [.id, .name] | @tsv'`). `main` and `next`
+  each require a PR, merge commits only, and the `CI` checks (`changes`, `actionlint`, `rust`,
+  `app`, `perf`, `windows`, `android`, `store-guard`, `macos`, `gitleaks`; `integration_id` 15368 is the
+  GitHub Actions app); jobs skipped by path filtering count as passed. A PR does not need to be up
+  to date with its base: when it is behind, the merged tree differs from the tested one, and for
+  `main` the release gate then runs CI again before tagging. Repository admins can bypass the `next`
+  ruleset when merging a PR (`bypass_mode: pull_request`: no direct push), for exceptional cases;
+  `main` has no bypass. Both name their branch literally (`refs/heads/main`, `refs/heads/next`), not
+  `~DEFAULT_BRANCH`, since the default branch is `next`. `release-tags` forbids deleting `v*` and
   `latest` (repository admins can bypass); moving them is an update, so the `tag` job still can.
 - The secrets and the variables above, as each feature is wanted.
 
@@ -464,8 +522,8 @@ of this.
   self-signed or ad-hoc without the Apple secrets (see [macOS signing](#macos-signing)). A failure
   there blocks the release, like every other desktop app job.
 - **macOS runner label**: every macOS job uses `macos-26`. If GitHub retires or renames that
-  label, those jobs wait for a runner that never comes; change it in `ci.yml`, `release.yml` and
-  `mobile-init.yml` together.
+  label, those jobs wait for a runner that never comes; change it in `ci.yml`, `release.yml`,
+  `store.yml` and `mobile-init.yml` together.
 - **macOS daemon binaries** are built natively on `macos-26` and ad-hoc signed by the linker, not
   Developer ID signed: `curl`-installed binaries are not quarantined, so remote install over SSH
   is unaffected. Two binaries are shipped, no universal one.
@@ -484,7 +542,7 @@ of this.
 
 ```sh
 make lint && timeout 1500 make test && make app-test
-scripts/ci-changes.sh origin/main HEAD   # which CI jobs a PR from this branch would run
+scripts/ci-changes.sh origin/next HEAD   # which CI jobs a PR from this branch would run
 scripts/ci-changes.test.sh && scripts/ci-apt.test.sh   # path filter and cached apt install (Docker)
 make dist-cross          # needs zig, cargo-zigbuild, cargo-xwin, clang, lld, llvm, musl-tools and the rustup targets
 make dist-darwin         # on a Mac: both macOS daemons (aarch64 and x86_64 rustup targets)

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { baseName, crumbs, tildePath } from './dirs';
+import { baseName, crumbs, shortPath, tildePath } from './dirs';
 
 describe('baseName', () => {
   it('takes the last segment and ignores trailing slashes', () => {
@@ -37,5 +37,17 @@ describe('crumbs', () => {
       { label: 'meow', path: '/home/meow' },
       { label: 'x', path: '/home/meow/x' },
     ]);
+  });
+});
+
+describe('shortPath', () => {
+  it('replaces a Linux or macOS home prefix with ~', () => {
+    expect(shortPath('/home/alice/src/app')).toBe('~/src/app');
+    expect(shortPath('/Users/bob')).toBe('~');
+  });
+
+  it('leaves paths outside a home folder alone', () => {
+    expect(shortPath('/opt/homebrew')).toBe('/opt/homebrew');
+    expect(shortPath('/home2/alice')).toBe('/home2/alice');
   });
 });

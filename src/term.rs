@@ -639,17 +639,40 @@ impl Term {
 
     #[cfg(unix)]
     fn fall_back_to_shell(self: &Arc<Self>) -> bool {
-        if !self.may_fall_back() {
-            return false;
-        }
+        self.may_fall_back() && self.to_shell("exited").is_ok()
+    }
+
+    #[cfg(not(unix))]
+    fn fall_back_to_shell(self: &Arc<Self>) -> bool {
+        false
+    }
+
+    #[cfg(unix)]
+    pub fn to_shell(self: &Arc<Self>, verb: &str) -> Result<(), String> {
         let i = self.info();
         let agent = i.agent.clone().unwrap_or_default();
         let note = match i.resume.clone() {
             Some((session, cmd)) => {
-                format!("{agent} exited. Session {session}, resume with: {cmd}")
+                format!("{agent} {verb}. Session {session}, resume with: {cmd}")
             }
-            None => format!("{agent} exited."),
+            None => format!("{agent} {verb}."),
         };
+        self.detach();
+        self.respawn(vec![
+            "/bin/sh".into(),
+            "-c".into(),
+            "printf '\\r\\n%s\\r\\n\\r\\n' \"$1\"; exec \"${SHELL:-/bin/sh}\"".into(),
+            "sh".into(),
+            note,
+        ])
+    }
+
+    #[cfg(not(unix))]
+    pub fn to_shell(self: &Arc<Self>, _verb: &str) -> Result<(), String> {
+        Err("no shell fallback on this platform".into())
+    }
+
+    pub fn detach(&self) {
         {
             let mut i = lock(&self.info);
             i.agent = None;
@@ -658,19 +681,7 @@ impl Term {
             i.flags = vec![];
             i.resume = None;
         }
-        self.respawn(vec![
-            "/bin/sh".into(),
-            "-c".into(),
-            "printf '\\r\\n%s\\r\\n\\r\\n' \"$1\"; exec \"${SHELL:-/bin/sh}\"".into(),
-            "sh".into(),
-            note,
-        ])
-        .is_ok()
-    }
-
-    #[cfg(not(unix))]
-    fn fall_back_to_shell(self: &Arc<Self>) -> bool {
-        false
+        publish("term.updated", json!({"term": self.to_json()}));
     }
 
     pub fn respawn(self: &Arc<Self>, argv: Vec<String>) -> Result<(), String> {

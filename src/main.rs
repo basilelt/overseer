@@ -409,7 +409,7 @@ fn main() -> ExitCode {
             let r = if cmd == "hold" {
                 actions::hold(&ctx, q, apply)
             } else {
-                actions::close(&ctx, q, apply)
+                actions::close(&ctx, q, apply, false)
             };
             match r {
                 Ok(r) => report(&r, cmd, flag("--json"), apply),

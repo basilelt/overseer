@@ -5,7 +5,7 @@ import { phoneParam } from './mobile/layout';
 import { MockGit } from './git/mockGit';
 import { bigDiff, bigPatch, MockReview } from './review/mock';
 import { chatPage, mockScreen, MOCK_COMMANDS, seedAgentChat, seedChat } from './chat/mock';
-import type { Effort, HookResult, HooksStatus, Profile, ProfileChip, ProfilesStore, SourceItem, SourceItems, SubagentDef, TaskSource } from './types';
+import type { Effort, HookResult, HooksStatus, SwitchboardStatus, Profile, ProfileChip, ProfilesStore, SourceItem, SourceItems, SubagentDef, TaskSource } from './types';
 import { mockSystem } from './system/mock';
 import { resolveProfile } from './profiles';
 import { fileKind } from './files';
@@ -514,6 +514,7 @@ interface MockOptions {
   scale?: number;
   storm?: number;
   platform?: PlatformInfo;
+  switchboard?: boolean;
 }
 
 const urlNumber = (k: string) => (typeof location !== 'undefined' ? Number(new URLSearchParams(location.search).get(k)) || 0 : 0);
@@ -601,6 +602,7 @@ export class MockDaemon implements DaemonClient {
   taskSources: (TaskSource & { project: string })[] = [];
   agents: AgentInfo[] = structuredClone(MOCK_AGENTS);
   hooks: HooksStatus = mockHooks();
+  switchboard: SwitchboardStatus = { found: false, dir: null, imported: false, running: false, sessions: 0, tasks: 0, workspaces: 0, hooks: false, settings: {} };
   statusline = { path: '~/.claude/settings.json', installed: false, command: '~/.claude/statusline.sh' as string | null };
   profileStore: ProfilesStore = structuredClone(MOCK_PROFILES);
   git = new MockGit(this);
@@ -643,6 +645,8 @@ export class MockDaemon implements DaemonClient {
     this.activity = seedActivity();
     ({ workspaces: this.workspaces, folders: this.folders, groups: this.groups } = seedWs(now));
     this.live = opts.live ?? true;
+    if (opts.switchboard ?? (typeof location !== 'undefined' && new URLSearchParams(location.search).has('switchboard')))
+      this.switchboard = { found: true, dir: '/home/dev/.switchboard', imported: false, running: true, sessions: 12, tasks: 4, workspaces: 3, hooks: true, settings: { 'overseer.mockImported': '1' } };
     this.delayMs = opts.delayMs ?? 300;
     this.devicePlatform = opts.platform;
   }
@@ -655,6 +659,15 @@ export class MockDaemon implements DaemonClient {
   async request<T>(method: string, path: string, body?: any): Promise<T> {
     await lag(`${method} ${path}`);
     return this.route(method, path, body) as T;
+  }
+
+  private switchboardRoute(method: string): unknown {
+    const s = this.switchboard;
+    if (method === 'GET') return structuredClone(s);
+    if (method !== 'POST') throw new DaemonError(404, `no route ${method} /v1/import/switchboard`);
+    if (!s.found) throw new DaemonError(404, 'no switchboard data found');
+    this.switchboard = { ...s, imported: true, running: false };
+    return { imported: true, sessions: s.sessions, tasks: s.tasks, workspaces: s.workspaces, stopped: s.running, hooks: s.hooks };
   }
 
   private route(method: string, fullPath: string, body: any): unknown {
@@ -687,6 +700,7 @@ export class MockDaemon implements DaemonClient {
     if (method === 'GET' && path === '/v1/agents') return structuredClone(this.agents);
     if (method === 'POST' && path === '/v1/agents/rescan') return structuredClone(this.agents);
     if (method === 'GET' && path === '/v1/hooks/status') return structuredClone(this.hooks);
+    if (path === '/v1/import/switchboard') return this.switchboardRoute(method);
     if (path === '/v1/lifecycle' && (method === 'GET' || method === 'PATCH')) return this.lifecycleRoute(method, body);
     if (method === 'POST' && (path === '/v1/hooks/install' || path === '/v1/hooks/uninstall')) {
       const on = path.endsWith('/install');
@@ -1135,6 +1149,14 @@ export class MockDaemon implements DaemonClient {
 
   async savePaste(name: string, bytes: Uint8Array): Promise<string> {
     return `/tmp/overseer-paste/${Date.now()}-${this.storeUpload(name, bytes.length).name}`;
+  }
+
+  async saveDownload(name: string, bytes: Uint8Array): Promise<string> {
+    const url = URL.createObjectURL(new Blob([bytes as BlobPart]));
+    const a = Object.assign(document.createElement('a'), { href: url, download: name });
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 0);
+    return name;
   }
 
   private sourcesOf(project: string): TaskSource[] {

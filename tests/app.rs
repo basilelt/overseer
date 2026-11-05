@@ -802,6 +802,119 @@ fn hold_and_resume_work_on_every_cycle_of_the_same_line() {
     );
 }
 
+fn claude_term(app: &App, cmd: Value, sid: &str) -> (String, String) {
+    let wt = app.fx.wt.to_string_lossy().into_owned();
+    let t = app.ok(
+        "POST",
+        "/v1/terms",
+        json!({"cwd": wt, "cmd": cmd, "cols": 100, "rows": 30}),
+    );
+    let tid = t["id"].as_str().unwrap().to_string();
+    let line = wait_for(|| {
+        app.ok("GET", "/v1/lines?all=true", Value::Null)
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|l| l["line"]["agentSessionId"] == sid && l["local"]["pid"].is_u64())
+            .map(|l| l["line"]["id"].as_str().unwrap().to_string())
+    });
+    (tid, line)
+}
+
+#[test]
+fn closing_an_agent_session_with_shell_leaves_a_shell_in_its_term() {
+    // Given a claude session that is the root process of its term
+    // When the session is closed as the panel does, with shell=true
+    // Then the term keeps running a shell that shows how to resume the session,
+    // detached from the line, and killing the term still ends it
+    let sid = "cccccccc-0000-4000-8000-000000000000";
+    let app = App::new("closeshell", json!({}));
+    let (tid, line) = claude_term(&app, json!(["claude", "--session-id", sid]), sid);
+    let mut ws = app.ws(&tid);
+    read_until(&mut ws, "❯");
+    let r = app.ok(
+        "POST",
+        &format!("/v1/lines/{line}/close?dryRun=false&shell=true"),
+        Value::Null,
+    );
+    assert_eq!(r["action"], "closed", "{r}");
+    let mut ws = app.ws(&tid);
+    read_until(
+        &mut ws,
+        &format!("claude closed. Session {sid}, resume with:"),
+    );
+    let term = app.ok("GET", &format!("/v1/terms/{tid}"), Value::Null);
+    assert_eq!(
+        (&term["exited"], &term["agent"], &term["lineId"]),
+        (&json!(false), &Value::Null, &Value::Null)
+    );
+    send(&mut ws, "echo SHELL-$((40+3))\r");
+    read_until(&mut ws, "SHELL-43");
+    app.ok(
+        "POST",
+        &format!("/v1/terms/{tid}/kill"),
+        json!({"confirm": true}),
+    );
+    wait(|| app.ok("GET", &format!("/v1/terms/{tid}"), Value::Null)["exited"] == true);
+}
+
+#[test]
+fn closing_an_agent_session_without_shell_still_ends_its_term() {
+    // Given a claude session that is the root process of its term
+    // When the session is closed without shell=true, as closing its tab does
+    // Then the term exits
+    let sid = "dddddddd-0000-4000-8000-000000000000";
+    let app = App::new("closenoshell", json!({}));
+    let (tid, line) = claude_term(&app, json!(["claude", "--session-id", sid]), sid);
+    let mut ws = app.ws(&tid);
+    read_until(&mut ws, "❯");
+    let r = app.ok(
+        "POST",
+        &format!("/v1/lines/{line}/close?dryRun=false"),
+        Value::Null,
+    );
+    assert_eq!(r["action"], "closed", "{r}");
+    wait(|| app.ok("GET", &format!("/v1/terms/{tid}"), Value::Null)["exited"] == true);
+}
+
+#[test]
+fn closing_an_agent_session_started_from_a_shell_keeps_that_shell() {
+    // Given a claude session started from the shell of a term
+    // When the session is closed with shell=true
+    // Then the shell keeps running in the term, detached from the line
+    let sid = "eeeeeeee-0000-4000-8000-000000000000";
+    let app = App::new("closenested", json!({}));
+    let (tid, line) = claude_term(
+        &app,
+        json!([
+            "/bin/sh",
+            "-c",
+            format!("claude --session-id {sid}; exec /bin/sh")
+        ]),
+        sid,
+    );
+    let mut ws = app.ws(&tid);
+    read_until(&mut ws, "❯");
+    let r = app.ok(
+        "POST",
+        &format!("/v1/lines/{line}/close?dryRun=false&shell=true"),
+        Value::Null,
+    );
+    assert_eq!(r["action"], "closed", "{r}");
+    wait(|| app.ok("GET", &format!("/v1/terms/{tid}"), Value::Null)["lineId"].is_null());
+    send(&mut ws, "echo SHELL-$((40+4))\r");
+    read_until(&mut ws, "SHELL-44");
+    assert_eq!(
+        app.ok("GET", &format!("/v1/terms/{tid}"), Value::Null)["exited"],
+        false
+    );
+    app.ok(
+        "POST",
+        &format!("/v1/terms/{tid}/kill"),
+        json!({"confirm": true}),
+    );
+}
+
 #[test]
 fn mcp_server_talks_to_the_daemon() {
     let app = App::new("mcp", json!({}));

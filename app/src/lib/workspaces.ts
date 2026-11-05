@@ -60,7 +60,7 @@ function longestPrefix(path: string | undefined, workspaces: Workspace[]): Works
 
 export interface MemberIndex {
   byId: Map<string, Workspace>;
-  repoRoot: Map<string, string>;
+  repoRoots: Map<string, string[]>;
   taskByLine: Map<string, Task>;
   taskById: Map<string, Task>;
   workspaces: Workspace[];
@@ -79,15 +79,22 @@ export function memberIndex(workspaces: Workspace[], projects: Project[], tasks:
 }
 
 function buildMemberIndex(workspaces: Workspace[], projects: Project[], tasks: Task[]): MemberIndex {
-  const repoRoot = new Map<string, string>();
-  for (const p of projects) if (p.repo && !repoRoot.has(p.repo)) repoRoot.set(p.repo, p.path);
+  const repoRoots = new Map<string, string[]>();
+  for (const p of projects) if (p.repo) repoRoots.set(p.repo, [...(repoRoots.get(p.repo) ?? []), p.path]);
   return {
     byId: new Map(workspaces.map((w) => [w.id, w])),
-    repoRoot,
+    repoRoots,
     taskByLine: new Map(tasks.filter((t) => t.lineId && t.origin !== 'session').map((t) => [t.lineId!, t])),
     taskById: new Map(tasks.map((t) => [t.id, t])),
     workspaces,
   };
+}
+
+export function repoRoot(clones: string[] | undefined, path: string | undefined): string | undefined {
+  if (!clones) return undefined;
+  let best: string | undefined;
+  for (const c of clones) if (path && within(path, c) && (!best || c.length > best.length)) best = c;
+  return best ?? (clones.length === 1 ? clones[0] : undefined);
 }
 
 export function lineWorkspace(l: LocalLine, ix: MemberIndex): Workspace | undefined {
@@ -98,8 +105,9 @@ export function lineWorkspace(l: LocalLine, ix: MemberIndex): Workspace | undefi
   if (byTask) return byTask;
   const wt = l.line.worktreePath;
   const cwd = l.local?.cwd;
-  const p = longestPrefix(cwd && wt && within(cwd, wt) ? cwd : wt || cwd, ix.workspaces);
-  const r = longestPrefix(l.line.repo ? ix.repoRoot.get(l.line.repo) : undefined, ix.workspaces);
+  const path = cwd && wt && within(cwd, wt) ? cwd : wt || cwd;
+  const p = longestPrefix(path, ix.workspaces);
+  const r = longestPrefix(l.line.repo ? repoRoot(ix.repoRoots.get(l.line.repo), path) : undefined, ix.workspaces);
   if (r && (!p || !within(p.path, r.path))) return r;
   return p;
 }
