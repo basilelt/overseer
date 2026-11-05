@@ -342,7 +342,7 @@
         await app.api.hold(lineId);
         app.notify(t('chat.held'));
       } else if (kind === 'close') {
-        await app.api.close(lineId);
+        await app.api.close(lineId, true);
         chats.drop(cacheKey(lineId));
         app.notify(t('chat.closed'));
       } else {

@@ -937,6 +937,10 @@ curl --unix-socket "$S" -X POST -d '{"confirm":true}' http://unix/v1/terms/<id>/
 When an agent quits on its own in a tab (Ctrl+C, `/quit`, `exit`), the tab stays open: it prints
 the session the agent ran and the command that resumes it, then starts your shell there. Killing the
 term, closing the tab or holding the session ends it as before, and task terms are not kept.
+**Close** on a session (side panel or chat) does the same: the agent stops, and its tab keeps a
+shell with `<agent> closed. Session <id>, resume with: …`; an agent started from a shell leaves that
+shell. This is `POST /v1/lines/<id>/close?dryRun=false&shell=true`; without `shell=true` (closing
+the tab, the CLI, the organizer) the term ends with the agent.
 
 `GET /v1/terms/<id>/io` is a WebSocket: the last 2 MiB of output first, then live output (binary
 frames); binary frames sent are typed into the program, `{"resize":{"cols":…,"rows":…}}` text

@@ -224,6 +224,7 @@ fn execute_hold_term(
     l: &Line,
     t: &std::sync::Arc<crate::term::Term>,
     stub: bool,
+    shell: bool,
 ) -> Result<Vec<String>, String> {
     let pid = l.pid.ok_or("no pid")?;
     let start = ctx.probe.info(pid).and_then(|i| i.start);
@@ -243,6 +244,7 @@ fn execute_hold_term(
         ));
     }
     done.push(format!("agent pid {pid} exited after SIGTERM"));
+    let shell = shell && cfg!(unix) && t.info().task_id.is_none();
     match (root, stub) {
         (true, true) => {
             t.respawn(vec![
@@ -252,11 +254,19 @@ fn execute_hold_term(
             ])?;
             done.push(format!("started the held stub in term {id}"));
         }
+        (true, false) if shell => {
+            t.to_shell("closed")?;
+            done.push(format!("left a shell in term {id}"));
+        }
         (true, false) => {
             t.finish(None);
             done.push(format!("closed term {id}"));
         }
         (false, true) => done.push(format!("term {id} runs a shell; stub not started")),
+        (false, false) if shell => {
+            t.detach();
+            done.push(format!("left the shell of term {id}"));
+        }
         (false, false) => {
             t.kill()?;
             done.push(format!("closed term {id}"));
@@ -265,10 +275,16 @@ fn execute_hold_term(
     Ok(done)
 }
 
-fn execute_hold(ctx: &Ctx, reg: &Registry, l: &Line, stub: bool) -> Result<Vec<String>, String> {
+fn execute_hold(
+    ctx: &Ctx,
+    reg: &Registry,
+    l: &Line,
+    stub: bool,
+    shell: bool,
+) -> Result<Vec<String>, String> {
     if l.pane.is_none() {
         if let Some(t) = crate::deliver::line_term(l) {
-            return execute_hold_term(ctx, reg, l, &t, stub);
+            return execute_hold_term(ctx, reg, l, &t, stub, shell);
         }
     }
     let tmux = ctx.tmux.as_ref().ok_or("tmux unavailable")?;
@@ -336,10 +352,10 @@ fn execute_hold(ctx: &Ctx, reg: &Registry, l: &Line, stub: bool) -> Result<Vec<S
 pub fn hold(ctx: &Ctx, q: &str, apply: bool) -> Result<Report, String> {
     let lines = scan(ctx)?;
     let l = find_line(&lines, q)?;
-    Ok(hold_line(ctx, l, apply, true))
+    Ok(hold_line(ctx, l, apply, true, false))
 }
 
-pub(crate) fn hold_line(ctx: &Ctx, l: &Line, apply: bool, stub: bool) -> Report {
+pub(crate) fn hold_line(ctx: &Ctx, l: &Line, apply: bool, stub: bool, shell: bool) -> Report {
     let checks = evaluate(&hold_input(ctx, l));
     let mut r = Report {
         line_id: l.id.clone(),
@@ -351,7 +367,9 @@ pub(crate) fn hold_line(ctx: &Ctx, l: &Line, apply: bool, stub: bool) -> Report 
     if r.ok() {
         r.action = "would-hold";
         if apply {
-            match Registry::open(&ctx.state_dir).and_then(|reg| execute_hold(ctx, &reg, l, stub)) {
+            match Registry::open(&ctx.state_dir)
+                .and_then(|reg| execute_hold(ctx, &reg, l, stub, shell))
+            {
                 Ok(done) => {
                     r.action = "held";
                     r.steps = done;
@@ -370,14 +388,14 @@ pub(crate) fn hold_line(ctx: &Ctx, l: &Line, apply: bool, stub: bool) -> Report 
     r
 }
 
-pub fn close(ctx: &Ctx, q: &str, apply: bool) -> Result<Report, String> {
+pub fn close(ctx: &Ctx, q: &str, apply: bool, shell: bool) -> Result<Report, String> {
     let lines = scan(ctx)?;
-    close_line(ctx, find_line(&lines, q)?, apply)
+    close_line(ctx, find_line(&lines, q)?, apply, shell)
 }
 
-pub(crate) fn close_line(ctx: &Ctx, l: &Line, apply: bool) -> Result<Report, String> {
+pub(crate) fn close_line(ctx: &Ctx, l: &Line, apply: bool, shell: bool) -> Result<Report, String> {
     let mut r = if l.alive() {
-        let mut h = hold_line(ctx, l, apply, false);
+        let mut h = hold_line(ctx, l, apply, false, shell);
         if h.ok() {
             h.steps.push(format!("mark {} hung-up", l.id));
         }

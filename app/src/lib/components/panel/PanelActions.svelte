@@ -31,7 +31,7 @@
   }
 
   const hold = () => act('action.hold', () => app.api.hold(line.line.id));
-  const close = () => (confirming ? act('action.close', () => app.api.close(line.line.id)) : (confirming = true));
+  const close = () => (confirming ? act('action.close', () => app.api.close(line.line.id, true)) : (confirming = true));
   const resume = () => act('action.resume', () => app.resumeLine(item));
   const pin = () => act(line.local?.pinned ? 'action.unpin' : 'action.pin', () => app.api.pin(line.line.id, !line.local?.pinned));
 </script>
