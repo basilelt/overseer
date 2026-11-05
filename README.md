@@ -275,6 +275,29 @@ draft PR per feature). [app/README.md](app/README.md) covers the app's developme
 mock daemon. `make test` and `make lint` run offline; tmux tests use an isolated server. Report
 security problems privately, as described in [SECURITY.md](SECURITY.md).
 
+### Develop while using the installed app
+
+`scripts/dev.sh` runs Overseer built from your checkout next to the Overseer you use every day,
+without touching it: the dev daemon gets its own `HOME`, state directory and tmux server under
+`~/.overseer-dev` (`OVERSEER_DEV_DIR` changes it), and the dev desktop app runs under its own
+bundle id, `io.github.basilelt.overseer.dev`, so its settings, windows and macOS permissions are
+separate too.
+
+```sh
+scripts/dev.sh up       # build the daemon from this checkout and start it
+scripts/dev.sh app      # desktop app in dev mode (pnpm tauri dev) on the dev daemon
+scripts/dev.sh status   # is the dev daemon running?
+scripts/dev.sh down     # stop the dev daemon; its tmux sessions keep running
+scripts/dev.sh reset    # stop everything dev and delete ~/.overseer-dev
+```
+
+No code signing is needed: `tauri dev` runs an unbundled binary you built, which Gatekeeper does
+not block. Signing only concerns the released `.app` (see [docs/ci.md](docs/ci.md#macos-signing)).
+The dev app is a different app to macOS, so it may ask for Local Network access on its own. The dev `HOME` starts
+with a copy of your `~/.gitconfig` and nothing else: agents started from the dev daemon are not
+logged in until you log in from one of its terminals (for example `claude`, then `/login`). For UI work
+alone, `pnpm dev` in `app/` runs the frontend in a browser on the mock daemon.
+
 ## Documentation
 
 - [User guide](docs/user-guide.md): setup per station, every command, Board, API, desktop app, troubleshooting.
