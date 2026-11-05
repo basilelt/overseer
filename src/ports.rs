@@ -533,7 +533,7 @@ fn owned_port(ports: &BTreeMap<u16, Port>, port: u16, pid: u32) -> Result<Port, 
         .ok_or_else(|| {
             (
                 404,
-                format!("no process {pid} listening on port {port} in a Overseer terminal"),
+                format!("no process {pid} listening on port {port} in an Overseer terminal"),
             )
         })
 }
@@ -765,6 +765,10 @@ mod tests {
         assert_eq!(owned_port(&ports, 5173, 42).unwrap().pid, 42);
         assert_eq!(owned_port(&ports, 5173, 43).unwrap_err().0, 404);
         assert_eq!(owned_port(&ports, 8080, 42).unwrap_err().0, 404);
+        assert_eq!(
+            owned_port(&ports, 5173, 43).unwrap_err().1,
+            "no process 43 listening on port 5173 in an Overseer terminal"
+        );
     }
 
     #[test]
