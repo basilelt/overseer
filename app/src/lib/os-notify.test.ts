@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { DEMO_KEY } from './demo';
 import { center } from './notifications.svelte';
 import { DEFAULT_KINDS, DEFAULT_QUIET, FOCUS_FALLBACK_MS } from './notify-prefs';
 import {
@@ -475,6 +476,30 @@ describe('system notifications', () => {
 
     it('does not touch the plugin in a browser', () => {
       web();
+      startOs(fakeApp())();
+      expect(plug.onAction).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('in demo mode', () => {
+    beforeEach(() => {
+      tauri();
+      storage.setItem(DEMO_KEY, '1');
+    });
+
+    it('reports system notifications as unsupported without asking the plugin', async () => {
+      expect(await permission('android')).toBe('unsupported');
+      expect(await requestPermission('android', true)).toBe('unsupported');
+      expect(plug.isPermissionGranted).not.toHaveBeenCalled();
+      expect(plug.requestPermission).not.toHaveBeenCalled();
+    });
+
+    it('never sends a system notification, so the app shows it in-app', async () => {
+      expect(await sendOs(appOn('android'), { kind: 'needsInput', title: 'Needs input' }, true)).toBe(false);
+      expect(plug.sendNotification).not.toHaveBeenCalled();
+    });
+
+    it('does not listen for notification taps', () => {
       startOs(fakeApp())();
       expect(plug.onAction).not.toHaveBeenCalled();
     });

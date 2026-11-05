@@ -16,6 +16,7 @@
   import UsageChip from './usage/UsageChip.svelte';
   import NewSessionMenu from './titlebar/NewSessionMenu.svelte';
   import UpdatePill from './titlebar/UpdatePill.svelte';
+  import DemoPill from './ui/DemoPill.svelte';
   import NotificationBell from './titlebar/NotificationBell.svelte';
   import { startable } from '../kanban';
 
@@ -59,6 +60,7 @@
   </div>
   <div class="spacer" data-tauri-drag-region></div>
   <AgentAvatars />
+  <DemoPill />
   <UpdatePill />
   <SystemChip />
   <UsageChip />

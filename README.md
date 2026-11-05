@@ -112,6 +112,9 @@ on a TCP port on the server.
     <img src="app/docs/screenshots/android-tablet-portrait-dark.png" height="420" alt="An agent asking a question, on an Android tablet in portrait">
     <img src="app/docs/screenshots/android-tablet-landscape-light.png" height="420" alt="Agents on an Android tablet in landscape">
   </p>
+- **Demo mode**: no server yet? **Try the demo** on the connect screen runs the whole app on sample
+  sessions, tasks, reviews and chats, on the desktop or a phone, with nothing installed. A **Demo
+  mode** pill stays in the title bar; **Exit demo** returns to your own hosts and settings, untouched.
 - **Notifications** when an agent needs input or finishes, from agent hooks Overseer can
   install for you.
 - **Usage and system monitor**: agent quotas, token usage, CPU and RAM in the title bar.

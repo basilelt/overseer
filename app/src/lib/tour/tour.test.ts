@@ -75,7 +75,7 @@ describe('tour store', () => {
 
   it('only keeps steps whose target is on screen', () => {
     tour.start('full', (n) => n === 'host' || n === 'kanban');
-    expect(tour.steps.map((s) => s.id)).toEqual(['host', 'kanban', 'palette', 'paletteKey']);
+    expect(tour.steps.map((s) => s.id)).toEqual(['host', 'demo', 'kanban', 'palette', 'paletteKey']);
   });
 
   it('upgrades an old numeric version to the current release when finished', () => {

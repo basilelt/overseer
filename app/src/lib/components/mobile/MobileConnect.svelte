@@ -13,11 +13,14 @@
   import Circle from '@lucide/svelte/icons/circle';
   import Minus from '@lucide/svelte/icons/circle-minus';
   import Loader from '@lucide/svelte/icons/loader-circle';
+  import Play from '@lucide/svelte/icons/play';
+  import LogOut from '@lucide/svelte/icons/log-out';
   import AuthPrompt from '../overlays/AuthPrompt.svelte';
   import DeviceKey from './DeviceKey.svelte';
   import { t, type Key } from '../../i18n.svelte';
   import { app } from '../../state.svelte';
   import { isBusy, steps } from '../../conn';
+  import { exitDemo, isDemo, startDemo } from '../../demo';
   import { connectHint, describeHost, emptyForm, formFromHost, hostFromForm, type FormError, type HostForm } from '../../mobile/hosts';
   import type { ConnPhase, HostTarget, SavedHost } from '../../types';
 
@@ -66,6 +69,8 @@
   const current = $derived(app.conn.target.kind === 'direct' ? app.conn.target.host : undefined);
   const editing = $derived(hosts.find((h) => h.id === form.id) ?? null);
   const canClose = $derived(app.connected || app.client?.kind === 'mock');
+  const demo = isDemo();
+  const canDemo = $derived(!demo && !!app.client && app.client.kind !== 'mock');
 
   function go(next: Screen) {
     back = screen === 'form' ? 'list' : screen;
@@ -202,6 +207,17 @@
           <button class="btn big" onclick={disconnect}><Unplug size={17} />{t('mobile.connect.disconnect')}</button>
         {/if}
       </div>
+      {#if demo}
+        <div class="demo">
+          <p>{t('demo.exitHint')}</p>
+          <button class="btn big" onclick={() => exitDemo()}><LogOut size={17} />{t('demo.exit')}</button>
+        </div>
+      {:else if canDemo}
+        <div class="demo">
+          <p>{t('demo.tryHint')}</p>
+          <button class="btn big" onclick={() => startDemo(app.client)}><Play size={17} />{t('demo.try')}</button>
+        </div>
+      {/if}
     {:else if screen === 'form'}
       <form
         onsubmit={(e) => {
@@ -286,6 +302,9 @@
             <button class="btn big" onclick={() => forget(lastTarget?.host)}><KeyRound size={17} />{t('mobile.connect.forgetKey')}</button>
           {/if}
           <button class="btn big" onclick={() => (screen = 'list')}>{t('common.back')}</button>
+          {#if canDemo}
+            <button class="btn big" onclick={() => startDemo(app.client)}><Play size={17} />{t('demo.try')}</button>
+          {/if}
         </div>
       {/if}
     {/if}
@@ -416,6 +435,20 @@
     flex-direction: column;
     gap: 10px;
     margin-top: 16px;
+  }
+  .demo {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-top: 22px;
+    padding-top: 16px;
+    border-top: 1px solid var(--border);
+  }
+  .demo p {
+    margin: 0;
+    color: var(--text-2);
+    font-size: 13px;
+    line-height: 1.5;
   }
   .big {
     min-height: 46px;
