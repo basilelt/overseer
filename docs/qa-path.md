@@ -75,7 +75,7 @@ Each step is **Do → Expect**. Check every screenshot for overlaps, clipped tex
 
 ### D. Review
 
-- **D1** Click an In testing card → the review dialog shows the diff, file tree, Viewed checkboxes, Unified or Split, List or Graph, and the commits since main.
+- **D1** Click an In testing card → the review dialog shows the diff, file tree, Viewed checkboxes, Unified or Split, List or Graph, and the commits since main. The Comment and Request changes bar sits fully above the Reject / Commit / Approve footer at 1280x720, 1440x900 and 1920x1080.
 - **D2** Add a comment → **Request changes** → the agent receives the comments and the task goes back to In progress.
 - **D3** Change a file in the worktree → **Commit** → a commit appears and the task completes. With a clean worktree it shows "nothing to commit".
 - **D4** Tick **Approve the PR** and **Merge the PR** → **Approve** → the task completes and the agent's terminal shows the instruction (approve, then merge).
