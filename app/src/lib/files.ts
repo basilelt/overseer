@@ -1,3 +1,6 @@
+import type { DaemonClient } from './client';
+import { api } from './api';
+
 export type FileKind = 'image' | 'video' | 'audio' | 'pdf' | 'markdown' | 'text';
 
 const KINDS: Record<string, FileKind> = {
@@ -70,4 +73,10 @@ export function filePath(text: string): string | null {
   if (!t.includes(' ') || t.length > MAX_SPACED || !SPACED_RE.test(t)) return null;
   if (PROSE_LEAD.test(t) && SPACED_RE.test(t.replace(PROSE_LEAD, ''))) return null;
   return t.replace(/(?::\d+){1,2}$/, '');
+}
+
+export async function saveFile(client: DaemonClient, file: { path: string; term?: string; line?: string }, name: string): Promise<string> {
+  const { path, term, line } = file;
+  const buf = await api(client).fileBytes({ path, ...(term && { term }), ...(line && { line }) });
+  return client.saveDownload(name, new Uint8Array(buf));
 }
