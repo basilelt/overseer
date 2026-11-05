@@ -818,7 +818,7 @@ describe('sessions', () => {
   it('starts an agent in a worktree of the current workspace project', async () => {
     app.selectWorkspace('ws_webshop');
     const term = await app.newSession('claude', { model: 'opus' });
-    expect(m.bodies['POST /v1/terms']).toEqual([{ agent: 'claude', cwd: app.currentWorkspace!.path, model: 'opus', effort: undefined, cols: 120, rows: 32, worktree: true }]);
+    expect(m.bodies['POST /v1/terms']).toEqual([{ agent: 'claude', cwd: app.currentWorkspace!.path, workspaceId: 'ws_webshop', model: 'opus', effort: undefined, cols: 120, rows: 32, worktree: true }]);
     expect(app.data.terms.some((x) => x.id === term.id)).toBe(true);
     expect(app.selectedKey).toBe(`term:${term.id}`);
     expect(app.view).toBe('agents');
@@ -870,11 +870,30 @@ describe('sessions', () => {
     it('opens the workspace that holds a session started from elsewhere', async () => {
       app.selectWorkspace('ws_webshop');
       const base = await app.newSession('shell');
-      const term = { ...base, id: 'tm_feedback', cwd: '/tmp/elsewhere' } as Term;
+      const term = { ...base, id: 'tm_feedback', cwd: '/tmp/elsewhere', workspaceId: null } as Term;
       app.followSession(term);
       expect(app.selectedKey).toBe('term:tm_feedback');
       expect(app.workspaceId).toBe(NO_WORKSPACE);
     });
+  });
+
+  it('lists a session under its workspace before it reports a line', async () => {
+    app.selectWorkspace('ws_webshop');
+    const term = await app.newSession('codex');
+    expect(term.cwd).not.toBe(app.currentWorkspace!.path);
+    expect(app.itemWs.get(`term:${term.id}`)).toBe('ws_webshop');
+  });
+
+  it('assigns a shell started in the workspace too', async () => {
+    app.selectWorkspace('ws_webshop');
+    await app.newSession('shell');
+    expect((m.bodies['POST /v1/terms'].at(-1) as { workspaceId?: string }).workspaceId).toBe('ws_webshop');
+  });
+
+  it('does not assign a session started in a directory outside the workspace', async () => {
+    app.selectWorkspace('ws_webshop');
+    await app.newSession('claude', { cwd: '/tmp' });
+    expect((m.bodies['POST /v1/terms'].at(-1) as { workspaceId?: string }).workspaceId).toBeUndefined();
   });
 
   it('starts in the checkout when the user prefers it or outside a project', async () => {
@@ -921,7 +940,7 @@ describe('sessions', () => {
   it('starts a plain shell without agent options or worktree', async () => {
     app.nextProfile = 'p1';
     await app.newSession('shell', { cwd: '/home/alice/Documents/Github/work/webshop', model: 'x' });
-    expect(m.bodies['POST /v1/terms']).toEqual([{ cwd: '/home/alice/Documents/Github/work/webshop', cols: 120, rows: 32 }]);
+    expect(m.bodies['POST /v1/terms']).toEqual([{ cwd: '/home/alice/Documents/Github/work/webshop', workspaceId: 'ws_webshop', cols: 120, rows: 32 }]);
     expect(app.nextProfile).toBe('p1');
   });
 
