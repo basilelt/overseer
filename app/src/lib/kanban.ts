@@ -1,21 +1,14 @@
 import { TASK_STATUSES, type Task, type TaskMessage, type TaskStatus } from './types';
 
+export * from './kanban-core';
+import { isSession, rankOf, sortColumn, byId, blockers, startable } from './kanban-core';
+
 export interface Filter {
   search?: string;
   project?: string;
   hideSession?: boolean;
 }
 
-export const isSession = (t: Task): boolean => t.origin === 'session';
-
-export function taskForItem(tasks: Task[], item: { lineId?: string | null; termId?: string | null } | undefined): Task | undefined {
-  if (!item) return undefined;
-  return tasks.find((t) => (item.lineId && t.lineId === item.lineId) || (item.termId && t.termId === item.termId));
-}
-
-export function movableStatuses(task: Task): TaskStatus[] {
-  return isSession(task) ? ['in_progress', 'in_testing', 'completed'] : ['in_testing', 'completed'];
-}
 export const isOrganizer = (t: Task): boolean => t.origin === 'organizer' || t.origin === 'configurator';
 
 export type Quadrant = 'do' | 'plan' | 'delegate' | 'drop' | 'none';
@@ -48,12 +41,6 @@ export function matches(task: Task, f: Filter): boolean {
   if (!q) return true;
   const hay = `#${task.number} ${task.title} ${task.description} ${task.ticketKey ?? ''} ${task.project}`.toLowerCase();
   return q.split(/\s+/).every((w) => hay.includes(w));
-}
-
-export const rankOf = (t: Task): number => (Number.isFinite(t.rank) ? t.rank : t.number);
-
-export function sortColumn(tasks: Task[]): Task[] {
-  return tasks.slice().sort((a, b) => rankOf(a) - rankOf(b) || a.number - b.number);
 }
 
 export function columns(tasks: Task[], f: Filter = {}): Column[] {
@@ -91,23 +78,6 @@ export function autoSummary(tasks: Task[]): { running: number; queued: number } 
     else if (t.status === 'auto') queued++;
   }
   return { running, queued };
-}
-
-export const byId = (tasks: Task[]): Map<string, Task> => new Map(tasks.map((t) => [t.id, t]));
-
-export function blockers(task: Task, tasks: Map<string, Task>): Task[] {
-  if (!task.dependsOn?.length) return [];
-  const out: Task[] = [];
-  for (const id of task.dependsOn) {
-    const d = tasks.get(id);
-    if (d && d.status !== 'completed') out.push(d);
-  }
-  return out;
-}
-
-export function startable(tasks: Task[]): Task[] {
-  const ids = byId(tasks);
-  return sortColumn(tasks.filter((t) => t.status === 'auto' && !isSession(t) && !blockers(t, ids).length));
 }
 
 export function nextUp(tasks: Task[], concurrency: number): Set<string> {
