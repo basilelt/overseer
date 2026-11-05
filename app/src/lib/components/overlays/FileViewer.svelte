@@ -3,7 +3,7 @@
   import Markdown from '../chat/Markdown.svelte';
   import { app, type FileArg } from '../../state.svelte';
   import { api } from '../../api';
-  import { fileKind, mimeOf } from '../../files';
+  import { fileKind, mimeOf, saveFile } from '../../files';
   import { t } from '../../i18n.svelte';
 
   let { file, onclose }: { file: FileArg; onclose: () => void } = $props();
@@ -17,6 +17,7 @@
   let truncated = $state(false);
   let error = $state<string | null>(null);
   let full = $state(false);
+  let saving = $state(false);
 
   $effect(() => {
     const { path, term, line } = file;
@@ -50,6 +51,19 @@
   function copy() {
     app.client?.copyText(file.path).then(() => app.notify(t('file.copied')), () => {});
   }
+
+  async function download() {
+    const client = app.client;
+    if (!client || saving) return;
+    saving = true;
+    try {
+      await saveFile(client, file, name).then((path) => app.notify(t('file.saved', { path })));
+    } catch (e) {
+      app.notify(String((e as Error)?.message ?? e), 'error');
+    } finally {
+      saving = false;
+    }
+  }
 </script>
 
 <Modal title={name} {onclose} width={960}>
@@ -80,6 +94,7 @@
   </div>
   {#snippet footer()}
     <button class="btn" onclick={copy}>{t('file.copyPath')}</button>
+    <button class="btn primary" onclick={download} disabled={saving || !!error}>{t('file.download')}</button>
   {/snippet}
 </Modal>
 

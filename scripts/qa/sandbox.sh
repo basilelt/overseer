@@ -68,7 +68,7 @@ desktop)
   [ -f "$D/daemon.pid" ] || { echo "run $0 start first" >&2; exit 1; }
   "$0" desktop-stop
   mkdir -p "$D/apphome"
-  setsid Xvfb ":$DISPLAY_NUM" -screen 0 1440x900x24 -nolisten tcp >> "$D/xvfb.log" 2>&1 &
+  setsid Xvfb ":$DISPLAY_NUM" -screen 0 1440x900x24 -nolisten tcp -extension GLX >> "$D/xvfb.log" 2>&1 &
   echo $! > "$D/xvfb.pid"
   # The app's devUrl is fixed at localhost:1420, which another checkout's dev server may hold; then
   # Vite and the app share a private network namespace (the daemon and X are on Unix sockets).
