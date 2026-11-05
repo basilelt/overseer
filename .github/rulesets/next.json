@@ -72,6 +72,10 @@
           {
             "context": "macos",
             "integration_id": 15368
+          },
+          {
+            "context": "gitleaks",
+            "integration_id": 15368
           }
         ]
       }
