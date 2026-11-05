@@ -10,7 +10,12 @@ async function rendered(lastAssistantText: string) {
   vi.spyOn(app, 'selected', 'get').mockReturnValue({ key: 'line:l1', lineId: 'l1', title: 'x' } as never);
   const { render } = await import('svelte/server');
   const { default: SidePanel } = await import('./SidePanel.svelte');
-  return render(SidePanel, { props: {} }).body.replace(/<!--[\s\S]*?-->/g, '');
+  let html = render(SidePanel, { props: {} }).body;
+  for (let prev = ''; prev !== html; ) {
+    prev = html;
+    html = html.replace(/<!--[\s\S]*?-->/g, '');
+  }
+  return html;
 }
 
 afterEach(() => vi.restoreAllMocks());
