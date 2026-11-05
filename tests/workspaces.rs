@@ -679,3 +679,26 @@ fn sessions_move_to_an_explicitly_assigned_workspace() {
         );
     }
 }
+
+#[test]
+fn adding_a_project_announces_it_and_its_workspace() {
+    let app = App::new("ws-project-event", json!({"autoConcurrency": 0}));
+    let (mut sse, mut buf) = events(&app);
+    let wt = app.fx.wt.to_string_lossy().into_owned();
+    let (code, p) = app.req("POST", "/v1/projects", json!({"path": wt}));
+    assert_eq!(code, 201);
+    expect(
+        &mut sse,
+        &mut buf,
+        &["event: project.added", "event: workspace.created", &wt],
+    );
+    assert_eq!(p["path"], wt.as_str());
+    let before = buf.len();
+    assert_eq!(app.req("POST", "/v1/projects", json!({"path": wt})).0, 200);
+    std::thread::sleep(Duration::from_millis(300));
+    let mut b = [0u8; 4096];
+    if let Ok(n) = sse.read(&mut b) {
+        buf.push_str(&String::from_utf8_lossy(&b[..n]));
+    }
+    assert_eq!(buf[before..].matches("project.added").count(), 0);
+}
