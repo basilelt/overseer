@@ -1,5 +1,6 @@
 import { type Sub, t } from './i18n.svelte';
-import { isComment, isFeedbackTerm, UrlWatcher, type Kind } from './feedback';
+import { isComment, isFeedbackTerm, UrlWatcher } from './feedback-watch';
+import type { Kind } from './feedback';
 import type { DaemonClient, TermIO } from './client';
 import type { Term } from './types';
 

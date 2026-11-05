@@ -319,6 +319,14 @@ fn main() -> ExitCode {
         return usage();
     };
     let rest = &args[1..];
+    if overseer::cli::wants_help(cmd, rest) {
+        println!("{USAGE}");
+        return ExitCode::SUCCESS;
+    }
+    if let Err(e) = overseer::cli::check(cmd, rest) {
+        eprintln!("overseer: {e}\n{USAGE}");
+        return ExitCode::from(2);
+    }
     match cmd {
         "login" => return remote::cli_login(rest),
         "enroll" => return overseer::sync::cli_enroll(rest),

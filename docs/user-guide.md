@@ -393,7 +393,7 @@ logged to `<state>/actions.log`. Exit code 3 = refused; `--json` prints the repo
 | Check | Refuses when |
 |---|---|
 | alive | no live process, or two processes on the same session |
-| inTmux | the agent is neither in a tmux pane nor in a Overseer (daemon) terminal |
+| inTmux | the agent is neither in a tmux pane nor in an Overseer (daemon) terminal |
 | atPrompt | a turn is running (hook `UserPromptSubmit` without `Stop`, or `status: busy`) |
 | inputEmpty | text is typed in the prompt, or the prompt cannot be recognised on screen |
 | noToolRunning | a Bash tool, a subagent, a background task or an unknown child process runs |
@@ -409,7 +409,7 @@ to get the stub back in its pane after a reboot apply [`docs/toolkit-patch.md`](
 
 `close` marks a line `hung-up` (finished). A live line is held first, with the same checks.
 
-An agent running in a Overseer terminal (daemon term) is held through the daemon
+An agent running in an Overseer terminal (daemon term) is held through the daemon
 (`POST /v1/lines/<id>/hold|close?dryRun=false`, or Hold / Close in the app's chat header): the
 screen checks read the term's own screen, the agent gets SIGTERM, and the same term then shows the
 held stub; Enter in it, or Resume in the app, restarts the agent there. Close also ends the term.
