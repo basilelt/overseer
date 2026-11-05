@@ -73,6 +73,7 @@ jobs:
       android: ${{ steps.optional.outputs.android }}
       ios: ${{ steps.optional.outputs.ios }}
       tap: ${{ steps.optional.outputs.tap }}
+      msix: ${{ steps.optional.outputs.msix }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -112,13 +113,18 @@ jobs:
           ANDROID: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' && secrets.ANDROID_KEYSTORE_PASSWORD != '' && secrets.ANDROID_KEY_ALIAS != '' && secrets.ANDROID_KEY_PASSWORD != '' }}
           IOS: ${{ secrets.APPLE_TEAM_ID != '' && secrets.APPLE_KEY_ID != '' && secrets.APPLE_ISSUER_ID != '' && secrets.APPLE_KEY_CONTENT != '' && secrets.MATCH_GIT_URL != '' && secrets.MATCH_PASSWORD != '' && secrets.MATCH_SSH_PRIVATE_KEY != '' }}
           TAP: ${{ secrets.HOMEBREW_TAP_DEPLOY_KEY != '' }}
+          MSIX: ${{ secrets.WINDOWS_SELF_SIGN_PFX_BASE64 != '' && secrets.WINDOWS_SELF_SIGN_PFX_PASSWORD != '' }}
           UPDATER: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY != '' }}
         run: |
           {
             echo "android=$ANDROID"
             echo "ios=$IOS"
             echo "tap=$TAP"
+            echo "msix=$MSIX"
           } >> "$GITHUB_OUTPUT"
+          if [ "$MSIX" != "true" ]; then
+            echo "::warning title=MSIX skipped::WINDOWS_SELF_SIGN_PFX_BASE64 or WINDOWS_SELF_SIGN_PFX_PASSWORD is not set: no .msix in this release (docs/ci.md)"
+          fi
           if [ "$ANDROID" != "true" ]; then
             echo "::warning title=app-android skipped::ANDROID_KEYSTORE_BASE64, ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS or ANDROID_KEY_PASSWORD is not set: no Android APK in this release (docs/mobile.md)"
           fi
@@ -389,6 +395,53 @@ jobs:
           if-no-files-found: error
           retention-days: 4
 
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        if: needs.tag.outputs.msix == 'true'
+        with:
+          name: msix-input-x64
+          path: app/src-tauri/target/x86_64-pc-windows-msvc/release/overseer-app.exe
+          if-no-files-found: error
+          retention-days: 1
+
+  app-windows-msix:
+    needs: [tag, app-windows]
+    if: needs.tag.outputs.msix == 'true'
+    runs-on: windows-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          pattern: "servers*"
+          merge-multiple: true
+          path: dist
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: msix-input-x64
+          path: msix-input
+
+      - env:
+          VERSION: ${{ needs.tag.outputs.version }}
+          MSIX_PFX_BASE64: ${{ secrets.WINDOWS_SELF_SIGN_PFX_BASE64 }}
+          MSIX_PFX_PASSWORD: ${{ secrets.WINDOWS_SELF_SIGN_PFX_PASSWORD }}
+        run: |
+          scripts/app-resources.sh "$VERSION"
+          scripts/msix.sh "$VERSION" x64 msix-input/overseer-app.exe "out/Overseer_${VERSION}_x64.msix"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: app-msix-x64
+          path: out/
+          if-no-files-found: error
+          retention-days: 4
+
   app-windows-arm:
     needs: [tag, servers, servers-macos]
     runs-on: windows-11-arm
@@ -444,12 +497,24 @@ jobs:
           fi
           pnpm --dir app tauri build --target aarch64-pc-windows-msvc --bundles nsis "${updater[@]}"
 
+      - if: needs.tag.outputs.msix == 'true'
+        env:
+          VERSION: ${{ needs.tag.outputs.version }}
+          MSIX_PFX_BASE64: ${{ secrets.WINDOWS_SELF_SIGN_PFX_BASE64 }}
+          MSIX_PFX_PASSWORD: ${{ secrets.WINDOWS_SELF_SIGN_PFX_PASSWORD }}
+        run: >
+          scripts/msix.sh "$VERSION" arm64
+          app/src-tauri/target/aarch64-pc-windows-msvc/release/overseer-app.exe
+          "app/src-tauri/target/aarch64-pc-windows-msvc/release/bundle/nsis/Overseer_${VERSION}_arm64.msix"
+
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: app-windows-arm
           path: |
             app/src-tauri/target/aarch64-pc-windows-msvc/release/bundle/nsis/*-setup.exe
             app/src-tauri/target/aarch64-pc-windows-msvc/release/bundle/nsis/*-setup.exe.sig
+            app/src-tauri/target/aarch64-pc-windows-msvc/release/bundle/nsis/*.msix
+            app/src-tauri/target/aarch64-pc-windows-msvc/release/bundle/nsis/*.cer
           if-no-files-found: error
           retention-days: 4
 
@@ -753,7 +818,7 @@ jobs:
         run: rm -f ~/.ssh/match_certificates
 
   publish:
-    needs: [tag, servers, servers-macos, app-linux, app-windows, app-windows-arm, app-macos, app-android]
+    needs: [tag, servers, servers-macos, app-linux, app-windows, app-windows-msix, app-windows-arm, app-macos, app-android]
     if: >
       !cancelled() && needs.tag.outputs.tag != ''
       && needs.servers.result == 'success'
@@ -761,6 +826,7 @@ jobs:
       && needs.app-linux.result == 'success'
       && needs.app-windows.result == 'success'
       && needs.app-windows-arm.result == 'success'
+      && (needs.app-windows-msix.result == 'success' || needs.app-windows-msix.result == 'skipped')
       && needs.app-macos.result == 'success'
     runs-on: ubuntu-slim
     timeout-minutes: 15

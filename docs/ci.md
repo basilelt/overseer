@@ -119,7 +119,8 @@ its `changes` job runs, a few seconds on `ubuntu-slim`. Pushes by `github-action
 | release | `servers-macos` | `macos-26` | `make dist-darwin`: daemon for macOS x86_64/aarch64, built natively so it links FSEvents (CoreServices needs the Apple SDK) |
 | release | `app-linux` | `ubuntu-24.04`, `ubuntu-24.04-arm` | `.deb`, `.AppImage`, `.rpm` for x86_64 and aarch64, each built natively |
 | release | `app-windows` | `ubuntu-24.04` | NSIS installer `*_x64-setup.exe`, cross-built with `cargo-xwin` |
-| release | `app-windows-arm` | `windows-11-arm` | NSIS installer `*_arm64-setup.exe`, built natively |
+| release | `app-windows-msix` | `windows-latest` | `Overseer_<v>_x64.msix` from the `app-windows` executable (`scripts/msix.sh`); skipped without the MSIX secrets |
+| release | `app-windows-arm` | `windows-11-arm` | NSIS installer `*_arm64-setup.exe` and `Overseer_<v>_arm64.msix`, built natively |
 | release | `app-macos` | `macos-26` | `.dmg` for Apple Silicon (`aarch64-apple-darwin`) and Intel (`x86_64-apple-darwin`, cross-built) |
 | release | `app-android` | `ubuntu-24.04` | signed universal APK (arm64-v8a, armeabi-v7a) `Overseer_<v>_android.apk` + `.sha256`; skipped without the keystore secrets |
 | release | `app-ios` | `macos-26` | fastlane `internal_testflight` lane: match (readonly), `tauri ios build`, `upload_to_testflight` with `skip_submission`; `continue-on-error`, skipped without the Apple secrets |
@@ -242,6 +243,7 @@ job that needs a missing one is skipped or builds unsigned, with a warning annot
 | `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | password of that key (leave unset if the key has none) | |
 | `MACOS_SELF_SIGN_P12_BASE64`, `MACOS_SELF_SIGN_P12_PASSWORD` | stable self-signed macOS code signature ([macOS signing](#macos-signing)) | ad-hoc signature: macOS forgets the Local Network grant on every update |
 | `APPLE_CERTIFICATE`, `APPLE_CERTIFICATE_PASSWORD`, `APPLE_SIGNING_IDENTITY` | Developer ID signature of the macOS app (wins over the self-signed one) | self-signed or ad-hoc, as above |
+| `WINDOWS_SELF_SIGN_PFX_BASE64`, `WINDOWS_SELF_SIGN_PFX_PASSWORD` | self-signed `.msix` packages for x64 and arm64 and `overseer-msix.cer` in the release ([MSIX](#msix)) | no `.msix`, the NSIS installers ship as before |
 | `HOMEBREW_TAP_DEPLOY_KEY` | the `tap` job: the private half of an SSH deploy key with write access on `basilelt/homebrew-tap` only (create with `ssh-keygen -t ed25519`, add the public half under the tap's Settings > Deploy keys with "Allow write access") | `tap` skipped, the tap keeps the previous version |
 | `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD` | `app-android`: signed release APK ([docs/mobile.md](mobile.md#android-once-by-whoever-holds-the-release-key)) | `app-android` skipped, no APK in the release |
 | `APPLE_TEAM_ID`, `APPLE_KEY_ID`, `APPLE_ISSUER_ID`, `APPLE_KEY_CONTENT`, `MATCH_GIT_URL`, `MATCH_PASSWORD`, `MATCH_SSH_PRIVATE_KEY` | `app-ios`: TestFlight upload ([docs/mobile.md](mobile.md#ios-once-by-the-apple-developer-account-holder)) | `app-ios` skipped |
@@ -258,6 +260,28 @@ Release downloads need no token: the repository is public.
 Windows code signing is not configured: no secret exists for it and the NSIS installer is
 unsigned (SmartScreen warning). It would go through a `bundle.windows.signCommand`
 (`osslsigncode` on Linux) fed by two new secrets.
+
+### MSIX
+
+The `.msix` packages wrap the same `overseer-app.exe` as the NSIS installer with
+`packaging/msix/AppxManifest.xml` (full trust desktop app, identity `io.github.basilelt.overseer`,
+publisher `CN=basilelt`), packed with `makeappx` and signed with `signtool` from the Windows SDK of
+the runner (`scripts/msix.sh`). Windows installs an MSIX only when its signer is trusted, so each
+release also carries the public `overseer-msix.cer`; users import it once into Local Machine >
+Trusted People. An MSIX install never self-updates: the app sees its `WindowsApps` path and shows
+the release link like a `.deb`/`.rpm` install. Windows keeps an MSIX app's `%APPDATA%` apart, so
+switching between the MSIX and the NSIS install starts with fresh settings.
+
+Create the certificate once, on any machine with `openssl`:
+
+```sh
+MSIX_PFX_PASSWORD='<password>' scripts/msix-cert.sh ~/overseer-msix
+```
+
+Put `overseer-msix.pfx.b64` in `WINDOWS_SELF_SIGN_PFX_BASE64` and the password in
+`WINDOWS_SELF_SIGN_PFX_PASSWORD`, and keep the `.pfx` private. A new certificate means users
+import the new `.cer` again. The publisher in the manifest must equal the certificate subject;
+set `MSIX_PUBLISHER` for both scripts to change it.
 
 ## App updates
 

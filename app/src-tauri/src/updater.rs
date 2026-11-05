@@ -169,8 +169,15 @@ pub fn install_kind(
             }
         }
         "linux" if !appimage => InstallKind::Package,
+        "windows" if is_msix(exe) => InstallKind::Package,
         _ => InstallKind::Bundle,
     }
+}
+
+fn is_msix(exe: &Path) -> bool {
+    exe.to_string_lossy()
+        .to_ascii_lowercase()
+        .contains("\\windowsapps\\")
 }
 
 fn caskrooms() -> Vec<PathBuf> {
@@ -1323,6 +1330,18 @@ mod tests {
                 false
             ),
             InstallKind::Bundle
+        );
+        assert_eq!(
+            install_kind(
+                "windows",
+                Path::new(
+                    "C:\\Program Files\\WindowsApps\\io.github.basilelt.overseer_1.2.3.0_arm64__x\\Overseer.exe"
+                ),
+                &[],
+                any,
+                false
+            ),
+            InstallKind::Package
         );
     }
 }
