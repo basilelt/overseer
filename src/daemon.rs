@@ -644,9 +644,11 @@ fn activity(ctx: &Ctx, r: &Request, id: &str) -> (u16, Value) {
         &l.session_id,
     )
     .and_then(|p| crate::activity::activity(l.agent, &p, since));
-    let Some(mut a) = a else {
-        return err(409, format!("no transcript for line {}", l.id));
-    };
+    let transcript = a.is_some();
+    let mut a = a.unwrap_or_else(
+        || json!({"workLog": [], "todos": [], "editedFiles": [], "lastAssistantText": ""}),
+    );
+    a["transcript"] = json!(transcript);
     if let Some(t) = &l.title {
         a["title"] = json!(t);
     }

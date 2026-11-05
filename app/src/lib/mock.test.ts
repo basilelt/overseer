@@ -190,13 +190,13 @@ describe('MockDaemon', () => {
     await expect(a.killTerm('tm_shell1')).rejects.toMatchObject({ status: 409 });
   });
 
-  it('answers 409 for the activity of agents without session files', async () => {
+  it('answers an empty activity without a transcript for agents without session files', async () => {
     const { a } = setup();
     const lines = await a.lines();
     const copilot = lines.find((l) => l.line.agent === 'copilot')!;
-    await expect(a.activity(copilot.line.id)).rejects.toMatchObject({ status: 409 });
+    expect(await a.activity(copilot.line.id)).toMatchObject({ lineId: copilot.line.id, transcript: false, workLog: [], todos: [], editedFiles: [] });
     expect((await a.terms()).some((t) => t.lineId === copilot.line.id && t.agent === 'copilot')).toBe(true);
-    expect((await a.activity('ln_06')).lineId).toBe('ln_06');
+    expect(await a.activity('ln_06')).toMatchObject({ lineId: 'ln_06', transcript: true });
   });
 
   it('creates projects at the repository root and rejects non repositories', async () => {
