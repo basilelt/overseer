@@ -1,3 +1,4 @@
+import './demo-boot';
 import { isLocale, setLocale, systemLocale, type Locale } from './i18n.svelte';
 import { DEFAULT_SCROLLBACK_LINES } from './scroll';
 import type { Agent, Effort, HostTarget, Project } from './types';
