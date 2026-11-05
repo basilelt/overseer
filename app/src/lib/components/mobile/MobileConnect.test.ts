@@ -13,7 +13,12 @@ async function screen(file: 'mobile' | 'desktop', opts: { demo?: boolean; client
   const { app } = await import('../../state.svelte');
   app.client = opts.client ? ({ kind: opts.client } as never) : null;
   const C = file === 'mobile' ? (await import('./MobileConnect.svelte')).default : (await import('../overlays/ConnectDialog.svelte')).default;
-  return render(C, { props: { onclose: () => {} } }).body.replace(/<!--.*?-->/g, '');
+  let html = render(C, { props: { onclose: () => {} } }).body;
+  for (let prev = ''; prev !== html; ) {
+    prev = html;
+    html = html.replace(/<!--[\s\S]*?--!?>/g, '');
+  }
+  return html;
 }
 
 afterEach(() => vi.unstubAllGlobals());
