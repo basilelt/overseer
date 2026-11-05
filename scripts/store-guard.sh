@@ -1,23 +1,43 @@
 #!/bin/sh
 set -u
-cd "$(dirname "$0")/.."
+cd "${STORE_GUARD_ROOT:-$(dirname "$0")/..}" || exit 2
 paths=".github app/fastlane scripts Makefile"
 existing=
 for p in $paths; do
   [ -e "$p" ] && existing="$existing $p"
 done
 fail=0
-hits=$(grep -rnwE --exclude=store-guard.sh \
+hits=$(grep -rnwE --exclude='store-guard*.sh' \
   'deliver|upload_to_app_store|submit_for_review|submit_beta_review|distribute_external|upload_to_play_store|supply' \
   $existing 2>/dev/null)
 if [ -n "$hits" ]; then
   echo "$hits" | while IFS= read -r line; do
     echo "::error title=store guard::${line}"
   done
-  echo "store guard: App Store / Play Store submission found; Overseer ships to TestFlight and GitHub Releases only (docs/mobile.md)"
+  echo "store guard: App Store / Play Store submission found; Overseer ships to TestFlight, Google Play testing tracks and GitHub Releases only (docs/mobile.md)"
   fail=1
 fi
-for f in $(grep -rlwE 'upload_to_testflight|pilot' $existing 2>/dev/null | grep -v 'store-guard.sh$'); do
+prod=$(grep -rniE --exclude='store-guard*.sh' --exclude='android-play-track*.sh' 'track.*production|production.*track' \
+  $existing 2>/dev/null)
+if [ -n "$prod" ]; then
+  echo "$prod" | while IFS= read -r line; do
+    echo "::error title=store guard::${line}"
+  done
+  echo "store guard: a Google Play production track is named; CI uploads to internal or closed testing only"
+  fail=1
+fi
+for f in $(grep -rlE 'upload-google-play' $existing 2>/dev/null | grep -vE 'store-guard(\.test)?\.sh$'); do
+  if ! grep -q 'scripts/android-play-track.sh' "$f"; then
+    echo "::error title=store guard::$f uploads to Google Play without checking the track with scripts/android-play-track.sh"
+    fail=1
+  fi
+  bad=$(grep -nE '^[[:space:]]*(track|tracks|userFraction):' "$f" | grep -vE 'track: \$\{\{ steps\.[A-Za-z0-9_-]+\.outputs\.track \}\}$')
+  if [ -n "$bad" ]; then
+    echo "::error title=store guard::$f sets a Google Play track that does not come from scripts/android-play-track.sh: $bad"
+    fail=1
+  fi
+done
+for f in $(grep -rlwE 'upload_to_testflight|pilot' $existing 2>/dev/null | grep -vE 'store-guard(\.test)?\.sh$'); do
   if ! grep -q 'skip_submission: true' "$f"; then
     echo "::error title=store guard::$f uploads to TestFlight without skip_submission: true"
     fail=1
@@ -32,5 +52,5 @@ for f in app/src-tauri/gen/apple/Assets.xcassets/AppIcon.appiconset/*.png; do
       ;;
   esac
 done
-[ "$fail" -eq 0 ] && echo "store guard: TestFlight only, no store submission, opaque iOS icons"
+[ "$fail" -eq 0 ] && echo "store guard: TestFlight and Google Play testing tracks only, no store submission, opaque iOS icons"
 exit "$fail"

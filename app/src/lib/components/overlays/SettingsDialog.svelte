@@ -12,14 +12,14 @@
   import UpdateSettings from './UpdateSettings.svelte';
   import ServerSettings from './ServerSettings.svelte';
   import NotificationSettings from './NotificationSettings.svelte';
-  import ApkUpdateSettings from '../mobile/ApkUpdateSettings.svelte';
   import { adaptChoice, findAgent, hasModel, taskAgents } from '../../agents';
   import { localeName, locales, t, type Key } from '../../i18n.svelte';
   import { COLOR_TOKENS, customColors, resolvedTheme, saveSettings, settings, type ColorToken, type Settings, type ThemePref } from '../../settings.svelte';
   import { app } from '../../state.svelte';
   import { diag, dt } from '../../diag.svelte';
   import { feedback, ft } from '../../feedback.svelte';
-  import { DEFAULT_REPO } from '../../feedback';
+  import { DEFAULT_REPO, PRIVACY_URL } from '../../feedback';
+  import { openExternal } from '../../ports.svelte';
   import { organizer } from '../../organize.svelte';
   import { BUNDLED_FONT, clampLineHeight, FONT_SUGGESTIONS } from '../../fonts';
   import type { Effort, HookAgentStatus } from '../../types';
@@ -36,6 +36,7 @@
   import { availableCategories, availableSections, categoryCounts, escapeAction, initialCategory, isHit, phonePage, pickCategory, search, SECTIONS, showEntry, showSection, type CategoryId, type Gates, type SectionId } from '../../settings-index';
 
   let { onclose }: { onclose: () => void } = $props();
+  const apkSettings = __SELF_UPDATE__ ? () => import('../mobile/ApkUpdateSettings.svelte') : null;
 
   const themes: ThemePref[] = ['auto', 'light', 'dark'];
   const themeKey: Record<ThemePref, Key> = { auto: 'settings.theme.system', light: 'settings.theme.light', dark: 'settings.theme.dark' };
@@ -139,7 +140,7 @@
     profiles: !!app.profiles,
     hooks: !!hooks.status,
     updater: updater.enabled && !app.mobile,
-    apk: apk.enabled && apk.updates,
+    apk: __SELF_UPDATE__ && apk.enabled && apk.updates,
   });
   const text = (k: Key) => [t(k), en[k]];
   let query = $state('');
@@ -482,7 +483,7 @@
 
       {#if vis('server')}<ServerSettings row={(e) => row('server', e)} hit={(e) => hit('server', e)} />{/if}
       {#if vis('updater')}<UpdateSettings row={(e) => row('updater', e)} hit={(e) => hit('updater', e)} />{/if}
-      {#if vis('apk')}<ApkUpdateSettings row={(e) => row('apk', e)} hit={(e) => hit('apk', e)} />{/if}
+      {#if apkSettings && vis('apk')}{#await apkSettings() then { default: ApkUpdateSettings }}<ApkUpdateSettings row={(e) => row('apk', e)} hit={(e) => hit('apk', e)} />{/await}{/if}
 
       {#if vis('tour')}
         <section>
@@ -523,6 +524,10 @@
             <span>{ft('repo')}<small>{ft('repoHint')}</small></span>
             <input class="mono" value={settings.feedbackRepo ?? ''} placeholder={DEFAULT_REPO} spellcheck="false" onchange={(e) => saveSettings({ feedbackRepo: e.currentTarget.value.trim() || undefined })} />
           </label>
+          <div class="row" class:hit={hit('feedback', 'privacy')}>
+            <span>{ft('privacy')}<small>{ft('privacyHint')}</small></span>
+            <button class="btn" onclick={() => openExternal(PRIVACY_URL).catch((e) => app.notify(String(e?.message ?? e), 'error'))}>{ft('openLink')}</button>
+          </div>
         </section>
       {/if}
     </div>

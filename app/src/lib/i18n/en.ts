@@ -1296,6 +1296,8 @@ export const en = {
   'feedback.sectionHint': 'Report a bug or suggest an idea as a GitHub issue.',
   'feedback.repo': 'Feedback repository',
   'feedback.repoHint': 'GitHub owner/name where reports are filed',
+  'feedback.privacy': 'Privacy policy',
+  'feedback.privacyHint': 'How Overseer handles your data',
   'feedback.report': 'Report this crash',
   'feedback.crashTitle': 'The app {what}',
   'apk.pill.available': 'Update {version}',

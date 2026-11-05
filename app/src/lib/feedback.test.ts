@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildBody, buildDiagnostics, buildPrompt, findClone, issueTitle, labelsFor, newIssueUrl, wantsDiagnostics, redact, REPORT, repoSlug, stripAnsi, UrlWatcher, isFeedbackTerm, validate, validRepo, type Form } from './feedback';
+import { buildBody, buildDiagnostics, buildPrompt, findClone, issueTitle, labelsFor, newIssueUrl, wantsDiagnostics, PRIVACY_URL, redact, REPORT, repoSlug, stripAnsi, UrlWatcher, isFeedbackTerm, validate, validRepo, type Form } from './feedback';
 
 const form = (over: Partial<Form> = {}): Form => ({ kind: 'bug', title: '', description: 'It crashes', attachments: [], diagnostics: null, ...over });
 const enc = new TextEncoder();
@@ -217,5 +217,11 @@ describe('isFeedbackTerm', () => {
   it('ignores other titles', () => {
     expect(isFeedbackTerm({ ...agent, title: 'claude' })).toBe(false);
     expect(isFeedbackTerm({ ...agent, title: 'Review PR #1' })).toBe(false);
+  });
+});
+
+describe('privacy policy', () => {
+  it('links to the policy on the default repository main branch', () => {
+    expect(PRIVACY_URL).toBe('https://github.com/basilelt/overseer/blob/main/PRIVACY.md');
   });
 });
