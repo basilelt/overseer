@@ -671,4 +671,46 @@ mod tests {
         assert_eq!(n, 0);
         std::fs::remove_dir_all(dir).unwrap();
     }
+
+    #[test]
+    fn an_old_workspaces_table_gains_kind_and_cwd_and_keeps_its_rows() {
+        // Given a database created before subjects, with a workspace row
+        // When the registry is opened, then two subjects with no cwd clash are inserted
+        // Then the old row is a dir without cwd and several subjects can coexist
+        let dir = std::env::temp_dir().join(format!("sb-reg-subj-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let c = Connection::open(dir.join("overseer.db")).unwrap();
+        c.execute_batch(
+            "CREATE TABLE workspaces (id TEXT PRIMARY KEY, name TEXT NOT NULL, path TEXT NOT NULL UNIQUE,
+               folder_id TEXT, pinned INTEGER NOT NULL DEFAULT 0, archived INTEGER NOT NULL DEFAULT 0,
+               auto INTEGER NOT NULL DEFAULT 0, rank REAL NOT NULL, tabs TEXT NOT NULL DEFAULT '[]',
+               notify_idle INTEGER NOT NULL DEFAULT 0, created_ms INTEGER NOT NULL, updated_ms INTEGER NOT NULL);
+             INSERT INTO workspaces (id, name, path, rank, created_ms, updated_ms) VALUES ('w1', 'old', '/a', 1, 0, 0);",
+        )
+        .unwrap();
+        drop(c);
+        let reg = Registry::open(&dir).unwrap();
+        let row: (String, Option<String>, String) = reg
+            .conn
+            .query_row(
+                "SELECT kind, cwd, path FROM workspaces WHERE id = 'w1'",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .unwrap();
+        assert_eq!(row, ("dir".into(), None, "/a".into()));
+        for id in ["s1", "s2"] {
+            reg.conn
+                .execute(
+                    "INSERT INTO workspaces (id, name, path, rank, created_ms, updated_ms, kind, cwd)
+                     VALUES (?1, 'n', ?2, 1, 0, 0, 'subject', '/same')",
+                    params![id, format!("subject:{id}")],
+                )
+                .unwrap();
+        }
+        drop(reg);
+        assert!(Registry::open(&dir).is_ok());
+        std::fs::remove_dir_all(dir).unwrap();
+    }
 }

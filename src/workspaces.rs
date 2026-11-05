@@ -1104,4 +1104,54 @@ mod tests {
             Some("/home/u/src/app")
         );
     }
+
+    #[test]
+    fn a_subject_never_matches_by_path_but_wins_when_assigned() {
+        // Given a dir workspace holding a line's cwd and a subject sharing that cwd
+        // When membership is resolved before and after assigning the line and a term to the subject
+        // Then the subject is never derived from the cwd and the assignment beats the dir workspace
+        let mut subject = ws("subject:s1");
+        subject.id = "s1".into();
+        subject.path = String::new();
+        subject.subject = true;
+        subject.cwd = Some("/home/u/src/app".into());
+        let ix = Index {
+            workspaces: vec![ws("/home/u/src/app"), subject],
+            tasks: vec![],
+            projects: vec![],
+        };
+        let mut l = line("l1", "/home/u/src/app", "");
+        let mut t = crate::term::Info {
+            cwd: "/home/u/src/app".into(),
+            ..Default::default()
+        };
+        assert_eq!(
+            ix.of_line(&l).map(|w| w.id.as_str()),
+            Some("/home/u/src/app")
+        );
+        assert_eq!(
+            ix.of_term(&t).map(|w| w.id.as_str()),
+            Some("/home/u/src/app")
+        );
+        l.workspace_id = Some("s1".into());
+        t.workspace_id = Some("s1".into());
+        assert_eq!(ix.of_line(&l).map(|w| w.id.as_str()), Some("s1"));
+        assert_eq!(ix.of_term(&t).map(|w| w.id.as_str()), Some("s1"));
+    }
+
+    #[test]
+    fn a_subject_starts_in_its_cwd_and_a_dir_in_its_path() {
+        // Given a subject with a cwd and a dir workspace
+        // When their start directory is asked
+        // Then the subject answers its cwd and the dir its path, and the subject json has no path
+        let mut s = ws("");
+        s.subject = true;
+        s.cwd = Some("/tmp".into());
+        assert_eq!(s.start_dir(), "/tmp");
+        assert!(!s.missing());
+        assert!(s.to_json("st")["path"].is_null());
+        assert_eq!(s.to_json("st")["kind"], "subject");
+        assert_eq!(ws("/home/u").start_dir(), "/home/u");
+        assert_eq!(ws("/home/u").to_json("st")["kind"], "dir");
+    }
 }
