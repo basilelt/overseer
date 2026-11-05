@@ -612,6 +612,23 @@ pub fn delete_group(reg: &Registry, id: &str) -> Res<Value> {
     Ok(json!({"deleted": id}))
 }
 
+pub fn repo_root<'a>(projects: &'a [(String, String)], repo: &str, path: &str) -> Option<&'a str> {
+    let clones: Vec<&str> = projects
+        .iter()
+        .filter(|(_, r)| !repo.is_empty() && r == repo)
+        .map(|(p, _)| p.as_str())
+        .collect();
+    clones
+        .iter()
+        .copied()
+        .filter(|p| under(path, p))
+        .max_by_key(|p| p.len())
+        .or(match clones[..] {
+            [only] => Some(only),
+            _ => None,
+        })
+}
+
 pub struct Index {
     pub workspaces: Vec<Workspace>,
     pub tasks: Vec<Task>,
@@ -670,11 +687,7 @@ impl Index {
             &l.worktree_path
         };
         let prefix = self.longest(path);
-        let repo = self
-            .projects
-            .iter()
-            .find(|(_, r)| !l.repo.is_empty() && *r == l.repo)
-            .and_then(|(p, _)| self.longest(p));
+        let repo = repo_root(&self.projects, &l.repo, path).and_then(|p| self.longest(p));
         match (prefix, repo) {
             (p, Some(r)) if p.is_none_or(|p| !under(&p.path, &r.path)) => Some(r),
             (p, _) => p,
@@ -851,6 +864,48 @@ mod tests {
         let mut cwd = line("f", "", "");
         cwd.cwd = "/home/u/src/lib/sub".into();
         assert_eq!(of(cwd).as_deref(), Some("/home/u/src/lib"));
+    }
+
+    #[test]
+    fn a_session_in_a_second_clone_of_a_repo_stays_in_that_clone_workspace() {
+        let ix = Index {
+            workspaces: vec![
+                ws("/home/u/work/atk"),
+                ws("/home/u/work/atk2"),
+                ws("/home/u/.overseer/worktrees"),
+            ],
+            tasks: vec![],
+            projects: vec![
+                ("/home/u/work/atk".into(), "github.com/o/pkg".into()),
+                ("/home/u/work/atk2".into(), "github.com/o/pkg".into()),
+            ],
+        };
+        let of = |p: &str| {
+            ix.of_line(&line("l", p, "github.com/o/pkg"))
+                .map(|w| w.path.clone())
+        };
+        assert_eq!(of("/home/u/work/atk").as_deref(), Some("/home/u/work/atk"));
+        assert_eq!(
+            of("/home/u/work/atk2/src").as_deref(),
+            Some("/home/u/work/atk2")
+        );
+        assert_eq!(
+            of("/home/u/.overseer/worktrees/atk-1/feat").as_deref(),
+            Some("/home/u/.overseer/worktrees")
+        );
+        assert_eq!(of("/srv/feat"), None);
+    }
+
+    #[test]
+    fn repo_root_picks_the_clone_holding_the_path_or_the_only_clone() {
+        let two = [
+            ("/a/atk".to_string(), "r".to_string()),
+            ("/a/atk2".to_string(), "r".to_string()),
+        ];
+        assert_eq!(repo_root(&two, "r", "/a/atk2/src"), Some("/a/atk2"));
+        assert_eq!(repo_root(&two, "r", "/w/atk-1"), None);
+        assert_eq!(repo_root(&two[..1], "r", "/w/atk-1"), Some("/a/atk"));
+        assert_eq!(repo_root(&two, "", "/a/atk"), None);
     }
 
     #[test]
