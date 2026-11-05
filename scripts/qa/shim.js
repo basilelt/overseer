@@ -104,6 +104,8 @@
     term_background: () => null,
     diag_tail: () => ({ path: 'app.log', lines: ['qa line'] }),
     diag_info: () => null,
+    update_status: () => ({ current: '0.0.0-qa', kind: 'package', releasesUrl: 'https://github.com/basilelt/overseer/releases' }),
+    update_check: () => { throw 'Updates are not available in the sandbox'; },
     ports_watch: (a) => { const id = nextId++; const tick = async () => { try { const r = await fetch(BASE + '/v1/ports'); send(a.onState, { remote: false, detected: await r.json(), forwards: [] }); } catch {} }; tick(); subs.set(id, { abort: () => clearInterval(iv) }); const iv = setInterval(tick, 1500); return id; },
     ports_watch_stop: (a) => { subs.get(a.sub)?.abort(); subs.delete(a.sub); },
     ports_configure: () => null,

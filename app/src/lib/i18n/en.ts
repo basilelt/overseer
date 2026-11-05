@@ -1459,6 +1459,7 @@ export const en = {
   'updater.brewOr': 'Or from a terminal:',
   'updater.title': 'Software update',
   'updater.check': 'Check for updates',
+  'updater.unavailable': 'Not available here',
   'updater.checking': 'Checking for updates…',
   'updater.current': 'Overseer {version} is the latest version.',
   'updater.available': 'Overseer {version} is available',
