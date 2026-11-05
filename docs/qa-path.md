@@ -21,7 +21,7 @@ scripts/qa/sandbox.sh stop     # stop everything; `clean` also deletes $QA_DIR
 - `QA_DIR` defaults to `/tmp/sbqa`. Keep it short: a unix socket path must stay under about 100 bytes.
 - The daemon runs with its own `HOME`, state dir, runtime dir, Claude and Codex config, `GIT_CONFIG_GLOBAL=/dev/null`, and `tests/stubs` first on `PATH`. Sessions therefore start real processes from the stub CLIs: they print a `❯` prompt, echo what you type (`got: …`), and log their command line to `$QA_DIR/stub.log`. Typing `done` ends a turn, so a task moves to In testing. The `codex` stub behaves like Codex 0.165+: it creates its thread (a rollout under `$QA_DIR/home/.codex/sessions`) on the first `busy`, not at launch, reports its hooks with a pid that is not its own (real Codex runs hooks from a shared `codex app-server`), Ctrl+C makes it quit cleanly like Codex, and `tool` runs for 8 s a process with the argv of Codex's Linux sandbox (`bwrap … -- …/bin/codex --sandbox-policy-cwd …`).
 - A sample git repository is created at `$QA_DIR/home/proj`. Add files there as a step needs them.
-- Drive the app with Playwright and `scripts/qa/drive.py`: `launch(p, mode=...)` opens a browser with `scripts/qa/shim.js`, which replaces the Tauri IPC with calls to the proxy (requests, `/v1/events` SSE, terminal websockets, ports). `open_app(pg, "?theme=light")` loads it and dismisses the welcome tour. Set `QA_CHROME` to use a specific Chromium binary.
+- Drive the app with Playwright and `scripts/qa/drive.py`: `launch(p, mode=...)` opens a browser with `scripts/qa/shim.js`, which replaces the Tauri IPC with calls to the proxy (requests, `/v1/events` SSE, terminal websockets, ports). Like the desktop app, it checks `/v1/version` every 5 s and reports `reconnecting` while the daemon is down, holding requests until it answers again. `open_app(pg, "?theme=light")` loads it and dismisses the welcome tour. Set `QA_CHROME` to use a specific Chromium binary.
 - **Modes**: QA runs in every mode a user can be in. `mode` (or `QA_MODE`) picks one:
   - `web`: Chromium at 1440×900, the desktop layout in a browser.
   - `android`: Chromium emulating a Pixel 7 with touch (the Android app's WebView is Chromium); phone layout.
@@ -111,7 +111,7 @@ Each step is **Do → Expect**. Check every screenshot for overlaps, clipped tex
 - **G3** Groups: Cmd/Ctrl+click several sessions → Add to group → the group lists them and broadcast reaches them.
 - **G4** Drag the sidebar narrow → the mode tabs stay on one line, cut with an ellipsis. Drag it back.
 - **G5** Filter workspaces or sessions → the list narrows. Archive and restore a workspace.
-- **G6** Add a workspace for a folder with no sessions and open it → the pane shows the workspace name, its path and "No sessions in this workspace yet", with **New <agent> session**, **Shell** and **More…**. Each button starts its session in that folder (or opens the new tab menu); with the daemon down or the folder deleted, the two start buttons are disabled. **By status** with nothing open shows the generic "Nothing open here" pane.
+- **G6** Add a workspace for a folder with no sessions and open it → the pane shows the workspace name, its path and "No sessions in this workspace yet", with **New <agent> session**, **Shell** and **More…**. Each button starts its session in that folder (or opens the new tab menu); with the folder deleted, the two start buttons are disabled and the pane says the folder no longer exists. After `sandbox.sh crash`, the buttons stay enabled while the app reconnects, and a click starts the session once the daemon is back. **By status** with nothing open shows the generic "Nothing open here" pane.
 
 ### H. Ports
 
@@ -157,7 +157,7 @@ Each step is **Do → Expect**. Check every screenshot for overlaps, clipped tex
 
 ### M. Life events
 
-- **M1** With an agent session, a shell (in a workspace, renamed) and a task in progress: `sandbox.sh crash`, then `start` → the log says `daemon restarted; restored N agent sessions and M shells`. Terminals keep their ids, workspace and title, and the agent is relaunched with `--resume <same session>` (`stub.log`). Leave the app open through the crash: each terminal reconnects on its own, shows the restored session without rows of the old screen left in it, and keeps one connection per terminal.
+- **M1** With an agent session, a shell (in a workspace, renamed) and a task in progress: `sandbox.sh crash`, then `start` → the log says `daemon restarted; restored N agent sessions and M shells`. Terminals keep their ids, workspace and title, and the agent is relaunched with `--resume <same session>` (`stub.log`). Leave the app open through the crash: within about 10 s the host chip shows the connection is reconnecting, and after `start` it is connected again; each terminal reconnects on its own, shows the restored session without rows of the old screen left in it, and keeps one connection per terminal.
 - **M2** Reload the app → tabs, workspaces and the selected session come back. The resumed agent answers input.
 - **M3** Set **After a server reboot or restart** to Nothing, then crash and start → nothing is restored.
 - **M4** Idle: leave the app untouched for 70 s with a session open → no DOM changes and no repaints (count `MutationObserver` records over 10 s).
