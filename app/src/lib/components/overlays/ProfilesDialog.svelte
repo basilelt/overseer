@@ -27,6 +27,7 @@
   let preview = $state<FileEdit[] | null>(null);
   let chosen = $state<string[]>([]);
   let applied = $state<FileEdit[] | null>(null);
+  let expanded = $state<Record<string, boolean>>({});
 
   const all = $derived([...(store?.profiles.filter((p) => p.builtin) ?? []), ...draft]);
   const current = $derived(all.find((p) => p.id === selected) ?? all[0]);
@@ -200,7 +201,7 @@
           {#each agents as a (a.id)}
             {@const s = store.support[a.id]}
             {@const c = cfg(a.id)}
-            <details class="agent" open={agents.length === 1}>
+            <details class="agent" open={expanded[a.id] ?? agents.length === 1} ontoggle={(e) => (expanded[a.id] = e.currentTarget.open)}>
               <summary>
                 <AgentGlyph agent={a.id} size={13} />
                 <span class="aname">{a.name}</span>
