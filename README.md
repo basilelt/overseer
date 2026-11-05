@@ -10,6 +10,20 @@
 </p>
 
 <p align="center">
+  <a href="https://github.com/basilelt/overseer/releases/latest"><img src="https://img.shields.io/badge/GitHub-Latest_release-181717?style=for-the-badge&logo=github&logoColor=white" alt="GitHub Latest release"></a>
+  <a href="https://apps.obtainium.imranr.dev/redirect?r=obtainium://app/%7B%22id%22%3A%22io.github.basilelt.overseer%22%2C%22url%22%3A%22https%3A%2F%2Fgithub.com%2Fbasilelt%2Foverseer%22%2C%22author%22%3A%22basilelt%22%2C%22name%22%3A%22Overseer%22%2C%22preferredApkIndex%22%3A0%2C%22additionalSettings%22%3A%22%7B%5C%22includePrereleases%5C%22%3Afalse%2C%5C%22apkFilterRegEx%5C%22%3A%5C%22Overseer_.%2A_android%5C%5C%5C%5C.apk%5C%22%2C%5C%22invertAPKFilter%5C%22%3Afalse%7D%22%2C%22overrideSource%22%3A%22GitHub%22%7D"><img src="https://img.shields.io/badge/Obtainium-Android-5C2D91?style=for-the-badge&logo=obtainium&logoColor=white" alt="Obtainium Android"></a>
+  <a href="#google-play-closed-testing"><img src="https://img.shields.io/badge/Google_Play-Beta-01875F?style=for-the-badge&logo=googleplay&logoColor=white" alt="Google Play Beta"></a>
+  <a href="https://testflight.apple.com/join/DZgZFcMk"><img src="https://img.shields.io/badge/TestFlight-iOS_beta-0D96F6?style=for-the-badge&logo=apple&logoColor=white" alt="TestFlight iOS beta"></a>
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/App_Store-Coming_soon-lightgrey?style=for-the-badge&logo=appstore&logoColor=white" alt="App Store Coming soon">
+  <img src="https://img.shields.io/badge/Google_Play-Coming_soon-lightgrey?style=for-the-badge&logo=googleplay&logoColor=white" alt="Google Play Coming soon">
+  <img src="https://img.shields.io/badge/Mac_App_Store-Coming_soon-lightgrey?style=for-the-badge&logo=apple&logoColor=white" alt="Mac App Store Coming soon">
+  <img src="https://img.shields.io/badge/Microsoft_Store-Coming_soon-lightgrey?style=for-the-badge&logoColor=white" alt="Microsoft Store Coming soon">
+</p>
+
+<p align="center">
   <a href="#install">Install</a> ·
   <a href="#features">Features</a> ·
   <a href="docs/user-guide.md">User guide</a> ·
