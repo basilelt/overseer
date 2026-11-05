@@ -105,6 +105,7 @@ export class Updater {
     this.error = '';
     try {
       const r = await this.backend.check();
+      if (!r) throw new Error(ut('unavailable'));
       if (r.status === 'available') {
         const { status: _, ...info } = r;
         this.info = info;
@@ -183,10 +184,6 @@ export class Updater {
     }
   }
 
-  brewRestart() {
-    return this.restart();
-  }
-
   private fail(err: BrewError) {
     this.brewError = err;
     this.error = brewMessage(err);
@@ -237,6 +234,7 @@ export function brewMessage(err: BrewError): string {
 export function pillLabel(u: Pick<Updater, 'phase' | 'info' | 'progress'>): string | null {
   switch (u.phase) {
     case 'available':
+    case 'error':
       return u.info ? ut('pill.available', { version: u.info.version }) : null;
     case 'downloading':
       return u.progress === null ? ut('pill.downloading') : ut('pill.progress', { pct: Math.round(u.progress * 100) });
@@ -248,8 +246,6 @@ export function pillLabel(u: Pick<Updater, 'phase' | 'info' | 'progress'>): stri
       return ut('pill.updated');
     case 'restarting':
       return ut('pill.restarting');
-    case 'error':
-      return u.info ? ut('pill.available', { version: u.info.version }) : null;
     default:
       return null;
   }
