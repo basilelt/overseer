@@ -143,8 +143,10 @@ repository's release workflow.
 
 ### Linux and Windows
 
-Download from the latest release (`.AppImage`, `.deb` or `.rpm` on Linux x64, `-setup.exe` on
-Windows x64):
+Download from the latest release (`.AppImage`, `.deb` or `.rpm` on Linux x64 and arm64,
+`-setup.exe` or `.msix` on Windows x64 and arm64). The `.msix` is self-signed: import
+`overseer-msix.cer` from the release into Local Machine > Trusted People once, then open the
+`.msix`; it does not update itself, use the `-setup.exe` for in-app updates. For example:
 
 ```sh
 gh release download --repo basilelt/overseer --pattern '*.AppImage'

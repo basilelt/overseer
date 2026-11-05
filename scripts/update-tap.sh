@@ -32,7 +32,8 @@ sha() {
   echo "$s"
 }
 
-dmg=Overseer_${version}_aarch64.dmg
+dmg_arm=Overseer_${version}_aarch64.dmg
+dmg_intel=Overseer_${version}_x64.dmg
 mac_arm=overseer-$version-aarch64-apple-darwin
 mac_intel=overseer-$version-x86_64-apple-darwin
 linux_arm=overseer-$version-aarch64-unknown-linux-musl
@@ -46,22 +47,81 @@ done
 
 mkdir -p "$tap/Casks" "$tap/Formula"
 
-if jq -e --arg n "$dmg" 'any(.[]; .name == $n)' <<<"$assets" >/dev/null; then
-  url[$dmg]=$(asset_url "$dmg")
-  sum[$dmg]=$(sha "$dmg")
-  v='#{version}'
-  cat >"$tap/Casks/overseer.rb" <<RUBY
-cask "overseer" do
-  version "$version"
-  sha256 "${sum[$dmg]}"
+has_asset() {
+  jq -e --arg n "$1" 'any(.[]; .name == $n)' <<<"$assets" >/dev/null
+}
 
-  url "${url[$dmg]//$version/$v}"
+cask_url() {
+  local v='#{version}'
+  echo "${url[$1]//$version/$v}"
+}
+
+cask_meta() {
+  cat <<RUBY
   name "Overseer"
   desc "Desktop client for Overseer agent sessions"
   homepage "https://github.com/$repo"
+RUBY
+}
 
-  depends_on arch: :arm64
-  depends_on :macos
+cask_arch() {
+  local arm=$1 intel=$2
+  if [ -n "$arm" ] && [ -n "$intel" ]; then
+    cat <<RUBY
+
+  on_arm do
+    sha256 "${sum[$arm]}"
+
+    url "$(cask_url "$arm")"
+  end
+  on_intel do
+    sha256 "${sum[$intel]}"
+
+    url "$(cask_url "$intel")"
+  end
+
+$(cask_meta)
+RUBY
+  else
+    local d=${arm:-$intel}
+    cat <<RUBY
+  sha256 "${sum[$d]}"
+
+  url "$(cask_url "$d")"
+$(cask_meta)
+RUBY
+  fi
+}
+
+cask_depends() {
+  if [ -n "$1" ] && [ -n "$2" ]; then
+    echo "  depends_on :macos"
+  elif [ -n "$1" ]; then
+    printf '  depends_on arch: :arm64\n  depends_on :macos\n'
+  else
+    printf '  depends_on arch: :x86_64\n  depends_on :macos\n'
+  fi
+}
+
+dmgs=()
+for d in "$dmg_arm" "$dmg_intel"; do
+  if has_asset "$d"; then
+    url[$d]=$(asset_url "$d")
+    sum[$d]=$(sha "$d")
+    dmgs+=("$d")
+  else
+    echo "warning: release v$version has no $d" >&2
+    [ "$d" = "$dmg_arm" ] && dmg_arm= || dmg_intel=
+  fi
+done
+
+if [ ${#dmgs[@]} -gt 0 ]; then
+  cat >"$tap/Casks/overseer.rb" <<RUBY
+cask "overseer" do
+  version "$version"
+$(cask_arch "$dmg_arm" "$dmg_intel")
+
+$(cask_depends "$dmg_arm" "$dmg_intel")
 
   app "Overseer.app"
 
@@ -75,7 +135,7 @@ cask "overseer" do
 end
 RUBY
 else
-  echo "warning: release v$version has no $dmg, Casks/overseer.rb left unchanged" >&2
+  echo "warning: release v$version has no .dmg, Casks/overseer.rb left unchanged" >&2
 fi
 
 formula_url() {

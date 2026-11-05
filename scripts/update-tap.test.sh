@@ -44,5 +44,7 @@ check() {
   fi
 }
 
-check "arm64 dmg" "Overseer_9.8.7_aarch64.dmg"
+check "both dmgs" "Overseer_9.8.7_aarch64.dmg Overseer_9.8.7_x64.dmg"
+check "arm64 dmg only" "Overseer_9.8.7_aarch64.dmg"
+check "x64 dmg only" "Overseer_9.8.7_x64.dmg"
 exit "$fail"
