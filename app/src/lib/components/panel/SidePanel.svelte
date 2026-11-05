@@ -116,9 +116,7 @@
     };
   });
 
-  function summary(w: { files: number; ahead: number }): string {
-    return counts({ files: w.files, ahead: w.ahead });
-  }
+  const summary = (w: { files: number; ahead: number }) => counts({ files: w.files, ahead: w.ahead });
 
   const sectionOrder = $derived(normalizeOrder(settings.panelOrder));
   const orderOf = (id: PanelSection) => sectionOrder.indexOf(id) + 1;
@@ -192,7 +190,7 @@
       {#if act}
         {#if act.lastAssistantText}
           <Section id="last" order={orderOf('last')} title={t('panel.lastMessage')}>
-            <p class="msg">{act.lastAssistantText}</p>
+            <p class="msg">{act.lastAssistantText.replace(/`/g, '')}</p>
           </Section>
         {/if}
         {#if act.workLog.length}
