@@ -22,7 +22,7 @@ import type { MenuItem } from './menu';
 import { app, NO_WORKSPACE, type BroadcastTarget } from './state.svelte';
 import type { Folder, Group, Workspace } from './types';
 import { byRank, lineActions, type LineAction } from './workspaces';
-import { movableStatuses, taskForItem } from './kanban';
+import { movableStatuses, taskForItem } from './kanban-core';
 import { isTargetMuted, toggleTargetMute } from './os-notify';
 
 const muteItem = (target: string): MenuItem => ({ label: t('nb.mute'), icon: BellOff, checked: isTargetMuted(app, target), run: () => toggleTargetMute(app, target) });

@@ -1927,7 +1927,7 @@ export class MockDaemon implements DaemonClient {
     if (!Number.isInteger(pid) || pid < 0 || pid > 0xffffffff) throw new DaemonError(400, 'pid (number) required');
     if (body?.confirm !== true) throw new DaemonError(400, 'kill needs {"confirm":true}');
     const p = this.detected.find((x) => x.port === port && x.pid === pid);
-    if (!p) throw new DaemonError(404, `no process ${pid} listening on port ${port} in a Overseer terminal`);
+    if (!p) throw new DaemonError(404, `no process ${pid} listening on port ${port} in an Overseer terminal`);
     this.detected = this.detected.filter((x) => x !== p);
     this.publishPorts();
     return structuredClone(p);
