@@ -159,6 +159,8 @@ impl Reconnect {
 
 type Session = (Target, Arc<Reporter>, Ctx);
 
+const CONNECT_RETRY: Duration = Duration::from_millis(250);
+
 pub struct ConnManager {
     tx: watch::Sender<Option<Arc<DaemonConn>>>,
     monitor: Mutex<Option<JoinHandle<()>>>,
@@ -188,6 +190,35 @@ impl ConnManager {
 
     pub fn subscribe(&self) -> watch::Receiver<Option<Arc<DaemonConn>>> {
         self.tx.subscribe()
+    }
+
+    pub async fn current_within(&self, bound: Duration) -> Option<Arc<DaemonConn>> {
+        if let Some(c) = self.current() {
+            return Some(c);
+        }
+        tokio::time::timeout(bound, self.wait_current()).await.ok()
+    }
+
+    pub async fn request(
+        &self,
+        method: &str,
+        path: &str,
+        body: Option<&[u8]>,
+        bound: Duration,
+    ) -> Result<http::Response, String> {
+        let end = std::time::Instant::now() + bound;
+        loop {
+            let left = end.saturating_duration_since(std::time::Instant::now());
+            let conn = self
+                .current_within(left)
+                .await
+                .ok_or("not connected to a daemon")?;
+            match conn.open().await {
+                Ok(io) => return conn.request_on(io, method, path, body).await,
+                Err(e) if left.is_zero() => return Err(e.to_string()),
+                Err(_) => tokio::time::sleep(CONNECT_RETRY).await,
+            }
+        }
     }
 
     pub async fn wait_current(&self) -> Arc<DaemonConn> {
@@ -791,6 +822,85 @@ async fn establish_direct(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn conn() -> Option<Arc<DaemonConn>> {
+        Some(Arc::new(DaemonConn::Local("/tmp/x.sock".into())))
+    }
+
+    #[tokio::test]
+    async fn current_within_returns_a_live_connection_at_once() {
+        let m = ConnManager::default();
+        m.tx.send_replace(conn());
+        assert!(m.current_within(Duration::ZERO).await.is_some());
+    }
+
+    #[tokio::test]
+    async fn current_within_waits_for_the_reconnection() {
+        let m = Arc::new(ConnManager::default());
+        let later = m.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(50)).await;
+            later.tx.send_replace(conn());
+        });
+        assert!(m.current_within(Duration::from_secs(5)).await.is_some());
+    }
+
+    fn dead_socket(name: &str) -> (std::path::PathBuf, ConnManager) {
+        let path = std::env::temp_dir().join(format!("ov-{name}-{}.sock", std::process::id()));
+        let _ = std::fs::remove_file(&path);
+        let m = ConnManager::default();
+        m.tx.send_replace(Some(Arc::new(DaemonConn::Local(path.clone()))));
+        (path, m)
+    }
+
+    #[tokio::test]
+    async fn request_retries_refused_connections_until_the_daemon_is_back() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let (path, m) = dead_socket("back");
+        let at = path.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(600)).await;
+            let l = tokio::net::UnixListener::bind(&at).unwrap();
+            let (mut s, _) = l.accept().await.unwrap();
+            let mut buf = [0u8; 512];
+            let _ = s.read(&mut buf).await;
+            s.write_all(b"HTTP/1.1 200 OK\r\ncontent-length: 2\r\nconnection: close\r\n\r\n{}")
+                .await
+                .unwrap();
+        });
+        let res = m
+            .request("POST", "/v1/terms", Some(b"{}"), Duration::from_secs(10))
+            .await
+            .unwrap();
+        assert_eq!(res.head.status, 200);
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[tokio::test]
+    async fn request_reports_the_refusal_once_the_wait_is_over() {
+        let (_, m) = dead_socket("down");
+        let err = m
+            .request("GET", "/v1/lines", None, Duration::from_millis(400))
+            .await
+            .unwrap_err();
+        assert!(!err.contains("not connected"), "{err}");
+    }
+
+    #[tokio::test]
+    async fn request_without_a_connection_waits_then_reports_it() {
+        let m = ConnManager::default();
+        let err = m
+            .request("GET", "/v1/lines", None, Duration::from_millis(50))
+            .await
+            .unwrap_err();
+        assert_eq!(err, "not connected to a daemon");
+    }
+
+    #[tokio::test]
+    async fn current_within_gives_up_after_the_bound() {
+        let m = ConnManager::default();
+        assert!(m.current_within(Duration::from_millis(20)).await.is_none());
+    }
 
     #[test]
     fn backoff_grows_and_caps() {
