@@ -149,7 +149,7 @@ its `changes` job runs, a few seconds on `ubuntu-slim`. Pushes by `github-action
 | release | `app-android` | `ubuntu-24.04` | signed universal APK (arm64-v8a, armeabi-v7a) `Overseer_<v>_android.apk` + `.sha256`; skipped without the keystore secrets |
 | release | `publish` | `ubuntu-slim` | GitHub Release with generated release notes, every artifact and `SHA256SUMS`, then the updater manifest `latest.json` when the updater key is set |
 | release | `tap` | `ubuntu-24.04` | `scripts/update-tap.sh` writes the cask and formula of `basilelt/homebrew-tap` and pushes `overseer <version>`; skipped without `HOMEBREW_TAP_DEPLOY_KEY` |
-| store | `ios` | `macos-26` | fastlane `app_store` lane: match (readonly), `tauri ios build`, `upload_to_app_store` with `submit_for_review` (manual release after approval) |
+| store | `ios` | `macos-26` | fastlane `app_store` lane: `tauri ios build` signed from `IOS_CERTIFICATE` and `IOS_MOBILE_PROVISION`, `upload_to_app_store` with `submit_for_review` (manual release after approval) |
 | store | `android` | `ubuntu-24.04` | signed AAB (`pnpm tauri android build --aab`), fastlane `play_store` lane: `upload_to_play_store` to the chosen track |
 
 The app jobs get the server binaries from the `servers*` artifacts and copy them into
@@ -292,7 +292,7 @@ asked, so a missing secret fails them.
 | `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD` | `app-android`: signed release APK ([docs/mobile.md](mobile.md#android-once-by-whoever-holds-the-release-key)) | `app-android` skipped, no APK in the release |
 | `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD` | also the store `android` job: the AAB is signed with the same key, the Play upload key | store `android` fails |
 | `PLAY_SERVICE_ACCOUNT_JSON` | store `android`: Play Developer API service account key (JSON) ([docs/mobile.md](mobile.md#android-play-store-once)) | store `android` fails |
-| `APPLE_TEAM_ID`, `APPLE_KEY_ID`, `APPLE_ISSUER_ID`, `APPLE_KEY_CONTENT`, `MATCH_GIT_URL`, `MATCH_PASSWORD`, `MATCH_SSH_PRIVATE_KEY` | store `ios`: App Store submission ([docs/mobile.md](mobile.md#ios-once-by-the-apple-developer-account-holder)) | store `ios` fails |
+| `APPLE_TEAM_ID`, `APPLE_KEY_ID`, `APPLE_ISSUER_ID`, `APPLE_KEY_CONTENT`, `IOS_CERTIFICATE`, `IOS_CERTIFICATE_PASSWORD`, `IOS_MOBILE_PROVISION` | store `ios`: App Store submission ([docs/mobile.md](mobile.md#ios-once-by-the-apple-developer-account-holder)) | store `ios` fails |
 
 One repository variable (same page, Variables tab):
 

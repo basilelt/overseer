@@ -14,7 +14,7 @@ covers each case with the `android`, `android-tablet`, `iphone`, `ipad` and `-la
 |---|---|---|---|
 | Android | universal release APK (arm64-v8a, armeabi-v7a), signed with the Overseer release key | the GitHub Release of every release, `Overseer_<version>_android.apk` + `.sha256` | anyone: in-app updates, Obtainium or by hand |
 | Android | AAB signed with the same key (the Play upload key) | the Play Store, on demand | anyone, from Google Play |
-| iOS | App Store IPA, signed with the team's distribution certificate (fastlane match) | the App Store (after review) and TestFlight internal testing, on demand | anyone, from the App Store; testers of the team in TestFlight |
+| iOS | App Store IPA, signed with the team's Apple Distribution certificate and App Store profile | the App Store (after review) and TestFlight internal testing, on demand | anyone, from the App Store; testers of the team in TestFlight |
 
 The GitHub Release (and so Obtainium) gets every release. The stores only get the releases the
 maintainer ships with the manual `store.yml` workflow (Actions > Store > Run workflow, from
@@ -117,9 +117,8 @@ group), usually 10 to 30 minutes after the store run, before App Store review en
   docs/ci.md, "Store releases"):
   - `ios` on `macos-26`: checks out the tag, stamps its version, writes `APPLE_TEAM_ID` into the
     Xcode project (`gen/apple/project.yml` and `project.pbxproj` are committed with an empty
-    team), then `fastlane ios app_store` from `app/` (`app/fastlane/Fastfile`). The lane creates a
-    temporary keychain, fetches the `appstore` certificate and profile with `match` (readonly)
-    from the `MATCH_GIT_URL` repository, builds with `pnpm tauri ios build --export-method
+    team), then `fastlane ios app_store` from `app/` (`app/fastlane/Fastfile`). Tauri signs with
+    `IOS_CERTIFICATE` and `IOS_MOBILE_PROVISION`; the lane builds with `pnpm tauri ios build --export-method
     app-store-connect`, checks the IPA's versions, and submits it with `upload_to_app_store`
     (`submit_for_review: true`, `automatic_release: false`, metadata and screenshots skipped).
     `CFBundleShortVersionString` is the release version; `CFBundleVersion` is the `store.yml` run
@@ -194,20 +193,11 @@ team id comes from the `APPLE_TEAM_ID` secret at build time.
 5. Export compliance: `ITSAppUsesNonExemptEncryption` is `false` in the iOS `Info.plist`
    (Overseer only uses standard encryption: SSH and HTTPS), so builds do not wait for the
    question. Answer the same way in App Store Connect if asked.
-6. Create a private Git repository for fastlane match (for example `basilelt/certificates`) and
-   a deploy key for it (read-only is enough for CI). Then, on a Mac with fastlane, from `app/` of
-   this repository:
-
-   ```sh
-   cd app
-   APPLE_TEAM_ID=<team id> MATCH_GIT_URL=git@github.com:<owner>/certificates.git \
-     MATCH_PASSWORD=<a new passphrase> fastlane match appstore --app_identifier io.github.basilelt.overseer
-   ```
-
-   It logs in to the Apple account (or pass `--api_key_path` with an App Store Connect API key
-   JSON), creates or reuses an Apple Distribution certificate, and stores it with the profile
-   `match AppStore io.github.basilelt.overseer`, encrypted with `MATCH_PASSWORD`. CI only reads
-   it (`readonly: true`).
+6. Signing: an Apple Distribution certificate and an App Store provisioning profile for
+   `io.github.basilelt.overseer` (developer.apple.com > Certificates and Profiles). Export the
+   certificate with its private key from Keychain Access as a `.p12` with a password, and
+   download the profile (`.mobileprovision`). The profile expires after a year: renew it there
+   and update `IOS_MOBILE_PROVISION`.
 7. Repository secrets:
 
    | Secret | Value |
@@ -216,9 +206,9 @@ team id comes from the `APPLE_TEAM_ID` secret at build time.
    | `APPLE_KEY_ID` | App Store Connect API key id (Users and Access > Integrations, role App Manager or Admin) |
    | `APPLE_ISSUER_ID` | issuer id of that key |
    | `APPLE_KEY_CONTENT` | the `.p8` file content |
-   | `MATCH_GIT_URL` | SSH URL of the match repository, e.g. `git@github.com:<owner>/certificates.git` |
-   | `MATCH_PASSWORD` | passphrase of the match repository |
-   | `MATCH_SSH_PRIVATE_KEY` | private key of the deploy key of the match repository |
+   | `IOS_CERTIFICATE` | `base64 -w0` of the distribution `.p12` |
+   | `IOS_CERTIFICATE_PASSWORD` | password of that `.p12` |
+   | `IOS_MOBILE_PROVISION` | `base64 -w0` of the App Store `.mobileprovision` |
 
    `APPLE_ITC_TEAM_ID` (App Store Connect team id) is read by `app/fastlane/Appfile` when it is in
    the environment; it only matters for an Apple account in several App Store Connect teams, and
