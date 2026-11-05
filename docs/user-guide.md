@@ -1028,7 +1028,9 @@ Markdown is rendered and text-like files (txt, log, JSON, YAML, TOML, CSV, XML) 
 up to 1 MiB displayed. Relative paths resolve against the terminal's current directory; `~` is the
 host's home. The daemon serves any regular file the host user can read, up to 50 MiB, through
 `GET /v1/file`; directories, devices and larger files are refused with a message. **Copy path** puts
-the full path on the clipboard.
+the full path on the clipboard, and **Download** saves a copy of the file into your Downloads
+folder on the device running the app (a file of the same name is kept and the copy gets a ` (1)`
+suffix).
 
 On a phone, long-press a tab in the session strip for **Pin/Unpin** (agent tabs) and **Close**.
 

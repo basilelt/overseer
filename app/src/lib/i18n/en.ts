@@ -1154,6 +1154,8 @@ export const en = {
   'git.pr': 'PR #{n}',
   'file.copyPath': 'Copy path',
   'file.copied': 'Path copied',
+  'file.download': 'Download',
+  'file.saved': 'Saved to {path}',
   'file.pdfUnavailable': "PDF preview isn't available on this device",
   'file.unsupported': "This file type can't be previewed",
   'file.truncated': 'Showing the first 1 MiB',
