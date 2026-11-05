@@ -26,11 +26,8 @@ app-dev: app/node_modules
 	$(APP) tauri dev
 
 VERSION = $(shell sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
-SERVER = app/src-tauri/resources/server
-
 LINUX_SERVERS = linux-x86_64:x86_64-unknown-linux-musl linux-aarch64:aarch64-unknown-linux-musl
 DARWIN_SERVERS = darwin-x86_64:x86_64-apple-darwin darwin-aarch64:aarch64-apple-darwin
-SERVERS = $(LINUX_SERVERS) $(DARWIN_SERVERS)
 WINDOWS = x86_64-pc-windows-msvc
 
 dist-darwin:
@@ -54,10 +51,7 @@ dist-cross:
 	cp target/$(WINDOWS)/release/overseer.exe dist/overseer-$(VERSION)-$(WINDOWS).exe
 
 app-resources:
-	for p in $(SERVERS); do \
-	  f=dist/overseer-$(VERSION)-$${p#*:}; d=$(SERVER)/$${p%%:*}; \
-	  if [ -f $$f ]; then mkdir -p $$d && cp $$f $$d/overseer && chmod 755 $$d/overseer; fi; \
-	done
+	scripts/app-resources.sh $(VERSION)
 
 app-server: dist
 	$(MAKE) app-resources

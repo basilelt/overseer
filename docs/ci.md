@@ -117,22 +117,23 @@ its `changes` job runs, a few seconds on `ubuntu-slim`. Pushes by `github-action
 | release | `tag` | `ubuntu-slim` | next `vX.Y.Z` tag, moves `vX`, `vX.Y`, `latest`; checks which optional secrets are set |
 | release | `servers` | `ubuntu-24.04` | `make dist-cross`: daemon for Linux musl x86_64/aarch64 and Windows x86_64 (MSVC), `overseer-api` Linux musl x86_64 |
 | release | `servers-macos` | `macos-26` | `make dist-darwin`: daemon for macOS x86_64/aarch64, built natively so it links FSEvents (CoreServices needs the Apple SDK) |
-| release | `app-linux` | `ubuntu-24.04` | `.deb`, `.AppImage`, `.rpm` |
+| release | `app-linux` | `ubuntu-24.04`, `ubuntu-24.04-arm` | `.deb`, `.AppImage`, `.rpm` for x86_64 and aarch64, each built natively |
 | release | `app-windows` | `ubuntu-24.04` | NSIS installer `*_x64-setup.exe`, cross-built with `cargo-xwin` |
-| release | `app-macos` | `macos-26` | Apple Silicon (`aarch64-apple-darwin`) `.dmg`, no Intel build, `continue-on-error` |
+| release | `app-windows-arm` | `windows-11-arm` | NSIS installer `*_arm64-setup.exe`, built natively |
+| release | `app-macos` | `macos-26` | `.dmg` for Apple Silicon (`aarch64-apple-darwin`) and Intel (`x86_64-apple-darwin`, cross-built) |
 | release | `app-android` | `ubuntu-24.04` | signed universal APK (arm64-v8a, armeabi-v7a) `Overseer_<v>_android.apk` + `.sha256`; skipped without the keystore secrets |
 | release | `app-ios` | `macos-26` | fastlane `internal_testflight` lane: match (readonly), `tauri ios build`, `upload_to_testflight` with `skip_submission`; `continue-on-error`, skipped without the Apple secrets |
 | release | `publish` | `ubuntu-slim` | GitHub Release with generated release notes, every artifact and `SHA256SUMS`, then the updater manifest `latest.json` when the updater key is set |
 | release | `tap` | `ubuntu-24.04` | `scripts/update-tap.sh` writes the cask and formula of `basilelt/homebrew-tap` and pushes `overseer <version>`; skipped without `HOMEBREW_TAP_DEPLOY_KEY` |
 
 The app jobs get the server binaries from the `servers*` artifacts and copy them into
-`app/src-tauri/resources/server/<os>-<arch>/overseer` (`make app-resources`), so every app
+`app/src-tauri/resources/server/<os>-<arch>/overseer` (`scripts/app-resources.sh`, also `make app-resources`), so every app
 bundle can install the daemon on Linux and macOS hosts in remote mode.
 
-The Windows installer stays cross-built on Linux: `servers` needs `cargo-xwin` on Linux anyway for
-`overseer.exe` (`make dist-cross`), and `make app-resources` is a POSIX `make` target that
-`windows-latest` does not ship the tools for. Only the clippy check runs on `windows-latest`,
-where it needs nothing but the Rust toolchain.
+The x64 Windows installer stays cross-built on Linux: `servers` needs `cargo-xwin` on Linux anyway
+for `overseer.exe` (`make dist-cross`). The arm64 installer builds natively on `windows-11-arm`
+in Git Bash, which has no `make`, so the job calls `scripts/app-resources.sh` directly. Every
+desktop app job must succeed for `publish` to run.
 
 ## Runner setup
 
@@ -269,13 +270,14 @@ The app updates itself with `tauri-plugin-updater` from the GitHub releases (`ap
   signs the self-updating bundles with minisign. `tauri.conf.json` never turns updater artifacts
   on by itself, so without the key the build succeeds and only the updater files are missing.
 - Updater files attached to the release: `Overseer_<v>_amd64.AppImage.sig`,
-  `Overseer_<v>_x64-setup.exe.sig`, and `Overseer_<v>_aarch64.app.tar.gz` with its `.sig`
-  (renamed from `bundle/macos/Overseer.app.tar.gz`). `.deb`, `.rpm` and `.dmg` are not
+  `Overseer_<v>_aarch64.AppImage.sig`, `Overseer_<v>_x64-setup.exe.sig`,
+  `Overseer_<v>_arm64-setup.exe.sig`, and `Overseer_<v>_aarch64.app.tar.gz` and
+  `Overseer_<v>_x64.app.tar.gz` with their `.sig` (renamed from `bundle/macos/Overseer.app.tar.gz`). `.deb`, `.rpm` and `.dmg` are not
   self-updating.
 - `publish` then runs `scripts/latest-json.sh <version>`: it reads `gh release view --json
   assets,body,publishedAt`, downloads the `.sig` files and writes `latest.json` with `version`,
-  `notes` (the release body), `pub_date` and `platforms` (`darwin-aarch64` on the `.app.tar.gz`,
-  `windows-x86_64`, `linux-x86_64`; no `darwin-x86_64`, Intel Macs get no app update). URLs are API
+  `notes` (the release body), `pub_date` and `platforms` (`darwin-aarch64`, `darwin-x86_64`,
+  `windows-x86_64`, `windows-aarch64`, `linux-x86_64`, `linux-aarch64`). URLs are API
   asset URLs (`https://api.github.com/repos/.../releases/assets/<id>`), which the app downloads
   with `Accept: application/octet-stream`; on a public repository they need no token. A platform
   without a signed file is left out with a warning; no platform at all fails the step. It is
@@ -379,8 +381,8 @@ unidentified (no notarization): after installing from a downloaded `.dmg` or the
 
 - **macOS app**: Tauri cannot bundle a `.app`/`.dmg` on Linux (it needs the Apple SDK, `codesign`,
   `hdiutil`), so `app-macos` runs on `macos-26`, self-signed or ad-hoc (see
-  [macOS signing](#macos-signing)), not notarized. It is `continue-on-error`: a failure there does
-  not block the release.
+  [macOS signing](#macos-signing)), not notarized. A failure there blocks the release, like every
+  other desktop app job.
 - **macOS runner label**: every macOS job uses `macos-26`. If GitHub retires or renames that
   label, those jobs wait for a runner that never comes; change it in `ci.yml`, `release.yml` and
   `mobile-init.yml` together.
@@ -396,8 +398,7 @@ unidentified (no notarization): after installing from a downloaded `.dmg` or the
   `review::watch` tests. Linux runs the full suite.
 - Fallback if `cargo-xwin` breaks: build `overseer.exe` natively on `windows-latest`, or
   `x86_64-pc-windows-gnu` with `cargo zigbuild`; the Tauri app would then need a native
-  `windows-latest` job (`pnpm tauri build --bundles nsis`, with `make` installed for
-  `make app-resources`).
+  `windows-latest` job like `app-windows-arm`.
 
 ## Local equivalents
 

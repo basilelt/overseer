@@ -221,7 +221,15 @@ jobs:
 
   app-linux:
     needs: [tag, servers, servers-macos]
-    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            arch: x86_64
+          - runner: ubuntu-24.04-arm
+            arch: aarch64
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 75
     env:
       APPIMAGE_EXTRACT_AND_RUN: "1"
@@ -296,7 +304,7 @@ jobs:
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
-          name: app-linux
+          name: app-linux-${{ matrix.arch }}
           path: out/
           if-no-files-found: error
           retention-days: 4
@@ -381,11 +389,13 @@ jobs:
           if-no-files-found: error
           retention-days: 4
 
-  app-macos:
+  app-windows-arm:
     needs: [tag, servers, servers-macos]
-    runs-on: macos-26
-    timeout-minutes: 25
-    continue-on-error: true
+    runs-on: windows-11-arm
+    timeout-minutes: 75
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -394,11 +404,81 @@ jobs:
       - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
           toolchain: stable
-          targets: aarch64-apple-darwin
+          targets: aarch64-pc-windows-msvc
 
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with:
           workspaces: app/src-tauri -> target
+
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6
+        with:
+          version: 11
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: app/pnpm-lock.yaml
+
+      - run: scripts/ci-runner-check.sh cargo pnpm jq clang target:aarch64-pc-windows-msvc
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          pattern: "servers*"
+          merge-multiple: true
+          path: dist
+
+      - env:
+          VERSION: ${{ needs.tag.outputs.version }}
+        run: scripts/set-version.sh "$VERSION" && scripts/app-resources.sh "$VERSION"
+
+      - run: pnpm --dir app install --frozen-lockfile
+
+      - env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          updater=()
+          if [ -n "$TAURI_SIGNING_PRIVATE_KEY" ]; then
+            updater=(--config "$GITHUB_WORKSPACE/app/src-tauri/tauri.updater.conf.json")
+          fi
+          pnpm --dir app tauri build --target aarch64-pc-windows-msvc --bundles nsis "${updater[@]}"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: app-windows-arm
+          path: |
+            app/src-tauri/target/aarch64-pc-windows-msvc/release/bundle/nsis/*-setup.exe
+            app/src-tauri/target/aarch64-pc-windows-msvc/release/bundle/nsis/*-setup.exe.sig
+          if-no-files-found: error
+          retention-days: 4
+
+  app-macos:
+    needs: [tag, servers, servers-macos]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: aarch64-apple-darwin
+            arch: aarch64
+          - target: x86_64-apple-darwin
+            arch: x64
+    runs-on: macos-26
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: stable
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+        with:
+          workspaces: app/src-tauri -> target
+          key: ${{ matrix.target }}
 
       - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6
         with:
@@ -449,6 +529,7 @@ jobs:
           DEV_ID_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           DEV_ID_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
           DEV_ID_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          TARGET: ${{ matrix.target }}
         shell: bash
         run: |
           extra=()
@@ -464,20 +545,20 @@ jobs:
               extra+=(--config "$GITHUB_WORKSPACE/app/src-tauri/tauri.selfsign.conf.json")
               ;;
           esac
-          pnpm --dir app tauri build --target aarch64-apple-darwin --bundles app,dmg "${extra[@]}"
+          pnpm --dir app tauri build --target "$TARGET" --bundles app,dmg "${extra[@]}"
 
       - name: Check the signature
         if: steps.codesign.outputs.kind != 'adhoc'
         shell: bash
         env:
           SIGN_KIND: ${{ steps.codesign.outputs.kind }}
-        run: scripts/macos-sign.sh verify app/src-tauri/target/aarch64-apple-darwin/release/bundle/macos/Overseer.app "$SIGN_KIND"
+        run: scripts/macos-sign.sh verify app/src-tauri/target/${{ matrix.target }}/release/bundle/macos/Overseer.app "$SIGN_KIND"
 
       - name: Show the ad-hoc signature
         if: steps.codesign.outputs.kind == 'adhoc'
         shell: bash
         run: |
-          app=app/src-tauri/target/aarch64-apple-darwin/release/bundle/macos/Overseer.app
+          app=app/src-tauri/target/${{ matrix.target }}/release/bundle/macos/Overseer.app
           codesign -dv --verbose=4 "$app" 2>&1 || true
           codesign -d -r- "$app" 2>&1 || true
 
@@ -486,21 +567,22 @@ jobs:
         shell: bash
         run: security delete-keychain "$SIGN_KEYCHAIN" || true
 
-      - working-directory: app/src-tauri/target/aarch64-apple-darwin/release/bundle
+      - working-directory: app/src-tauri/target/${{ matrix.target }}/release/bundle
         shell: bash
         env:
           VERSION: ${{ needs.tag.outputs.version }}
+          ARCH: ${{ matrix.arch }}
         run: |
           mkdir -p "$GITHUB_WORKSPACE/out"
           cp dmg/*.dmg "$GITHUB_WORKSPACE/out/"
           if [ -f macos/Overseer.app.tar.gz.sig ]; then
-            cp macos/Overseer.app.tar.gz "$GITHUB_WORKSPACE/out/Overseer_${VERSION}_aarch64.app.tar.gz"
-            cp macos/Overseer.app.tar.gz.sig "$GITHUB_WORKSPACE/out/Overseer_${VERSION}_aarch64.app.tar.gz.sig"
+            cp macos/Overseer.app.tar.gz "$GITHUB_WORKSPACE/out/Overseer_${VERSION}_${ARCH}.app.tar.gz"
+            cp macos/Overseer.app.tar.gz.sig "$GITHUB_WORKSPACE/out/Overseer_${VERSION}_${ARCH}.app.tar.gz.sig"
           fi
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
-          name: app-macos
+          name: app-macos-${{ matrix.arch }}
           path: out/
           if-no-files-found: error
           retention-days: 4
@@ -671,13 +753,15 @@ jobs:
         run: rm -f ~/.ssh/match_certificates
 
   publish:
-    needs: [tag, servers, servers-macos, app-linux, app-windows, app-macos, app-android]
+    needs: [tag, servers, servers-macos, app-linux, app-windows, app-windows-arm, app-macos, app-android]
     if: >
       !cancelled() && needs.tag.outputs.tag != ''
       && needs.servers.result == 'success'
       && needs.servers-macos.result == 'success'
       && needs.app-linux.result == 'success'
       && needs.app-windows.result == 'success'
+      && needs.app-windows-arm.result == 'success'
+      && needs.app-macos.result == 'success'
     runs-on: ubuntu-slim
     timeout-minutes: 15
     permissions:

@@ -141,8 +141,8 @@ The app is not signed yet. If macOS refuses to open it, run
 
 ### Linux and Windows
 
-Download from the latest release (`.AppImage`, `.deb` or `.rpm` on Linux x64, `-setup.exe` on
-Windows x64):
+Download from the latest release (`.AppImage`, `.deb` or `.rpm` on Linux x64 and arm64,
+`-setup.exe` on Windows x64 and arm64):
 
 ```sh
 gh release download --repo basilelt/overseer --pattern '*.AppImage'
