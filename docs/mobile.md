@@ -46,9 +46,7 @@ uninstall it before installing a release APK, and the other way round.
 Overseer updates itself from the GitHub releases (ADR 0032, addendum). Obtainium still works
 and installs the same signed APK; use one or the other.
 
-The repository is public, so checking for and downloading updates needs no GitHub token. A token
-saved under Settings > Updates is optional; it only lifts GitHub's anonymous API rate limit
-(60 requests per hour per IP address).
+The repository is public, so checking for and downloading updates needs no GitHub token.
 
 1. When a release is newer than the installed version, an "Update x.y.z" pill appears in the top
    bar. Tap it, read the notes, tap "Download & install". The APK is downloaded, checked against
@@ -74,8 +72,7 @@ cache folder, uploads it over the SSH session and starts it. The Connect screen 
 server for linux/x86_64", "Installing server", "Starting". A running older daemon is hot-upgraded
 as from the desktop.
 
-The download needs no token (public releases); an optional token from Settings > Updates on
-Android, or Settings > GitHub access on iOS, is used when set.
+The download needs no token (public releases).
 
 ## Install on Android by hand
 

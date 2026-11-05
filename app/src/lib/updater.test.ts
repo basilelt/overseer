@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { loadLocale, setLocale } from './i18n.svelte';
-import { LOG_LINES, Updater, brewError, brewMessage, brewStepLabel, dialogAction, pillLabel, tokenSourceLabel, type CheckResult, type InstallKind, type ProgressEvent, type UpdaterBackend } from './updater.svelte';
+import { LOG_LINES, Updater, brewError, brewMessage, brewStepLabel, dialogAction, pillLabel, type CheckResult, type InstallKind, type ProgressEvent, type UpdaterBackend } from './updater.svelte';
 
 const available = (kind: InstallKind = 'bundle'): CheckResult => ({
   status: 'available',
@@ -14,13 +14,12 @@ const available = (kind: InstallKind = 'bundle'): CheckResult => ({
 
 function backend(over: Partial<UpdaterBackend> = {}): UpdaterBackend {
   return {
-    status: vi.fn(async () => ({ current: '0.2.0', kind: 'bundle' as const, tokenSource: 'gh', releasesUrl: '' })),
+    status: vi.fn(async () => ({ current: '0.2.0', kind: 'bundle' as const, releasesUrl: '' })),
     check: vi.fn(async () => available()),
     install: vi.fn(async () => {}),
     relaunch: vi.fn(async () => {}),
     brew: vi.fn(async () => null),
     brewRelaunch: vi.fn(async () => {}),
-    setToken: vi.fn(async () => {}),
     openUrl: vi.fn(async () => {}),
     ...over,
   };
@@ -52,18 +51,17 @@ describe('updater check', () => {
 
   });
 
-  it('checks without any token and needs no sign-in', async () => {
-    const b = backend({ status: async () => ({ current: '0.2.0', kind: 'bundle' as const, tokenSource: null, releasesUrl: '' }), check: vi.fn(async () => ({ status: 'none' as const, current: '0.2.0' })) });
+  it('checks the public releases without any sign-in', async () => {
+    const b = backend({ status: async () => ({ current: '0.2.0', kind: 'bundle' as const, releasesUrl: '' }), check: vi.fn(async () => ({ status: 'none' as const, current: '0.2.0' })) });
     const u = new Updater(b);
     await u.refreshStatus();
     await u.check();
-    expect(u.status?.tokenSource).toBeNull();
     expect(b.check).toHaveBeenCalledTimes(1);
     expect(u.phase).toBe('current');
     expect(dialogAction(u)).toBeNull();
   });
 
-  it('shows the rate limit error with a way to retry when no token is set', async () => {
+  it('shows the rate limit error with a way to retry', async () => {
     const limit = "GitHub's limit for requests without a token is reached: add a GitHub token in Settings > Updates, or try again later";
     const u = new Updater(backend({ check: async () => Promise.reject(new Error(limit)) }));
     await u.check(true);
@@ -195,22 +193,6 @@ describe('updater install', () => {
       expect(u.phase).toBe('available');
     }
   });
-
-  it('rechecks after a token is saved following a rate limit', async () => {
-    let signedIn = false;
-    const b = backend({
-      check: async () => (signedIn ? available() : Promise.reject(new Error('rate limit'))),
-      setToken: async () => {
-        signedIn = true;
-      },
-    });
-    const u = new Updater(b);
-    await u.check();
-    expect(u.phase).toBe('error');
-    await u.setToken('github_pat_x');
-    expect(u.phase).toBe('available');
-    expect(u.status?.tokenSource).toBe('gh');
-  });
 });
 
 describe('homebrew update', () => {
@@ -340,7 +322,6 @@ describe('homebrew update', () => {
   it('explains common failures', async () => {
     for (const [err, text] of [
       [{ kind: 'missing' }, 'Homebrew was not found'],
-      [{ kind: 'auth' }, 'basilelt/overseer'],
       [{ kind: 'stale' }, 'does not see the new version'],
       [{ kind: 'failed', message: 'Error: disk full' }, 'Error: disk full'],
       [new Error('ipc closed'), 'ipc closed'],
@@ -357,6 +338,7 @@ describe('homebrew update', () => {
   it('normalises backend errors', async () => {
     expect(brewError({ kind: 'untrusted' })).toEqual({ kind: 'untrusted', tap: 'basilelt/tap' });
     expect(brewError('boom')).toEqual({ kind: 'failed', message: 'boom' });
+    expect(brewError({ kind: 'auth', message: 'old' })).toEqual({ kind: 'failed', message: 'old' });
     expect(brewError({ kind: 'nope' })).toEqual({ kind: 'failed', message: '[object Object]' });
     setLocale('fr');
     await loadLocale('fr');
@@ -394,12 +376,5 @@ describe('updater strings', () => {
     setLocale('fr');
     await loadLocale('fr');
     expect(pillLabel(u)).toBe('Mise à jour 0.3.0');
-  });
-
-  it('names the token source', () => {
-    expect(tokenSourceLabel(null)).toBe('No token, updates use GitHub without one');
-    expect(tokenSourceLabel('settings')).toBe('Using the token from these settings');
-    expect(tokenSourceLabel('gh')).toBe('Using the token from gh auth token');
-    expect(tokenSourceLabel('GITHUB_TOKEN')).toBe('Using the token from GITHUB_TOKEN');
   });
 });

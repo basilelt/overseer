@@ -1,12 +1,10 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { app } from '../../state.svelte';
-  import { REPO, tokenSourceLabel, updater, ut } from '../../updater.svelte';
+  import { updater, ut } from '../../updater.svelte';
 
   let { row = () => true, hit = () => false }: { row?: (id: string) => boolean; hit?: (id: string) => boolean } = $props();
 
-  let draft = $state('');
-  const source = $derived(updater.status?.tokenSource ?? null);
   const line = $derived.by(() => {
     switch (updater.phase) {
       case 'checking':
@@ -23,15 +21,6 @@
   });
 
   onMount(() => void updater.refreshStatus());
-
-  async function save(token: string) {
-    try {
-      await updater.setToken(token);
-      draft = '';
-    } catch (e) {
-      app.notify(String((e as Error)?.message ?? e), 'error');
-    }
-  }
 
   function view() {
     app.open(null);
@@ -52,17 +41,6 @@
         {#if updater.info && !updater.busy}<button class="btn" onclick={view}>{ut('view')}</button>{/if}
         <button class="btn" disabled={updater.busy} onclick={() => updater.check()}>{ut('check')}</button>
       </div>
-    </div>
-    {/if}
-    {#if row('updateToken')}
-    <div class="row stacked" class:hit={hit('updateToken')}>
-      <span>{ut('token')}<small>{ut('tokenHint', { repo: REPO })}</small></span>
-      <form class="token" onsubmit={(e) => (e.preventDefault(), save(draft))}>
-        <input class="mono" type="password" bind:value={draft} placeholder="github_pat_…" autocomplete="off" spellcheck="false" aria-label={ut('token')} />
-        <button class="btn" type="submit" disabled={!draft.trim()}>{ut('tokenSave')}</button>
-        {#if source === 'settings'}<button class="btn ghost" type="button" onclick={() => save('')}>{ut('tokenClear')}</button>{/if}
-      </form>
-      <small>{tokenSourceLabel(source)}</small>
     </div>
     {/if}
   </section>
@@ -87,12 +65,6 @@
     gap: 16px;
     min-height: 36px;
   }
-  .row.stacked {
-    flex-direction: column;
-    align-items: stretch;
-    gap: 6px;
-    margin-top: 8px;
-  }
   .row > span,
   .status {
     display: flex;
@@ -105,14 +77,9 @@
   small.error {
     color: var(--st-failed);
   }
-  .actions,
-  .token {
+    .actions {
     display: flex;
     gap: 6px;
-  }
-  .token input {
-    flex: 1;
-    min-width: 0;
   }
   .row.hit {
     margin: 0 -8px;
