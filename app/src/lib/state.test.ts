@@ -806,6 +806,38 @@ describe('sessions', () => {
     expect(m.bodies['POST /v1/terms'].map((b) => (b as { worktree?: boolean }).worktree)).toEqual([undefined, undefined, undefined]);
   });
 
+  describe('in a subject', () => {
+    const repo = '/home/alice/Documents/Github/work/webshop';
+    const subject = async () => {
+      const w = await m.request<{ id: string }>('POST', '/v1/workspaces', { kind: 'subject', name: 'Deal', cwd: repo });
+      await vi.waitFor(() => expect(app.ws.workspaces.some((x) => x.id === w.id)).toBe(true));
+      app.selectWorkspace(w.id);
+      return w.id;
+    };
+
+    it('sends the workspaceId and no cwd, and still starts agents in a worktree of the subject cwd repo', async () => {
+      // Given a subject whose cwd is a project repository, selected in the sidebar
+      // When an agent and a shell are started
+      // Then both bodies carry workspaceId and no cwd, and only the agent asks for a worktree
+      const id = await subject();
+      await app.newSession('claude');
+      await app.newSession('shell');
+      expect(m.bodies['POST /v1/terms']).toEqual([
+        { agent: 'claude', cwd: undefined, workspaceId: id, model: undefined, effort: undefined, cols: 120, rows: 32, worktree: true },
+        { cwd: undefined, workspaceId: id, cols: 120, rows: 32 },
+      ]);
+    });
+
+    it('lets an explicit cwd win and sends no workspaceId', async () => {
+      // Given a selected subject
+      // When a session starts with an explicit cwd
+      // Then the body has that cwd and no workspaceId
+      await subject();
+      await app.newSession('shell', { cwd: '/tmp' });
+      expect(m.bodies['POST /v1/terms']).toEqual([{ cwd: '/tmp', cols: 120, rows: 32 }]);
+    });
+  });
+
   it('starts a plain shell without agent options or worktree', async () => {
     app.nextProfile = 'p1';
     await app.newSession('shell', { cwd: '/home/alice/Documents/Github/work/webshop', model: 'x' });

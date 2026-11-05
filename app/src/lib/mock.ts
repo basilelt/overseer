@@ -1087,7 +1087,7 @@ export class MockDaemon implements DaemonClient {
     const stored = this.terms.find((x) => x.id === term.id);
     if (stored) stored.workspaceId = w.id;
     term.workspaceId = w.id;
-    // Like the scan: the line of this term inherits the assignment when it has none.
+    // Like the scan, but only at creation with a given lineId (the daemon also inherits on later scans).
     const line = this.lines.find((x) => x.line.id === term.lineId);
     if (line && !line.local?.workspaceId) {
       line.local = { ...line.local, workspaceId: w.id };

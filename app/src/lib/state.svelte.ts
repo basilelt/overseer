@@ -562,7 +562,7 @@ class AppState {
     // A subject has no directory: the daemon starts the term in its cwd and assigns it.
     const subject = !opts.cwd && scoped?.kind === 'subject' ? scoped.id : undefined;
     const cwd = opts.cwd ?? scoped?.path ?? undefined;
-    const worktree = (opts.worktree ?? (agent !== 'shell' && !settings.sessionsInCheckout)) && this.inProject(cwd);
+    const worktree = (opts.worktree ?? (agent !== 'shell' && !settings.sessionsInCheckout)) && this.inProject(cwd ?? (subject ? (scoped?.cwd ?? undefined) : undefined));
     const size = { cols: 120, rows: 32, ...(worktree ? { worktree: true } : {}) };
     const profile = agent === 'shell' ? undefined : (opts.profile ?? this.nextProfile ?? undefined);
     const term = await this.api.createTerm(agent === 'shell' ? { cwd, ...(subject ? { workspaceId: subject } : {}), ...size } : { agent, cwd, ...(subject ? { workspaceId: subject } : {}), model: opts.model || undefined, effort: opts.effort, ...(profile ? { profile } : {}), ...size });
