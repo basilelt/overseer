@@ -5,7 +5,7 @@ require "tmpdir"
 default_platform(:ios)
 
 platform :ios do
-  lane :internal_testflight do
+  private_lane :build_ipa do
     app_dir = File.expand_path(ENV.fetch("OVERSEER_APP_DIR"))
     tmp = ENV.fetch("RUNNER_TEMP", Dir.tmpdir)
     run_number = ENV.fetch("GITHUB_RUN_NUMBER")
@@ -37,12 +37,25 @@ platform :ios do
       UI.user_error!("IPA is #{built_short} (#{built_bundle}), expected #{short_version} (#{bundle_version})")
     end
 
-    upload_to_testflight(
-      api_key: api_key,
-      ipa: ipa,
-      app_platform: "ios",
-      skip_submission: true,
-      skip_waiting_for_build_processing: true
+    { ipa: ipa, api_key: api_key }
+  end
+
+  lane :app_store do
+    built = build_ipa
+    upload_to_app_store(
+      api_key: built[:api_key],
+      ipa: built[:ipa],
+      platform: "ios",
+      skip_metadata: true,
+      skip_screenshots: true,
+      submit_for_review: true,
+      automatic_release: false,
+      force: true,
+      run_precheck_before_submit: false,
+      submission_information: {
+        add_id_info_uses_idfa: false,
+        export_compliance_uses_encryption: false
+      }
     )
   end
 end
