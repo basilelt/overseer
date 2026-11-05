@@ -187,7 +187,7 @@ branch) and restored everywhere: a pull request reads the caches of `main`.
 | Cache | Key | Saved by |
 |---|---|---|
 | Rust: `~/.cargo` registry and git sources, and the `target` directories (dependencies only) | `Swatinem/rust-cache`: job, rustc version, `Cargo.lock` and `Cargo.toml` files | every Rust job |
-| apt `.deb` archive | OS, arch, sorted package list, then the runner image version (`$ImageOS-$ImageVersion`); falls back to the previous image | jobs with `apt` |
+| apt `.deb` archive | OS, arch, sorted package list, then the runner image version (`$ImageOS-$ImageVersion`): a new image starts cold, since its lists differ | jobs with `apt` |
 | pnpm store | OS and `app/pnpm-lock.yaml`, falls back to any older store | jobs with `node` |
 | Gradle | the Android `*.gradle.kts` and wrapper properties, falls back to any older one | android, app-android |
 | cargo-xwin | fixed (`cargo-xwin-x86_64-v1`) | servers, app-windows |

@@ -71,7 +71,6 @@ runs:
       with:
         path: ${{ steps.ctx.outputs.apt-dir }}
         key: ${{ steps.ctx.outputs.apt-key }}${{ steps.ctx.outputs.image }}
-        restore-keys: ${{ steps.ctx.outputs.apt-key }}
 
     - if: inputs.apt != '' && runner.os == 'Linux'
       shell: bash
