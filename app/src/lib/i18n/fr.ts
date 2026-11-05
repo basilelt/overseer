@@ -1415,7 +1415,6 @@ export const dict: Partial<Dict> = {
   'updater.brew': 'Installé avec Homebrew.',
   'updater.copy': 'Copier',
   'updater.copied': 'Copié',
-  'updater.package': 'Installé depuis un paquet .deb ou .rpm. Téléchargez le nouveau paquet sur la page de la version.',
   'updater.openRelease': 'Ouvrir la page de la version',
   'updater.section': 'Mises à jour',
   'updater.version': 'Version',

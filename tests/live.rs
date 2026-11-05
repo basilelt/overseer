@@ -22,6 +22,11 @@ fn hooks_and_polling_drive_live_state() {
     t.wait(|| t.line(SID)["local"]["busy"] == true);
     t.keys(&pane, "ask", true);
     t.wait(|| t.line(SID)["local"]["needsInput"] == true);
+    t.keys(&pane, "approved", true);
+    t.wait(|| t.line(SID)["local"]["needsInput"] == false);
+    assert_eq!(t.line(SID)["local"]["busy"], true);
+    t.keys(&pane, "ask", true);
+    t.wait(|| t.line(SID)["local"]["needsInput"] == true);
     t.keys(&pane, "done", true);
     t.wait(|| t.line(SID)["local"]["needsInput"] == false);
     let spool = std::fs::read_dir(t.base.join("state/spool")).unwrap();
@@ -375,7 +380,7 @@ fn hooks_installer_dry_run_apply_idempotent_uninstall() {
         "~/.claude/hooks/tmux-claude-id.sh"
     );
     assert_eq!(v["hooks"]["SessionStart"].as_array().unwrap().len(), 2);
-    assert_eq!(v["hooks"].as_object().unwrap().len(), 12);
+    assert_eq!(v["hooks"].as_object().unwrap().len(), 14);
     let backups = std::fs::read_dir(t.base.join("home/.claude"))
         .unwrap()
         .flatten()
@@ -399,7 +404,7 @@ fn hooks_installer_dry_run_apply_idempotent_uninstall() {
         "{again}"
     );
     let doctor = String::from_utf8_lossy(&t.sb(&["doctor"]).stdout).into_owned();
-    assert!(doctor.contains("12/12 events"), "{doctor}");
+    assert!(doctor.contains("14/14 events"), "{doctor}");
 
     let cmd = v["hooks"]["Stop"][0]["hooks"][0]["command"]
         .as_str()

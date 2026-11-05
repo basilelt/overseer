@@ -94,7 +94,7 @@ per file with its diff and backup.
 
 | Agent | Mechanism | File | Events used |
 |---|---|---|---|
-| Claude Code | hooks | `$CLAUDE_CONFIG_DIR/settings.json` (`~/.claude`) | SessionStart, UserPromptSubmit, Stop, Notification, PermissionRequest, Subagent*, Task*, SessionEnd |
+| Claude Code | hooks | `$CLAUDE_CONFIG_DIR/settings.json` (`~/.claude`) | SessionStart, UserPromptSubmit, Stop, Notification, PermissionRequest, PostToolUse*, Subagent*, Task*, SessionEnd |
 | Codex | hooks | `$CODEX_HOME/hooks.json` (`~/.codex`) | SessionStart, UserPromptSubmit, Stop, PermissionRequest, Subagent*, SessionEnd |
 | Gemini CLI (0.26+) | hooks | `~/.gemini/settings.json` | SessionStart, BeforeAgent, AfterAgent, Notification (ToolPermission), SessionEnd |
 | Copilot CLI | hooks | `$COPILOT_HOME/hooks/overseer.json` (`~/.copilot`) | sessionStart, userPromptSubmitted, agentStop, notification, sessionEnd |

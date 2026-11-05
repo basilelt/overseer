@@ -32,8 +32,11 @@ add() {
 }
 
 add darwin-aarch64 _aarch64.app.tar.gz
+add darwin-x86_64 _x64.app.tar.gz
 add windows-x86_64 _x64-setup.exe
+add windows-aarch64 _arm64-setup.exe
 add linux-x86_64 _amd64.AppImage
+add linux-aarch64 _aarch64.AppImage
 
 if [ "$platforms" = '{}' ]; then
   echo "v$version has no signed updater artifact" >&2

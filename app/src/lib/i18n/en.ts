@@ -1426,7 +1426,7 @@ export const en = {
   'updater.brew': 'Installed with Homebrew.',
   'updater.copy': 'Copy',
   'updater.copied': 'Copied',
-  'updater.package': 'Installed from a .deb or .rpm package. Download the new package from the release page.',
+  'updater.package': 'Installed from a .deb, .rpm or .msix package. Download the new package from the release page.',
   'updater.openRelease': 'Open release page',
   'updater.section': 'Updates',
   'updater.version': 'Version',
