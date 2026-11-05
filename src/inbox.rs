@@ -155,7 +155,7 @@ pub fn execute(ctx: &Ctx, cmd: &Value) -> (&'static str, Option<String>) {
     }
     match kind {
         "hold" => report(actions::hold(ctx, line, !dry)),
-        "close" => report(actions::close(ctx, line, !dry)),
+        "close" => report(actions::close(ctx, line, !dry, false)),
         "resume" => match actions::resume(ctx, line, dry, Launch::Detached) {
             Ok(p) if dry => ("succeeded", Some(format!("would resume in {}", p.r#where))),
             Ok(p) => ("succeeded", Some(format!("resumed in {}", p.r#where))),

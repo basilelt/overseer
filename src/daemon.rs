@@ -867,10 +867,12 @@ pub fn handle(ctx: &Ctx, r: &Request) -> (u16, Value) {
             Ok(rep) => (if rep.ok() { 200 } else { 409 }, rep.to_json()),
             Err(e) => err(404, e),
         },
-        ("POST", ["v1", "lines", id, "close"]) => match actions::close(ctx, id, !dry_run(r)) {
-            Ok(rep) => (if rep.ok() { 200 } else { 409 }, rep.to_json()),
-            Err(e) => err(404, e),
-        },
+        ("POST", ["v1", "lines", id, "close"]) => {
+            match actions::close(ctx, id, !dry_run(r), q(r, "shell") == Some("true")) {
+                Ok(rep) => (if rep.ok() { 200 } else { 409 }, rep.to_json()),
+                Err(e) => err(404, e),
+            }
+        }
         ("POST", ["v1", "lines", id, "resume"]) => {
             match actions::resume(ctx, id, dry_run(r), actions::Launch::Detached) {
                 Ok(p) => (200, p.to_json()),

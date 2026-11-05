@@ -1,5 +1,6 @@
 import type { Component } from 'svelte';
 import type { SidebarItem } from './grouping';
+import type { Term } from './types';
 import { REVIEW_PREFIX } from './review/keys';
 
 export type TabKind = 'agent' | 'chat' | 'shell' | 'browser' | 'review' | 'graph' | 'worktrees' | 'system' | 'usage' | 'prs';
@@ -64,6 +65,16 @@ export function tabInfo(key: string, items: SidebarItem[], mode?: (item: Sidebar
   if (!item) return null;
   const kind: TabKind = item.kind === 'shell' ? 'shell' : mode?.(item) === 'chat' ? 'chat' : 'agent';
   return { key, kind, arg: item.lineId ?? item.termId ?? '', item };
+}
+
+export function rememberTerms(termOf: Map<string, string>, items: SidebarItem[], terms: Term[]) {
+  const bound = new Set(terms.filter((t) => t.lineId).map((t) => `${t.lineId}|${t.id}`));
+  for (const i of items) if (i.lineId && i.termId && bound.has(`${i.lineId}|${i.termId}`)) termOf.set(i.key, i.termId);
+}
+
+export function followTerm(key: string, items: SidebarItem[], termOf: Map<string, string>): string | null {
+  const id = key.startsWith('line:') ? termOf.get(key) : undefined;
+  return (id && items.find((i) => i.termId === id && !i.lineId)?.key) || null;
 }
 
 export function newTabKey(kind: 'browser' | 'review' | 'graph' | 'worktrees' | 'system' | 'usage' | 'prs', arg: string): string {

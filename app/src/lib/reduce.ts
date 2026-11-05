@@ -103,9 +103,8 @@ export function applyEvent(s: Snapshot, e: DaemonEvent): Snapshot {
       const term = unwrap<Term>(e.data, 'term');
       if (!term?.id) return s;
       const prev = s.terms.find((t) => t.id === term.id);
-      const next = { ...prev, ...term };
-      if (prev && same(prev, next)) return s;
-      return { ...s, terms: upsert(s.terms, next, (t) => t.id) };
+      if (prev && same(prev, term)) return s;
+      return { ...s, terms: upsert(s.terms, term, (t) => t.id) };
     }
     case 'task.created':
     case 'task.updated': {

@@ -11,7 +11,7 @@ export function api(c: DaemonClient) {
     status: () => c.request<Status>('GET', '/v1/status'),
     lines: () => c.request<LocalLine[]>('GET', '/v1/lines'),
     hold: (id: string) => c.request('POST', `/v1/lines/${enc(id)}/hold?dryRun=false`),
-    close: (id: string) => c.request('POST', `/v1/lines/${enc(id)}/close?dryRun=false`),
+    close: (id: string, shell = false) => c.request('POST', `/v1/lines/${enc(id)}/close?dryRun=false${shell ? '&shell=true' : ''}`),
     resume: (id: string) => c.request<Term>('POST', `/v1/lines/${enc(id)}/resume?dryRun=false`, { target: 'term' }),
     attach: (id: string) => c.request<Term>('POST', `/v1/lines/${enc(id)}/resume?dryRun=false`, { target: 'term', attachOnly: true }),
     pin: (id: string, pinned: boolean) => c.request('PUT', `/v1/lines/${enc(id)}/pin`, { pinned }),
