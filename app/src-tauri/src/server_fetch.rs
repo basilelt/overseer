@@ -1,16 +1,14 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use serde::Deserialize;
 use sha2::{Digest, Sha256};
 
-use crate::apk_update::{api, asset, client, hex, read_token, ApkError, Asset, REPO};
+use crate::apk_update::{asset_url, client, get, hex, ApkError};
 use crate::install::{Platform, SERVER_VERSION};
 use crate::ssh::{Fetch, FetchFuture};
 
+const GITHUB: &str = "https://github.com";
 pub const SUMS: &str = "SHA256SUMS";
-pub const RATE_LIMITED: &str = "GitHub's limit for downloads without a token is reached: add a GitHub token (Settings > Updates, GitHub access), try again later, or connect to this host once from the Overseer desktop app";
-
 pub fn asset_name(version: &str, platform: Platform) -> String {
     format!("overseer-{version}-{}", platform.target_triple())
 }
@@ -46,66 +44,43 @@ fn keep_only(dir: &Path, keep: &Path) {
 
 fn describe(e: ApkError, version: &str) -> String {
     match e {
-        ApkError::RateLimited => RATE_LIMITED.into(),
-        ApkError::Rejected | ApkError::Forbidden => "GitHub refused the saved GitHub token: check it in Settings > Updates (GitHub access)".into(),
-        ApkError::NoAccess => format!("no release v{version} of {REPO} is visible with the saved GitHub token: check it in Settings > Updates (GitHub access)"),
-        ApkError::Network { message } => format!("cannot download the server from GitHub: {message}"),
-        ApkError::Checksum => format!("the downloaded server does not match the {SUMS} of release v{version}"),
+        ApkError::Network { message } => {
+            format!("cannot download the server from GitHub: {message}")
+        }
+        ApkError::Checksum => {
+            format!("the downloaded server does not match the {SUMS} of release v{version}")
+        }
         ApkError::Failed { message } => message,
     }
 }
 
-#[derive(Deserialize)]
-struct Release {
-    #[serde(default)]
-    assets: Vec<Asset>,
+pub(crate) fn server_urls(base: &str, version: &str, platform: Platform) -> (String, String) {
+    (
+        asset_url(base, version, SUMS),
+        asset_url(base, version, &asset_name(version, platform)),
+    )
 }
 
-async fn from_github(data: &Path, version: &str, platform: Platform) -> Result<Vec<u8>, ApkError> {
-    let data = data.to_path_buf();
-    let token = tokio::task::spawn_blocking(move || read_token(&data))
-        .await
-        .map_err(|e| ApkError::Failed {
-            message: e.to_string(),
-        })??;
-    let token = token.as_deref();
+async fn from_github(version: &str, platform: Platform) -> Result<Vec<u8>, ApkError> {
+    from_base(GITHUB, version, platform).await
+}
+
+async fn from_base(base: &str, version: &str, platform: Platform) -> Result<Vec<u8>, ApkError> {
     let client = client()?;
-    let release: Release = api(
-        &client,
-        token,
-        &format!("/repos/{REPO}/releases/tags/v{version}"),
-    )
-    .await?
-    .json()
-    .await
-    .map_err(|e| ApkError::Network {
-        message: e.without_url().to_string(),
-    })?;
     let name = asset_name(version, platform);
-    let missing = |what: &str| ApkError::Failed {
-        message: format!("release v{version} has no {what}"),
-    };
-    let bin = release
-        .assets
-        .iter()
-        .find(|a| a.name == name)
-        .ok_or_else(|| missing(&name))?;
-    let sums = release
-        .assets
-        .iter()
-        .find(|a| a.name == SUMS)
-        .ok_or_else(|| missing(SUMS))?;
+    let (sums_url, bin_url) = server_urls(base, version, platform);
     let network = |e: reqwest::Error| ApkError::Network {
         message: e.without_url().to_string(),
     };
-    let text = asset(&client, token, &sums.url)
+    let text = get(&client, &sums_url)
         .await?
         .text()
         .await
         .map_err(network)?;
-    let want =
-        parse_sums(&text, &name).ok_or_else(|| missing(&format!("{name} line in {SUMS}")))?;
-    let bytes = asset(&client, token, &bin.url)
+    let want = parse_sums(&text, &name).ok_or_else(|| ApkError::Failed {
+        message: format!("release v{version} has no {name} line in {SUMS}"),
+    })?;
+    let bytes = get(&client, &bin_url)
         .await?
         .bytes()
         .await
@@ -128,29 +103,24 @@ async fn store(file: &Path, bytes: &[u8]) -> std::io::Result<()> {
     Ok(())
 }
 
-pub async fn download(
-    data: &Path,
-    cache: &Path,
-    version: &str,
-    platform: Platform,
-) -> Result<Vec<u8>, String> {
+pub async fn download(cache: &Path, version: &str, platform: Platform) -> Result<Vec<u8>, String> {
     let file = cached(cache, version, platform);
     if let Ok(bytes) = tokio::fs::read(&file).await {
         if !bytes.is_empty() {
             return Ok(bytes);
         }
     }
-    let bytes = from_github(data, version, platform)
+    let bytes = from_github(version, platform)
         .await
         .map_err(|e| describe(e, version))?;
     let _ = store(&file, &bytes).await;
     Ok(bytes)
 }
 
-pub fn source(data: PathBuf, cache: PathBuf) -> Arc<Fetch> {
+pub fn source(cache: PathBuf) -> Arc<Fetch> {
     Arc::new(move |platform| -> FetchFuture {
-        let (data, cache) = (data.clone(), cache.clone());
-        Box::pin(async move { download(&data, &cache, SERVER_VERSION, platform).await })
+        let cache = cache.clone();
+        Box::pin(async move { download(&cache, SERVER_VERSION, platform).await })
     })
 }
 
@@ -229,25 +199,96 @@ mod tests {
         store(&file, b"new").await.unwrap();
         assert!(!old.exists());
         assert_eq!(
-            download(&d.join("data"), &d, "0.9.0", Platform::LinuxAarch64)
-                .await
-                .unwrap(),
+            download(&d, "0.9.0", Platform::LinuxAarch64).await.unwrap(),
             b"new"
         );
         let _ = std::fs::remove_dir_all(d);
     }
 
     #[test]
-    fn rate_limit_without_a_token_suggests_adding_one() {
-        let err = describe(ApkError::RateLimited, "0.9.0");
-        assert_eq!(err, RATE_LIMITED);
-        assert!(err.contains("GitHub token") && err.contains("desktop"));
+    fn builds_the_public_server_urls() {
+        let (sums, bin) = server_urls("https://github.com", "0.9.0", Platform::LinuxX86_64);
+        assert_eq!(
+            sums,
+            "https://github.com/basilelt/overseer/releases/download/v0.9.0/SHA256SUMS"
+        );
+        assert_eq!(
+            bin,
+            "https://github.com/basilelt/overseer/releases/download/v0.9.0/overseer-0.9.0-x86_64-unknown-linux-musl"
+        );
     }
 
     #[test]
-    fn saved_token_errors_point_to_settings() {
-        for e in [ApkError::Rejected, ApkError::Forbidden, ApkError::NoAccess] {
-            assert!(describe(e, "0.9.0").contains("Settings > Updates"));
-        }
+    fn errors_are_described_without_any_token_hint() {
+        assert!(describe(ApkError::Checksum, "0.9.0").contains("v0.9.0"));
+        assert!(describe(
+            ApkError::Network {
+                message: "dns".into()
+            },
+            "0.9.0"
+        )
+        .contains("dns"));
+        assert_eq!(
+            describe(
+                ApkError::Failed {
+                    message: "GitHub answered 404 Not Found".into()
+                },
+                "0.9.0"
+            ),
+            "GitHub answered 404 Not Found"
+        );
+    }
+
+    #[tokio::test]
+    async fn downloads_and_verifies_the_server_without_authorization() {
+        let bin = "#!/bin/sh\necho hi\n";
+        let name = asset_name("0.9.0", Platform::LinuxX86_64);
+        let sums: &'static str = Box::leak(
+            format!("{}  {name}\n", hex(&Sha256::digest(bin.as_bytes()))).into_boxed_str(),
+        );
+        let (base, reqs) = crate::apk_update::testhttp::serve_script(vec![
+            (200, vec![], sums),
+            (302, vec![("location", "/cdn")], ""),
+            (200, vec![], bin),
+        ])
+        .await;
+        let got = from_base(&base, "0.9.0", Platform::LinuxX86_64)
+            .await
+            .unwrap();
+        assert_eq!(got, bin.as_bytes());
+        let reqs = reqs.await.unwrap();
+        assert!(reqs[0].starts_with("get /basilelt/overseer/releases/download/v0.9.0/sha256sums "));
+        assert!(reqs[1].contains(&format!("/v0.9.0/{name} ")));
+        assert!(reqs[2].starts_with("get /cdn "));
+        assert!(reqs.iter().all(|r| !r.contains("authorization")));
+    }
+
+    #[tokio::test]
+    async fn a_corrupt_server_download_fails_the_checksum() {
+        let name = asset_name("0.9.0", Platform::LinuxX86_64);
+        let sums: &'static str =
+            Box::leak(format!("{}  {name}\n", "a".repeat(64)).into_boxed_str());
+        let (base, _reqs) = crate::apk_update::testhttp::serve_script(vec![
+            (200, vec![], sums),
+            (200, vec![], "tampered"),
+        ])
+        .await;
+        assert_eq!(
+            from_base(&base, "0.9.0", Platform::LinuxX86_64).await,
+            Err(ApkError::Checksum)
+        );
+    }
+
+    #[tokio::test]
+    async fn a_missing_release_reports_the_github_status() {
+        let (base, _reqs) =
+            crate::apk_update::testhttp::serve_script(vec![(404, vec![], "Not Found")]).await;
+        let err = from_base(&base, "9.9.9", Platform::LinuxX86_64)
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(err, ApkError::Failed { ref message } if message.contains("404")),
+            "{err:?}"
+        );
     }
 }

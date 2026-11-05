@@ -121,7 +121,7 @@ describe('search', () => {
   });
 
   it('matches across categories', () => {
-    const r = search('token', all, en2);
+    const r = search('check for updates', all, en2);
     expect(r.categories).toEqual(['updates']);
     const w = search('notif', all, en2);
     expect(w.categories).toContain('notifications');
@@ -144,9 +144,9 @@ describe('search', () => {
   });
 
   it('limits the updates sections to the matching rows', () => {
-    expect(search('github token', all, en2).hits.updater).toEqual(['updateToken']);
     expect(search('check for updates', all, en2).hits.updater).toEqual(['update']);
-    expect(search('github access', all, en2).hits.apk).toEqual(['apkToken']);
+    expect(search('github token', all, en2).hits.updater).toBeUndefined();
+    expect(search('version', all, en2).hits.apk).toEqual(['apk']);
   });
 
   it('matches the notification kinds in French with accents folded', () => {

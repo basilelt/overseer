@@ -13,7 +13,7 @@ covers each case with the `android`, `android-tablet`, `iphone`, `ipad` and `-la
 | Platform | Package | Where it goes | Who can install |
 |---|---|---|---|
 | Android | universal release APK (arm64-v8a, armeabi-v7a), signed with the Overseer release key | the GitHub Release, `Overseer_<version>_android.apk` + `.sha256` | anyone: in-app updates, Obtainium or by hand |
-| iOS | App Store IPA, signed with the team's distribution certificate (fastlane match) | TestFlight, an internal testing group | members of the App Store Connect team in that group |
+| iOS | App Store IPA, signed with the team's Apple Distribution certificate and App Store profile | TestFlight, an internal testing group | members of the App Store Connect team in that group |
 
 There is no Play Store or App Store release. The iOS build goes to TestFlight only; it is never
 submitted for App Store review, nor for external TestFlight review. `scripts/store-guard.sh` runs
@@ -46,9 +46,7 @@ uninstall it before installing a release APK, and the other way round.
 Overseer updates itself from the GitHub releases (ADR 0032, addendum). Obtainium still works
 and installs the same signed APK; use one or the other.
 
-The repository is public, so checking for and downloading updates needs no GitHub token. A token
-saved under Settings > Updates is optional; it only lifts GitHub's anonymous API rate limit
-(60 requests per hour per IP address).
+The repository is public, so checking for and downloading updates needs no GitHub token.
 
 1. When a release is newer than the installed version, an "Update x.y.z" pill appears in the top
    bar. Tap it, read the notes, tap "Download & install". The APK is downloaded, checked against
@@ -74,8 +72,7 @@ cache folder, uploads it over the SSH session and starts it. The Connect screen 
 server for linux/x86_64", "Installing server", "Starting". A running older daemon is hot-upgraded
 as from the desktop.
 
-The download needs no token (public releases); an optional token from Settings > Updates on
-Android, or Settings > GitHub access on iOS, is used when set.
+The download needs no token (public releases).
 
 ## Install on Android by hand
 
@@ -112,9 +109,9 @@ show up in TestFlight after Apple's processing (usually 10 to 30 minutes after t
   - `app-ios` on `macos-26`, `continue-on-error`: runs `scripts/store-guard.sh`, writes
     `APPLE_TEAM_ID` into the Xcode project (`gen/apple/project.yml` and `project.pbxproj` are
     committed with an empty team), then `fastlane ios internal_testflight` from `app/`
-    (`app/fastlane/Fastfile`). The lane creates a temporary keychain, fetches the `appstore`
-    certificate and profile with `match` (readonly) from the `MATCH_GIT_URL` repository, builds with `pnpm tauri ios build
-    --export-method app-store-connect`, checks the IPA's versions, and uploads with
+    (`app/fastlane/Fastfile`). The lane builds with `pnpm tauri ios build
+    --export-method app-store-connect`, which signs with `IOS_CERTIFICATE` and
+    `IOS_MOBILE_PROVISION`, checks the IPA's versions, and uploads with
     `upload_to_testflight(skip_submission: true, skip_waiting_for_build_processing: true)`.
     `CFBundleShortVersionString` is the release version; `CFBundleVersion` is the workflow run
     number (`<run>.<attempt>` on a re-run, so a re-run never reuses a build number).
@@ -180,31 +177,31 @@ team id comes from the `APPLE_TEAM_ID` secret at build time.
    waits in TestFlight for "Manage" > export compliance before testers get it. Once decided, set
    `ITSAppUsesNonExemptEncryption` accordingly in `app/src-tauri/Info.ios.plist` (Tauri merges it
    into the iOS `Info.plist`) so builds go through on their own.
-5. Create a private Git repository for fastlane match (for example `basilelt/certificates`) and
-   a deploy key for it (read-only is enough for CI). Then, on a Mac with fastlane, from `app/` of
-   this repository:
+5. Create the Apple Distribution certificate and the App Store profile, from any OS, with an
+   App Store Connect API key with the Admin role (kept off CI):
 
    ```sh
-   cd app
-   APPLE_TEAM_ID=<team id> MATCH_GIT_URL=git@github.com:<owner>/certificates.git \
-     MATCH_PASSWORD=<a new passphrase> fastlane match appstore --app_identifier io.github.basilelt.overseer
+   openssl req -new -newkey rsa:2048 -nodes -keyout dist.key -out dist.csr -subj "/CN=Overseer iOS Distribution"
    ```
 
-   It logs in to the Apple account (or pass `--api_key_path` with an App Store Connect API key
-   JSON), creates or reuses an Apple Distribution certificate, and stores it with the profile
-   `match AppStore io.github.basilelt.overseer`, encrypted with `MATCH_PASSWORD`. CI only reads
-   it (`readonly: true`).
+   Then, with a JWT for that key, `POST /v1/certificates` with `certificateType: DISTRIBUTION` and
+   the CSR body (without the PEM armour), and `POST /v1/profiles` with
+   `profileType: IOS_APP_STORE`, the bundle id `io.github.basilelt.overseer` and that
+   certificate. Pack the certificate with its key and the `AppleWWDRCAG3` intermediate:
+   `openssl pkcs12 -export -legacy -inkey dist.key -in dist.pem -certfile wwdrg3.pem -out dist.p12`.
+   Both expire after one year: repeat this step and update the three `IOS_*` secrets before then.
+   Keep `dist.key` and the `.p12` outside the repository, in a password manager.
 6. Repository secrets:
 
    | Secret | Value |
    |---|---|
    | `APPLE_TEAM_ID` | the 10-character Apple Developer team id (Membership details) |
-   | `APPLE_KEY_ID` | App Store Connect API key id (Users and Access > Integrations, role App Manager or Admin) |
+   | `APPLE_KEY_ID` | App Store Connect API key id (Users and Access > Integrations; the Developer role is enough to upload builds and notarize) |
    | `APPLE_ISSUER_ID` | issuer id of that key |
    | `APPLE_KEY_CONTENT` | the `.p8` file content |
-   | `MATCH_GIT_URL` | SSH URL of the match repository, e.g. `git@github.com:<owner>/certificates.git` |
-   | `MATCH_PASSWORD` | passphrase of the match repository |
-   | `MATCH_SSH_PRIVATE_KEY` | private key of the deploy key of the match repository |
+   | `IOS_CERTIFICATE` | `base64 -w0 dist.p12` |
+   | `IOS_CERTIFICATE_PASSWORD` | password of that `.p12` |
+   | `IOS_MOBILE_PROVISION` | `base64 -w0` of the App Store `.mobileprovision` |
 
    `APPLE_ITC_TEAM_ID` (App Store Connect team id) is read by `app/fastlane/Appfile` when it is in
    the environment; it only matters for an Apple account in several App Store Connect teams, and

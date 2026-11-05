@@ -18,7 +18,6 @@
   import { t, type Key } from '../../i18n.svelte';
   import { app } from '../../state.svelte';
   import { isBusy, steps } from '../../conn';
-  import { apk, at } from '../../mobile/apk-update.svelte';
   import { connectHint, describeHost, emptyForm, formFromHost, hostFromForm, type FormError, type HostForm } from '../../mobile/hosts';
   import type { ConnPhase, HostTarget, SavedHost } from '../../types';
 
@@ -280,9 +279,6 @@
         </div>
         <div class="stack">
           <button class="btn primary big" onclick={retry}>{t('common.retry')}</button>
-          {#if hint === 'token' && apk.enabled}
-            <button class="btn big" onclick={() => apk.openToken()}><KeyRound size={17} />{apk.hasToken ? at('tokenReplace') : at('addToken')}</button>
-          {/if}
           {#if hint === 'deviceKey'}
             <button class="btn big" onclick={() => go('key')}><KeyRound size={17} />{t('mobile.connect.showKey')}</button>
           {/if}

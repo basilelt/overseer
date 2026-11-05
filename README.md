@@ -136,8 +136,10 @@ brew install overseer
 
 Upgrade with `brew update && brew upgrade --cask overseer && brew upgrade overseer`.
 
-The app is not signed yet. If macOS refuses to open it, run
-`xattr -dr com.apple.quarantine /Applications/Overseer.app` once.
+The app is signed with a Developer ID and notarized by Apple, so macOS opens it without a
+warning. Each release asset carries a build provenance attestation:
+`gh attestation verify <file> --repo basilelt/overseer` checks a download came from this
+repository's release workflow.
 
 ### Linux and Windows
 
@@ -164,11 +166,9 @@ publicly; building it needs your own Apple developer account and TestFlight. See
 
 ### Updates
 
-From 0.4.0 the app updates itself (AppImage and Windows installer). The repository is public, so
-no GitHub token is needed. A token is optional and only lifts GitHub's rate limit for requests
-without one (60 per hour per IP address); the app uses one when it finds it: Settings → Updates,
-`OVERSEER_GITHUB_TOKEN`, `HOMEBREW_GITHUB_API_TOKEN`, `GITHUB_TOKEN` or `gh auth token`. Homebrew installs get an Update button that runs `brew upgrade` for you (the
-command stays copyable); `.deb`/`.rpm` installs link to the release.
+From 0.4.0 the app updates itself (AppImage and Windows installer) from the public GitHub
+releases; no token or sign-in is needed. Homebrew installs get an Update button that runs
+`brew upgrade` for you (the command stays copyable); `.deb`/`.rpm` installs link to the release.
 
 ## Components
 
