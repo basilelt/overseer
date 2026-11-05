@@ -83,7 +83,9 @@ jobs:
 
       - run: scripts/ci-changes.test.sh
 
-      - run: scripts/ci-apt.test.sh
+      - env:
+          CI_APT_TEST_IMAGE: mirror.gcr.io/library/ubuntu:24.04
+        run: scripts/ci-apt.test.sh
 
       - name: The setup action installs from a warm apt archive
         uses: ./.github/actions/setup
