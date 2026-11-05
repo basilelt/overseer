@@ -3,6 +3,8 @@ name: CI
 on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
+  push:
+    branches: [next]
   workflow_dispatch:
   workflow_call:
     inputs:
@@ -36,6 +38,7 @@ jobs:
       actionlint: ${{ steps.filter.outputs.actionlint }}
       store_guard: ${{ steps.filter.outputs.store_guard }}
       tap: ${{ steps.filter.outputs.tap }}
+      ci_scripts: ${{ steps.filter.outputs.ci_scripts }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -45,6 +48,7 @@ jobs:
       - id: filter
         env:
           EVENT: ${{ github.event_name }}
+          REF: ${{ github.ref }}
           SKIP: ${{ inputs.skip }}
         run: scripts/ci-changes.sh
 
@@ -58,15 +62,45 @@ jobs:
         with:
           persist-credentials: false
 
-      - env:
+      - id: actionlint
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: ~/.cache/actionlint
+          key: actionlint-1.7.12-${{ runner.os }}-${{ runner.arch }}
+
+      - if: steps.actionlint.outputs.cache-hit != 'true'
+        env:
           VERSION: 1.7.12
           SHA256: 8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
         run: |
           curl -fsSL --retry 5 --retry-all-errors -o actionlint.tar.gz "https://github.com/rhysd/actionlint/releases/download/v${VERSION}/actionlint_${VERSION}_linux_amd64.tar.gz"
           echo "${SHA256}  actionlint.tar.gz" | sha256sum -c -
-          tar xzf actionlint.tar.gz actionlint
+          mkdir -p ~/.cache/actionlint
+          tar xzf actionlint.tar.gz -C ~/.cache/actionlint actionlint
 
-      - run: ./actionlint -color
+      - run: ~/.cache/actionlint/actionlint -color
+
+  ci-scripts:
+    needs: changes
+    if: needs.changes.outputs.ci_scripts == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - run: scripts/ci-changes.test.sh
+
+      - env:
+          CI_APT_TEST_IMAGE: mirror.gcr.io/library/ubuntu:24.04
+        run: scripts/ci-apt.test.sh
+
+      - name: The setup action installs from a warm apt archive
+        uses: ./.github/actions/setup
+        with:
+          apt: tmux xvfb
+          check: tmux xvfb-run
 
   gitleaks:
     if: github.event_name == 'pull_request' && !github.event.pull_request.draft
@@ -100,23 +134,15 @@ jobs:
         with:
           persist-credentials: false
 
-      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends tmux
-
-      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+      - uses: ./.github/actions/setup
         with:
-          toolchain: stable
-          components: clippy, rustfmt
-
-      - run: scripts/ci-runner-check.sh cargo cargo-fmt cargo-clippy tmux git ssh ssh-keygen
-
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
-        with:
-          path: |
-            ~/.cargo/registry/index
-            ~/.cargo/registry/cache
-            ~/.cargo/git/db
-          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('Cargo.lock', 'api/Cargo.lock', 'app/src-tauri/Cargo.lock') }}
-          restore-keys: ${{ runner.os }}-cargo-registry-
+          apt: tmux
+          rust: "true"
+          rust-components: clippy, rustfmt
+          rust-workspaces: |
+            . -> target
+            api -> api/target
+          check: cargo cargo-fmt cargo-clippy tmux git ssh ssh-keygen
 
       - run: cargo fetch --locked && cargo fetch --locked --manifest-path api/Cargo.toml
 
@@ -125,6 +151,7 @@ jobs:
       - run: make lint
 
       - run: timeout 1500 make test
+
 
   app:
     needs: changes
@@ -136,40 +163,22 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Free disk space
-        run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL
-
-      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev libsoup-3.0-dev libjavascriptcoregtk-4.1-dev libxdo-dev libssl-dev pkg-config patchelf tmux
-
-      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+      - uses: ./.github/actions/setup
         with:
-          toolchain: stable
-          components: clippy
-
-      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6
-        with:
-          version: 11
-
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
-        with:
-          node-version: 24
-          cache: pnpm
-          cache-dependency-path: app/pnpm-lock.yaml
-
-      - run: scripts/ci-runner-check.sh cargo cargo-clippy pnpm pkg:webkit2gtk-4.1 pkg:gtk+-3.0 pkg:librsvg-2.0
-
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
-        with:
-          path: |
-            ~/.cargo/registry/index
-            ~/.cargo/registry/cache
-            ~/.cargo/git/db
-          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('Cargo.lock', 'api/Cargo.lock', 'app/src-tauri/Cargo.lock') }}
-          restore-keys: ${{ runner.os }}-cargo-registry-
+          free-disk: all
+          apt: libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev libsoup-3.0-dev libjavascriptcoregtk-4.1-dev libxdo-dev libssl-dev pkg-config patchelf tmux
+          rust: "true"
+          rust-components: clippy
+          rust-workspaces: |
+            . -> target
+            app/src-tauri -> target
+          node: "true"
+          check: cargo cargo-clippy pnpm pkg:webkit2gtk-4.1 pkg:gtk+-3.0 pkg:librsvg-2.0
 
       - run: cargo fetch --locked
 
       - run: make app-test
+
 
   perf:
     needs: changes
@@ -181,37 +190,14 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Free disk space
-        run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL
-
-      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev libsoup-3.0-dev libjavascriptcoregtk-4.1-dev libxdo-dev libssl-dev pkg-config patchelf xvfb dbus-x11
-
-      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+      - uses: ./.github/actions/setup
         with:
-          toolchain: stable
-
-      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6
-        with:
-          version: 11
-
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
-        with:
-          node-version: 24
-          cache: pnpm
-          cache-dependency-path: app/pnpm-lock.yaml
-
-      - run: scripts/ci-runner-check.sh cargo pnpm xvfb-run pkg:webkit2gtk-4.1 pkg:gtk+-3.0 pkg:librsvg-2.0
-
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
-        with:
-          path: |
-            ~/.cargo/registry/index
-            ~/.cargo/registry/cache
-            ~/.cargo/git/db
-          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('Cargo.lock', 'api/Cargo.lock', 'app/src-tauri/Cargo.lock') }}
-          restore-keys: ${{ runner.os }}-cargo-registry-
-
-      - run: pnpm --dir app install --frozen-lockfile
+          free-disk: all
+          apt: libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev libsoup-3.0-dev libjavascriptcoregtk-4.1-dev libxdo-dev libssl-dev pkg-config patchelf xvfb dbus-x11
+          rust: "true"
+          rust-workspaces: app/src-tauri -> target
+          node: "true"
+          check: cargo pnpm xvfb-run pkg:webkit2gtk-4.1 pkg:gtk+-3.0 pkg:librsvg-2.0
 
       - name: Release build of the app against the mock backend
         env:
@@ -224,6 +210,7 @@ jobs:
       - name: CPU budget (30 s idle, 30 s streaming)
         run: xvfb-run -a -s "-screen 0 1440x900x24" scripts/perf-cpu.sh app/src-tauri/target/release/overseer-app
 
+
   windows:
     needs: changes
     if: needs.changes.outputs.windows == 'true'
@@ -234,21 +221,13 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+      - uses: ./.github/actions/setup
         with:
-          toolchain: stable
-          components: clippy
-
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
-        with:
-          path: |
-            ~/.cargo/registry/index
-            ~/.cargo/registry/cache
-            ~/.cargo/git/db
-          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('Cargo.lock', 'api/Cargo.lock', 'app/src-tauri/Cargo.lock') }}
-          restore-keys: ${{ runner.os }}-cargo-registry-
+          rust: "true"
+          rust-components: clippy
 
       - run: cargo clippy --locked --target x86_64-pc-windows-msvc --lib --bins -- -D warnings
+
 
   tap:
     needs: changes
@@ -323,7 +302,9 @@ jobs:
         run: security delete-keychain "$SIGN_KEYCHAIN" || true
 
       - if: needs.changes.outputs.macos_procs == 'true'
-        uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        uses: ./.github/actions/setup
+        with:
+          rust: "true"
 
       - if: needs.changes.outputs.macos_procs == 'true'
         run: "cargo test --lib -- procs:: ports:: review::watch::"
@@ -352,50 +333,17 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6
+      - uses: ./.github/actions/setup
         with:
-          distribution: temurin
-          java-version: "21"
-
-      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
-        with:
-          toolchain: stable
-
-      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6
-        with:
-          version: 11
-
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
-        with:
-          node-version: 24
-          cache: pnpm
-          cache-dependency-path: app/pnpm-lock.yaml
-
-      - name: Free disk space
-        run: sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL
-
-      - run: scripts/ci-runner-check.sh cargo rustup pnpm java env:ANDROID_HOME env:JAVA_HOME
+          free-disk: keep-android
+          rust: "true"
+          rust-workspaces: app/src-tauri -> target
+          node: "true"
+          java: "true"
+          gradle: "true"
+          check: cargo rustup pnpm java env:ANDROID_HOME env:JAVA_HOME
 
       - run: NDK_HOME=${ANDROID_NDK_LATEST_HOME:-${ANDROID_NDK_HOME:-}} scripts/android-env.sh aarch64-linux-android
-
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
-        with:
-          path: |
-            ~/.cargo/registry/index
-            ~/.cargo/registry/cache
-            ~/.cargo/git/db
-          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('Cargo.lock', 'api/Cargo.lock', 'app/src-tauri/Cargo.lock') }}
-          restore-keys: ${{ runner.os }}-cargo-registry-
-
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
-        with:
-          path: |
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-          key: gradle-${{ hashFiles('app/src-tauri/gen/android/**/*.gradle.kts', 'app/src-tauri/gen/android/gradle/wrapper/gradle-wrapper.properties') }}
-          restore-keys: gradle-
-
-      - run: pnpm --dir app install --frozen-lockfile
 
       - run: pnpm --dir app tauri android build --ci --debug --apk --target aarch64
 
