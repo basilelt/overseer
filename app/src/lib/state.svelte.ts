@@ -531,7 +531,7 @@ class AppState {
     const line = this.data.lines.find((l) => l.line.id === lineId);
     if (line && !sessionsAvailable(this.agents, line.line.agent)) return null;
     const act = await this.api.activity(lineId).catch(() => null);
-    if (!act) return null;
+    if (!act || act.transcript === false) return null;
     const stale = (l: LocalLine) => l.line.id === lineId && (l.local?.needsInput !== act.needsInput || (act.busy !== undefined && l.local?.busy !== act.busy));
     const lines = this.data.lines.some(stale) ? this.data.lines.map((l) => (stale(l) ? { ...l, local: { ...l.local, needsInput: act.needsInput, busy: act.busy ?? l.local?.busy } } : l)) : this.data.lines;
     const prev = this.data.activity[lineId];

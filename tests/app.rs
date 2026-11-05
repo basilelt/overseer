@@ -1392,11 +1392,11 @@ fn agents_are_detected_and_launched_from_the_table() {
     assert_eq!(l["line"]["agentSessionId"], sid.as_str());
     assert_eq!(l["local"]["resumeVerified"], true);
     let lid = l["line"]["id"].as_str().unwrap().to_string();
-    assert_eq!(
-        app.req("GET", &format!("/v1/lines/{lid}/activity"), Value::Null)
-            .0,
-        409
-    );
+    let (code, act) = app.req("GET", &format!("/v1/lines/{lid}/activity"), Value::Null);
+    assert_eq!(code, 200);
+    assert_eq!(act["transcript"], false);
+    assert_eq!(act["lineId"], lid.as_str());
+    assert!(act["workLog"].as_array().unwrap().is_empty());
     app.ok(
         "POST",
         &format!("/v1/terms/{ctid}/kill"),

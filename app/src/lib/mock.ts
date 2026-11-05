@@ -831,8 +831,10 @@ export class MockDaemon implements DaemonClient {
     }
     switch (action) {
       case 'activity':
-        if (!this.agents.find((a) => a.id === l.line.agent)?.sessions) throw new DaemonError(409, `no session files for ${l.line.agent}`);
-        return structuredClone(this.activity[id]);
+        if (!this.agents.find((a) => a.id === l.line.agent)?.sessions || !this.activity[id]) {
+          return { lineId: id, title: l.local?.title ?? '', goal: '', status: l.line.state, needsInput: !!l.local?.needsInput, busy: !!l.local?.busy, workLog: [], todos: [], editedFiles: [], lastAssistantText: '', transcript: false } satisfies Activity;
+        }
+        return { ...structuredClone(this.activity[id]), transcript: true };
       case 'diff':
         if (l.line.repo === 'unknown') throw new DaemonError(409, 'fatal: not a git repository (or any of the parent directories): .git');
         return { lineId: id, worktree: l.line.worktreePath ?? '', status: ' M src/term.rs\n M tests/term.rs', stat: ' 2 files changed, 21 insertions(+), 3 deletions(-)', diff: bigDiff() ? bigPatch() : DIFF, truncated: false } satisfies Diff;

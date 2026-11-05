@@ -578,6 +578,14 @@ describe('loadActivity', () => {
     expect(m.calls).toEqual([]);
   });
 
+  it('returns nothing for a line without a transcript and leaves the snapshot alone', async () => {
+    await connect();
+    m.override['GET /v1/lines/ln_03/activity'] = () => ({ lineId: 'ln_03', title: '', goal: '', status: 'active', needsInput: false, busy: false, workLog: [], todos: [], editedFiles: [], lastAssistantText: '', transcript: false });
+    const data = app.data;
+    expect(await app.loadActivity('ln_03')).toBeNull();
+    expect(app.data).toBe(data);
+  });
+
   it('returns nothing when the request fails', async () => {
     await connect();
     m.override['GET /v1/lines/ln_03/activity'] = fail(500);

@@ -1218,7 +1218,8 @@ started from a task keeps that task and gets no second one.
 
 `GET /v1/lines/<id>/activity[?since=RFC3339]` summarises the line's transcript: title, goal (first
 prompt), work log (edits, commands, reads, searches with running/done/failed), the agent's todo
-list, edited files and the last assistant text. `GET /v1/lines/<id>/diff` gives the worktree diff.
+list, edited files and the last assistant text. A line with no transcript (a stub agent, a
+session being closed) answers 200 with empty lists and `"transcript": false`. `GET /v1/lines/<id>/diff` gives the worktree diff.
 The SSE stream `GET /v1/events` adds `term.created|updated|exited`, `task.created|updated|deleted`
 `line.activity` (the transcript grew; at most one per line every 500 ms), `git.changed` and
 `worktree.created|updated|removed` (14.9, 14.10).
