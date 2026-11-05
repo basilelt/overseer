@@ -139,7 +139,7 @@
     profiles: !!app.profiles,
     hooks: !!hooks.status,
     updater: updater.enabled && !app.mobile,
-    apk: apk.enabled,
+    apk: apk.enabled && apk.updates,
   });
   const text = (k: Key) => [t(k), en[k]];
   let query = $state('');

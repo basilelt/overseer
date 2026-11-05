@@ -89,11 +89,10 @@ export function hostFromForm(f: HostForm): { host: SavedHost } | { error: FormEr
   };
 }
 
-export type ConnectHint = 'token' | 'notInstalled' | 'deviceKey' | 'hostKeyChanged' | 'unreachable' | null;
+export type ConnectHint = 'notInstalled' | 'deviceKey' | 'hostKeyChanged' | 'unreachable' | null;
 
 export function connectHint(error: string | undefined): ConnectHint {
   if (!error) return null;
-  if (error.includes('not installed on this host') && error.includes('GitHub token')) return 'token';
   if (error.includes('not installed on this host')) return 'notInstalled';
   if (error.includes("did not accept this device's key")) return 'deviceKey';
   if (error.includes('HOST IDENTIFICATION HAS CHANGED')) return 'hostKeyChanged';

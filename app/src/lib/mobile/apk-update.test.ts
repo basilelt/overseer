@@ -15,9 +15,7 @@ const available = (ready = false): ApkCheck => ({
 
 function backend(over: Partial<ApkBackend> = {}): ApkBackend {
   return {
-    status: vi.fn(async () => ({ current: '0.9.0', hasToken: true, supported: true })),
-    setToken: vi.fn(async () => {}),
-    clearToken: vi.fn(async () => {}),
+    status: vi.fn(async () => ({ current: '0.9.0', supported: true })),
     check: vi.fn(async () => available()),
     download: vi.fn(async (on: (e: DownloadEvent) => void) => {
       on({ event: 'progress', downloaded: 10, total: 40 });
@@ -81,82 +79,42 @@ describe('apk update check', () => {
   });
 });
 
-describe('github token step', () => {
-  it('checks at start without a token and never opens the token sheet by itself', async () => {
-    const b = backend({ status: async () => ({ current: '0.9.0', hasToken: false, supported: true }) });
+describe('public releases, no sign-in', () => {
+  it('checks at start with no credentials of any kind', async () => {
+    const b = backend();
     const u = new ApkUpdater(b);
     const stop = u.start();
     await flush();
     stop();
     expect(b.check).toHaveBeenCalledTimes(1);
     expect(u.phase).toBe('available');
-    expect(u.hasToken).toBe(false);
-    expect(u.tokenSheet).toBe(false);
+    expect(sheetAction(u)).toBe('install');
   });
 
-  it('offers the optional token sheet only after a rate limit without a token', async () => {
-    const u = new ApkUpdater(backend({ check: async () => Promise.reject({ kind: 'ratelimited' }) }));
-    await u.check();
-    expect(u.phase).toBe('error');
-    expect(u.tokenSheet).toBe(false);
-    expect(sheetAction(u)).toBe('token');
-    expect(errorText(u.error!)).toMatch(/without a token.*optional GitHub token/);
-  });
-
-  it('goes from the update sheet to the token sheet and back', async () => {
-    let token = false;
-    const b = backend({ check: async () => (token ? available() : Promise.reject({ kind: 'ratelimited' })), setToken: vi.fn(async () => void (token = true)) });
-    const u = new ApkUpdater(b);
+  it('offers a retry, never a token, after a network error', async () => {
+    const u = new ApkUpdater(backend({ check: async () => Promise.reject({ kind: 'network', message: 'dns' }) }));
     await u.check(true);
-    expect(u.sheet).toBe(true);
-    expect(sheetAction(u)).toBe('token');
-    u.openToken();
-    expect(u.sheet).toBe(false);
-    expect(u.tokenSheet).toBe(true);
-    expect(await u.saveToken('  github_pat_abc  ')).toBe(true);
-    expect(b.setToken).toHaveBeenCalledWith('github_pat_abc');
-    expect(u.tokenSheet).toBe(false);
-    expect(u.hasToken).toBe(true);
-    expect(u.sheet).toBe(true);
-    expect(u.phase).toBe('available');
+    expect(u.phase).toBe('error');
+    expect(sheetAction(u)).toBe('retry');
   });
 
-  it('keeps the token sheet open with a clear message when GitHub refuses the token', async () => {
-    const cases: [string, RegExp][] = [
-      ['rejected', /rejected this token/],
-      ['noaccess', /cannot read basilelt\/overseer/],
-      ['forbidden', /token is valid/],
-    ];
-    for (const [kind, text] of cases) {
-      const u = new ApkUpdater(backend({ setToken: async () => Promise.reject({ kind }) }));
-      u.openToken();
-      expect(await u.saveToken('ghp_bad')).toBe(false);
-      expect(u.tokenSheet).toBe(true);
-      expect(u.tokenBusy).toBe(false);
-      expect(u.hasToken).toBeNull();
-      expect(errorText(u.tokenError!)).toMatch(text);
-    }
+  it.each(['rejected', 'ratelimited', 'forbidden', 'noaccess', 'auth', 'nope'])('maps the legacy or unknown kind %s to failed', (kind) => {
+    expect(apkError({ kind })).toEqual({ kind: 'failed', message: '[object Object]' });
+    expect(apkError({ kind, message: 'old' })).toEqual({ kind: 'failed', message: 'old' });
+    expect(errorText(apkError({ kind }))).toBe('[object Object]');
   });
 
-  it('refuses an empty token without calling GitHub', async () => {
-    const b = backend();
-    const u = new ApkUpdater(b);
-    expect(await u.saveToken('   ')).toBe(false);
-    expect(b.setToken).not.toHaveBeenCalled();
-    expect(u.tokenError?.kind).toBe('rejected');
-  });
-
-  it('removes the token', async () => {
-    const b = backend();
-    const u = new ApkUpdater(b);
+  it('shows no size and an indeterminate download when the release size is unknown', async () => {
+    const u = new ApkUpdater(backend({ check: async () => ({ ...available(), size: 0 }), download: vi.fn(async () => {}) }));
     await u.check();
-    await u.removeToken();
-    expect(b.clearToken).toHaveBeenCalled();
-    expect(u.hasToken).toBe(false);
-    expect(b.check).toHaveBeenCalledTimes(2);
-    expect(u.phase).toBe('available');
+    expect(formatSize(u.info!.size)).toBe('');
+    const p = u.install();
+    expect(u.total).toBeNull();
+    expect(u.progress).toBeNull();
+    await p;
   });
 });
+
 
 describe('download and install', () => {
   it('downloads with progress, verifies, then hands off to the installer', async () => {
@@ -272,35 +230,26 @@ describe('schedule', () => {
   });
 });
 
-describe('token only, for the server download on iOS', () => {
+describe('server download only, on iOS', () => {
   it('never checks for app updates', async () => {
     vi.useFakeTimers();
-    const b = backend({ status: async () => ({ current: '0.9.0', hasToken: false, supported: false }) });
+    const b = backend({ status: async () => ({ current: '0.9.0', supported: false }) });
     const u = new ApkUpdater(b);
     u.updates = false;
     const stop = u.start(1000);
     await vi.advanceTimersByTimeAsync(5000);
     expect(b.check).not.toHaveBeenCalled();
-    expect(u.tokenSheet).toBe(false);
-    expect(u.hasToken).toBe(false);
     u.resume();
     await u.check(true);
     expect(b.check).not.toHaveBeenCalled();
-    stop();
-
-    u.openToken();
-    expect(await u.saveToken('github_pat_x')).toBe(true);
-    expect(u.hasToken).toBe(true);
-    expect(u.tokenSheet).toBe(false);
-    expect(b.check).not.toHaveBeenCalled();
-    await u.removeToken();
     expect(u.phase).toBe('idle');
+    stop();
   });
 });
 
 describe('helpers', () => {
   it('normalises errors', () => {
-    expect(apkError({ kind: 'noaccess' })).toEqual({ kind: 'noaccess' });
+    expect(apkError({ kind: 'checksum' })).toEqual({ kind: 'checksum' });
     expect(apkError({ kind: 'network', message: 'dns' })).toEqual({ kind: 'network', message: 'dns' });
     expect(apkError(new Error('boom'))).toEqual({ kind: 'failed', message: 'boom' });
     expect(apkError('plain')).toEqual({ kind: 'failed', message: 'plain' });
@@ -315,6 +264,5 @@ describe('helpers', () => {
     setLocale('fr');
     await loadLocale('fr');
     expect(pillLabel({ phase: 'available', info: { version: '1.0.0' } as never, progress: null })).toBe('Mise à jour 1.0.0');
-    expect(errorText({ kind: 'ratelimited' })).toMatch(/without a token/);
   });
 });
