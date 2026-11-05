@@ -85,6 +85,7 @@ Each step is **Do → Expect**. Check every screenshot for overlaps, clipped tex
 - **E6** Split the pane right and down, move tabs between panes, close a pane → the layout follows, and nothing is lost on reload.
 - **E7** Select text in a terminal → it is copied (desktop shell only; note it when it cannot be checked in Chromium).
 - **E8** Drag-select a line that touches the first or last row of a terminal with no scrollback (a fresh shell, or the prompt of an agent at the bottom) → the whole dragged range is selected and copied, not a single cell.
+- **E9** In a shell, run a script that prints a few hundred lines each ending in an OSC 8 hyperlink (`printf '\e]8;;https://example.com\a/rc %s\e]8;;\a\n'`), then resize the window several times while it keeps printing → every line stays whole and in order, no text from one line shows inside another, and typing still reaches the shell (`stty size` shows the new size).
 
 ### F. Chat
 
@@ -139,7 +140,7 @@ Each step is **Do → Expect**. Check every screenshot for overlaps, clipped tex
 
 ### M. Life events
 
-- **M1** With an agent session, a shell (in a workspace, renamed) and a task in progress: `sandbox.sh crash`, then `start` → the log says `daemon restarted; restored N agent sessions and M shells`. Terminals keep their ids, workspace and title, and the agent is relaunched with `--resume <same session>` (`stub.log`).
+- **M1** With an agent session, a shell (in a workspace, renamed) and a task in progress: `sandbox.sh crash`, then `start` → the log says `daemon restarted; restored N agent sessions and M shells`. Terminals keep their ids, workspace and title, and the agent is relaunched with `--resume <same session>` (`stub.log`). Leave the app open through the crash: each terminal reconnects on its own, shows the restored session without rows of the old screen left in it, and keeps one connection per terminal.
 - **M2** Reload the app → tabs, workspaces and the selected session come back. The resumed agent answers input.
 - **M3** Set **After a server reboot or restart** to Nothing, then crash and start → nothing is restored.
 - **M4** Idle: leave the app untouched for 70 s with a session open → no DOM changes and no repaints (count `MutationObserver` records over 10 s).

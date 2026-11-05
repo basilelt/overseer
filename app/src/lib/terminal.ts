@@ -1,6 +1,6 @@
 import type { Ghostty, ITheme } from 'ghostty-web';
 import wasmUrl from 'ghostty-web/ghostty-vt.wasm?url';
-import { installOnDemandRendering } from './termrender';
+import { installBlankResize, installOnDemandRendering } from './termrender';
 
 export const TERM_THEMES: Record<'light' | 'dark', ITheme> = {
   dark: {
@@ -75,6 +75,7 @@ let loading: Promise<GhosttyRuntime> | null = null;
 export function loadGhostty(): Promise<GhosttyRuntime> {
   loading ??= import('ghostty-web').then(async (mod) => {
     installOnDemandRendering(mod);
+    installBlankResize(mod);
     return { mod, ghostty: await mod.Ghostty.load(wasmUrl) };
   });
   return loading;
