@@ -158,9 +158,9 @@ need nothing: the app installs the daemon over SSH on first connection.
 ### Android and iOS
 
 Android: install and update the APK from the releases with Obtainium, or download it with
-`gh release download --repo basilelt/overseer --pattern '*android.apk'`. iOS: not distributed
-publicly; building it needs your own Apple developer account and TestFlight. See
-[docs/mobile.md](docs/mobile.md).
+`gh release download --repo basilelt/overseer --pattern '*android.apk'`; Google Play gets a
+release now and then. iOS: install from the App Store. Store versions are shipped by hand and lag
+behind the GitHub releases. See [docs/mobile.md](docs/mobile.md).
 
 ### Updates
 

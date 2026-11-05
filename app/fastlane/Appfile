@@ -1,3 +1,4 @@
 app_identifier("io.github.basilelt.overseer")
 team_id(ENV["APPLE_TEAM_ID"]) if ENV["APPLE_TEAM_ID"]
 itc_team_id(ENV["APPLE_ITC_TEAM_ID"]) if ENV["APPLE_ITC_TEAM_ID"]
+package_name("io.github.basilelt.overseer")

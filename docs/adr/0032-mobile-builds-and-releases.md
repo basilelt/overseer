@@ -1,6 +1,6 @@
 # 0032 Mobile builds and releases
 
-Status: accepted
+Status: accepted; store decisions (TestFlight only, no store submission, iOS in the release run) superseded by 0039
 
 ## Context
 The Tauri app gets Android and iOS targets (in-process SSH transport, mobile UI). They need a

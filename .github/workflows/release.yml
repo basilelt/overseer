@@ -71,7 +71,6 @@ jobs:
       tag: ${{ steps.tag_version.outputs.new_tag }}
       version: ${{ steps.tag_version.outputs.new_version }}
       android: ${{ steps.optional.outputs.android }}
-      ios: ${{ steps.optional.outputs.ios }}
       tap: ${{ steps.optional.outputs.tap }}
       msix: ${{ steps.optional.outputs.msix }}
     steps:
@@ -111,14 +110,12 @@ jobs:
         id: optional
         env:
           ANDROID: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' && secrets.ANDROID_KEYSTORE_PASSWORD != '' && secrets.ANDROID_KEY_ALIAS != '' && secrets.ANDROID_KEY_PASSWORD != '' }}
-          IOS: ${{ secrets.APPLE_TEAM_ID != '' && secrets.APPLE_KEY_ID != '' && secrets.APPLE_ISSUER_ID != '' && secrets.APPLE_KEY_CONTENT != '' && secrets.MATCH_GIT_URL != '' && secrets.MATCH_PASSWORD != '' && secrets.MATCH_SSH_PRIVATE_KEY != '' }}
           TAP: ${{ secrets.HOMEBREW_TAP_DEPLOY_KEY != '' }}
           MSIX: ${{ secrets.WINDOWS_SELF_SIGN_PFX_BASE64 != '' && secrets.WINDOWS_SELF_SIGN_PFX_PASSWORD != '' }}
           UPDATER: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY != '' }}
         run: |
           {
             echo "android=$ANDROID"
-            echo "ios=$IOS"
             echo "tap=$TAP"
             echo "msix=$MSIX"
           } >> "$GITHUB_OUTPUT"
@@ -127,9 +124,6 @@ jobs:
           fi
           if [ "$ANDROID" != "true" ]; then
             echo "::warning title=app-android skipped::ANDROID_KEYSTORE_BASE64, ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS or ANDROID_KEY_PASSWORD is not set: no Android APK in this release (docs/mobile.md)"
-          fi
-          if [ "$IOS" != "true" ]; then
-            echo "::warning title=app-ios skipped::APPLE_TEAM_ID, APPLE_KEY_ID, APPLE_ISSUER_ID, APPLE_KEY_CONTENT, MATCH_GIT_URL, MATCH_PASSWORD or MATCH_SSH_PRIVATE_KEY is not set: no TestFlight build (docs/mobile.md)"
           fi
           if [ "$TAP" != "true" ]; then
             echo "::warning title=tap skipped::HOMEBREW_TAP_DEPLOY_KEY is not set: the Homebrew tap is not updated (docs/ci.md)"
@@ -737,85 +731,6 @@ jobs:
 
       - if: always()
         run: rm -f "$RUNNER_TEMP/release.jks"
-
-  app-ios:
-    needs: tag
-    if: needs.tag.outputs.tag != '' && needs.tag.outputs.ios == 'true'
-    runs-on: macos-26
-    timeout-minutes: 60
-    continue-on-error: true
-    env:
-      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-      APPLE_DEVELOPMENT_TEAM: ${{ secrets.APPLE_TEAM_ID }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          persist-credentials: false
-
-      - run: scripts/store-guard.sh
-
-      - uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90 # v1
-        with:
-          xcode-version: "26"
-
-      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
-        with:
-          toolchain: stable
-          targets: aarch64-apple-ios
-
-      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
-        with:
-          workspaces: app/src-tauri -> target
-
-      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6
-        with:
-          version: 11
-
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
-        with:
-          node-version: 24
-          cache: pnpm
-          cache-dependency-path: app/pnpm-lock.yaml
-
-      - run: command -v fastlane || brew install fastlane
-
-      - env:
-          VERSION: ${{ needs.tag.outputs.version }}
-        run: scripts/set-version.sh "$VERSION"
-
-      - run: pnpm --dir app install --frozen-lockfile
-
-      - name: Set the Apple team in the Xcode project
-        working-directory: app/src-tauri/gen/apple
-        run: |
-          sed -i '' -E "s/(DEVELOPMENT_TEAM|DevelopmentTeam) = [^;]*;/\1 = $APPLE_TEAM_ID;/" overseer-app.xcodeproj/project.pbxproj
-          sed -i '' -E "s/DEVELOPMENT_TEAM: .*/DEVELOPMENT_TEAM: $APPLE_TEAM_ID/" project.yml
-          grep -c "$APPLE_TEAM_ID" overseer-app.xcodeproj/project.pbxproj
-
-      - env:
-          MATCH_SSH_PRIVATE_KEY: ${{ secrets.MATCH_SSH_PRIVATE_KEY }}
-        run: |
-          mkdir -p ~/.ssh
-          chmod 700 ~/.ssh
-          printf '%s\n' "$MATCH_SSH_PRIVATE_KEY" > ~/.ssh/match_certificates
-          chmod 600 ~/.ssh/match_certificates
-          ssh-keyscan github.com >> ~/.ssh/known_hosts 2>/dev/null
-          printf 'Host github.com\n  IdentityFile ~/.ssh/match_certificates\n  IdentitiesOnly yes\n' >> ~/.ssh/config
-
-      - working-directory: app
-        env:
-          OVERSEER_APP_DIR: ${{ github.workspace }}/app
-          APPLE_KEY_ID: ${{ secrets.APPLE_KEY_ID }}
-          APPLE_ISSUER_ID: ${{ secrets.APPLE_ISSUER_ID }}
-          APPLE_KEY_CONTENT: ${{ secrets.APPLE_KEY_CONTENT }}
-          MATCH_GIT_URL: ${{ secrets.MATCH_GIT_URL }}
-          MATCH_PASSWORD: ${{ secrets.MATCH_PASSWORD }}
-          FASTLANE_SKIP_UPDATE_CHECK: "1"
-          FASTLANE_HIDE_CHANGELOG: "1"
-        run: fastlane ios internal_testflight
-
-      - if: always()
-        run: rm -f ~/.ssh/match_certificates
 
   publish:
     needs: [tag, servers, servers-macos, app-linux, app-windows, app-windows-msix, app-windows-arm, app-macos, app-android]

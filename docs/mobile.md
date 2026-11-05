@@ -12,13 +12,15 @@ covers each case with the `android`, `android-tablet`, `iphone`, `ipad` and `-la
 
 | Platform | Package | Where it goes | Who can install |
 |---|---|---|---|
-| Android | universal release APK (arm64-v8a, armeabi-v7a), signed with the Overseer release key | the GitHub Release, `Overseer_<version>_android.apk` + `.sha256` | anyone: in-app updates, Obtainium or by hand |
-| iOS | App Store IPA, signed with the team's distribution certificate (fastlane match) | TestFlight, an internal testing group | members of the App Store Connect team in that group |
+| Android | universal release APK (arm64-v8a, armeabi-v7a), signed with the Overseer release key | the GitHub Release of every release, `Overseer_<version>_android.apk` + `.sha256` | anyone: in-app updates, Obtainium or by hand |
+| Android | AAB signed with the same key (the Play upload key) | the Play Store, on demand | anyone, from Google Play |
+| iOS | App Store IPA, signed with the team's distribution certificate (fastlane match) | the App Store (after review) and TestFlight internal testing, on demand | anyone, from the App Store; testers of the team in TestFlight |
 
-There is no Play Store or App Store release. The iOS build goes to TestFlight only; it is never
-submitted for App Store review, nor for external TestFlight review. `scripts/store-guard.sh` runs
-in CI and before every iOS upload, and fails if a workflow, script or fastlane file contains a
-store submission action.
+The GitHub Release (and so Obtainium) gets every release. The stores only get the releases the
+maintainer ships with the manual `store.yml` workflow (Actions > Store > Run workflow, from
+`main`), since each one goes through Apple's and Google's review. `scripts/store-guard.sh` runs
+in CI and fails if a store submission appears anywhere but `store.yml` and `app/fastlane/`, or if
+`store.yml` gets a trigger other than `workflow_dispatch`.
 
 Bundle identifier and Android package: `io.github.basilelt.overseer`, the desktop identifier.
 
@@ -88,38 +90,48 @@ The release workflow pins the signing certificate when the repository variable
 `ANDROID_CERT_SHA256` is set; compare it with `apksigner verify --print-certs` on the downloaded
 APK.
 
-## Install on iOS with TestFlight
+## Install from the stores
 
-An App Store Connect admin adds you to the team and to the internal TestFlight group.
-Install TestFlight from the App Store, accept the invitation, and install Overseer. New builds
-show up in TestFlight after Apple's processing (usually 10 to 30 minutes after the release run).
+Install Overseer from the App Store or Google Play. Store versions lag behind the GitHub releases:
+they are shipped by hand, a few releases at a time. A phone that installed the APK from GitHub
+keeps updating from GitHub; switching sources needs the same signing key on both sides (see
+[Android Play Store](#android-play-store-once)).
+
+Testers on the App Store Connect team also get every store build in TestFlight (internal testing
+group), usually 10 to 30 minutes after the store run, before App Store review ends.
 
 ## How the builds run
 
 - Pull requests: the `android` CI job builds a debug APK for arm64 (`pnpm tauri android build
   --debug --apk --target aarch64`) so the mobile code compiles, and uploads it as the
-  `android-debug-apk` artifact. `store-guard` checks for store submissions. iOS is not built on
-  pull requests.
+  `android-debug-apk` artifact. `store-guard` checks that store submissions stay in the manual
+  workflow. iOS is not built on pull requests.
 - Releases (`release.yml`, push to `main`):
   - `app-android` on `ubuntu-24.04`: stamps the version (`scripts/set-version.sh`),
     builds `pnpm tauri android build --apk --target aarch64 --target armv7` with the release
     keystore, checks the signature (and the certificate fingerprint when `ANDROID_CERT_SHA256` is
     set) with `apksigner` (`scripts/android-apk.sh`), and hands the APK to `publish`. The release does not wait for it
-    to succeed.
-  - `app-ios` on `macos-26`, `continue-on-error`: runs `scripts/store-guard.sh`, writes
-    `APPLE_TEAM_ID` into the Xcode project (`gen/apple/project.yml` and `project.pbxproj` are
-    committed with an empty team), then `fastlane ios internal_testflight` from `app/`
-    (`app/fastlane/Fastfile`). The lane creates a temporary keychain, fetches the `appstore`
-    certificate and profile with `match` (readonly) from the `MATCH_GIT_URL` repository, builds with `pnpm tauri ios build
-    --export-method app-store-connect`, checks the IPA's versions, and uploads with
-    `upload_to_testflight(skip_submission: true, skip_waiting_for_build_processing: true)`.
-    `CFBundleShortVersionString` is the release version; `CFBundleVersion` is the workflow run
+    to succeed. It is skipped, with a warning on the run, while its secrets are missing (the
+    `tag` job checks them).
+- Store releases (`store.yml`, manual, from `main`, inputs `tag`, `ios`, `android`, `track`; see
+  docs/ci.md, "Store releases"):
+  - `ios` on `macos-26`: checks out the tag, stamps its version, writes `APPLE_TEAM_ID` into the
+    Xcode project (`gen/apple/project.yml` and `project.pbxproj` are committed with an empty
+    team), then `fastlane ios app_store` from `app/` (`app/fastlane/Fastfile`). The lane creates a
+    temporary keychain, fetches the `appstore` certificate and profile with `match` (readonly)
+    from the `MATCH_GIT_URL` repository, builds with `pnpm tauri ios build --export-method
+    app-store-connect`, checks the IPA's versions, and submits it with `upload_to_app_store`
+    (`submit_for_review: true`, `automatic_release: false`, metadata and screenshots skipped).
+    `CFBundleShortVersionString` is the release version; `CFBundleVersion` is the `store.yml` run
     number (`<run>.<attempt>` on a re-run, so a re-run never reuses a build number).
-  - Each job is skipped, with a warning on the run, while its secrets are missing (the `tag` job
-    checks them). A release never fails because of the mobile builds.
+  - `android` on `ubuntu-24.04`: checks out the tag, stamps its version, builds `pnpm tauri
+    android build --aab` with the release keystore, then `fastlane android play_store` uploads
+    the AAB to the chosen track (`internal`, `alpha`, `beta` or `production`) with the
+    `PLAY_SERVICE_ACCOUNT_JSON` service account.
+  - Both fail when their secrets are missing: they only run when asked.
 - Versions: Android `versionName` is the release version and `versionCode` is
   `major * 1000000 + minor * 1000 + patch` (Tauri's default), so every release upgrades the
-  previous one.
+  previous one, on GitHub and on Play (which rejects a `versionCode` it has already seen).
 - The mobile bundles carry no daemon binaries (`bundle.resources` is emptied in
   `app/src-tauri/tauri.android.conf.json` and `tauri.ios.conf.json`).
 
@@ -133,8 +145,9 @@ Apple Silicon or use `pnpm tauri android dev`.
 
 ## One-time setup
 
-Every secret below is optional: while a platform's set is incomplete its release job is skipped
-with a warning and the rest of the release goes on (docs/ci.md, "Secrets").
+Every secret below is optional for `release.yml`: while the Android set is incomplete its
+release job is skipped with a warning and the rest of the release goes on (docs/ci.md,
+"Secrets"). The store jobs need theirs.
 
 ### Android (once, by whoever holds the release key)
 
@@ -171,13 +184,17 @@ team id comes from the `APPLE_TEAM_ID` secret at build time.
 2. Create the app record: App Store Connect > Apps > + > New App, platform iOS, name
    "Overseer" (App Store names are global: if it is taken, pick another; it does not need to
    match the app), primary language, bundle ID `io.github.basilelt.overseer`, SKU `overseer`.
-3. TestFlight > Internal Testing > + : a group, with automatic distribution on so every processed
+3. Fill the App Store listing by hand, once: description, keywords, support URL, screenshots
+   (iPhone and iPad), App Privacy answers, age rating, content rights and the price. The store
+   workflow never uploads metadata or screenshots (`skip_metadata`, `skip_screenshots`), so the
+   listing stays as edited in App Store Connect; update it there before a submission when the app
+   changed visibly.
+4. TestFlight > Internal Testing > + : a group, with automatic distribution on so every processed
    build reaches it. Add the testers (they must be App Store Connect users of the team).
-4. Export compliance: Overseer uses encryption (SSH). Until the answer is recorded, each build
-   waits in TestFlight for "Manage" > export compliance before testers get it. Once decided, set
-   `ITSAppUsesNonExemptEncryption` accordingly in `app/src-tauri/Info.ios.plist` (Tauri merges it
-   into the iOS `Info.plist`) so builds go through on their own.
-5. Create a private Git repository for fastlane match (for example `basilelt/certificates`) and
+5. Export compliance: `ITSAppUsesNonExemptEncryption` is `false` in the iOS `Info.plist`
+   (Overseer only uses standard encryption: SSH and HTTPS), so builds do not wait for the
+   question. Answer the same way in App Store Connect if asked.
+6. Create a private Git repository for fastlane match (for example `basilelt/certificates`) and
    a deploy key for it (read-only is enough for CI). Then, on a Mac with fastlane, from `app/` of
    this repository:
 
@@ -191,7 +208,7 @@ team id comes from the `APPLE_TEAM_ID` secret at build time.
    JSON), creates or reuses an Apple Distribution certificate, and stores it with the profile
    `match AppStore io.github.basilelt.overseer`, encrypted with `MATCH_PASSWORD`. CI only reads
    it (`readonly: true`).
-6. Repository secrets:
+7. Repository secrets:
 
    | Secret | Value |
    |---|---|
@@ -207,9 +224,37 @@ team id comes from the `APPLE_TEAM_ID` secret at build time.
    the environment; it only matters for an Apple account in several App Store Connect teams, and
    the API key already selects the team.
 
-The next release then uploads a build; it appears in TestFlight after processing. Never add
-`deliver`, `upload_to_app_store`, `submit_for_review` or external distribution to the lane:
-`store-guard` would fail the pull request.
+Then run Actions > Store > Run workflow on `main` with `ios` checked. Only ship tags created
+after store releases moved to `store.yml`: the build number restarts with that workflow's run
+number, and App Store Connect refuses a build number it already has for the same version. Never
+call the `app_store` lane, `upload_to_app_store` or `submit_for_review` from another workflow or
+script: `store-guard` would fail the pull request.
+
+### Android Play Store (once)
+
+Needs a Google Play developer account and the Android release key above.
+
+1. Play Console > Create app: name "Overseer", app, free; package `io.github.basilelt.overseer`
+   is set by the first upload.
+2. Play App Signing: choose to use your own key and upload the existing release key
+   (`overseer-release.jks`, with Google's PEPK tool as the Console explains). Play then signs the
+   store build with the same key as the GitHub APK, so a phone can move between Obtainium and
+   Play without uninstalling. With a key generated by Google instead, the two builds have
+   different signatures and Android refuses to update one with the other. Either way the release
+   key is the upload key, so `ANDROID_KEYSTORE_*` sign the AAB.
+3. Fill the store listing, content rating, data safety, target audience and app access forms.
+4. Upload the first AAB by hand: the Play Developer API refuses uploads for an app that has none.
+   Build it locally with the release key (`ANDROID_KEYSTORE_PATH`, `ANDROID_KEYSTORE_PASSWORD`,
+   `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD` set, then
+   `pnpm --dir app tauri android build --aab`) and upload it to Testing > Internal testing.
+5. Google Cloud: in a project, enable the Google Play Android Developer API, create a service
+   account and a JSON key for it. Play Console > Users and permissions > Invite new users: the
+   service account's email, with access to Overseer and the release permissions (release to
+   testing tracks and to production).
+6. Repository secret `PLAY_SERVICE_ACCOUNT_JSON`: the content of that JSON key.
+
+Then run Actions > Store > Run workflow on `main` with `android` checked and the track to release
+to. A production release still goes through Google's review before it reaches users.
 
 ## Regenerating the projects
 

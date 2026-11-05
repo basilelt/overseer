@@ -7,7 +7,7 @@ require "tmpdir"
 default_platform(:ios)
 
 platform :ios do
-  lane :internal_testflight do
+  private_lane :build_ipa do
     app_dir = File.expand_path(ENV.fetch("OVERSEER_APP_DIR"))
     tmp = ENV.fetch("RUNNER_TEMP", Dir.tmpdir)
     run_number = ENV.fetch("GITHUB_RUN_NUMBER")
@@ -72,12 +72,45 @@ platform :ios do
       UI.user_error!("IPA is #{built_short} (#{built_bundle}), expected #{short_version} (#{bundle_version})")
     end
 
-    upload_to_testflight(
-      api_key: api_key,
-      ipa: ipa,
-      app_platform: "ios",
-      skip_submission: true,
-      skip_waiting_for_build_processing: true
+    { ipa: ipa, api_key: api_key }
+  end
+
+  lane :app_store do
+    built = build_ipa
+    upload_to_app_store(
+      api_key: built[:api_key],
+      ipa: built[:ipa],
+      platform: "ios",
+      skip_metadata: true,
+      skip_screenshots: true,
+      submit_for_review: true,
+      automatic_release: false,
+      force: true,
+      run_precheck_before_submit: false,
+      submission_information: {
+        add_id_info_uses_idfa: false,
+        export_compliance_uses_encryption: false
+      }
+    )
+  end
+end
+
+platform :android do
+  lane :play_store do
+    app_dir = File.expand_path(ENV.fetch("OVERSEER_APP_DIR"))
+    aabs = Dir[File.join(app_dir, "src-tauri/gen/android/app/build/outputs/bundle/**/*.aab")]
+    UI.user_error!("expected one .aab under src-tauri/gen/android/app/build/outputs/bundle, found #{aabs.size}") unless aabs.size == 1
+
+    upload_to_play_store(
+      track: ENV.fetch("TRACK"),
+      aab: aabs.first,
+      json_key_data: ENV.fetch("PLAY_SERVICE_ACCOUNT_JSON"),
+      release_status: "completed",
+      skip_upload_apk: true,
+      skip_upload_metadata: true,
+      skip_upload_changelogs: true,
+      skip_upload_images: true,
+      skip_upload_screenshots: true
     )
   end
 end
