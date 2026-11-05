@@ -154,9 +154,7 @@
         body,
       });
       const term = res.term;
-      if (!app.data.terms.some((t) => t.id === term.id)) app.data = { ...app.data, terms: [...app.data.terms, term] };
-      app.selectedKey = `term:${term.id}`;
-      app.view = 'agents';
+      app.followSession(term);
       void feedback.watch(client, term.id, found);
       feedback.close();
       app.notify(ft('started', { agent: agent.name }));

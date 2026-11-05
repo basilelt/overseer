@@ -86,6 +86,7 @@ class AppState {
   wsPersistent = $state(true);
   sidebarMode = $state<SidebarMode>(settings.sidebarMode ?? 'workspaces');
   workspaceId = $state<string>(NO_WORKSPACE);
+  private following: { id: string; goToWorkspace: boolean } | null = null;
   private pendingTab: 'graph' | 'worktrees' | null = initialTab();
   private wsChosen = false;
   multi = $state.raw<Set<string>>(new Set());
@@ -245,6 +246,7 @@ class AppState {
       this.touched.clear();
       this.added.clear();
     }
+    this.settleFollow();
     if (complete) {
       this.synced = true;
       pages.useHost(hostKey(this.conn.target));
@@ -478,6 +480,7 @@ class AppState {
     }
     if (next === prev && e.type !== 'line.activity' && !/^(review|worktree)\./.test(e.type) && e.type !== 'git.changed') return;
     this.data = next;
+    this.settleFollow();
     for (const l of this.listeners) l(prev, next, e);
     if (e.type === 'line.activity' && e.data?.lineId && !e.data.activity) this.scheduleActivity(e.data.lineId);
   }
@@ -567,10 +570,35 @@ class AppState {
     const profile = agent === 'shell' ? undefined : (opts.profile ?? this.nextProfile ?? undefined);
     const term = await this.api.createTerm(agent === 'shell' ? { cwd, ...(subject ? { workspaceId: subject } : {}), ...size } : { agent, cwd, ...(subject ? { workspaceId: subject } : {}), model: opts.model || undefined, effort: opts.effort, ...(profile ? { profile } : {}), ...size });
     if (profile && !opts.profile) this.nextProfile = null;
-    this.upsertTerm(term);
-    this.selectedKey = `term:${term.id}`;
-    this.view = 'agents';
+    this.followSession(term, false);
     return term;
+  }
+
+  followSession(term: Term, goToWorkspace = true) {
+    this.upsertTerm(term);
+    this.following = { id: term.id, goToWorkspace };
+    this.focusKey(`term:${term.id}`);
+  }
+
+  private focusKey(key: string) {
+    if (this.following?.goToWorkspace) this.select(key);
+    else {
+      this.selectedKey = key;
+      this.view = 'agents';
+    }
+  }
+
+  private settleFollow() {
+    const id = this.following?.id;
+    if (!id) return;
+    const item = this.items.find((i) => i.termId === id);
+    if (!item) {
+      if (!this.data.terms.some((t) => t.id === id && !t.exited)) this.following = null;
+      return;
+    }
+    const cur = this.selectedKey;
+    if (cur !== item.key && (cur === null || cur === `term:${id}` || !this.items.some((i) => i.key === cur))) this.focusKey(item.key);
+    if (item.lineId) this.following = null;
   }
 
   openProjectTab(kind: 'graph' | 'worktrees', project?: string) {
