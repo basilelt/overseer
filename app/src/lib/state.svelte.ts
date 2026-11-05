@@ -48,6 +48,11 @@ const EMPTY: Snapshot = { lines: [], terms: [], tasks: [], activity: {} };
 // Bounded backoff after a failed workspaces load (e.g. SQLite locked during an upgrade), then stop.
 const WS_RETRY_MS = [1000, 2000, 5000, 10000];
 
+function withAdded(terms: Term[], added: Map<string, Term>): Term[] {
+  const missing = [...added.values()].filter((t) => !terms.some((x) => x.id === t.id));
+  return missing.length ? [...terms, ...missing] : terms;
+}
+
 class AppState {
   client = $state.raw<DaemonClient | null>(null);
   conn = $state<ConnState>({ phase: 'idle', target: LOCAL });
@@ -104,6 +109,7 @@ class AppState {
   private wsRetry: ReturnType<typeof setTimeout> | undefined;
   private wsAttempt = 0;
   private refreshing = 0;
+  private added = new Map<string, Term>();
   private eventSeq = 0;
   private touched: Touched = new Map();
 
@@ -232,10 +238,13 @@ class AppState {
     this.data = {
       ...cur,
       lines: mergeFetched(lines, cur.lines, 'line', (l) => l.line.id, this.touched, since),
-      terms: mergeFetched(terms, cur.terms, 'term', (t) => t.id, this.touched, since),
+      terms: withAdded(mergeFetched(terms, cur.terms, 'term', (t) => t.id, this.touched, since), this.added),
       tasks: mergeFetched(tasks, cur.tasks, 'task', (t) => t.id, this.touched, since),
     };
-    if (--this.refreshing === 0) this.touched.clear();
+    if (--this.refreshing === 0) {
+      this.touched.clear();
+      this.added.clear();
+    }
     if (complete) {
       this.synced = true;
       pages.useHost(hostKey(this.conn.target));
@@ -580,6 +589,7 @@ class AppState {
   }
 
   upsertTerm(term: Term) {
+    if (this.refreshing) this.added.set(term.id, term);
     if (this.data.terms.some((t) => t.id === term.id)) return;
     this.data = { ...this.data, terms: [...this.data.terms, term] };
   }
