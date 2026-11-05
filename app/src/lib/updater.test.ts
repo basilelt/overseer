@@ -322,7 +322,7 @@ describe('homebrew update', () => {
   it('explains common failures', async () => {
     for (const [err, text] of [
       [{ kind: 'missing' }, 'Homebrew was not found'],
-      [{ kind: 'stale' }, 'does not see the new version'],
+      [{ kind: 'stale' }, 'does not have this version yet'],
       [{ kind: 'failed', message: 'Error: disk full' }, 'Error: disk full'],
       [new Error('ipc closed'), 'ipc closed'],
     ] as const) {

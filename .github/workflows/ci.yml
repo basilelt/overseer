@@ -312,6 +312,10 @@ jobs:
 
       - run: scripts/store-guard.sh
 
+      - run: scripts/store-guard.test.sh
+
+      - run: scripts/android-play-track.test.sh
+
   android:
     needs: changes
     if: needs.changes.outputs.android == 'true'
@@ -346,7 +350,7 @@ jobs:
 
       - run: scripts/ci-runner-check.sh cargo rustup pnpm java env:ANDROID_HOME env:JAVA_HOME
 
-      - run: NDK_HOME=${ANDROID_NDK_HOME:-} scripts/android-env.sh aarch64-linux-android
+      - run: NDK_HOME=${ANDROID_NDK_LATEST_HOME:-${ANDROID_NDK_HOME:-}} scripts/android-env.sh aarch64-linux-android
 
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
@@ -373,6 +377,10 @@ jobs:
           ANDROID_CERT_SHA256=$(keytool -list -v -keystore ~/.android/debug.keystore -storepass android | sed -n 's/^.*SHA256: *//p' | head -1)
           test -n "$ANDROID_CERT_SHA256"
           ANDROID_CERT_SHA256=$ANDROID_CERT_SHA256 scripts/android-apk.sh debug out/overseer-debug-arm64.apk
+
+      - run: scripts/android-16k.test.sh
+
+      - run: scripts/android-16k.sh out/overseer-debug-arm64.apk
 
       - if: github.event_name != 'push'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
