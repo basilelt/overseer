@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -uo pipefail
 
-jobs="rust app windows android macos_signing macos_procs actionlint store_guard tap"
+jobs="rust app windows android macos_signing macos_procs actionlint store_guard tap ci_scripts"
 for j in $jobs; do declare "$j=false"; done
 all=false
 wide=false
@@ -21,7 +21,7 @@ else
       docs/* | *.md | .github/ISSUE_TEMPLATE/*) continue ;;
     esac
     case $f in
-      .github/workflows/ci.yml | scripts/ci-changes.sh | scripts/ci-runner-check.sh | Makefile) wide=true ;;
+      .github/workflows/ci.yml | .github/actions/* | scripts/ci-*.sh | Makefile) wide=true ;;
     esac
     case $f in
       src/* | api/* | tests/* | board/* | Cargo.toml | Cargo.lock | build.rs) rust=true app=true windows=true ;;
@@ -42,6 +42,9 @@ else
     esac
     case $f in
       .github/*) actionlint=true ;;
+    esac
+    case $f in
+      .github/actions/* | scripts/ci-*.sh) ci_scripts=true ;;
     esac
     case $f in
       scripts/update-tap.sh | scripts/update-tap.test.sh) tap=true ;;

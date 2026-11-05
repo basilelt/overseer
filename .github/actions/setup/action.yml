@@ -1,0 +1,181 @@
+name: Setup
+description: Installs and caches what an Overseer CI or release job needs. Caches are saved from main only and restored everywhere.
+
+inputs:
+  free-disk:
+    description: "Delete unused preinstalled toolchains in the background: 'all', 'keep-android' or '' (Linux only)"
+    default: ""
+  apt:
+    description: Space-separated apt packages, installed from a cached .deb archive (Linux only)
+    default: ""
+  rust:
+    description: Install the Rust stable toolchain and cache cargo
+    default: "false"
+  rust-components:
+    description: rustup components
+    default: ""
+  rust-targets:
+    description: rustup targets, comma-separated
+    default: ""
+  rust-workspaces:
+    description: Swatinem/rust-cache workspaces, one "path -> target" per line
+    default: ". -> target"
+  rust-cache-key:
+    description: Extra key for jobs that build several variants of the same workspace
+    default: ""
+  node:
+    description: Install Node 24 and pnpm 11, then run pnpm install in app/
+    default: "false"
+  java:
+    description: Install the Temurin JDK 21
+    default: "false"
+  gradle:
+    description: Cache ~/.gradle
+    default: "false"
+  xwin:
+    description: Cache the MSVC CRT and Windows SDK downloaded by cargo-xwin
+    default: "false"
+  check:
+    description: Arguments for scripts/ci-runner-check.sh
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    - id: ctx
+      shell: bash
+      env:
+        APT: ${{ inputs.apt }}
+        SAVE: ${{ github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch' }}
+      run: |
+        pkgs=$(tr ' ' '\n' <<<"$APT" | sed '/^$/d' | sort -u | tr '\n' ' ')
+        echo "save=$SAVE" >>"$GITHUB_OUTPUT"
+        echo "apt=$pkgs" >>"$GITHUB_OUTPUT"
+        echo "apt-key=apt-$RUNNER_OS-$RUNNER_ARCH-$(printf %s "$pkgs" | sha256sum | cut -c1-16)-" >>"$GITHUB_OUTPUT"
+        echo "image=${ImageOS:-local}-${ImageVersion:-0}" >>"$GITHUB_OUTPUT"
+        echo "apt-dir=$RUNNER_TEMP/apt-archive" >>"$GITHUB_OUTPUT"
+
+    - if: inputs.free-disk != '' && runner.os == 'Linux'
+      shell: bash
+      env:
+        MODE: ${{ inputs.free-disk }}
+      run: |
+        dirs=(/usr/share/dotnet /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL)
+        [ "$MODE" = keep-android ] || dirs+=(/usr/local/lib/android)
+        df -h / | tail -1
+        sudo nohup ionice -c3 rm -rf "${dirs[@]}" >/dev/null 2>&1 &
+
+    - if: inputs.apt != '' && runner.os == 'Linux'
+      id: apt
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+      with:
+        path: ${{ steps.ctx.outputs.apt-dir }}
+        key: ${{ steps.ctx.outputs.apt-key }}${{ steps.ctx.outputs.image }}
+        restore-keys: ${{ steps.ctx.outputs.apt-key }}
+
+    - if: inputs.apt != '' && runner.os == 'Linux'
+      shell: bash
+      env:
+        DIR: ${{ steps.ctx.outputs.apt-dir }}
+        PKGS: ${{ steps.ctx.outputs.apt }}
+      run: |
+        # shellcheck disable=SC2086
+        "$GITHUB_WORKSPACE/scripts/ci-apt.sh" "$DIR" $PKGS
+
+    - if: inputs.apt != '' && runner.os == 'Linux' && steps.ctx.outputs.save == 'true' && steps.apt.outputs.cache-hit != 'true'
+      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+      with:
+        path: ${{ steps.ctx.outputs.apt-dir }}
+        key: ${{ steps.ctx.outputs.apt-key }}${{ steps.ctx.outputs.image }}
+
+    - if: inputs.rust == 'true'
+      uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+      with:
+        toolchain: stable
+        components: ${{ inputs.rust-components }}
+        targets: ${{ inputs.rust-targets }}
+
+    - if: inputs.rust == 'true'
+      uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+      with:
+        workspaces: ${{ inputs.rust-workspaces }}
+        key: ${{ inputs.rust-cache-key }}
+        save-if: ${{ steps.ctx.outputs.save == 'true' }}
+
+    - if: inputs.node == 'true'
+      uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6
+      with:
+        version: 11
+
+    - if: inputs.node == 'true'
+      uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+      with:
+        node-version: 24
+        package-manager-cache: false
+
+    - if: inputs.node == 'true'
+      id: pnpm-store
+      shell: bash
+      run: echo "path=$(pnpm store path --silent)" >>"$GITHUB_OUTPUT"
+
+    - if: inputs.node == 'true'
+      id: pnpm
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+      with:
+        path: ${{ steps.pnpm-store.outputs.path }}
+        key: pnpm-${{ runner.os }}-${{ hashFiles('app/pnpm-lock.yaml') }}
+        restore-keys: pnpm-${{ runner.os }}-
+
+    - if: inputs.node == 'true'
+      shell: bash
+      run: pnpm --dir app install --frozen-lockfile --prefer-offline
+
+    - if: inputs.node == 'true' && steps.ctx.outputs.save == 'true' && steps.pnpm.outputs.cache-hit != 'true'
+      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+      with:
+        path: ${{ steps.pnpm-store.outputs.path }}
+        key: pnpm-${{ runner.os }}-${{ hashFiles('app/pnpm-lock.yaml') }}
+
+    - if: inputs.java == 'true'
+      uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6
+      with:
+        distribution: temurin
+        java-version: "21"
+
+    - if: inputs.gradle == 'true' && steps.ctx.outputs.save == 'true'
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+      with:
+        path: |
+          ~/.gradle/caches
+          ~/.gradle/wrapper
+        key: gradle-${{ hashFiles('app/src-tauri/gen/android/**/*.gradle.kts', 'app/src-tauri/gen/android/gradle/wrapper/gradle-wrapper.properties') }}
+        restore-keys: gradle-
+
+    - if: inputs.gradle == 'true' && steps.ctx.outputs.save != 'true'
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+      with:
+        path: |
+          ~/.gradle/caches
+          ~/.gradle/wrapper
+        key: gradle-${{ hashFiles('app/src-tauri/gen/android/**/*.gradle.kts', 'app/src-tauri/gen/android/gradle/wrapper/gradle-wrapper.properties') }}
+        restore-keys: gradle-
+
+    - if: inputs.xwin == 'true' && steps.ctx.outputs.save == 'true'
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+      with:
+        path: ~/.cache/cargo-xwin
+        key: cargo-xwin-x86_64-v1
+
+    - if: inputs.xwin == 'true' && steps.ctx.outputs.save != 'true'
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+      with:
+        path: ~/.cache/cargo-xwin
+        key: cargo-xwin-x86_64-v1
+
+    - if: inputs.check != ''
+      shell: bash
+      env:
+        CHECK: ${{ inputs.check }}
+      run: |
+        # shellcheck disable=SC2086
+        "$GITHUB_WORKSPACE/scripts/ci-runner-check.sh" $CHECK

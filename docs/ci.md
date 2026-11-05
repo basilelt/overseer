@@ -59,10 +59,11 @@ base) and sets one output per job. Each job `needs: changes` and runs only when 
 | `actionlint` | `.github/` |
 | `store-guard` | what `scripts/store-guard.sh` scans: `.github/`, `app/fastlane/`, `scripts/`, `Makefile` |
 | `tap` | `scripts/update-tap.sh`, `scripts/update-tap.test.sh` |
+| `ci-scripts` | `.github/actions/`, `scripts/ci-*.sh` (runs `scripts/ci-changes.test.sh`, `scripts/ci-apt.test.sh` and the setup action with apt packages) |
 
 - `docs/`, `*.md` and `.github/ISSUE_TEMPLATE/` never trigger a job: a docs-only PR runs `changes`
   alone.
-- `.github/workflows/ci.yml`, `scripts/ci-changes.sh`, `scripts/ci-runner-check.sh` and `Makefile`
+- `.github/workflows/ci.yml`, `.github/actions/`, `scripts/ci-*.sh` and `Makefile`
   trigger every job except `macos`, which only follows its own paths: macOS runners are the
   scarcest and slowest to start, so it runs on pull requests and manual runs only, as one job.
 - A failed `git diff` runs every job.
@@ -105,7 +106,8 @@ its `changes` job runs, a few seconds on `ubuntu-slim`. Pushes by `github-action
 | Workflow | Job | Runner | What |
 |---|---|---|---|
 | ci | `changes` | `ubuntu-slim` | `scripts/ci-changes.sh`: which jobs the PR needs ([Path filtering](#path-filtering)) |
-| ci | `actionlint` | `ubuntu-slim` | `actionlint` (downloaded by its install script; `ubuntu-slim` has no Docker) |
+| ci | `actionlint` | `ubuntu-slim` | `actionlint` (downloaded once by its install script and cached by version; `ubuntu-slim` has no Docker) |
+| ci | `ci-scripts` | `ubuntu-24.04` | `scripts/ci-changes.test.sh` (path filter), `scripts/ci-apt.test.sh` (offline apt install in Docker), the setup action on real apt packages |
 | ci | `rust` | `ubuntu-24.04` | `cargo fmt --check` (root and `api/`), `make lint`, `timeout 1500 make test` |
 | ci | `app` | `ubuntu-24.04` | `make app-test` (vitest with coverage, svelte-check, Tauri crate tests and clippy) |
 | ci | `perf` | `ubuntu-24.04` | release build of the app against the mock backend, `scripts/perf-cpu.sh` CPU budget (30 s idle, 30 s streaming) under Xvfb |
@@ -141,43 +143,72 @@ desktop app job must succeed for `publish` to run.
 
 ## Runner setup
 
-Hosted runners have none of the project's tools, so each job installs what it needs:
+Hosted runners have none of the project's tools. Every job installs them through one composite
+action, [`.github/actions/setup`](../.github/actions/setup/action.yml), whose inputs say what the
+job needs:
 
-| Tool | How | Jobs |
+| Input | What it does | Jobs |
 |---|---|---|
-| Rust stable, `clippy`, `rustfmt`, cross targets | `dtolnay/rust-toolchain@stable` (`targets:` for musl, MSVC and Apple; the Android targets through `scripts/android-env.sh`) | every Rust job |
-| Node 24, pnpm 11 | `pnpm/action-setup@v6`, then `actions/setup-node@v7` with `cache: pnpm` on `app/pnpm-lock.yaml` | app, perf, android, app-* |
-| Tauri Linux libraries | `sudo apt-get install libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev libsoup-3.0-dev libjavascriptcoregtk-4.1-dev libxdo-dev libssl-dev pkg-config patchelf` | app, perf, app-linux (plus `file`) |
-| `tmux` | apt | rust, app (the daemon's terminal tests drive real `tmux` sessions) |
-| Xvfb | apt `xvfb dbus-x11` | perf |
-| musl and Windows cross tools | apt `clang lld llvm musl-tools`, `mlugg/setup-zig@v2`, `taiki-e/install-action@v2` with `cargo-zigbuild,cargo-xwin` | servers |
-| NSIS and the Windows app's native dependencies | apt `nsis clang lld llvm cmake nasm`, `cargo-xwin` | app-windows |
-| JDK 21 | `actions/setup-java@v6` (temurin) | android, app-android, mobile-init |
-| Android SDK and NDK | preinstalled on `ubuntu-24.04` (`ANDROID_HOME`, platform 36, build-tools); `scripts/android-env.sh` runs with `NDK_HOME=$ANDROID_NDK_LATEST_HOME` (the newest NDK on the image, r28 or later, whose linker aligns native libraries to 16 KB pages for Google Play; `$ANDROID_NDK_HOME` when unset) and adds the Rust Android targets | android, app-android, mobile-init |
-| Xcode 26, fastlane, xcodegen | `maxim-lobanov/setup-xcode@v1`, `brew install` when missing | app-ios, mobile-init |
+| `free-disk: all` / `keep-android` | deletes `/usr/share/dotnet`, `/opt/ghc`, `/usr/local/.ghcup`, CodeQL (and the Android SDK unless `keep-android`) in the background, at idle I/O priority, while the job goes on | app, perf, android, app-linux, app-android |
+| `apt: <packages>` | `scripts/ci-apt.sh`: installs from a cached `.deb` archive (see below), Linux only | rust, app, perf, ci-scripts, servers, app-linux, app-windows |
+| `rust: "true"`, `rust-components`, `rust-targets` | `dtolnay/rust-toolchain@stable`, then `Swatinem/rust-cache@v2` on `rust-workspaces` (`rust-cache-key` for matrix variants) | every Rust job |
+| `node: "true"` | `pnpm/action-setup@v6` (pnpm 11), `actions/setup-node@v7` (Node 24), the pnpm store cache, then `pnpm --dir app install --frozen-lockfile --prefer-offline` | app, perf, android, app-* |
+| `java: "true"` | `actions/setup-java@v6`, Temurin 21 | android, app-android |
+| `gradle: "true"` | caches `~/.gradle/caches` and `~/.gradle/wrapper` | android, app-android |
+| `xwin: "true"` | caches the MSVC CRT and Windows SDK of `cargo-xwin` (`~/.cache/cargo-xwin`) | servers, app-windows |
+| `check: <list>` | `scripts/ci-runner-check.sh` | most jobs |
+
+The Tauri Linux libraries are `libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev
+librsvg2-dev libsoup-3.0-dev libjavascriptcoregtk-4.1-dev libxdo-dev libssl-dev pkg-config
+patchelf` (plus `tmux` for the daemon's terminal tests, `xvfb dbus-x11` for perf, `file` for
+app-linux). The cross builds add `mlugg/setup-zig@v2` and `taiki-e/install-action@v2` with
+`cargo-zigbuild,cargo-xwin`; iOS adds `maxim-lobanov/setup-xcode@v1` and `brew install fastlane`
+when missing. The Android SDK and NDK are preinstalled on `ubuntu-24.04` (`ANDROID_HOME`, platform
+36, build-tools); `scripts/android-env.sh` runs with `NDK_HOME=$ANDROID_NDK_LATEST_HOME` (the
+newest NDK on the image, r28 or later, whose linker aligns native libraries to 16 KB pages for
+Google Play; `$ANDROID_NDK_HOME` when unset) and adds the Rust Android targets.
+`mobile-init.yml` runs once per platform and keeps its own uncached setup.
 
 `git`, `ssh`, `ssh-keygen`, `curl`, `jq`, `gh` and Docker come with the images. The daemon's
 Docker remote tests run only with `OVERSEER_DOCKER_TESTS=1` (`make test-remote`), not in CI.
 
-Each job still starts with `scripts/ci-runner-check.sh`, which fails in a second with the list of
-what is missing (commands, `pkg-config` modules, rustup targets) instead of deep in a build, and
-puts `~/.cargo/bin` on the `PATH` of the next steps.
+`scripts/ci-runner-check.sh` fails in a second with the list of what is missing (commands,
+`pkg-config` modules, rustup targets) instead of deep in a build, and puts `~/.cargo/bin` on the
+`PATH` of the next steps.
 
-### Disk and caches
+### Caches
 
-Standard hosted Linux runners of a public repository have 4 vCPUs, 16 GB of RAM and about 14 GB
-of guaranteed free disk. A Tauri release build takes several GB, so:
+The repository has 10 GB of Actions cache, evicted least recently used first. A cache saved on a
+pull request belongs to that pull request only, and every pull request used to save its own copy
+of the same 554 MB Gradle cache. So **caches are saved from `main` only** (the CI run the release
+workflow calls on each merge, plus manual `workflow_dispatch` runs, which save to their own
+branch) and restored everywhere: a pull request reads the caches of `main`.
 
-- the `app`, `perf` and `app-linux` jobs first delete preinstalled toolchains they do not use
-  (`/usr/share/dotnet`, `/usr/local/lib/android`, `/opt/ghc`, CodeQL); the Android jobs delete
-  the same minus the Android SDK;
-- target directories are not cached: one Tauri target would fill most of the 10 GB
-  per-repository Actions cache. Only the cargo registry and git sources
-  (`~/.cargo/registry/{index,cache}`, `~/.cargo/git/db`) go through `actions/cache@v6`, keyed on
-  the runner OS and the three `Cargo.lock` files; Gradle (`~/.gradle/caches`, `~/.gradle/wrapper`) and the xwin
-  MSVC CRT and Windows SDK (`~/.cache/cargo-xwin`) are cached the same way; the macOS jobs use
-  `Swatinem/rust-cache@v2`;
-- `CARGO_INCREMENTAL=0` everywhere.
+| Cache | Key | Saved by |
+|---|---|---|
+| Rust: `~/.cargo` registry and git sources, and the `target` directories (dependencies only) | `Swatinem/rust-cache`: job, rustc version, `Cargo.lock` and `Cargo.toml` files | every Rust job |
+| apt `.deb` archive | OS, arch, sorted package list, then the runner image version (`$ImageOS-$ImageVersion`); falls back to the previous image | jobs with `apt` |
+| pnpm store | OS and `app/pnpm-lock.yaml`, falls back to any older store | jobs with `node` |
+| Gradle | the Android `*.gradle.kts` and wrapper properties, falls back to any older one | android, app-android |
+| cargo-xwin | fixed (`cargo-xwin-x86_64-v1`) | servers, app-windows |
+| actionlint binary | its version | actionlint |
+
+`scripts/ci-apt.sh` installs with the image's own package lists and without `apt-get update`, from
+the restored archive (`Dir::Cache::Archives`), with the man-db trigger off and `dpkg
+--force-unsafe-io`. A warm run downloads nothing. When the archive or the image's lists are stale
+the install fails, the script runs `apt-get update` and installs again, and the next `main` run
+saves the new archive. `scripts/ci-apt.test.sh` proves it in Docker: a cold install fills the
+archive, a second install succeeds with `--network none`, and a missing `.deb` falls back to the
+network.
+
+`CARGO_INCREMENTAL=0` everywhere. Standard hosted Linux runners of a public repository have 4
+vCPUs, 16 GB of RAM and about 14 GB of guaranteed free disk; the Tauri jobs delete preinstalled
+toolchains they do not use (`free-disk`), in the background, since a foreground `rm` took 60 to
+240 s per job.
+
+To see what the cache holds: `gh api repos/basilelt/overseer/actions/cache/usage` and
+`gh cache list --sort size_in_bytes`; delete stale pull request caches with
+`gh cache delete <key> --ref refs/pull/<n>/merge`.
 
 ### Perf budget on hosted runners
 
@@ -190,11 +221,11 @@ so the streaming budget may be tight there. The budgets are not raised to make t
 
 ## Actions
 
-Major tags, no SHA pins; Dependabot bumps them monthly (`.github/dependabot.yml`).
+Pinned to a commit SHA with the tag in a comment; Dependabot bumps them monthly (`.github/dependabot.yml`, which also scans `.github/actions/*`).
 
 `actions/checkout@v7`, `actions/setup-node@v7`, `actions/setup-java@v6`, `actions/cache@v6`,
 `maxim-lobanov/setup-xcode@v1`, `actions/upload-artifact@v7`, `actions/download-artifact@v8`,
-`pnpm/action-setup@v6`, `dtolnay/rust-toolchain@stable`, `Swatinem/rust-cache@v2` (macOS only),
+`pnpm/action-setup@v6`, `dtolnay/rust-toolchain@stable`, `Swatinem/rust-cache@v2`,
 `taiki-e/install-action@v2`, `mlugg/setup-zig@v2`, `mathieudutour/github-tag-action@v7`,
 `ncipollo/release-action@v1`.
 
@@ -453,6 +484,7 @@ of this.
 ```sh
 make lint && timeout 1500 make test && make app-test
 scripts/ci-changes.sh origin/main HEAD   # which CI jobs a PR from this branch would run
+scripts/ci-changes.test.sh && scripts/ci-apt.test.sh   # path filter and cached apt install (Docker)
 make dist-cross          # needs zig, cargo-zigbuild, cargo-xwin, clang, lld, llvm, musl-tools and the rustup targets
 make dist-darwin         # on a Mac: both macOS daemons (aarch64 and x86_64 rustup targets)
 make app-resources       # copies dist/ binaries into app/src-tauri/resources/server/
