@@ -123,11 +123,19 @@ describe('MockDaemon', () => {
 
   it('holds a line and resumes it into a term', async () => {
     const { a, events } = setup();
-    await a.hold('ln_06');
-    expect((await a.lines()).find((l) => l.line.id === 'ln_06')!.line.state).toBe('held');
+    await a.hold('ln_10');
+    expect((await a.lines()).find((l) => l.line.id === 'ln_10')!.line.state).toBe('held');
     const term = await a.resume('ln_11');
     expect(term.lineId).toBe('ln_11');
     expect(events.map((e) => e.type)).toContain('line.state_changed');
+  });
+
+  it('refuses to hold or close a busy line unless the close is forced, like the daemon', async () => {
+    const { m, a } = setup();
+    await expect(a.hold('ln_06')).rejects.toThrow('HTTP 409');
+    await expect(a.close('ln_06')).rejects.toThrow('HTTP 409');
+    await m.request('POST', '/v1/lines/ln_06/close?dryRun=false&force=true');
+    expect((await a.lines()).find((l) => l.line.id === 'ln_06')!.line.state).toBe('hung-up');
   });
 
   it('keeps a reducer snapshot in sync with its events', async () => {

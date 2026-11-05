@@ -737,7 +737,7 @@ export class MockDaemon implements DaemonClient {
     if ((r = m(/^\/v1\/lines\/([^/]+)\/chat\/agents\/([^/]+)$/))) return this.agentChat(decodeURIComponent(r[1]), decodeURIComponent(r[2]), new URLSearchParams(qs));
     if ((r = m(/^\/v1\/lines\/([^/]+)\/(chat|screen|keys|commands)$/))) return this.chatRoute(decodeURIComponent(r[1]), r[2], new URLSearchParams(qs), body);
     if (method === 'PUT' && (r = m(/^\/v1\/(lines|terms)\/([^/]+)\/workspace$/))) return this.assignWorkspace(r[1], decodeURIComponent(r[2]), body);
-    if ((r = m(/^\/v1\/lines\/([^/]+)\/(activity|diff|hold|close|resume|pin|title)$/))) return this.lineAction(decodeURIComponent(r[1]), r[2], body, !fullPath.includes('dryRun=false'));
+    if ((r = m(/^\/v1\/lines\/([^/]+)\/(activity|diff|hold|close|resume|pin|title)$/))) return this.lineAction(decodeURIComponent(r[1]), r[2], body, !fullPath.includes('dryRun=false'), fullPath.includes('force=true'));
     if ((r = m(/^\/v1\/(workspaces|folders|groups)(?:\/([^/]+))?$/))) return this.wsRoute(method, r[1] as WsKind, r[2] && decodeURIComponent(r[2]), body);
     if (method === 'POST' && path === '/v1/broadcast') return this.broadcast(body);
     if (method === 'POST' && (r = m(/^\/v1\/ports\/([^/]+)\/kill$/))) return this.killPortProcess(decodeURIComponent(r[1]), body);
@@ -817,7 +817,7 @@ export class MockDaemon implements DaemonClient {
     return l;
   }
 
-  private lineAction(id: string, action: string, body: any, dry = false): unknown {
+  private lineAction(id: string, action: string, body: any, dry = false, force = false): unknown {
     const l = this.findLine(id);
     if (dry && (action === 'hold' || action === 'close')) {
       const running = l.line.state !== 'held' && l.line.state !== 'hung-up';
@@ -839,6 +839,10 @@ export class MockDaemon implements DaemonClient {
         return { lineId: id, worktree: l.line.worktreePath ?? '', status: ' M src/term.rs\n M tests/term.rs', stat: ' 2 files changed, 21 insertions(+), 3 deletions(-)', diff: bigDiff() ? bigPatch() : DIFF, truncated: false } satisfies Diff;
       case 'hold':
       case 'close': {
+        if (l.local?.busy && !force) {
+          const plan = { lineId: id, action: 'none', steps: [], predicates: { atPrompt: { ok: false, detail: 'turn in progress' } } };
+          throw new DaemonError(409, 'HTTP 409', plan);
+        }
         const from = l.line.state;
         l.line.state = action === 'hold' ? 'held' : 'hung-up';
         l.local = { ...l.local, busy: false, needsInput: false, heldReason: action === 'hold' ? 'user' : undefined };
