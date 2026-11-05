@@ -340,7 +340,7 @@ pub fn default_state_dir() -> PathBuf {
         .unwrap_or_else(platform_state_dir)
 }
 
-fn platform_state_dir() -> PathBuf {
+pub fn platform_state_dir() -> PathBuf {
     if cfg!(windows) {
         if let Some(d) = std::env::var_os("LOCALAPPDATA").filter(|v| !v.is_empty()) {
             return PathBuf::from(d).join("overseer");
