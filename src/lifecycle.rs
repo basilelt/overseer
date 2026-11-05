@@ -412,6 +412,33 @@ mod tests {
     }
 
     #[test]
+    fn a_stored_initial_prompt_is_not_passed_to_resume() {
+        let resumed = |agent: &str, flags: &[&str]| {
+            let s = Saved {
+                id: "t".into(),
+                cwd: "/w".into(),
+                agent: Some(agent.into()),
+                session: Some("sid".into()),
+                flags: flags.iter().map(|f| f.to_string()).collect(),
+                ..Default::default()
+            };
+            plan(vec![s], AfterReboot::Agents, |_| true).remove(0).cmd
+        };
+        assert_eq!(
+            resumed("claude", &["--effort", "high", "File this issue"]),
+            ["claude", "--effort", "high", "--resume", "sid"]
+        );
+        assert_eq!(
+            resumed("codex", &["-m", "o3", "File this issue"]),
+            ["codex", "resume", "-m", "o3", "sid"]
+        );
+        assert_eq!(
+            resumed("gemini", &["-m", "pro"]),
+            ["gemini", "-m", "pro", "--resume", "sid"]
+        );
+    }
+
+    #[test]
     fn plan_follows_the_setting() {
         let terms = [
             info("t1", &["claude"], false),

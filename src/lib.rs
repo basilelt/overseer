@@ -908,6 +908,7 @@ pub fn resume_flags(agent: &str, flags: &[String]) -> Vec<String> {
     let flags = procs::rejoin_split_json(flags);
     match agent {
         "codex" => codex::launch_flags(&flags),
+        "claude" => claude::launch_flags(&flags),
         _ => flags,
     }
 }
