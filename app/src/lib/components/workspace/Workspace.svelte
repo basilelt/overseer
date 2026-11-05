@@ -2,7 +2,7 @@
   import { untrack } from 'svelte';
   import { t } from '../../i18n.svelte';
   import { app, NO_WORKSPACE } from '../../state.svelte';
-  import { activeKey, addTabs, allTabs, EMPTY_LAYOUT, layoutFromTabs, openInFocused, setRatio, split, switchLayout, update, workspace, type Layout } from '../../workspace.svelte';
+  import { activeKey, addTabs, allTabs, layoutFromTabs, openInFocused, renameTab, setRatio, split, switchLayout, update, workspace, type Layout } from '../../workspace.svelte';
   import { isKnown, loadKnown, mergeKnown, saveKnown, startKnown } from '../../known-tabs';
   import { hostKey } from '../../window';
   import { pages } from '../../session-pages.svelte';
@@ -10,7 +10,7 @@
   import type { Workspace } from '../../types';
   import { aggregate, resolveTab, workspaceTabs } from '../../workspaces';
   import { rememberTerms } from '../../tabs';
-  import { reconcileLayout } from '../../layout-sync';
+  import { reconcileLayout, restoreLayout, savedActive } from '../../layout-sync';
   import PaneView from './PaneView.svelte';
 
   let root: HTMLDivElement;
@@ -22,7 +22,7 @@
   );
   const loaded = $derived(app.connected && app.synced && app.data.lines.length + app.data.terms.length > 0);
   let current = '#status';
-  const stale = new Set<string>();
+  const stale = new Set<string>(['#status']);
   const localTabs = new Map<string, string>();
   const knownBy = new Map<string, Set<string> | undefined>();
   const termOf = new Map<string, string>();
@@ -30,23 +30,29 @@
   let pending: { id: string; tabs: string[] } | null = null;
 
   const host = () => hostKey(app.conn.target);
-  const localOnly = (key: string) => key === '#other' || key.startsWith('group:');
+  const localOnly = (key: string) => key === '#status' || key === '#other' || key.startsWith('group:');
   const savedTabs = (key: string, ws: Workspace | null) => (localOnly(key) ? (loadKnown(host(), key)?.tabs ?? []) : (ws?.tabs ?? []));
+
+  const signature = (key: string, tabs: string[], active: string | null | undefined) => `${localOnly(key) ? tabs.join('\n') : ''}\0${active ?? ''}`;
 
   function store(key: string, known: Set<string>) {
     const tabs = localOnly(key) ? allTabs(workspace.layout) : undefined;
-    if (tabs) localTabs.set(`${host()}|${key}`, tabs.join('\n'));
-    saveKnown(host(), key, { known: [...known], tabs });
+    const active = activeKey(workspace.layout);
+    localTabs.set(`${host()}|${key}`, signature(key, tabs ?? [], active));
+    saveKnown(host(), key, { known: [...known], tabs, active });
   }
 
   function build(key: string, ws: Workspace | null, mem: SidebarItem[], items: SidebarItem[], ready: boolean): Layout {
-    if (key === '#status') return EMPTY_LAYOUT;
     if (ready) stale.delete(key);
     else stale.add(key);
+    if (key === '#status') return restoreLayout(loadKnown(host(), key), items);
     const saved = savedTabs(key, ws);
     const id = `${host()}|${key}`;
     if (ready && !knownBy.has(id)) knownBy.set(id, startKnown(loadKnown(host(), key), saved, mem));
-    return layoutFromTabs(workspaceTabs(saved, mem, items, knownBy.get(id)), aggregate(mem).statusKey ?? null);
+    const tabs = workspaceTabs(saved, mem, items, knownBy.get(id));
+    const rec = loadKnown(host(), key);
+    const want = rec?.active ? resolveTab(rec.active, items) : null;
+    return layoutFromTabs(tabs, want && tabs.includes(want) ? want : (aggregate(mem).statusKey ?? null));
   }
 
   $effect(() => {
@@ -74,7 +80,10 @@
       if (stale.has(key)) {
         const sel = app.selectedKey;
         workspace.layout = build(key, ws, mem, items, ready);
-        if (sel && allTabs(workspace.layout).includes(sel)) update((l) => openInFocused(l, sel));
+        const restored = savedActive(loadKnown(host(), key), workspace.layout, items);
+        if (restored) app.selectedKey = restored;
+        else if (sel && allTabs(workspace.layout).includes(sel)) update((l) => openInFocused(l, sel));
+        else if (key === '#status' && sel) update((l) => openInFocused(l, sel));
         else app.selectedKey = activeKey(workspace.layout);
       }
       rememberTerms(termOf, items, app.data.terms);
@@ -101,13 +110,17 @@
 
   $effect(() => {
     const tabs = allTabs(workspace.layout);
+    const active = activeKey(workspace.layout);
     const key = layoutKey;
-    if (!localOnly(key) || current !== key || stale.has(key)) return;
+    if (current !== key || stale.has(key)) return;
     untrack(() => {
       const id = `${host()}|${key}`;
-      const known = knownBy.get(id);
-      if (!localTabs.has(id)) localTabs.set(id, (loadKnown(host(), key)?.tabs ?? []).join('\n'));
-      if (known && localTabs.get(id) !== tabs.join('\n')) store(key, known);
+      const known = knownBy.get(id) ?? (key === '#status' ? new Set<string>() : undefined);
+      if (!localTabs.has(id)) {
+        const rec = loadKnown(host(), key);
+        localTabs.set(id, signature(key, rec?.tabs ?? [], rec?.active));
+      }
+      if (known && localTabs.get(id) !== signature(key, tabs, active)) store(key, known);
     });
   });
 
