@@ -894,12 +894,40 @@ pub fn resume_command(agent: &str, cwd: &str, session_id: &str, flags: &[String]
     format!("cd {} && {}", shell_quote(cwd), argv.join(" "))
 }
 
+fn scan_linked(ctx: &Ctx) -> Result<Vec<Line>, String> {
+    let lines = scan_now(ctx)?;
+    term::link_lines(&lines);
+    Ok(lines)
+}
+
 pub fn scan(ctx: &Ctx) -> Result<Vec<Line>, String> {
-    scanner::fresh(|| scan_now(ctx))
+    scanner::fresh(|| scan_linked(ctx))
 }
 
 pub fn current_lines(ctx: &Ctx) -> Result<Vec<Line>, String> {
-    scanner::current(|| scan_now(ctx))
+    scanner::current(|| scan_linked(ctx))
+}
+
+pub fn session_at_exit(t: &term::Info) -> Option<(String, String)> {
+    let agent = t.agent.as_deref()?;
+    let ctx = Ctx::from_env(&procs::System);
+    let lines = scan(&ctx).ok()?;
+    let pick = lines
+        .iter()
+        .find(|l| l.term_id.as_deref() == Some(t.id.as_str()))
+        .or_else(|| {
+            lines
+                .iter()
+                .filter(|l| {
+                    l.term_id.is_none()
+                        && l.pid.is_none()
+                        && l.agent == agent
+                        && l.cwd == t.cwd
+                        && l.last_activity_ms >= t.created_ms
+                })
+                .max_by_key(|l| l.last_activity_ms)
+        })?;
+    Some((pick.session_id.clone(), pick.resume_command.clone()))
 }
 
 type UpsertKey = (PathBuf, u64, &'static str, String);

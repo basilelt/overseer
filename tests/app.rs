@@ -2504,6 +2504,27 @@ fn an_agent_that_quits_leaves_a_shell_with_its_session_in_the_tab() {
 }
 
 #[test]
+fn an_agent_that_quits_right_after_starting_a_turn_still_leaves_its_session() {
+    // Given a codex session whose first turn just started, before any scan linked it to the term
+    // When codex quits at once
+    // Then the shell note still carries the session and how to resume it
+    let app = App::new("agentquitfast", json!({}));
+    let wt = app.fx.wt.to_string_lossy().into_owned();
+    let t = app.ok(
+        "POST",
+        "/v1/terms",
+        json!({"cwd": wt, "agent": "codex", "cols": 120, "rows": 24}),
+    );
+    let id = t["id"].as_str().unwrap().to_string();
+    let mut ws = app.ws(&id);
+    read_until(&mut ws, "codex ready");
+    send(&mut ws, "busy\r");
+    send(&mut ws, "exit\r");
+    let shown = read_until(&mut ws, ", resume with:");
+    assert!(shown.contains("codex exited. Session "), "{shown:?}");
+}
+
+#[test]
 fn ending_a_busy_agent_session_needs_force_and_then_ends_its_term() {
     // Given a codex session in a term that is busy with a turn
     // When the session is closed as ending its tab does, first without and then with force=true
