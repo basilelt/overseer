@@ -114,9 +114,11 @@
           {/if}
         {/await}
       {:else if tab && (tab.kind === 'graph' || tab.kind === 'worktrees' || tab.kind === 'system' || tab.kind === 'usage' || tab.kind === 'prs')}
-        {#await TAB_KINDS[tab.kind]?.load?.() then View}
-          {#if View}<Boundary name={tab.kind}><View tabKey={tab.key} {tab} {focused} /></Boundary>{/if}
-        {/await}
+        {#key tab.kind}
+          {#await TAB_KINDS[tab.kind]?.load?.() then View}
+            {#if View}<Boundary name={tab.kind}><View tabKey={tab.key} {tab} {focused} /></Boundary>{/if}
+          {/await}
+        {/key}
       {:else if item?.lineId && tab?.kind === 'chat'}
         <Boundary name="chat">{#await chatView() then { default: ChatView }}<ChatView {item} phone={ui.layout === 'phone'} />{/await}</Boundary>
       {:else if item?.lineId && !item.termId}
