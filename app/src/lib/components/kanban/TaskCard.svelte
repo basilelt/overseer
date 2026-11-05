@@ -554,21 +554,19 @@
     padding-left: 4px;
   }
   .effort {
+    flex: none;
+    white-space: nowrap;
     padding: 0 6px;
     border: 1px solid var(--border);
     border-radius: 4px;
     line-height: 16px;
   }
   .actions {
-    position: absolute;
-    right: -4px;
-    top: 0;
-    bottom: 0;
     display: flex;
+    flex: none;
     align-items: center;
     gap: 2px;
-    padding-left: 12px;
-    background: linear-gradient(to right, transparent, var(--surface) 12px);
+    margin-right: -4px;
     opacity: 0;
     pointer-events: none;
     transition: opacity var(--ease);
@@ -618,9 +616,7 @@
     border-color: var(--border);
   }
   :global(.phone) .actions {
-    position: static;
-    padding-left: 0;
-    background: none;
+    margin-right: 0;
     opacity: 1;
     pointer-events: auto;
   }
