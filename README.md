@@ -88,7 +88,8 @@ commit from the Kanban card when the task is in testing.
 
 A per-project git graph that stays fast on large histories, with agent branches, tasks and PRs
 on it. Worktrees live in one store outside your repositories, show whether they are in use, idle
-or stale, and are cleaned up safely.
+or stale, and are cleaned up safely: **Clean up merged** picks the merged ones with no agent left,
+and you untick the ones to keep.
 
 ![Git graph](app/docs/screenshots/graph-light.png)
 ![Worktrees](app/docs/screenshots/worktrees-dark.png)
@@ -168,11 +169,33 @@ need nothing: the app installs the daemon over SSH on first connection.
 
 Android: install and update the APK from the releases with Obtainium
 ([add it in one tap](https://apps.obtainium.imranr.dev/redirect?r=obtainium://app/%7B%22id%22%3A%22io.github.basilelt.overseer%22%2C%22url%22%3A%22https%3A%2F%2Fgithub.com%2Fbasilelt%2Foverseer%22%2C%22author%22%3A%22basilelt%22%2C%22name%22%3A%22Overseer%22%2C%22preferredApkIndex%22%3A0%2C%22additionalSettings%22%3A%22%7B%5C%22includePrereleases%5C%22%3Afalse%2C%5C%22apkFilterRegEx%5C%22%3A%5C%22Overseer_.%2A_android%5C%5C%5C%5C.apk%5C%22%2C%5C%22invertAPKFilter%5C%22%3Afalse%7D%22%2C%22overrideSource%22%3A%22GitHub%22%7D), settings prefilled), or download it with
-`gh release download --repo basilelt/overseer --pattern '*android.apk'`. Each release also goes
-to a Google Play testing track; Play builds are updated by Play instead of the in-app updater.
-iOS: not distributed
-publicly; building it needs your own Apple developer account and TestFlight. See
+`gh release download --repo basilelt/overseer --pattern '*android.apk'`. Google Play gets a
+release now and then, shipped by hand; Play builds are updated by Play instead of the in-app
+updater. iOS: install from the App Store. Store versions lag behind the GitHub releases. See
 [docs/mobile.md](docs/mobile.md).
+
+#### Google Play (closed testing)
+
+Overseer is in closed testing on Google Play before its public release. To install it from Play
+and get updates there:
+
+1. With the Google account of your Android phone, join the
+   [Overseer testers group](https://groups.google.com/g/overseer-testers) ("Join group").
+2. Open the [testing invitation](https://play.google.com/apps/testing/io.github.basilelt.overseer)
+   with the same account and tap **Become a tester**. If it says the app is not available, the
+   group join has not reached Play yet: wait a few minutes and reload.
+3. Install Overseer from the
+   [Play Store page](https://play.google.com/store/apps/details?id=io.github.basilelt.overseer)
+   (the link from the invitation page). Updates arrive through Play like any app.
+4. Stay in the group and keep the app installed: Play only opens the app to everyone after
+   testers have used it for 14 days. Send feedback from the app (More > Send feedback) or on the
+   Play listing.
+
+No server yet? Tap **Try the demo** on the first screen to explore the app with sample data.
+
+Already using the APK from the releases? The Play build is signed with a different key, so
+Android will not install it over the APK: uninstall the APK first (your servers have to be added
+again). From then on Play updates the app instead of the in-app updater.
 
 ### Updates
 

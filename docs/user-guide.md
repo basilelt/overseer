@@ -873,7 +873,7 @@ On first launch, once the app is connected (immediately in local mode, after the
 connection on a phone), a welcome card offers **Take the tour** or **Skip**. The tour dims the
 window and highlights the real controls one at a time: host chip, workspaces sidebar, tabs and the
 new-session menu, the Terminal/Chat toggle, the side panel, Tasks, Review, the usage, system and ports
-chips, notifications and hooks, the command palette and Feedback, in 0.25 the Cmd/Ctrl+P palette shortcut, and in 0.27 the demo mode (on the **Demo mode** pill while in the demo, else on the host chip), in 0.28 the GPU rendering option for terminals, and in 0.29 the import from Switchboard (on its button in Settings, Help, or on the Settings button). Steps whose control is not on
+chips, notifications and hooks, the command palette and Feedback, in 0.25 the Cmd/Ctrl+P palette shortcut, and in 0.27 the demo mode (on the **Demo mode** pill while in the demo, else on the host chip), and in 0.28 the GPU rendering option for terminals, and in 0.29 the clean up of unused worktrees and the import from Switchboard (on its button in Settings, Help, or on the Settings button). Steps whose control is not on
 screen (no session selected, a feature the server lacks, phone layout) are skipped. On a phone the
 card is a sheet at the bottom (or top, when the control sits low) and points at the bottom
 navigation, the session strip and the menu.
@@ -1039,7 +1039,9 @@ Markdown is rendered and text-like files (txt, log, JSON, YAML, TOML, CSV, XML) 
 up to 1 MiB displayed. Relative paths resolve against the terminal's current directory; `~` is the
 host's home. The daemon serves any regular file the host user can read, up to 50 MiB, through
 `GET /v1/file`; directories, devices and larger files are refused with a message. **Copy path** puts
-the full path on the clipboard.
+the full path on the clipboard, and **Download** saves a copy of the file into your Downloads
+folder on the device running the app (a file of the same name is kept and the copy gets a ` (1)`
+suffix).
 
 On a phone, long-press a tab in the session strip for **Pin/Unpin** (agent tabs) and **Close**.
 
@@ -1760,6 +1762,10 @@ opt out). One place, outside your repositories:
   whose branch has commits that are neither pushed nor in the base. The branch is deleted only
   when every commit of it is in the base (or its PR is merged and the tip pushed); otherwise it
   is kept. Nothing is ever forced.
+- **Clean up merged (n)** in the Worktrees toolbar picks the worktrees nobody needs any more: merged
+  into the base (or missing on disk), with no agent session, no terminal and no uncommitted change.
+  The dialog lists each one with a checkbox, all ticked; untick the ones to keep, then confirm.
+  **Clean up stale** and the row's **Clean up** use the same checkboxes.
 
 ```
 P=$(python3 -c 'import urllib.parse,sys;print(urllib.parse.quote(sys.argv[1],safe=""))' ~/src/app)
