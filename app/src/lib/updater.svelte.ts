@@ -25,14 +25,12 @@ export type ProgressEvent =
 export type BrewError =
   | { kind: 'missing' }
   | { kind: 'untrusted'; tap: string }
-  | { kind: 'auth' }
   | { kind: 'stale' }
   | { kind: 'failed'; message: string };
 
 export interface UpdateStatus {
   current: string;
   kind: InstallKind;
-  tokenSource: string | null;
   releasesUrl: string;
 }
 
@@ -43,7 +41,6 @@ export interface UpdaterBackend {
   relaunch(): Promise<void>;
   brew(trust: string | null, onProgress: (e: ProgressEvent) => void): Promise<string | null>;
   brewRelaunch(): Promise<void>;
-  setToken(token: string): Promise<void>;
   openUrl(url: string): Promise<void>;
 }
 
@@ -195,13 +192,6 @@ export class Updater {
     this.phase = 'error';
   }
 
-  async setToken(token: string) {
-    if (!this.backend) return;
-    await this.backend.setToken(token);
-    await this.refreshStatus();
-    if (this.phase === 'error' && token.trim()) await this.check();
-  }
-
   start(intervalMs = CHECK_INTERVAL_MS): () => void {
     if (!this.backend) return () => {};
     void this.refreshStatus();
@@ -219,9 +209,8 @@ export function brewError(e: unknown): BrewError {
   const o = (e && typeof e === 'object' ? e : {}) as Record<string, unknown>;
   switch (o.kind) {
     case 'missing':
-    case 'auth':
     case 'stale':
-      return { kind: o.kind as 'missing' | 'auth' | 'stale' };
+      return { kind: o.kind as 'missing' | 'stale' };
     case 'untrusted':
       return { kind: 'untrusted', tap: typeof o.tap === 'string' ? o.tap : BREW_TAP };
     case 'failed':
@@ -237,8 +226,6 @@ export function brewMessage(err: BrewError): string {
       return ut('err.missing');
     case 'untrusted':
       return ut('err.untrusted', { tap: err.tap });
-    case 'auth':
-      return ut('err.auth', { repo: REPO });
     case 'stale':
       return ut('err.stale');
     case 'failed':
@@ -297,17 +284,8 @@ export const BREW_TAP = 'basilelt/tap';
 
 type UKey = Sub<'updater'>;
 
-export const REPO = 'basilelt/overseer';
-
 export function ut(key: UKey, params?: Record<string, string | number>): string {
   return t(`updater.${key}`, params);
-}
-
-export function tokenSourceLabel(source: string | null): string {
-  if (!source) return ut('tokenNone');
-  if (source === 'settings') return ut('tokenFrom', { source: ut('sourceSettings') });
-  if (source === 'gh') return ut('tokenFrom', { source: ut('sourceGh') });
-  return ut('tokenFrom', { source });
 }
 
 async function tauriBackend(): Promise<UpdaterBackend> {
@@ -327,7 +305,6 @@ async function tauriBackend(): Promise<UpdaterBackend> {
       return invoke<string | null>('update_brew', { trust, onProgress: channel });
     },
     brewRelaunch: () => invoke<void>('update_brew_relaunch'),
-    setToken: (token) => invoke<void>('update_token_set', { token }),
     openUrl: (url) => invoke<void>('open_external', { url }),
   };
 }
@@ -339,7 +316,6 @@ const lazy: UpdaterBackend = {
   relaunch: async () => (await tauriBackend()).relaunch(),
   brew: async (t, p) => (await tauriBackend()).brew(t, p),
   brewRelaunch: async () => (await tauriBackend()).brewRelaunch(),
-  setToken: async (t) => (await tauriBackend()).setToken(t),
   openUrl: async (u) => (await tauriBackend()).openUrl(u),
 };
 

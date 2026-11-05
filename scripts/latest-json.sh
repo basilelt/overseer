@@ -26,7 +26,7 @@ add() {
     echo "warning: v$version has no $name.sig, $key left out" >&2
     return
   fi
-  url=$(jq -r --arg n "$name" '.assets[] | select(.name == $n) | .apiUrl' <<<"$release")
+  url=$(jq -r --arg n "$name" '.assets[] | select(.name == $n) | .url' <<<"$release")
   sig=$(cat "$sigs/$name.sig")
   platforms=$(jq --arg k "$key" --arg u "$url" --arg s "$sig" '.[$k] = {url: $u, signature: $s}' <<<"$platforms")
 }

@@ -161,7 +161,7 @@ pub async fn connect(
             remember: host.remember_password,
             secrets: store.secrets(),
         }),
-        server: cache.map(|c| crate::server_fetch::source(dir.to_path_buf(), c.to_path_buf())),
+        server: cache.map(|c| crate::server_fetch::source(c.to_path_buf())),
     };
     let described = host.describe();
     let t = client::connect(&host, &session, replace, on_step)

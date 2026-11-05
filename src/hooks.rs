@@ -13,6 +13,8 @@ pub const CLAUDE_EVENTS: &[&str] = &[
     "Notification",
     "PermissionRequest",
     "Elicitation",
+    "PostToolUse",
+    "PostToolUseFailure",
     "SubagentStart",
     "SubagentStop",
     "TaskCreated",
@@ -155,6 +157,7 @@ pub fn apply(h: &mut HookState, ev: &Value) {
             )
         }
         "PermissionRequest" | "Elicitation" => h.needs_input = true,
+        "PostToolUse" | "PostToolUseFailure" => h.needs_input = false,
         "SubagentStart" => h.subagents += 1,
         "SubagentStop" => h.subagents = (h.subagents - 1).max(0),
         "TaskCreated" => h.tasks += 1,
@@ -342,5 +345,28 @@ mod tests {
         apply(&mut h, &ev("Notification", 8));
         assert!(h.needs_input);
         assert_eq!(h.at_ms, 8);
+    }
+
+    #[test]
+    fn answered_permission_clears_needs_input_while_turn_runs() {
+        let ev = |e: &str| json!({"event": e, "at": 1});
+        for after in ["PostToolUse", "PostToolUseFailure"] {
+            let mut h = HookState::default();
+            apply(&mut h, &ev("UserPromptSubmit"));
+            apply(&mut h, &ev("PermissionRequest"));
+            apply(
+                &mut h,
+                &json!({"event": "Notification", "at": 1, "notificationType": "permission_prompt"}),
+            );
+            assert!(h.needs_input);
+            apply(&mut h, &ev(after));
+            assert!(h.busy && !h.needs_input, "{after}");
+        }
+    }
+
+    #[test]
+    fn claude_hooks_report_tool_completion() {
+        assert!(CLAUDE_EVENTS.contains(&"PostToolUse"));
+        assert!(CLAUDE_EVENTS.contains(&"PostToolUseFailure"));
     }
 }

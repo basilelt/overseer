@@ -58,6 +58,7 @@ base) and sets one output per job. Each job `needs: changes` and runs only when 
 | `macos` (`procs`/`ports`/`review::watch` tests) | `src/procs.rs`, `src/ports.rs`, `src/review/watch.rs`, `Cargo.toml` |
 | `actionlint` | `.github/` |
 | `store-guard` | what `scripts/store-guard.sh` scans: `.github/`, `app/fastlane/`, `scripts/`, `Makefile` |
+| `tap` | `scripts/update-tap.sh`, `scripts/update-tap.test.sh` |
 
 - `docs/`, `*.md` and `.github/ISSUE_TEMPLATE/` never trigger a job: a docs-only PR runs `changes`
   alone.
@@ -112,6 +113,7 @@ its `changes` job runs, a few seconds on `ubuntu-slim`. Pushes by `github-action
 | ci | `android` | `ubuntu-24.04` | debug APK for arm64 (`pnpm tauri android build --debug --apk --target aarch64`), artifact `android-debug-apk` |
 | ci | `macos` | `macos-26` | throwaway self-signed identity on two builds must give one designated requirement; `cargo test --lib -- procs:: ports:: review::watch::`; pull requests and manual runs only |
 | ci | `store-guard` | `ubuntu-slim` | `scripts/store-guard.sh`: no App Store / Play Store submission anywhere |
+| ci | `tap` | `ubuntu-24.04` | `scripts/update-tap.test.sh`: runs `scripts/update-tap.sh` on a fake release and requires `brew style` and `brew audit --strict` to pass on the generated formula and cask |
 | release | `gate` | `ubuntu-slim` | `scripts/release-gate.sh` and the tagged-`HEAD` check ([Release gate](#release-gate)); skipped for `github-actions[bot]` and `[skip ci]` |
 | release | `ci` | calls `ci.yml` | the jobs above, or `changes` alone when the gate says `skip_ci` |
 | release | `tag` | `ubuntu-slim` | next `vX.Y.Z` tag, moves `vX`, `vX.Y`, `latest`; checks which optional secrets are set |
@@ -125,7 +127,7 @@ its `changes` job runs, a few seconds on `ubuntu-slim`. Pushes by `github-action
 | release | `app-android` | `ubuntu-24.04` | signed universal APK (arm64-v8a, armeabi-v7a) `Overseer_<v>_android.apk` + `.sha256`; skipped without the keystore secrets |
 | release | `app-ios` | `macos-26` | fastlane `internal_testflight` lane: `tauri ios build` signed with `IOS_CERTIFICATE`/`IOS_MOBILE_PROVISION`, `upload_to_testflight` with `skip_submission`; `continue-on-error`, skipped without the Apple secrets |
 | release | `publish` | `ubuntu-slim` | GitHub Release with generated release notes, every artifact and `SHA256SUMS`, then the updater manifest `latest.json` when the updater key is set |
-| release | `tap` | `ubuntu-24.04` | `scripts/update-tap.sh` writes the cask and formula of `basilelt/homebrew-tap` and pushes `overseer <version>`; skipped without `HOMEBREW_TAP_DEPLOY_KEY` |
+| release | `tap` | `ubuntu-24.04` | `scripts/update-tap.sh` writes the cask and formula of `basilelt/homebrew-tap` and pushes `overseer <version>` to `bump/overseer-<version>`; the tap's own CI audits it and fast-forwards `main`; skipped without `HOMEBREW_TAP_DEPLOY_KEY` |
 
 The app jobs get the server binaries from the `servers*` artifacts and copy them into
 `app/src-tauri/resources/server/<os>-<arch>/overseer` (`scripts/app-resources.sh`, also `make app-resources`), so every app
@@ -244,6 +246,7 @@ job that needs a missing one is skipped or builds unsigned, with a warning annot
 | `MACOS_SELF_SIGN_P12_BASE64`, `MACOS_SELF_SIGN_P12_PASSWORD` | stable self-signed macOS code signature ([macOS signing](#macos-signing)) | ad-hoc signature: macOS forgets the Local Network grant on every update |
 | `APPLE_CERTIFICATE`, `APPLE_CERTIFICATE_PASSWORD`, `APPLE_SIGNING_IDENTITY` | Developer ID signature of the macOS app (wins over the self-signed one) | self-signed or ad-hoc, as above |
 | `WINDOWS_SELF_SIGN_PFX_BASE64`, `WINDOWS_SELF_SIGN_PFX_PASSWORD` | self-signed `.msix` packages for x64 and arm64 and `overseer-msix.cer` in the release ([MSIX](#msix)) | no `.msix`, the NSIS installers ship as before |
+| `APPLE_KEY_ID`, `APPLE_ISSUER_ID`, `APPLE_KEY_CONTENT` | App Store Connect API key (Developer role; `APPLE_KEY_CONTENT` is the `.p8` text): notarization of the Developer ID app, and TestFlight | with a Developer ID set, `app-macos` fails instead of shipping an app Gatekeeper blocks |
 | `HOMEBREW_TAP_DEPLOY_KEY` | the `tap` job: the private half of an SSH deploy key with write access on `basilelt/homebrew-tap` only (create with `ssh-keygen -t ed25519`, add the public half under the tap's Settings > Deploy keys with "Allow write access") | `tap` skipped, the tap keeps the previous version |
 | `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD` | `app-android`: signed release APK ([docs/mobile.md](mobile.md#android-once-by-whoever-holds-the-release-key)) | `app-android` skipped, no APK in the release |
 | `APPLE_TEAM_ID`, `APPLE_KEY_ID`, `APPLE_ISSUER_ID`, `APPLE_KEY_CONTENT`, `IOS_CERTIFICATE`, `IOS_CERTIFICATE_PASSWORD`, `IOS_MOBILE_PROVISION` | `app-ios`: TestFlight upload ([docs/mobile.md](mobile.md#ios-once-by-the-apple-developer-account-holder)) | `app-ios` skipped |
@@ -327,12 +330,21 @@ daemon binaries for macOS and Linux, both arches). The `tap` job, after `publish
    (`https://github.com/basilelt/overseer/releases/download/v<version>/<asset>`) from
    `gh release view --json assets`, sha256 from the release `SHA256SUMS`. The cask is left
    unchanged when the release has no `.dmg` (the macOS job may fail);
-3. commits `overseer <version>` as `github-actions[bot]` and pushes, or does nothing when the
-   files did not change, so re-runs are safe.
+3. commits `overseer <version>` as `github-actions[bot]` and force-pushes it to
+   `bump/overseer-<version>`, or does nothing when the files did not change, so re-runs are safe;
+4. the tap's `.github/workflows/tests.yml` then runs on that branch: `brew style`,
+   `brew audit --strict --online` of the formula (and of the cask on macOS), `brew install` and
+   `brew test` on macOS arm64, macOS Intel and Linux, and on macOS `brew install --cask` followed
+   by `spctl --assess`, which fails unless Gatekeeper accepts the installed app. Only when every job is green does it fast-forward
+   `main` to the branch and delete it, so users never get a formula or cask that fails brew's checks.
 
 The tap repository must exist first (public, with one commit on its default branch; the job
 creates `Casks/` and `Formula/`). Users: `brew tap basilelt/tap`, then `brew install overseer`
 and/or `brew install --cask overseer`.
+
+Every release asset also gets a GitHub build provenance attestation (the `publish` job attests
+each file listed in `SHA256SUMS`): `gh attestation verify <file> --repo basilelt/overseer`
+checks that a download was built by this workflow from this repository.
 
 ## One-time setup
 
@@ -356,9 +368,15 @@ update is a new app to TCC, the toggle under Privacy & Security > Local Network 
 build and macOS does not prompt again for the same bundle id. The `app-macos` job therefore signs
 with a stable identity when it has one, picked in this order:
 
-1. Developer ID, when `APPLE_CERTIFICATE` (base64 .p12), `APPLE_CERTIFICATE_PASSWORD` and
-   `APPLE_SIGNING_IDENTITY` are all set: passed to the Tauri CLI as is (notarization would add
-   `APPLE_ID`, `APPLE_PASSWORD` and the team id; not wired yet).
+1. Developer ID, when `APPLE_CERTIFICATE` (base64 .p12 with the Developer ID G2 intermediate),
+   `APPLE_CERTIFICATE_PASSWORD` and `APPLE_SIGNING_IDENTITY` are all set: `scripts/macos-sign.sh
+   import` loads the p12 into a temporary keychain (with `SIGN_TRUST=0`: no local trust override,
+   the DR must stay `anchor apple generic`), `scripts/macos-sign.sh sign-resources` signs every
+   Mach-O under `app/src-tauri/resources/server` (the bundled daemons) with the hardened runtime
+   and a secure timestamp, and the Tauri CLI signs the app with the hardened runtime, then
+   notarizes and staples it with the App Store Connect API key (`APPLE_API_KEY`,
+   `APPLE_API_ISSUER`, `APPLE_API_KEY_PATH` from `APPLE_KEY_ID`, `APPLE_ISSUER_ID`,
+   `APPLE_KEY_CONTENT`; the `.p8` is written to `$RUNNER_TEMP` and removed at the end).
 2. Self-signed, when `MACOS_SELF_SIGN_P12_BASE64` and `MACOS_SELF_SIGN_P12_PASSWORD` are set:
    `scripts/macos-sign.sh import` decodes the p12 into a temporary keychain (partition list set
    for `codesign`, added to the search list, certificate marked trusted for code signing in the
@@ -368,7 +386,8 @@ with a stable identity when it has one, picked in this order:
 3. Otherwise ad-hoc, with a warning annotation.
 
 `scripts/macos-sign.sh verify` then fails the job unless `codesign -dv --verbose=4` shows
-`Authority=Overseer Self-Signed` (or Developer ID) and `codesign -d -r-` gives a DR such as
+`Authority=Overseer Self-Signed` (or Developer ID, plus `xcrun stapler validate` and
+`spctl --assess` reporting `source=Notarized Developer ID`) and `codesign -d -r-` gives a DR such as
 `identifier "io.github.basilelt.overseer" and certificate root = H"d98c76cf…"`, with no `cdhash`.
 The keychain is deleted at the end of the job. The `macos` CI job runs the same import and verify
 with a throwaway certificate on two different builds and checks that both get the same DR.
@@ -397,16 +416,17 @@ the main executable's Mach-O UUID (new on every build) and only promises reliabl
 Apple-issued identities; a stable self-signed DR fixes the ad-hoc cdhash case, Developer ID
 remains the complete fix, and the Terminal workaround in app/README.md still applies if a
 self-signed update ever loses the grant. Local Network is not in the TCC database, so
-`tccutil reset` does not clear it; use the toggle. Gatekeeper still treats the app as
-unidentified (no notarization): after installing from a downloaded `.dmg` or the cask, run
-`xattr -dr com.apple.quarantine /Applications/Overseer.app`.
+`tccutil reset` does not clear it; use the toggle. A self-signed app is not notarized, so
+Gatekeeper treats it as unidentified: after installing it from a downloaded `.dmg` or the cask,
+run `xattr -dr com.apple.quarantine /Applications/Overseer.app`. The Developer ID build needs none
+of this.
 
 ## Limitations
 
 - **macOS app**: Tauri cannot bundle a `.app`/`.dmg` on Linux (it needs the Apple SDK, `codesign`,
-  `hdiutil`), so `app-macos` runs on `macos-26`, self-signed or ad-hoc (see
-  [macOS signing](#macos-signing)), not notarized. A failure there blocks the release, like every
-  other desktop app job.
+  `hdiutil`), so `app-macos` runs on `macos-26`, Developer ID signed and notarized, or
+  self-signed or ad-hoc without the Apple secrets (see [macOS signing](#macos-signing)). A failure
+  there blocks the release, like every other desktop app job.
 - **macOS runner label**: every macOS job uses `macos-26`. If GitHub retires or renames that
   label, those jobs wait for a runner that never comes; change it in `ci.yml`, `release.yml` and
   `mobile-init.yml` together.

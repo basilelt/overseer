@@ -37,6 +37,7 @@ while IFS= read -r line; do
     tool) sh -c ': shell-snapshots/snapshot-sh-1.sh; sleep 60; :' & tool=$! ;;
     untool) kill "$tool"; tool= ;;
     ask) hook PermissionRequest ;;
+    approved) hook PostToolUse ;;
     sub) hook SubagentStart ;;
     unsub) hook SubagentStop ;;
     *) printf 'got: %s\n' "$line" ;;

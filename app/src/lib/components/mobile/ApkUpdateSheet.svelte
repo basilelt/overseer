@@ -48,9 +48,7 @@
 
   {#snippet footer()}
     {#if !apk.busy}<button class="btn ghost" onclick={close}>{action ? at('later') : at('close')}</button>{/if}
-    {#if action === 'token'}
-      <button class="btn primary" onclick={() => apk.openToken()}>{at('addToken')}</button>
-    {:else if action === 'install'}
+    {#if action === 'install'}
       <button class="btn primary" onclick={() => apk.install()}>{apk.phase === 'error' ? at('retry') : info?.ready ? at('installReady') : at('install')}</button>
     {:else if action === 'allow'}
       <button class="btn primary" onclick={() => apk.allowInstall()}>{at('allow')}</button>

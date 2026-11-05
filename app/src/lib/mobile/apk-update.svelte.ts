@@ -1,12 +1,10 @@
 import { isTauri } from '../client';
 import { type Sub, t } from '../i18n.svelte';
 
-export const REPO = 'basilelt/overseer';
-export const TOKEN_URL = 'https://github.com/settings/personal-access-tokens/new';
 export const CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
 export const RESUME_CHECK_MS = 15 * 60 * 1000;
 
-export type ApkErrorKind = 'rejected' | 'forbidden' | 'ratelimited' | 'noaccess' | 'network' | 'checksum' | 'signature' | 'failed';
+export type ApkErrorKind = 'network' | 'checksum' | 'signature' | 'failed';
 
 export interface ApkError {
   kind: ApkErrorKind;
@@ -15,7 +13,6 @@ export interface ApkError {
 
 export interface ApkStatus {
   current: string;
-  hasToken: boolean;
   supported: boolean;
 }
 
@@ -37,8 +34,6 @@ export type InstallOutcome = 'started' | 'permission' | 'signature';
 
 export interface ApkBackend {
   status(): Promise<ApkStatus>;
-  setToken(token: string): Promise<void>;
-  clearToken(): Promise<void>;
   check(): Promise<ApkCheck>;
   download(onProgress: (e: DownloadEvent) => void): Promise<void>;
   install(): Promise<InstallOutcome>;
@@ -49,24 +44,19 @@ export interface ApkBackend {
 export type ApkPhase = 'idle' | 'checking' | 'current' | 'available' | 'downloading' | 'verifying' | 'permission' | 'installing' | 'error';
 
 const BUSY: ApkPhase[] = ['checking', 'downloading', 'verifying'];
-const KINDS: ApkErrorKind[] = ['rejected', 'forbidden', 'ratelimited', 'noaccess', 'network', 'checksum', 'signature', 'failed'];
+const KINDS: ApkErrorKind[] = ['network', 'checksum', 'signature', 'failed'];
 
 export class ApkUpdater {
   phase = $state<ApkPhase>('idle');
   info = $state<ApkInfo | null>(null);
   current = $state('');
-  hasToken = $state<boolean | null>(null);
   error = $state<ApkError | null>(null);
   downloaded = $state(0);
   total = $state<number | null>(null);
   sheet = $state(false);
-  tokenSheet = $state(false);
-  tokenBusy = $state(false);
-  tokenError = $state<ApkError | null>(null);
   backend = $state.raw<ApkBackend | null>(null);
   updates = $state(true);
   private lastCheck = 0;
-  private reopenSheet = false;
 
   constructor(
     backend: ApkBackend | null,
@@ -92,7 +82,6 @@ export class ApkUpdater {
     try {
       const s = await this.backend.status();
       this.current = s.current;
-      this.hasToken = s.hasToken;
     } catch {}
   }
 
@@ -119,59 +108,6 @@ export class ApkUpdater {
       this.error = apkError(e);
       this.phase = !manual && this.info ? 'available' : 'error';
     }
-  }
-
-  openToken() {
-    this.reopenSheet = this.sheet;
-    this.sheet = false;
-    this.tokenError = null;
-    this.tokenSheet = true;
-  }
-
-  closeToken() {
-    this.tokenSheet = false;
-    this.tokenError = null;
-    if (this.reopenSheet) this.sheet = true;
-    this.reopenSheet = false;
-  }
-
-  async saveToken(token: string): Promise<boolean> {
-    if (!this.backend || this.tokenBusy) return false;
-    if (!token.trim()) {
-      this.tokenError = { kind: 'rejected' };
-      return false;
-    }
-    this.tokenBusy = true;
-    this.tokenError = null;
-    try {
-      await this.backend.setToken(token.trim());
-    } catch (e) {
-      this.tokenError = apkError(e);
-      return false;
-    } finally {
-      this.tokenBusy = false;
-    }
-    this.hasToken = true;
-    const reopen = this.reopenSheet;
-    this.reopenSheet = false;
-    this.tokenSheet = false;
-    if (this.updates) await this.check(reopen);
-    return true;
-  }
-
-  async removeToken() {
-    if (!this.backend) return;
-    try {
-      await this.backend.clearToken();
-      this.hasToken = false;
-      this.info = null;
-      this.error = null;
-      this.phase = 'idle';
-    } catch (e) {
-      this.error = apkError(e);
-      return;
-    }
-    if (this.updates) await this.check();
   }
 
   async install() {
@@ -263,7 +199,7 @@ export function errorText(err: ApkError): string {
     case 'failed':
       return err.message || at('err.failed');
     default:
-      return at(`err.${err.kind}` as AKey, { repo: REPO });
+      return at(`err.${err.kind}` as AKey);
   }
 }
 
@@ -285,10 +221,9 @@ export function pillLabel(u: Pick<ApkUpdater, 'phase' | 'info' | 'progress'>): s
   }
 }
 
-export type SheetAction = 'token' | 'install' | 'allow' | 'reinstall' | 'retry' | null;
+export type SheetAction = 'install' | 'allow' | 'reinstall' | 'retry' | null;
 
 export function sheetAction(u: Pick<ApkUpdater, 'phase' | 'info' | 'error'>): SheetAction {
-  if (u.error?.kind === 'rejected' || u.error?.kind === 'noaccess' || u.error?.kind === 'forbidden' || u.error?.kind === 'ratelimited') return 'token';
   if (u.phase === 'permission') return 'allow';
   if (u.phase === 'installing') return 'reinstall';
   if (u.phase === 'error' && u.error?.kind === 'signature') return null;
@@ -312,8 +247,6 @@ async function tauriBackend(): Promise<ApkBackend> {
   const { invoke, Channel } = await import('@tauri-apps/api/core');
   return {
     status: () => invoke<ApkStatus>('apk_update_status'),
-    setToken: (token) => invoke<void>('apk_update_token_set', { token }),
-    clearToken: () => invoke<void>('apk_update_token_clear'),
     check: () => invoke<ApkCheck>('apk_update_check'),
     download: (onProgress) => {
       const channel = new Channel<DownloadEvent>();
@@ -328,8 +261,6 @@ async function tauriBackend(): Promise<ApkBackend> {
 
 const lazy: ApkBackend = {
   status: async () => (await tauriBackend()).status(),
-  setToken: async (t) => (await tauriBackend()).setToken(t),
-  clearToken: async () => (await tauriBackend()).clearToken(),
   check: async () => (await tauriBackend()).check(),
   download: async (p) => (await tauriBackend()).download(p),
   install: async () => (await tauriBackend()).install(),

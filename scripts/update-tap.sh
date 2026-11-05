@@ -51,27 +51,55 @@ has_asset() {
   jq -e --arg n "$1" 'any(.[]; .name == $n)' <<<"$assets" >/dev/null
 }
 
+cask_url() {
+  local v='#{version}'
+  echo "${url[$1]//$version/$v}"
+}
+
+cask_meta() {
+  cat <<RUBY
+  name "Overseer"
+  desc "Desktop client for Overseer agent sessions"
+  homepage "https://github.com/$repo"
+RUBY
+}
+
 cask_arch() {
   local arm=$1 intel=$2
   if [ -n "$arm" ] && [ -n "$intel" ]; then
     cat <<RUBY
+
   on_arm do
     sha256 "${sum[$arm]}"
-    url "${url[$arm]}"
+
+    url "$(cask_url "$arm")"
   end
   on_intel do
     sha256 "${sum[$intel]}"
-    url "${url[$intel]}"
+
+    url "$(cask_url "$intel")"
   end
+
+$(cask_meta)
 RUBY
   else
-    local d=${arm:-$intel} a=arm64
-    [ -n "$arm" ] || a=x86_64
+    local d=${arm:-$intel}
     cat <<RUBY
   sha256 "${sum[$d]}"
-  url "${url[$d]}"
-  depends_on arch: :$a
+
+  url "$(cask_url "$d")"
+$(cask_meta)
 RUBY
+  fi
+}
+
+cask_depends() {
+  if [ -n "$1" ] && [ -n "$2" ]; then
+    echo "  depends_on :macos"
+  elif [ -n "$1" ]; then
+    printf '  depends_on arch: :arm64\n  depends_on :macos\n'
+  else
+    printf '  depends_on arch: :x86_64\n  depends_on :macos\n'
   fi
 }
 
@@ -91,14 +119,9 @@ if [ ${#dmgs[@]} -gt 0 ]; then
   cat >"$tap/Casks/overseer.rb" <<RUBY
 cask "overseer" do
   version "$version"
-
 $(cask_arch "$dmg_arm" "$dmg_intel")
 
-  name "Overseer"
-  desc "Desktop client for Overseer agent sessions"
-  homepage "https://github.com/$repo"
-
-  depends_on :macos
+$(cask_depends "$dmg_arm" "$dmg_intel")
 
   app "Overseer.app"
 
@@ -126,7 +149,6 @@ cat >"$tap/Formula/overseer.rb" <<RUBY
 class Overseer < Formula
   desc "Daemon and CLI that supervise coding agent sessions"
   homepage "https://github.com/$repo"
-  version "$version"
 
   on_macos do
     on_arm do

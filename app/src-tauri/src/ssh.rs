@@ -933,7 +933,7 @@ mod tests {
     #[tokio::test]
     async fn bootstrap_falls_back_or_explains_when_the_download_fails() {
         let fetch: Box<Fetch> = Box::new(|_: Platform| -> FetchFuture {
-            Box::pin(async { Err("a GitHub token is needed".to_string()) })
+            Box::pin(async { Err("cannot download the server from GitHub".to_string()) })
         });
         let (res, line, _) = fetch_boot("SB:HELLO Linux x86_64 0.0.1\n", fetch.as_ref()).await;
         assert_eq!(res.unwrap().as_deref(), Some("0.0.1"));
@@ -945,7 +945,7 @@ mod tests {
                 assert!(
                     m.contains(NOT_INSTALLED)
                         && m.contains("darwin-aarch64")
-                        && m.contains("GitHub token"),
+                        && m.contains("cannot download the server"),
                     "{m}"
                 );
                 assert!(permanent(&m));
