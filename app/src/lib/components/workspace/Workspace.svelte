@@ -2,14 +2,15 @@
   import { untrack } from 'svelte';
   import { t } from '../../i18n.svelte';
   import { app, NO_WORKSPACE } from '../../state.svelte';
-  import { activeKey, addTabs, allTabs, dropKey, EMPTY_LAYOUT, layoutFromTabs, openInFocused, renameTab, setRatio, split, switchLayout, update, workspace, type Layout } from '../../workspace.svelte';
+  import { activeKey, addTabs, allTabs, EMPTY_LAYOUT, layoutFromTabs, openInFocused, setRatio, split, switchLayout, update, workspace, type Layout } from '../../workspace.svelte';
   import { isKnown, loadKnown, mergeKnown, saveKnown, startKnown } from '../../known-tabs';
   import { hostKey } from '../../window';
   import { pages } from '../../session-pages.svelte';
   import type { SidebarItem } from '../../grouping';
   import type { Workspace } from '../../types';
   import { aggregate, resolveTab, workspaceTabs } from '../../workspaces';
-  import { followTerm, rememberTerms, tabInfo } from '../../tabs';
+  import { rememberTerms } from '../../tabs';
+  import { reconcileLayout } from '../../layout-sync';
   import PaneView from './PaneView.svelte';
 
   let root: HTMLDivElement;
@@ -69,32 +70,25 @@
           update((l) => openInFocused(l, sel));
         }
       }
-      if (key === '#status' || !ready) return;
+      if (!ready) return;
       if (stale.has(key)) {
         const sel = app.selectedKey;
         workspace.layout = build(key, ws, mem, items, ready);
         if (sel && allTabs(workspace.layout).includes(sel)) update((l) => openInFocused(l, sel));
         else app.selectedKey = activeKey(workspace.layout);
       }
+      rememberTerms(termOf, items, app.data.terms);
+      const rec = reconcileLayout(workspace.layout, items, termOf, app.selectedKey);
+      if (rec.layout !== workspace.layout) workspace.layout = rec.layout;
+      if (rec.selected !== app.selectedKey) app.selectedKey = rec.selected;
+      for (const k of rec.forget) termOf.delete(k);
+      if (key === '#status') return;
       const id = `${host()}|${key}`;
       if (!knownBy.has(id)) knownBy.set(id, startKnown(loadKnown(host(), key), savedTabs(key, ws), mem));
       const prev = knownBy.get(id);
       const fresh = mem.filter((m) => m.group !== 'held' && !(prev && isKnown(m, prev))).map((m) => m.key);
       const next = mergeKnown(prev ?? new Set(), mem, items);
       knownBy.set(id, next);
-      rememberTerms(termOf, items, app.data.terms);
-      for (const k of allTabs(workspace.layout)) {
-        if (!k.startsWith('term:') && !k.startsWith('line:')) continue;
-        const r = followTerm(k, items, termOf) ?? resolveTab(k, items);
-        if (r && r !== k) {
-          update((l) => renameTab(l, k, r));
-          termOf.delete(k);
-          if (app.selectedKey === k) app.selectedKey = r;
-        } else if (!r && !tabInfo(k, items)) {
-          update((l) => dropKey(l, k));
-          termOf.delete(k);
-        }
-      }
       if (fresh.length) update((l) => addTabs(l, fresh));
       if (!prev || prev.size !== next.size || [...next].some((k) => !prev.has(k))) store(key, next);
     });
