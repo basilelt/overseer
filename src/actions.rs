@@ -233,16 +233,32 @@ fn revert_held(reg: &Registry, l: &Line) {
     let _ = reg.set_mark(&l.id, "state", Some(l.state));
 }
 
+/// Start stamp of a process: (start, start_ms) as the probe reports them.
+type Stamp = (Option<String>, Option<i64>);
+
+fn stamp(probe: &dyn crate::procs::Probe, pid: u32) -> Option<Stamp> {
+    probe.info(pid).map(|i| (i.start, i.start_ms))
+}
+
+/// Same process as when the stamp was taken. macOS has no `start`, so `start_ms` counts too;
+/// a stamp with neither can never be verified.
+fn same_process(now: &Stamp, then: &Stamp) -> bool {
+    match (&now.0, &then.0, now.1, then.1) {
+        (None, None, None, None) => false,
+        (a, b, x, y) => a == b && x.zip(y).is_none_or(|(x, y)| (x - y).abs() <= 2000),
+    }
+}
+
 /// Every process below `pid`, with its start stamp so a reused pid is never signalled.
 /// Collected before the agent exits: its children are re-parented to init afterwards.
-fn descendants(ctx: &Ctx, pid: u32) -> Vec<(u32, Option<String>)> {
+fn descendants(ctx: &Ctx, pid: u32) -> Vec<(u32, Option<Stamp>)> {
     let mut seen = std::collections::HashSet::from([pid]);
     let mut out = vec![];
     let mut todo = vec![pid];
     while let Some(p) = todo.pop() {
         for (c, _) in ctx.probe.children(p) {
             if out.len() < 4096 && seen.insert(c) {
-                out.push((c, ctx.probe.info(c).and_then(|i| i.start)));
+                out.push((c, stamp(ctx.probe, c)));
                 todo.push(c);
             }
         }
@@ -250,37 +266,50 @@ fn descendants(ctx: &Ctx, pid: u32) -> Vec<(u32, Option<String>)> {
     out
 }
 
-#[cfg(unix)]
-fn signal_tree(ctx: &Ctx, tree: &[(u32, Option<String>)], sig: i32) -> usize {
+fn alive_same(probe: &dyn crate::procs::Probe, pid: u32, then: &Option<Stamp>) -> bool {
+    match (stamp(probe, pid), then) {
+        (Some(now), Some(then)) => same_process(&now, then),
+        _ => false,
+    }
+}
+
+fn signal_tree(
+    probe: &dyn crate::procs::Probe,
+    tree: &[(u32, Option<Stamp>)],
+    sig: i32,
+    send: &dyn Fn(u32, i32),
+) -> usize {
     let mut live = 0;
-    for (p, start) in tree {
-        if ctx.probe.info(*p).is_some_and(|i| i.start == *start) {
+    for (p, then) in tree {
+        if alive_same(probe, *p, then) {
             live += 1;
-            unsafe { libc::kill(*p as i32, sig) };
+            send(*p, sig);
         }
     }
     live
 }
 
+#[cfg(unix)]
+fn send_signal(pid: u32, sig: i32) {
+    unsafe { libc::kill(pid as i32, sig) };
+}
+
 /// SIGTERM what the agent left behind, SIGKILL what survives the hold timeout.
 #[cfg(unix)]
-fn stop_tree(ctx: &Ctx, tree: &[(u32, Option<String>)]) -> Vec<String> {
-    let signalled = signal_tree(ctx, tree, libc::SIGTERM);
+fn stop_tree(ctx: &Ctx, tree: &[(u32, Option<Stamp>)]) -> Vec<String> {
+    let signalled = signal_tree(ctx.probe, tree, libc::SIGTERM, &send_signal);
     if signalled == 0 {
         return vec![];
     }
     let deadline = std::time::Instant::now() + timeout();
-    let gone = |ctx: &Ctx| {
-        tree.iter()
-            .all(|(p, s)| ctx.probe.info(*p).is_none_or(|i| i.start != *s))
-    };
+    let gone = |ctx: &Ctx| tree.iter().all(|(p, s)| !alive_same(ctx.probe, *p, s));
     while !gone(ctx) && std::time::Instant::now() < deadline {
         std::thread::sleep(Duration::from_millis(100));
     }
     let killed = if gone(ctx) {
         0
     } else {
-        signal_tree(ctx, tree, libc::SIGKILL)
+        signal_tree(ctx.probe, tree, libc::SIGKILL, &send_signal)
     };
     let mut done = vec![format!(
         "stopped {signalled} process(es) the agent left running"
@@ -292,7 +321,7 @@ fn stop_tree(ctx: &Ctx, tree: &[(u32, Option<String>)]) -> Vec<String> {
 }
 
 #[cfg(not(unix))]
-fn stop_tree(_: &Ctx, _: &[(u32, Option<String>)]) -> Vec<String> {
+fn stop_tree(_: &Ctx, _: &[(u32, Option<Stamp>)]) -> Vec<String> {
     vec![]
 }
 
@@ -981,6 +1010,39 @@ mod tests {
             session_id: sid.into(),
             ..Default::default()
         }
+    }
+
+    struct Reuse(std::cell::Cell<i64>);
+    impl crate::procs::Probe for Reuse {
+        fn info(&self, pid: u32) -> Option<crate::procs::ProcInfo> {
+            (pid == 7).then(|| crate::procs::ProcInfo {
+                start: None,
+                argv: vec![],
+                start_ms: Some(self.0.get()),
+            })
+        }
+        fn list(&self) -> Vec<(u32, Vec<String>)> {
+            vec![]
+        }
+        fn cwd(&self, _: u32) -> Option<String> {
+            None
+        }
+    }
+
+    #[test]
+    fn a_reused_pid_is_not_signalled_even_without_a_start_tick_stamp() {
+        // Given a descendant recorded on a platform that only reports start_ms (macOS)
+        // When its pid is reused by a process that started later, or is unchanged
+        // Then only the unchanged process is signalled
+        let probe = Reuse(std::cell::Cell::new(1_000));
+        let tree = vec![(7, stamp(&probe, 7))];
+        let sent = std::cell::RefCell::new(vec![]);
+        let send = |p: u32, s: i32| sent.borrow_mut().push((p, s));
+        assert_eq!(signal_tree(&probe, &tree, 15, &send), 1);
+        probe.0.set(900_000);
+        assert_eq!(signal_tree(&probe, &tree, 15, &send), 0);
+        assert_eq!(*sent.borrow(), vec![(7, 15)]);
+        assert_eq!(signal_tree(&probe, &[(7, None)], 15, &send), 0, "no stamp");
     }
 
     #[test]
