@@ -291,6 +291,7 @@
 
 <svelte:window onpointermove={tabMove} onpointerup={tabUp} onpointercancel={tabUp} />
 
+<div class="tabbar-box">
 <div class="tabbar" class:focused class:wrap={settings.wrapTabs} class:dragging={dropAt !== null} role="tablist" data-tour="tabs">
   <div class="tabs" bind:this={strip}>
     {#each tabs as tab, i (tab.key)}
@@ -384,6 +385,7 @@
     {/if}
   </div>
 </div>
+</div>
 
 <style>
   .actions .icon-btn.on {
@@ -396,6 +398,10 @@
     width: auto;
     padding: 0 6px;
     font-size: 11px;
+  }
+  .tabbar-box {
+    container-type: inline-size;
+    flex: none;
   }
   .tabbar {
     display: flex;
@@ -548,8 +554,25 @@
   }
   .actions {
     display: flex;
+    flex: none;
     align-items: center;
     gap: 2px;
+  }
+  @container (max-width: 520px) {
+    .tabbar {
+      flex-wrap: wrap;
+      height: auto;
+      align-items: flex-start;
+    }
+    .tabs {
+      flex: 1 0 100%;
+    }
+    .actions {
+      flex: 1 0 100%;
+      justify-content: flex-end;
+      height: 34px;
+      border-top: 1px solid var(--border);
+    }
   }
   .kill:hover:not(:disabled),
   .kill.confirm {
