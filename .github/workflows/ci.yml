@@ -35,6 +35,7 @@ jobs:
       macos_procs: ${{ steps.filter.outputs.macos_procs }}
       actionlint: ${{ steps.filter.outputs.actionlint }}
       store_guard: ${{ steps.filter.outputs.store_guard }}
+      tap: ${{ steps.filter.outputs.tap }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -220,6 +221,20 @@ jobs:
           restore-keys: ${{ runner.os }}-cargo-registry-
 
       - run: cargo clippy --locked --target x86_64-pc-windows-msvc --lib --bins -- -D warnings
+
+  tap:
+    needs: changes
+    if: needs.changes.outputs.tap == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - uses: Homebrew/actions/setup-homebrew@c262868c096d909fc278daa87ed9772967331ea3 # 2026.11.02.1
+
+      - run: scripts/update-tap.test.sh
 
   macos:
     needs: changes
