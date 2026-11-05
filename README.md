@@ -162,6 +162,29 @@ Android: install and update the APK from the releases with Obtainium, or downloa
 publicly; building it needs your own Apple developer account and TestFlight. See
 [docs/mobile.md](docs/mobile.md).
 
+#### Google Play (closed testing)
+
+Overseer is in closed testing on Google Play before its public release. To install it from Play
+and get updates there:
+
+1. With the Google account of your Android phone, join the
+   [Overseer testers group](https://groups.google.com/g/overseer-testers) ("Join group").
+2. Open the [testing invitation](https://play.google.com/apps/testing/io.github.basilelt.overseer)
+   with the same account and tap **Become a tester**. If it says the app is not available, the
+   group join has not reached Play yet: wait a few minutes and reload.
+3. Install Overseer from the
+   [Play Store page](https://play.google.com/store/apps/details?id=io.github.basilelt.overseer)
+   (the link from the invitation page). Updates arrive through Play like any app.
+4. Stay in the group and keep the app installed: Play only opens the app to everyone after
+   testers have used it for 14 days. Send feedback from the app (More > Send feedback) or on the
+   Play listing.
+
+No server yet? Tap **Try the demo** on the first screen to explore the app with sample data.
+
+Already using the APK from the releases? Both builds are signed with the same key, so Play
+installs over it and keeps your servers; from then on Play updates the app instead of the in-app
+updater.
+
 ### Updates
 
 From 0.4.0 the app updates itself (AppImage and Windows installer) from the public GitHub
