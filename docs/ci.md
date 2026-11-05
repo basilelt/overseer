@@ -125,7 +125,7 @@ its `changes` job runs, a few seconds on `ubuntu-slim`. Pushes by `github-action
 | release | `app-windows-arm` | `windows-11-arm` | NSIS installer `*_arm64-setup.exe` and `Overseer_<v>_arm64.msix`, built natively |
 | release | `app-macos` | `macos-26` | `.dmg` for Apple Silicon (`aarch64-apple-darwin`) and Intel (`x86_64-apple-darwin`, cross-built) |
 | release | `app-android` | `ubuntu-24.04` | signed universal APK (arm64-v8a, armeabi-v7a) `Overseer_<v>_android.apk` + `.sha256`; skipped without the keystore secrets |
-| release | `app-ios` | `macos-26` | fastlane `internal_testflight` lane: match (readonly), `tauri ios build`, `upload_to_testflight` with `skip_submission`; `continue-on-error`, skipped without the Apple secrets |
+| release | `app-ios` | `macos-26` | fastlane `internal_testflight` lane: `tauri ios build` signed with `IOS_CERTIFICATE`/`IOS_MOBILE_PROVISION`, `upload_to_testflight` with `skip_submission`; `continue-on-error`, skipped without the Apple secrets |
 | release | `publish` | `ubuntu-slim` | GitHub Release with generated release notes, every artifact and `SHA256SUMS`, then the updater manifest `latest.json` when the updater key is set |
 | release | `tap` | `ubuntu-24.04` | `scripts/update-tap.sh` writes the cask and formula of `basilelt/homebrew-tap` and pushes `overseer <version>` to `bump/overseer-<version>`; the tap's own CI audits it and fast-forwards `main`; skipped without `HOMEBREW_TAP_DEPLOY_KEY` |
 
@@ -249,7 +249,7 @@ job that needs a missing one is skipped or builds unsigned, with a warning annot
 | `APPLE_KEY_ID`, `APPLE_ISSUER_ID`, `APPLE_KEY_CONTENT` | App Store Connect API key (Developer role; `APPLE_KEY_CONTENT` is the `.p8` text): notarization of the Developer ID app, and TestFlight | with a Developer ID set, `app-macos` fails instead of shipping an app Gatekeeper blocks |
 | `HOMEBREW_TAP_DEPLOY_KEY` | the `tap` job: the private half of an SSH deploy key with write access on `basilelt/homebrew-tap` only (create with `ssh-keygen -t ed25519`, add the public half under the tap's Settings > Deploy keys with "Allow write access") | `tap` skipped, the tap keeps the previous version |
 | `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD` | `app-android`: signed release APK ([docs/mobile.md](mobile.md#android-once-by-whoever-holds-the-release-key)) | `app-android` skipped, no APK in the release |
-| `APPLE_TEAM_ID`, `APPLE_KEY_ID`, `APPLE_ISSUER_ID`, `APPLE_KEY_CONTENT`, `MATCH_GIT_URL`, `MATCH_PASSWORD`, `MATCH_SSH_PRIVATE_KEY` | `app-ios`: TestFlight upload ([docs/mobile.md](mobile.md#ios-once-by-the-apple-developer-account-holder)) | `app-ios` skipped |
+| `APPLE_TEAM_ID`, `APPLE_KEY_ID`, `APPLE_ISSUER_ID`, `APPLE_KEY_CONTENT`, `IOS_CERTIFICATE`, `IOS_CERTIFICATE_PASSWORD`, `IOS_MOBILE_PROVISION` | `app-ios`: TestFlight upload ([docs/mobile.md](mobile.md#ios-once-by-the-apple-developer-account-holder)) | `app-ios` skipped |
 
 One repository variable (same page, Variables tab):
 

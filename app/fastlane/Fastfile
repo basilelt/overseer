@@ -1,6 +1,4 @@
-require "base64"
 require "json"
-require "securerandom"
 require "shellwords"
 require "tmpdir"
 
@@ -14,18 +12,8 @@ platform :ios do
     attempt = ENV.fetch("GITHUB_RUN_ATTEMPT", "1")
     bundle_version = attempt == "1" ? run_number : "#{run_number}.#{attempt}"
     short_version = JSON.parse(File.read(File.join(app_dir, "src-tauri/tauri.conf.json"))).fetch("version")
-    app_id = CredentialsManager::AppfileConfig.try_fetch_value(:app_identifier)
 
-    keychain = "overseer-ci"
-    keychain_password = SecureRandom.hex(24)
-    create_keychain(
-      name: keychain,
-      password: keychain_password,
-      default_keychain: true,
-      unlock: true,
-      timeout: 3600,
-      lock_when_sleeps: false
-    )
+    %w[IOS_CERTIFICATE IOS_CERTIFICATE_PASSWORD IOS_MOBILE_PROVISION].each { |k| ENV.fetch(k) }
 
     api_key = app_store_connect_api_key(
       key_id: ENV.fetch("APPLE_KEY_ID"),
@@ -34,29 +22,6 @@ platform :ios do
       duration: 1200,
       in_house: false
     )
-
-    match(
-      type: "appstore",
-      readonly: true,
-      keychain_name: keychain,
-      keychain_password: keychain_password,
-      api_key: api_key
-    )
-
-    # Tauri signs iOS builds itself from IOS_CERTIFICATE (a .p12 with the key) and
-    # IOS_MOBILE_PROVISION, so the identity match installed is exported back out.
-    p12 = File.join(tmp, "distribution.p12")
-    p12_password = SecureRandom.hex(16)
-    sh(
-      "security", "export",
-      "-k", File.expand_path("~/Library/Keychains/#{keychain}-db"),
-      "-t", "identities", "-f", "pkcs12",
-      "-P", p12_password, "-o", p12,
-      log: false
-    )
-    ENV["IOS_CERTIFICATE"] = Base64.strict_encode64(File.binread(p12))
-    ENV["IOS_CERTIFICATE_PASSWORD"] = p12_password
-    ENV["IOS_MOBILE_PROVISION"] = Base64.strict_encode64(File.binread(ENV.fetch("sigh_#{app_id}_appstore_profile-path")))
 
     config = { bundle: { iOS: { bundleVersion: bundle_version } } }.to_json
     sh("pnpm", "--dir", app_dir, "tauri", "ios", "build", "--ci", "--export-method", "app-store-connect", "--config", config)
