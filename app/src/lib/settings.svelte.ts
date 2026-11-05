@@ -1,10 +1,12 @@
-import './demo-boot';
+import { installDemoStorage } from './demo';
 import { isLocale, setLocale, systemLocale, type Locale } from './i18n.svelte';
 import { DEFAULT_SCROLLBACK_LINES } from './scroll';
 import type { Agent, Effort, HostTarget, Project } from './types';
 import type { LinkTarget } from './links';
 import { hostKey } from './window';
 import { DEFAULT_KINDS, DEFAULT_QUIET, migrateKinds, type Delivery, type NotifyKind, type QuietHours } from './notify-prefs';
+
+installDemoStorage();
 
 export type ThemePref = 'auto' | 'light' | 'dark';
 export const COLOR_TOKENS = ['accent', 'bg', 'surface', 'border', 'text', 'text-2'] as const;

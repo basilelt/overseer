@@ -5,10 +5,8 @@ let real: Storage | undefined;
 
 function storage(): Storage | undefined {
   try {
-    return real ?? globalThis.localStorage ?? undefined;
-  } catch {
-    return undefined;
-  }
+    return real ?? globalThis.localStorage;
+  } catch {}
 }
 
 export function isDemo(): boolean {
@@ -46,17 +44,14 @@ export function scopedStorage(base: Storage, prefix = DEMO_PREFIX): Storage {
 export function installDemoStorage(target: { localStorage?: Storage } = globalThis): boolean {
   try {
     const base = target.localStorage;
-    if (!base) return false;
-    if (!isDemo()) {
-      scopedStorage(base).clear();
-      return false;
+    if (base && isDemo()) {
+      Object.defineProperty(target, 'localStorage', { value: scopedStorage(base), configurable: true, writable: true });
+      real = base;
+      return true;
     }
-    Object.defineProperty(target, 'localStorage', { value: scopedStorage(base), configurable: true, writable: true });
-    real = base;
-    return true;
-  } catch {
-    return false;
-  }
+    if (base) scopedStorage(base).clear();
+  } catch {}
+  return false;
 }
 
 export function uninstallDemoStorage(target: { localStorage?: Storage } = globalThis) {
@@ -90,11 +85,10 @@ export function exitDemo(reload: () => void = reloadPage, target: { localStorage
       scopedStorage(base).clear();
       base.removeItem(DEMO_KEY);
     }
-    if (real) Object.defineProperty(target, 'localStorage', { value: discarding(), configurable: true, writable: true });
+    if (real) {
+      const none = () => null;
+      Object.defineProperty(target, 'localStorage', { value: { length: 0, key: none, getItem: none, setItem: none, removeItem: none, clear: none }, configurable: true, writable: true });
+    }
   } catch {}
   reload();
-}
-
-function discarding(): Storage {
-  return { length: 0, key: () => null, getItem: () => null, setItem: () => {}, removeItem: () => {}, clear: () => {} };
 }
