@@ -105,6 +105,10 @@ sources means uninstalling first (see
 Testers on the App Store Connect team also get every store build in TestFlight (internal testing
 group), usually 10 to 30 minutes after the store run, before App Store review ends.
 
+Anyone else can join the public TestFlight beta with the
+[invitation link](https://testflight.apple.com/join/DZgZFcMk) (external testing group). A new
+version reaches them after Beta App Review; later builds of the same version usually need none.
+
 ## How the builds run
 
 - Pull requests: the `android` CI job builds a debug APK for arm64 (`pnpm tauri android build

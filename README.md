@@ -171,7 +171,7 @@ Android: install and update the APK from the releases with Obtainium
 ([add it in one tap](https://apps.obtainium.imranr.dev/redirect?r=obtainium://app/%7B%22id%22%3A%22io.github.basilelt.overseer%22%2C%22url%22%3A%22https%3A%2F%2Fgithub.com%2Fbasilelt%2Foverseer%22%2C%22author%22%3A%22basilelt%22%2C%22name%22%3A%22Overseer%22%2C%22preferredApkIndex%22%3A0%2C%22additionalSettings%22%3A%22%7B%5C%22includePrereleases%5C%22%3Afalse%2C%5C%22apkFilterRegEx%5C%22%3A%5C%22Overseer_.%2A_android%5C%5C%5C%5C.apk%5C%22%2C%5C%22invertAPKFilter%5C%22%3Afalse%7D%22%2C%22overrideSource%22%3A%22GitHub%22%7D), settings prefilled), or download it with
 `gh release download --repo basilelt/overseer --pattern '*android.apk'`. Google Play gets a
 release now and then, shipped by hand; Play builds are updated by Play instead of the in-app
-updater. iOS: install from the App Store. Store versions lag behind the GitHub releases. See
+updater. iOS: join the [TestFlight beta](#testflight-ios-beta) (App Store release to follow). Store versions lag behind the GitHub releases. See
 [docs/mobile.md](docs/mobile.md).
 
 #### Google Play (closed testing)
@@ -196,6 +196,18 @@ No server yet? Tap **Try the demo** on the first screen to explore the app with 
 Already using the APK from the releases? The Play build is signed with a different key, so
 Android will not install it over the APK: uninstall the APK first (your servers have to be added
 again). From then on Play updates the app instead of the in-app updater.
+
+#### TestFlight (iOS beta)
+
+Overseer for iPhone and iPad is in public beta on TestFlight before its App Store release:
+
+1. Install [TestFlight](https://apps.apple.com/app/testflight/id899247664) from the App Store.
+2. Open the [Overseer TestFlight invitation](https://testflight.apple.com/join/DZgZFcMk) on your
+   iPhone or iPad and tap **Accept**, then **Install**. If it says the beta is full or not
+   accepting testers, try again later.
+3. New builds arrive through TestFlight; each build expires after 90 days, so keep TestFlight
+   updates on. Send feedback from the app (More > Send feedback) or with **Send Beta Feedback**
+   in TestFlight.
 
 ### Updates
 
