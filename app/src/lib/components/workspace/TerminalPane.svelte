@@ -23,7 +23,8 @@
   import { scrollbackBytes, writeAnchored } from '../../scroll';
   import { fontChain, fontFamilies, lineMetrics, sameMetrics, SYMBOL_SAMPLE } from '../../fonts';
   import { applyMods, NO_MODS, type Mods } from '../../mobile/accessory';
-  import { attachRetryMs, attemptAfterDetach } from '../../conn';
+  import { attachRetryMs } from '../../conn';
+  import { termLink, type TermLink } from '../../termlink';
   import { LONG_PRESS_MS, movedTooFar, pinchFontSize, touchDistance } from '../../mobile/gestures';
   import { canResize, isAgentTerm, shouldReassert, sizedElsewhere } from '../../mobile/termsize';
   import { ui } from '../../mobile/ui.svelte';
@@ -49,6 +50,7 @@
   let picker = $state<HTMLInputElement>();
   let term: Terminal | null = null;
   let io: TermIO | null = null;
+  let link: TermLink | null = null;
   let refit: (() => void) | null = null;
   let pickFiles: ((files: File[]) => void) | null = null;
   let pastePath: ((path: string) => Promise<void>) | null = null;
@@ -293,58 +295,36 @@
           if (tm && info && (tm.cols !== info.cols || tm.rows !== info.rows)) tm.resize(info.cols, info.rows);
         };
         applyFont();
-        let since = 0;
-        let gen = 0;
-        let linking = false;
-        const attach = async (attempt: number): Promise<void> => {
-          if (disposed || !term) return;
-          const g = ++gen;
-          linking = true;
-          term.reset();
-          modes.reset();
-          let conn: TermIO;
-          try {
-            conn = await app.client!.attachTerm(
-              termId,
-              (bytes) => {
-                if (g !== gen) return;
-                modes.feed(bytes);
-                if (!term) return;
-                writing = true;
-                try {
-                  scrolledBack = writeAnchored(term, bytes);
-                  if (scrolledBack) unseen = true;
-                } finally {
-                  writing = false;
-                }
-              },
-              () => g === gen && onDetached(attempt),
-            );
-          } catch (e) {
-            if (g !== gen) return;
-            linking = false;
-            return retry(attempt, e);
-          }
-          if (disposed || g !== gen) return conn.close();
-          linking = false;
-          since = Date.now();
-          error = null;
-          io = conn;
-          if (!scheduler.shown(term as unknown as PaintTarget)) conn.background?.(true);
-          if (!fixed) io.resize(term.cols, term.rows);
-          measured();
-        };
-        const retry = (attempt: number, e?: unknown) => {
-          if (disposed) return;
-          if (e !== undefined) error = message(e);
-          const wait = attachRetryMs(attempt, !!info?.exited, e);
-          if (wait === null) return void (e === undefined && (closed = true));
-          setTimeout(() => attach(attempt + 1).catch((err) => (error = message(err))), wait);
-        };
-        const onDetached = (attempt: number) => {
-          io = null;
-          retry(attemptAfterDetach(attempt, Date.now() - since));
-        };
+        link = termLink({
+          open: (onData, onClose) => app.client!.attachTerm(termId, onData, onClose),
+          reset: () => {
+            term?.reset();
+            modes.reset();
+          },
+          data: (bytes) => {
+            modes.feed(bytes);
+            if (!term) return;
+            writing = true;
+            try {
+              scrolledBack = writeAnchored(term, bytes);
+              if (scrolledBack) unseen = true;
+            } finally {
+              writing = false;
+            }
+          },
+          up: (conn) => {
+            io = conn;
+            error = null;
+            if (!term) return;
+            if (!scheduler.shown(term as unknown as PaintTarget)) conn.background?.(true);
+            if (!fixed) conn.resize(term.cols, term.rows);
+            measured();
+          },
+          down: () => (io = null),
+          failed: (e) => (error = message(e)),
+          retryMs: (attempt, e) => attachRetryMs(attempt, !!info?.exited, e),
+          ended: () => (closed = true),
+        });
         term.onScroll(() => {
           if (writing || !term) return;
           scrolledBack = term.getViewportY() > 0;
@@ -383,13 +363,9 @@
         });
         term.onResize(({ cols, rows }) => {
           mine = { cols, rows };
-          if (!io && !linking) return;
-          const old = io;
-          io = null;
-          attach(0).catch((err) => (error = message(err)));
-          old?.close();
+          link?.reattach();
         });
-        await attach(0);
+        await link.attach();
         ro = new ResizeObserver(([e]) => {
           if (!phone) refit?.();
           resized.push(`${Math.round(e.contentRect.width)}x${Math.round(e.contentRect.height)}`);
@@ -422,7 +398,8 @@
       resized.cancel();
       stopIme?.();
       stopShown?.();
-      io?.close();
+      link?.dispose();
+      link = null;
       io = null;
       term?.dispose();
       term = null;

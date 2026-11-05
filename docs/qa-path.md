@@ -140,7 +140,7 @@ Each step is **Do → Expect**. Check every screenshot for overlaps, clipped tex
 
 ### M. Life events
 
-- **M1** With an agent session, a shell (in a workspace, renamed) and a task in progress: `sandbox.sh crash`, then `start` → the log says `daemon restarted; restored N agent sessions and M shells`. Terminals keep their ids, workspace and title, and the agent is relaunched with `--resume <same session>` (`stub.log`).
+- **M1** With an agent session, a shell (in a workspace, renamed) and a task in progress: `sandbox.sh crash`, then `start` → the log says `daemon restarted; restored N agent sessions and M shells`. Terminals keep their ids, workspace and title, and the agent is relaunched with `--resume <same session>` (`stub.log`). Leave the app open through the crash: each terminal reconnects on its own, shows the restored session without rows of the old screen left in it, and keeps one connection per terminal.
 - **M2** Reload the app → tabs, workspaces and the selected session come back. The resumed agent answers input.
 - **M3** Set **After a server reboot or restart** to Nothing, then crash and start → nothing is restored.
 - **M4** Idle: leave the app untouched for 70 s with a session open → no DOM changes and no repaints (count `MutationObserver` records over 10 s).

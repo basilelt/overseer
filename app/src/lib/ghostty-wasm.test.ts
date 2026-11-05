@@ -85,6 +85,26 @@ describe('blank resize', () => {
     expect(screen(term.wasmTerm!)[0]).toBe(line(3));
   });
 
+  it('starts blank after a reset that reuses the memory of a freed terminal', async () => {
+    installBlankResize(mod);
+    const term = headless(await load(), 80, 24);
+    for (let i = 0; i < 3000; i++) term.write(`\x1b[1;31mold line ${i} ${'x'.repeat(i % 60)}\x1b[0m\r\n`);
+    term.reset();
+    term.write('new\r\n');
+    expect(screen(term.wasmTerm!)).toEqual(['new', ...Array(23).fill('')]);
+  });
+
+  it('points the selection at the new terminal after a reset', async () => {
+    installBlankResize(mod);
+    const term = headless(await load(), 80, 24);
+    const selection = { wasmTerm: term.wasmTerm };
+    Object.assign(term, { selectionManager: selection });
+    term.reset();
+    term.write('copied text\r\n');
+    expect(selection.wasmTerm).toBe(term.wasmTerm);
+    expect(text(selection.wasmTerm!, 0)).toBe('copied text');
+  });
+
   it('patches the prototype once', () => {
     expect(installBlankResize(mod)).toBe(true);
     expect(installBlankResize(mod)).toBe(true);
