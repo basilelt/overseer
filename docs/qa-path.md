@@ -110,6 +110,7 @@ Each step is **Do → Expect**. Check every screenshot for overlaps, clipped tex
 - **G3** Groups: Cmd/Ctrl+click several sessions → Add to group → the group lists them and broadcast reaches them.
 - **G4** Drag the sidebar narrow → the mode tabs stay on one line, cut with an ellipsis. Drag it back.
 - **G5** Filter workspaces or sessions → the list narrows. Archive and restore a workspace.
+- **G6** Add a workspace for a folder with no sessions and open it → the pane shows the workspace name, its path and "No sessions in this workspace yet", with **New <agent> session**, **Shell** and **More…**. Each button starts its session in that folder (or opens the new tab menu); with the daemon down or the folder deleted, the two start buttons are disabled. **By status** with nothing open shows the generic "Nothing open here" pane.
 
 ### H. Ports
 

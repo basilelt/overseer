@@ -13,6 +13,7 @@
   import { app } from '../../state.svelte';
   import { focusPane, update, type Pane } from '../../workspace.svelte';
   import TabBar from './TabBar.svelte';
+  import EmptyPane from './EmptyPane.svelte';
   import TerminalPane from './TerminalPane.svelte';
   import GitCompare from '@lucide/svelte/icons/git-compare';
   import { renameTab } from '../../workspace.svelte';
@@ -128,7 +129,9 @@
             <button class="btn primary" disabled={resuming} onclick={resume}><RotateCcw size={13} />{t(running ? 'line.attach' : 'term.resume')}</button>
           {/if}
         </div>
-      {:else if !item?.termId}
+      {:else if !item}
+        <EmptyPane />
+      {:else if !item.termId}
         <div class="empty">
           <SquareTerminal size={28} strokeWidth={1.5} />
           <p class="faint">{t('term.empty')}</p>
