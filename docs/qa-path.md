@@ -106,7 +106,7 @@ Each step is **Do → Expect**. Check every screenshot for overlaps, clipped tex
 
 ### G. Sidebar and workspaces
 
-- **G1** Workspaces versus **By status** → the lists match the sessions. By status groups by Working, Idle and Held.
+- **G1** Workspaces versus **By status** → the lists match the sessions. By status groups by Working, Idle and Stopped (sessions with no live process).
 - **G2** Add a workspace for a parent folder and one for a child folder, then open a shell in the child → it counts under the child, not the parent. Task sessions stay in their project's workspace, and no stray **Other sessions** group appears.
 - **G3** Groups: Cmd/Ctrl+click several sessions → Add to group → the group lists them and broadcast reaches them.
 - **G4** Drag the sidebar narrow → the mode tabs stay on one line, cut with an ellipsis. Drag it back.

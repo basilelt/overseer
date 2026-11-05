@@ -1508,7 +1508,7 @@ Each target answers `sent`, `skipped` (busy or waiting for a permission answer),
 A workspace is one project on one host: a repository or any folder, with every agent, shell,
 browser and review tab that belongs to it. The sidebar shows **Workspaces** (default) or
 **By status** (the session list grouped by Needs input, Needs testing, Working, Pushed, Idle,
-Held); the toggle is at the top of the sidebar.
+Stopped: no live agent process, resumable); the toggle is at the top of the sidebar.
 
 - **Tree**: pinned workspaces on top, then your folders (one level of sub-folders) and the
   workspaces outside any folder. Every project the daemon knows gets a workspace: the
