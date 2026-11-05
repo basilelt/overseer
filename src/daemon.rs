@@ -1065,6 +1065,11 @@ pub fn conn(mut s: impl Stream, token: Option<&str>) {
     let (code, v) = handle(&ctx, &req);
     if changes_lines(&req.method, &req.path, code) {
         crate::scanner::poke();
+        if settles_lines(&req.method, &req.path) {
+            if let Ok(lines) = crate::scan(&ctx) {
+                crate::lifecycle::persist(&ctx.state_dir, &lines);
+            }
+        }
     }
     let extra = if crate::scanner::take_scanning() {
         "X-Overseer-Scanning: 1\r\n"
@@ -1078,6 +1083,16 @@ pub fn conn(mut s: impl Stream, token: Option<&str>) {
         extra,
         &serde_json::to_vec(&v).unwrap_or_default(),
     );
+}
+
+fn settles_lines(method: &str, path: &str) -> bool {
+    let segs: Vec<&str> = path.trim_matches('/').split('/').collect();
+    method == "PUT"
+        && matches!(
+            segs.as_slice(),
+            ["v1", "lines", _, "pin" | "title" | "workspace"]
+                | ["v1", "terms", _, "title" | "workspace"]
+        )
 }
 
 fn changes_lines(method: &str, path: &str, code: u16) -> bool {
@@ -1097,6 +1112,7 @@ fn changes_lines(method: &str, path: &str, code: u16) -> bool {
             ]
         ) | ("POST", ["v1", "terms"])
             | ("POST", ["v1", "terms", _, "kill"])
+            | ("PUT", ["v1", "terms", _, "title" | "workspace"])
             | ("DELETE", ["v1", "terms" | "workspaces", _])
             | ("POST", ["v1", "tasks", _, "start"])
             | ("POST", ["v1", "tasks", "organize"])
@@ -1745,6 +1761,12 @@ mod tests {
         assert!(changes_lines("PUT", "/v1/lines/x/pin", 200));
         assert!(changes_lines("PUT", "/v1/lines/x/title", 200));
         assert!(changes_lines("PUT", "/v1/lines/x/workspace", 200));
+        assert!(changes_lines("PUT", "/v1/terms/x/title", 200));
+        assert!(changes_lines("PUT", "/v1/terms/x/workspace", 200));
+        assert!(settles_lines("PUT", "/v1/lines/x/pin"));
+        assert!(settles_lines("PUT", "/v1/terms/x/title"));
+        assert!(!settles_lines("POST", "/v1/terms"));
+        assert!(!settles_lines("PUT", "/v1/lines/x/hold"));
         assert!(changes_lines("DELETE", "/v1/workspaces/w", 200));
         assert!(!changes_lines("POST", "/v1/terms", 400));
         assert!(!changes_lines("GET", "/v1/lines", 200));
