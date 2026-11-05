@@ -55,7 +55,6 @@ describe('saved host form', () => {
 describe('connect hints', () => {
   it('classifies errors the phone can explain', () => {
     expect(connectHint('the overseer server is not installed on this host (linux-x86_64): cannot download the server from GitHub: dns')).toBe('notInstalled');
-    expect(connectHint('the overseer server is not installed on this host (linux-x86_64): GitHub\'s limit for downloads without a token is reached: add a GitHub token (Settings > Updates, GitHub access), try again later…')).toBe('token');
     expect(connectHint("Permission denied for u@box:22: the server did not accept this device's key. Add…")).toBe('deviceKey');
     expect(connectHint('REMOTE HOST IDENTIFICATION HAS CHANGED for box:22')).toBe('hostKeyChanged');
     expect(connectHint('ssh: connect to host box port 22: Connection timed out')).toBe('unreachable');

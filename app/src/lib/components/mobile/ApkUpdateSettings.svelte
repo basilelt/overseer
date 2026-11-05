@@ -20,10 +20,10 @@
   onMount(() => void apk.refreshStatus());
 </script>
 
-{#if apk.enabled}
+{#if apk.enabled && apk.updates}
   <section>
-    <h3>{at(apk.updates ? 'section' : 'serverSection')}</h3>
-    {#if apk.updates && row('apk')}
+    <h3>{at('section')}</h3>
+    {#if row('apk')}
     <div class="row" class:hit={hit('apk')}>
       <span class="status">
         <span>{at('version')} <span class="mono">{apk.current || '—'}</span></span>
@@ -32,19 +32,6 @@
       <div class="actions">
         {#if apk.info && !apk.busy}<button class="btn" onclick={() => (apk.sheet = true)}>{at('view')}</button>{/if}
         <button class="btn" disabled={apk.busy} onclick={() => apk.check(true)}>{at('check')}</button>
-      </div>
-    </div>
-    {/if}
-    {#if row('apkToken')}
-    <div class="row" class:hit={hit('apkToken')}>
-      <span class="status">
-        <span>{at('tokenTitle')}</span>
-        <small>{apk.hasToken ? `${at('tokenSaved')} · ${at('tokenStored')}` : at('tokenNone')}</small>
-        {#if !apk.updates}<small>{at('serverHint')}</small>{/if}
-      </span>
-      <div class="actions">
-        {#if apk.hasToken}<button class="btn ghost" onclick={() => apk.removeToken()}>{at('tokenRemove')}</button>{/if}
-        <button class="btn" onclick={() => apk.openToken()}>{apk.hasToken ? at('tokenReplace') : at('addToken')}</button>
       </div>
     </div>
     {/if}

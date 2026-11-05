@@ -525,13 +525,13 @@ async fn installs_a_missing_server_from_the_release_download() {
     drop(t);
 
     s.server = Some(source(
-        Err(crate::server_fetch::RATE_LIMITED),
+        Err("cannot download the server from GitHub: connection refused"),
         calls.clone(),
     ));
     let (t, _) = connect_steps(&h, &s).await;
     let err = t.err().unwrap();
     assert!(
-        err.contains(crate::ssh::NOT_INSTALLED) && err.contains("GitHub token"),
+        err.contains(crate::ssh::NOT_INSTALLED) && err.contains("cannot download the server"),
         "{err}"
     );
     assert!(crate::ssh::permanent(&err));
