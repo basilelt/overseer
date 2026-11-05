@@ -14,6 +14,10 @@ fn main() {
         })
         .unwrap_or_else(|| std::env::var("CARGO_PKG_VERSION").unwrap());
     println!("cargo:rustc-env=OVERSEER_SERVER_VERSION={version}");
+    println!("cargo:rerun-if-env-changed=OVERSEER_DISTRIBUTION");
+    let play = std::env::var("OVERSEER_DISTRIBUTION").is_ok_and(|d| d == "play");
+    let distribution = if play { "play" } else { "github" };
+    println!("cargo:rustc-env=OVERSEER_DISTRIBUTION={distribution}");
     std::fs::create_dir_all("resources/server").expect("create resources/server");
     tauri_build::build()
 }

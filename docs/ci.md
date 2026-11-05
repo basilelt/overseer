@@ -110,9 +110,9 @@ its `changes` job runs, a few seconds on `ubuntu-slim`. Pushes by `github-action
 | ci | `app` | `ubuntu-24.04` | `make app-test` (vitest with coverage, svelte-check, Tauri crate tests and clippy) |
 | ci | `perf` | `ubuntu-24.04` | release build of the app against the mock backend, `scripts/perf-cpu.sh` CPU budget (30 s idle, 30 s streaming) under Xvfb |
 | ci | `windows` | `windows-latest` | native `cargo clippy --target x86_64-pc-windows-msvc --lib --bins -- -D warnings` |
-| ci | `android` | `ubuntu-24.04` | debug APK for arm64 (`pnpm tauri android build --debug --apk --target aarch64`), artifact `android-debug-apk` |
+| ci | `android` | `ubuntu-24.04` | debug APK for arm64 (`pnpm tauri android build --debug --apk --target aarch64`), 16 KB page alignment (`scripts/android-16k.sh` and its test), artifact `android-debug-apk` |
 | ci | `macos` | `macos-26` | throwaway self-signed identity on two builds must give one designated requirement; `cargo test --lib -- procs:: ports:: review::watch::`; pull requests and manual runs only |
-| ci | `store-guard` | `ubuntu-slim` | `scripts/store-guard.sh`: no App Store / Play Store submission anywhere |
+| ci | `store-guard` | `ubuntu-slim` | `scripts/store-guard.sh`: no App Store submission and no Google Play production release anywhere; `scripts/store-guard.test.sh` and `scripts/android-play-track.test.sh` |
 | ci | `tap` | `ubuntu-24.04` | `scripts/update-tap.test.sh`: runs `scripts/update-tap.sh` on a fake release and requires `brew style` and `brew audit --strict` to pass on the generated formula and cask |
 | release | `gate` | `ubuntu-slim` | `scripts/release-gate.sh` and the tagged-`HEAD` check ([Release gate](#release-gate)); skipped for `github-actions[bot]` and `[skip ci]` |
 | release | `ci` | calls `ci.yml` | the jobs above, or `changes` alone when the gate says `skip_ci` |
@@ -124,7 +124,8 @@ its `changes` job runs, a few seconds on `ubuntu-slim`. Pushes by `github-action
 | release | `app-windows-msix` | `windows-latest` | `Overseer_<v>_x64.msix` from the `app-windows` executable (`scripts/msix.sh`); skipped without the MSIX secrets |
 | release | `app-windows-arm` | `windows-11-arm` | NSIS installer `*_arm64-setup.exe` and `Overseer_<v>_arm64.msix`, built natively |
 | release | `app-macos` | `macos-26` | `.dmg` for Apple Silicon (`aarch64-apple-darwin`) and Intel (`x86_64-apple-darwin`, cross-built) |
-| release | `app-android` | `ubuntu-24.04` | signed universal APK (arm64-v8a, armeabi-v7a) `Overseer_<v>_android.apk` + `.sha256`; skipped without the keystore secrets |
+| release | `app-android` | `ubuntu-24.04` | signed universal APK (arm64-v8a, armeabi-v7a) `Overseer_<v>_android.apk` + `.sha256`, then the signed Google Play App Bundle (artifact `play-android`, not attached to the release; `continue-on-error`); skipped without the keystore secrets |
+| release | `app-android-play` | `ubuntu-slim` | uploads the App Bundle to the Google Play track `PLAY_TRACK` (default `internal`, never `production`) with `r0adkll/upload-google-play`; skipped without `PLAY_SERVICE_ACCOUNT_JSON`; `publish` does not wait for it |
 | release | `app-ios` | `macos-26` | fastlane `internal_testflight` lane: `tauri ios build` signed with `IOS_CERTIFICATE`/`IOS_MOBILE_PROVISION`, `upload_to_testflight` with `skip_submission`; `continue-on-error`, skipped without the Apple secrets |
 | release | `publish` | `ubuntu-slim` | GitHub Release with generated release notes, every artifact and `SHA256SUMS`, then the updater manifest `latest.json` when the updater key is set |
 | release | `tap` | `ubuntu-24.04` | `scripts/update-tap.sh` writes the cask and formula of `basilelt/homebrew-tap` and pushes `overseer <version>` to `bump/overseer-<version>`; the tap's own CI audits it and fast-forwards `main`; skipped without `HOMEBREW_TAP_DEPLOY_KEY` |
@@ -152,7 +153,7 @@ Hosted runners have none of the project's tools, so each job installs what it ne
 | musl and Windows cross tools | apt `clang lld llvm musl-tools`, `mlugg/setup-zig@v2`, `taiki-e/install-action@v2` with `cargo-zigbuild,cargo-xwin` | servers |
 | NSIS and the Windows app's native dependencies | apt `nsis clang lld llvm cmake nasm`, `cargo-xwin` | app-windows |
 | JDK 21 | `actions/setup-java@v6` (temurin) | android, app-android, mobile-init |
-| Android SDK and NDK | preinstalled on `ubuntu-24.04` (`ANDROID_HOME`, platform 36, build-tools); `scripts/android-env.sh` runs with `NDK_HOME=$ANDROID_NDK_HOME` (the image's default NDK, not the newest one) and adds the Rust Android targets | android, app-android, mobile-init |
+| Android SDK and NDK | preinstalled on `ubuntu-24.04` (`ANDROID_HOME`, platform 36, build-tools); `scripts/android-env.sh` runs with `NDK_HOME=$ANDROID_NDK_LATEST_HOME` (the newest NDK on the image, r28 or later, whose linker aligns native libraries to 16 KB pages for Google Play; `$ANDROID_NDK_HOME` when unset) and adds the Rust Android targets | android, app-android, mobile-init |
 | Xcode 26, fastlane, xcodegen | `maxim-lobanov/setup-xcode@v1`, `brew install` when missing | app-ios, mobile-init |
 
 `git`, `ssh`, `ssh-keygen`, `curl`, `jq`, `gh` and Docker come with the images. The daemon's
@@ -249,13 +250,16 @@ job that needs a missing one is skipped or builds unsigned, with a warning annot
 | `APPLE_KEY_ID`, `APPLE_ISSUER_ID`, `APPLE_KEY_CONTENT` | App Store Connect API key (Developer role; `APPLE_KEY_CONTENT` is the `.p8` text): notarization of the Developer ID app, and TestFlight | with a Developer ID set, `app-macos` fails instead of shipping an app Gatekeeper blocks |
 | `HOMEBREW_TAP_DEPLOY_KEY` | the `tap` job: the private half of an SSH deploy key with write access on `basilelt/homebrew-tap` only (create with `ssh-keygen -t ed25519`, add the public half under the tap's Settings > Deploy keys with "Allow write access") | `tap` skipped, the tap keeps the previous version |
 | `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD` | `app-android`: signed release APK ([docs/mobile.md](mobile.md#android-once-by-whoever-holds-the-release-key)) | `app-android` skipped, no APK in the release |
+| `PLAY_SERVICE_ACCOUNT_JSON` | `app-android-play`: upload of the App Bundle to a Google Play testing track ([docs/mobile.md](mobile.md#google-play-once-by-the-play-console-account-holder)) | `app-android-play` skipped; the bundle is still built as the `play-android` artifact |
 | `APPLE_TEAM_ID`, `APPLE_KEY_ID`, `APPLE_ISSUER_ID`, `APPLE_KEY_CONTENT`, `IOS_CERTIFICATE`, `IOS_CERTIFICATE_PASSWORD`, `IOS_MOBILE_PROVISION` | `app-ios`: TestFlight upload ([docs/mobile.md](mobile.md#ios-once-by-the-apple-developer-account-holder)) | `app-ios` skipped |
 
-One repository variable (same page, Variables tab):
+Repository variables (same page, Variables tab):
 
 | Variable | Use |
 |---|---|
 | `ANDROID_CERT_SHA256` | SHA-256 fingerprint of the Android release certificate; `scripts/android-apk.sh` fails the release APK when another key signed it (the PR `android` job pins the runner debug keystore the same way). Unset: the signature is still verified, the fingerprint is not pinned |
+| `PLAY_TRACK` | Google Play track for `app-android-play`: `internal` (default), `alpha`, `beta` or a closed testing track; `production` fails the job (`scripts/android-play-track.sh`) |
+| `PLAY_RELEASE_STATUS` | `completed` (default) or `draft` |
 
 `GITHUB_TOKEN` covers everything else (tags, releases, the release gate's check-run lookups).
 Release downloads need no token: the repository is public.
@@ -358,7 +362,7 @@ checks that a download was built by this workflow from this repository.
   `windows`, `android`, `store-guard`, `macos`; `integration_id` 15368 is the GitHub Actions
   app); jobs skipped by path filtering count as passed. `release-tags` forbids deleting `v*` and
   `latest` (repository admins can bypass); moving them is an update, so the `tag` job still can.
-- The secrets and the variable above, as each feature is wanted.
+- The secrets and the variables above, as each feature is wanted.
 
 ### macOS signing
 

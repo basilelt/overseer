@@ -26,6 +26,9 @@ android {
         versionName = tauriProperties.getProperty("tauri.android.versionName", "1.0")
     }
     val releaseKeystore = System.getenv("ANDROID_KEYSTORE_PATH")?.takeIf { it.isNotBlank() }
+    if (System.getenv("OVERSEER_DISTRIBUTION") == "play") {
+        sourceSets.getByName("release").manifest.srcFile("src/play/AndroidManifest.xml")
+    }
     signingConfigs {
         if (releaseKeystore != null) {
             create("release") {

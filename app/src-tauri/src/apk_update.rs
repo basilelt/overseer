@@ -13,6 +13,8 @@ pub const REPO: &str = "basilelt/overseer";
 const GITHUB: &str = "https://github.com";
 const DOWNLOADS: &str = "updates";
 const PROGRESS_STEP: u64 = 256 * 1024;
+pub const DISTRIBUTION: &str = env!("OVERSEER_DISTRIBUTION");
+const PLAY_MANAGED: &str = "Google Play installs updates for this app";
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(tag = "kind", rename_all = "lowercase")]
@@ -32,6 +34,17 @@ fn network(e: reqwest::Error) -> ApkError {
     ApkError::Network {
         message: e.without_url().to_string(),
     }
+}
+
+pub fn updates_supported(android: bool, distribution: &str) -> bool {
+    android && distribution != "play"
+}
+
+fn ensure_supported() -> Result<(), ApkError> {
+    if DISTRIBUTION == "play" {
+        return Err(failed(PLAY_MANAGED));
+    }
+    Ok(())
 }
 
 pub(crate) fn manifest_url(base: &str) -> String {
@@ -250,7 +263,7 @@ fn current_version(app: &AppHandle) -> String {
 pub async fn apk_update_status(app: AppHandle) -> Result<ApkStatus, ApkError> {
     Ok(ApkStatus {
         current: current_version(&app),
-        supported: cfg!(target_os = "android"),
+        supported: updates_supported(cfg!(target_os = "android"), DISTRIBUTION),
     })
 }
 
@@ -259,6 +272,7 @@ pub async fn apk_update_check(
     app: AppHandle,
     state: State<'_, ApkState>,
 ) -> Result<CheckResult, ApkError> {
+    ensure_supported()?;
     crate::diag::info("updater", "checking for an APK update");
     let current = current_version(&app);
     let Some(found) = find_update(&client()?, GITHUB, &current).await? else {
@@ -293,6 +307,7 @@ pub async fn apk_update_download(
     state: State<'_, ApkState>,
     on_progress: Channel<DownloadEvent>,
 ) -> Result<(), ApkError> {
+    ensure_supported()?;
     crate::diag::info("updater", "downloading the APK update");
     let pending = state
         .pending
@@ -354,6 +369,7 @@ pub async fn apk_update_install(
     app: AppHandle,
     state: State<'_, ApkState>,
 ) -> Result<InstallOutcome, ApkError> {
+    ensure_supported()?;
     crate::diag::info("updater", "opening the Android installer");
     let path = state
         .pending
@@ -368,6 +384,7 @@ pub async fn apk_update_install(
 
 #[tauri::command]
 pub async fn apk_update_allow_install(app: AppHandle) -> Result<(), ApkError> {
+    ensure_supported()?;
     installer::open_settings(&app)
 }
 
@@ -501,6 +518,20 @@ pub(crate) mod testhttp {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_the_github_android_build_updates_itself() {
+        assert!(updates_supported(true, "github"));
+        assert!(!updates_supported(true, "play"));
+        assert!(!updates_supported(false, "github"));
+        assert!(!updates_supported(false, "play"));
+    }
+
+    #[test]
+    fn a_default_build_is_the_github_distribution() {
+        assert_eq!(DISTRIBUTION, "github");
+        assert_eq!(ensure_supported(), Ok(()));
+    }
 
     #[test]
     fn compares_release_tags_as_semver() {

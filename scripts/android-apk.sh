@@ -34,6 +34,11 @@ if [ -n "${ANDROID_CERT_SHA256:-}" ]; then
     exit 1
   fi
 fi
+aapt2=$(command -v aapt2 || ls -d "$ANDROID_HOME"/build-tools/*/aapt2 2>/dev/null | sort -V | tail -1)
+if ! "$aapt2" dump permissions "$apks" | grep -q 'android.permission.REQUEST_INSTALL_PACKAGES'; then
+  echo "::error title=android apk::$apks lacks REQUEST_INSTALL_PACKAGES, so its in-app updater cannot install updates (was it built with OVERSEER_DISTRIBUTION=play?)"
+  exit 1
+fi
 mkdir -p "$(dirname "$out")"
 cp "$apks" "$out"
 (cd "$(dirname "$out")" && sha256sum "$(basename "$out")" >"$(basename "$out").sha256")

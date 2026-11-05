@@ -125,6 +125,8 @@ Each step is **Do → Expect**. Check every screenshot for overlaps, clipped tex
 - **I6** Search: type `notif`, then `reboot` → only the matching rows stay, highlighted, with a count per category; in Notifications, Connection (server) and Updates the other rows of the section are hidden too. Type `zzzz` → an empty state. In Français, type an accented word (`échoue`) and the same without the accent → same rows. **Esc** clears the search, a second **Esc** closes Settings.
 - **I7** Language from the new layout: switch it in General → the sidebar, the search placeholder and the rows change language at once.
 - **I8** Phone (`?phone=1`): Settings opens on a list of categories; a category opens its rows with a back button; searching shows results across categories; no horizontal scroll at 390 px.
+- **I10** Help → **Privacy policy** → **Open** opens `https://github.com/basilelt/overseer/blob/main/PRIVACY.md` in the system browser (desktop) or a new tab (web). Search `privacy` → Help is the only category and the **Privacy policy** row is highlighted.
+- **I11** (Android, real device) The GitHub APK shows **Software update** in Settings and **Check for updates** in More; the Google Play build (installed from the internal testing track) shows neither, no update pill, and no **Check for updates** in the command palette.
 
 ### J. Feedback
 

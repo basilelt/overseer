@@ -99,3 +99,49 @@ Android build now updates itself from the same release assets
   (docs/mobile.md).
 - **iOS** stays on TestFlight; the updater is not shown there.
 
+## Addendum: Google Play
+
+The "no Play Store" decision is narrowed: the GitHub Release APK stays the main Android
+channel, and each release also uploads an App Bundle to a Google Play **testing** track. Production
+on Play stays out of CI.
+
+- **Two artifacts from one job.** `app-android` builds the APK as before, then a signed AAB
+  (`--aab --target aarch64 --target armv7`) with the same release keystore. The user registers that
+  key with Play App Signing and uses it as the upload key, so the GitHub APK and the Play build
+  share one signing certificate. The AAB is the `play-android` artifact, not an `app-*` one, so it
+  is never attached to the GitHub Release.
+- **No self-update on Play.** Play policy forbids an app it distributes from installing updates
+  itself. The Play build drops `REQUEST_INSTALL_PACKAGES` and never shows or runs the in-app
+  updater. One switch, `OVERSEER_DISTRIBUTION=play`, set only on the AAB step, drives both:
+  - Gradle points the `release` source set's manifest at `src/play/AndroidManifest.xml`, which
+    removes the permission through the manifest merger (`tools:node="remove"`);
+  - `build.rs` turns it into the compile-time `OVERSEER_DISTRIBUTION` env (`github` or `play`);
+    `apk_update_status` then reports `supported: false`, and the check, download and install
+    commands refuse to run. The web view starts the updater only after `apk_update_status`
+    confirms it is supported, so no update entry (pill, Settings row, More row, command palette)
+    is shown on a Play build and GitHub is never asked.
+
+  A product flavor was the alternative. Tauri already uses the `abi` flavor dimension and looks
+  for its outputs by path; a second dimension would rename every output and need CLI plumbing.
+  An environment variable keeps the paths, and the manifest and the Rust side read the same value.
+  `scripts/android-apk.sh` fails if the GitHub APK lacks the permission; `scripts/android-aab.sh`
+  fails if the AAB declares it.
+- **16 KB pages.** Play requires 16 KB aligned native libraries for apps targeting Android 15+.
+  Both Android jobs build with the newest NDK on the runner (`ANDROID_NDK_LATEST_HOME`, r28 or
+  later, whose linker aligns to 16 KB by default), and `scripts/android-16k.sh` checks every
+  64-bit library's `LOAD` segments (and the APK's zip alignment with `zipalign -c -P 16`). The
+  release APK and the pull-request debug APK are checked too.
+- **Upload**: `app-android-play` (needs `app-android`, not a dependency of `publish`) uploads with
+  `r0adkll/upload-google-play`, pinned by commit, when the `PLAY_SERVICE_ACCOUNT_JSON` secret is
+  set; otherwise the `tag` job warns and the job is skipped. Track and status come from the
+  `PLAY_TRACK` (default `internal`) and `PLAY_RELEASE_STATUS` (default `completed`, or `draft`)
+  repository variables, checked by `scripts/android-play-track.sh`, which rejects `production`.
+  An upload failure marks that job red and never blocks the GitHub Release.
+- **Guard**: `scripts/store-guard.sh` still fails on App Store submission and on fastlane
+  `supply`/`upload_to_play_store`; it now also fails on a Play production track anywhere, on a
+  staged rollout (`userFraction`), and on a Play upload whose track does not come from
+  `scripts/android-play-track.sh`. `scripts/store-guard.test.sh` pins each case.
+- **Consequences**: one more release build of the Rust crate per release (the AAB step changes
+  the build environment, so the app crate recompiles); the first AAB must be uploaded by hand in
+  the Play Console before the API accepts uploads; promotion to production is a manual step in
+  the Play Console.

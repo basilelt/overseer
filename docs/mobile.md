@@ -13,12 +13,15 @@ covers each case with the `android`, `android-tablet`, `iphone`, `ipad` and `-la
 | Platform | Package | Where it goes | Who can install |
 |---|---|---|---|
 | Android | universal release APK (arm64-v8a, armeabi-v7a), signed with the Overseer release key | the GitHub Release, `Overseer_<version>_android.apk` + `.sha256` | anyone: in-app updates, Obtainium or by hand |
+| Android | App Bundle (arm64-v8a, armeabi-v7a), same key, without the in-app updater | a Google Play testing track (`internal` by default) | testers added to that track in the Play Console |
 | iOS | App Store IPA, signed with the team's Apple Distribution certificate and App Store profile | TestFlight, an internal testing group | members of the App Store Connect team in that group |
 
-There is no Play Store or App Store release. The iOS build goes to TestFlight only; it is never
-submitted for App Store review, nor for external TestFlight review. `scripts/store-guard.sh` runs
-in CI and before every iOS upload, and fails if a workflow, script or fastlane file contains a
-store submission action.
+There is no App Store release and no Google Play production release from CI. The iOS build goes
+to TestFlight only; it is never submitted for App Store review, nor for external TestFlight
+review. The Android App Bundle goes to a Google Play internal or closed testing track; promoting
+it to production is a manual step in the Play Console. `scripts/store-guard.sh` runs in CI and
+before every iOS upload, and fails if a workflow, script or fastlane file contains a store
+submission action or names a Play production track.
 
 Bundle identifier and Android package: `io.github.basilelt.overseer`, the desktop identifier.
 
@@ -46,7 +49,8 @@ uninstall it before installing a release APK, and the other way round.
 ## Updates on Android
 
 Overseer updates itself from the GitHub releases (ADR 0032, addendum). Obtainium still works
-and installs the same signed APK; use one or the other.
+and installs the same signed APK; use one or the other. The Google Play build has no in-app
+updater: Play updates it.
 
 The repository is public, so checking for and downloading updates needs no GitHub token.
 
@@ -106,8 +110,17 @@ show up in TestFlight after Apple's processing (usually 10 to 30 minutes after t
   - `app-android` on `ubuntu-24.04`: stamps the version (`scripts/set-version.sh`),
     builds `pnpm tauri android build --apk --target aarch64 --target armv7` with the release
     keystore, checks the signature (and the certificate fingerprint when `ANDROID_CERT_SHA256` is
-    set) with `apksigner` (`scripts/android-apk.sh`), and hands the APK to `publish`. The release does not wait for it
-    to succeed.
+    set) with `apksigner` (`scripts/android-apk.sh`), checks 16 KB page alignment
+    (`scripts/android-16k.sh`), and hands the APK to `publish`. The release does not wait for it
+    to succeed. It then builds the Google Play App Bundle with `OVERSEER_DISTRIBUTION=play`
+    (`pnpm tauri android build --aab --target aarch64 --target armv7`, no
+    `REQUEST_INSTALL_PACKAGES`, no in-app updater), checks its signature, permissions and
+    alignment (`scripts/android-aab.sh`, `scripts/android-16k.sh`) and keeps it as the
+    `play-android` artifact. A failure there does not fail the job or the APK.
+  - `app-android-play` on `ubuntu-slim`, after `app-android`: checks `PLAY_TRACK` and
+    `PLAY_RELEASE_STATUS` (`scripts/android-play-track.sh`, never `production`) and uploads the
+    AAB with `r0adkll/upload-google-play`. Skipped while `PLAY_SERVICE_ACCOUNT_JSON` is missing;
+    `publish` does not depend on it.
   - `app-ios` on `macos-26`, `continue-on-error`: runs `scripts/store-guard.sh`, writes
     `APPLE_TEAM_ID` into the Xcode project (`gen/apple/project.yml` and `project.pbxproj` are
     committed with an empty team), then `fastlane ios internal_testflight` from `app/`
@@ -161,6 +174,35 @@ Repository secrets and variable (Settings > Secrets and variables > Actions):
 
 A lost or changed key means users must uninstall the app before they can install a new release.
 Rotating the key also means updating `ANDROID_CERT_SHA256`.
+
+### Google Play (once, by the Play Console account holder)
+
+1. Create the app in the [Play Console](https://play.google.com/console) with the package
+   `io.github.basilelt.overseer`, fill in the store listing, the content rating, the data safety
+   form and the privacy policy URL
+   (`https://github.com/basilelt/overseer/blob/main/PRIVACY.md`).
+2. Play App Signing: choose to use your own key and upload the release key above (the Console's
+   PEPK tool encrypts it), so Play signs with the same certificate as the GitHub APK. That key is
+   also the upload key the CI signs the AAB with.
+3. First upload by hand: the Play API refuses an app with no build. Download the `play-android`
+   artifact of a release run (or build the AAB locally with `OVERSEER_DISTRIBUTION=play pnpm
+   tauri android build --aab --target aarch64 --target armv7` and the release keystore) and
+   upload it to the internal testing track in the Console.
+4. Service account: in Google Cloud, enable the Google Play Android Developer API, create a
+   service account and a JSON key. In the Play Console, Users and permissions, invite the service
+   account's e-mail with the "Release to testing tracks" permission (and "Release apps to
+   production" left off) for this app.
+5. Repository secret and variables:
+
+| Name | Kind | Value |
+|---|---|---|
+| `PLAY_SERVICE_ACCOUNT_JSON` | secret | the service account JSON key, as is |
+| `PLAY_TRACK` | variable | optional: `internal` (default), `alpha`, `beta` or a closed testing track name; `production` is rejected |
+| `PLAY_RELEASE_STATUS` | variable | optional: `completed` (default) or `draft` (use `draft` while the app itself is still a draft in the Console) |
+
+Users who install from Play get updates from Play. The GitHub APK and the Play build share the
+package name and the key, so a user can switch between them without uninstalling, but the APK's
+in-app updater and Play would then both offer updates: use one channel.
 
 ### iOS (once, by the Apple Developer account holder)
 
@@ -227,7 +269,8 @@ checked. After a forced Android run, re-apply the hand edits to `app/src-tauri/g
 - `app/src/main/java/io/github/basilelt/overseer/ApkInstallerPlugin.kt` (the in-app installer, keep the
   file);
 - `<uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />` in
-  `app/src/main/AndroidManifest.xml`. The installer also relies on the generated `FileProvider`
+  `app/src/main/AndroidManifest.xml`, and the `OVERSEER_DISTRIBUTION` block in
+  `app/build.gradle.kts` with `app/src/play/AndroidManifest.xml` (removes it for Google Play). The installer also relies on the generated `FileProvider`
   (`${applicationId}.fileprovider`) and its `cache-path` in `res/xml/file_paths.xml`.
 
 The icons come from the 512x512 `icon.png`; the 1024x1024 App Store icon is upscaled. A

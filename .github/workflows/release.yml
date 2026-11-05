@@ -71,6 +71,7 @@ jobs:
       tag: ${{ steps.tag_version.outputs.new_tag }}
       version: ${{ steps.tag_version.outputs.new_version }}
       android: ${{ steps.optional.outputs.android }}
+      play: ${{ steps.optional.outputs.play }}
       ios: ${{ steps.optional.outputs.ios }}
       tap: ${{ steps.optional.outputs.tap }}
       msix: ${{ steps.optional.outputs.msix }}
@@ -115,9 +116,11 @@ jobs:
           TAP: ${{ secrets.HOMEBREW_TAP_DEPLOY_KEY != '' }}
           MSIX: ${{ secrets.WINDOWS_SELF_SIGN_PFX_BASE64 != '' && secrets.WINDOWS_SELF_SIGN_PFX_PASSWORD != '' }}
           UPDATER: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY != '' }}
+          PLAY: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON != '' }}
         run: |
           {
             echo "android=$ANDROID"
+            echo "play=$PLAY"
             echo "ios=$IOS"
             echo "tap=$TAP"
             echo "msix=$MSIX"
@@ -127,6 +130,9 @@ jobs:
           fi
           if [ "$ANDROID" != "true" ]; then
             echo "::warning title=app-android skipped::ANDROID_KEYSTORE_BASE64, ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS or ANDROID_KEY_PASSWORD is not set: no Android APK in this release (docs/mobile.md)"
+          fi
+          if [ "$ANDROID" = "true" ] && [ "$PLAY" != "true" ]; then
+            echo "::warning title=Google Play skipped::PLAY_SERVICE_ACCOUNT_JSON is not set: the Android App Bundle is built but not uploaded to Google Play (docs/mobile.md)"
           fi
           if [ "$IOS" != "true" ]; then
             echo "::warning title=app-ios skipped::APPLE_TEAM_ID, APPLE_KEY_ID, APPLE_ISSUER_ID, APPLE_KEY_CONTENT, IOS_CERTIFICATE, IOS_CERTIFICATE_PASSWORD or IOS_MOBILE_PROVISION is not set: no TestFlight build (docs/mobile.md)"
@@ -672,7 +678,9 @@ jobs:
     needs: tag
     if: needs.tag.outputs.tag != '' && needs.tag.outputs.android == 'true'
     runs-on: ubuntu-24.04
-    timeout-minutes: 90
+    timeout-minutes: 120
+    outputs:
+      aab: ${{ steps.aab.outcome }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -702,7 +710,7 @@ jobs:
 
       - run: scripts/ci-runner-check.sh cargo rustup pnpm java env:ANDROID_HOME env:JAVA_HOME
 
-      - run: NDK_HOME=${ANDROID_NDK_HOME:-} scripts/android-env.sh aarch64-linux-android armv7-linux-androideabi
+      - run: NDK_HOME=${ANDROID_NDK_LATEST_HOME:-${ANDROID_NDK_HOME:-}} scripts/android-env.sh aarch64-linux-android armv7-linux-androideabi
 
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
@@ -744,6 +752,10 @@ jobs:
           ANDROID_CERT_SHA256: ${{ vars.ANDROID_CERT_SHA256 }}
         run: scripts/android-apk.sh release "out/Overseer_${VERSION}_android.apk"
 
+      - env:
+          VERSION: ${{ needs.tag.outputs.version }}
+        run: scripts/android-16k.sh "out/Overseer_${VERSION}_android.apk"
+
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: app-android
@@ -751,8 +763,60 @@ jobs:
           if-no-files-found: error
           retention-days: 4
 
+      - name: Google Play bundle
+        id: aab
+        continue-on-error: true
+        env:
+          OVERSEER_DISTRIBUTION: play
+          VERSION: ${{ needs.tag.outputs.version }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          ANDROID_CERT_SHA256: ${{ vars.ANDROID_CERT_SHA256 }}
+        run: |
+          pnpm --dir app tauri android build --ci --aab --target aarch64 --target armv7
+          scripts/android-aab.sh "play/Overseer_${VERSION}_android.aab"
+          scripts/android-16k.sh "play/Overseer_${VERSION}_android.aab"
+
+      - if: steps.aab.outcome == 'success'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: play-android
+          path: play/
+          if-no-files-found: error
+          retention-days: 4
+
       - if: always()
         run: rm -f "$RUNNER_TEMP/release.jks"
+
+  app-android-play:
+    needs: [tag, app-android]
+    if: ${{ !cancelled() && needs.tag.outputs.play == 'true' && needs.app-android.outputs.aab == 'success' }}
+    runs-on: ubuntu-slim
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - id: play
+        env:
+          PLAY_TRACK: ${{ vars.PLAY_TRACK }}
+          PLAY_RELEASE_STATUS: ${{ vars.PLAY_RELEASE_STATUS }}
+        run: scripts/android-play-track.sh
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: play-android
+          path: play
+
+      - uses: r0adkll/upload-google-play@e738b9dd8f2476ea806d921b64aacd24f34515a5 # v1.1.5
+        with:
+          serviceAccountJsonPlainText: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+          packageName: io.github.basilelt.overseer
+          releaseFiles: play/*.aab
+          track: ${{ steps.play.outputs.track }}
+          status: ${{ steps.play.outputs.status }}
 
   app-ios:
     needs: tag

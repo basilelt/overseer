@@ -19,7 +19,8 @@
   import { app } from '../../state.svelte';
   import { diag, dt } from '../../diag.svelte';
   import { feedback, ft } from '../../feedback.svelte';
-  import { DEFAULT_REPO } from '../../feedback';
+  import { DEFAULT_REPO, PRIVACY_URL } from '../../feedback';
+  import { openExternal } from '../../ports.svelte';
   import { organizer } from '../../organize.svelte';
   import { BUNDLED_FONT, clampLineHeight, FONT_SUGGESTIONS } from '../../fonts';
   import type { Effort, HookAgentStatus } from '../../types';
@@ -523,6 +524,10 @@
             <span>{ft('repo')}<small>{ft('repoHint')}</small></span>
             <input class="mono" value={settings.feedbackRepo ?? ''} placeholder={DEFAULT_REPO} spellcheck="false" onchange={(e) => saveSettings({ feedbackRepo: e.currentTarget.value.trim() || undefined })} />
           </label>
+          <div class="row" class:hit={hit('feedback', 'privacy')}>
+            <span>{ft('privacy')}<small>{ft('privacyHint')}</small></span>
+            <button class="btn" onclick={() => openExternal(PRIVACY_URL).catch((e) => app.notify(String(e?.message ?? e), 'error'))}>{ft('openLink')}</button>
+          </div>
         </section>
       {/if}
     </div>
