@@ -66,6 +66,15 @@ export function tabInfo(key: string, items: SidebarItem[], mode?: (item: Sidebar
   return { key, kind, arg: item.lineId ?? item.termId ?? '', item };
 }
 
+export function rememberTerms(termOf: Map<string, string>, items: SidebarItem[]) {
+  for (const i of items) if (i.lineId && i.termId) termOf.set(i.key, i.termId);
+}
+
+export function followTerm(key: string, items: SidebarItem[], termOf: Map<string, string>): string | null {
+  const id = key.startsWith('line:') ? termOf.get(key) : undefined;
+  return (id && items.find((i) => i.termId === id && !i.lineId)?.key) || null;
+}
+
 export function newTabKey(kind: 'browser' | 'review' | 'graph' | 'worktrees' | 'system' | 'usage' | 'prs', arg: string): string {
   return `${TAB_KINDS[kind]!.prefix}${arg}`;
 }

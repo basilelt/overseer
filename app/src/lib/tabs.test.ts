@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import type { SidebarItem } from './grouping';
-import { applyShortcut, newTabKey, registerTabKind, stripScroll, TAB_KINDS, tabInfo, tabTitle, type TabKindDef } from './tabs';
+import { applyShortcut, followTerm, newTabKey, rememberTerms, registerTabKind, stripScroll, TAB_KINDS, tabInfo, tabTitle, type TabKindDef } from './tabs';
 import { addTabs, layoutFromTabs, renameTab, reorderTab, split, switchLayout, workspace } from './workspace.svelte';
 
 describe('tab shortcuts', () => {
@@ -112,5 +112,25 @@ describe('registered tab kinds', () => {
 
   it('keeps an argument that itself contains the prefix', () => {
     expect(tabInfo(newTabKey('browser', 'browser:x'), [])).toMatchObject({ kind: 'browser', arg: 'browser:x' });
+  });
+});
+
+describe('followTerm', () => {
+  const line = { key: 'line:a', lineId: 'a', termId: 't1', kind: 'agent', group: 'active', title: '', at: '' } as unknown as SidebarItem;
+  const shell = { key: 'term:t1', termId: 't1', kind: 'shell', group: 'active', title: '', at: '' } as unknown as SidebarItem;
+
+  it('moves a closed session tab to the shell left in its term', () => {
+    const termOf = new Map<string, string>();
+    rememberTerms(termOf, [line]);
+    expect(followTerm('line:a', [shell], termOf)).toBe('term:t1');
+  });
+
+  it('finds nothing when the term is gone or still bound to a line', () => {
+    const termOf = new Map<string, string>();
+    rememberTerms(termOf, [line]);
+    expect(followTerm('line:a', [], termOf)).toBeNull();
+    expect(followTerm('line:a', [{ ...line, key: 'line:b', lineId: 'b' }], termOf)).toBeNull();
+    expect(followTerm('line:z', [shell], termOf)).toBeNull();
+    expect(followTerm('term:t1', [shell], termOf)).toBeNull();
   });
 });

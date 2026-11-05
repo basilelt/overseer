@@ -9,7 +9,7 @@
   import type { SidebarItem } from '../../grouping';
   import type { Workspace } from '../../types';
   import { aggregate, resolveTab, workspaceTabs } from '../../workspaces';
-  import { tabInfo } from '../../tabs';
+  import { followTerm, rememberTerms, tabInfo } from '../../tabs';
   import PaneView from './PaneView.svelte';
 
   let root: HTMLDivElement;
@@ -24,6 +24,7 @@
   const stale = new Set<string>();
   const localTabs = new Map<string, string>();
   const knownBy = new Map<string, Set<string> | undefined>();
+  const termOf = new Map<string, string>();
   let persistTimer: ReturnType<typeof setTimeout> | undefined;
   let pending: { id: string; tabs: string[] } | null = null;
 
@@ -81,11 +82,18 @@
       const fresh = mem.filter((m) => m.group !== 'held' && !(prev && isKnown(m, prev))).map((m) => m.key);
       const next = mergeKnown(prev ?? new Set(), mem, items);
       knownBy.set(id, next);
+      rememberTerms(termOf, items);
       for (const k of allTabs(workspace.layout)) {
         if (!k.startsWith('term:') && !k.startsWith('line:')) continue;
-        const r = resolveTab(k, items);
-        if (r && r !== k) update((l) => renameTab(l, k, r));
-        else if (!r && !tabInfo(k, items)) update((l) => dropKey(l, k));
+        const r = resolveTab(k, items) ?? followTerm(k, items, termOf);
+        if (r && r !== k) {
+          update((l) => renameTab(l, k, r));
+          termOf.delete(k);
+          if (app.selectedKey === k) app.selectedKey = r;
+        } else if (!r && !tabInfo(k, items)) {
+          update((l) => dropKey(l, k));
+          termOf.delete(k);
+        }
       }
       if (fresh.length) update((l) => addTabs(l, fresh));
       if (!prev || prev.size !== next.size || [...next].some((k) => !prev.has(k))) store(key, next);
