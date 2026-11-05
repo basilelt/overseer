@@ -52,3 +52,24 @@ describe('uploadPaths', () => {
     expect(fail).toHaveBeenCalledWith({ name: 'b.pdf', error: 'daemon down' });
   });
 });
+
+describe('an upload answered with nothing', () => {
+  const nullClient = () => ({
+    savePaste: vi.fn(async () => '/tmp/p'),
+    uploadFile: vi.fn(async () => null as never),
+  });
+
+  it('reports a clear error for a pasted blob instead of a TypeError', async () => {
+    const fail = vi.fn();
+    const out = await uploadBlobs(nullClient(), [blob('att.txt')], fail);
+    expect(out).toEqual([]);
+    expect(fail).toHaveBeenCalledWith({ name: 'att.txt', error: 'the daemon returned no file path' });
+  });
+
+  it('reports a clear error for a dropped path', async () => {
+    const fail = vi.fn();
+    const out = await uploadPaths(nullClient(), ['/a/att.txt'], fail);
+    expect(out).toEqual([]);
+    expect(fail).toHaveBeenCalledWith({ name: 'att.txt', error: 'the daemon returned no file path' });
+  });
+});

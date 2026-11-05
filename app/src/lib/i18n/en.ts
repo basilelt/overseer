@@ -1418,7 +1418,7 @@ export const en = {
   'system.byCpu': 'By CPU',
   'system.byMem': 'By memory',
   'system.agents': 'Overseer sessions',
-  'system.noAgents': 'No session running in a Overseer terminal.',
+  'system.noAgents': 'No session running in an Overseer terminal.',
   'system.load': 'Load',
   'system.uptime': 'Up',
   'system.swap': 'Swap',
