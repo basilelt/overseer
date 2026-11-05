@@ -61,6 +61,11 @@ cask_meta() {
   name "Overseer"
   desc "Desktop client for Overseer agent sessions"
   homepage "https://github.com/$repo"
+
+  livecheck do
+    url :url
+    strategy :github_latest
+  end
 RUBY
 }
 
