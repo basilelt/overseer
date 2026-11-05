@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { GraphCommit, Worktree } from './types';
-import { authors, cleanable, commitUrl, dimmed, formatSize, labelsBySha, needsMore, ROW_H, scrollToRow, searchMatches, sortWorktrees, stepMatch, visibleRange } from './view';
+import { authors, cleanable, commitUrl, dimmed, formatSize, labelsBySha, listFor, needsMore, ROW_H, scrollToRow, searchMatches, sortWorktrees, stepMatch, visibleRange } from './view';
 
 const commit = (sha: string, subject: string, author = 'Ada'): GraphCommit => ({ sha, parents: [], author, email: '', at: '2026-10-29T09:00:00Z', subject });
 
@@ -124,5 +124,14 @@ describe('worktree helpers', () => {
     expect(cleanable(w({ state: 'missing' }))).toBe(true);
     expect(cleanable(w({ state: 'idle' }))).toBe(false);
     expect(cleanable(w({ state: 'stale', kind: 'orphan' }))).toBe(false);
+  });
+});
+
+describe('listFor', () => {
+  it('shows a worktree list only in the panel of its project or a folder inside it, not in a sibling clone', () => {
+    expect(listFor('/w/atk', '/w/atk')).toBe(true);
+    expect(listFor('/w/atk', '/w/atk/sub')).toBe(true);
+    expect(listFor('/w/atk', '/w/atk2')).toBe(false);
+    expect(listFor('/w/atk2', '/w/atk')).toBe(false);
   });
 });

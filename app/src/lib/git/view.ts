@@ -1,3 +1,4 @@
+import { within } from '../workspaces';
 import type { GraphCommit, GraphPage, GraphRef, Overlay, Worktree } from './types';
 
 export const ROW_H = 28;
@@ -135,3 +136,5 @@ export function sortWorktrees(list: Worktree[]): Worktree[] {
 export function cleanable(w: Worktree): boolean {
   return w.kind === 'managed' && (w.state === 'stale' || w.state === 'missing');
 }
+
+export const listFor = (listProject: string, panelProject: string): boolean => within(panelProject, listProject);

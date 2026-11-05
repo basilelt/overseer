@@ -15,7 +15,7 @@
   import { gt, type GKey } from './strings';
   import { openReview } from '../review/open';
   import type { Worktree, WorktreeList } from './types';
-  import { cleanable, formatSize, sortWorktrees } from './view';
+  import { cleanable, formatSize, listFor, sortWorktrees } from './view';
 
   let { projectPath }: { projectPath: string } = $props();
 
@@ -32,7 +32,7 @@
     if (!app.client) return;
     try {
       const d = await gitApi(app.client).worktrees(projectPath);
-      if (d.project === projectPath || projectPath.startsWith(d.project)) data = d;
+      if (listFor(d.project, projectPath)) data = d;
       error = null;
     } catch (e) {
       error = err(e);
