@@ -877,7 +877,7 @@ pub fn handle(ctx: &Ctx, r: &Request) -> (u16, Value) {
         }
         ("DELETE", ["v1", "lines", id, "hold"]) => match actions::cancel_pending_hold(ctx, id) {
             Ok(id) => (200, json!({"lineId": id, "holdPending": false})),
-            Err(e) => err(404, e),
+            Err((code, e)) => err(code, e),
         },
         ("POST", ["v1", "lines", id, "close"]) => {
             match actions::close(ctx, id, !dry_run(r), q(r, "shell") == Some("true")) {

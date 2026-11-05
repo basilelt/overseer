@@ -505,7 +505,9 @@ pub fn hold_after_turn(ctx: &Ctx, q: &str, apply: bool) -> Result<Report, String
     let lines = scan(ctx)?;
     let l = find_line(&lines, q)?;
     let checks = evaluate(&hold_input(ctx, l));
-    if checks.iter().all(|c| c.ok) || !checks.iter().all(|c| c.ok || TURN_CHECKS.contains(&c.name))
+    if checks.iter().all(|c| c.ok)
+        || !l.busy_known
+        || !checks.iter().all(|c| c.ok || TURN_CHECKS.contains(&c.name))
     {
         return Ok(hold_line(ctx, l, apply, true, false));
     }
@@ -539,30 +541,178 @@ pub fn hold_after_turn(ctx: &Ctx, q: &str, apply: bool) -> Result<Report, String
     Ok(r)
 }
 
-pub fn cancel_pending_hold(ctx: &Ctx, q: &str) -> Result<String, String> {
-    let lines = scan(ctx)?;
-    let l = find_line(&lines, q)?;
-    Registry::open(&ctx.state_dir)?.set_mark(&l.id, "hold_pending", None)?;
+/// Cancels a pending hold. 409 when it was already claimed and is being applied right now.
+pub fn cancel_pending_hold(ctx: &Ctx, q: &str) -> Result<String, (u16, String)> {
+    let lines = scan(ctx).map_err(|e| (500, e))?;
+    let l = find_line(&lines, q).map_err(|e| (404, e))?;
+    let claimed = Registry::open(&ctx.state_dir)
+        .and_then(|r| r.claim_hold_pending(&l.id))
+        .map_err(|e| (500, e))?;
+    if !claimed
+        && INFLIGHT
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .contains(&l.id)
+    {
+        return Err((409, "the hold is already being applied".into()));
+    }
     Ok(l.id.clone())
 }
 
-/// A pending hold fires once the turn is over and the agent is not waiting for the user.
-pub(crate) fn pending_ready(l: &Line) -> bool {
-    l.hold_pending && l.alive() && l.busy_known && !l.busy && !l.needs_input
+#[derive(Debug, PartialEq)]
+pub(crate) enum Pending {
+    /// Mid-turn, waiting for the user, or only input-bound checks fail: stay queued.
+    Wait,
+    Run,
+    /// A failure that outlasts the turn (tool, pinned, unknown turn state...).
+    Blocked(Vec<Check>),
 }
 
-/// Applies the pending holds whose turn ended; the others stay queued.
+/// What a pending hold does once the scan sees the line.
+pub(crate) fn pending_verdict(l: &Line, checks: &[Check]) -> Pending {
+    if l.busy_known && l.busy || l.needs_input {
+        return Pending::Wait;
+    }
+    let failed: Vec<Check> = checks.iter().filter(|c| !c.ok).cloned().collect();
+    if failed.is_empty() {
+        Pending::Run
+    } else if l.busy_known
+        && failed
+            .iter()
+            .all(|c| ["atPrompt", "inputEmpty"].contains(&c.name))
+    {
+        Pending::Wait
+    } else {
+        Pending::Blocked(failed)
+    }
+}
+
+/// A non-transient failure must last this long before the pending hold is dropped, so a tool
+/// process still exiting right after the turn ended does not cancel it.
+const BLOCK_GRACE_MS: i64 = 10_000;
+
+static BLOCKED: std::sync::Mutex<Option<std::collections::HashMap<String, i64>>> =
+    std::sync::Mutex::new(None);
+
+/// True once the line has been blocked for `BLOCK_GRACE_MS`; `None` forgets it.
+fn blocked_long_enough(id: &str, now_ms: Option<i64>) -> bool {
+    let mut g = BLOCKED.lock().unwrap_or_else(|e| e.into_inner());
+    let map = g.get_or_insert_with(Default::default);
+    match now_ms {
+        Some(now) => now - *map.entry(id.to_string()).or_insert(now) >= BLOCK_GRACE_MS,
+        None => {
+            map.remove(id);
+            false
+        }
+    }
+}
+
+static INFLIGHT: std::sync::LazyLock<std::sync::Mutex<std::collections::HashSet<String>>> =
+    std::sync::LazyLock::new(Default::default);
+
+struct Inflight(String);
+
+impl Inflight {
+    fn begin(id: &str) -> Option<Inflight> {
+        let fresh = INFLIGHT
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .insert(id.to_string());
+        fresh.then(|| Inflight(id.to_string()))
+    }
+}
+
+impl Drop for Inflight {
+    fn drop(&mut self) {
+        INFLIGHT
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .remove(&self.0);
+    }
+}
+
+fn checks_json(checks: &[Check]) -> Value {
+    Value::Array(
+        checks
+            .iter()
+            .filter(|c| !c.ok)
+            .map(|c| json!({"name": c.name, "detail": c.detail}))
+            .collect(),
+    )
+}
+
+/// The pending hold was dropped: tell the app why and keep a trace in the action log.
+fn refuse_pending(ctx: &Ctx, l: &Line, failed: Value, error: Option<&str>) {
+    let rec = json!({"lineId": l.id, "failed": failed, "error": error});
+    log_action(
+        ctx,
+        &json!({"action": "hold-pending-refused", "result": rec.clone()}),
+    );
+    crate::board::publish("line.hold_refused", rec);
+}
+
+/// Applies the pending holds whose turn ended, each on its own worker so a slow hold never
+/// stalls the scan loop; the others stay queued, or are dropped when something lasting blocks them.
 pub fn apply_pending_holds(ctx: &Ctx, lines: &[Line]) {
-    for l in lines.iter().filter(|l| pending_ready(l)) {
-        if !evaluate(&hold_input(ctx, l)).iter().all(|c| c.ok) {
-            continue;
+    for l in lines.iter().filter(|l| l.hold_pending && l.alive()) {
+        let checks = if l.busy_known && l.busy || l.needs_input {
+            vec![]
+        } else {
+            evaluate(&hold_input(ctx, l))
+        };
+        match pending_verdict(l, &checks) {
+            Pending::Wait => {
+                blocked_long_enough(&l.id, None);
+            }
+            Pending::Blocked(failed) => {
+                if blocked_long_enough(&l.id, Some(ctx.now_ms))
+                    && Registry::open(&ctx.state_dir).and_then(|r| r.claim_hold_pending(&l.id))
+                        == Ok(true)
+                {
+                    blocked_long_enough(&l.id, None);
+                    refuse_pending(ctx, l, checks_json(&failed), None);
+                }
+            }
+            Pending::Run => {
+                blocked_long_enough(&l.id, None);
+                let Some(guard) = Inflight::begin(&l.id) else {
+                    continue;
+                };
+                let line = l.clone();
+                let spawned = std::thread::Builder::new()
+                    .name("hold-pending".into())
+                    .spawn(move || {
+                        let _guard = guard;
+                        let done = std::panic::catch_unwind(|| run_pending(&line));
+                        if let Err(p) = done {
+                            crate::dlog::line(
+                                "error",
+                                &format!(
+                                    "overseer daemon: pending hold panicked ({})",
+                                    crate::util::panic_text(p.as_ref())
+                                ),
+                            );
+                        }
+                    });
+                if let Err(e) = spawned {
+                    crate::dlog::line("error", &format!("overseer daemon: pending hold: {e}"));
+                }
+            }
         }
-        // DELETE or a manual hold may have cleared it since the scan: only the claimer holds.
-        let claimed = Registry::open(&ctx.state_dir).and_then(|r| r.claim_hold_pending(&l.id));
-        if claimed != Ok(true) {
-            continue;
-        }
-        hold_line(ctx, l, true, true, false);
+    }
+}
+
+fn run_pending(l: &Line) {
+    let probe = crate::procs::System;
+    let ctx = Ctx::from_env(&probe);
+    // DELETE or a manual hold may have cleared it since the scan: only the claimer holds.
+    let claimed = Registry::open(&ctx.state_dir).and_then(|r| r.claim_hold_pending(&l.id));
+    if claimed != Ok(true) {
+        return;
+    }
+    let r = hold_line(&ctx, l, true, true, false);
+    if r.action != "held" {
+        refuse_pending(&ctx, l, checks_json(&r.checks), r.error.as_deref());
     }
 }
 
@@ -1045,30 +1195,92 @@ mod tests {
         assert_eq!(signal_tree(&probe, &[(7, None)], 15, &send), 0, "no stamp");
     }
 
+    fn failing(name: &'static str) -> Check {
+        Check {
+            name,
+            ok: false,
+            detail: "x".into(),
+        }
+    }
+
+    fn pending_line() -> Line {
+        Line {
+            pid: Some(1),
+            hold_pending: true,
+            busy_known: true,
+            ..Default::default()
+        }
+    }
+
     #[test]
-    fn a_pending_hold_fires_only_when_idle_and_not_waiting_for_the_user() {
+    fn a_pending_hold_waits_mid_turn_and_while_the_agent_asks_for_input() {
         // Given a live line with a pending hold
-        // When the turn is running, ends, or the agent asks for input
-        // Then it fires only when the turn ended and the agent does not wait for the user
-        let mut l = line("a", "s");
-        l.pid = Some(1);
-        l.hold_pending = true;
-        l.busy_known = true;
+        // When the turn runs, or the agent waits for the user
+        // Then it keeps waiting, whatever the checks say
+        let mut l = pending_line();
         l.busy = true;
-        assert!(!pending_ready(&l), "mid-turn");
+        assert_eq!(pending_verdict(&l, &[failing("atPrompt")]), Pending::Wait);
         l.busy = false;
-        assert!(pending_ready(&l), "turn ended");
         l.needs_input = true;
-        assert!(!pending_ready(&l), "waiting for the user: stays pending");
-        l.needs_input = false;
-        l.busy_known = false;
-        assert!(!pending_ready(&l), "turn state unknown");
-        l.busy_known = true;
-        l.pid = None;
-        assert!(!pending_ready(&l), "hung up");
-        l.pid = Some(1);
-        l.hold_pending = false;
-        assert!(!pending_ready(&l), "nothing pending");
+        assert_eq!(
+            pending_verdict(&l, &[failing("notNeedsInput")]),
+            Pending::Wait
+        );
+    }
+
+    #[test]
+    fn a_pending_hold_runs_once_the_turn_ended_and_every_check_passes() {
+        // Given a pending hold on an idle line
+        // When no check fails
+        // Then it runs
+        assert_eq!(pending_verdict(&pending_line(), &[]), Pending::Run);
+    }
+
+    #[test]
+    fn a_pending_hold_is_blocked_by_failures_that_outlast_the_turn() {
+        // Given a pending hold on an idle line
+        // When a tool, a pin or an unknown turn state blocks it, or only typed input does
+        // Then the lasting failures block it and typed input only waits
+        let l = pending_line();
+        let tool = [failing("noToolRunning")];
+        assert!(matches!(pending_verdict(&l, &tool), Pending::Blocked(f) if f.len() == 1));
+        let pinned = [failing("notPinned")];
+        assert!(matches!(pending_verdict(&l, &pinned), Pending::Blocked(_)));
+        assert_eq!(pending_verdict(&l, &[failing("inputEmpty")]), Pending::Wait);
+        let mut unknown = pending_line();
+        unknown.busy_known = false;
+        assert!(matches!(
+            pending_verdict(&unknown, &[failing("atPrompt")]),
+            Pending::Blocked(_)
+        ));
+    }
+
+    #[test]
+    fn a_blocked_hold_is_only_dropped_after_the_grace_period() {
+        // Given a line first seen blocked at t=1000
+        // When it is checked before and after the grace, and after being unblocked
+        // Then it expires only after the grace and the clock restarts once forgotten
+        assert!(!blocked_long_enough("grace-1", Some(1_000)));
+        assert!(!blocked_long_enough(
+            "grace-1",
+            Some(1_000 + BLOCK_GRACE_MS - 1)
+        ));
+        assert!(blocked_long_enough("grace-1", Some(1_000 + BLOCK_GRACE_MS)));
+        blocked_long_enough("grace-1", None);
+        assert!(!blocked_long_enough("grace-1", Some(99_000)));
+        blocked_long_enough("grace-1", None);
+    }
+
+    #[test]
+    fn only_one_hold_per_line_is_in_flight() {
+        // Given a hold in flight for a line
+        // When another starts for the same line, or the first ends
+        // Then the second is refused until the first is dropped
+        let a = Inflight::begin("inflight-1").unwrap();
+        assert!(Inflight::begin("inflight-1").is_none());
+        assert!(Inflight::begin("inflight-2").is_some());
+        drop(a);
+        assert!(Inflight::begin("inflight-1").is_some());
     }
 
     #[test]

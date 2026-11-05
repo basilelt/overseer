@@ -992,6 +992,42 @@ fn holding_a_line_stops_the_processes_its_agent_left_behind() {
 }
 
 #[test]
+fn a_pending_hold_blocked_for_good_is_dropped_and_the_refusal_is_recorded() {
+    // Given a busy session with a pending hold
+    // When the line is pinned meanwhile and its turn ends
+    // Then the pending hold is dropped (not held, nothing queued) and the refusal is logged
+    let sid = "dddddddd-0000-4000-8000-000000000006";
+    let app = App::new("holdblocked", json!({}));
+    let (tid, line) = claude_term(&app, json!(["claude", "--session-id", sid]), sid);
+    let mut ws = app.ws(&tid);
+    read_until(&mut ws, "❯");
+    send(&mut ws, "busy\r");
+    wait(|| line_json(&app, &line)["local"]["busy"] == true);
+    let hold = format!("/v1/lines/{line}/hold?dryRun=false&afterTurn=true");
+    assert_eq!(app.ok("POST", &hold, Value::Null)["action"], "hold-pending");
+    wait(|| line_json(&app, &line)["local"]["holdPending"] == true);
+    app.ok(
+        "PUT",
+        &format!("/v1/lines/{line}/pin"),
+        json!({"pinned": true}),
+    );
+    send(&mut ws, "done\r");
+    wait(|| line_json(&app, &line)["local"]["holdPending"].is_null());
+    let l = line_json(&app, &line);
+    assert_ne!(l["line"]["state"], "held", "{l}");
+    let log = std::fs::read_to_string(app.fx.state.join("actions.log")).unwrap();
+    assert!(
+        log.contains("hold-pending-refused") && log.contains("notPinned"),
+        "{log}"
+    );
+    app.ok(
+        "POST",
+        &format!("/v1/terms/{tid}/kill"),
+        json!({"confirm": true}),
+    );
+}
+
+#[test]
 fn holding_without_after_turn_still_refuses_a_busy_line() {
     // Given a busy claude session
     // When it is held without afterTurn
