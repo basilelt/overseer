@@ -475,7 +475,13 @@ fn tasks(r: &Request, segs: &[&str], body: &Value, ctx: &Ctx) -> Option<(u16, Va
                 .map(Value::from),
         ),
         ("POST", ["v1", "projects"]) => match tasks::add_project(ctx, body) {
-            Ok((created, p)) => (if created { 201 } else { 200 }, p),
+            Ok((created, p)) => {
+                if created {
+                    crate::board::publish("project.added", json!({"project": p}));
+                    let _ = crate::workspaces::list(ctx);
+                }
+                (if created { 201 } else { 200 }, p)
+            }
             Err((c, e)) => err(c, e),
         },
         ("POST", ["v1", "projects", "discover"]) => res(200, crate::discover::run(ctx)),

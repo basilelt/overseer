@@ -354,6 +354,7 @@ export type EventType =
   | 'review.thread'
   | 'review.thread_deleted'
   | 'review.delivery'
+  | 'project.added'
   | 'workspace.created'
   | 'workspace.updated'
   | 'workspace.deleted'
