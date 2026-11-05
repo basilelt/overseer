@@ -1137,6 +1137,14 @@ export class MockDaemon implements DaemonClient {
     return `/tmp/overseer-paste/${Date.now()}-${this.storeUpload(name, bytes.length).name}`;
   }
 
+  async saveDownload(name: string, bytes: Uint8Array): Promise<string> {
+    const url = URL.createObjectURL(new Blob([bytes as BlobPart]));
+    const a = Object.assign(document.createElement('a'), { href: url, download: name });
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 0);
+    return name;
+  }
+
   private sourcesOf(project: string): TaskSource[] {
     if (!project.startsWith('/')) throw new DaemonError(400, 'project must be an absolute path');
     const repo = this.projects.find((p) => p.path === project)?.repo ?? '';

@@ -36,3 +36,7 @@ export async function runCleanup(api: GitApi, ids: string[], projectOf: (id: str
   }
   return { done, failed };
 }
+
+export function chosen(ids: string[], skipped: ReadonlySet<string>): string[] {
+  return ids.filter((id) => !skipped.has(id));
+}

@@ -152,4 +152,8 @@ export class TauriDaemon implements DaemonClient {
   savePaste(name: string, bytes: Uint8Array): Promise<string> {
     return invoke<string>('save_paste', bytes, { headers: { 'x-name': encodeURIComponent(name) } });
   }
+
+  saveDownload(name: string, bytes: Uint8Array): Promise<string> {
+    return invoke<string>('save_download', bytes, { headers: { 'x-name': encodeURIComponent(name) } });
+  }
 }

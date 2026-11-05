@@ -135,3 +135,7 @@ export function sortWorktrees(list: Worktree[]): Worktree[] {
 export function cleanable(w: Worktree): boolean {
   return w.kind === 'managed' && (w.state === 'stale' || w.state === 'missing');
 }
+
+export function unused(w: Worktree): boolean {
+  return w.kind === 'managed' && !w.lines.length && !w.termIds.length && !w.dirty && (w.state === 'missing' || (w.merged && w.state !== 'in_use'));
+}

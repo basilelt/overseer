@@ -40,6 +40,7 @@ export interface DaemonClient {
   pasteText(): Promise<string>;
   uploadFile(path: string, onProgress?: (p: UploadProgress) => void): Promise<UploadResult>;
   savePaste(name: string, bytes: Uint8Array): Promise<string>;
+  saveDownload(name: string, bytes: Uint8Array): Promise<string>;
 }
 
 export class DaemonError extends Error {
@@ -66,6 +67,7 @@ async function demoClient(): Promise<DaemonClient> {
   const m = new MockDaemon({ platform });
   m.copyText = async (text) => void (await invoke('plugin:clipboard-manager|write_text', { text }));
   m.pasteText = () => invoke<string>('plugin:clipboard-manager|read_text');
+  m.saveDownload = (name, bytes) => invoke<string>('save_download', bytes, { headers: { 'x-name': encodeURIComponent(name) } });
   return m;
 }
 
