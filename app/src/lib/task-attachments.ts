@@ -10,10 +10,16 @@ type Uploader = Pick<DaemonClient, 'uploadFile' | 'savePaste'>;
 type Blob = { name: string; size: number; arrayBuffer(): Promise<ArrayBuffer> };
 export type Failure = { name: string; error: string };
 
-const remotePath = (up: { path?: string } | null | undefined) => {
-  if (!up?.path) throw new Error('the daemon returned no file path');
-  return up.path;
-};
+export function requirePath(path: string | null | undefined): string {
+  if (!path) throw new Error('the daemon returned no file path');
+  return path;
+}
+
+export async function savePasted(client: Pick<DaemonClient, 'savePaste'>, name: string, bytes: Uint8Array): Promise<string> {
+  return requirePath(await client.savePaste(name, bytes));
+}
+
+const remotePath = (up: { path?: string } | null | undefined) => requirePath(up?.path);
 
 const msg = (e: unknown) => String((e as Error)?.message ?? e);
 

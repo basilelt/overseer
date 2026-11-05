@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { uploadBlobs, uploadPaths } from './task-attachments';
+import { requirePath, savePasted, uploadBlobs, uploadPaths } from './task-attachments';
 import { MAX_UPLOAD } from './uploads';
 
 const blob = (name: string, size = 3) => ({ name, size, arrayBuffer: async () => new ArrayBuffer(size) });
@@ -50,6 +50,24 @@ describe('uploadPaths', () => {
     const out = await uploadPaths(client(['b.pdf']), ['/Users/me/a.png', 'C:\\docs\\b.pdf'], fail);
     expect(out).toEqual([{ name: 'a.png', path: '/home/u/.overseer/u/a.png' }]);
     expect(fail).toHaveBeenCalledWith({ name: 'b.pdf', error: 'daemon down' });
+  });
+});
+
+describe('a paste saved to nothing', () => {
+  it('throws a clear error instead of passing null on', async () => {
+    const client = { savePaste: vi.fn(async () => null as never) };
+    await expect(savePasted(client, 'a.png', new Uint8Array(1))).rejects.toThrow('the daemon returned no file path');
+  });
+
+  it('returns the saved path', async () => {
+    const client = { savePaste: vi.fn(async (n: string) => `/tmp/${n}`) };
+    expect(await savePasted(client, 'a.png', new Uint8Array(1))).toBe('/tmp/a.png');
+  });
+
+  it('requirePath rejects an empty path', () => {
+    expect(() => requirePath('')).toThrow('the daemon returned no file path');
+    expect(() => requirePath(undefined)).toThrow('the daemon returned no file path');
+    expect(requirePath('/x')).toBe('/x');
   });
 });
 
