@@ -680,6 +680,311 @@ fn sessions_move_to_an_explicitly_assigned_workspace() {
     }
 }
 
+fn targets_of(app: &App, wid: &str) -> Vec<String> {
+    let mut t: Vec<String> = app.ok(
+        "POST",
+        "/v1/broadcast",
+        json!({"text": "noop", "workspaceId": wid}),
+    )["results"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|r| r["target"].as_str().unwrap().to_string())
+        .collect();
+    t.sort();
+    t
+}
+
+fn local_of(app: &App, line: &str) -> Value {
+    app.ok("GET", "/v1/lines?all=true", Value::Null)
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|l| l["line"]["id"] == line)
+        .map(|l| l["local"].clone())
+        .unwrap_or(Value::Null)
+}
+
+#[test]
+fn subjects_are_created_edited_listed_and_deleted_without_a_directory() {
+    // Given two directories, one reachable as ~/shared
+    // When two subjects share a cwd, one is patched, bad bodies are sent, then a subject is deleted
+    // Then list shows kind and cwd with a null path, bad input is a 400 and the other subject stays
+    let app = App::new("ws-subject-crud", json!({"autoConcurrency": 0}));
+    let shared = app.fx.base.join("home").join("shared");
+    std::fs::create_dir_all(&shared).unwrap();
+    let canon = shared
+        .canonicalize()
+        .unwrap()
+        .to_string_lossy()
+        .into_owned();
+    let a = app.ok(
+        "POST",
+        "/v1/workspaces",
+        json!({"kind": "subject", "name": "Deal A", "cwd": "~/shared", "pinned": true}),
+    );
+    assert_eq!(a["kind"], "subject");
+    assert_eq!(a["cwd"], canon.as_str());
+    assert!(a["path"].is_null(), "{a}");
+    assert_eq!(a["pinned"], true);
+    let b = app.ok(
+        "POST",
+        "/v1/workspaces",
+        json!({"kind": "subject", "name": "Deal B", "cwd": canon}),
+    );
+    assert_ne!(a["id"], b["id"]);
+
+    let list = app.ok("GET", "/v1/workspaces", Value::Null);
+    assert_eq!(
+        find(&list, "name", "Deal B").unwrap()["cwd"],
+        canon.as_str()
+    );
+    let count = list.as_array().unwrap().len();
+    let again = app.ok("GET", "/v1/workspaces", Value::Null);
+    assert_eq!(again.as_array().unwrap().len(), count);
+
+    let other = app.fx.base.join("other");
+    std::fs::create_dir_all(&other).unwrap();
+    let other_canon = other.canonicalize().unwrap().to_string_lossy().into_owned();
+    let p = app.ok(
+        "PATCH",
+        &format!("/v1/workspaces/{}", id(&a)),
+        json!({"name": "Deal A2", "cwd": other.to_string_lossy()}),
+    );
+    assert_eq!(p["name"], "Deal A2");
+    assert_eq!(p["cwd"], other_canon.as_str());
+    assert!(p["path"].is_null());
+
+    let dir_ws = app.ok("POST", "/v1/workspaces", json!({"path": other_canon}));
+    assert_eq!(dir_ws["kind"], "dir");
+    assert!(dir_ws["cwd"].is_null());
+    let ws = "/v1/workspaces".to_string();
+    for (m, path, body) in [
+        ("POST", ws.clone(), json!({"kind": "subject", "cwd": canon})),
+        ("POST", ws.clone(), json!({"kind": "subject", "name": "x"})),
+        (
+            "POST",
+            ws.clone(),
+            json!({"kind": "subject", "name": "x", "cwd": "relative"}),
+        ),
+        (
+            "POST",
+            ws.clone(),
+            json!({"kind": "subject", "name": "x", "cwd": "/nonexistent-dir"}),
+        ),
+        (
+            "POST",
+            ws.clone(),
+            json!({"kind": "subject", "name": "x", "cwd": canon, "path": canon}),
+        ),
+        ("POST", ws.clone(), json!({"kind": "folder", "path": canon})),
+        ("POST", ws.clone(), json!({"path": canon, "cwd": canon})),
+        (
+            "PATCH",
+            format!("/v1/workspaces/{}", id(&a)),
+            json!({"cwd": "/nonexistent-dir"}),
+        ),
+        (
+            "PATCH",
+            format!("/v1/workspaces/{}", id(&dir_ws)),
+            json!({"cwd": canon}),
+        ),
+    ] {
+        assert_eq!(app.req(m, &path, body.clone()).0, 400, "{m} {path} {body}");
+    }
+
+    app.ok("DELETE", &format!("/v1/workspaces/{}", id(&a)), Value::Null);
+    let list = app.ok("GET", "/v1/workspaces", Value::Null);
+    assert!(find(&list, "name", "Deal A2").is_none());
+    assert!(find(&list, "name", "Deal B").is_some());
+}
+
+#[test]
+fn a_session_in_a_dir_workspace_assigned_to_a_subject_shows_only_in_the_subject() {
+    // Given a shell term whose cwd is inside a dir workspace and a subject
+    // When the term is assigned to the subject, then the subject is deleted
+    // Then it is a member of the subject only, and falls back to the dir workspace without being killed
+    let app = App::new("ws-subject-member", json!({"autoConcurrency": 0}));
+    let wt = app.fx.wt.to_string_lossy().into_owned();
+    let subject = id(&app.ok(
+        "POST",
+        "/v1/workspaces",
+        json!({"kind": "subject", "name": "Support", "cwd": wt}),
+    ));
+    let sh = id(&app.ok("POST", "/v1/terms", json!({"cwd": wt, "cmd": ["/bin/sh"]})));
+    let sk = format!("term:{sh}");
+    let repo = id(&app.ok("POST", "/v1/workspaces", json!({"path": wt})));
+    assert_eq!(targets_of(&app, &repo), vec![sk.clone()]);
+    assert!(
+        targets_of(&app, &subject).is_empty(),
+        "a subject has no cwd membership"
+    );
+
+    app.ok(
+        "PUT",
+        &format!("/v1/terms/{sh}/workspace"),
+        json!({"workspaceId": subject}),
+    );
+    assert_eq!(targets_of(&app, &subject), vec![sk.clone()]);
+    assert!(targets_of(&app, &repo).is_empty());
+
+    app.ok("DELETE", &format!("/v1/workspaces/{subject}"), Value::Null);
+    assert_eq!(targets_of(&app, &repo), vec![sk]);
+    let t = app.ok("GET", &format!("/v1/terms/{sh}"), Value::Null);
+    assert_eq!(t["exited"], false);
+    assert!(t.get("workspaceId").is_none());
+    app.ok(
+        "POST",
+        &format!("/v1/terms/{sh}/kill"),
+        json!({"confirm": true}),
+    );
+}
+
+#[test]
+fn a_term_started_for_a_subject_starts_in_its_cwd_and_its_line_inherits_the_assignment() {
+    // Given a subject whose cwd is the repo
+    // When a shell and an agent are started with its workspaceId and no cwd
+    // Then both run in the subject cwd and are assigned, the agent line inherits it, and an unknown id is a 404
+    let app = App::new("ws-subject-start", json!({"autoConcurrency": 0}));
+    let wt = app.fx.wt.to_string_lossy().into_owned();
+    let subject = id(&app.ok(
+        "POST",
+        "/v1/workspaces",
+        json!({"kind": "subject", "name": "Infra", "cwd": wt}),
+    ));
+    let (code, _) = app.req(
+        "POST",
+        "/v1/terms",
+        json!({"workspaceId": "nope", "cmd": ["/bin/sh"]}),
+    );
+    assert_eq!(code, 404);
+    let (code, _) = app.req("POST", "/v1/terms", json!({"workspaceId": 3}));
+    assert_eq!(code, 400);
+
+    let sh = app.ok(
+        "POST",
+        "/v1/terms",
+        json!({"workspaceId": subject, "cmd": ["/bin/sh"]}),
+    );
+    assert_eq!(sh["workspaceId"], subject.as_str());
+    assert_eq!(
+        sh["cwd"],
+        app.fx.wt.canonicalize().unwrap().to_string_lossy().as_ref()
+    );
+    let term = id(&app.ok(
+        "POST",
+        "/v1/terms",
+        json!({"workspaceId": subject, "agent": "claude"}),
+    ));
+    let mut tws = app.ws(&term);
+    read_until(&mut tws, "❯");
+    let line = wait_for(|| line_of(&app, &term));
+    wait(|| local_of(&app, &line)["workspaceId"] == subject.as_str());
+    let mut want = vec![format!("line:{line}"), format!("term:{}", id(&sh))];
+    want.sort();
+    assert_eq!(targets_of(&app, &subject), want);
+
+    // Clearing the line's assignment sticks: the term does not re-assign it on the next scan.
+    app.ok(
+        "PUT",
+        &format!("/v1/lines/{line}/workspace"),
+        json!({"workspaceId": null}),
+    );
+    wait(|| local_of(&app, &line).get("workspaceId").is_none());
+    app.ok("GET", "/v1/lines?all=true", Value::Null);
+    assert!(local_of(&app, &line).get("workspaceId").is_none());
+    for t in [id(&sh), term] {
+        app.ok(
+            "POST",
+            &format!("/v1/terms/{t}/kill"),
+            json!({"confirm": true}),
+        );
+    }
+}
+
+#[test]
+fn a_term_started_for_a_dir_workspace_without_a_cwd_starts_in_its_path() {
+    // Given a dir workspace on a directory other than HOME
+    // When a shell is started with its workspaceId and no cwd
+    // Then it runs in the workspace path and is assigned to it
+    let app = App::new("ws-dir-start", json!({"autoConcurrency": 0}));
+    let dir = app.fx.base.join("elsewhere");
+    std::fs::create_dir_all(&dir).unwrap();
+    let w = app.ok(
+        "POST",
+        "/v1/workspaces",
+        json!({"path": dir.to_string_lossy()}),
+    );
+    let t = app.ok(
+        "POST",
+        "/v1/terms",
+        json!({"workspaceId": w["id"], "cmd": ["/bin/sh"]}),
+    );
+    assert_eq!(t["cwd"], w["path"]);
+    assert_eq!(t["workspaceId"], w["id"]);
+    app.ok(
+        "POST",
+        &format!("/v1/terms/{}/kill", id(&t)),
+        json!({"confirm": true}),
+    );
+}
+
+#[test]
+fn patching_a_subject_cwd_to_null_is_refused_and_keeps_the_cwd() {
+    // Given a subject with a cwd
+    // When its cwd is patched to null
+    // Then the daemon answers 400 and the cwd is unchanged
+    let app = App::new("ws-subject-null-cwd", json!({"autoConcurrency": 0}));
+    let dir = app.fx.base.join("home");
+    let s = app.ok(
+        "POST",
+        "/v1/workspaces",
+        json!({"kind": "subject", "name": "S", "cwd": dir.to_string_lossy()}),
+    );
+    let (code, _) = app.req(
+        "PATCH",
+        &format!("/v1/workspaces/{}", id(&s)),
+        json!({"cwd": null}),
+    );
+    assert_eq!(code, 400);
+    let list = app.ok("GET", "/v1/workspaces", Value::Null);
+    assert_eq!(find(&list, "id", &id(&s)).unwrap()["cwd"], s["cwd"]);
+}
+
+#[test]
+fn deleting_a_subject_unassigns_its_lines_and_keeps_them_running() {
+    // Given an agent line assigned to a subject
+    // When the subject is deleted
+    // Then the line has no assignment any more and its term is still alive
+    let app = App::new("ws-subject-del-line", json!({"autoConcurrency": 0}));
+    let wt = app.fx.wt.to_string_lossy().into_owned();
+    let subject = id(&app.ok(
+        "POST",
+        "/v1/workspaces",
+        json!({"kind": "subject", "name": "Gone", "cwd": wt}),
+    ));
+    let term = id(&app.ok(
+        "POST",
+        "/v1/terms",
+        json!({"workspaceId": subject, "agent": "claude"}),
+    ));
+    let mut tws = app.ws(&term);
+    read_until(&mut tws, "❯");
+    let line = wait_for(|| line_of(&app, &term));
+    wait(|| local_of(&app, &line)["workspaceId"] == subject.as_str());
+    app.ok("DELETE", &format!("/v1/workspaces/{subject}"), Value::Null);
+    wait(|| local_of(&app, &line).get("workspaceId").is_none());
+    assert_eq!(
+        app.ok("GET", &format!("/v1/terms/{term}"), Value::Null)["exited"],
+        false
+    );
+    app.ok(
+        "POST",
+        &format!("/v1/terms/{term}/kill"),
+        json!({"confirm": true}),
+    );
+}
+
 #[test]
 fn adding_a_project_announces_it_and_its_workspace() {
     let app = App::new("ws-project-event", json!({"autoConcurrency": 0}));

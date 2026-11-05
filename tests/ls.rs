@@ -872,6 +872,8 @@ fn ws(path: &str) -> overseer::workspaces::Workspace {
         notify_idle: false,
         created_ms: 0,
         updated_ms: 0,
+        subject: false,
+        cwd: None,
     }
 }
 

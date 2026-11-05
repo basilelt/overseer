@@ -120,7 +120,7 @@ export function workspaceMenu(w: Workspace): MenuItem[] {
     { label: t('hold.resumeAll'), icon: Play, run: () => holdAll({ kind: 'workspace', id: w.id }, 'resume') },
     { label: t('ws.notifyIdle'), icon: Bell, checked: w.notifyIdle, disabled: !persistent, run: () => app.patchWorkspace(w.id, { notifyIdle: !w.notifyIdle }) },
     muteItem(`w:${w.id}`),
-    ...(app.profiles ? [{ label: t('profile.forWorkspace'), icon: Gauge, hint: app.profiles.profiles.find((p) => p.id === app.profiles?.scopes[w.path])?.name, run: () => app.open('profiles', w.path) }] : []),
+    ...(app.profiles && w.path ? [{ label: t('profile.forWorkspace'), icon: Gauge, hint: app.profiles.profiles.find((p) => p.id === app.profiles?.scopes[w.path!])?.name, run: () => app.open('profiles', w.path!) }] : []),
     { label: '', separator: true },
     { label: w.archived ? t('ws.unarchive') : t('ws.archive'), icon: w.archived ? ArchiveRestore : Archive, disabled: !persistent, run: () => app.patchWorkspace(w.id, { archived: !w.archived }) },
     {

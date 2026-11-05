@@ -68,6 +68,20 @@ describe('membership', () => {
     expect(m.get('line:dot')).toBe('home');
   });
 
+  it('ignores a subject (null path) when matching by path and still honours an explicit assignment to it', () => {
+    // Given a subject with a null path and a cwd inside the webshop workspace
+    // When membership is computed for an unassigned line and for one assigned to the subject
+    // Then nothing throws, the subject matches no path, and the assignment wins
+    const subject = ws('subj', null as unknown as string, { path: null, kind: 'subject', cwd: '/home/u/work/webshop' });
+    const plain = line('plain', '/home/u/work/webshop/src', 'github.com/o/webshop');
+    const mine = { ...line('mine', '/home/u/work/webshop/src', 'github.com/o/webshop'), local: { workspaceId: 'subj' } };
+    const lines = [plain, mine];
+    const items = sidebarItems(lines, [], []);
+    const m = itemWorkspaces(items, { lines, terms: [], tasks: [] }, [home, subject, webshop], projects);
+    expect(m.get('line:plain')).toBe('webshop');
+    expect(m.get('line:mine')).toBe('subj');
+  });
+
   it('puts a session started in a child workspace folder in the child workspace, not in the parent repository workspace', () => {
     const atRoot = { ...line('root', '/home/u/work/webshop', 'github.com/o/webshop'), local: { cwd: '/home/u/work/webshop' } };
     const inChild = { ...line('child', '/home/u/work/webshop', 'github.com/o/webshop'), local: { cwd: '/home/u/work/webshop/web/src' } };

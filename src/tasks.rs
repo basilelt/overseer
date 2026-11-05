@@ -884,6 +884,7 @@ pub(crate) fn start_with_args(
         flags,
         profile: p.chip.clone(),
         id: None,
+        workspace_id: None,
     })
     .map_err(|e| (409, e))?;
     t.term_id = Some(term.info().id);

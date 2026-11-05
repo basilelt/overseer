@@ -187,6 +187,7 @@ pub struct Spec {
     pub flags: Vec<String>,
     pub profile: Option<crate::profiles::Chip>,
     pub id: Option<String>,
+    pub workspace_id: Option<String>,
 }
 
 static TERMS: Mutex<BTreeMap<String, Arc<Term>>> = Mutex::new(BTreeMap::new());
@@ -555,7 +556,7 @@ pub fn spawn(s: Spec) -> Result<Arc<Term>, String> {
             flags: s.flags,
             sized_by: None,
             profile: s.profile,
-            workspace_id: None,
+            workspace_id: s.workspace_id,
             resume: None,
         }),
         out: Mutex::default(),
@@ -886,6 +887,10 @@ impl Term {
         publish("term.updated", json!({"term": self.to_json()}));
     }
 
+    pub fn workspace_id(&self) -> Option<String> {
+        lock(&self.info).workspace_id.clone()
+    }
+
     pub fn set_workspace(&self, id: Option<String>) {
         {
             let mut i = lock(&self.info);
@@ -1136,6 +1141,11 @@ pub fn theme_changed(dark: bool) {
 
 pub fn get(id: &str) -> Option<Arc<Term>> {
     lock(&TERMS).get(id).cloned()
+}
+
+/// The workspace a term is assigned to, read without cloning its whole info.
+pub fn workspace_of(id: &str) -> Option<String> {
+    get(id)?.workspace_id()
 }
 
 pub fn all() -> Vec<Arc<Term>> {

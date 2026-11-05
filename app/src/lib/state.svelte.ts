@@ -558,11 +558,14 @@ class AppState {
   }
 
   async newSession(agent: string, opts: { cwd?: string; model?: string; effort?: Effort; worktree?: boolean; profile?: string } = {}): Promise<Term> {
-    const cwd = opts.cwd ?? (this.sidebarMode === 'workspaces' ? this.currentWorkspace?.path : undefined);
-    const worktree = (opts.worktree ?? (agent !== 'shell' && !settings.sessionsInCheckout)) && this.inProject(cwd);
+    const scoped = this.sidebarMode === 'workspaces' ? this.currentWorkspace : null;
+    // A subject has no directory: the daemon starts the term in its cwd and assigns it.
+    const subject = !opts.cwd && scoped?.kind === 'subject' ? scoped.id : undefined;
+    const cwd = opts.cwd ?? scoped?.path ?? undefined;
+    const worktree = (opts.worktree ?? (agent !== 'shell' && !settings.sessionsInCheckout)) && this.inProject(cwd ?? (subject ? (scoped?.cwd ?? undefined) : undefined));
     const size = { cols: 120, rows: 32, ...(worktree ? { worktree: true } : {}) };
     const profile = agent === 'shell' ? undefined : (opts.profile ?? this.nextProfile ?? undefined);
-    const term = await this.api.createTerm(agent === 'shell' ? { cwd, ...size } : { agent, cwd, model: opts.model || undefined, effort: opts.effort, ...(profile ? { profile } : {}), ...size });
+    const term = await this.api.createTerm(agent === 'shell' ? { cwd, ...(subject ? { workspaceId: subject } : {}), ...size } : { agent, cwd, ...(subject ? { workspaceId: subject } : {}), model: opts.model || undefined, effort: opts.effort, ...(profile ? { profile } : {}), ...size });
     if (profile && !opts.profile) this.nextProfile = null;
     this.upsertTerm(term);
     this.selectedKey = `term:${term.id}`;
@@ -571,7 +574,7 @@ class AppState {
   }
 
   openProjectTab(kind: 'graph' | 'worktrees', project?: string) {
-    const p = project ?? this.projectFor(this.sidebarMode === 'workspaces' ? this.currentWorkspace?.path : undefined) ?? this.projects[0]?.path;
+    const p = project ?? this.projectFor(this.sidebarMode === 'workspaces' ? (this.currentWorkspace?.path ?? undefined) : undefined) ?? this.projects[0]?.path;
     if (!p) return;
     const key = newTabKey(kind, p);
     this.view = 'agents';
