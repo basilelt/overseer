@@ -109,6 +109,11 @@ describe('search', () => {
     expect(r.count).toBe(1);
   });
 
+  it('finds the GPU rendering toggle by its label and its hint', () => {
+    expect(search('gpu', all, en2).hits.terminal).toEqual(['gpuTerminal']);
+    expect(search('webgl', all, en2).hits.terminal).toEqual(['gpuTerminal']);
+  });
+
   it('finds a setting by its hint text', () => {
     const r = search('zsh', all, en2);
     expect(r.hits.terminal).toEqual(['shiftEnter']);

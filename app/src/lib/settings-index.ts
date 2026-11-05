@@ -63,6 +63,7 @@ export const ENTRIES: Entry[] = [
   { id: 'fontSize', section: 'terminal', keys: ['settings.fontSize'] },
   { id: 'lineHeight', section: 'terminal', keys: ['settings.lineHeight'] },
   { id: 'scrollback', section: 'terminal', keys: ['settings.scrollback', 'settings.scrollbackHint'] },
+  { id: 'gpuTerminal', section: 'terminal', keys: ['settings.gpuTerminal', 'settings.gpuTerminalHint'] },
   { id: 'shiftEnter', section: 'terminal', keys: ['settings.shiftEnterNewline', 'settings.shiftEnterNewlineHint'] },
   { id: 'ctrlW', section: 'keyboard', gate: 'nonMac', keys: ['settings.ctrlWClosesTab', 'settings.ctrlWClosesTabHint'] },
   { id: 'newTabShell', section: 'keyboard', keys: ['settings.newTabShell', 'settings.newTabShellHint'] },

@@ -85,6 +85,8 @@ Each step is **Do → Expect**. Check every screenshot for overlaps, clipped tex
 - **E6** Split the pane right and down, move tabs between panes, close a pane → the layout follows, and nothing is lost on reload.
 - **E7** Select text in a terminal → it is copied (desktop shell only; note it when it cannot be checked in Chromium).
 - **E8** Drag-select a line that touches the first or last row of a terminal with no scrollback (a fresh shell, or the prompt of an agent at the bottom) → the whole dragged range is selected and copied, not a single cell.
+- **E9** Settings → Terminal → turn **GPU rendering** on (off by default) → open terminals redraw with WebGL: `seq 100000` scrolls smoothly, the wheel and Shift+wheel scroll the scrollback, drag-select copies the text, colours and the cursor look as before in both themes. Reload: the option is kept. Turn it off → terminals return to the normal renderer with their content and scrollback intact. Where WebGL is unavailable (`--disable-gpu`), turning it on still draws terminals with the normal renderer.
+- **E10** **(desktop)** Repeat E9 in the desktop app under Xvfb: with GPU rendering on, select text and check it with `xclip`, scroll a long output, resize the window and split a pane → no blank or garbled terminal; turn it off → the normal renderer is back.
 
 ### F. Chat
 

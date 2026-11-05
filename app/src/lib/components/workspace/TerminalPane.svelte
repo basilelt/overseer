@@ -596,6 +596,11 @@
   });
 
   $effect(() => {
+    void settings.gpuTerminal;
+    if (term) scheduler.invalidate(term as unknown as PaintTarget);
+  });
+
+  $effect(() => {
     if (focused && app.view !== 'kanban' && (!phone || ui.tab === 'agents')) focusSoon();
   });
 
