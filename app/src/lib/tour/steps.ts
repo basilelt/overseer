@@ -9,7 +9,7 @@ export interface Step {
 
 export const STEPS: Step[] = [
   { id: 'host', targets: ['host'], since: '0.15' },
-  { id: 'demo', targets: ['demo', 'host'], since: '0.27' },
+  { id: 'demo', targets: ['demo', 'host'], since: '0.28' },
   { id: 'workspaces', targets: ['workspaces'], since: '0.15' },
   { id: 'tabs', targets: ['tabs'], since: '0.15' },
   { id: 'view', targets: ['view-toggle'], since: '0.15' },

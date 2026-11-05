@@ -95,11 +95,11 @@ describe('tour versioning', () => {
     expect(targetOf(STEPS.find((s) => s.id === 'settings')!, (n) => n === 'settings')).toBe('settings');
   });
 
-  it('shows only the demo step to users who saw 0.26', () => {
-    expect(TOUR_VERSION).toBe('0.27');
-    expect(modeFor('0.26')).toBe('whatsNew');
-    expect(stepsFor('whatsNew', '0.26').map((s) => s.id)).toEqual(['demo']);
-    expect(modeFor('0.27')).toBeNull();
+  it('shows only the demo step to users who saw 0.27', () => {
+    expect(TOUR_VERSION).toBe('0.28');
+    expect(modeFor('0.27')).toBe('whatsNew');
+    expect(stepsFor('whatsNew', '0.27').map((s) => s.id)).toEqual(['demo']);
+    expect(modeFor('0.28')).toBeNull();
   });
 
   it('points the demo step at the Demo mode pill in the demo, else at the host chip', () => {
