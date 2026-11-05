@@ -1,6 +1,7 @@
 import type { Project, Term } from './types';
 
 export const DEFAULT_REPO = 'basilelt/overseer';
+export const PRIVACY_URL = `https://github.com/${DEFAULT_REPO}/blob/main/PRIVACY.md`;
 export const REPORT = '@REPORT@';
 export const APP_LINES = 200;
 export const SERVER_LINES = 100;

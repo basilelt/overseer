@@ -19,6 +19,7 @@
   import Workspace from '../workspace/Workspace.svelte';
   import SidePanel from '../panel/SidePanel.svelte';
   import ConnBanner from '../ui/ConnBanner.svelte';
+  import DemoPill from '../ui/DemoPill.svelte';
   import MobileChips from './MobileChips.svelte';
   import MobileReviews from './MobileReviews.svelte';
   import MobileMore from './MobileMore.svelte';
@@ -43,7 +44,7 @@
     return app.selected?.title ?? app.currentWorkspace?.name ?? t('app.name');
   });
   const subtitle = $derived(ui.tab === 'agents' && app.selected ? (app.currentWorkspace?.name ?? '') : '');
-  const updateLabel = $derived(apk.enabled ? pillLabel(apk) : null);
+  const updateLabel = $derived(__SELF_UPDATE__ && apk.enabled ? pillLabel(apk) : null);
   const hostLabel = $derived(app.conn.target.kind === 'local' ? t('host.local') : app.conn.target.label || t('mobile.more.notConnected'));
 
   let last: NavState = { view: app.view, key: app.selectedKey };
@@ -143,9 +144,10 @@
       <span class="title">{title}</span>
       {#if subtitle}<span class="subtitle faint">{subtitle}</span>{/if}
     </div>
-    {#if updateLabel}
+    {#if __SELF_UPDATE__ && updateLabel}
       <button class="upd" class:busy={apk.busy} onclick={() => (apk.sheet = true)}><span class="udot"></span>{updateLabel}</button>
     {/if}
+    <DemoPill compact />
     <button class="host" data-tour="host" onclick={() => app.open('connect')} aria-label={t('host.connect')}>
       <span class="dot" style:background={connPhase === 'connected' ? 'var(--st-input)' : connPhase === 'error' ? 'var(--st-failed)' : connPhase === 'idle' ? 'var(--st-held)' : 'var(--st-working)'}></span>
       <span class="hl">{hostLabel}</span>

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { build, type Rolldown } from 'vite';
 
 const ENTRY_BUDGET_KB = 340;
@@ -30,5 +30,30 @@ describe('production bundle budget', () => {
     expect([...startup].map((f) => byFile.get(f)!.name).filter((n) => LAZY_ONLY.test(n))).toEqual([]);
     expect([...startup].flatMap((f) => byFile.get(f)!.moduleIds).filter((m) => /\/i18n\/(?!en\.ts)[^/]+\.ts$/.test(m))).toEqual([]);
     expect(all.filter((c) => !startup.has(c.fileName)).some((c) => c.moduleIds.some((m) => m.endsWith('/i18n/fr.ts')))).toBe(true);
+  });
+});
+
+describe('APK updater only in the builds that update themselves', () => {
+  const updater = (all: Rolldown.OutputChunk[]) => all.flatMap((c) => Object.entries(c.modules)).filter(([id, m]) => /\/mobile\/(apk-update\.svelte\.ts|ApkUpdate\w+\.svelte)$/.test(id) && m.renderedLength > 0).map(([id]) => id);
+  const commands = (all: Rolldown.OutputChunk[]) => all.filter((c) => c.code.includes('apk_update_check'));
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('ships it in the GitHub build', { timeout: 120_000 }, async () => {
+    const all = await chunks();
+    expect(updater(all).length).toBeGreaterThan(0);
+    expect(commands(all).length).toBeGreaterThan(0);
+  });
+
+  it.each([
+    ['Google Play', { OVERSEER_DISTRIBUTION: 'play', TAURI_ENV_PLATFORM: 'android' }],
+    ['iOS', { TAURI_ENV_PLATFORM: 'ios' }],
+  ])('leaves it out of the %s build', { timeout: 120_000 }, async (_, env) => {
+    for (const [k, v] of Object.entries(env)) vi.stubEnv(k, v);
+    const all = await chunks();
+    expect(updater(all)).toEqual([]);
+    expect(commands(all)).toEqual([]);
   });
 });

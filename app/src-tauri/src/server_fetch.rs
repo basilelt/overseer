@@ -3,8 +3,8 @@ use std::sync::Arc;
 
 use sha2::{Digest, Sha256};
 
-use crate::apk_update::{asset_url, client, get, hex, ApkError};
 use crate::install::{Platform, SERVER_VERSION};
+use crate::release_http::{asset_url, client, get, hex, ApkError};
 use crate::ssh::{Fetch, FetchFuture};
 
 const GITHUB: &str = "https://github.com";
@@ -246,7 +246,7 @@ mod tests {
         let sums: &'static str = Box::leak(
             format!("{}  {name}\n", hex(&Sha256::digest(bin.as_bytes()))).into_boxed_str(),
         );
-        let (base, reqs) = crate::apk_update::testhttp::serve_script(vec![
+        let (base, reqs) = crate::release_http::testhttp::serve_script(vec![
             (200, vec![], sums),
             (302, vec![("location", "/cdn")], ""),
             (200, vec![], bin),
@@ -268,7 +268,7 @@ mod tests {
         let name = asset_name("0.9.0", Platform::LinuxX86_64);
         let sums: &'static str =
             Box::leak(format!("{}  {name}\n", "a".repeat(64)).into_boxed_str());
-        let (base, _reqs) = crate::apk_update::testhttp::serve_script(vec![
+        let (base, _reqs) = crate::release_http::testhttp::serve_script(vec![
             (200, vec![], sums),
             (200, vec![], "tampered"),
         ])
@@ -282,7 +282,7 @@ mod tests {
     #[tokio::test]
     async fn a_missing_release_reports_the_github_status() {
         let (base, _reqs) =
-            crate::apk_update::testhttp::serve_script(vec![(404, vec![], "Not Found")]).await;
+            crate::release_http::testhttp::serve_script(vec![(404, vec![], "Not Found")]).await;
         let err = from_base(&base, "9.9.9", Platform::LinuxX86_64)
             .await
             .unwrap_err();

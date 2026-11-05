@@ -322,7 +322,7 @@ describe('homebrew update', () => {
   it('explains common failures', async () => {
     for (const [err, text] of [
       [{ kind: 'missing' }, 'Homebrew was not found'],
-      [{ kind: 'stale' }, 'does not see the new version'],
+      [{ kind: 'stale' }, 'does not have this version yet'],
       [{ kind: 'failed', message: 'Error: disk full' }, 'Error: disk full'],
       [new Error('ipc closed'), 'ipc closed'],
     ] as const) {
@@ -376,5 +376,28 @@ describe('updater strings', () => {
     setLocale('fr');
     await loadLocale('fr');
     expect(pillLabel(u)).toBe('Mise à jour 0.3.0');
+  });
+});
+
+describe('the shared updater', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.resetModules();
+  });
+
+  const native = (demo: boolean) => {
+    vi.stubGlobal('window', { __TAURI_INTERNALS__: {} });
+    vi.stubGlobal('localStorage', { getItem: (k: string) => (demo && k === 'overseer.demo' ? '1' : null), setItem: () => {} });
+    vi.resetModules();
+  };
+
+  it('checks for updates in the native app', async () => {
+    native(false);
+    expect((await import('./updater.svelte')).updater.enabled).toBe(true);
+  });
+
+  it('is disabled in demo mode', async () => {
+    native(true);
+    expect((await import('./updater.svelte')).updater.enabled).toBe(false);
   });
 });

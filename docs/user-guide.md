@@ -873,7 +873,7 @@ On first launch, once the app is connected (immediately in local mode, after the
 connection on a phone), a welcome card offers **Take the tour** or **Skip**. The tour dims the
 window and highlights the real controls one at a time: host chip, workspaces sidebar, tabs and the
 new-session menu, the Terminal/Chat toggle, the side panel, Tasks, Review, the usage, system and ports
-chips, notifications and hooks, the command palette and Feedback, and in 0.25 the Cmd/Ctrl+P palette shortcut. Steps whose control is not on
+chips, notifications and hooks, the command palette and Feedback, in 0.25 the Cmd/Ctrl+P palette shortcut, and in 0.27 the demo mode (on the **Demo mode** pill while in the demo, else on the host chip), and in 0.28 the GPU rendering option for terminals. Steps whose control is not on
 screen (no session selected, a feature the server lacks, phone layout) are skipped. On a phone the
 card is a sheet at the bottom (or top, when the control sits low) and points at the bottom
 navigation, the session strip and the menu.
@@ -886,12 +886,33 @@ minor and major releases add steps. To see it again: Settings > Help > **Take th
 tour**, the palette command **Start the tour**, or **Show the tour again** in More on a phone.
 
 Settings (gear in the title bar, or More on a phone) has a sidebar of categories: **General**
-(appearance, links), **Terminal** (font, scrollback, keyboard), **Agents** (task defaults, profiles,
+(appearance, links), **Terminal** (font, scrollback, GPU rendering, keyboard), **Agents** (task defaults, profiles,
 hooks, usage), **Notifications**, **Connection** (hosts, server), **Updates** and **Help** (tour,
 logs, feedback). The search box at the top of the sidebar has focus when Settings opens: type part of a
 setting's name or description, in the app language or in English, and only the matching settings stay,
 highlighted, with a count per category; Esc clears the search. On a phone the categories are a list
 that opens a section, with a back button.
+
+**GPU rendering** (Settings > Terminal, off by default, experimental) draws terminals with WebGL
+instead of the normal renderer, which keeps long, fast output smooth. It needs hardware graphics
+acceleration; where WebGL is not available the terminals keep the normal renderer. Selection,
+scrolling and colours work the same with either renderer, and turning it off goes back to the normal
+renderer.
+
+### 14.0a Demo mode
+
+**Try the demo** lets you use the whole app without a server, for example to look around before
+installing the daemon. It is on the connect screen: at the bottom of the host list on the desktop
+(**Connect to host**), under **Add server** on a phone, and next to **Retry** when a connection fails.
+The app reloads on sample data: sessions with live terminals, a task board, reviews with diffs,
+chats, ports and saved hosts. Everything is simulated inside the app; nothing is installed, no SSH
+connection is made and no notification or update check reaches the system.
+
+While the demo runs, a **Demo mode** pill sits in the title bar (next to the host chip on a phone)
+with **Exit demo**. The demo keeps its own settings, layouts and drafts apart from yours, and it
+survives closing or backgrounding the app: it stays on until you exit it. **Exit demo** (on the pill
+or on the connect screen) deletes the demo's data and reloads the app on your own hosts, settings
+and sessions, exactly as you left them.
 
 ### 14.1 Terminals
 
@@ -912,6 +933,10 @@ curl --unix-socket "$S" -X POST -d '{"cwd":"/home/me/src/app","cmd":["claude"],"
 curl --unix-socket "$S" http://unix/v1/terms
 curl --unix-socket "$S" -X POST -d '{"confirm":true}' http://unix/v1/terms/<id>/kill
 ```
+
+When an agent quits on its own in a tab (Ctrl+C, `/quit`, `exit`), the tab stays open: it prints
+the session the agent ran and the command that resumes it, then starts your shell there. Killing the
+term, closing the tab or holding the session ends it as before, and task terms are not kept.
 
 `GET /v1/terms/<id>/io` is a WebSocket: the last 2 MiB of output first, then live output (binary
 frames); binary frames sent are typed into the program, `{"resize":{"cols":…,"rows":…}}` text
@@ -1489,7 +1514,9 @@ Held); the toggle is at the top of the sidebar.
   worktree). Shells follow their working directory. Sessions that match nothing are under
   **Other sessions**.
 - **Tabs**: selecting a workspace shows its own tab strip (agents, shells, browser, review), with
-  the agent glyph and a status dot per tab. `+` starts any installed agent or a shell in the
+  the agent glyph and a status dot per tab. Tabs keep a compact width with long titles cut, and
+  the selected tab shows its full title; when they do not fit, the strip scrolls with the mouse
+  wheel or trackpad, and hovering a tab shows its full title. `+` starts any installed agent or a shell in the
   workspace folder, opens a browser tab or **Review changes** of the selected agent. Drag tabs
   to reorder, middle-click or `×` to close (this ends the agent or shell; right-click > **Hide tab
   (keep running)** only hides it), split right or down. The

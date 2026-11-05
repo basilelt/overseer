@@ -13,12 +13,15 @@ covers each case with the `android`, `android-tablet`, `iphone`, `ipad` and `-la
 | Platform | Package | Where it goes | Who can install |
 |---|---|---|---|
 | Android | universal release APK (arm64-v8a, armeabi-v7a), signed with the Overseer release key | the GitHub Release, `Overseer_<version>_android.apk` + `.sha256` | anyone: in-app updates, Obtainium or by hand |
-| iOS | App Store IPA, signed with the team's distribution certificate (fastlane match) | TestFlight, an internal testing group | members of the App Store Connect team in that group |
+| Android | App Bundle (arm64-v8a, armeabi-v7a), same key, without the in-app updater | a Google Play testing track (`internal` by default) | testers added to that track in the Play Console |
+| iOS | App Store IPA, signed with the team's Apple Distribution certificate and App Store profile | TestFlight, an internal testing group | members of the App Store Connect team in that group |
 
-There is no Play Store or App Store release. The iOS build goes to TestFlight only; it is never
-submitted for App Store review, nor for external TestFlight review. `scripts/store-guard.sh` runs
-in CI and before every iOS upload, and fails if a workflow, script or fastlane file contains a
-store submission action.
+There is no App Store release and no Google Play production release from CI. The iOS build goes
+to TestFlight only; it is never submitted for App Store review, nor for external TestFlight
+review. The Android App Bundle goes to a Google Play internal or closed testing track; promoting
+it to production is a manual step in the Play Console. `scripts/store-guard.sh` runs in CI and
+before every iOS upload, and fails if a workflow, script or fastlane file contains a store
+submission action or names a Play production track.
 
 Bundle identifier and Android package: `io.github.basilelt.overseer`, the desktop identifier.
 
@@ -27,7 +30,9 @@ Bundle identifier and Android package: `io.github.basilelt.overseer`, the deskto
 [Obtainium](https://github.com/ImranR98/Obtainium) installs and updates apps from GitHub releases.
 The repository is public, so Obtainium needs no GitHub token.
 
-1. Add App:
+1. Add App: on the phone, with Obtainium installed, open
+   [Add Overseer to Obtainium](https://apps.obtainium.imranr.dev/redirect?r=obtainium://app/%7B%22id%22%3A%22io.github.basilelt.overseer%22%2C%22url%22%3A%22https%3A%2F%2Fgithub.com%2Fbasilelt%2Foverseer%22%2C%22author%22%3A%22basilelt%22%2C%22name%22%3A%22Overseer%22%2C%22preferredApkIndex%22%3A0%2C%22additionalSettings%22%3A%22%7B%5C%22includePrereleases%5C%22%3Afalse%2C%5C%22apkFilterRegEx%5C%22%3A%5C%22Overseer_.%2A_android%5C%5C%5C%5C.apk%5C%22%2C%5C%22invertAPKFilter%5C%22%3Afalse%7D%22%2C%22overrideSource%22%3A%22GitHub%22%7D). It opens Obtainium with every setting below prefilled;
+   tap Add. Or add it by hand:
    - App source URL: `https://github.com/basilelt/overseer` (the source is detected as
      GitHub);
    - "Filter APKs by regular expression": `Overseer_.*_android\.apk`;
@@ -44,7 +49,8 @@ uninstall it before installing a release APK, and the other way round.
 ## Updates on Android
 
 Overseer updates itself from the GitHub releases (ADR 0032, addendum). Obtainium still works
-and installs the same signed APK; use one or the other.
+and installs the same signed APK; use one or the other. The Google Play build has no in-app
+updater: Play updates it.
 
 The repository is public, so checking for and downloading updates needs no GitHub token.
 
@@ -104,14 +110,24 @@ show up in TestFlight after Apple's processing (usually 10 to 30 minutes after t
   - `app-android` on `ubuntu-24.04`: stamps the version (`scripts/set-version.sh`),
     builds `pnpm tauri android build --apk --target aarch64 --target armv7` with the release
     keystore, checks the signature (and the certificate fingerprint when `ANDROID_CERT_SHA256` is
-    set) with `apksigner` (`scripts/android-apk.sh`), and hands the APK to `publish`. The release does not wait for it
-    to succeed.
+    set) with `apksigner` (`scripts/android-apk.sh`), checks 16 KB page alignment
+    (`scripts/android-16k.sh`), and hands the APK to `publish`. The release does not wait for it
+    to succeed. It then builds the Google Play App Bundle with `OVERSEER_DISTRIBUTION=play`
+    (`pnpm tauri android build --aab --target aarch64 --target armv7`; the in-app updater is
+    not compiled into it: no Rust module, no Kotlin plugin, no web view code, no
+    `REQUEST_INSTALL_PACKAGES`), checks its signature, manifest, dex and
+    alignment (`scripts/android-aab.sh`, `scripts/android-16k.sh`) and keeps it as the
+    `play-android` artifact. A failure there does not fail the job or the APK.
+  - `app-android-play` on `ubuntu-slim`, after `app-android`: checks `PLAY_TRACK` and
+    `PLAY_RELEASE_STATUS` (`scripts/android-play-track.sh`, never `production`) and uploads the
+    AAB with `r0adkll/upload-google-play`. Skipped while `PLAY_SERVICE_ACCOUNT_JSON` is missing;
+    `publish` does not depend on it.
   - `app-ios` on `macos-26`, `continue-on-error`: runs `scripts/store-guard.sh`, writes
     `APPLE_TEAM_ID` into the Xcode project (`gen/apple/project.yml` and `project.pbxproj` are
     committed with an empty team), then `fastlane ios internal_testflight` from `app/`
-    (`app/fastlane/Fastfile`). The lane creates a temporary keychain, fetches the `appstore`
-    certificate and profile with `match` (readonly) from the `MATCH_GIT_URL` repository, builds with `pnpm tauri ios build
-    --export-method app-store-connect`, checks the IPA's versions, and uploads with
+    (`app/fastlane/Fastfile`). The lane builds with `pnpm tauri ios build
+    --export-method app-store-connect`, which signs with `IOS_CERTIFICATE` and
+    `IOS_MOBILE_PROVISION`, checks the IPA's versions, and uploads with
     `upload_to_testflight(skip_submission: true, skip_waiting_for_build_processing: true)`.
     `CFBundleShortVersionString` is the release version; `CFBundleVersion` is the workflow run
     number (`<run>.<attempt>` on a re-run, so a re-run never reuses a build number).
@@ -160,6 +176,35 @@ Repository secrets and variable (Settings > Secrets and variables > Actions):
 A lost or changed key means users must uninstall the app before they can install a new release.
 Rotating the key also means updating `ANDROID_CERT_SHA256`.
 
+### Google Play (once, by the Play Console account holder)
+
+1. Create the app in the [Play Console](https://play.google.com/console) with the package
+   `io.github.basilelt.overseer`, fill in the store listing, the content rating, the data safety
+   form and the privacy policy URL
+   (`https://github.com/basilelt/overseer/blob/main/PRIVACY.md`).
+2. Play App Signing: choose to use your own key and upload the release key above (the Console's
+   PEPK tool encrypts it), so Play signs with the same certificate as the GitHub APK. That key is
+   also the upload key the CI signs the AAB with.
+3. First upload by hand: the Play API refuses an app with no build. Download the `play-android`
+   artifact of a release run (or build the AAB locally with `OVERSEER_DISTRIBUTION=play pnpm
+   tauri android build --aab --target aarch64 --target armv7` and the release keystore) and
+   upload it to the internal testing track in the Console.
+4. Service account: in Google Cloud, enable the Google Play Android Developer API, create a
+   service account and a JSON key. In the Play Console, Users and permissions, invite the service
+   account's e-mail with the "Release to testing tracks" permission (and "Release apps to
+   production" left off) for this app.
+5. Repository secret and variables:
+
+| Name | Kind | Value |
+|---|---|---|
+| `PLAY_SERVICE_ACCOUNT_JSON` | secret | the service account JSON key, as is |
+| `PLAY_TRACK` | variable | optional: `internal` (default), `alpha`, `beta` or a closed testing track name; `production` is rejected |
+| `PLAY_RELEASE_STATUS` | variable | optional: `completed` (default) or `draft` (use `draft` while the app itself is still a draft in the Console) |
+
+Users who install from Play get updates from Play. The GitHub APK and the Play build share the
+package name and the key, so a user can switch between them without uninstalling, but the APK's
+in-app updater and Play would then both offer updates: use one channel.
+
 ### iOS (once, by the Apple Developer account holder)
 
 Needs a paid Apple Developer Program membership. Nothing in the repository names a team: the
@@ -177,31 +222,31 @@ team id comes from the `APPLE_TEAM_ID` secret at build time.
    waits in TestFlight for "Manage" > export compliance before testers get it. Once decided, set
    `ITSAppUsesNonExemptEncryption` accordingly in `app/src-tauri/Info.ios.plist` (Tauri merges it
    into the iOS `Info.plist`) so builds go through on their own.
-5. Create a private Git repository for fastlane match (for example `basilelt/certificates`) and
-   a deploy key for it (read-only is enough for CI). Then, on a Mac with fastlane, from `app/` of
-   this repository:
+5. Create the Apple Distribution certificate and the App Store profile, from any OS, with an
+   App Store Connect API key with the Admin role (kept off CI):
 
    ```sh
-   cd app
-   APPLE_TEAM_ID=<team id> MATCH_GIT_URL=git@github.com:<owner>/certificates.git \
-     MATCH_PASSWORD=<a new passphrase> fastlane match appstore --app_identifier io.github.basilelt.overseer
+   openssl req -new -newkey rsa:2048 -nodes -keyout dist.key -out dist.csr -subj "/CN=Overseer iOS Distribution"
    ```
 
-   It logs in to the Apple account (or pass `--api_key_path` with an App Store Connect API key
-   JSON), creates or reuses an Apple Distribution certificate, and stores it with the profile
-   `match AppStore io.github.basilelt.overseer`, encrypted with `MATCH_PASSWORD`. CI only reads
-   it (`readonly: true`).
+   Then, with a JWT for that key, `POST /v1/certificates` with `certificateType: DISTRIBUTION` and
+   the CSR body (without the PEM armour), and `POST /v1/profiles` with
+   `profileType: IOS_APP_STORE`, the bundle id `io.github.basilelt.overseer` and that
+   certificate. Pack the certificate with its key and the `AppleWWDRCAG3` intermediate:
+   `openssl pkcs12 -export -legacy -inkey dist.key -in dist.pem -certfile wwdrg3.pem -out dist.p12`.
+   Both expire after one year: repeat this step and update the three `IOS_*` secrets before then.
+   Keep `dist.key` and the `.p12` outside the repository, in a password manager.
 6. Repository secrets:
 
    | Secret | Value |
    |---|---|
    | `APPLE_TEAM_ID` | the 10-character Apple Developer team id (Membership details) |
-   | `APPLE_KEY_ID` | App Store Connect API key id (Users and Access > Integrations, role App Manager or Admin) |
+   | `APPLE_KEY_ID` | App Store Connect API key id (Users and Access > Integrations; the Developer role is enough to upload builds and notarize) |
    | `APPLE_ISSUER_ID` | issuer id of that key |
    | `APPLE_KEY_CONTENT` | the `.p8` file content |
-   | `MATCH_GIT_URL` | SSH URL of the match repository, e.g. `git@github.com:<owner>/certificates.git` |
-   | `MATCH_PASSWORD` | passphrase of the match repository |
-   | `MATCH_SSH_PRIVATE_KEY` | private key of the deploy key of the match repository |
+   | `IOS_CERTIFICATE` | `base64 -w0 dist.p12` |
+   | `IOS_CERTIFICATE_PASSWORD` | password of that `.p12` |
+   | `IOS_MOBILE_PROVISION` | `base64 -w0` of the App Store `.mobileprovision` |
 
    `APPLE_ITC_TEAM_ID` (App Store Connect team id) is read by `app/fastlane/Appfile` when it is in
    the environment; it only matters for an Apple account in several App Store Connect teams, and
@@ -222,10 +267,11 @@ checked. After a forced Android run, re-apply the hand edits to `app/src-tauri/g
 
 - the release signing block and the SDK level (36, preinstalled on the hosted runner) in
   `app/build.gradle.kts`;
-- `app/src/main/java/io/github/basilelt/overseer/ApkInstallerPlugin.kt` (the in-app installer, keep the
-  file);
+- `app/src/selfupdate/java/io/github/basilelt/overseer/ApkInstallerPlugin.kt` (the in-app installer,
+  outside `src/main` so the Google Play build leaves it out; keep the file);
 - `<uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />` in
-  `app/src/main/AndroidManifest.xml`. The installer also relies on the generated `FileProvider`
+  `app/src/main/AndroidManifest.xml`, and the `OVERSEER_DISTRIBUTION` block in
+  `app/build.gradle.kts` with `app/src/play/AndroidManifest.xml` (removes it for Google Play). The installer also relies on the generated `FileProvider`
   (`${applicationId}.fileprovider`) and its `cache-path` in `res/xml/file_paths.xml`.
 
 The icons come from the 512x512 `icon.png`; the 1024x1024 App Store icon is upscaled. A

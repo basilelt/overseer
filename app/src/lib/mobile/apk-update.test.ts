@@ -247,6 +247,75 @@ describe('server download only, on iOS', () => {
   });
 });
 
+describe('Google Play build', () => {
+  const play = () => backend({ status: vi.fn(async () => ({ current: '0.9.0', supported: false })) });
+
+  it('never checks GitHub, on start, interval, resume or by hand', async () => {
+    vi.useFakeTimers();
+    const b = play();
+    const u = new ApkUpdater(b);
+    const stop = u.start(1000);
+    await vi.advanceTimersByTimeAsync(5000);
+    u.resume();
+    await u.check(true);
+    stop();
+    expect(b.status).toHaveBeenCalledTimes(1);
+    expect(b.check).not.toHaveBeenCalled();
+    expect(b.download).not.toHaveBeenCalled();
+    expect(u.current).toBe('0.9.0');
+    expect(u.phase).toBe('idle');
+  });
+
+  it('hides every update entry point', async () => {
+    const u = new ApkUpdater(play());
+    u.start();
+    expect(u.enabled && u.updates).toBe(false);
+    await flush();
+    expect(u.enabled && u.updates).toBe(false);
+    expect(u.sheet).toBe(false);
+    expect(pillLabel(u)).toBeNull();
+  });
+
+  it('turns updates off when the settings page reads the status', async () => {
+    const u = new ApkUpdater(play());
+    expect(await u.refreshStatus()).toBe(false);
+    expect(u.updates).toBe(false);
+  });
+
+  it('shows no update entry before the status confirms the GitHub build', async () => {
+    let resolve!: (s: { current: string; supported: boolean }) => void;
+    const b = backend({ status: () => new Promise((r) => (resolve = r)) });
+    const u = new ApkUpdater(b);
+    const stop = u.start();
+    expect(u.updates).toBe(false);
+    resolve({ current: '0.9.0', supported: true });
+    await flush();
+    stop();
+    expect(u.updates).toBe(true);
+    expect(b.check).toHaveBeenCalledTimes(1);
+  });
+
+  it('still checks when the status cannot be read', async () => {
+    const b = backend({ status: async () => Promise.reject(new Error('ipc')) });
+    const u = new ApkUpdater(b);
+    const stop = u.start();
+    await flush();
+    stop();
+    expect(u.updates).toBe(true);
+    expect(b.check).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not start checking when stopped before the status arrives', async () => {
+    let resolve!: (s: { current: string; supported: boolean }) => void;
+    const b = backend({ status: () => new Promise((r) => (resolve = r)) });
+    const u = new ApkUpdater(b);
+    u.start()();
+    resolve({ current: '0.9.0', supported: true });
+    await flush();
+    expect(b.check).not.toHaveBeenCalled();
+  });
+});
+
 describe('helpers', () => {
   it('normalises errors', () => {
     expect(apkError({ kind: 'checksum' })).toEqual({ kind: 'checksum' });
@@ -264,5 +333,19 @@ describe('helpers', () => {
     setLocale('fr');
     await loadLocale('fr');
     expect(pillLabel({ phase: 'available', info: { version: '1.0.0' } as never, progress: null })).toBe('Mise à jour 1.0.0');
+  });
+});
+
+describe('startApkUpdater', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('stays off in demo mode, so no update check or install prompt reaches the native side', async () => {
+    vi.stubGlobal('window', { __TAURI_INTERNALS__: {} });
+    vi.stubGlobal('localStorage', { getItem: (k: string) => (k === 'overseer.demo' ? '1' : null) });
+    const { apk, startApkUpdater } = await import('./apk-update.svelte');
+    const onResume = vi.fn(() => () => {});
+    startApkUpdater('android', onResume)();
+    expect(onResume).not.toHaveBeenCalled();
+    expect(apk.enabled).toBe(false);
   });
 });

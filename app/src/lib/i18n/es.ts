@@ -1385,7 +1385,6 @@ export const dict: Partial<Dict> = {
   'updater.step.formula': 'Actualizando la CLI de overseer…',
   'updater.err.missing': 'No se encontró Homebrew en /opt/homebrew, /usr/local ni en el PATH.',
   'updater.err.untrusted': 'Homebrew aún no confía en el tap {tap}. Confía en él aquí o ejecuta `brew trust {tap}`.',
-  'updater.err.stale': 'Homebrew aún no ve la nueva versión: no se pudo actualizar el tap. Ejecuta el siguiente comando desde un terminal.',
   'updater.update': 'Actualizar',
   'updater.updated': 'Actualizado a Overseer {version}. Reinicia para terminar.',
   'updater.restart': 'Reiniciar para terminar',

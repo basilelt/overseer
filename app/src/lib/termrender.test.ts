@@ -310,4 +310,31 @@ describe('ghostty-web patch', () => {
     expect(installOnDemandRendering({ Terminal: class {} })).toBe(false);
     warn.mockRestore();
   });
+
+  it('attaches once when ghostty restarts its render loop after a resize', () => {
+    const { s } = setup();
+    class Sel {
+      requestRender() {}
+    }
+    class Ren {
+      render() {}
+      stopCursorBlink() {}
+      setHoveredHyperlinkId() {}
+      setHoveredLinkRange() {}
+    }
+    class Term {
+      startRenderLoop() {}
+      writeInternal() {}
+      dispose() {}
+    }
+    installOnDemandRendering({ Terminal: Term, SelectionManager: Sel, CanvasRenderer: Ren }, s);
+    const onScroll = vi.fn(() => ({ dispose() {} }));
+    const t = Object.assign(new Term(), target(), { onScroll }) as unknown as PaintTarget & Term;
+    t.startRenderLoop();
+    t.startRenderLoop();
+    expect(onScroll).toHaveBeenCalledTimes(1);
+    t.dispose();
+    t.startRenderLoop();
+    expect(onScroll).toHaveBeenCalledTimes(2);
+  });
 });

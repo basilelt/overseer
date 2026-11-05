@@ -492,6 +492,144 @@ fn codex_desktop_and_server_processes_are_not_sessions() {
     );
 }
 
+#[test]
+fn codex_sandboxed_tool_call_does_not_wake_an_idle_thread() {
+    // Given an idle Codex thread in a worktree and a tool call of another thread sandboxed there by bwrap
+    // When the station is scanned
+    // Then the sandbox is not taken for a Codex session and the idle thread stays without a process
+    let fx = Fx::new();
+    let probe = Fake(vec![(
+        7101,
+        "1",
+        argv("bwrap --new-session --die-with-parent --ro-bind / / --argv0 codex-linux-sandbox -- /u/.codex/packages/app-server-daemon/releases/0.166.0-x86_64-unknown-linux-musl/bin/codex --sandbox-policy-cwd /r --command-cwd /r -- /bin/zsh -c ls"),
+        Some(fx.wt_chore.clone()),
+    )]);
+    let lines = fx.scan(&probe);
+    let cx = find(&lines, CX);
+    assert_eq!((cx.pid, cx.state), (None, "held"));
+}
+
+struct Timed(Fake, Vec<(u32, i64)>);
+
+impl Probe for Timed {
+    fn info(&self, pid: u32) -> Option<ProcInfo> {
+        let mut i = self.0.info(pid)?;
+        i.start_ms = self.1.iter().find(|p| p.0 == pid).map(|p| p.1);
+        Some(i)
+    }
+    fn list(&self) -> Vec<(u32, Vec<String>)> {
+        self.0.list()
+    }
+    fn cwd(&self, pid: u32) -> Option<String> {
+        self.0.cwd(pid)
+    }
+}
+
+const T0: &str = "2026-10-28T09:00:00Z";
+
+fn codex_threads(fx: &Fx, rows: &[(&str, i64, i64)]) {
+    let db = rusqlite::Connection::open(fx.codex().join("state_5.sqlite")).unwrap();
+    db.execute_batch(
+        "CREATE TABLE threads (id TEXT, rollout_path TEXT, created_at INTEGER, updated_at INTEGER, cwd TEXT,
+           title TEXT, archived INTEGER, git_branch TEXT, first_user_message TEXT);",
+    )
+    .unwrap();
+    let t0 = parse_rfc3339(T0).unwrap() / 1000;
+    for (id, created, updated) in rows {
+        db.execute(
+            "INSERT INTO threads VALUES (?1, NULL, ?2, ?3, ?4, 't', 0, NULL, 'm')",
+            rusqlite::params![id, t0 + created, t0 + updated, fx.wt_chore],
+        )
+        .unwrap();
+    }
+}
+
+fn tuis(fx: &Fx, procs: &[(u32, &str, i64)]) -> Timed {
+    let t0 = parse_rfc3339(T0).unwrap();
+    Timed(
+        Fake(
+            procs
+                .iter()
+                .map(|(pid, cmd, _)| (*pid, "1", argv(cmd), Some(fx.wt_chore.clone())))
+                .collect(),
+        ),
+        procs
+            .iter()
+            .map(|(pid, _, s)| (*pid, t0 + s * 1000))
+            .collect(),
+    )
+}
+
+fn pids(lines: &[Line], ids: &[&str]) -> Vec<Option<u32>> {
+    ids.iter().map(|id| find(lines, id).pid).collect()
+}
+
+#[test]
+fn codex_tuis_in_one_repo_keep_their_threads_whatever_was_used_last() {
+    // Given two fresh codex TUIs in one worktree, each owning the thread it created, the older one used last,
+    // and an idle thread created before both
+    // When the station is scanned
+    // Then each thread keeps the TUI that started before it and the idle thread has none
+    let fx = Fx::new();
+    codex_threads(
+        &fx,
+        &[
+            ("cx-old", -600, -500),
+            ("cx-a", 20, 300),
+            ("cx-b", 120, 200),
+        ],
+    );
+    let lines = fx.scan(&tuis(&fx, &[(8002, "codex", 100), (8001, "codex", 0)]));
+    assert_eq!(
+        pids(&lines, &["cx-old", "cx-a", "cx-b"]),
+        [None, Some(8001), Some(8002)]
+    );
+}
+
+#[test]
+fn codex_tui_that_quits_takes_only_its_own_thread_down() {
+    // Given two codex threads in one worktree whose first TUI has quit
+    // When the station is scanned
+    // Then the thread of the remaining TUI keeps it and the other has no process
+    let fx = Fx::new();
+    codex_threads(&fx, &[("cx-a", 20, 300), ("cx-b", 120, 200)]);
+    let lines = fx.scan(&tuis(&fx, &[(8002, "codex", 100)]));
+    assert_eq!(pids(&lines, &["cx-a", "cx-b"]), [None, Some(8002)]);
+}
+
+#[test]
+fn fresh_codex_tui_does_not_wake_an_idle_thread_of_its_repo() {
+    // Given an idle codex thread in a worktree and a codex TUI opened there that has no thread yet
+    // When the station is scanned
+    // Then the idle thread stays without a process
+    let fx = Fx::new();
+    codex_threads(&fx, &[("cx-old", -600, -500)]);
+    let lines = fx.scan(&tuis(&fx, &[(8003, "codex", 0)]));
+    assert_eq!(pids(&lines, &["cx-old"]), [None]);
+}
+
+#[test]
+fn codex_resume_last_attaches_to_the_most_recent_thread_of_its_repo() {
+    // Given two older codex threads in a worktree and `codex resume --last` started there afterwards
+    // When the station is scanned
+    // Then the most recently used thread is the one resumed
+    let fx = Fx::new();
+    codex_threads(&fx, &[("cx-a", -900, -100), ("cx-b", -800, -400)]);
+    let lines = fx.scan(&tuis(&fx, &[(8004, "codex resume --last", 0)]));
+    assert_eq!(pids(&lines, &["cx-a", "cx-b"]), [Some(8004), None]);
+}
+
+#[test]
+fn codex_tui_that_switches_to_an_older_thread_follows_it() {
+    // Given a codex TUI that resumed an older thread from inside, which it has used since it started
+    // When the station is scanned
+    // Then that thread has the TUI
+    let fx = Fx::new();
+    codex_threads(&fx, &[("cx-a", -900, 100)]);
+    let lines = fx.scan(&tuis(&fx, &[(8005, "codex", 0)]));
+    assert_eq!(pids(&lines, &["cx-a"]), [Some(8005)]);
+}
+
 struct Tree {
     procs: Fake,
     parents: Vec<(u32, u32)>,

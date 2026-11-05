@@ -72,8 +72,8 @@ export const MOCK_AGENTS: AgentInfo[] = [
   { id: 'codex', name: 'Codex', installed: true, version: '0.58.0', efforts: [...ALL_EFFORTS], resume: true, verified: true, sessions: true, turns: true },
   { id: 'gemini', name: 'Gemini CLI', installed: true, version: '0.21.0', efforts: [], resume: true, verified: true, sessions: true, turns: false },
   { id: 'agy', name: 'Antigravity', installed: true, version: '1.4.2', efforts: [], resume: false, verified: true, sessions: false, turns: false },
-  { id: 'opencode', name: 'opencode', installed: false, efforts: [], resume: true, verified: true, install: 'npm install -g opencode-ai', sessions: false, turns: false },
-  { id: 'amp', name: 'Amp', installed: false, models: [], efforts: [...ALL_EFFORTS], resume: true, verified: true, install: 'npm install -g @sourcegraph/amp', sessions: false, turns: false },
+  { id: 'opencode', name: 'opencode', installed: false, efforts: [], resume: true, verified: true, install: 'npm install -g --allow-scripts=opencode-ai opencode-ai', sessions: false, turns: false },
+  { id: 'amp', name: 'Amp', installed: false, models: [], efforts: [...ALL_EFFORTS], resume: true, verified: true, install: 'npm install -g --allow-scripts=@ampcode/cli @sourcegraph/amp', sessions: false, turns: false },
   { id: 'copilot', name: 'Copilot CLI', installed: true, version: '0.0.354', efforts: [...ALL_EFFORTS], resume: true, verified: true, sessions: false, turns: false },
   { id: 'cursor', name: 'Cursor Agent', installed: false, efforts: [], resume: true, verified: false, install: 'curl https://cursor.com/install -fsS | bash', sessions: false, turns: false },
   { id: 'shell', name: 'Shell', installed: true, models: [], efforts: [], resume: false, verified: true, sessions: false, turns: false },
@@ -513,6 +513,7 @@ interface MockOptions {
   delayMs?: number;
   scale?: number;
   storm?: number;
+  platform?: PlatformInfo;
 }
 
 const urlNumber = (k: string) => (typeof location !== 'undefined' ? Number(new URLSearchParams(location.search).get(k)) || 0 : 0);
@@ -625,6 +626,7 @@ export class MockDaemon implements DaemonClient {
   private promptSeq = 0;
   hosts: SavedHost[] = structuredClone(MOCK_SAVED_HOSTS);
   private trusted = new Set<string>(['h1']);
+  private devicePlatform: PlatformInfo | undefined;
   private sinks = new Map<string, (s: string) => void>();
 
   constructor(opts: MockOptions = {}) {
@@ -642,6 +644,7 @@ export class MockDaemon implements DaemonClient {
     ({ workspaces: this.workspaces, folders: this.folders, groups: this.groups } = seedWs(now));
     this.live = opts.live ?? true;
     this.delayMs = opts.delayMs ?? 300;
+    this.devicePlatform = opts.platform;
   }
 
   emit(type: EventType, data: unknown) {
@@ -1741,6 +1744,7 @@ export class MockDaemon implements DaemonClient {
   }
 
   async platform(): Promise<PlatformInfo> {
+    if (this.devicePlatform) return { ...this.devicePlatform };
     const phone = typeof location !== 'undefined' && phoneParam(location.search);
     return { os: phone ? 'android' : 'linux', mobile: phone };
   }
