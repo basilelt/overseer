@@ -87,7 +87,10 @@ impl Probe for System {
             let stat = std::fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
             let after = &stat[stat.rfind(')')? + 1..];
             let start = after.split_whitespace().nth(19).map(str::to_string);
+            #[cfg(target_os = "linux")]
             let start_ms = start.as_deref().and_then(boot_ticks_ms);
+            #[cfg(not(target_os = "linux"))]
+            let start_ms = None;
             Some(ProcInfo {
                 start,
                 argv,
@@ -395,6 +398,7 @@ pub fn parse_etime(s: &str) -> Option<i64> {
     Some(((days * 24 + h) * 60 + m) * 60 + sec)
 }
 
+#[cfg(target_os = "linux")]
 fn boot_ticks_ms(ticks: &str) -> Option<i64> {
     static BOOT_MS: std::sync::OnceLock<Option<i64>> = std::sync::OnceLock::new();
     let boot = (*BOOT_MS.get_or_init(|| {

@@ -331,6 +331,7 @@ mod tests {
             sized_by: None,
             profile: None,
             workspace_id: None,
+            resume: None,
         }
     }
 

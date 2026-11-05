@@ -45,6 +45,7 @@ pub struct Info {
     pub sized_by: Option<String>,
     pub profile: Option<crate::profiles::Chip>,
     pub workspace_id: Option<String>,
+    pub resume: Option<(String, String)>,
 }
 
 struct Sub {
@@ -167,6 +168,7 @@ pub struct Term {
     killer: Mutex<Option<Box<dyn ChildKiller + Send + Sync>>>,
     gen: AtomicU64,
     holding: AtomicBool,
+    killed: AtomicBool,
 }
 
 #[derive(Default)]
@@ -483,10 +485,21 @@ fn watch(term: &Arc<Term>, mut child: Box<dyn portable_pty::Child + Send + Sync>
     });
     let t = term.clone();
     std::thread::spawn(move || {
-        let code = child.wait().ok().map(|s| s.exit_code());
+        let status = child.wait().ok();
+        let code = status.as_ref().map(|s| s.exit_code());
         let _ = done_rx.recv_timeout(Duration::from_secs(1));
         if t.stale(gen) {
             return;
+        }
+        if status.is_some_and(|s| s.signal().is_none()) && t.fall_back_to_shell() {
+            return;
+        }
+        {
+            let mut o = lock(&t.out);
+            if !o.closed {
+                o.closed = true;
+                o.hang_up();
+            }
         }
         {
             let mut i = lock(&t.info);
@@ -542,6 +555,7 @@ pub fn spawn(s: Spec) -> Result<Arc<Term>, String> {
             sized_by: None,
             profile: s.profile,
             workspace_id: None,
+            resume: None,
         }),
         out: Mutex::default(),
         writer: Mutex::new(writer),
@@ -549,6 +563,7 @@ pub fn spawn(s: Spec) -> Result<Arc<Term>, String> {
         killer: Mutex::new(Some(child.clone_killer())),
         gen: AtomicU64::new(0),
         holding: AtomicBool::new(false),
+        killed: AtomicBool::new(false),
     });
     lock(&TERMS).insert(id, term.clone());
     publish("term.created", json!({"term": term.to_json()}));
@@ -595,7 +610,7 @@ fn pump(t: &Term, reader: Reader, gen: u64) {
             Err(_) => break,
         }
     }
-    if t.stale(gen) {
+    if t.stale(gen) || t.may_fall_back() {
         return;
     }
     let mut o = lock(&t.out);
@@ -610,6 +625,52 @@ impl Term {
 
     pub fn hold(&self, on: bool) {
         self.holding.store(on, Ordering::SeqCst);
+    }
+
+    // An agent that quits on its own (Ctrl+C, /quit) leaves a shell in its tab, with the
+    // session it ran and how to resume it, instead of closing the tab.
+    fn may_fall_back(&self) -> bool {
+        let i = lock(&self.info);
+        cfg!(unix)
+            && i.agent.as_deref().is_some_and(|a| a != "shell")
+            && i.task_id.is_none()
+            && !self.killed.load(Ordering::SeqCst)
+    }
+
+    #[cfg(unix)]
+    fn fall_back_to_shell(self: &Arc<Self>) -> bool {
+        if !self.may_fall_back() {
+            return false;
+        }
+        let i = self.info();
+        let agent = i.agent.clone().unwrap_or_default();
+        let note = match i.resume.clone() {
+            Some((session, cmd)) => {
+                format!("{agent} exited. Session {session}, resume with: {cmd}")
+            }
+            None => format!("{agent} exited."),
+        };
+        {
+            let mut i = lock(&self.info);
+            i.agent = None;
+            i.line_id = None;
+            i.session = None;
+            i.flags = vec![];
+            i.resume = None;
+        }
+        self.respawn(vec![
+            "/bin/sh".into(),
+            "-c".into(),
+            "printf '\\r\\n%s\\r\\n\\r\\n' \"$1\"; exec \"${SHELL:-/bin/sh}\"".into(),
+            "sh".into(),
+            note,
+        ])
+        .is_ok()
+    }
+
+    #[cfg(not(unix))]
+    fn fall_back_to_shell(self: &Arc<Self>) -> bool {
+        false
     }
 
     pub fn respawn(self: &Arc<Self>, argv: Vec<String>) -> Result<(), String> {
@@ -814,9 +875,12 @@ impl Term {
         publish("term.updated", json!({"term": self.to_json()}));
     }
 
-    pub fn set_line(&self, line_id: &str) {
+    pub fn set_line(&self, line_id: &str, resume: Option<(String, String)>) {
         {
             let mut i = lock(&self.info);
+            if resume.is_some() {
+                i.resume = resume;
+            }
             if i.line_id.as_deref() == Some(line_id) {
                 return;
             }
@@ -827,6 +891,7 @@ impl Term {
 
     #[cfg(unix)]
     pub fn kill(self: &Arc<Self>) -> Result<(), String> {
+        self.killed.store(true, Ordering::SeqCst);
         let group = -(self.info().pid as i32);
         if group == 0 {
             return self.kill_direct();
@@ -846,6 +911,7 @@ impl Term {
 
     #[cfg(not(unix))]
     pub fn kill(self: &Arc<Self>) -> Result<(), String> {
+        self.killed.store(true, Ordering::SeqCst);
         self.kill_direct()
     }
 
@@ -991,6 +1057,7 @@ pub fn adopt(s: crate::upgrade::SavedTerm) -> Result<Arc<Term>, String> {
             sized_by: s.sized_by,
             profile: s.profile,
             workspace_id: s.workspace_id,
+            resume: None,
         }),
         out: Mutex::new(Out {
             ring: ring.into(),
@@ -1006,6 +1073,7 @@ pub fn adopt(s: crate::upgrade::SavedTerm) -> Result<Arc<Term>, String> {
         killer: Mutex::new(None),
         gen: AtomicU64::new(0),
         holding: AtomicBool::new(false),
+        killed: AtomicBool::new(false),
     });
     lock(&TERMS).insert(s.id, term.clone());
     if live {
@@ -1095,7 +1163,10 @@ pub fn trim_exited(now: i64) -> usize {
 pub fn link_lines(lines: &[crate::Line]) {
     for l in lines {
         if let Some(t) = l.term_id.as_deref().and_then(get) {
-            t.set_line(&l.id);
+            t.set_line(
+                &l.id,
+                Some((l.session_id.clone(), l.resume_command.clone())),
+            );
         }
     }
 }
@@ -1306,6 +1377,7 @@ mod tests {
             sized_by: None,
             profile: None,
             workspace_id: None,
+            resume: None,
         };
         assert!(may_resize(&i, Some("phone")));
         assert!(may_resize(&i, Some("desktop")));

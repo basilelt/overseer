@@ -25,6 +25,14 @@ describe('cleanExits', () => {
     expect(cleanExits([term()], [term({ exited: true, exitCode: 1 })])).toEqual([]);
   });
 
+  it('keeps an agent term that is not linked to its line yet', () => {
+    expect(cleanExits([term({ agent: 'codex' })], [term({ agent: 'codex', exited: true, exitCode: 0 })])).toEqual([]);
+  });
+
+  it('still closes a shell term that exits cleanly', () => {
+    expect(cleanExits([term({ agent: 'shell' })], [term({ agent: 'shell', exited: true, exitCode: 0 })])).toEqual(['tm_a']);
+  });
+
   it('keeps agent line and task terms', () => {
     expect(cleanExits([term({ lineId: 'ln' }), term({ id: 'tm_b', taskId: 'tk' })], [term({ lineId: 'ln', exited: true }), term({ id: 'tm_b', taskId: 'tk', exited: true })])).toEqual([]);
   });

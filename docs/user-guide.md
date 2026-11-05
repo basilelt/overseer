@@ -913,6 +913,10 @@ curl --unix-socket "$S" http://unix/v1/terms
 curl --unix-socket "$S" -X POST -d '{"confirm":true}' http://unix/v1/terms/<id>/kill
 ```
 
+When an agent quits on its own in a tab (Ctrl+C, `/quit`, `exit`), the tab stays open: it prints
+the session the agent ran and the command that resumes it, then starts your shell there. Killing the
+term, closing the tab or holding the session ends it as before, and task terms are not kept.
+
 `GET /v1/terms/<id>/io` is a WebSocket: the last 2 MiB of output first, then live output (binary
 frames); binary frames sent are typed into the program, `{"resize":{"cols":…,"rows":…}}` text
 frames resize it. An agent started in a term is linked to its line (`local.termId` in

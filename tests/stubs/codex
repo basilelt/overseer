@@ -27,6 +27,7 @@ hook() {
 tool=
 cleanup() { [ -n "$tool" ] && kill "$tool" 2>/dev/null; exit 0; }
 trap cleanup TERM HUP
+trap 'exit 0' INT
 printf 'codex ready\r\n› '
 while IFS= read -r l; do
   case $l in
