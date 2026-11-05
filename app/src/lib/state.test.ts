@@ -853,6 +853,24 @@ describe('sessions', () => {
     expect(app.data.terms.at(-1)).toBe(term);
   });
 
+  it('keeps a terminal added while a refresh is in flight', async () => {
+    const term = { ...app.data.terms[0], id: 'tm_during_refresh' };
+    const pending = app.refresh();
+    app.upsertTerm(term);
+    await pending;
+    expect(app.data.terms.some((x) => x.id === 'tm_during_refresh')).toBe(true);
+  });
+
+  it('prefers the refreshed copy of a terminal added while a refresh is in flight', async () => {
+    const fetched = app.data.terms[0];
+    const pending = app.refresh();
+    app.upsertTerm({ ...fetched, cols: 1, rows: 1 });
+    await pending;
+    const kept = app.data.terms.filter((x) => x.id === fetched.id);
+    expect(kept).toHaveLength(1);
+    expect(kept[0].cols).toBe(fetched.cols);
+  });
+
   it('does not add a terminal twice', () => {
     const terms = app.data.terms;
     app.upsertTerm(terms[0]);
