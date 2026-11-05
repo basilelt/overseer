@@ -1,3 +1,4 @@
+import { FEEDBACK_TITLE, isFeedbackTerm } from './feedback';
 import type { LocalLine, Task, Term } from './types';
 
 export type GroupId = 'needs_input' | 'needs_testing' | 'working' | 'pushed' | 'idle' | 'held';
@@ -45,6 +46,7 @@ export function sidebarItems(lines: LocalLine[], terms: Term[], tasks: Task[], b
   const testing = new Set(own.filter((t) => t.status === 'in_testing').map((t) => t.lineId));
   const taskByLine = new Map(own.map((t) => [t.lineId!, t]));
   const termByLine = new Map(terms.filter((t) => t.lineId && !t.exited).map((t) => [t.lineId!, t.id]));
+  const feedbackLines = new Set(terms.filter((t) => t.lineId && isFeedbackTerm(t)).map((t) => t.lineId!));
   const items: SidebarItem[] = [];
   for (const l of lines) {
     const group = lineGroup(l, testing.has(l.line.id));
@@ -54,7 +56,7 @@ export function sidebarItems(lines: LocalLine[], terms: Term[], tasks: Task[], b
       key: `line:${l.line.id}`,
       kind: l.line.agent,
       group,
-      title: l.local?.titleOverride || (task?.title ?? lineTitle(l)),
+      title: l.local?.titleOverride || (task?.title ?? (feedbackLines.has(l.line.id) ? FEEDBACK_TITLE : lineTitle(l))),
       renamed: !!l.local?.titleOverride,
       goal: briefs[l.line.id]?.goal ?? task?.description,
       status: briefs[l.line.id]?.status,
