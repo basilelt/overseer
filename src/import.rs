@@ -3,7 +3,7 @@ use crate::registry::Registry;
 use rusqlite::{Connection, OpenFlags};
 use serde_json::{json, Map, Value};
 use std::path::{Path, PathBuf};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 const KEY: &str = "import.switchboard";
 const OLD_HOOK: &str = "#switchboard-hook";
@@ -299,9 +299,10 @@ fn unsafe_uid() -> u32 {
     0
 }
 
+#[cfg(unix)]
 fn wait_dead(pid: i32, within: Duration) -> bool {
-    let end = Instant::now() + within;
-    while Instant::now() < end {
+    let end = std::time::Instant::now() + within;
+    while std::time::Instant::now() < end {
         if !alive(pid) {
             return true;
         }
