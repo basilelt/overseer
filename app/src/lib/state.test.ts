@@ -824,6 +824,59 @@ describe('sessions', () => {
     expect(app.view).toBe('agents');
   });
 
+  describe('following a session just started', () => {
+    const lineFor = async () => {
+      const all = await m.request<{ line: { id: string } }[]>('GET', '/v1/lines');
+      return { ...all[0].line, id: 'ln_new', state: 'active' };
+    };
+
+    it('selects the line when the term gets linked before the line is known', async () => {
+      const term = await app.newSession('claude');
+      const line = await lineFor();
+      m.emit('term.updated', { term: { ...term, lineId: line.id } });
+      expect(app.items.some((i) => i.key === `term:${term.id}`)).toBe(false);
+      m.emit('line.updated', { line });
+      expect(app.items.find((i) => i.lineId === line.id)?.termId).toBe(term.id);
+      expect(app.selectedKey).toBe(`line:${line.id}`);
+      expect(app.selected?.lineId).toBe(line.id);
+    });
+
+    it('selects the line when it arrives together with the term link', async () => {
+      const term = await app.newSession('claude');
+      const line = await lineFor();
+      m.emit('line.updated', { line });
+      m.emit('term.updated', { term: { ...term, lineId: line.id } });
+      expect(app.selectedKey).toBe(`line:${line.id}`);
+    });
+
+    it('leaves the selection alone once the user picked another session', async () => {
+      const term = await app.newSession('claude');
+      const line = await lineFor();
+      m.emit('term.updated', { term: { ...term, lineId: line.id } });
+      const other = app.items.find((i) => i.key.startsWith('line:'))!.key;
+      app.select(other);
+      m.emit('line.updated', { line });
+      expect(app.selectedKey).toBe(other);
+    });
+
+    it('stops following when the term is gone', async () => {
+      const term = await app.newSession('claude');
+      m.emit('term.exited', { term: { ...term, exited: true } });
+      const line = await lineFor();
+      m.emit('line.updated', { line });
+      expect(app.selectedKey).toBe(`term:${term.id}`);
+    });
+
+    it('opens the workspace that holds a session started from elsewhere', async () => {
+      app.selectWorkspace('ws_webshop');
+      const base = await app.newSession('shell');
+      const term = { ...base, id: 'tm_feedback', cwd: '/tmp/elsewhere' } as Term;
+      app.followSession(term);
+      expect(app.selectedKey).toBe('term:tm_feedback');
+      expect(app.workspaceId).toBe(NO_WORKSPACE);
+    });
+  });
+
   it('starts in the checkout when the user prefers it or outside a project', async () => {
     settings.sessionsInCheckout = true;
     await app.newSession('claude', { cwd: '/home/alice/Documents/Github/work/webshop' });
