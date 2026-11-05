@@ -1266,11 +1266,11 @@ fn agents_are_detected_and_launched_from_the_table() {
     );
     let ctid = c["id"].as_str().unwrap().to_string();
     let cmd = strs(&c["cmd"]);
-    let sid = cmd[1].strip_prefix("--resume=").unwrap().to_string();
+    let sid = cmd[1].strip_prefix("--session-id=").unwrap().to_string();
     assert_eq!(cmd[2..], ["--model", "gpt-5.2", "--effort", "xhigh"]);
     wait(|| {
         stub_log(&app).contains(&format!(
-            "copilot --resume={sid} --model gpt-5.2 --effort xhigh"
+            "copilot --session-id={sid} --model gpt-5.2 --effort xhigh"
         ))
     });
 
