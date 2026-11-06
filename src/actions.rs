@@ -584,6 +584,10 @@ pub(crate) fn pending_verdict(l: &Line, checks: &[Check]) -> Pending {
     if l.busy_known && l.busy || l.needs_input {
         return Pending::Wait;
     }
+    // Subagents outlive the parent's turn: their end is the real end of the work.
+    if l.hook.as_ref().is_some_and(|h| h.subagents > 0) {
+        return Pending::Wait;
+    }
     let failed: Vec<Check> = checks.iter().filter(|c| !c.ok).cloned().collect();
     if failed.is_empty() {
         Pending::Run
@@ -602,15 +606,25 @@ pub(crate) fn pending_verdict(l: &Line, checks: &[Check]) -> Pending {
 /// process still exiting right after the turn ended does not cancel it.
 const BLOCK_GRACE_MS: i64 = 10_000;
 
+fn parse_grace(v: Option<&str>) -> i64 {
+    v.and_then(|v| v.parse().ok())
+        .filter(|ms| *ms >= 0)
+        .unwrap_or(BLOCK_GRACE_MS)
+}
+
+fn grace_ms() -> i64 {
+    parse_grace(std::env::var("OVERSEER_HOLD_GRACE_MS").ok().as_deref())
+}
+
 static BLOCKED: std::sync::Mutex<Option<std::collections::HashMap<String, i64>>> =
     std::sync::Mutex::new(None);
 
-/// True once the line has been blocked for `BLOCK_GRACE_MS`; `None` forgets it.
+/// True once the line has been blocked for the grace period; `None` forgets it.
 fn blocked_long_enough(id: &str, now_ms: Option<i64>) -> bool {
     let mut g = BLOCKED.lock().unwrap_or_else(|e| e.into_inner());
     let map = g.get_or_insert_with(Default::default);
     match now_ms {
-        Some(now) => now - *map.entry(id.to_string()).or_insert(now) >= BLOCK_GRACE_MS,
+        Some(now) => now - *map.entry(id.to_string()).or_insert(now) >= grace_ms(),
         None => {
             map.remove(id);
             false
@@ -1246,6 +1260,24 @@ mod tests {
     }
 
     #[test]
+    fn a_pending_hold_waits_while_a_subagent_runs_after_the_turn() {
+        // Given an idle line with a pending hold and one running subagent
+        // When noToolRunning fails because of it, then the subagent count drops to 0
+        // Then it waits instead of being blocked, and runs once the count is 0
+        let mut l = pending_line();
+        l.hook = Some(crate::registry::HookState {
+            subagents: 1,
+            ..Default::default()
+        });
+        assert_eq!(
+            pending_verdict(&l, &[failing("noToolRunning")]),
+            Pending::Wait
+        );
+        l.hook.as_mut().unwrap().subagents = 0;
+        assert_eq!(pending_verdict(&l, &[]), Pending::Run);
+    }
+
+    #[test]
     fn a_pending_hold_runs_once_the_turn_ended_and_every_check_passes() {
         // Given a pending hold on an idle line
         // When no check fails
@@ -1270,6 +1302,17 @@ mod tests {
             pending_verdict(&unknown, &[failing("atPrompt")]),
             Pending::Blocked(_)
         ));
+    }
+
+    #[test]
+    fn the_grace_period_can_be_overridden_by_a_valid_number_of_milliseconds() {
+        // Given the grace env override
+        // When it is unset, valid, negative or not a number
+        // Then only a valid non-negative value replaces the default
+        assert_eq!(parse_grace(None), BLOCK_GRACE_MS);
+        assert_eq!(parse_grace(Some("2000")), 2_000);
+        assert_eq!(parse_grace(Some("-1")), BLOCK_GRACE_MS);
+        assert_eq!(parse_grace(Some("soon")), BLOCK_GRACE_MS);
     }
 
     #[test]

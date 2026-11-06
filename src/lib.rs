@@ -1388,6 +1388,10 @@ impl Line {
         if self.hold_pending {
             local["holdPending"] = json!(true);
         }
+        let live =
+            |n: fn(&HookState) -> i64| self.hook.as_ref().filter(|_| self.alive()).map_or(0, n);
+        local["subagents"] = json!(live(|h| h.subagents));
+        local["tasks"] = json!(live(|h| h.tasks));
         if let Some(t) = &self.title {
             local["title"] = json!(t);
         }

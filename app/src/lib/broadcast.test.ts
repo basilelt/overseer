@@ -95,7 +95,7 @@ describe('mock daemon workspaces and broadcast', () => {
     const m = new MockDaemon({ live: false });
     const a = api(m);
     expect(await a.holdPlan('ln_09')).toMatchObject({ lineId: 'ln_09', predicates: { alive: { ok: true } } });
-    expect((await a.holdPlan('ln_04')).error).toBe('turn in progress');
+    expect((await a.holdPlan('ln_04')).predicates?.atPrompt).toEqual({ ok: false, detail: 'agent is mid-turn' });
     expect(m.lines.find((l) => l.line.id === 'ln_09')!.line.state).toBe('idle');
   });
 });

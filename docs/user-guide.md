@@ -407,6 +407,11 @@ aborted and reverted), and the pane shows
 `overseer resume <line>` does the same from elsewhere. A held line stays held after a reboot;
 to get the stub back in its pane after a reboot apply [`docs/toolkit-patch.md`](toolkit-patch.md).
 
+A pause queued for the end of the turn (`afterTurn`) also waits for running sub-agents. A
+background task does not wait: after `OVERSEER_HOLD_GRACE_MS` (default 10 s) the pause is dropped
+and the app is told. If an agent lost its sub-agent end event, the pause waits until the session
+ends or restarts, the line is closed, or you cancel the pause.
+
 `close` marks a line `hung-up` (finished). A live line is held first, with the same checks.
 
 An agent running in an Overseer terminal (daemon term) is held through the daemon
@@ -849,6 +854,7 @@ Station (mostly for tests and services):
 | `OVERSEER_TMUX_SNAPSHOT` | `~/.local/state/tmux-snapshot/latest/state.json` | Snapshot file read for launch flags. |
 | `OVERSEER_NOW` | current time | Fixed RFC 3339 "now". |
 | `OVERSEER_HOLD_TIMEOUT_MS` | `10000` | Wait for the agent to exit after SIGTERM in `hold` (abort and revert after). |
+| `OVERSEER_HOLD_GRACE_MS` | `10000` | How long a lasting block (e.g. a background task) must last before a pending `afterTurn` hold is dropped. |
 | `OVERSEER_START_TIMEOUT_MS` | `30000` | Wait for the agent's prompt in `start`, `relaunch`, `patch --local`. |
 | `OVERSEER_RELAY_TIMEOUT_MS` | `15000` | Board relay wait for the outcome. |
 | `OVERSEER_TASK_ID` | set by the daemon | In an agent started for a task: its task id (MCP `id` default). |
