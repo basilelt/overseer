@@ -14,6 +14,9 @@
   import { saveSettings, settings } from '../../settings.svelte';
   import { organizer } from '../../organize.svelte';
   import { nudgeVisible, unplacedCount } from '../../organize';
+  import LayoutList from '@lucide/svelte/icons/layout-list';
+  import ListTree from '@lucide/svelte/icons/list-tree';
+  import SpacesView from './SpacesView.svelte';
   import StatusList from './StatusList.svelte';
   import WorkspaceTree from './WorkspaceTree.svelte';
 
@@ -21,6 +24,8 @@
   const nudge = $derived(nudgeVisible(unplaced, settings.organizeNudgeAt));
   let filter = $state('');
   let showArchived = $state(false);
+  // The compact view is the default; the folder tree stays one click away until it is retired.
+  const compact = $derived((settings.workspacesLayout ?? 'spaces') === 'spaces');
   const modes: { id: SidebarMode; label: () => string }[] = [
     { id: 'workspaces', label: () => t('ws.title') },
     { id: 'status', label: () => t('ws.byStatus') },
@@ -40,6 +45,13 @@
       {/each}
     </div>
     {#if app.sidebarMode === 'workspaces'}
+      <button
+        class="icon-btn"
+        title={compact ? t('ws.layoutTree') : t('ws.layoutSpaces')}
+        aria-label={compact ? t('ws.layoutTree') : t('ws.layoutSpaces')}
+        onclick={() => saveSettings({ workspacesLayout: compact ? 'tree' : 'spaces' })}
+        >{#if compact}<ListTree size={14} />{:else}<LayoutList size={14} />{/if}</button
+      >
       <button class="icon-btn" title={t('ws.new')} aria-label={t('ws.new')} disabled={!app.connected || !app.wsPersistent} aria-haspopup="menu" onclick={(e) => app.openMenu(e, t('ws.new'), addMenu())}
         ><Plus size={14} /></button
       >
@@ -71,7 +83,7 @@
     </div>
   {/if}
   {#if app.sidebarMode === 'workspaces'}
-    <WorkspaceTree {filter} {showArchived} />
+    {#if compact}<SpacesView {filter} />{:else}<WorkspaceTree {filter} {showArchived} />{/if}
   {:else}
     <StatusList {filter} />
   {/if}

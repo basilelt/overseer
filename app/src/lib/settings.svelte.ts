@@ -51,6 +51,8 @@ export interface Settings {
   hooksNever: string[];
   keepRunningOffered?: string[];
   sidebarMode?: 'workspaces' | 'status';
+  workspacesLayout?: 'spaces' | 'tree';
+  spacesOpen?: string[];
   workspaceId?: string;
   workspaceByHost?: Record<string, string>;
   portsAutoForward: boolean;

@@ -71,8 +71,8 @@
     box-shadow: inset 0 0 0 1.5px var(--c);
   }
   .title {
-    flex: none;
-    max-width: 45%;
+    flex: 0 1 auto;
+    max-width: 60%;
     font-weight: 700;
     overflow: hidden;
     text-overflow: ellipsis;
