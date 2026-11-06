@@ -2,12 +2,12 @@
   import type { WsState } from '../../workspaces';
 
   export const WS_COLOR: Record<WsState, string> = {
-    needs_input: 'var(--st-input)',
-    running: 'var(--st-working)',
+    needs_input: 'var(--state-attention)',
+    running: 'var(--state-running)',
     needs_testing: 'var(--st-testing)',
-    ready: 'var(--border-strong)',
-    paused: 'var(--st-paused)',
-    stopped: 'var(--st-held)',
+    ready: 'var(--state-open)',
+    paused: 'var(--state-paused)',
+    stopped: 'var(--state-closed)',
   };
 </script>
 

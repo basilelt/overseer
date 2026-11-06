@@ -2,6 +2,7 @@
   import ChevronDown from '@lucide/svelte/icons/chevron-down';
   import Monitor from '@lucide/svelte/icons/monitor';
   import Server from '@lucide/svelte/icons/server';
+  import { connLabel } from '../../conn-label';
   import { t } from '../../i18n.svelte';
   import { settings } from '../../settings.svelte';
   import { app } from '../../state.svelte';
@@ -23,13 +24,7 @@
 
   const conn = $derived(app.conn);
   const label = $derived(conn.target.kind === 'local' ? t('host.local') : conn.target.label);
-  const phaseText = $derived(
-    conn.phase === 'installing'
-      ? t('conn.installing', { version: conn.version ?? '' })
-      : conn.phase === 'reconnecting'
-        ? t('conn.reconnecting', { n: conn.attempt ?? 1 })
-        : t(`conn.${conn.phase}`),
-  );
+  const phaseText = $derived(connLabel(conn));
   const tip = $derived([phaseText, conn.error, app.client?.kind === 'mock' ? t('conn.mock') : ''].filter(Boolean).join(' · '));
 
   function pick(h: HostTarget) {

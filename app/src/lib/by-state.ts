@@ -18,10 +18,11 @@ export type StateSection =
 const LIVE: LiveSectionState[] = ['running', 'open', 'paused'];
 
 // items must already be newest first, so every group keeps that order.
-function groupByWorkspace(items: SidebarItem[], wsOf: ReadonlyMap<string, string>): WorkspaceGroup[] {
+function groupByWorkspace(items: SidebarItem[], wsOf: ReadonlyMap<string, string>, visible?: ReadonlySet<string>): WorkspaceGroup[] {
   const by = new Map<string | null, WorkspaceGroup>();
   for (const it of items) {
-    const id = wsOf.get(it.key) ?? null;
+    const w = wsOf.get(it.key);
+    const id = w !== undefined && (!visible || visible.has(w)) ? w : null;
     const g = by.get(id);
     if (g) g.items.push(it);
     else by.set(id, { workspaceId: id, items: [it], at: it.at });
@@ -31,13 +32,14 @@ function groupByWorkspace(items: SidebarItem[], wsOf: ReadonlyMap<string, string
 
 // Mode "Par état": running, open, paused sections of workspace groups, then closed sessions by interval.
 // Sessions requiring attention are left out (the banner lists them) and plain shells are not sessions.
-export function byState(items: SidebarItem[], wsOf: ReadonlyMap<string, string>, now: number): StateSection[] {
+// visible: the workspaces that are shown; a session of any other one is grouped with the unassigned.
+export function byState(items: SidebarItem[], wsOf: ReadonlyMap<string, string>, now: number, visible?: ReadonlySet<string>): StateSection[] {
   const sorted = items.filter((i) => i.kind !== 'shell').sort(newestFirst);
   const live = LIVE.map((state) => {
     const mine = sorted.filter((i) => i.state === state);
-    return { state, count: mine.length, groups: groupByWorkspace(mine, wsOf) };
+    return { state, count: mine.length, groups: groupByWorkspace(mine, wsOf, visible) };
   });
   const closed = sorted.filter((i) => i.state === 'closed');
-  const buckets = bucketByTime(closed, now).map((b) => ({ bucket: b.bucket, count: b.items.length, groups: groupByWorkspace(b.items, wsOf) }));
+  const buckets = bucketByTime(closed, now).map((b) => ({ bucket: b.bucket, count: b.items.length, groups: groupByWorkspace(b.items, wsOf, visible) }));
   return [...live, { state: 'closed', count: closed.length, buckets }];
 }

@@ -3,6 +3,8 @@ import { attention } from '../attention';
 import { byState } from '../by-state';
 import type { SidebarItem } from '../grouping';
 import type { SessionState } from '../session-state';
+import type { Workspace } from '../types';
+import { spaces } from '../spaces';
 import { bucketByTime, timeBucket } from '../time-bucket';
 import { workspaceSessions } from '../workspace-sessions';
 import { workspaceSummary } from '../workspace-summary';
@@ -54,7 +56,7 @@ describe('session lists scale with the session count', () => {
     // Given 100 and 1000 sessions in mixed states, spread over 7 workspaces
     // When each list is built
     // Then 10x the sessions costs well under the 100x of a quadratic pass
-    for (const run of [(f: ReturnType<typeof fixture>) => attention(f.items, f.wsOf), (f: ReturnType<typeof fixture>) => byState(f.items, f.wsOf, now), (f: ReturnType<typeof fixture>) => workspaceSessions(f.items, now)]) {
+    for (const run of [(f: ReturnType<typeof fixture>) => attention(f.items, f.wsOf), (f: ReturnType<typeof fixture>) => byState(f.items, f.wsOf, now, new Set(['w1', 'w2'])), (f: ReturnType<typeof fixture>) => workspaceSessions(f.items, now), (f: ReturnType<typeof fixture>) => spaces(Array.from({ length: 7 }, (_, i) => ({ id: `w${i}`, name: `ws${i}`, rank: i, pinned: false, archived: false }) as Workspace), f.items, f.wsOf, 't')]) {
       const [small, big] = scale(run);
       expect(big / small).toBeGreaterThanOrEqual(10);
       expect(big / small).toBeLessThan(20);
