@@ -23,6 +23,9 @@ describe('title and labels', () => {
     expect(issueTitle(form({ title: ' Tabs vanish ' }))).toBe('Bug: Tabs vanish');
     expect(issueTitle(form({ kind: 'idea', description: 'Dark sidebar\nmore text' }))).toBe('Idea: Dark sidebar');
     expect(issueTitle(form({ kind: 'other', title: 'x'.repeat(200) })).length).toBeLessThanOrEqual(90);
+    expect(issueTitle(form({ title: '', description: 'Test SECRET sk-ant-api03-abcdefghijklmnop1234567890' }))).toBe('Bug: Test SECRET sk-***');
+    expect(issueTitle(form({ title: 'login token=abc123def', description: 'd' }))).toBe('Bug: login token=***');
+    expect(issueTitle(form({ title: `${'a'.repeat(70)} sk-ant-api03-abcdefghijklmnop1234567890` })).includes('sk-ant')).toBe(false);
   });
 
   it('maps types to labels', () => {

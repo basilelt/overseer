@@ -351,15 +351,21 @@ fn listed(files: &[(PathBuf, String)], why: &str) -> String {
         .join("\n")
 }
 
+fn checked_title(b: &Value) -> Res<String> {
+    let title = text(b, "title");
+    if title.is_empty() || title.len() > 256 || title.contains('\n') {
+        return Err(bad("title must be one line of 1 to 256 characters"));
+    }
+    Ok(crate::dlog::redact(title))
+}
+
 fn direct(ctx: &Ctx, b: &Value) -> Res<Value> {
     let repo = text(b, "repo");
     if !valid_repo(repo) {
         return Err(bad("repo must look like owner/name"));
     }
-    let title = text(b, "title");
-    if title.is_empty() || title.len() > 256 || title.contains('\n') {
-        return Err(bad("title must be one line of 1 to 256 characters"));
-    }
+    let title = checked_title(b)?;
+    let title = title.as_str();
     let body = checked_body(b)?;
     let labels = labels(b);
     let files = attachments(b)?;
@@ -436,6 +442,21 @@ mod tests {
         assert_eq!(issue_url("https://github.com/o/r/pull/3"), None);
         assert_eq!(issue_url("https://github.com/o/r/issues/abc"), None);
         assert_eq!(issue_url("nothing here"), None);
+    }
+
+    #[test]
+    fn redacts_secrets_in_the_title() {
+        let t = checked_title(
+            &json!({"title": "Bug: SECRET sk-ant-api03-abcdefghijklmnop1234567890 token=abc123"}),
+        )
+        .unwrap();
+        assert!(!t.contains("abcdefghijklmnop") && !t.contains("abc123"));
+        assert!(t.starts_with("Bug: SECRET "));
+        assert_eq!(
+            checked_title(&json!({"title": " plain "})).unwrap(),
+            "plain"
+        );
+        assert!(checked_title(&json!({"title": "a\nb"})).is_err());
     }
 
     #[test]
