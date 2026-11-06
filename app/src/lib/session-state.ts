@@ -39,7 +39,7 @@ export const isEnded = (l: LocalLine): boolean => l.line.state === 'hung-up';
 function stateOf(l: LocalLine, termId: string | null | undefined): SessionState {
   const { line, local } = l;
   if (line.state === 'held') return local?.heldReason === 'user' ? 'paused' : 'closed';
-  if (local?.pid === undefined && !local?.termId && !termId) return 'closed';
+  if (local?.pid == null && !local?.termId && !termId) return 'closed';
   if (local?.needsInput) return 'attention';
   // Subagents keep a parent working even between its own turns.
   return local?.busy || local?.holdPending || (local?.subagents ?? 0) > 0 ? 'running' : 'open';
@@ -72,7 +72,7 @@ export function sessionState(l: LocalLine, termId?: string | null): SessionView 
     return {
       state,
       label,
-      since: state === 'paused' ? local?.heldAt : undefined,
+      since: state === 'paused' ? local?.heldAt ?? undefined : undefined,
       actions: { interrupt: none, pause: none, cancelPause: off('session.why.noPausePending'), resume: ON, close: ON },
     };
   }

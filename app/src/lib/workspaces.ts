@@ -354,7 +354,7 @@ export function synthesize(projects: Project[]): Workspace[] {
 
 export type LineAction = 'open' | 'attach' | 'resume' | 'hold' | 'close';
 
-const lineAlive = (line: LocalLine) => line.local?.pid !== undefined && line.line.state !== 'held' && line.line.state !== 'hung-up';
+const lineAlive = (line: LocalLine) => line.local?.pid != null && line.line.state !== 'held' && line.line.state !== 'hung-up';
 
 export function lineActions(item: SidebarItem, line: LocalLine | undefined): LineAction[] {
   if (!item.lineId || !line) return [];

@@ -36,6 +36,15 @@ describe('sessionState: which state a session is in', () => {
     expect(sessionState({ line: line().line }).state).toBe('closed');
   });
 
+  it('treats null event fields exactly like absent ones', () => {
+    const nulls = { pid: null, termId: null, holdPending: null, heldReason: null, heldAt: null, title: null };
+    expect(sessionState(line({}, nulls)).state).toBe('closed');
+    expect(sessionState(line({}, nulls), 't1').state).toBe('open');
+    expect(sessionState(line({}, { ...nulls, pid: 42 })).state).toBe('open');
+    expect(sessionState(line({ state: 'held' }, { ...nulls, heldReason: 'user', heldAt: '2026-01-01T00:00:00Z' })).state).toBe('paused');
+    expect(sessionState(line({ state: 'held' }, nulls)).state).toBe('closed');
+  });
+
   it('stays running, with a pause-after-turn sub-label, when a pause is queued on a busy agent', () => {
     const s = sessionState(line({}, { pid: 42, busy: true, holdPending: true }));
     expect([s.state, s.sub]).toEqual(['running', { key: 'session.state.pause_pending' }]);

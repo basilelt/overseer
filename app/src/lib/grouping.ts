@@ -57,7 +57,7 @@ export function sidebarItems(lines: LocalLine[], terms: Term[], tasks: Task[], b
   const feedbackLines = new Set(terms.filter((t) => t.lineId && isFeedbackTerm(t)).map((t) => t.lineId!));
   const items: SidebarItem[] = [];
   for (const l of lines) {
-    const termId = termByLine.get(l.line.id) ?? l.local?.termId;
+    const termId = termByLine.get(l.line.id) ?? l.local?.termId ?? undefined;
     const group = lineGroup(l, testing.has(l.line.id), termId);
     if (!group) continue;
     const task = taskByLine.get(l.line.id);
