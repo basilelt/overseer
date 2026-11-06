@@ -2447,16 +2447,22 @@ fn ctrl_c_interrupts_the_job_and_exit_reports_the_sigint_status() {
     );
     let id = t["id"].as_str().unwrap().to_string();
     let mut a = app.ws(&id);
-    // `wait` (not a foreground `sleep`) so macOS bash 3.2 as sh runs the INT trap too.
+    // A foreground job that only the pty's Ctrl-C can stop; no trap, so bash 3.2 and dash agree.
     send(
         &mut a,
-        "trap 'echo GOT-$((20+1))' INT; echo ARMED-$((1+1)); sleep 30 & wait\n",
+        "echo ARMED-$((1+1)); sleep 37; s=$?; echo AFTER-$s; exit $s\n",
     );
     read_until(&mut a, "ARMED-2");
     std::thread::sleep(Duration::from_millis(300));
     send(&mut a, "\x03");
-    read_until(&mut a, "GOT-21");
-    send(&mut a, "exit\n");
+    read_until(&mut a, "AFTER-130");
+    let alive = std::process::Command::new("pgrep")
+        .args(["-f", "sleep 37"])
+        .output()
+        .unwrap()
+        .status
+        .success();
+    assert!(!alive, "the interrupted job is still running");
     wait(|| app.ok("GET", &format!("/v1/terms/{id}"), Value::Null)["exited"] == true);
     assert_eq!(
         app.ok("GET", &format!("/v1/terms/{id}"), Value::Null)["exitCode"],
