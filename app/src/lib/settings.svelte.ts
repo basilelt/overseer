@@ -8,9 +8,13 @@ import { DEFAULT_KINDS, DEFAULT_QUIET, migrateKinds, type Delivery, type NotifyK
 
 installDemoStorage();
 
-export type ThemePref = 'auto' | 'light' | 'dark';
+export type ThemePref = 'auto' | 'light' | 'dark' | 'graphite' | 'solarized';
 export const COLOR_TOKENS = ['accent', 'bg', 'surface', 'border', 'text', 'text-2'] as const;
 export type ColorToken = (typeof COLOR_TOKENS)[number];
+export type ColorPalette = 'light' | 'dark' | 'graphite' | 'solarized';
+export const GRAPHITE_COLORS = { accent: '#9AB8EF', bg: '#202124', surface: '#292B30', border: '#454850', text: '#DADCE0', 'text-2': '#A8ADB7' } as const;
+export const SOLARIZED_COLORS = { accent: '#70B5DB', bg: '#002b36', surface: '#073642', border: '#38606B', text: '#A7B6B6', 'text-2': '#A7B6B6' } as const;
+const PRESET_COLORS = { graphite: GRAPHITE_COLORS, solarized: SOLARIZED_COLORS };
 export type ColorOverrides = Partial<Record<ColorToken, string>>;
 const HEX = /^#[0-9a-f]{6}$/i;
 
@@ -70,7 +74,7 @@ export interface Settings {
   linkTarget: LinkTarget;
   linkBrowser: string;
   linkAsk: boolean;
-  colors: Record<'light' | 'dark', ColorOverrides>;
+  colors: Record<'light' | 'dark', ColorOverrides> & { graphite?: ColorOverrides; solarized?: ColorOverrides };
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -135,7 +139,7 @@ function load(): Settings {
 
 function urlTheme(): ThemePref | null {
   const v = globalThis.location ? new URLSearchParams(globalThis.location.search).get('theme') : null;
-  return v === 'light' || v === 'dark' || v === 'auto' ? v : null;
+  return v === 'light' || v === 'dark' || v === 'auto' || v === 'graphite' || v === 'solarized' ? v : null;
 }
 
 export const settings = $state<Settings>({ ...load(), ...(urlTheme() ? { theme: urlTheme()! } : {}) });
@@ -193,18 +197,28 @@ export function setSystemDark(dark: boolean) {
 }
 
 export function resolvedTheme(): 'light' | 'dark' {
-  return settings.theme === 'auto' ? (systemDark ? 'dark' : 'light') : settings.theme;
+  return settings.theme === 'auto' ? (systemDark ? 'dark' : 'light') : settings.theme === 'graphite' || settings.theme === 'solarized' ? 'dark' : settings.theme;
 }
 
-export function customColors(theme = resolvedTheme()): ColorOverrides {
-  const raw = settings.colors?.[theme] ?? {};
+export function colorPalette(): ColorPalette {
+  return settings.theme === 'graphite' || settings.theme === 'solarized' ? settings.theme : resolvedTheme();
+}
+
+export function colorOverrides(palette = colorPalette()): ColorOverrides {
+  const raw = settings.colors?.[palette] ?? {};
   return Object.fromEntries(COLOR_TOKENS.filter((k) => HEX.test(raw[k] ?? '')).map((k) => [k, raw[k]]));
+}
+
+export function customColors(palette: ColorPalette = colorPalette()): ColorOverrides {
+  return palette === 'graphite' || palette === 'solarized' ? { ...PRESET_COLORS[palette], ...colorOverrides(palette) } : colorOverrides(palette);
 }
 
 export function applyTheme() {
   if (typeof document === 'undefined') return;
   const root = document.documentElement;
   root.dataset.theme = resolvedTheme();
+  if (settings.theme === 'graphite' || settings.theme === 'solarized') root.dataset.palette = settings.theme;
+  else delete root.dataset.palette;
   const colors = customColors();
   for (const k of COLOR_TOKENS) {
     const v = colors[k];
