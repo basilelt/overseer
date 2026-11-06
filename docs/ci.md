@@ -439,8 +439,8 @@ checks that a download was built by this workflow from this repository.
   branch (Settings > General > Default branch, or
   `gh api -X PATCH repos/basilelt/overseer -f default_branch=next`), so pull requests and
   Dependabot target it.
-- Rulesets: create them from `.github/rulesets/main.json`, `.github/rulesets/next.json` and
-  `.github/rulesets/release-tags.json` with
+- Rulesets: create them from `.github/rulesets/main.json`, `.github/rulesets/next.json`,
+  `.github/rulesets/no-delete.json` and `.github/rulesets/release-tags.json` with
   `gh api -X POST repos/basilelt/overseer/rulesets --input <file>` (later changes:
   `gh api -X PUT repos/basilelt/overseer/rulesets/<id> --input <file>`, ids from
   `gh api repos/basilelt/overseer/rulesets --jq '.[] | [.id, .name] | @tsv'`). `main` and `next`
@@ -452,7 +452,9 @@ checks that a download was built by this workflow from this repository.
   ruleset when merging a PR (`bypass_mode: pull_request`: no direct push), for exceptional cases;
   on `main` they bypass it always (`bypass_mode: always`, direct push included), for urgent CI or
   release fixes only. Both name their branch literally (`refs/heads/main`, `refs/heads/next`), not
-  `~DEFAULT_BRANCH`, since the default branch is `next`. `release-tags` forbids deleting `v*` and
+  `~DEFAULT_BRANCH`, since the default branch is `next`. `no-delete` forbids deleting `main` and
+  `next` with no bypass: the repository deletes head branches on merge, and an admin merging a
+  `main` to `next` PR would otherwise delete `main` through the `main` bypass. `release-tags` forbids deleting `v*` and
   `latest` (repository admins can bypass); moving them is an update, so the `tag` job still can.
 - The secrets and the variables above, as each feature is wanted.
 

@@ -1210,16 +1210,24 @@ describe('toasts', () => {
     expect(center.entries[0]).toMatchObject({ kind: 'error', title: 'Disk full' });
   });
 
-  it('keeps a progress toast until it is replaced and clamps the fraction', () => {
+  it('keeps an unfinished progress toast until it is replaced and clamps the fraction', () => {
     vi.useFakeTimers();
     app.notify('x');
-    app.progress('Uploading', 1.5);
+    app.progress('Uploading', 0.5);
     vi.advanceTimersByTime(60_000);
-    expect(app.toast).toEqual({ text: 'Uploading', kind: 'info', progress: 1 });
+    expect(app.toast).toEqual({ text: 'Uploading', kind: 'info', progress: 0.5 });
     app.progress('Uploading', -1);
     expect(app.toast?.progress).toBe(0);
     app.progress('Waiting');
     expect(app.toast?.progress).toBeUndefined();
+  });
+
+  it('hides a finished progress toast when nothing replaces it', () => {
+    vi.useFakeTimers();
+    app.progress('Uploading', 1.5);
+    expect(app.toast).toEqual({ text: 'Uploading', kind: 'info', progress: 1 });
+    vi.advanceTimersByTime(1500);
+    expect(app.toast).toBeNull();
   });
 
   it('shows notices as toasts and records them', async () => {
