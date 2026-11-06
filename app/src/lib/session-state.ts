@@ -23,7 +23,7 @@ export type SubLabel = { key: 'session.state.pause_pending' } | { key: 'session.
 
 export interface SessionView {
   state: SessionState;
-  label: Extract<Key, `session.state.${string}`>;
+  label: Extract<Key, `session.state.${string}`> | 'session.ended';
   sub?: SubLabel;
   // The line was hung up: shown only while its tab is still open.
   ended?: true;
@@ -45,6 +45,12 @@ function stateOf(l: LocalLine, termId: string | null | undefined): SessionState 
   return local?.busy || local?.holdPending || (local?.subagents ?? 0) > 0 ? 'running' : 'open';
 }
 
+// Why a session that is not mid-turn cannot be interrupted, in the words of the state it shows.
+function idleWhy(local: LocalLine['local']): WhyKey {
+  if ((local?.subagents ?? 0) > 0 && !local?.needsInput) return 'session.why.subagents';
+  return local?.holdPending && !local.needsInput ? 'session.why.pausePending' : 'session.why.notBusy';
+}
+
 function subOf(l: LocalLine, state: SessionState): SubLabel | undefined {
   if (state !== 'running') return undefined;
   if (l.local?.holdPending) return { key: 'session.state.pause_pending' };
@@ -56,7 +62,7 @@ function subOf(l: LocalLine, state: SessionState): SubLabel | undefined {
 export function sessionState(l: LocalLine, termId?: string | null): SessionView {
   if (isEnded(l)) {
     const ended = off('session.why.ended');
-    return { state: 'closed', label: 'session.state.closed', ended: true, actions: { interrupt: ended, pause: ended, cancelPause: ended, resume: ended, close: ended } };
+    return { state: 'closed', label: 'session.ended', ended: true, actions: { interrupt: ended, pause: ended, cancelPause: ended, resume: ended, close: ended } };
   }
   const state = stateOf(l, termId);
   const local = l.local;
@@ -76,7 +82,7 @@ export function sessionState(l: LocalLine, termId?: string | null): SessionView 
     label,
     sub: subOf(l, state),
     actions: {
-      interrupt: local?.busy && !local.needsInput ? ON : off('session.why.notBusy'),
+      interrupt: local?.busy && !local.needsInput ? ON : off(idleWhy(local)),
       pause: pending ? off('session.why.pausePending') : local?.pinned ? off('session.why.pinned') : ON,
       cancelPause: pending ? ON : off('session.why.noPausePending'),
       resume: off('session.why.alive'),

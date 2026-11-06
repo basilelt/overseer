@@ -46,7 +46,7 @@ describe('workspaceSessions', () => {
   });
 
   it('treats a session with an unreadable date as the least recent', () => {
-    const items = [item('bad', 'ready', ''), item('ok', 'ready', day(6))];
-    expect(workspaceSessions(items, now).live.map((i) => i.key)).toEqual(['ok', 'bad']);
+    const items = [item('bad', 'ready', ''), item('na', 'ready', 'n/a'), item('ok', 'ready', day(6))];
+    expect(workspaceSessions(items, now).live.map((i) => i.key)).toEqual(['ok', 'bad', 'na']);
   });
 });

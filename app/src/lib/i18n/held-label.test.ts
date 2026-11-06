@@ -42,6 +42,12 @@ describe('label of a session without a live process', () => {
     expect([fr['session.subagents'], fr['session.subagentsOne']]).toEqual(['{n} sous-agents', '1 sous-agent']);
   });
 
+  it('words the ended label and the sub-agents interrupt reason', () => {
+    expect([en['session.ended'], fr['session.ended']]).toEqual(['Session ended', 'Session terminée']);
+    expect(en['session.why.subagents']).toBe('Sub-agents are running; interrupt them from the session');
+    expect(fr['session.why.subagents']).toBe('Des sous-agents tournent ; interrompez-les depuis la session');
+  });
+
   it('calls a hung-up line ended, and its close action ends the session', () => {
     expect([en['chat.closed'], fr['chat.closed']]).toEqual(['Session ended', 'Session terminée']);
     expect([en['session.action.close'], fr['session.action.close']]).toEqual(['End the session', 'Terminer la session']);

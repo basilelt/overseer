@@ -84,6 +84,11 @@ describe('sessionState: which state a session is in', () => {
     expect(sessionState(line({ state: 'held' }, {})).state).toBe('closed');
   });
 
+  it('labels a hung-up line "ended", not Closed, so it never reads like a resumable session', () => {
+    expect(sessionState(line({ state: 'hung-up' })).label).toBe('session.ended');
+    expect(sessionState(line({ state: 'held' }, { heldReason: 'lost' })).label).toBe('session.state.closed');
+  });
+
   it('flags a hung-up line as ended, whatever its process says, instead of giving it a state of its own', () => {
     const s = sessionState(line({ state: 'hung-up' }, { pid: 42, busy: true }));
     expect([s.state, s.ended]).toEqual(['closed', true]);
@@ -160,6 +165,14 @@ describe('sessionState: why an action is disabled', () => {
 
   it('says the agent is not mid-turn when interrupt is disabled on an open session', () => {
     expect(sessionState(line({}, { pid: 42 })).actions.interrupt.reason).toBe('session.why.notBusy');
+  });
+
+  it('says sub-agents are running when interrupt is disabled on a session running only because of them', () => {
+    expect(sessionState(line({ state: 'idle' }, { pid: 42, subagents: 2 })).actions.interrupt.reason).toBe('session.why.subagents');
+  });
+
+  it('says the pause is queued when interrupt is disabled on an idle session with a queued pause', () => {
+    expect(sessionState(line({ state: 'idle' }, { pid: 42, holdPending: true })).actions.interrupt.reason).toBe('session.why.pausePending');
   });
 
   it('says the pause is already queued when pause is disabled on a queued pause', () => {

@@ -56,6 +56,15 @@ describe('timeBucket', () => {
     expect(timeBucket(at(2026, 11, 9), now)).toBe('today');
   });
 
+  it('keeps calendar days across a daylight-saving change, where a day is 23 or 25 hours', () => {
+    // Europe/Paris springs forward on 2026-03-29; the calendar logic must hold in any zone.
+    const sunday = new Date(2026, 2, 29, 10).getTime();
+    expect(timeBucket(at(2026, 3, 28, 0, 30), sunday)).toBe('yesterday');
+    expect(timeBucket(at(2026, 3, 27, 23, 30), sunday)).toBe('thisWeek');
+    expect(timeBucket(at(2026, 3, 23, 0, 30), sunday)).toBe('thisWeek');
+    expect(timeBucket(at(2026, 3, 22, 23, 30), sunday)).toBe('older');
+  });
+
   it('is older for a missing, empty or unreadable date', () => {
     expect(timeBucket(undefined, now)).toBe('older');
     expect(timeBucket(null, now)).toBe('older');

@@ -200,6 +200,8 @@ export const dict: Partial<Dict> = {
   'session.state.closed': 'Fermée',
   'session.subagents': '{n} sous-agents',
   'session.subagentsOne': '1 sous-agent',
+  'session.ended': 'Session terminée',
+  'session.why.subagents': 'Des sous-agents tournent ; interrompez-les depuis la session',
   'session.pausedFor': 'En pause depuis {n} j',
   'session.why.ended': 'La session est terminée',
   'session.why.noProcess': "Aucun processus d'agent ne tourne",

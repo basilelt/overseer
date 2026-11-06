@@ -33,8 +33,8 @@
   const view = $derived(line ? sessionState(line, item.termId) : null);
   const alive = $derived(!!view && view.state !== 'paused' && view.state !== 'closed');
   const days = $derived(view?.state === 'paused' ? pausedDays(view.since, clock.now) : null);
+  const DOT = { attention: 'input', running: 'busy', open: 'idle', paused: 'paused', closed: 'off' } as const;
   const waiting = $derived(!!local?.needsInput);
-  const busy = $derived(!!local?.busy && !waiting);
 
   let chat = $state.raw<ChatState>(EMPTY_CHAT);
   let unsupported = $state<string | null>(null);
@@ -341,7 +341,7 @@
       else if (kind === 'pause') {
         // TODO(holdAfterTurn): call app.api.holdAfterTurn(lineId) once the client lands, so a busy turn finishes first.
         await app.api.hold(lineId);
-        app.notify(t('chat.held'));
+        app.notify(t('chat.paused'));
       } else if (kind === 'close') {
         await app.api.close(lineId, true);
         chats.drop(cacheKey(lineId));
@@ -362,7 +362,7 @@
 
 <div class="chat" class:phone>
   <header class="head">
-    <span class="state {waiting ? 'input' : view?.state === 'paused' ? 'paused' : busy ? 'busy' : alive ? 'idle' : 'off'}"></span>
+    <span class="state {view ? DOT[view.state] : 'off'}"></span>
     <span class="status">{view ? t(view.label) : ''}{#if view?.sub}<span class="faint"> · {t(view.sub.key, 'n' in view.sub ? { n: view.sub.n } : undefined)}</span>{/if}{#if days !== null}<span class="faint"> · {t('session.pausedFor', { n: days })}</span>{/if}</span>
     {#if model}<span class="model faint">{model}</span>{/if}
     <span class="grow"></span>

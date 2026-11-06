@@ -86,9 +86,9 @@ describe('byState', () => {
   });
 
   it('sorts a session with an unreadable date last in its group', () => {
-    const items = [item('bad', 'running', ''), item('ok', 'running', day(6))];
+    const items = [item('na', 'running', 'n/a'), item('bad', 'running', ''), item('ok', 'running', day(6))];
     const running = byState(items, new Map(), now)[0]!;
     if (running.state === 'closed') throw new Error('unreachable');
-    expect(ids(running.groups[0]!.items)).toEqual(['ok', 'bad']);
+    expect(ids(running.groups[0]!.items)).toEqual(['ok', 'na', 'bad']);
   });
 });

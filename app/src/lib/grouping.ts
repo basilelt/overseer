@@ -114,7 +114,11 @@ export function stableItems(prev: SidebarItem[], next: SidebarItem[]): SidebarIt
   return same ? prev : out;
 }
 
+// An unreadable date (not starting with a year digit) is the oldest, as timeBucket files it.
+const dated = (s: string): boolean => s >= '0' && s < ':';
+
 export function newestFirst(a: { at: string }, b: { at: string }): number {
+  if (!dated(a.at) || !dated(b.at)) return dated(a.at) === dated(b.at) ? 0 : dated(a.at) ? -1 : 1;
   return a.at < b.at ? 1 : a.at > b.at ? -1 : 0;
 }
 

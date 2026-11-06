@@ -198,6 +198,8 @@ export const en = {
   'session.state.closed': 'Closed',
   'session.subagents': '{n} sub-agents',
   'session.subagentsOne': '1 sub-agent',
+  'session.ended': 'Session ended',
+  'session.why.subagents': 'Sub-agents are running; interrupt them from the session',
   'session.pausedFor': 'Paused for {n} d',
   'session.why.ended': 'The session has ended',
   'session.why.noProcess': 'No agent process is running',
