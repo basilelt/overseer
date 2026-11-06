@@ -94,6 +94,8 @@ jobs:
 
       - run: scripts/qa/qa.test.sh
 
+      - run: scripts/check-version.test.sh
+
       - env:
           CI_APT_TEST_IMAGE: mirror.gcr.io/library/ubuntu:24.04
         run: scripts/ci-apt.test.sh
@@ -310,6 +312,47 @@ jobs:
 
       - if: needs.changes.outputs.macos_procs == 'true'
         run: "cargo test --lib -- procs:: ports:: review::watch::"
+
+  release-version:
+    needs: changes
+    if: github.event_name == 'pull_request' && github.base_ref == 'main'
+    runs-on: ubuntu-slim
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      # Same paths as scripts/release-gate.sh: a docs-only release makes no tag.
+      - id: code
+        shell: bash
+        run: |
+          if grep -qvE '^(docs/|\.github/ISSUE_TEMPLATE/)|\.md$' < <(git diff --name-only HEAD^1 HEAD); then
+            echo "release=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice title=release version::docs-only, no release, nothing to check"
+          fi
+
+      # Same settings as the tag step of release.yml; dry_run only computes the version.
+      - id: tag_version
+        if: steps.code.outputs.release == 'true'
+        uses: mathieudutour/github-tag-action@af99e60ce8132224b8e6ebab5023449fe256ed46 # v7
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          default_bump: patch
+          release_branches: main
+          rolling_tags: true
+          dry_run: true
+
+      # On a pull request the action appends -<sha> to the version; the release tags without it.
+      - if: steps.code.outputs.release == 'true' && steps.tag_version.outputs.new_version != ''
+        env:
+          NEW_VERSION: ${{ steps.tag_version.outputs.new_version }}
+        run: scripts/check-version.sh "${NEW_VERSION%%-*}"
+
+      - if: steps.code.outputs.release == 'true' && steps.tag_version.outputs.new_version == ''
+        run: echo "::notice title=release version::no eligible commits, no release, nothing to check"
 
   store-guard:
     needs: changes

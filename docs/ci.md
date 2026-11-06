@@ -46,16 +46,20 @@ Hotfixes take the same path: a `fix/` branch from `next`, a PR to `next`, then a
 
 Cutting a release, when enough has been batched on `next`:
 
-1. Open a draft PR from `next` to `main` (title such as `chore: release`), by hand or with
+1. Stamp the version first: `next` is protected, so the `chore(release): vX.Y.Z` commit (made with
+   `scripts/set-version.sh X.Y.Z`, `X.Y.Z` being the version the merge will tag) reaches it through
+   its own PR to `next` ([Versioning](#versioning)). A `feat` merged on `next` after that PR
+   changes the expected version: redo the version PR.
+2. Open a draft PR from `next` to `main` (title such as `chore: release`), by hand or with
    Actions > Release PR (`release-pr.yml`), run the full QA path of
    [docs/qa-path.md](qa-path.md) on the merged tree, then mark it ready: CI runs once on the whole
    batch.
-2. Merge with a merge commit. The release then skips CI (the gate sees the same tree already
+3. Merge with a merge commit. The release then skips CI (the gate sees the same tree already
    passed). `tag` bumps the current `vX.Y.Z` tag from every Conventional Commit of the batch
    ([Versioning](#versioning)): one `feat` anywhere in it makes a minor release. Then the builds,
    the Android APK (Obtainium), the GitHub Release and the Homebrew tap follow. A docs-only merge
    makes no release.
-3. `main` now has a merge commit that `next` lacks. Sync right away with a PR from `main` to
+4. `main` now has a merge commit that `next` lacks. Sync right away with a PR from `main` to
    `next`, merged with a merge commit: the trees are equal, so CI runs only `changes`. Without the
    sync the next release PR is behind `main`, and the release gate runs CI again on `main` before
    tagging.
@@ -85,7 +89,7 @@ base) and sets one output per job. Each job `needs: changes` and runs only when 
 | `actionlint` | `.github/` |
 | `store-guard` | `.github/`, `scripts/`, `Makefile` (what `scripts/store-guard.sh` scans), `app/fastlane/` and the iOS app icons |
 | `tap` | `scripts/update-tap.sh`, `scripts/update-tap.test.sh` |
-| `ci-scripts` | `.github/actions/`, `scripts/ci-*.sh` (runs `scripts/ci-changes.test.sh`, `scripts/ci-apt.test.sh` and the setup action with apt packages) |
+| `ci-scripts` | `.github/actions/`, `scripts/ci-*.sh` (runs `scripts/check-version*.sh`, `scripts/set-version.sh`; runs `scripts/ci-changes.test.sh`, `scripts/check-version.test.sh`, `scripts/ci-apt.test.sh` and the setup action with apt packages) |
 
 - `docs/`, `*.md` and `.github/ISSUE_TEMPLATE/` never trigger a job: a docs-only PR runs `changes`
   alone.
@@ -135,7 +139,8 @@ its `changes` job runs, a few seconds on `ubuntu-slim`. Pushes by `github-action
 |---|---|---|---|
 | ci | `changes` | `ubuntu-slim` | `scripts/ci-changes.sh`: which jobs the PR needs ([Path filtering](#path-filtering)) |
 | ci | `actionlint` | `ubuntu-slim` | `actionlint` (pinned release, checksum verified, cached by version; `ubuntu-slim` has no Docker) |
-| ci | `ci-scripts` | `ubuntu-24.04` | `scripts/ci-changes.test.sh` (path filter), `scripts/ci-apt.test.sh` (offline apt install in Docker), the setup action on real apt packages |
+| ci | `ci-scripts` | `ubuntu-24.04` | `scripts/ci-changes.test.sh` (path filter), `scripts/check-version.test.sh`, `scripts/ci-apt.test.sh` (offline apt install in Docker), the setup action on real apt packages |
+| ci | `release-version` | `ubuntu-slim` | pull requests to `main` only, skipped when docs-only: `mathieudutour/github-tag-action@v7` with the settings of the `tag` job of `release.yml` and `dry_run: true` computes the version the merge will tag, then `scripts/check-version.sh` fails naming each stamped file that differs. Required on `main` once `.github/rulesets/main.json` is applied (a skipped job counts as passed). Copy the settings by hand when you change them in `release.yml` |
 | ci | `gitleaks` | `ubuntu-slim` | `gitleaks git` (pinned release, checksum verified) over the PR's commits (`base..head`); every PR, no path filter. Known false positives are fingerprinted in `.gitleaksignore` |
 | ci | `rust` | `ubuntu-24.04` | `cargo fmt --check` (root and `api/`), `make lint`, `timeout 1500 make test` |
 | ci | `app` | `ubuntu-24.04` | `make app-test` (vitest with coverage, svelte-check, Tauri crate tests and clippy) |
@@ -276,11 +281,19 @@ it runs):
    nothing. Push the tag with the commit (or before it), not after: a release run that finds no
    `vX.Y.Z` tag at all seeds one from the root `Cargo.toml` version (`custom_tag`) and publishes
    that release. The first merge after that makes `v0.26.4` (or `v0.27.0`).
-3. The build jobs run `scripts/set-version.sh <version>`, which writes the version into
-   `Cargo.toml`, `api/Cargo.toml`, `app/src-tauri/Cargo.toml`, their `Cargo.lock` entries,
-   `app/package.json` and `app/src-tauri/tauri.conf.json` in the CI workspace only. Nothing is
-   committed back: the versions in git stay at their last manual value, the tag is the source of
-   truth for releases. Builds keep `--locked` working because the lock entries are stamped too.
+3. The versions in git tell the truth. Before the release PR is opened, a PR to `next` (`next` is
+   protected) adds a `chore(release): vX.Y.Z` commit made with `scripts/set-version.sh X.Y.Z`,
+   which writes the version into `Cargo.toml`, `api/Cargo.toml`, `app/src-tauri/Cargo.toml`,
+   their `Cargo.lock` entries, `app/package.json` and `app/src-tauri/tauri.conf.json`. `X.Y.Z` is
+   the version the merge will tag. A `feat` merged on `next` after that PR changes the expected
+   version, so the version PR has to be redone. The `release-version` job checks it on the
+   release PR ([Jobs and runners](#jobs-and-runners)). Its check is a test-merge that GitHub does
+   not redo when `main` moves (for example a hotfix tagged while the release PR is open): a
+   stale green is possible, so rerun the job or push to the release branch to refresh it. The
+   build jobs still run `scripts/set-version.sh <version>`; it changes nothing when the files are
+   already stamped, and builds keep `--locked` working. The iOS bundle versions are not stamped
+   in git: `app/fastlane/Fastfile` takes the short version from `tauri.conf.json`, overrides the
+   build number and fails the lane when the built IPA differs.
 4. Tags pushed with `GITHUB_TOKEN` do not trigger workflows, so the artifacts are built in the
    same run (`needs: tag`), not by an `on: push: tags` workflow.
 
@@ -447,7 +460,7 @@ checks that a download was built by this workflow from this repository.
   `gh api -X PUT repos/basilelt/overseer/rulesets/<id> --input <file>`, ids from
   `gh api repos/basilelt/overseer/rulesets --jq '.[] | [.id, .name] | @tsv'`). `main` and `next`
   each require a PR, merge commits only, and the `CI` checks (`changes`, `actionlint`, `rust`,
-  `app`, `perf`, `windows`, `android`, `store-guard`, `macos`, `gitleaks`; `integration_id` 15368 is the
+  `app`, `perf`, `windows`, `android`, `store-guard`, `macos`, `gitleaks`, plus `release-version` on `main`; `integration_id` 15368 is the
   GitHub Actions app); jobs skipped by path filtering count as passed. A PR does not need to be up
   to date with its base: when it is behind, the merged tree differs from the tested one, and for
   `main` the release gate then runs CI again before tagging. Repository admins can bypass the `next`
