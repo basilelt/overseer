@@ -104,6 +104,7 @@ Each step is **Do → Expect**. Check every screenshot for overlaps, clipped tex
 - **F3** Click a file path in assistant text (relative, as agents write it; a path with spaces, such as `docs/J3 modifications.pdf`, is a link when it is written as a whole `code span`, and stays plain text in ordinary prose) → the file viewer opens: a PDF renders, an image shows, text shows. A missing file gives a clear not-found error. **Copy path** copies it. **Download** saves the file into Downloads (an existing name gets a ` (1)` suffix, never overwritten) and a toast shows the saved path; in a browser it downloads through the browser. **(desktop)**
 - **F4** Expand a Read, Edit or Write tool step → click its path → the same viewer opens.
 - **F5** Composer: Enter sends, Shift+Enter adds a line, `/` lists commands, attaching a file works. A slash-command picker such as `/advisor` shows as a prompt card (needs a real agent; say so when only the stub was available).
+- **F6** **(desktop)** Open the **Browser** once (or a session web preview in a pane), switch back to a session, then drag an image from the file manager onto the chat and onto a terminal → each zone highlights while hovered and the drop attaches the image (chat) or types its path (terminal). Opening a child webview must not stop drops anywhere in the window. Xvfb cannot start a native file drag, so on Linux CI this is covered by `app/src/lib/drop.test.ts`; run it by hand on macOS.
 
 ### G. Sidebar and workspaces
 
