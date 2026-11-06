@@ -1,13 +1,25 @@
 <script lang="ts" module>
   import type { GroupId } from '../../grouping';
+  import type { SessionState } from '../../session-state';
+
+  export const STATE_COLOR: Record<SessionState, string> = {
+    running: 'var(--st-working)',
+    needs_input: 'var(--st-input)',
+    ready: 'var(--st-done)',
+    pause_pending: 'var(--st-paused)',
+    paused: 'var(--st-paused)',
+    stopped: 'var(--st-held)',
+    closed: 'var(--st-held)',
+  };
 
   export const GROUP_COLOR: Record<GroupId, string> = {
     needs_input: 'var(--st-input)',
     needs_testing: 'var(--st-testing)',
-    working: 'var(--st-working)',
+    running: 'var(--st-working)',
     pushed: 'var(--st-done)',
-    idle: 'var(--border-strong)',
-    held: 'var(--st-held)',
+    ready: 'var(--border-strong)',
+    paused: 'var(--st-paused)',
+    stopped: 'var(--st-held)',
   };
 </script>
 

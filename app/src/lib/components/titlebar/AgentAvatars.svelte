@@ -5,7 +5,7 @@
   import AgentGlyph from '../ui/AgentGlyph.svelte';
 
   const MAX = 8;
-  const active = $derived(app.groups.filter((g) => g.id === 'needs_input' || g.id === 'working').flatMap((g) => g.items));
+  const active = $derived(app.groups.filter((g) => g.id === 'needs_input' || g.id === 'running').flatMap((g) => g.items));
 </script>
 
 {#if active.length}

@@ -3,9 +3,11 @@
 
   export const WS_COLOR: Record<WsState, string> = {
     needs_input: 'var(--st-input)',
-    working: 'var(--st-working)',
+    running: 'var(--st-working)',
     needs_testing: 'var(--st-testing)',
-    idle: 'var(--border-strong)',
+    ready: 'var(--border-strong)',
+    paused: 'var(--st-paused)',
+    stopped: 'var(--st-held)',
   };
 </script>
 
@@ -13,7 +15,7 @@
   import { shortPath } from '../../dirs';
   import Zap from '@lucide/svelte/icons/zap';
   import Pin from '@lucide/svelte/icons/pin';
-  import type { Aggregate } from '../../workspaces';
+  import { summaryParts, summaryText, type Aggregate } from '../../workspaces';
   import { t } from '../../i18n.svelte';
   import { app } from '../../state.svelte';
 
@@ -47,8 +49,9 @@
     onpointerdown?: (e: PointerEvent) => void;
   } = $props();
 
-  const state = $derived(agg?.state ?? 'idle');
-  const count = $derived(agg ? agg.counts[state] : 0);
+  const parts = $derived(summaryParts(agg));
+  const state = $derived(parts[0]!.state);
+  const summary = $derived(summaryText(parts, (s) => t(`wsstate.${s}`)));
   const host = $derived(
     app.conn.target.kind === 'ssh' ? (app.conn.target.host ?? app.conn.target.label) : app.conn.target.kind === 'direct' ? app.conn.target.label : t('host.local'),
   );
@@ -79,9 +82,9 @@
     <span class="dot" style:background={WS_COLOR[state]}></span>
     <span class="name">{name}</span>
     {#if pinned}<span class="pin faint"><Pin size={11} /></span>{/if}
-    <span class="state" class:hot={state !== 'idle'} style:--c={WS_COLOR[state]}>
-      {#if state === 'working'}<Zap size={11} />{/if}
-      {t(`wsstate.${state}`)}{#if state !== 'idle' && count > 1}&nbsp;{count}{/if}
+    <span class="state" class:hot={state !== 'ready'} style:--c={WS_COLOR[state]} title={summary}>
+      {#if state === 'running'}<Zap size={11} />{/if}
+      {summary}
     </span>
   </div>
   {#if agg?.status}<div class="line muted">{agg.status}</div>{/if}
@@ -156,8 +159,8 @@
     flex: none;
   }
   .name {
-    flex: 1;
-    min-width: 0;
+    flex: 1 1 auto;
+    min-width: 5em;
     font-weight: 500;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -174,6 +177,10 @@
     color: var(--text-3);
     white-space: nowrap;
     font-variant-numeric: tabular-nums;
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
   .state.hot {
     color: var(--c);

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { SESSION_ACTIONS, sessionState, type SessionAction } from './session-state';
+import { pausedDays, SESSION_ACTIONS, sessionState, type SessionAction } from './session-state';
 import type { LocalLine } from './types';
 
 const line = (over: Partial<LocalLine['line']> = {}, local: LocalLine['local'] = { pid: 42 }): LocalLine => ({
@@ -147,5 +147,19 @@ describe('sessionState: why an action is disabled', () => {
   it('says the session is closed for every action of a hung-up line', () => {
     const s = sessionState(line({ state: 'hung-up' }));
     for (const a of SESSION_ACTIONS) expect(s.actions[a].reason).toBe('session.why.closed');
+  });
+});
+
+describe('pausedDays', () => {
+  const now = Date.parse('2026-11-05T10:00:00Z');
+
+  it('counts whole days since the pause', () => {
+    expect(pausedDays('2026-11-02T09:00:00Z', now)).toBe(3);
+  });
+
+  it('stays plain when the pause is under a day old, absent or unreadable', () => {
+    expect(pausedDays('2026-11-05T01:00:00Z', now)).toBeNull();
+    expect(pausedDays(undefined, now)).toBeNull();
+    expect(pausedDays('nope', now)).toBeNull();
   });
 });

@@ -1,7 +1,7 @@
 import type { SidebarItem } from './grouping';
 import type { BroadcastRequest, BroadcastResult } from './types';
 
-export type TargetState = 'idle' | 'busy' | 'needs_input' | 'held';
+export type TargetState = 'idle' | 'busy' | 'needs_input' | 'paused' | 'stopped';
 
 export interface TargetRow {
   key: string;
@@ -13,20 +13,20 @@ export interface TargetRow {
 }
 
 export function targetState(i: SidebarItem): TargetState {
-  if (i.group === 'held') return 'held';
+  if (i.group === 'paused' || i.group === 'stopped') return i.group;
   if (i.kind === 'shell') return 'idle';
   if (i.group === 'needs_input') return 'needs_input';
-  if (i.group === 'working') return 'busy';
+  if (i.group === 'running') return 'busy';
   return 'idle';
 }
 
 export function targetRows(items: SidebarItem[], queue: boolean): TargetRow[] {
-  const order: TargetState[] = ['idle', 'needs_input', 'busy', 'held'];
+  const order: TargetState[] = ['idle', 'needs_input', 'busy', 'paused', 'stopped'];
   return items
     .filter((i) => i.lineId || i.termId)
     .map((i) => {
       const state = targetState(i);
-      const selectable = state === 'idle' || (queue && state !== 'held');
+      const selectable = state === 'idle' || (queue && state !== 'paused' && state !== 'stopped');
       return { key: i.key, title: i.title, kind: i.kind, state, selectable, checked: selectable && (state === 'idle' ? i.kind !== 'shell' : true) };
     })
     .sort((a, b) => order.indexOf(a.state) - order.indexOf(b.state) || a.title.localeCompare(b.title));

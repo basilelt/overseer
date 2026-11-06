@@ -73,7 +73,8 @@
     idle: () => t('broadcast.idle'),
     busy: () => t('broadcast.busy'),
     needs_input: () => t('wsstate.needs_input'),
-    held: () => t('group.held'),
+    paused: () => t('group.paused'),
+    stopped: () => t('group.stopped'),
   };
   const sum = $derived(results ? summarize(results) : null);
 
