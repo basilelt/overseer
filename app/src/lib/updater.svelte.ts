@@ -276,8 +276,8 @@ export function dialogAction(u: Pick<Updater, 'phase' | 'info'>): DialogAction {
   return u.phase === 'available' || u.phase === 'error' ? 'install' : null;
 }
 
-export const BREW_UPGRADE = 'brew update && brew upgrade --cask overseer';
 export const BREW_TAP = 'basilelt/tap';
+export const BREW_UPGRADE = `brew update && brew upgrade --cask ${BREW_TAP}/overseer`;
 
 type UKey = Sub<'updater'>;
 

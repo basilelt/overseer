@@ -15,6 +15,7 @@ pub const REPO: &str = "basilelt/overseer";
 const BREW_BINS: [&str; 2] = ["/opt/homebrew/bin/brew", "/usr/local/bin/brew"];
 const BREW_TAP: &str = "basilelt/tap";
 const CASK: &str = "overseer";
+const CASK_FULL: &str = "basilelt/tap/overseer";
 #[cfg(any(target_os = "macos", test))]
 const APP_BUNDLE: &str = "Applications/Overseer.app";
 #[derive(Default)]
@@ -546,12 +547,12 @@ async fn brew_update(
     }
 
     step("upgrade");
-    let (ok, upgrade_log) = run_brew(&brew, &["upgrade", "--cask", CASK], out).await;
+    let (ok, upgrade_log) = run_brew(&brew, &["upgrade", "--cask", CASK_FULL], out).await;
     classify(&upgrade_log, ok)?;
 
     if run_brew(&brew, &["list", "--formula", CASK], None).await.0 {
         step("formula");
-        run_brew(&brew, &["upgrade", "--formula", CASK], out).await;
+        run_brew(&brew, &["upgrade", "--formula", CASK_FULL], out).await;
     }
 
     let (_, list) = run_brew(&brew, &["list", "--cask", "--versions", CASK], None).await;
@@ -676,6 +677,11 @@ pub async fn update_brew_relaunch(app: AppHandle) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn brew_upgrade_names_the_tap_so_homebrew_trusts_it() {
+        assert_eq!(CASK_FULL, format!("{BREW_TAP}/{CASK}"));
+    }
 
     #[test]
     fn homebrew_detection() {
