@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { loadLocale, setLocale } from './i18n.svelte';
-import { LOG_LINES, Updater, brewError, brewMessage, brewStepLabel, dialogAction, pillLabel, type CheckResult, type InstallKind, type ProgressEvent, type UpdaterBackend } from './updater.svelte';
+import { BREW_UPGRADE, LOG_LINES, Updater, brewError, brewMessage, brewStepLabel, dialogAction, pillLabel, type CheckResult, type InstallKind, type ProgressEvent, type UpdaterBackend } from './updater.svelte';
 
 const available = (kind: InstallKind = 'bundle'): CheckResult => ({
   status: 'available',
@@ -210,6 +210,10 @@ describe('updater install', () => {
 });
 
 describe('homebrew update', () => {
+  it('copyable upgrade names the tap so Homebrew trusts the cask', () => {
+    expect(BREW_UPGRADE).toBe('brew update && brew upgrade --cask basilelt/tap/overseer');
+  });
+
   function controlled() {
     let emit: (e: ProgressEvent) => void = () => {};
     let finish: (v: string | null) => void = () => {};

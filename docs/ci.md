@@ -422,8 +422,9 @@ daemon binaries for macOS and Linux, both arches). The `tap` job, after `publish
    `main` to the branch and delete it, so users never get a formula or cask that fails brew's checks.
 
 The tap repository must exist first (public, with one commit on its default branch; the job
-creates `Casks/` and `Formula/`). Users: `brew tap basilelt/tap`, then `brew install overseer`
-and/or `brew install --cask overseer`.
+creates `Casks/` and `Formula/`). Users: `brew install --formula basilelt/tap/overseer` and/or
+`brew install --cask basilelt/tap/overseer`; the fully qualified name taps the repository and
+makes Homebrew trust the formula or cask, so users never run `brew trust` themselves.
 
 Every release asset also gets a GitHub build provenance attestation (the `publish` job attests
 each file listed in `SHA256SUMS`): `gh attestation verify <file> --repo basilelt/overseer`
