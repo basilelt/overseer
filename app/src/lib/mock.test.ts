@@ -138,6 +138,35 @@ describe('MockDaemon', () => {
     expect((await a.lines()).find((l) => l.line.id === 'ln_06')!.line.state).toBe('hung-up');
   });
 
+  it('ignores force on hold and refuses a busy line like the daemon', async () => {
+    const { m } = setup();
+    await expect(m.request('POST', '/v1/lines/ln_06/hold?dryRun=false&force=true')).rejects.toMatchObject({ status: 409, body: { action: 'none', predicates: { atPrompt: { ok: false, detail: 'agent is mid-turn' } } } });
+    expect(m.lines.find((l) => l.line.id === 'ln_06')!.line.state).toBe('active');
+  });
+
+  it('refuses to hold a pinned line or one waiting for input', async () => {
+    const { m, a } = setup();
+    await a.pin('ln_09', true);
+    await expect(a.hold('ln_09')).rejects.toMatchObject({ status: 409, body: { predicates: { notPinned: { ok: false, detail: 'line is pinned' } } } });
+    await expect(a.hold('ln_01')).rejects.toMatchObject({ status: 409, body: { predicates: { notNeedsInput: { ok: false, detail: 'agent is waiting for you' } } } });
+    expect(m.lines.filter((l) => ['ln_01', 'ln_09'].includes(l.line.id)).map((l) => l.line.state)).toEqual(['active', 'idle']);
+  });
+
+  it('refuses to hold a line with no live process', async () => {
+    const { m, a } = setup();
+    await expect(a.hold('ln_11')).rejects.toMatchObject({ status: 409, body: { predicates: { alive: { ok: false, detail: 'no live agent process for this line' } } } });
+    await a.close('ln_11');
+    await expect(a.hold('ln_11')).rejects.toMatchObject({ status: 409 });
+    expect(m.lines.find((l) => l.line.id === 'ln_11')!.line.state).toBe('hung-up');
+  });
+
+  it('previews a forced close of a busy line without acting', async () => {
+    const { m } = setup();
+    expect(await m.request('POST', '/v1/lines/ln_06/close?force=true')).toMatchObject({ action: 'would-close', predicates: {} });
+    await expect(m.request('POST', '/v1/lines/ln_06/close')).rejects.toMatchObject({ status: 409 });
+    expect(m.lines.find((l) => l.line.id === 'ln_06')!.line.state).toBe('active');
+  });
+
   it('keeps a reducer snapshot in sync with its events', async () => {
     const { m, a, events } = setup();
     let s: Snapshot = { lines: await a.lines(), terms: await a.terms(), tasks: await a.tasks(), activity: {} };
