@@ -437,32 +437,52 @@ pub fn mem_bytes() -> Option<(u64, Option<u64>)> {
         };
         Some((kb("MemTotal:")?, kb("MemAvailable:")))
     } else {
-        let total = run("sysctl", &["-n", "hw.memsize"])?.trim().parse().ok()?;
-        Some((total, run("vm_stat", &[]).and_then(|o| parse_vm_stat(&o))))
+        other_mem()
     }
 }
 
-/// Reclaimable memory on macOS: free, inactive and speculative pages.
-fn parse_vm_stat(out: &str) -> Option<u64> {
-    let page: u64 = out
-        .lines()
-        .next()?
-        .split("page size of ")
-        .nth(1)?
-        .split_whitespace()
-        .next()?
-        .parse()
-        .ok()?;
-    let pages = |k: &str| -> Option<u64> {
-        out.lines()
-            .find_map(|l| l.strip_prefix(k))?
-            .trim()
-            .trim_end_matches('.')
-            .parse()
-            .ok()
+#[cfg(not(target_os = "macos"))]
+fn other_mem() -> Option<(u64, Option<u64>)> {
+    let total = run("sysctl", &["-n", "hw.memsize"])?.trim().parse().ok()?;
+    Some((total, None))
+}
+
+#[cfg(target_os = "macos")]
+fn other_mem() -> Option<(u64, Option<u64>)> {
+    mac_mem()
+}
+
+/// Total memory is read once; available (free + inactive + speculative pages) comes from the
+/// kernel in-process, so a status tick never spawns `sysctl` or `vm_stat`.
+#[cfg(target_os = "macos")]
+fn mac_mem() -> Option<(u64, Option<u64>)> {
+    static TOTAL: std::sync::OnceLock<Option<(u64, u64)>> = std::sync::OnceLock::new();
+    let (total, page) = (*TOTAL.get_or_init(|| {
+        let get = |name: &std::ffi::CStr, out: *mut libc::c_void, len: &mut usize| unsafe {
+            libc::sysctlbyname(name.as_ptr(), out, len, std::ptr::null_mut(), 0) == 0
+        };
+        let (mut total, mut page) = (0u64, 0u32);
+        let (mut tl, mut pl) = (size_of::<u64>(), size_of::<u32>());
+        (get(c"hw.memsize", (&mut total as *mut u64).cast(), &mut tl)
+            && get(c"hw.pagesize", (&mut page as *mut u32).cast(), &mut pl))
+        .then_some((total, page as u64))
+    }))?;
+    // libc deprecates mach_host_self in favour of mach2, which this crate does not depend on.
+    #[allow(deprecated)]
+    let avail = unsafe {
+        let mut s: libc::vm_statistics64 = std::mem::zeroed();
+        let mut n = libc::HOST_VM_INFO64_COUNT;
+        let r = libc::host_statistics64(
+            libc::mach_host_self(),
+            libc::HOST_VM_INFO64,
+            (&mut s as *mut libc::vm_statistics64).cast(),
+            &mut n,
+        );
+        (r == 0).then(|| {
+            (s.free_count as u64 + s.inactive_count as u64 + s.speculative_count as u64) * page
+        })
     };
-    let n = pages("Pages free:")? + pages("Pages inactive:")? + pages("Pages speculative:")?;
-    Some(n * page)
+    Some((total, avail))
 }
 
 pub fn flags_after(argv: &[String], is_bin: impl Fn(&str) -> bool) -> Option<Vec<String>> {
@@ -547,18 +567,16 @@ pub fn strip_resume(flags: &[String]) -> Vec<String> {
 mod tests {
     use super::*;
 
+    #[cfg(target_os = "macos")]
     #[test]
-    fn vm_stat_available_memory_is_free_inactive_and_speculative_pages() {
-        // Given the output of macOS vm_stat with 16 KiB pages
-        let out = "Mach Virtual Memory Statistics: (page size of 16384 bytes)\n\
-                   Pages free:                                   100.\n\
-                   Pages active:                                 999.\n\
-                   Pages inactive:                                50.\n\
-                   Pages speculative:                             10.\n";
-        // When the available memory is parsed
-        // Then it sums free, inactive and speculative pages in bytes
-        assert_eq!(parse_vm_stat(out), Some(160 * 16384));
-        assert_eq!(parse_vm_stat("garbage"), None);
+    fn mac_memory_is_read_in_process_with_a_cached_total() {
+        // Given a macOS host
+        // When reading memory twice, with no ps-like process spawned (none is involved)
+        let (total, avail) = mac_mem().unwrap();
+        let (again, _) = mac_mem().unwrap();
+        // Then the total is stable and the available memory is a sane share of it
+        assert_eq!(total, again);
+        assert!(avail.is_some_and(|a| a > 0 && a <= total));
     }
 
     #[cfg(target_os = "macos")]
