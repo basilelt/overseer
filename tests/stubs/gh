@@ -1,7 +1,6 @@
 #!/bin/sh
-case $1 in
-  issue)
-    [ "$2" = create ] || { echo "[]"; exit 0; }
+case "$1 $2" in
+  "issue create")
     if [ "$3" = --help ]; then
       [ -f "${SB_GH_DIR:-/nonexistent}/old" ] || echo "      --attach file[#alt]   Attach a file"
       exit 0
