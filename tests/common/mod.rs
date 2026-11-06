@@ -11,17 +11,35 @@ use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Output, Stdio};
 use std::sync::atomic::{AtomicI64, AtomicUsize, Ordering};
 
-/// Stubs, the system dirs, and the directory of the host's tmux when it is not
-/// in them (Homebrew on macOS); the rest of the host PATH stays hidden.
+/// Stubs and the system dirs, plus a dir holding only a symlink to the host's tmux when it
+/// lives elsewhere (Homebrew on macOS); the rest of the host PATH stays hidden.
 fn test_path(stubs: &Path) -> String {
     static TMUX_DIR: std::sync::OnceLock<Option<PathBuf>> = std::sync::OnceLock::new();
     let dir = TMUX_DIR.get_or_init(|| {
         let host = std::env::var_os("PATH")?;
-        let dir = std::env::split_paths(&host).find(|d| d.join("tmux").is_file())?;
-        (dir != Path::new("/usr/bin") && dir != Path::new("/bin")).then_some(dir)
+        let tmux = std::env::split_paths(&host)
+            .map(|d| d.join("tmux"))
+            .find(|t| t.is_file())?;
+        let parent = tmux.parent()?;
+        if parent == Path::new("/usr/bin") || parent == Path::new("/bin") {
+            return None;
+        }
+        let dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join("tmux-bin");
+        std::fs::create_dir_all(&dir).ok()?;
+        let link = dir.join("tmux");
+        if std::fs::read_link(&link).ok().as_deref() != Some(tmux.as_path()) {
+            let tmp = dir.join(format!("tmux.{}", std::process::id()));
+            let _ = std::fs::remove_file(&tmp);
+            std::os::unix::fs::symlink(&tmux, &tmp).ok()?;
+            std::fs::rename(&tmp, &link).ok()?;
+        }
+        Some(dir)
     });
-    // /usr/sbin holds lsof on macOS.
-    let mut p = format!("{}:/usr/bin:/bin:/usr/sbin:/sbin", stubs.display());
+    let mut p = format!("{}:/usr/bin:/bin", stubs.display());
+    if cfg!(target_os = "macos") {
+        // lsof lives in /usr/sbin on macOS.
+        p.push_str(":/usr/sbin:/sbin");
+    }
     if let Some(d) = dir {
         p.push(':');
         p.push_str(&d.display().to_string());
