@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { SidebarItem } from './grouping';
-import { filterItems, folderSpaces, hostFor, spaceTrail, spaces, toggleOpen, visibleIds, type SpaceNode } from './spaces';
+import { filterItems, folderSpaces, hostFor, openOnPick, spaceTrail, spaces, toggleOpen, visibleIds, type SpaceNode } from './spaces';
+import { NO_WORKSPACE } from './state.svelte';
 import type { Folder, Workspace } from './types';
 
 const ws = (id: string, name: string, over: Partial<Workspace> = {}) => ({ id, name, rank: 1, pinned: false, archived: false, ...over }) as Workspace;
@@ -309,3 +310,69 @@ describe('spaceTrail', () => {
     expect(trail('b')).toBe('Y › X › B');
   });
 });
+
+describe('spaces with archived workspaces shown', () => {
+  it('lists an archived workspace with its sessions and flags, instead of dropping them to the other row', () => {
+    // Given an archived workspace holding a session
+    const items = [it_('k1', 'open')];
+    const wsOf = new Map([['k1', 'a']]);
+    const list = [ws('a', 'A', { archived: true })];
+    // When the archive is shown, and when it is not
+    const shown = spaces(list, items, wsOf, '', true);
+    const hidden = spaces(list, items, wsOf, '');
+    // Then the workspace owns its row only when shown
+    expect(shown.rows.map((r) => r.id)).toEqual(['a']);
+    expect(shown.rows[0]!.workspace?.archived).toBe(true);
+    expect(hidden.rows.map((r) => r.id)).toEqual(['']);
+  });
+
+  it('lists an archived workspace without session among the empty ones, and keeps ghosts out', () => {
+    // Given an archived workspace with no session and a ghost
+    const list = [ws('a', 'A', { archived: true }), ws('g', 'G', { auto: true, missing: true } as Partial<Workspace>)];
+    // When the archive is shown
+    const shown = spaces(list, [], new Map(), '', true);
+    // Then only the archived one is listed
+    expect(shown.empty.map((x) => x.id)).toEqual(['a']);
+    expect(spaces(list, [], new Map(), '').empty).toEqual([]);
+  });
+});
+
+describe('openOnPick', () => {
+  it('keeps the previously open workspace open when an unset list switches to another one', () => {
+    // Given no saved list, workspace a active (so the only open one)
+    // When b is picked
+    // Then both stay open, instead of a folding away
+    expect(openOnPick(undefined, 'a', 'b')).toEqual(['a', 'b']);
+  });
+
+  it('adds a closed workspace to the saved list and changes nothing for an open one', () => {
+    // Given a saved list holding a
+    // When b is picked, then a
+    // Then only b needs a write
+    expect(openOnPick(['a'], 'a', 'b')).toEqual(['a', 'b']);
+    expect(openOnPick(['a'], 'b', 'a')).toBeNull();
+    expect(openOnPick(undefined, 'a', 'a')).toBeNull();
+  });
+});
+
+describe('spaces filter on paths', () => {
+  it('keeps a workspace whose path or cwd matches, with every session, and lists an empty one by path', () => {
+    // Given a workspace matched by its path, one by its cwd, and an empty one by path
+    const list = [ws('a', 'A', { path: '/src/billing' } as Partial<Workspace>), ws('b', 'B', { cwd: '/src/billing-b' } as Partial<Workspace>), ws('c', 'C', { path: '/src/billing-c' } as Partial<Workspace>)];
+    const items = [it_('k1', 'open', { title: 'x' }), it_('k2', 'open', { title: 'y' })];
+    // When filtering on "billing"
+    const r = spaces(list, items, new Map([['k1', 'a'], ['k2', 'b']]), 'billing');
+    // Then both rows keep their session and the empty workspace is listed
+    expect(r.rows.map((x) => [x.id, x.items.length])).toEqual([['a', 1], ['b', 1]]);
+    expect(r.empty.map((x) => x.id)).toEqual(['c']);
+  });
+
+  it('numbers the unassigned row like NO_WORKSPACE so picking it selects that space', () => {
+    // Given a session outside any workspace
+    // When the rows are built
+    // Then the row id is the id the app uses for "no workspace"
+    const r = spaces([], [it_('k1', 'open')], new Map(), '');
+    expect(r.rows[0]!.id).toBe(NO_WORKSPACE);
+  });
+});
+

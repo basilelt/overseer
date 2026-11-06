@@ -1529,19 +1529,22 @@ browser and review tab that belongs to it. The sidebar shows **Workspaces** (def
 **By status** (the session list grouped by Needs input, Needs testing, Working, Pushed, Idle,
 Stopped: no live agent process, resumable); the toggle is at the top of the sidebar.
 
-- **Tree**: pinned workspaces on top, then your folders (one level of sub-folders) and the
-  workspaces outside any folder. Every project the daemon knows gets a workspace: the
+- **Spaces**: pinned workspaces on top, then your folders (one level of sub-folders) and the
+  workspaces outside any folder. Each workspace is one block with its sessions under it: click its
+  name to open it (its tab strip and `+` show), the chevron only folds it. A group section at the
+  bottom lists your groups; click one to open it. Every project the daemon knows gets a workspace: the
   repositories its agents ran in, and the git repositories it finds under `discoverRoots`
   (3.1; by default `~/Documents/Github`, `~/src`, `~/code`, `~/projects`, `~/dev`), scanned at
   start, every 10 minutes and with **Rescan folders** in the `+` menu or the palette. `+` adds one
   from any folder (`~` is fine), the folder button adds a folder, the archive button shows
   archived workspaces. When a workspace's folder is renamed or deleted, a workspace created
   automatically is hidden (it comes back with the folder; the new name is found by the next
-  scan) and one you added stays, marked "Folder missing". Drag a workspace onto another to reorder, onto a folder to move it in, onto
-  **Pinned** to pin it; drag folders the same way. Right-click for rename, pin, move, broadcast,
+  scan) and one you added stays, marked "Folder missing". Drag a workspace header onto another to reorder, onto a folder to move it in, onto
+  **Pinned** to pin it; drag folders the same way. Right-click a workspace, folder, group, the
+  **Other** row or a session for rename, pin, move, broadcast,
   hold all, resume all, "notify me when all agents are idle", archive and delete. A folder
   remembers whether it is collapsed.
-- **Row**: the most urgent state of its agents (Needs input, then Running, then Needs testing,
+- **Block**: the most urgent state of its sessions (Needs input, then Running, then Needs testing,
   then Idle; shells do not count) with how many agents are in it, the last status line ("Claude
   finished", "Asking: …"), the host and its connection state, and the folder path.
 - **Membership**: a line belongs to the workspace of its task's project, else to the workspace

@@ -14,8 +14,6 @@
   import { saveSettings, settings } from '../../settings.svelte';
   import { organizer } from '../../organize.svelte';
   import { nudgeVisible, unplacedCount } from '../../organize';
-  import LayoutList from '@lucide/svelte/icons/layout-list';
-  import ListTree from '@lucide/svelte/icons/list-tree';
   import SpacesView from './SpacesView.svelte';
   import StatesView from './StatesView.svelte';
 
@@ -23,8 +21,6 @@
   const nudge = $derived(nudgeVisible(unplaced, settings.organizeNudgeAt));
   let filter = $state('');
   let showArchived = $state(false);
-  // The compact view is the default; the folder tree stays one click away until it is retired.
-  const compact = $derived(settings.workspacesLayout !== 'tree');
   const modes: { id: SidebarMode; label: () => string }[] = [
     { id: 'workspaces', label: () => t('ws.title') },
     { id: 'status', label: () => t('ws.byStatus') },
@@ -44,27 +40,20 @@
       {/each}
     </div>
     {#if app.sidebarMode === 'workspaces'}
-      <button
-        class="icon-btn"
-        title={compact ? t('ws.layoutTree') : t('ws.layoutSpaces')}
-        aria-label={compact ? t('ws.layoutTree') : t('ws.layoutSpaces')}
-        onclick={() => saveSettings({ workspacesLayout: compact ? 'tree' : 'spaces' })}
-        >{#if compact}<ListTree size={14} />{:else}<LayoutList size={14} />{/if}</button
-      >
       <button class="icon-btn" title={t('ws.new')} aria-label={t('ws.new')} disabled={!app.connected || !app.wsPersistent} aria-haspopup="menu" onclick={(e) => app.openMenu(e, t('ws.new'), addMenu())}
         ><Plus size={14} /></button
       >
       <button class="icon-btn" title={t('ws.newFolder')} aria-label={t('ws.newFolder')} disabled={!app.connected || !app.wsPersistent} onclick={() => createFolder()}
         ><FolderPlus size={14} /></button
       >
-      {#if !compact}<button
+      <button
         class="icon-btn"
         class:active={showArchived}
         title={t('ws.showArchived')}
         aria-label={t('ws.showArchived')}
         aria-pressed={showArchived}
         onclick={() => (showArchived = !showArchived)}><Archive size={14} /></button
-      >{/if}
+      >
     {:else}
       <span class="count faint">{app.items.length}</span>
     {/if}
@@ -82,7 +71,7 @@
     </div>
   {/if}
   {#if app.sidebarMode === 'workspaces'}
-    {#if compact}<SpacesView {filter} />{:else}<!-- The tree is the opt-in layout: loaded on first use to keep startup JS small. -->{#await import('./WorkspaceTree.svelte') then { default: WorkspaceTree }}<WorkspaceTree {filter} {showArchived} />{/await}{/if}
+    <SpacesView {filter} {showArchived} />
   {:else}
     <StatesView {filter} />
   {/if}

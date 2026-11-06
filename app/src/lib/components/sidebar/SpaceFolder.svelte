@@ -7,7 +7,22 @@
   import StatePills from './StatePills.svelte';
 
   // Depth 0 is a section title, deeper folders are rows; the pinned section (no folder) cannot fold.
-  let { node, ontoggle }: { node: Extract<SpaceNode, { type: 'folder' }>; ontoggle: () => void } = $props();
+  // dropPos and target mark where a dragged item would land; the folder and pinned zones are found by their data-drop.
+  let {
+    node,
+    ontoggle,
+    onmenu,
+    dropPos = null,
+    target = false,
+    onpointerdown,
+  }: {
+    node: Extract<SpaceNode, { type: 'folder' }>;
+    ontoggle: () => void;
+    onmenu?: (e: MouseEvent) => void;
+    dropPos?: 'before' | 'after' | 'inside' | null;
+    target?: boolean;
+    onpointerdown?: (e: PointerEvent) => void;
+  } = $props();
 
   const name = $derived(node.folder?.name ?? t('ws.pinned'));
   const meta = $derived(
@@ -19,17 +34,41 @@
 
 {#if node.depth === 0}
   {#if node.folder}
-    <button class="section" type="button" aria-expanded={node.open} onclick={ontoggle}>
+    <button
+      class="section"
+      class:inside={dropPos === 'inside'}
+      class:drop-before={dropPos === 'before'}
+      class:drop-after={dropPos === 'after'}
+      type="button"
+      data-drop="folder"
+      data-id={node.folder.id}
+      aria-expanded={node.open}
+      onclick={ontoggle}
+      oncontextmenu={(e) => onmenu && (e.preventDefault(), onmenu(e))}
+      {onpointerdown}
+    >
       <span class="chev" class:open={node.open}><ChevronRight size={11} /></span>
       <span class="name">{name}</span>
       {#if !node.open}<StatePills summary={node.summary} hideZero />{/if}
       <span class="meta">{meta}</span>
     </button>
   {:else}
-    <div class="section"><span class="name">{name}</span></div>
+    <div class="section" class:target data-drop="pinned"><span class="name">{name}</span></div>
   {/if}
 {:else}
-  <button class="row" type="button" aria-expanded={node.open} onclick={ontoggle}>
+  <button
+    class="row"
+    class:inside={dropPos === 'inside'}
+    class:drop-before={dropPos === 'before'}
+    class:drop-after={dropPos === 'after'}
+    type="button"
+    data-drop="folder"
+    data-id={node.folder?.id}
+    aria-expanded={node.open}
+    onclick={ontoggle}
+    oncontextmenu={(e) => onmenu && (e.preventDefault(), onmenu(e))}
+    {onpointerdown}
+  >
     <span class="chev" class:open={node.open}><ChevronRight size={12} /></span>
     {#if node.open}<FolderOpen size={15} />{:else}<FolderClosed size={15} />{/if}
     <span class="name">{name}</span>
@@ -40,6 +79,7 @@
 <style>
   .section,
   .row {
+    position: relative;
     display: flex;
     align-items: center;
     gap: 6px;
@@ -56,6 +96,28 @@
     letter-spacing: 0.08em;
     text-transform: uppercase;
     color: var(--text-2);
+  }
+  .section.target {
+    color: var(--accent);
+  }
+  .inside {
+    box-shadow: inset 0 0 0 1px var(--accent);
+    background: var(--accent-soft);
+  }
+  .drop-before::before,
+  .drop-after::after {
+    content: '';
+    position: absolute;
+    left: 8px;
+    right: 8px;
+    height: 2px;
+    background: var(--accent);
+  }
+  .drop-before::before {
+    top: -1px;
+  }
+  .drop-after::after {
+    bottom: -1px;
   }
   .row {
     height: 28px;

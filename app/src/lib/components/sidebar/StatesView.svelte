@@ -8,7 +8,7 @@
   import { app } from '../../state.svelte';
   import { TIME_BUCKETS } from '../../time-bucket';
   import { hostKey } from '../../window';
-  import { itemMenu } from '../../wsactions';
+  import { itemMenuAt, selectSession } from '../../wsactions';
   import { visibleClock } from '../../visible-clock';
   import AttentionBanner from './AttentionBanner.svelte';
   import StateGroups from './StateGroups.svelte';
@@ -31,21 +31,6 @@
   function toggle(bucket: string) {
     saveSettings({ statesOpen: { ...settings.statesOpen, [hostKey(app.conn.target)]: toggleOpen(saved, bucket, new Set(TIME_BUCKETS), '') } });
   }
-
-  function select(key: string, e?: MouseEvent) {
-    if (e && (e.metaKey || e.ctrlKey || e.shiftKey)) {
-      const next = new Set(app.multi);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      if (app.selectedKey && !next.size) next.add(app.selectedKey);
-      app.multi = next;
-      return;
-    }
-    app.multi = new Set();
-    app.select(key);
-  }
-
-  const menu = (key: string, title: string, e: MouseEvent) => app.openMenu(e, title, itemMenu(key));
 </script>
 
 <div class="states">
@@ -62,11 +47,11 @@
               <span class="n">{b.count}</span>
             </button>
             {#if opened.has(b.bucket)}
-              <StateGroups groups={b.groups} {names} {now} {host} selectedKey={app.selectedKey} onselect={select} onmenu={menu} />
+              <StateGroups groups={b.groups} {names} {now} {host} selectedKey={app.selectedKey} onselect={selectSession} onmenu={itemMenuAt} />
             {/if}
           {/each}
         {:else}
-          <StateGroups groups={s.groups} {names} {now} {host} selectedKey={app.selectedKey} onselect={select} onmenu={menu} />
+          <StateGroups groups={s.groups} {names} {now} {host} selectedKey={app.selectedKey} onselect={selectSession} onmenu={itemMenuAt} />
         {/if}
       </section>
     {/if}

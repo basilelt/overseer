@@ -11,7 +11,7 @@ const w = { id: 'a', name: 'webshop', rank: 1, pinned: false, archived: false } 
 const item = (key: string, state: SidebarItem['state'], at = '2026-11-05T10:00:00Z') => ({ key, kind: 'claude', group: 'ready', state, title: `T-${key}`, at }) as SidebarItem;
 const row = (items: SidebarItem[]) => spaces([w], items, new Map(items.map((i) => [i.key, 'a'])), '').rows[0]!;
 const html = (items: SidebarItem[], extra: Record<string, unknown> = {}) =>
-  render(SpaceBlock, { props: { row: row(items), now: NOW, open: false, closedOpen: false, selectedKey: null, ontoggle: () => {}, onclosed: () => {}, onselect: () => {}, ...extra } }).body;
+  render(SpaceBlock, { props: { row: row(items), now: NOW, open: false, closedOpen: false, selectedKey: null, ontoggle: () => {}, onclosed: () => {}, onselect: () => {}, onpick: () => {}, ...extra } }).body;
 
 describe('SpaceBlock', () => {
   it('collapsed: one line with name, a pill per non-zero live state, and the total', () => {
@@ -62,13 +62,50 @@ describe('SpaceBlock', () => {
     expect(html([item('l', 'open')], { open: true })).not.toContain('class="host');
   });
 
-  it('forwards the row click and the toggle to the parent', () => {
+  it('forwards the row click with its event, the row menu and the toggle to the parent', () => {
     // Given the component source
     // When the handlers are read
-    // Then rows call onselect with the key and the line calls ontoggle
-    expect(componentSrc).toMatch(/onselect=\{\(\) => onselect\(it\.key\)\}|onselect=\{\(\) => onselect\(i\.key\)\}/);
+    // Then rows pass the key and the click event, a right-click reaches onitemmenu, and the chevron calls ontoggle
+    expect(componentSrc).toMatch(/onselect=\{\(e\) => onselect\(it\.key, e\)\}/);
+    expect(componentSrc).toMatch(/onmenu=\{onitemmenu && \(\(e\) => onitemmenu\(it\.key, it\.title, e\)\)\}/);
     expect(componentSrc).toMatch(/onclick=\{ontoggle\}/);
     expect(componentSrc).not.toMatch(/transition|animation/);
+  });
+
+  it('splits the header: the name picks the workspace, a separate chevron folds it', () => {
+    // Given a collapsed block
+    // When it renders and the source is read
+    // Then two buttons exist, only the chevron carries aria-expanded, and each calls its own handler
+    const h = html([item('1', 'open')]);
+    expect(h.match(/<button/g)).toHaveLength(2);
+    expect(h.match(/aria-expanded/g)).toHaveLength(1);
+    expect(h).toMatch(/<button[^>]*class="chev[^"]*"[^>]*aria-expanded="false"|<button[^>]*aria-expanded="false"[^>]*class="chev/);
+    expect(componentSrc).toMatch(/onclick=\{onpick\}/);
+  });
+
+  it('marks the selected workspace, the tab-drop target and the archived one', () => {
+    // Given a block that is selected, then one hovered by a dragged tab, then an archived one
+    // When they render
+    // Then each carries its class
+    expect(html([item('1', 'open')], { selected: true })).toContain('selected');
+    expect(html([item('1', 'open')], { selected: false })).not.toMatch(/class="[^"]*selected/);
+    expect(html([item('1', 'open')], { tabDrop: true })).toMatch(/class="[^"]*tab-drop/);
+    const archived = render(SpaceBlock, { props: { row: { ...row([item('1', 'open')]), workspace: { ...w, archived: true } }, now: NOW, open: false, closedOpen: false, selectedKey: null, ontoggle: () => {}, onclosed: () => {}, onselect: () => {}, onpick: () => {} } }).body;
+    expect(archived).toMatch(/class="[^"]*archived/);
+  });
+
+  it('exposes the header as a tab-drop and drag-and-drop target of its workspace, but not for "Other"', () => {
+    // Given a workspace block and the unassigned one
+    // When they render
+    // Then the workspace header has data-workspace-id and data-drop, "Other" has neither, and a drop line shows
+    const h = html([item('1', 'open')], { dropPos: 'before' });
+    expect(h).toContain('data-workspace-id="a"');
+    expect(h).toContain('data-drop="workspace"');
+    expect(h).toContain('data-id="a"');
+    expect(h).toMatch(/class="[^"]*drop-before/);
+    const other = render(SpaceBlock, { props: { row: { id: '', name: null, workspace: null, items: [item('1', 'open')], summary: row([item('1', 'open')]).summary }, now: NOW, open: false, closedOpen: false, selectedKey: null, ontoggle: () => {}, onclosed: () => {}, onselect: () => {}, onpick: () => {} } }).body;
+    expect(other).not.toContain('data-workspace-id');
+    expect(other).not.toContain('data-drop');
   });
 
   it('words the closed count in singular and plural', () => {
@@ -78,5 +115,25 @@ describe('SpaceBlock', () => {
     expect(html([item('l', 'open'), item('c', 'closed')], { open: true })).toContain('+ 1 closed');
     expect(html([item('l', 'open'), item('c', 'closed'), item('d', 'closed')], { open: true })).toContain('+ 2 closed');
     expect(componentSrc).toContain("ws.closedOne");
+  });
+
+  it('flags a workspace whose folder is gone, with its path as the tooltip', () => {
+    // Given a workspace marked missing, with a path
+    const missing = { ...w, missing: true, path: '/src/gone' } as Workspace;
+    const h = render(SpaceBlock, { props: { row: { ...row([item('1', 'open')]), workspace: missing }, now: NOW, open: false, closedOpen: false, selectedKey: null, ontoggle: () => {}, onclosed: () => {}, onselect: () => {}, onpick: () => {} } }).body;
+    // When it renders
+    // Then the line has the missing class, the label, and the path title; a normal one has none
+    expect(h).toMatch(/class="[^"]*missing/);
+    expect(h).toContain('Folder missing');
+    expect(h).toContain('title="/src/gone"');
+    expect(html([item('1', 'open')])).not.toContain('Folder missing');
+  });
+
+  it('labels the chevron as a fold action, apart from the name button', () => {
+    // Given a collapsed and an expanded block
+    // When they render
+    // Then the chevron says Expand or Collapse with the name, never just the name
+    expect(html([item('1', 'open')])).toContain('aria-label="Expand webshop"');
+    expect(html([item('1', 'open')], { open: true })).toContain('aria-label="Collapse webshop"');
   });
 });

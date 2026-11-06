@@ -3,13 +3,13 @@ import src from './StatesView.svelte?raw';
 import sidebarSrc from './Sidebar.svelte?raw';
 
 describe('StatesView wiring', () => {
-  it('opens sessions and banner entries with app.select, keeping the multi-selection modifiers', () => {
+  it('opens banner entries with app.select and rows through the helpers shared with the Espaces view', () => {
     // Given the source
     // When the handlers are read
-    // Then banner and rows reach app.select and modifier clicks edit app.multi
+    // Then the banner reaches app.select, and rows use selectSession (modifier clicks) and itemMenuAt (right-click)
     expect(src).toMatch(/onselect=\{\(e\) => app\.select\(e\.key\)\}/);
-    expect(src).toContain('app.select(key)');
-    expect(src).toContain('app.multi');
+    expect(src).toContain('onselect={selectSession}');
+    expect(src).toContain('onmenu={itemMenuAt}');
   });
 
   it('builds sections from byState with the visible workspaces and one shared clock', () => {
