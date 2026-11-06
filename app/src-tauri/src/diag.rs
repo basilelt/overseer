@@ -653,6 +653,40 @@ pub fn session_end() {
     }
 }
 
+#[cfg(all(unix, desktop))]
+pub fn quit_signal() -> std::io::Result<impl std::future::Future<Output = &'static str>> {
+    use tokio::signal::unix::{signal, SignalKind};
+    let mut term = signal(SignalKind::terminate())?;
+    let mut hup = signal(SignalKind::hangup())?;
+    let mut int = signal(SignalKind::interrupt())?;
+    Ok(async move {
+        tokio::select! {
+            _ = term.recv() => "SIGTERM",
+            _ = hup.recv() => "SIGHUP",
+            _ = int.recv() => "SIGINT",
+        }
+    })
+}
+
+#[cfg(all(unix, desktop))]
+pub fn quit_on_signals(app: AppHandle) {
+    tauri::async_runtime::spawn(async move {
+        let quit = match quit_signal() {
+            Ok(q) => q,
+            Err(e) => return warn("session", format!("signal handlers not installed: {e}")),
+        };
+        let name = quit.await;
+        info("session", format!("received {name}, quitting"));
+        app.exit(0);
+        tokio::time::sleep(Duration::from_secs(5)).await;
+        warn(
+            "session",
+            format!("still running 5 s after {name}, exiting now"),
+        );
+        std::process::exit(1);
+    });
+}
+
 pub fn log_dir() -> Option<PathBuf> {
     lock(&SINK).dir.clone()
 }
@@ -1135,6 +1169,19 @@ mod tests {
         let _ = fs::remove_dir_all(&d);
         fs::create_dir_all(&d).unwrap();
         d
+    }
+
+    #[cfg(all(unix, desktop))]
+    #[tokio::test]
+    async fn sigterm_is_caught_instead_of_killing_the_app() {
+        let quit = quit_signal().unwrap();
+        let sent = std::process::Command::new("kill")
+            .args(["-TERM", &std::process::id().to_string()])
+            .status()
+            .unwrap();
+        assert!(sent.success());
+        let got = tokio::time::timeout(Duration::from_secs(5), quit).await;
+        assert_eq!(got.ok(), Some("SIGTERM"));
     }
 
     #[test]
