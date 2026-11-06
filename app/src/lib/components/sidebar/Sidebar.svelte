@@ -18,7 +18,6 @@
   import ListTree from '@lucide/svelte/icons/list-tree';
   import SpacesView from './SpacesView.svelte';
   import StatesView from './StatesView.svelte';
-  import WorkspaceTree from './WorkspaceTree.svelte';
 
   const unplaced = $derived(app.connected && app.wsPersistent ? unplacedCount(app.data.lines, app.ws.workspaces, app.projects, app.data.tasks) : 0);
   const nudge = $derived(nudgeVisible(unplaced, settings.organizeNudgeAt));
@@ -83,7 +82,7 @@
     </div>
   {/if}
   {#if app.sidebarMode === 'workspaces'}
-    {#if compact}<SpacesView {filter} />{:else}<WorkspaceTree {filter} {showArchived} />{/if}
+    {#if compact}<SpacesView {filter} />{:else}<!-- The tree is the opt-in layout: loaded on first use to keep startup JS small. -->{#await import('./WorkspaceTree.svelte') then { default: WorkspaceTree }}<WorkspaceTree {filter} {showArchived} />{/await}{/if}
   {:else}
     <StatesView {filter} />
   {/if}

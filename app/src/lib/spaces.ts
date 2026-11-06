@@ -1,6 +1,7 @@
 import type { SidebarItem } from './grouping';
-import type { ConnState, Workspace } from './types';
-import { isGhost } from './workspaces';
+import { STATE_URGENCY } from './session-state';
+import type { ConnState, Folder, Workspace } from './types';
+import { byRank, isGhost, type WsData } from './workspaces';
 import { workspaceSummary, type WorkspaceSummary } from './workspace-summary';
 
 export interface SpaceRow {
@@ -60,6 +61,115 @@ export function spaces(workspaces: Workspace[], items: SidebarItem[], wsOf: Read
   const others = narrow(null, by.get('') ?? []);
   if (others.length) rows.push({ id: '', name: null, workspace: null, items: others, summary: workspaceSummary(others) });
   return { rows, empty };
+}
+
+export type SpaceNode =
+  /** folder null is the pinned section; depth 0 is a section title. */
+  | { type: 'folder'; key: string; folder: Folder | null; depth: number; open: boolean; folders: number; spaces: number; summary: WorkspaceSummary }
+  | { type: 'space'; key: string; row: SpaceRow; depth: number }
+  | { type: 'empty'; key: string; workspaces: Workspace[]; depth: number };
+
+interface Agg {
+  summary: WorkspaceSummary;
+  /** Workspaces listed in the subtree, busy or empty. */
+  spaces: number;
+}
+
+function push<K, V>(m: Map<K, V[]>, k: K, v: V) {
+  const list = m.get(k);
+  if (list) list.push(v);
+  else m.set(k, [v]);
+}
+
+function sum(parts: WorkspaceSummary[]): WorkspaceSummary {
+  const counts: WorkspaceSummary['counts'] = { attention: 0, running: 0, open: 0, paused: 0, closed: 0 };
+  let total = 0;
+  for (const p of parts) {
+    total += p.total;
+    for (const s of STATE_URGENCY) counts[s] += p.counts[s];
+  }
+  return { total, counts, urgent: STATE_URGENCY.find((s) => counts[s] > 0) ?? null };
+}
+
+// Mode "Espaces" with folders: files the rows of spaces() into the folder tree, as one flat list to render.
+// Pinned workspaces leave their folder for a pinned section; a filter drops the folders without a match and opens the rest.
+export function folderSpaces(view: Spaces, folders: Folder[], filter: string): SpaceNode[] {
+  const q = filter.trim() !== '';
+  const known = new Set(folders.map((f) => f.id));
+  const kids = new Map<string | null, Folder[]>();
+  for (const f of folders) push(kids, f.parentId && f.parentId !== f.id && known.has(f.parentId) ? f.parentId : null, f);
+  for (const list of kids.values()) list.sort(byRank);
+  // Folders caught in a parent cycle are never reached: their workspaces fall to the root.
+  const reach = new Set<string>();
+  const stack = [...(kids.get(null) ?? [])];
+  for (let f = stack.pop(); f; f = stack.pop()) {
+    reach.add(f.id);
+    stack.push(...(kids.get(f.id) ?? []));
+  }
+  const at = (w: Workspace) => (w.folderId && reach.has(w.folderId) ? w.folderId : null);
+  const rowsIn = new Map<string | null, SpaceRow[]>();
+  const emptyIn = new Map<string | null, Workspace[]>();
+  const pinnedRows: SpaceRow[] = [];
+  const pinnedEmpty: Workspace[] = [];
+  for (const r of view.rows) {
+    if (r.workspace?.pinned) pinnedRows.push(r);
+    else push(rowsIn, r.workspace ? at(r.workspace) : null, r);
+  }
+  for (const w of view.empty) {
+    if (w.pinned) pinnedEmpty.push(w);
+    else push(emptyIn, at(w), w);
+  }
+  const aggs = new Map<string, Agg>();
+  const agg = (f: Folder): Agg => {
+    const done = aggs.get(f.id);
+    if (done) return done;
+    const rows = rowsIn.get(f.id) ?? [];
+    const subs = (kids.get(f.id) ?? []).map(agg);
+    const a: Agg = {
+      summary: sum([...rows.map((r) => r.summary), ...subs.map((x) => x.summary)]),
+      spaces: rows.length + (emptyIn.get(f.id)?.length ?? 0) + subs.reduce((n, x) => n + x.spaces, 0),
+    };
+    aggs.set(f.id, a);
+    return a;
+  };
+  const out: SpaceNode[] = [];
+  const level = (rows: SpaceRow[] | undefined, empty: Workspace[] | undefined, depth: number, key: string, between?: () => void) => {
+    for (const row of rows ?? []) out.push({ type: 'space', key: `w:${row.id}`, row, depth });
+    between?.();
+    if (empty?.length) out.push({ type: 'empty', key: `e:${key}`, workspaces: empty, depth });
+  };
+  const emit = (f: Folder, depth: number) => {
+    const a = agg(f);
+    if (q && !a.spaces) return;
+    const subs = (kids.get(f.id) ?? []).filter((c) => !q || agg(c).spaces > 0);
+    const open = q || !f.collapsed;
+    out.push({ type: 'folder', key: `f:${f.id}`, folder: f, depth, open, folders: subs.length, spaces: a.spaces, summary: a.summary });
+    if (open) level(rowsIn.get(f.id), emptyIn.get(f.id), depth + 1, f.id, () => subs.forEach((c) => emit(c, depth + 1)));
+  };
+  if (pinnedRows.length || pinnedEmpty.length) {
+    out.push({ type: 'folder', key: 'f:*', folder: null, depth: 0, open: true, folders: 0, spaces: pinnedRows.length + pinnedEmpty.length, summary: sum(pinnedRows.map((r) => r.summary)) });
+    level(pinnedRows, pinnedEmpty, 0, '*');
+  }
+  for (const f of kids.get(null) ?? []) emit(f, 0);
+  level(rowsIn.get(null), emptyIn.get(null), 0, '');
+  return out;
+}
+
+// The attention banner's path to a workspace: its folder chain, then its name.
+export function spaceTrail(data: WsData): (workspaceId: string | null | undefined) => string | undefined {
+  const ws = new Map(data.workspaces.map((w) => [w.id, w]));
+  const fs = new Map(data.folders.map((f) => [f.id, f]));
+  return (id) => {
+    const w = id ? ws.get(id) : undefined;
+    if (!w) return undefined;
+    const names = [w.name];
+    const seen = new Set<string>();
+    for (let f = w.folderId ? fs.get(w.folderId) : undefined; f && !seen.has(f.id); f = f.parentId ? fs.get(f.parentId) : undefined) {
+      seen.add(f.id);
+      names.unshift(f.name);
+    }
+    return names.join(' › ');
+  };
 }
 
 export interface SpaceHost {

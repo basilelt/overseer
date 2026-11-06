@@ -30,6 +30,34 @@ describe('SpacesView wiring', () => {
   });
 });
 
+describe('SpacesView folders', () => {
+  it('renders the folder tree of folderSpaces and keeps the drag and drop in the tree view', () => {
+    // Given the component source
+    // When it is read
+    // Then nodes come from folderSpaces over the daemon folders, with no drag handlers
+    expect(src).toMatch(/folderSpaces\(spaces\(app\.ws\.workspaces, app\.items, app\.itemWs, filter\), app\.ws\.folders, filter\)/);
+    expect(src).toContain('<SpaceFolder');
+    expect(src).not.toMatch(/ondrag|ondrop/);
+  });
+
+  it('stores a folder\'s collapsed state on the daemon folder, optimistically', () => {
+    // Given the component source
+    // When the folder toggle is read
+    // Then the local folder flips first and the daemon gets patchFolder with the new value
+    expect(src).toMatch(/collapsed: !x\.collapsed/);
+    expect(src).toMatch(/app\.api\.patchFolder\(id, \{ collapsed: !f\.collapsed \}\)/);
+  });
+
+  it('indents each node by its depth and gives the banner the workspace trail', () => {
+    // Given the component source
+    // When it is read
+    // Then the depth drives the indent and the banner gets spaceTrail
+    expect(src).toMatch(/style:--depth=\{n\.depth\}/);
+    expect(src).toMatch(/spaceTrail\(app\.ws\)/);
+    expect(src).toMatch(/pathOf=/);
+  });
+});
+
 describe('Sidebar compact toggle', () => {
   it('defaults to compact for any value but tree, and hides "show archived" there', () => {
     // Given the sidebar source
@@ -38,5 +66,13 @@ describe('Sidebar compact toggle', () => {
     expect(sidebarSrc).toContain("settings.workspacesLayout !== 'tree'");
     expect(sidebarSrc).toMatch(/\{#if !compact\}\s*<button[^>]*\s*class="icon-btn"\s*class:active=\{showArchived\}/);
     expect(sidebarSrc).toMatch(/saveSettings\(\{ workspacesLayout: compact \? 'tree' : 'spaces' \}\)/);
+  });
+
+  it('loads the folder tree only when the tree layout is chosen', () => {
+    // Given the sidebar source
+    // When the tree branch is read
+    // Then WorkspaceTree comes from a dynamic import, never a static one
+    expect(sidebarSrc).not.toMatch(/import WorkspaceTree from/);
+    expect(sidebarSrc).toMatch(/\{#await import\('\.\/WorkspaceTree\.svelte'\) then \{ default: WorkspaceTree \}\}<WorkspaceTree \{filter\} \{showArchived\} \/>\{\/await\}/);
   });
 });

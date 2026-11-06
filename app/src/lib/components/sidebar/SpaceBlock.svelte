@@ -1,10 +1,10 @@
 <script lang="ts">
   import { t } from '../../i18n.svelte';
-  import type { SessionState } from '../../session-state';
   import type { SpaceRow } from '../../spaces';
   import { workspaceSessions } from '../../workspace-sessions';
   import type { ConnState } from '../../types';
   import SessionRow from './SessionRow.svelte';
+  import StatePills from './StatePills.svelte';
   import WorkspaceFrame from './WorkspaceFrame.svelte';
 
   // Purely presentational: the parent owns the expand state, the clock and the open action.
@@ -32,7 +32,6 @@
     onmenu?: (e: MouseEvent) => void;
   } = $props();
 
-  const PILLS: SessionState[] = ['attention', 'running', 'paused'];
   const sessions = $derived(open ? workspaceSessions(row.items, now) : null);
   const name = $derived(row.name ?? t('ws.other'));
 </script>
@@ -40,10 +39,7 @@
 {#snippet line()}
   <button class="line" type="button" aria-expanded={open} onclick={ontoggle} oncontextmenu={(e) => onmenu && (e.preventDefault(), onmenu(e))}>
     <span class="name">{name}</span>
-    {#each PILLS as s (s)}
-      {#if row.summary.counts[s] > 0}<span class="pill" data-pill={s} style:--c="var(--state-{s})" title={t(`session.state.${s}`)}>{row.summary.counts[s]}</span>{/if}
-    {/each}
-    <span class="total">{row.summary.total}</span>
+    <StatePills summary={row.summary} />
   </button>
 {/snippet}
 
@@ -95,25 +91,6 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-  }
-  .pill {
-    flex: none;
-    min-width: 18px;
-    padding: 0 6px;
-    border-radius: 9px;
-    background: var(--c);
-    color: #0b0b0c;
-    font-size: 11px;
-    font-weight: 700;
-    text-align: center;
-    font-variant-numeric: tabular-nums;
-  }
-  .total {
-    flex: none;
-    font-size: 11px;
-    font-weight: 500;
-    color: var(--text-2);
-    font-variant-numeric: tabular-nums;
   }
   .more {
     margin-left: 20px;
