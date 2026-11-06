@@ -1557,7 +1557,8 @@ Stopped: no live agent process, resumable); the toggle is at the top of the side
   the agent glyph and a status dot per tab. Tabs keep a compact width with long titles cut, and
   the selected tab shows its full title; when they do not fit, the strip scrolls with the mouse
   wheel or trackpad, and hovering a tab shows its full title. `+` starts any installed agent or a shell in the
-  workspace folder, opens a browser tab or **Review changes** of the selected agent. Drag tabs
+  workspace folder. Views (browser, **Review changes**, Git graph, worktrees, System, Usage, PR reviews)
+  open from the **Views** section of the command palette (Cmd/Ctrl+P). Drag tabs
   to reorder, middle-click or `×` to close (this ends the agent or shell; right-click > **Hide tab
   (keep running)** only hides it), split right or down. The
   order is saved in the daemon, so it comes back on another machine.
@@ -1737,7 +1738,7 @@ A GitHub-style review of what an agent changed, while it works (ADR 0030, contra
 ### 14.8a PR reviews (GitHub)
 
 The **PR reviews** tab lists the open pull requests where your GitHub account is a requested
-reviewer, directly or through a team. Open it from the `+` tab menu, the command palette ("Open
+reviewer, directly or through a team. Open it from the command palette ("Open
 PR reviews") or, on the phone, More → PR reviews.
 
 - It uses the GitHub CLI already signed in on the host running Overseer (`gh`), so nothing
@@ -1809,7 +1810,7 @@ changes and abort on conflicts (the error names the files).
 
 ### 14.10 Git graph
 
-The app's Git graph tab (workspace `+` menu or palette) draws a project's history with lanes (branches, remote branches, tags, HEAD,
+The app's Git graph tab (command palette, "Open the Git graph") draws a project's history with lanes (branches, remote branches, tags, HEAD,
 merges), with Overseer's knowledge on top: the agent and its state on the tip of its branch,
 the task number, the ticket and the PR state. Filters: all branches, current, agents only (the
 branches of lines, tasks and worktrees), author; search by sha or subject. A commit shows its
