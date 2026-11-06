@@ -167,7 +167,8 @@ repository's release workflow.
 ### Linux and Windows
 
 Download from the latest release (`.AppImage`, `.deb` or `.rpm` on Linux x64 and arm64,
-`-setup.exe` or `.msix` on Windows x64 and arm64). The `.msix` is self-signed: import
+`-setup.exe` or `.msix` on Windows x64 and arm64). The Linux builds need glibc 2.35 or newer
+(Ubuntu 22.04, Debian 12, Fedora 36 and later). The `.msix` is self-signed: import
 `overseer-msix.cer` from the release into Local Machine > Trusted People once, then open the
 `.msix`; it does not update itself, use the `-setup.exe` for in-app updates. For example:
 
