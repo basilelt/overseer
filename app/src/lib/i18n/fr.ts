@@ -192,6 +192,7 @@ export const dict: Partial<Dict> = {
   'chat.toBottom': 'Aller au plus récent',
   'chat.held': 'Session fermée',
   'chat.paused': 'Session en pause',
+  'chat.pauseCancelled': 'Pause annulée',
   'session.state.running': 'En cours',
   'session.state.attention': 'Attention requise',
   'session.state.open': 'Ouverte',

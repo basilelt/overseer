@@ -6,6 +6,7 @@
   import { DaemonError } from '../../client';
   import { t } from '../../i18n.svelte';
   import { pausedDays, sessionState, stateDot, type SessionAction } from '../../session-state';
+  import { runSessionAction } from '../../session-action';
   import SessionBar from '../session/SessionBar.svelte';
   import { app } from '../../state.svelte';
   import type { SidebarItem } from '../../grouping';
@@ -336,21 +337,11 @@
     confirmClose = false;
     acting = kind;
     try {
-      if (kind === 'interrupt') await app.api.keys(lineId, ['esc']);
-      else if (kind === 'pause') {
-        // TODO(holdAfterTurn): call app.api.holdAfterTurn(lineId) once the client lands, so a busy turn finishes first.
-        await app.api.hold(lineId);
-        app.notify(t('chat.paused'));
-      } else if (kind === 'close') {
-        await app.api.close(lineId, true);
-        chats.drop(cacheKey(lineId));
-        app.notify(t('chat.closed'));
-      } else if (kind === 'cancelPause') {
-        // TODO(cancelHold): call app.api.cancelHold(lineId) once the client lands; the bar only offers it while holdPending.
-      } else {
-        const term = (await app.api.resume(lineId)) as Term;
-        if (term?.id) app.upsertTerm(term);
-      }
+      const r = await runSessionAction(app.api, lineId, kind);
+      if (r.dropChat) chats.drop(cacheKey(lineId));
+      const term = r.term as Term | undefined;
+      if (term?.id) app.upsertTerm(term);
+      if (r.notice) app.notify(t(r.notice));
     } catch (e) {
       app.notify(t('chat.actionFailed', { reason: message(e) }), 'error');
     } finally {
@@ -437,23 +428,23 @@
     width: 8px;
     height: 8px;
     border-radius: 50%;
-    background: var(--st-held);
+    background: var(--state-closed);
   }
   .state.input {
-    background: var(--st-input);
+    background: var(--state-attention);
   }
   .state.busy {
-    background: var(--st-working);
+    background: var(--state-running);
   }
   .state.paused {
-    background: var(--st-paused);
+    background: var(--state-paused);
   }
   .state.ended {
     background: transparent;
-    box-shadow: inset 0 0 0 1px var(--st-held);
+    box-shadow: inset 0 0 0 1px var(--state-closed);
   }
   .state.idle {
-    background: var(--st-done);
+    background: var(--state-open);
   }
   .status {
     color: var(--text-2);
