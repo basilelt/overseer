@@ -15,7 +15,7 @@
   import { openExternal } from '../../ports.svelte';
   import { diagBackend, fetchServerLog } from '../../diag.svelte';
   import { feedback, ft, type Result } from '../../feedback.svelte';
-  import { APP_LINES, buildBody, buildDiagnostics, buildPrompt, DEFAULT_REPO, findClone, issueTitle, labelsFor, newIssueUrl, SERVER_LINES, validate, wantsDiagnostics, type Kind } from '../../feedback';
+  import { APP_LINES, attachProblem, ATTACH_ACCEPT, VIDEO_FREE_MAX, buildBody, buildDiagnostics, buildPrompt, DEFAULT_REPO, findClone, issueTitle, labelsFor, newIssueUrl, SERVER_LINES, validate, wantsDiagnostics, type Kind } from '../../feedback';
   import type { Term } from '../../types';
 
   const prefill = feedback.prefill;
@@ -78,6 +78,13 @@
     return null;
   }
 
+  function admit(name: string, size: number): boolean {
+    const p = attachProblem(name, size);
+    if (p) app.notify(ft(p === 'type' ? 'attachType' : p === 'image' ? 'attachImageBig' : 'attachVideoBig', { name }), 'error');
+    else if (size > VIDEO_FREE_MAX && attachProblem(name) === null && !/\.(png|jpe?g|gif|webp|svg)$/i.test(name)) app.notify(ft('attachVideoPlan', { name }));
+    return !p;
+  }
+
   async function addFiles(files: File[]) {
     const client = app.client;
     if (!client || !app.connected) return app.notify(ft('offline'), 'error');
@@ -87,6 +94,7 @@
         continue;
       }
       const name = f.name || 'screenshot.png';
+      if (!admit(name, f.size)) continue;
       uploading++;
       try {
         const local = await client.savePaste(name, new Uint8Array(await f.arrayBuffer()));
@@ -104,6 +112,7 @@
     const client = app.client;
     if (!client || !app.connected) return app.notify(ft('offline'), 'error');
     for (const p of paths) {
+      if (!admit(basename(p), 0)) continue;
       uploading++;
       try {
         const up = await client.uploadFile(p);
@@ -151,7 +160,6 @@
         cwd,
         cols: 120,
         rows: 32,
-        repo,
         attachments,
         prompt: buildPrompt({ repo, kind, title: fullTitle, attachments: form.attachments, investigate, inClone: !!cwd }),
         body: sentBody,
@@ -175,8 +183,9 @@
     if (!client) return;
     busy = true;
     try {
-      const res = await client.request<{ url: string }>('POST', '/v1/feedback/direct', { repo, title: fullTitle, body: sentBody, labels: labelsFor(kind), attachments });
+      const res = await client.request<{ url: string; attachWarning?: string }>('POST', '/v1/feedback/direct', { repo, title: fullTitle, body: sentBody, labels: labelsFor(kind), attachments });
       feedback.showResult({ url: res.url, comment: false });
+      if (res.attachWarning) app.notify(ft('attachPartial', { error: res.attachWarning }), 'error');
     } catch (e) {
       app.notify(ft('failed', { error: unsupported(e) ?? msg(e) }), 'error');
     } finally {
@@ -265,7 +274,7 @@
           <span class="faint">{ft('attachHint')}</span>
           <button class="linkish" onclick={() => picker?.click()}>{ft('browse')}</button>
           {#if uploading}<span class="faint">· {uploading}…</span>{/if}
-          <input bind:this={picker} type="file" multiple hidden onchange={(e) => (void addFiles(Array.from(e.currentTarget.files ?? [])), (e.currentTarget.value = ''))} />
+          <input bind:this={picker} type="file" multiple hidden accept={ATTACH_ACCEPT} onchange={(e) => (void addFiles(Array.from(e.currentTarget.files ?? [])), (e.currentTarget.value = ''))} />
         </div>
         {#if attachments.length}
           <ul class="files">

@@ -2703,75 +2703,98 @@ fn upload(fx: &Fx, name: &str, data: &str) -> Value {
     serde_json::from_str(&out).unwrap()
 }
 
+fn attach_body() -> &'static str {
+    "It broke\n\n### Attachments\n@ATTACHMENTS@\n\n_Sent from Overseer._"
+}
+
+fn direct(fx: &Fx, repo: &str, files: &[&Value]) -> (u16, Value) {
+    let list: Vec<Value> = files
+        .iter()
+        .map(|f| json!({"path": f["path"], "name": f["name"]}))
+        .collect();
+    let body = json!({"repo": repo, "title": "Bug: x", "labels": ["bug"], "body": attach_body(), "attachments": list});
+    let (code, out) = fx.req("POST", "/v1/feedback/direct", &body.to_string());
+    (
+        code,
+        serde_json::from_str(&out).unwrap_or(Value::String(out)),
+    )
+}
+
+fn gh_log(fx: &Fx) -> String {
+    std::fs::read_to_string(fx.base.join("gh.log")).unwrap_or_default()
+}
+
 #[test]
-fn direct_feedback_uploads_attachments_and_links_them_in_the_issue() {
+fn direct_feedback_attaches_files_with_gh() {
     let fx = Fx::new("feedback-attach", 0);
     let _d = fx.daemon(false);
     let shot = upload(&fx, "shot.png", "PNGDATA");
     let clip = upload(&fx, "clip.mov", "MOVDATA");
-    let body = json!({
-        "repo": "o/r", "title": "Bug: x", "labels": ["bug"],
-        "body": "It broke\n\n### Attachments\n@ATTACHMENTS@\n\n_Sent from Overseer._",
-        "attachments": [
-            {"path": shot["path"], "name": shot["name"]},
-            {"path": clip["path"], "name": clip["name"]},
-        ],
-    });
-    let (code, out) = fx.req("POST", "/v1/feedback/direct", &body.to_string());
+    let (code, out) = direct(&fx, "o/r", &[&shot, &clip]);
     assert_eq!(code, 201, "{out}");
-    let log = std::fs::read_to_string(fx.base.join("gh.log")).unwrap();
-    assert!(log.contains("repos/o/r/git/refs"), "{log}");
-    assert_eq!(
-        log.matches("-X PUT repos/o/r/contents/attachments/")
-            .count(),
-        2,
-        "{log}"
-    );
-    let puts = std::fs::read_to_string(fx.base.join("gh.log.put")).unwrap();
-    assert!(
-        puts.contains("\"branch\":\"overseer-attachments\""),
-        "{puts}"
-    );
-    assert!(puts.contains("UE5HREFUQQ=="), "{puts}");
+    assert!(out.get("attachWarning").is_none(), "{out}");
+    let log = gh_log(&fx);
+    for f in [&shot, &clip] {
+        assert!(
+            log.contains(&format!("--attach={}", f["path"].as_str().unwrap())),
+            "{log}"
+        );
+    }
     let issue = std::fs::read_to_string(fx.base.join("gh.log.body")).unwrap();
-    assert!(!issue.contains("@ATTACHMENTS@"), "{issue}");
     assert!(
-        issue.contains("![shot.png](https://github.com/o/r/blob/overseer-attachments/attachments/"),
+        !issue.contains("@ATTACHMENTS@") && issue.contains("Attached below."),
         "{issue}"
     );
-    assert!(
-        issue.contains("- [clip.mov](https://github.com/o/r/blob/overseer-attachments/"),
-        "{issue}"
-    );
-    assert!(issue.contains("?raw=true"), "{issue}");
-    assert!(!issue.contains(".overseer/u"), "{issue}");
 }
 
 #[test]
-fn direct_feedback_still_files_the_issue_when_the_upload_is_refused() {
-    let fx = Fx::new("feedback-attach-denied", 0);
+fn direct_feedback_reports_files_gh_refused_but_keeps_the_issue() {
+    let fx = Fx::new("feedback-attach-partial", 0);
     let _d = fx.daemon(false);
     let clip = upload(&fx, "clip.mov", "MOVDATA");
-    let body = json!({
-        "repo": "deny/r", "title": "Bug: x",
-        "body": "It broke\n\n### Attachments\n@ATTACHMENTS@",
-        "attachments": [{"path": clip["path"], "name": clip["name"]}],
-    });
-    let (code, out) = fx.req("POST", "/v1/feedback/direct", &body.to_string());
+    let (code, out) = direct(&fx, "partial/r", &[&clip]);
     assert_eq!(code, 201, "{out}");
+    assert_eq!(out["url"], "https://github.com/partial/r/issues/7");
+    assert!(
+        out["attachWarning"].as_str().unwrap().contains("clip.mov"),
+        "{out}"
+    );
+}
+
+#[test]
+fn direct_feedback_lists_files_when_gh_is_too_old_to_attach() {
+    let fx = Fx::new("feedback-attach-old", 0);
+    std::fs::create_dir_all(fx.base.join("gh")).unwrap();
+    std::fs::write(fx.base.join("gh/old"), "").unwrap();
+    let _d = fx.daemon(false);
+    let clip = upload(&fx, "clip.mov", "MOVDATA");
+    let (code, out) = direct(&fx, "o/r", &[&clip]);
+    assert_eq!(code, 201, "{out}");
+    assert!(!gh_log(&fx).contains("--attach"), "{}", gh_log(&fx));
     let issue = std::fs::read_to_string(fx.base.join("gh.log.body")).unwrap();
-    assert!(issue.contains("(not uploaded: HTTP 403"), "{issue}");
+    assert!(
+        issue.contains("(not uploaded: gh 2.99+ is needed to attach files)"),
+        "{issue}"
+    );
     assert!(issue.contains("~/.overseer/u/"), "{issue}");
 }
 
 #[test]
-fn feedback_rejects_attachments_that_are_not_uploads() {
+fn feedback_rejects_attachments_github_would_not_accept() {
     let fx = Fx::new("feedback-attach-bad", 0);
     let _d = fx.daemon(false);
-    let body = json!({
-        "repo": "o/r", "title": "t", "body": "b",
-        "attachments": [{"path": "/etc/passwd"}],
-    });
-    let (code, out) = fx.req("POST", "/v1/feedback/direct", &body.to_string());
+    let notes = upload(&fx, "notes.txt", "hello");
+    let (code, out) = direct(&fx, "o/r", &[&notes]);
     assert_eq!(code, 400, "{out}");
+    assert!(
+        out["error"].as_str().unwrap().contains("notes.txt"),
+        "{out}"
+    );
+    let big = upload(&fx, "big.png", &"x".repeat(10 * 1024 * 1024 + 1));
+    let (code, out) = direct(&fx, "o/r", &[&big]);
+    assert_eq!(code, 400, "{out}");
+    assert!(out["error"].as_str().unwrap().contains("10 MB"), "{out}");
+    let outside = json!({"path": "/etc/passwd", "name": "passwd.png"});
+    assert_eq!(direct(&fx, "o/r", &[&outside]).0, 400);
+    assert!(gh_log(&fx).is_empty());
 }

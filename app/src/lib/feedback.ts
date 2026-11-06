@@ -6,6 +6,12 @@ export const DEFAULT_REPO = 'basilelt/overseer';
 export const PRIVACY_URL = `https://github.com/${DEFAULT_REPO}/blob/main/PRIVACY.md`;
 export const REPORT = '@REPORT@';
 export const ATTACHMENTS = '@ATTACHMENTS@';
+export const IMAGE_EXTS = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg'];
+export const VIDEO_EXTS = ['mp4', 'mov', 'webm'];
+export const ATTACH_ACCEPT = [...IMAGE_EXTS, ...VIDEO_EXTS].map((e) => `.${e}`).join(',');
+export const IMAGE_MAX = 10 * 1024 * 1024;
+export const VIDEO_MAX = 100 * 1024 * 1024;
+export const VIDEO_FREE_MAX = 10 * 1024 * 1024;
 export const APP_LINES = 200;
 export const SERVER_LINES = 100;
 export const MAX_BODY = 60_000;
@@ -25,6 +31,15 @@ export interface Form {
 }
 
 export type Problem = 'description' | 'repo' | 'tooLong';
+
+export type AttachProblem = 'type' | 'image' | 'video';
+
+export function attachProblem(name: string, size = 0): AttachProblem | null {
+  const ext = /\.([A-Za-z0-9]{1,10})$/.exec(name)?.[1]?.toLowerCase() ?? '';
+  if (IMAGE_EXTS.includes(ext)) return size > IMAGE_MAX ? 'image' : null;
+  if (VIDEO_EXTS.includes(ext)) return size > VIDEO_MAX ? 'video' : null;
+  return 'type';
+}
 
 export function validRepo(repo: string): boolean {
   return /^(?![-.])[A-Za-z0-9_.-]+\/(?![-.])[A-Za-z0-9_.-]+$/.test(repo.trim());
@@ -132,7 +147,9 @@ export function buildPrompt(p: PromptInput): string {
     '   - Write the final body to a new file from `mktemp`, never inside a repository.',
   );
   if (p.attachments.length)
-    lines.push('   - Overseer already uploaded the attachments and linked them under "Attachments" in the report. Keep that section exactly as it is; do not upload, move or edit the files.');
+    lines.push(
+      `   - Attachments (local files): ${p.attachments.join(', ')}. Pass each one with \`--attach <path>\` on the \`gh issue create\` (or \`gh issue comment\`) command; gh uploads it to the issue. Check \`gh issue create --help\` lists \`--attach\`; if gh is too old (needs 2.99+), keep the "Attachments" list of paths from the report and tell the user to update gh or drag the files into the issue. If gh refuses a file, keep it listed under "Attachments" with the reason. Once attached, replace that list in the body with "Attached below."`,
+    );
   if (p.investigate)
     lines.push(
       `4. Before filing, investigate read-only: read the diagnostics, then search ${p.inClone ? 'the code in this checkout' : 'the logs in ~/.overseer'} for the likely cause, and add a short "Likely cause" section with file paths. Read only.`,

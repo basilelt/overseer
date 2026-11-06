@@ -13,12 +13,11 @@ const MAX_BODY: usize = 60_000;
 const MAX_PROMPT: usize = 16_000;
 const KEEP: Duration = Duration::from_secs(7 * 24 * 3600);
 const GH_TIMEOUT: Duration = Duration::from_secs(45);
-const UPLOAD_TIMEOUT: Duration = Duration::from_secs(180);
-const MAX_FILE: u64 = 25 * 1024 * 1024;
-const MAX_TOTAL: u64 = 50 * 1024 * 1024;
-const BRANCH: &str = "overseer-attachments";
 pub const ATTACHMENTS: &str = "@ATTACHMENTS@";
-const IMAGES: [&str; 5] = ["png", "jpg", "jpeg", "gif", "webp"];
+const IMAGE_MAX: u64 = 10 * 1024 * 1024;
+const VIDEO_MAX: u64 = 100 * 1024 * 1024;
+const IMAGES: [&str; 6] = ["png", "jpg", "jpeg", "gif", "webp", "svg"];
+const VIDEOS: [&str; 3] = ["mp4", "mov", "webm"];
 const POSITIONAL: [&str; 2] = ["claude", "codex"];
 
 pub fn routes(ctx: &Ctx, method: &str, segs: &[&str], body: &Value) -> Option<(u16, Value)> {
@@ -135,7 +134,8 @@ fn start(ctx: &Ctx, b: &Value) -> Res<Value> {
     }
     let agent = agent_for(b)?;
     let cwd = workdir(&ctx.state_dir, text(b, "cwd"))?;
-    let body = with_attachments(ctx, b, text(b, "repo"), body)?;
+    let files = attachments(b)?;
+    let body = body.replace(ATTACHMENTS, &listed(&files, ""));
     let report = write_report(&ctx.state_dir, &body, SystemTime::now())?;
     let term = launch(ctx, agent, b, cwd, fill(prompt, &report), "Feedback")?;
     Ok(json!({ "term": term, "report": report.to_string_lossy() }))
@@ -259,7 +259,13 @@ pub fn label_problem(stderr: &str) -> bool {
     s.contains("label")
 }
 
-pub fn args(repo: &str, title: &str, body_file: &Path, labels: &[String]) -> Vec<String> {
+pub fn args(
+    repo: &str,
+    title: &str,
+    body_file: &Path,
+    labels: &[String],
+    attach: &[PathBuf],
+) -> Vec<String> {
     let mut a = vec![
         "issue".to_string(),
         "create".into(),
@@ -268,14 +274,15 @@ pub fn args(repo: &str, title: &str, body_file: &Path, labels: &[String]) -> Vec
         format!("--body-file={}", body_file.to_string_lossy()),
     ];
     a.extend(labels.iter().map(|l| format!("--label={l}")));
+    a.extend(
+        attach
+            .iter()
+            .map(|p| format!("--attach={}", p.to_string_lossy())),
+    );
     a
 }
 
 fn gh(args: &[String]) -> Res<(bool, String, String)> {
-    gh_within(args, GH_TIMEOUT)
-}
-
-fn gh_within(args: &[String], limit: Duration) -> Res<(bool, String, String)> {
     use crate::git::RunError;
     let out = crate::git::run_within(
         Command::new("gh")
@@ -283,7 +290,7 @@ fn gh_within(args: &[String], limit: Duration) -> Res<(bool, String, String)> {
             .env("GH_PROMPT_DISABLED", "1")
             .env("GH_NO_UPDATE_NOTIFIER", "1")
             .env("NO_COLOR", "1"),
-        limit,
+        GH_TIMEOUT,
     )
     .map_err(|e| match e {
         RunError::Spawn(e) if e.kind() == std::io::ErrorKind::NotFound => {
@@ -300,177 +307,45 @@ fn gh_within(args: &[String], limit: Duration) -> Res<(bool, String, String)> {
     ))
 }
 
-fn with_attachments(ctx: &Ctx, b: &Value, repo: &str, body: &str) -> Res<String> {
+fn attachments(b: &Value) -> Res<Vec<(PathBuf, String)>> {
     let files =
         crate::uploads::attachments(&crate::uploads::dir(), &b["attachments"]).map_err(bad)?;
-    if files.is_empty() {
-        return Ok(body.replace(ATTACHMENTS, "(none)"));
-    }
-    if !valid_repo(repo) {
-        return Err(bad("repo must look like owner/name"));
-    }
-    let results = upload_all(ctx, repo, &files);
-    Ok(body.replace(ATTACHMENTS, &section(&files, &results)))
-}
-
-fn upload_all(ctx: &Ctx, repo: &str, files: &[(PathBuf, String)]) -> Vec<Result<String, String>> {
-    let mut total = 0;
-    let mut ready = false;
-    let stamp = crate::procs::now_ms();
-    files
-        .iter()
-        .enumerate()
-        .map(|(i, (path, name))| {
-            let len = std::fs::metadata(path).map(|m| m.len()).unwrap_or(0);
-            if len > MAX_FILE {
-                return Err(format!("larger than {} MB", MAX_FILE >> 20));
-            }
-            total += len;
-            if total > MAX_TOTAL {
-                return Err(format!(
-                    "attachments total more than {} MB",
-                    MAX_TOTAL >> 20
-                ));
-            }
-            if !ready {
-                ensure_branch(repo)?;
-                ready = true;
-            }
-            let dest = format!("attachments/{stamp}-{i}-{}", safe_name(name));
-            put(ctx, repo, path, &dest)?;
-            Ok(format!(
-                "https://github.com/{repo}/blob/{BRANCH}/{dest}?raw=true"
-            ))
-        })
-        .collect()
-}
-
-fn failure(err: &str, fallback: &str) -> String {
-    let first = err.lines().map(str::trim).find(|l| !l.is_empty());
-    crate::dlog::redact(first.unwrap_or(fallback))
-}
-
-fn api(args: &[&str]) -> Result<String, String> {
-    let a: Vec<String> = std::iter::once("api")
-        .chain(args.iter().copied())
-        .map(String::from)
-        .collect();
-    match gh_within(&a, UPLOAD_TIMEOUT) {
-        Ok((true, out, _)) => Ok(out),
-        Ok((false, _, err)) => Err(failure(&err, "gh api failed")),
-        Err((_, e)) => Err(e),
-    }
-}
-
-fn ensure_branch(repo: &str) -> Result<(), String> {
-    if api(&[
-        &format!("repos/{repo}/git/ref/heads/{BRANCH}"),
-        "--jq",
-        ".ref",
-    ])
-    .is_ok()
-    {
-        return Ok(());
-    }
-    let default = api(&[&format!("repos/{repo}"), "--jq", ".default_branch"])?;
-    let sha = api(&[
-        &format!("repos/{repo}/git/ref/heads/{}", default.trim()),
-        "--jq",
-        ".object.sha",
-    ])?;
-    api(&[
-        "-X",
-        "POST",
-        &format!("repos/{repo}/git/refs"),
-        "-f",
-        &format!("ref=refs/heads/{BRANCH}"),
-        "-f",
-        &format!("sha={}", sha.trim()),
-    ])
-    .map(|_| ())
-}
-
-fn put(ctx: &Ctx, repo: &str, file: &Path, dest: &str) -> Result<(), String> {
-    let bytes = std::fs::read(file).map_err(|e| e.to_string())?;
-    let req = json!({
-        "message": "Add feedback attachment",
-        "branch": BRANCH,
-        "content": base64_encode(&bytes),
-    });
-    let d = dir(&ctx.state_dir);
-    crate::mkdir_private(&d).map_err(|e| e.to_string())?;
-    let tmp = d.join(format!(
-        "upload-{}-{}.json",
-        std::process::id(),
-        crate::procs::now_ms()
-    ));
-    std::fs::write(&tmp, req.to_string()).map_err(|e| e.to_string())?;
-    let r = api(&[
-        "-X",
-        "PUT",
-        &format!("repos/{repo}/contents/{dest}"),
-        "--input",
-        &tmp.to_string_lossy(),
-    ]);
-    let _ = std::fs::remove_file(&tmp);
-    r.map(|_| ())
-}
-
-pub fn safe_name(name: &str) -> String {
-    let s: String = name
-        .chars()
-        .map(|c| {
-            if c.is_ascii_alphanumeric() || "._-".contains(c) {
-                c
-            } else {
-                '_'
-            }
-        })
-        .collect();
-    if s.is_empty() {
-        "file".into()
-    } else {
-        s
-    }
-}
-
-pub fn base64_encode(b: &[u8]) -> String {
-    const A: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    let mut out = String::with_capacity(b.len().div_ceil(3) * 4);
-    for c in b.chunks(3) {
-        let n = (c[0] as u32) << 16
-            | (*c.get(1).unwrap_or(&0) as u32) << 8
-            | *c.get(2).unwrap_or(&0) as u32;
-        out.push(A[(n >> 18) as usize & 63] as char);
-        out.push(A[(n >> 12) as usize & 63] as char);
-        out.push(if c.len() > 1 {
-            A[(n >> 6) as usize & 63] as char
+    for (path, name) in &files {
+        let ext = crate::uploads::ext(name).unwrap_or_default();
+        let max = if IMAGES.contains(&ext.as_str()) {
+            IMAGE_MAX
+        } else if VIDEOS.contains(&ext.as_str()) {
+            VIDEO_MAX
         } else {
-            '='
-        });
-        out.push(if c.len() > 2 {
-            A[n as usize & 63] as char
-        } else {
-            '='
-        });
+            return Err(bad(format!(
+                "{name}: GitHub only accepts {} and {} attachments",
+                IMAGES.join(", "),
+                VIDEOS.join(", ")
+            )));
+        };
+        if std::fs::metadata(path).is_ok_and(|m| m.len() > max) {
+            return Err(bad(format!("{name} is larger than {} MB", max >> 20)));
+        }
     }
-    out
+    Ok(files)
 }
 
-pub fn section(files: &[(PathBuf, String)], results: &[Result<String, String>]) -> String {
+fn gh_can_attach() -> bool {
+    let a = ["issue", "create", "--help"].map(String::from);
+    matches!(gh(&a), Ok((true, out, _)) if out.contains("--attach"))
+}
+
+fn listed(files: &[(PathBuf, String)], why: &str) -> String {
     let home = crate::home();
     files
         .iter()
-        .zip(results)
-        .map(|((path, name), r)| match r {
-            Ok(url) if crate::uploads::ext(name).is_some_and(|e| IMAGES.contains(&e.as_str())) => {
-                format!("![{name}]({url})")
+        .map(|(path, _)| {
+            let shown = crate::uploads::short(path, &home);
+            if why.is_empty() {
+                format!("- `{shown}`")
+            } else {
+                format!("- `{shown}` (not uploaded: {why})")
             }
-            Ok(url) => format!("- [{name}]({url})"),
-            Err(why) => format!(
-                "- `{}` (not uploaded: {why})",
-                crate::uploads::short(path, &home)
-            ),
         })
         .collect::<Vec<_>>()
         .join("\n")
@@ -487,15 +362,33 @@ fn direct(ctx: &Ctx, b: &Value) -> Res<Value> {
     }
     let body = checked_body(b)?;
     let labels = labels(b);
-    let body = with_attachments(ctx, b, repo, body)?;
+    let files = attachments(b)?;
+    let can_attach = !files.is_empty() && gh_can_attach();
+    let note = match (files.is_empty(), can_attach) {
+        (true, _) => "(none)".to_string(),
+        (false, true) => "Attached below.".to_string(),
+        (false, false) => listed(&files, "gh 2.99+ is needed to attach files"),
+    };
+    let body = body.replace(ATTACHMENTS, &note);
+    let attach: Vec<PathBuf> = if can_attach {
+        files.into_iter().map(|f| f.0).collect()
+    } else {
+        vec![]
+    };
     let report = write_report(&ctx.state_dir, &body, SystemTime::now())?;
-    let (mut ok, mut out, mut err) = gh(&args(repo, title, &report, &labels))?;
+    let (mut ok, mut out, mut err) = gh(&args(repo, title, &report, &labels, &attach))?;
     let mut labelled = !labels.is_empty();
-    if !ok && labelled && label_problem(&err) {
-        (ok, out, err) = gh(&args(repo, title, &report, &[]))?;
+    if !ok && labelled && issue_url(&out).is_none() && label_problem(&err) {
+        (ok, out, err) = gh(&args(repo, title, &report, &[], &attach))?;
         labelled = false;
     }
     let _ = std::fs::remove_file(&report);
+    let first = err.lines().map(str::trim).find(|l| !l.is_empty());
+    if !ok && !attach.is_empty() && issue_url(&out).is_some() {
+        let url = issue_url(&out);
+        let warning = crate::dlog::redact(first.unwrap_or("some attachments were not uploaded"));
+        return Ok(json!({ "url": url, "labelled": labelled, "attachWarning": warning }));
+    }
     if !ok {
         let first = err
             .lines()
@@ -552,6 +445,7 @@ mod tests {
             "Bug: --help me",
             Path::new("/s/report.md"),
             &["bug".into(), "feedback".into()],
+            &[PathBuf::from("/u/a.png")],
         );
         assert_eq!(
             a,
@@ -562,10 +456,11 @@ mod tests {
                 "--title=Bug: --help me",
                 "--body-file=/s/report.md",
                 "--label=bug",
-                "--label=feedback"
+                "--label=feedback",
+                "--attach=/u/a.png"
             ]
         );
-        assert!(!args("o/r", "t", Path::new("/f"), &[])
+        assert!(!args("o/r", "t", Path::new("/f"), &[], &[])
             .iter()
             .any(|x| x.starts_with("--label")));
     }
@@ -638,55 +533,21 @@ mod tests {
     }
 
     #[test]
-    fn encodes_base64() {
-        assert_eq!(base64_encode(b""), "");
-        assert_eq!(base64_encode(b"f"), "Zg==");
-        assert_eq!(base64_encode(b"fo"), "Zm8=");
-        assert_eq!(base64_encode(b"foo"), "Zm9v");
-        assert_eq!(base64_encode(&[0xfb, 0xff]), "+/8=");
-    }
-
-    #[test]
-    fn sanitizes_attachment_names() {
-        assert_eq!(safe_name("my shot (1).png"), "my_shot__1_.png");
-        assert_eq!(safe_name(""), "file");
-    }
-
-    #[test]
-    fn renders_links_for_uploads_and_paths_for_failures() {
-        let files = vec![
-            (PathBuf::from("/u/a1.png"), "shot.png".to_string()),
-            (PathBuf::from("/u/b2.mov"), "clip.mov".to_string()),
-            (PathBuf::from("/u/c3.txt"), "log.txt".to_string()),
-        ];
-        let out = section(
-            &files,
-            &[
-                Ok("https://github.com/o/r/blob/x/a.png?raw=true".into()),
-                Ok("https://github.com/o/r/blob/x/b.mov?raw=true".into()),
-                Err("HTTP 403".into()),
-            ],
+    fn lists_files_that_could_not_be_attached() {
+        let files = vec![(PathBuf::from("/u/c3.mov"), "clip.mov".to_string())];
+        assert!(
+            listed(&files, "gh 2.99+ is needed").ends_with("(not uploaded: gh 2.99+ is needed)")
         );
-        let lines: Vec<&str> = out.lines().collect();
-        assert_eq!(
-            lines[0],
-            "![shot.png](https://github.com/o/r/blob/x/a.png?raw=true)"
+        assert!(
+            listed(&files, "").starts_with("- `") && !listed(&files, "").contains("not uploaded")
         );
-        assert_eq!(
-            lines[1],
-            "- [clip.mov](https://github.com/o/r/blob/x/b.mov?raw=true)"
-        );
-        assert!(lines[2].contains("/u/c3.txt") && lines[2].ends_with("(not uploaded: HTTP 403)"));
     }
 
     #[test]
     fn rejects_attachments_outside_the_uploads_dir() {
-        let probe = crate::procs::System;
-        let ctx = Ctx::from_env(&probe);
         let b = json!({"attachments": [{"path": "/etc/passwd"}]});
-        assert_eq!(with_attachments(&ctx, &b, "o/r", "x").unwrap_err().0, 400);
-        let none = with_attachments(&ctx, &json!({}), "o/r", "a @ATTACHMENTS@ b").unwrap();
-        assert_eq!(none, "a (none) b");
+        assert_eq!(attachments(&b).unwrap_err().0, 400);
+        assert!(attachments(&json!({})).unwrap().is_empty());
     }
 
     #[test]
