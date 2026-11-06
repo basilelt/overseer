@@ -128,6 +128,10 @@
   --diff-add: #81C995;
   --diff-del-bg: rgba(242, 139, 130, 0.1);
   --diff-del: #F5A8A0;
+  --ws-frame-border: var(--border);
+  --ws-frame-bg: var(--surface);
+  --session-row-bg: var(--bg);
+  --session-row-selected: var(--surface-active);
   --diff-hunk: #B3BAF7;
 }
 
@@ -156,6 +160,10 @@
   --diff-add: #BDD78C;
   --diff-del-bg: rgba(241, 156, 145, 0.1);
   --diff-del: #F5B5A8;
+  --ws-frame-border: var(--border);
+  --ws-frame-bg: var(--surface);
+  --session-row-bg: var(--bg);
+  --session-row-selected: var(--surface-active);
   --diff-hunk: #9CC7E0;
   --lane-0: #A7B6B6;
   --lane-1: #70B5DB;

@@ -20,6 +20,13 @@ describe.each([['graphite', GRAPHITE_COLORS], ['solarized', SOLARIZED_COLORS]] a
     expect(contrast(tokens['accent-fg'], rgb(tokens.accent))).toBeGreaterThanOrEqual(4.5);
   });
 
+  it('draws the sidebar frames and session rows from its own surfaces', () => {
+    // Given the palette block
+    // When the sidebar paints a workspace frame and its session rows
+    // Then it uses this palette's surfaces, not the default dark greys
+    expect([tokens['ws-frame-border'], tokens['ws-frame-bg'], tokens['session-row-bg'], tokens['session-row-selected']]).toEqual(['var(--border)', 'var(--surface)', 'var(--bg)', 'var(--surface-active)']);
+  });
+
   it('keeps diff text readable on its composited highlight backgrounds', () => {
     for (const kind of ['add', 'del']) {
       const [r, g, b, alpha] = tokens[`diff-${kind}-bg`].match(/[\d.]+/g)!.map(Number);
