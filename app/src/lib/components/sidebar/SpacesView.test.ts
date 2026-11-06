@@ -16,7 +16,7 @@ describe('SpacesView wiring', () => {
     // Given the component source
     // When it is read
     // Then expand state goes through the pure helper and the clock is the shared one
-    expect(src).toMatch(/saveSettings\(\{ spacesOpen: toggleOpen\(/);
+    expect(src).toMatch(/saveSettings\(\{ spacesOpen: \{ \.\.\.settings\.spacesOpen, \[hostKey\(app\.conn\.target\)\]: toggleOpen\(/);
     expect(src).toContain('visibleClock(');
     expect(src).not.toContain('setInterval');
   });

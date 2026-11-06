@@ -45,12 +45,6 @@ describe('SessionRow', () => {
     expect(componentSrc).toMatch(/onclick=\{\(e\) => onselect\(e\)\}/);
   });
 
-  it('caps the host chip so the chevron stays visible', () => {
-    // Given the component source
-    // When the host styles are read
-    // Then the chip can shrink and truncate
-    expect(componentSrc).toMatch(/\.host \{[^}]*max-width: 40%[^}]*overflow: hidden/s);
-  });
 
   it('shows title, last action, age and chevron in that order', () => {
     // Given a session with a last action
@@ -135,15 +129,23 @@ describe('SessionRow', () => {
     // Given the component source
     // When the flex rules are read
     // Then the title keeps a minimum width and the action takes the leftover
-    expect(componentSrc).toMatch(/\.title \{[^}]*flex: 0 1 auto[^}]*min-width: 40%/s);
+    expect(componentSrc).toMatch(/\.title \{[^}]*flex: 0 1 auto[^}]*min-width: \d+px/s);
     expect(componentSrc).toMatch(/\.action \{[^}]*flex: 1 1 0[^}]*min-width: 0/s);
   });
 
-  it('never clips the connection status: only the host name shrinks', () => {
+
+  it('keeps the chevron in view: the row clips, the chip and its parts can shrink, the name first', () => {
     // Given the component source
-    // When the chip styles are read
-    // Then the chip keeps its status and a minimum host name width
-    expect(componentSrc).toMatch(/\.host \{[^}]*min-width: min-content/s);
-    expect(componentSrc).toMatch(/\.hname \{[^}]*min-width: 3ch/s);
+    // When the layout rules are read
+    // Then the row clips, the title has a px minimum and name shrinks faster than status
+    const rule = (sel: string) => componentSrc.match(new RegExp(`\\${sel} \\{([^}]*)\\}`))![1]!;
+    expect(rule('.row')).toContain('overflow: hidden');
+    expect(rule('.title')).toMatch(/min-width: \d+px/);
+    expect(rule('.host')).toMatch(/min-width: 0/);
+    expect(rule('.host')).not.toContain('min-content');
+    const shrink = (sel: string) => Number(rule(sel).match(/flex: 0 (\d+) auto/)![1]);
+    expect(shrink('.hname')).toBeGreaterThan(shrink('.hst'));
+    expect(rule('.hst')).toContain('text-overflow: ellipsis');
+    expect(rule('.chev')).toContain('flex: none');
   });
 });

@@ -41,6 +41,7 @@
     background: var(--session-row-bg);
     text-align: left;
     min-width: 0;
+    overflow: hidden;
   }
   .row:hover {
     background: var(--surface-hover);
@@ -72,7 +73,7 @@
   }
   .title {
     flex: 0 1 auto;
-    min-width: 40%;
+    min-width: 80px;
     max-width: 100%;
     font-weight: 700;
     overflow: hidden;
@@ -100,7 +101,7 @@
   }
   .host {
     flex: 0 1 auto;
-    min-width: min-content;
+    min-width: 0;
     max-width: 40%;
     overflow: hidden;
     display: inline-flex;
@@ -112,13 +113,18 @@
     color: var(--text-2);
   }
   .hname {
+    flex: 0 4 auto;
     min-width: 3ch;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
   .hst {
-    flex: none;
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   .chev {
     flex: none;

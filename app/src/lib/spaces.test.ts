@@ -149,4 +149,11 @@ describe('spaces', () => {
     expect(toggleOpen(undefined, 'b', known, 'a')).toEqual(['a', 'b']);
     expect(toggleOpen(undefined, 'a', known, 'a')).toEqual([]);
   });
+
+  it('toggleOpen never prunes while the workspace list is empty', () => {
+    // Given workspaces still loading (only the other row is known)
+    // When toggling
+    // Then the saved ids survive
+    expect(toggleOpen(['a', 'b'], 'c', new Set(['']), 'a')).toEqual(['a', 'b', 'c']);
+  });
 });

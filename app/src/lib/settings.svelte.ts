@@ -52,7 +52,10 @@ export interface Settings {
   keepRunningOffered?: string[];
   sidebarMode?: 'workspaces' | 'status';
   workspacesLayout?: 'spaces' | 'tree';
-  spacesOpen?: string[];
+  /** Expanded workspaces, per host. */
+  spacesOpen?: Record<string, string[]>;
+  /** Opened closed-intervals of the by-state view, per host. */
+  statesOpen?: Record<string, string[]>;
   workspaceId?: string;
   workspaceByHost?: Record<string, string>;
   portsAutoForward: boolean;

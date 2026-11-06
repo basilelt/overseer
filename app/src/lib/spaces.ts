@@ -64,9 +64,10 @@ export function hostFor(conn: Pick<ConnState, 'target' | 'phase' | 'attempt' | '
   return { name: target.host ?? target.label, phase: conn.phase, attempt: conn.attempt, version: conn.version };
 }
 
-// The saved expanded list after toggling id: unset starts from the fallback, ids of gone workspaces are dropped.
+// The saved expanded list after toggling id: unset starts from the fallback; ids of gone workspaces are dropped,
+// but never while the list is still empty (loading, or no persistence) since that would wipe the host's choices.
 export function toggleOpen(saved: string[] | undefined, id: string, known: ReadonlySet<string>, fallback: string): string[] {
-  const next = new Set((saved ?? [fallback]).filter((x) => known.has(x)));
+  const next = new Set((saved ?? [fallback]).filter((x) => known.size <= 1 || known.has(x)));
   if (!next.delete(id)) next.add(id);
   return [...next];
 }

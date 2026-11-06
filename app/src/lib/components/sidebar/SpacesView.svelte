@@ -4,6 +4,7 @@
   import { t } from '../../i18n.svelte';
   import { saveSettings, settings } from '../../settings.svelte';
   import { hostFor, spaces, toggleOpen } from '../../spaces';
+  import { hostKey } from '../../window';
   import { visibleClock } from '../../visible-clock';
   import { app } from '../../state.svelte';
   import { workspaceMenu } from '../../wsactions';
@@ -20,13 +21,15 @@
 
   const view = $derived(spaces(app.ws.workspaces, app.items, app.itemWs, filter));
   const banner = $derived(attention(app.items, app.itemWs));
-  const opened = $derived(new Set(settings.spacesOpen ?? [app.workspaceId]));
+  const hk = $derived(hostKey(app.conn.target));
+  const saved = $derived(settings.spacesOpen?.[hk]);
+  const opened = $derived(new Set(saved ?? [app.workspaceId]));
   // Every session of a connection runs on that connection's host.
   const host = $derived(hostFor(app.conn));
   const q = $derived(filter.trim());
 
   function toggle(id: string) {
-    saveSettings({ spacesOpen: toggleOpen(settings.spacesOpen, id, new Set(['', ...app.ws.workspaces.map((w) => w.id)]), app.workspaceId) });
+    saveSettings({ spacesOpen: { ...settings.spacesOpen, [hostKey(app.conn.target)]: toggleOpen(saved, id, new Set(['', ...app.ws.workspaces.map((w) => w.id)]), app.workspaceId) } });
   }
 
   function toggleClosed(id: string) {
