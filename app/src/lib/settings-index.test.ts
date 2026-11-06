@@ -239,3 +239,12 @@ describe('escape', () => {
     expect(escapeAction('', false, 'general')).toBe('close');
   });
 });
+
+it('finds Graphite theme and its color controls in settings search', () => {
+  const hits = search('graphite', all, en2);
+  expect(hits.hits.appearance).toEqual(expect.arrayContaining(['theme', 'colors']));
+});
+
+it('finds Solarized Soft and its color controls in settings search', () => {
+  expect(search('solarized soft', all, en2).hits.appearance).toEqual(expect.arrayContaining(['theme', 'colors']));
+});

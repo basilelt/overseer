@@ -14,7 +14,7 @@
   import NotificationSettings from './NotificationSettings.svelte';
   import { adaptChoice, findAgent, hasModel, taskAgents } from '../../agents';
   import { localeName, locales, t, type Key } from '../../i18n.svelte';
-  import { COLOR_TOKENS, customColors, resolvedTheme, saveSettings, settings, type ColorToken, type Settings, type ThemePref } from '../../settings.svelte';
+  import { COLOR_TOKENS, colorOverrides, colorPalette, customColors, saveSettings, settings, type ColorToken, type Settings, type ThemePref } from '../../settings.svelte';
   import { app } from '../../state.svelte';
   import { diag, dt } from '../../diag.svelte';
   import { feedback, ft } from '../../feedback.svelte';
@@ -41,9 +41,9 @@
   let { onclose }: { onclose: () => void } = $props();
   const apkSettings = __SELF_UPDATE__ ? () => import('../mobile/ApkUpdateSettings.svelte') : null;
 
-  const themes: ThemePref[] = ['auto', 'light', 'dark'];
-  const themeKey: Record<ThemePref, Key> = { auto: 'settings.theme.system', light: 'settings.theme.light', dark: 'settings.theme.dark' };
-  const base = $derived(resolvedTheme());
+  const themes: ThemePref[] = ['auto', 'light', 'dark', 'graphite', 'solarized'];
+  const themeKey: Record<ThemePref, Key> = { auto: 'settings.theme.system', light: 'settings.theme.light', dark: 'settings.theme.dark', graphite: 'settings.theme.graphite', solarized: 'settings.theme.solarized' };
+  const base = $derived(colorPalette());
   const colorValues = $derived.by(() => {
     const own = customColors(base);
     const css = getComputedStyle(document.documentElement);
@@ -54,7 +54,7 @@
   let pending: { theme: typeof base; colors: Settings['colors'][typeof base] } | undefined;
   const flushColor = () => {
     clearTimeout(colorTimer);
-    if (pending) saveSettings({ colors: { ...settings.colors, [pending.theme]: { ...customColors(pending.theme), ...pending.colors } } });
+    if (pending) saveSettings({ colors: { ...settings.colors, [pending.theme]: { ...colorOverrides(pending.theme), ...pending.colors } } });
     pending = undefined;
   };
   // WebKit's native picker can fire `change` on every drag step; saving recreates terminals, so preview live and save once settled.
@@ -219,7 +219,7 @@
           {#if row('appearance', 'theme')}
             <div class="row" class:hit={hit('appearance', 'theme')}>
               <span>{t('settings.theme')}</span>
-              <div class="seg" role="radiogroup" aria-label={t('settings.theme')}>
+              <div class="seg themes" role="radiogroup" aria-label={t('settings.theme')}>
                 {#each themes as th}
                   <button role="radio" aria-checked={settings.theme === th} class:on={settings.theme === th} onclick={() => saveSettings({ theme: th })}>{t(themeKey[th])}</button>
                 {/each}
@@ -238,8 +238,8 @@
           {/if}
           {#if row('appearance', 'colors')}
             <div class="row" class:hit={hit('appearance', 'colors')}>
-              <span>{t(base === 'dark' ? 'settings.colors.dark' : 'settings.colors.light')}<small>{t('settings.colorsHint')}</small></span>
-              <button class="btn" disabled={!Object.keys(customColors(base)).length} onclick={() => { pending = undefined; setColors({}); }}>{t('settings.colors.reset')}</button>
+              <span>{t(base === 'solarized' ? 'settings.colors.solarized' : base === 'graphite' ? 'settings.colors.graphite' : base === 'dark' ? 'settings.colors.dark' : 'settings.colors.light')}<small>{t('settings.colorsHint')}</small></span>
+              <button class="btn" disabled={!Object.keys(colorOverrides(base)).length} onclick={() => { pending = undefined; setColors({}); }}>{t('settings.colors.reset')}</button>
             </div>
             <div class="colors">
               {#each COLOR_TOKENS as k}
@@ -784,6 +784,12 @@
     border: 1px solid var(--border);
     border-radius: var(--radius);
     background: var(--bg-subtle);
+  }
+  .themes {
+    flex-wrap: wrap;
+  }
+  .themes button {
+    white-space: nowrap;
   }
   .seg button {
     padding: 3px 10px;

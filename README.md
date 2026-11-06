@@ -135,6 +135,8 @@ on a TCP port on the server.
 - **Notifications** when an agent needs input or finishes, from agent hooks Overseer can
   install for you.
 - **Usage and system monitor**: agent quotas, token usage, CPU and RAM in the title bar.
+- **Solarized Soft theme**: deep teal panels and warm terminal colors inspired by Solarized, with brighter text for readability. Choose it in Settings → General → Appearance ([preview](app/docs/screenshots/solarized.png)).
+- **Graphite theme**: a softer dark palette with gray panels and a pale blue accent. Choose it in Settings → General → Appearance; your Light and Dark colors stay saved separately ([preview](app/docs/screenshots/graphite.png)).
 - **Settings with search**: categories in a sidebar, and a search box that finds any setting by name or description, in your language or in English.
 - **Command palette** (history, actions, sessions) and keyboard shortcuts.
 - **Organize my sessions**: a proposed workspace layout you approve before anything moves.

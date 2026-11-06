@@ -21,7 +21,7 @@ cat > "$work/tour.mjs" <<'EOF'
 import { chromium } from 'playwright-core';
 const [chrome, port, out] = process.argv.slice(2);
 const b = await chromium.launch({ executablePath: chrome });
-const p = await b.newPage({ viewport: { width: 1440, height: 900 } });
+const p = await b.newPage({ viewport: { width: 1440, height: 900 }, locale: 'en-US' });
 await p.goto(`http://localhost:${port}/?theme=dark`);
 await p.waitForSelector('text=Take the tour');
 let i = 0;
