@@ -1,7 +1,7 @@
 import type { Ghostty, ITheme } from 'ghostty-web';
 import wasmUrl from 'ghostty-web/ghostty-vt.wasm?url';
 import { installBlankResize, installOnDemandRendering } from './termrender';
-import { settings } from './settings.svelte';
+import { GRAPHITE_COLORS, SOLARIZED_COLORS, settings, type ColorPalette } from './settings.svelte';
 
 export const TERM_THEMES: Record<'light' | 'dark', ITheme> = {
   dark: {
@@ -52,8 +52,42 @@ export const TERM_THEMES: Record<'light' | 'dark', ITheme> = {
   },
 };
 
-export function termTheme(theme: 'light' | 'dark', colors: { bg?: string; text?: string }): ITheme {
-  const base = TERM_THEMES[theme];
+export const GRAPHITE_TERM_THEME: ITheme = {
+  ...TERM_THEMES.dark,
+  background: GRAPHITE_COLORS.bg,
+  foreground: GRAPHITE_COLORS.text,
+  cursor: GRAPHITE_COLORS.text,
+  cursorAccent: GRAPHITE_COLORS.bg,
+  selectionBackground: '#454F63',
+  brightBlack: '#A8ADB7',
+};
+
+export const SOLARIZED_TERM_THEME: ITheme = {
+  background: SOLARIZED_COLORS.bg,
+  foreground: SOLARIZED_COLORS.text,
+  cursor: SOLARIZED_COLORS.text,
+  cursorAccent: SOLARIZED_COLORS.bg,
+  selectionBackground: '#24515E',
+  black: '#073642',
+  red: '#E78278',
+  green: '#A4BC66',
+  yellow: '#D8B267',
+  blue: '#70B5DB',
+  magenta: '#D991BD',
+  cyan: '#65C3BA',
+  white: '#BAC4BC',
+  brightBlack: '#93A1A1',
+  brightRed: '#F5A398',
+  brightGreen: '#BDD78C',
+  brightYellow: '#E7C783',
+  brightBlue: '#9CC7E0',
+  brightMagenta: '#E5B0D2',
+  brightCyan: '#8BD6CB',
+  brightWhite: '#EEE8D5',
+};
+
+export function termTheme(theme: 'light' | 'dark', colors: { bg?: string; text?: string }, palette?: ColorPalette): ITheme {
+  const base = palette === 'solarized' ? SOLARIZED_TERM_THEME : palette === 'graphite' ? GRAPHITE_TERM_THEME : TERM_THEMES[theme];
   const bg = colors.bg ?? base.background;
   const fg = colors.text ?? base.foreground;
   return { ...base, background: bg, foreground: fg, cursor: fg, cursorAccent: bg };

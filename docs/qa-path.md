@@ -126,7 +126,7 @@ Each step is **Do → Expect**. Check every screenshot for overlaps, clipped tex
 ### I. Settings
 
 - **I1** Language: Deutsch, Español, Français, then English → the UI switches at once. Reload: the choice is kept.
-- **I2** Theme light and dark → both readable on every screen you visited.
+- **I2** Theme Light, Dark, Graphite and Solarized Soft → all readable on every screen you visited. Graphite uses softer gray panels and a pale blue accent; primary buttons have readable dark text. Visit terminals, a review diff and a dialog in Graphite. Change a Graphite color, switch to Light and Dark, then back → each palette keeps its own colors. Reset Graphite → the preset returns without changing Light or Dark. Reload, restart the sandbox daemon and reopen Settings → Graphite and its custom colors remain selected. Repeat with Solarized Soft: teal panels, readable colored terminal output and diff highlights; its overrides and Reset remain separate from Graphite, Light and Dark. Repeat on desktop and phone; no horizontal overflow.
 - **I3** Server: **Keep server running after reboot**, and **After a server reboot or restart** (Restore agent sessions, shells only, Nothing) → the choice is saved (`GET /v1/lifecycle`).
 - **I4** Notifications: **Send test**, per-event choices → saved. Profiles: **Edit…** opens and saves.
 - **I9** Profiles: in **Agents & models**, select a custom profile, open the Claude Code section, change Model, Subagent model and a named subagent's model one after the other → the section stays open after each pick and the cost index updates.

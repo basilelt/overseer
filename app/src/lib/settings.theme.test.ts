@@ -82,3 +82,122 @@ describe('custom colors', () => {
     expect(style.getPropertyValue('--accent')).toBe('');
   });
 });
+
+describe('Graphite preset', () => {
+  it('persists isolated overrides across reloads', async () => {
+    const storage = new Map<string, string>();
+    vi.stubGlobal('localStorage', { getItem: (k: string) => storage.get(k) ?? null, setItem: (k: string, v: string) => storage.set(k, v) });
+    const s = await load(false);
+    s.saveSettings({ theme: 'graphite', colors: { light: { text: '#112233' }, dark: { bg: '#000000' }, graphite: { accent: '#abcdef' } } });
+    const reloaded = await load(false);
+    expect(reloaded.settings.theme).toBe('graphite');
+    expect(reloaded.resolvedTheme()).toBe('dark');
+    expect(reloaded.customColors()).toEqual({ ...reloaded.GRAPHITE_COLORS, accent: '#abcdef' });
+    expect(reloaded.customColors('dark')).toEqual({ bg: '#000000' });
+    reloaded.saveSettings({ theme: 'dark' });
+    expect(reloaded.customColors()).toEqual({ bg: '#000000' });
+    reloaded.saveSettings({ theme: 'light' });
+    expect(reloaded.customColors()).toEqual({ text: '#112233' });
+  });
+
+  it('stays dark through native changes and clears its selector on system mode', async () => {
+    stubDocument();
+    const s = await load(false);
+    s.saveSettings({ theme: 'graphite' });
+    s.systemTheme(false);
+    expect(s.resolvedTheme()).toBe('dark');
+    expect(document.documentElement.dataset).toEqual({ theme: 'dark', palette: 'graphite' });
+    s.saveSettings({ theme: 'auto' });
+    expect(document.documentElement.dataset).toEqual({ theme: 'light' });
+    s.systemTheme(true);
+    expect(document.documentElement.dataset).toEqual({ theme: 'dark' });
+  });
+
+  it('resets only its overrides and remains selected', async () => {
+    const style = stubDocument();
+    const s = await load(true);
+    s.saveSettings({ theme: 'graphite', colors: { light: {}, dark: { accent: '#123456' }, graphite: { accent: '#abcdef', bg: 'invalid' } } });
+    expect(style.getPropertyValue('--accent')).toBe('#abcdef');
+    expect(style.getPropertyValue('--bg')).toBe(s.GRAPHITE_COLORS.bg);
+    s.saveSettings({ colors: { ...s.settings.colors, graphite: {} } });
+    expect(s.colorOverrides()).toEqual({});
+    expect(s.customColors()).toEqual(s.GRAPHITE_COLORS);
+    expect(s.settings.theme).toBe('graphite');
+    expect(s.settings.colors.dark).toEqual({ accent: '#123456' });
+  });
+
+  it('accepts its URL and synchronizes from other windows with old color storage', async () => {
+    vi.stubGlobal('location', { search: '?theme=graphite' });
+    const style = stubDocument();
+    const s = await load(false);
+    expect(s.settings.theme).toBe('graphite');
+    s.applyTheme();
+    expect(style.getPropertyValue('--surface')).toBe(s.GRAPHITE_COLORS.surface);
+    s.syncSettings(JSON.stringify({ theme: 'light', colors: { light: {}, dark: {} } }));
+    expect(s.colorPalette()).toBe('light');
+    s.syncSettings(JSON.stringify({ theme: 'graphite' }));
+    expect(s.colorPalette()).toBe('graphite');
+    expect(s.customColors()).toEqual(s.GRAPHITE_COLORS);
+  });
+});
+
+describe('Solarized Soft preset', () => {
+  it('persists and reloads without overwriting any other palette', async () => {
+    const storage = new Map<string, string>();
+    vi.stubGlobal('localStorage', { getItem: (k: string) => storage.get(k) ?? null, setItem: (k: string, v: string) => storage.set(k, v) });
+    const s = await load(false);
+    s.saveSettings({ theme: 'solarized', colors: { light: { text: '#112233' }, dark: { bg: '#000000' }, graphite: { accent: '#abcdef' }, solarized: { accent: '#fedcba' } } });
+    const reloaded = await load(false);
+    expect(reloaded.settings.theme).toBe('solarized');
+    expect(reloaded.resolvedTheme()).toBe('dark');
+    expect(reloaded.customColors()).toEqual({ ...reloaded.SOLARIZED_COLORS, accent: '#fedcba' });
+    expect(reloaded.customColors('dark')).toEqual({ bg: '#000000' });
+    expect(reloaded.customColors('graphite')).toEqual({ ...reloaded.GRAPHITE_COLORS, accent: '#abcdef' });
+    reloaded.saveSettings({ theme: 'graphite' });
+    expect(reloaded.customColors().accent).toBe('#abcdef');
+    reloaded.saveSettings({ theme: 'light' });
+    expect(reloaded.customColors()).toEqual({ text: '#112233' });
+    reloaded.saveSettings({ theme: 'solarized' });
+    expect(reloaded.customColors().accent).toBe('#fedcba');
+  });
+
+  it('stays dark through native changes and removes its selector on system mode', async () => {
+    stubDocument();
+    const s = await load(false);
+    s.saveSettings({ theme: 'solarized' });
+    s.systemTheme(false);
+    expect(s.resolvedTheme()).toBe('dark');
+    expect(document.documentElement.dataset).toEqual({ theme: 'dark', palette: 'solarized' });
+    s.saveSettings({ theme: 'auto' });
+    expect(document.documentElement.dataset).toEqual({ theme: 'light' });
+    s.systemTheme(true);
+    expect(document.documentElement.dataset).toEqual({ theme: 'dark' });
+  });
+
+  it('resets its overrides without resetting its preset or the other colors', async () => {
+    const style = stubDocument();
+    const s = await load(false);
+    s.saveSettings({ theme: 'solarized', colors: { light: {}, dark: {}, graphite: { accent: '#abcdef' }, solarized: { accent: '#fedcba', bg: 'invalid' } } });
+    expect(style.getPropertyValue('--accent')).toBe('#fedcba');
+    expect(style.getPropertyValue('--bg')).toBe(s.SOLARIZED_COLORS.bg);
+    s.saveSettings({ colors: { ...s.settings.colors, solarized: {} } });
+    expect(s.colorOverrides()).toEqual({});
+    expect(s.customColors()).toEqual(s.SOLARIZED_COLORS);
+    expect(s.settings.theme).toBe('solarized');
+    expect(s.settings.colors.graphite).toEqual({ accent: '#abcdef' });
+  });
+
+  it('accepts the URL and syncs storage with older color objects', async () => {
+    vi.stubGlobal('location', { search: '?theme=solarized' });
+    const style = stubDocument();
+    const s = await load(false);
+    expect(s.settings.theme).toBe('solarized');
+    s.applyTheme();
+    expect(style.getPropertyValue('--surface')).toBe(s.SOLARIZED_COLORS.surface);
+    s.syncSettings(JSON.stringify({ theme: 'dark', colors: { light: {}, dark: {} } }));
+    expect(s.colorPalette()).toBe('dark');
+    s.syncSettings(JSON.stringify({ theme: 'solarized' }));
+    expect(s.colorPalette()).toBe('solarized');
+    expect(s.customColors()).toEqual(s.SOLARIZED_COLORS);
+  });
+});

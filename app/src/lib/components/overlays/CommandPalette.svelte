@@ -80,7 +80,7 @@
     app.view = 'agents';
     window.dispatchEvent(new CustomEvent('sb:split', { detail: dir }));
   };
-  const nextTheme: Record<ThemePref, ThemePref> = { auto: 'light', light: 'dark', dark: 'auto' };
+  const nextTheme: Record<ThemePref, ThemePref> = { auto: 'light', light: 'dark', dark: 'graphite', graphite: 'solarized', solarized: 'auto' };
   const action = (id: string, key: Key, icon: Cmd['icon'], run: () => unknown): Cmd => ({ id, label: t(key), icon, section: 'actions', run });
   const connected = app.connected;
 

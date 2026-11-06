@@ -56,6 +56,8 @@
     { id: 'auto', label: () => t('settings.theme.system') },
     { id: 'light', label: () => t('settings.theme.light') },
     { id: 'dark', label: () => t('settings.theme.dark') },
+    { id: 'graphite', label: () => t('settings.theme.graphite') },
+    { id: 'solarized', label: () => t('settings.theme.solarized') },
   ];
 
   const tools: { icon: Component<{ size?: number }>; label: () => string; run: () => void; disabled?: () => boolean; badge?: () => number }[] = [
@@ -117,7 +119,7 @@
   </div>
 
   <h3>{t('mobile.more.appearance')}</h3>
-  <div class="seg" role="radiogroup" aria-label={t('settings.theme')}>
+  <div class="seg themes" role="radiogroup" aria-label={t('settings.theme')}>
     {#each themes as th (th.id)}
       <button role="radio" aria-checked={settings.theme === th.id} class:on={settings.theme === th.id} onclick={() => saveSettings({ theme: th.id })}>{th.label()}</button>
     {/each}
@@ -212,6 +214,13 @@
     border: 1px solid var(--border);
     border-radius: var(--radius-lg);
     background: var(--surface-2);
+  }
+  .themes {
+    flex-wrap: wrap;
+  }
+  .seg.themes button {
+    flex-basis: 28%;
+    white-space: nowrap;
   }
   .seg button {
     flex: 1;
