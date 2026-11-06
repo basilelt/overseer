@@ -807,8 +807,15 @@ folder, accept and the request runs; other agents get it pasted once they are re
 **Send directly** creates the issue with `gh` on the host without an agent. **Open on GitHub**
 copies the report and opens a prefilled new-issue page, for when you are offline or have no
 `gh`. The repository is `basilelt/overseer` unless you change Settings > Feedback >
-Feedback repository. `gh` cannot attach files to issues: attachment paths are listed in the issue
-for you to drag in.
+Feedback repository.
+
+Attachments are uploaded into the issue with `gh --attach` (gh 2.99 or later), the same storage as
+a drag and drop on github.com: images show inline and videos play. GitHub accepts PNG, JPEG, GIF,
+WebP and SVG up to 10 MB, and MP4, MOV and WebM up to 100 MB (10 MB on a free GitHub plan, which
+the sheet warns about). The sheet refuses other types and larger files, and the daemon refuses
+them too. With an older `gh`, or when GitHub refuses a file, the issue is still created and lists
+that file as not uploaded with the reason, and the app shows GitHub's message. GitHub may require
+write access to the repository to attach files.
 
 ### `doctor` items
 
@@ -1453,13 +1460,18 @@ shows the change, `--apply` writes it, `uninstall --apply` reverts it. If the Ov
 gone, the wrapped command falls back to running yours directly. The limits then update on each
 Claude reply and show "from the status line". Independently, with Settings → Usage → "Fetch Claude plan limits" (off by default) the daemon asks
 Anthropic for them with the local Claude Code login, the same call Claude Code makes: at most every
-5 minutes, only while the app shows usage and a Claude session replied in the last hour. Nothing
+5 minutes, only while the app shows usage and a Claude session replied in the last hour. When the
+status line tap is on, its limits are used while they are under 5 minutes old, and the call to
+Anthropic fills in after that (for example for usage on claude.ai). Nothing
 else leaves the machine, and the login is never refreshed or logged. When the login has expired
 the panel says "Limits unavailable — open Claude Code to refresh login"; opening Claude Code
 renews it. With the setting off, Claude shows tokens and cost only, plus "limit" when a request
 was refused. Costs are estimates from public per-token API prices (`PRICES` in `src/usage.rs`); a
-subscription is not billed that way. The app fetches only when the daemon reports a change (the
-chip at most every 10 s, an open panel at most every 2 s) and pauses while the window is hidden.
+subscription is not billed that way. The app fetches when the daemon reports a change (the
+chip at most every 10 s, an open panel at most every 2 s). While plan limits are shown and the
+window is focused, it also refetches every 5 minutes and right after the nearest window resets,
+so the percentages stay current when Claude runs outside Overseer or a window resets. It stops
+while the window is hidden or unfocused and catches up when you come back.
 
 ### 14.5 MCP server for agents
 
