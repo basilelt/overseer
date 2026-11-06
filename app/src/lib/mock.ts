@@ -835,20 +835,29 @@ export class MockDaemon implements DaemonClient {
   /** Hold with afterTurn: queue while the turn runs or the agent waits for the user, like the daemon. */
   private holdAfterTurn(l: LocalLine, dry: boolean): unknown {
     const id = l.line.id;
-    const running = l.line.state !== 'held' && l.line.state !== 'hung-up';
-    const turn = !!l.local?.busy || !!l.local?.needsInput || !!l.local?.subagents;
-    const predicates: Record<string, { ok: boolean; detail?: string }> = {
-      alive: running ? { ok: true } : { ok: false, detail: 'no live agent process for this line' },
-      atPrompt: l.local?.busy ? { ok: false, detail: 'agent is mid-turn' } : { ok: true },
-      notPinned: l.local?.pinned ? { ok: false, detail: 'line is pinned' } : { ok: true },
-      notNeedsInput: l.local?.needsInput ? { ok: false, detail: 'agent is waiting for you' } : { ok: true },
-    };
-    if (!running || l.local?.pinned) throw new DaemonError(409, 'refused', { lineId: id, action: 'none', predicates, steps: [] });
-    if (!turn) return dry ? { lineId: id, action: 'would-hold', predicates, steps: [`SIGTERM ${l.local?.pid ?? '?'}`] } : this.holdNow(l);
+    const predicates = this.holdChecks(l);
+    const failed = Object.entries(predicates).filter(([, p]) => !p.ok).map(([k]) => k);
+    // Like the daemon: only turn-bound failures queue; alive and notPinned are refused.
+    if (failed.some((k) => !['atPrompt', 'noToolRunning', 'notNeedsInput'].includes(k))) throw new DaemonError(409, 'refused', { lineId: id, action: 'none', predicates, steps: [] });
+    if (!failed.length) return dry ? { lineId: id, action: 'would-hold', predicates, steps: [`SIGTERM ${l.local?.pid ?? '?'}`] } : this.holdNow(l);
     if (dry) return { lineId: id, action: 'would-hold-pending', predicates, steps: [`record a pending hold on ${id}`, 'hold it when the turn ends and the agent is not waiting for you'] };
     l.local = { ...l.local, holdPending: true };
     this.emit('line.updated', { line: l.line, local: l.local });
     return { lineId: id, action: 'hold-pending', predicates, steps: [`record a pending hold on ${id}`, 'hold it when the turn ends and the agent is not waiting for you'] };
+  }
+
+  private blockedSince = new Map<string, number>();
+
+  /** A background task blocks a pending hold; like the daemon it is dropped once blocked for 10 s. */
+  private dropBlockedHold(p: LocalLine) {
+    const id = p.line.id;
+    const since = this.blockedSince.get(id) ?? Date.now();
+    this.blockedSince.set(id, since);
+    if (Date.now() - since < 10_000) return;
+    this.blockedSince.delete(id);
+    p.local = { ...p.local, holdPending: undefined };
+    this.emit('line.hold_refused', { lineId: id, failed: { noToolRunning: { ok: false, detail: 'a background task is running' } }, error: null });
+    this.emit('line.updated', { line: p.line, local: p.local });
   }
 
   /** The daemon's hold predicates the mock can evaluate, with its details. */
@@ -1710,7 +1719,9 @@ export class MockDaemon implements DaemonClient {
       if (p.local?.busy) {
         p.local = { ...p.local, busy: false };
         this.emit('line.updated', { line: p.line, local: p.local });
-      } else if (!p.local?.needsInput && !p.local?.subagents) this.holdNow(p);
+      } else if (p.local?.needsInput || p.local?.subagents) this.blockedSince.delete(p.line.id);
+      else if (p.local?.tasks) this.dropBlockedHold(p);
+      else this.holdNow(p);
     }
     const running = this.tasks.filter((t) => t.status === 'in_progress');
     const t = running[this.seq % Math.max(1, running.length)];

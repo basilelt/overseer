@@ -338,6 +338,7 @@ export type EventType =
   | 'line.updated'
   | 'line.state_changed'
   | 'line.hung_up'
+  | 'line.hold_refused'
   | 'line.activity'
   | 'line.chat'
   | 'term.created'

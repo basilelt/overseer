@@ -606,15 +606,25 @@ pub(crate) fn pending_verdict(l: &Line, checks: &[Check]) -> Pending {
 /// process still exiting right after the turn ended does not cancel it.
 const BLOCK_GRACE_MS: i64 = 10_000;
 
+fn parse_grace(v: Option<&str>) -> i64 {
+    v.and_then(|v| v.parse().ok())
+        .filter(|ms| *ms >= 0)
+        .unwrap_or(BLOCK_GRACE_MS)
+}
+
+fn grace_ms() -> i64 {
+    parse_grace(std::env::var("OVERSEER_HOLD_GRACE_MS").ok().as_deref())
+}
+
 static BLOCKED: std::sync::Mutex<Option<std::collections::HashMap<String, i64>>> =
     std::sync::Mutex::new(None);
 
-/// True once the line has been blocked for `BLOCK_GRACE_MS`; `None` forgets it.
+/// True once the line has been blocked for the grace period; `None` forgets it.
 fn blocked_long_enough(id: &str, now_ms: Option<i64>) -> bool {
     let mut g = BLOCKED.lock().unwrap_or_else(|e| e.into_inner());
     let map = g.get_or_insert_with(Default::default);
     match now_ms {
-        Some(now) => now - *map.entry(id.to_string()).or_insert(now) >= BLOCK_GRACE_MS,
+        Some(now) => now - *map.entry(id.to_string()).or_insert(now) >= grace_ms(),
         None => {
             map.remove(id);
             false
@@ -1292,6 +1302,17 @@ mod tests {
             pending_verdict(&unknown, &[failing("atPrompt")]),
             Pending::Blocked(_)
         ));
+    }
+
+    #[test]
+    fn the_grace_period_can_be_overridden_by_a_valid_number_of_milliseconds() {
+        // Given the grace env override
+        // When it is unset, valid, negative or not a number
+        // Then only a valid non-negative value replaces the default
+        assert_eq!(parse_grace(None), BLOCK_GRACE_MS);
+        assert_eq!(parse_grace(Some("2000")), 2_000);
+        assert_eq!(parse_grace(Some("-1")), BLOCK_GRACE_MS);
+        assert_eq!(parse_grace(Some("soon")), BLOCK_GRACE_MS);
     }
 
     #[test]

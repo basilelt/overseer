@@ -203,6 +203,41 @@ describe('MockDaemon', () => {
     expect((await get()).line.state).toBe('held');
   });
 
+  it('queues an afterTurn hold with the noToolRunning predicate while a subagent runs, like the daemon', async () => {
+    // Given an idle line with one running subagent
+    // When it is held after the turn
+    // Then the pending body names noToolRunning with the daemon's detail
+    const { m, a } = setup();
+    (m.lines.find((l) => l.line.id === 'ln_09')!.local as { subagents: number }).subagents = 1;
+    const r = await a.holdAfterTurn('ln_09');
+    expect(r.action).toBe('hold-pending');
+    expect(r.predicates?.noToolRunning).toEqual({ ok: false, detail: 'a subagent is running' });
+  });
+
+  it('drops a pending hold blocked by a background task after the grace with line.hold_refused, like the daemon', async () => {
+    // Given an idle line with a background task and a pending hold
+    // When the mock ticks before and after the 10 s grace
+    // Then the hold is dropped with a hold_refused event, and the line is never held
+    vi.useFakeTimers();
+    try {
+      const { m, a, events } = setup();
+      (m.lines.find((l) => l.line.id === 'ln_09')!.local as { tasks: number }).tasks = 1;
+      expect((await a.holdAfterTurn('ln_09')).action).toBe('hold-pending');
+      m.tick();
+      vi.advanceTimersByTime(9_000);
+      m.tick();
+      const get = async () => (await a.lines()).find((l) => l.line.id === 'ln_09')!;
+      expect((await get()).local?.holdPending).toBe(true);
+      vi.advanceTimersByTime(1_000);
+      m.tick();
+      expect((await get()).local?.holdPending).toBeUndefined();
+      expect((await get()).line.state).toBe('idle');
+      expect(events.some((e) => (e.type as string) === 'line.hold_refused')).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('queues a hold on a busy line, applies it when the turn ends and stamps heldAt', async () => {
     // Given a busy line
     // When it is held with afterTurn, then the mock ticks twice
