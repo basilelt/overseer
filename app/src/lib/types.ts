@@ -39,6 +39,9 @@ export interface LineLocal {
   needsInput?: boolean;
   pinned?: boolean;
   heldReason?: 'user' | 'lost';
+  // When the session was held, and whether a pause waits for the current turn to end.
+  heldAt?: string;
+  holdPending?: boolean;
   orphan?: boolean;
   duplicate?: boolean;
   tmuxPane?: string;
