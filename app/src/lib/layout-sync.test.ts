@@ -43,6 +43,25 @@ describe('closing a session opened from the status list', () => {
   });
 });
 
+describe('a term linked to a line the app has not received yet', () => {
+  const older = item('line:old', { lineId: 'old', termId: 't0' });
+
+  it('keeps its tab and its selection until the line arrives', () => {
+    const l = layoutFromTabs(['line:old', 'term:t1'], 'term:t1');
+    const out = reconcileLayout(l, [older], new Map(), 'term:t1', new Set(['t1']));
+    expect(out.layout).toBe(l);
+    expect(out.selected).toBe('term:t1');
+    expect(out.forget).toEqual([]);
+  });
+
+  it('moves the tab to the line once it arrives', () => {
+    const fresh = item('line:new', { lineId: 'new', termId: 't1' });
+    const out = reconcileLayout(layoutFromTabs(['line:old', 'term:t1'], 'term:t1'), [older, fresh], new Map(), 'term:t1', new Set(['t1']));
+    expect(out.layout.panes[0]).toEqual({ tabs: ['line:old', 'line:new'], active: 'line:new' });
+    expect(out.selected).toBe('line:new');
+  });
+});
+
 describe('restoring tabs after a reload', () => {
   const items = [item('line:a'), item('line:b', { termId: 't2' }), item('term:t3', { kind: 'shell', termId: 't3' })];
 
