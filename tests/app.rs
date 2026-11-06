@@ -1028,6 +1028,42 @@ fn a_pending_hold_blocked_for_good_is_dropped_and_the_refusal_is_recorded() {
 }
 
 #[test]
+fn a_pending_hold_waits_for_the_subagents_after_the_turn_ended() {
+    // Given a claude session whose turn ended while one subagent still runs, with a pending hold
+    // When the grace period passes, then the subagent stops
+    // Then local.subagents shows 1, the hold stays pending meanwhile and applies after the stop
+    let sid = "dddddddd-0000-4000-8000-000000000006";
+    let app = App::new("holdsub", json!({}));
+    let (tid, line) = claude_term(&app, json!(["claude", "--session-id", sid]), sid);
+    let mut ws = app.ws(&tid);
+    read_until(&mut ws, "❯");
+    assert_eq!(line_json(&app, &line)["local"]["subagents"], 0);
+    send(&mut ws, "busy\r");
+    wait(|| line_json(&app, &line)["local"]["busy"] == true);
+    send(&mut ws, "sub\r");
+    wait(|| line_json(&app, &line)["local"]["subagents"] == 1);
+    let hold = format!("/v1/lines/{line}/hold?dryRun=false&afterTurn=true");
+    assert_eq!(app.ok("POST", &hold, Value::Null)["action"], "hold-pending");
+    send(&mut ws, "done\r");
+    wait(|| line_json(&app, &line)["local"]["busy"] == false);
+    std::thread::sleep(Duration::from_secs(12));
+    let l = line_json(&app, &line);
+    assert_eq!(l["local"]["subagents"], 1, "{l}");
+    assert_eq!(l["local"]["holdPending"], true, "{l}");
+    assert_ne!(l["line"]["state"], "held", "{l}");
+    send(&mut ws, "unsub\r");
+    wait(|| line_json(&app, &line)["line"]["state"] == "held");
+    let l = line_json(&app, &line);
+    assert_eq!(l["local"]["subagents"], 0, "{l}");
+    assert!(l["local"]["holdPending"].is_null(), "{l}");
+    app.ok(
+        "POST",
+        &format!("/v1/terms/{tid}/kill"),
+        json!({"confirm": true}),
+    );
+}
+
+#[test]
 fn holding_without_after_turn_still_refuses_a_busy_line() {
     // Given a busy claude session
     // When it is held without afterTurn

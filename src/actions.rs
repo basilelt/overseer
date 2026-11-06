@@ -584,6 +584,10 @@ pub(crate) fn pending_verdict(l: &Line, checks: &[Check]) -> Pending {
     if l.busy_known && l.busy || l.needs_input {
         return Pending::Wait;
     }
+    // Subagents outlive the parent's turn: their end is the real end of the work.
+    if l.hook.as_ref().is_some_and(|h| h.subagents > 0) {
+        return Pending::Wait;
+    }
     let failed: Vec<Check> = checks.iter().filter(|c| !c.ok).cloned().collect();
     if failed.is_empty() {
         Pending::Run
@@ -1243,6 +1247,24 @@ mod tests {
             pending_verdict(&l, &[failing("notNeedsInput")]),
             Pending::Wait
         );
+    }
+
+    #[test]
+    fn a_pending_hold_waits_while_a_subagent_runs_after_the_turn() {
+        // Given an idle line with a pending hold and one running subagent
+        // When noToolRunning fails because of it, then the subagent count drops to 0
+        // Then it waits instead of being blocked, and runs once the count is 0
+        let mut l = pending_line();
+        l.hook = Some(crate::registry::HookState {
+            subagents: 1,
+            ..Default::default()
+        });
+        assert_eq!(
+            pending_verdict(&l, &[failing("noToolRunning")]),
+            Pending::Wait
+        );
+        l.hook.as_mut().unwrap().subagents = 0;
+        assert_eq!(pending_verdict(&l, &[]), Pending::Run);
     }
 
     #[test]
