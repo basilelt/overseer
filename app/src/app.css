@@ -28,6 +28,9 @@
   --state-open: #58a6ff;
   --state-paused: #a371f7;
   --state-closed: var(--st-held);
+  --ws-frame-border: #d4d4d8;
+  --ws-frame-bg: #f4f4f5;
+  --session-row-bg: #ffffff;
   --overlay: rgba(9, 9, 11, 0.32);
   --shadow: 0 8px 28px rgba(0, 0, 0, 0.12), 0 0 0 1px var(--border);
   --diff-add-bg: rgba(22, 163, 74, 0.1);
@@ -53,6 +56,9 @@
 
 :root[data-theme='dark'] {
   color-scheme: dark;
+  --ws-frame-border: #4a4a55;
+  --ws-frame-bg: #1e1e24;
+  --session-row-bg: #111114;
   --bg: #0b0b0c;
   --bg-subtle: #111113;
   --surface: #141416;
