@@ -2447,7 +2447,9 @@ fn ctrl_c_interrupts_the_job_and_exit_reports_the_sigint_status() {
     );
     let id = t["id"].as_str().unwrap().to_string();
     let mut a = app.ws(&id);
-    send(&mut a, "trap 'echo GOT-$((20+1))' INT; sleep 30\n");
+    // `wait` (not a foreground `sleep`) so macOS bash 3.2 as sh runs the INT trap too.
+    send(&mut a, "trap 'echo GOT-$((20+1))' INT; echo ARMED-$((1+1)); sleep 30 & wait\n");
+    read_until(&mut a, "ARMED-2");
     std::thread::sleep(Duration::from_millis(300));
     send(&mut a, "\x03");
     read_until(&mut a, "GOT-21");

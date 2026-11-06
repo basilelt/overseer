@@ -10,6 +10,23 @@ use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Output, Stdio};
 use std::sync::atomic::{AtomicI64, AtomicUsize, Ordering};
+
+/// Stubs, the system dirs, and the directory of the host's tmux when it is not
+/// in them (Homebrew on macOS); the rest of the host PATH stays hidden.
+fn test_path(stubs: &Path) -> String {
+    static TMUX_DIR: std::sync::OnceLock<Option<PathBuf>> = std::sync::OnceLock::new();
+    let dir = TMUX_DIR.get_or_init(|| {
+        let host = std::env::var_os("PATH")?;
+        let dir = std::env::split_paths(&host).find(|d| d.join("tmux").is_file())?;
+        (dir != Path::new("/usr/bin") && dir != Path::new("/bin")).then_some(dir)
+    });
+    let mut p = format!("{}:/usr/bin:/bin", stubs.display());
+    if let Some(d) = dir {
+        p.push(':');
+        p.push_str(&d.display().to_string());
+    }
+    p
+}
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tungstenite::{Message, WebSocket};
@@ -89,7 +106,7 @@ impl T {
     pub fn env(&self, c: &mut Command) {
         let stubs = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/stubs");
         c.env_clear()
-            .env("PATH", format!("{}:/usr/bin:/bin", stubs.display()))
+            .env("PATH", test_path(&stubs))
             .env("HOME", self.base.join("home"))
             .env("SHELL", "/bin/sh")
             .env("XDG_RUNTIME_DIR", self.base.join("run"))
@@ -340,7 +357,7 @@ impl Fx {
         let stubs = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/stubs");
         let p = |p: PathBuf| p.into_os_string();
         vec![
-            ("PATH", format!("{}:/usr/bin:/bin", stubs.display()).into()),
+            ("PATH", test_path(&stubs).into()),
             ("HOME", p(self.base.join("home"))),
             ("LANG", "C.UTF-8".into()),
             ("XDG_RUNTIME_DIR", p(self.base.join("run"))),
