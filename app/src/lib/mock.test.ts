@@ -232,7 +232,33 @@ describe('MockDaemon', () => {
       m.tick();
       expect((await get()).local?.holdPending).toBeUndefined();
       expect((await get()).line.state).toBe('idle');
-      expect(events.some((e) => (e.type as string) === 'line.hold_refused')).toBe(true);
+      const refused = events.filter((e) => (e.type as string) === 'line.hold_refused').map((e) => e.data);
+      expect(refused).toEqual([{ lineId: 'ln_09', failed: [{ name: 'noToolRunning', detail: 'a background task is running' }], error: null }]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('drops a pending hold of a line pinned after it was queued, never holding it, like the daemon', async () => {
+    // Given an idle line with a pending hold that gets pinned afterwards
+    // When the mock ticks before and after the 10 s grace
+    // Then it is not held, and after the grace it is dropped with a hold_refused naming notPinned
+    vi.useFakeTimers();
+    try {
+      const { m, a, events } = setup();
+      (m.lines.find((l) => l.line.id === 'ln_09')!.local as { tasks: number }).tasks = 1;
+      expect((await a.holdAfterTurn('ln_09')).action).toBe('hold-pending');
+      await a.pin('ln_09', true);
+      m.tick();
+      vi.advanceTimersByTime(10_000);
+      m.tick();
+      const l = (await a.lines()).find((x) => x.line.id === 'ln_09')!;
+      expect(l.line.state).not.toBe('held');
+      expect(l.local?.holdPending).toBeUndefined();
+      const refused = events.filter((e) => (e.type as string) === 'line.hold_refused').map((e) => e.data);
+      expect(refused).toEqual([
+        { lineId: 'ln_09', failed: [{ name: 'noToolRunning', detail: 'a background task is running' }, { name: 'notPinned', detail: 'line is pinned' }], error: null },
+      ]);
     } finally {
       vi.useRealTimers();
     }

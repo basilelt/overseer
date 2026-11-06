@@ -848,15 +848,15 @@ export class MockDaemon implements DaemonClient {
 
   private blockedSince = new Map<string, number>();
 
-  /** A background task blocks a pending hold; like the daemon it is dropped once blocked for 10 s. */
-  private dropBlockedHold(p: LocalLine) {
+  /** A lasting failed predicate (task, pin) blocks a pending hold; like the daemon it is dropped once blocked for 10 s. */
+  private dropBlockedHold(p: LocalLine, failed: { name: string; detail?: string }[]) {
     const id = p.line.id;
     const since = this.blockedSince.get(id) ?? Date.now();
     this.blockedSince.set(id, since);
     if (Date.now() - since < 10_000) return;
     this.blockedSince.delete(id);
     p.local = { ...p.local, holdPending: undefined };
-    this.emit('line.hold_refused', { lineId: id, failed: { noToolRunning: { ok: false, detail: 'a background task is running' } }, error: null });
+    this.emit('line.hold_refused', { lineId: id, failed, error: null });
     this.emit('line.updated', { line: p.line, local: p.local });
   }
 
@@ -1715,13 +1715,26 @@ export class MockDaemon implements DaemonClient {
     this.drainQueue();
     // Like the daemon: a pending hold is applied by the scan after the turn ended and only
     // when the agent is not waiting for the user; a busy turn ends on this tick.
+    // Like the daemon: a dead line loses its pending hold, a turn or a subagent keeps it waiting,
+    // and any other failed predicate drops it after the grace.
     for (const p of this.lines.filter((x) => x.local?.holdPending)) {
-      if (p.local?.busy) {
+      const id = p.line.id;
+      if (p.line.state === 'held' || p.line.state === 'hung-up') {
+        p.local = { ...p.local, holdPending: undefined };
+        this.blockedSince.delete(id);
+        this.emit('line.updated', { line: p.line, local: p.local });
+      } else if (p.local?.busy) {
         p.local = { ...p.local, busy: false };
         this.emit('line.updated', { line: p.line, local: p.local });
-      } else if (p.local?.needsInput || p.local?.subagents) this.blockedSince.delete(p.line.id);
-      else if (p.local?.tasks) this.dropBlockedHold(p);
-      else this.holdNow(p);
+      } else if (p.local?.needsInput || p.local?.subagents) this.blockedSince.delete(id);
+      else {
+        const failed = Object.entries(this.holdChecks(p)).filter(([, c]) => !c.ok);
+        if (failed.length) this.dropBlockedHold(p, failed.map(([name, c]) => ({ name, detail: c.detail })));
+        else {
+          this.blockedSince.delete(id);
+          this.holdNow(p);
+        }
+      }
     }
     const running = this.tasks.filter((t) => t.status === 'in_progress');
     const t = running[this.seq % Math.max(1, running.length)];
