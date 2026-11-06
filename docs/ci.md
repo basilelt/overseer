@@ -9,6 +9,7 @@ self-hosted runner.
 | `ci.yml` | non-draft pull requests (`opened`, `synchronize`, `reopened`, `ready_for_review`), manual (`workflow_dispatch`), and called by `release.yml` | lint, tests, Windows check, debug APK |
 | `release.yml` | push to `main` | CI, version tag, binaries, app bundles, Android APK, GitHub Release, Homebrew tap |
 | `store.yml` | manual, from `main` only | App Store submission (iOS) and Play Store upload (Android) of a release tag |
+| `release-pr.yml` | manual | opens the draft release PR from `next` to `main` (skips when one is open or `next` is not ahead) |
 | `mobile-init.yml` | manual | generates `app/src-tauri/gen/{android,apple}` and commits them to the branch |
 
 Concurrency: `ci-pr-<PR number or ref>` cancels the previous run of the same PR;
@@ -45,7 +46,8 @@ Hotfixes take the same path: a `fix/` branch from `next`, a PR to `next`, then a
 
 Cutting a release, when enough has been batched on `next`:
 
-1. Open a draft PR from `next` to `main` (title such as `chore: release`), run the full QA path of
+1. Open a draft PR from `next` to `main` (title such as `chore: release`), by hand or with
+   Actions > Release PR (`release-pr.yml`), run the full QA path of
    [docs/qa-path.md](qa-path.md) on the merged tree, then mark it ready: CI runs once on the whole
    batch.
 2. Merge with a merge commit. The release then skips CI (the gate sees the same tree already
