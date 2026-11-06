@@ -62,6 +62,12 @@ export function attachIme(root: EventTarget, send: (data: string) => void): () =
   let lastKey: Event | null = null;
   const keydown = (e: Event) => {
     lastKey = e;
+    const k = e as KeyboardEvent;
+    // ghostty-web drops keydowns while its own composition flag is stuck, and WebKit fires no beforeinput on an empty field.
+    if (k.key === 'Backspace' && !k.defaultPrevented && !k.isComposing && k.keyCode !== 229) {
+      e.preventDefault();
+      send('\x7f');
+    }
   };
   const keyup = () => {
     lastKey = null;
