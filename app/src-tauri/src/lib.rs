@@ -53,6 +53,8 @@ pub fn run() {
             macos::create_main_window(app)?;
             diag::log_start(app.handle());
             diag::start_watchdog(app.handle().clone());
+            #[cfg(all(unix, desktop))]
+            diag::quit_on_signals(app.handle().clone());
             Ok(())
         })
         .on_window_event(|w, e| match e {
