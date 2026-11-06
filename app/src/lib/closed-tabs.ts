@@ -11,3 +11,11 @@ export function popReopenable(stack: string[], reopen: (key: string) => string |
   }
   return { key: null, rest: [] };
 }
+
+export const closedShells = new Map<string, string>();
+
+export function rememberShell(key: string, cwd: string) {
+  closedShells.delete(key);
+  closedShells.set(key, cwd);
+  if (closedShells.size > MAX_CLOSED * 5) closedShells.delete(closedShells.keys().next().value!);
+}

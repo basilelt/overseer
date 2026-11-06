@@ -1660,7 +1660,8 @@ shortcuts.
   workspace folder instead of opening the `+` menu.
 - **Reopen** brings back agents, shells, browser, review, graph and other tabs; a running agent
   re-attaches, an agent whose
-  session ended reopens on its Resume button.
+  session ended reopens on its Resume button, and an ended shell starts again in the same folder
+  (a new shell: its scrollback is gone). Closing a pane records all of its tabs.
 
 ### 14.8 Live review
 

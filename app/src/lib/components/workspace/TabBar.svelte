@@ -26,7 +26,7 @@
   import { t, type Key } from '../../i18n.svelte';
   import { app, tabLazy } from '../../state.svelte';
   import { whenIdle } from '../../idle';
-  import { closePane, closeTabAt, openInFocused, reorderTab, split, update, type Pane } from '../../workspace.svelte';
+  import { closePaneAt, closeTabAt, openInFocused, reorderTab, split, update, type Pane } from '../../workspace.svelte';
   import AgentIcon, { GROUP_COLOR } from '../sidebar/AgentIcon.svelte';
   import ReviewBadge from '../review/ReviewBadge.svelte';
   import { itemTarget, modeFor, reviewTitle, setReviewMode } from '../../review/open';
@@ -359,7 +359,7 @@
       ><Rows2 size={14} /></button
     >
     {#if canClose}
-      <button class="icon-btn" title={t('term.closePane')} aria-label={t('term.closePane')} onclick={() => update((l) => closePane(l, index))}
+      <button class="icon-btn" title={t('term.closePane')} aria-label={t('term.closePane')} onclick={() => closePaneAt(index)}
         ><X size={14} /></button
       >
     {/if}

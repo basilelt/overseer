@@ -1,4 +1,5 @@
 import { isTauri } from './client';
+import { closedShells } from './closed-tabs';
 import { ui } from './mobile/ui.svelte';
 import { DEFAULT_SETTINGS, saveSettings, settings } from './settings.svelte';
 import { resolveShortcut, shortcutLabel, type Resolved, type ShortcutId } from './shortcuts';
@@ -52,12 +53,19 @@ function closeActive() {
 
 function reopenClosed() {
   const key = takeClosed((k) => {
+    if (k.startsWith('term:') && app.connected && closedShells.has(k) && !app.data.terms.some((t: { id: string }) => t.id === k.slice(5))) return k;
     const r = resolveTab(k, app.items);
     if (!r || !tabInfo(r, app.items)) return null;
     if (r.startsWith('term:') && !app.data.terms.some((t: { id: string }) => t.id === r.slice(5))) return null;
     return r;
   });
   if (!key) return;
+  const cwd = closedShells.get(key);
+  if (cwd !== undefined && !app.data.terms.some((t: { id: string }) => t.id === key.slice(5))) {
+    closedShells.delete(key);
+    app.newSession('shell', { cwd }).catch((e: unknown) => app.notify(String((e as Error)?.message ?? e), 'error'));
+    return;
+  }
   update((l) => openInFocused(l, key));
   activate(key);
   const item = app.items.find((i) => i.key === key);
