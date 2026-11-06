@@ -34,7 +34,7 @@
   import { loadGhostty, termTheme } from '../../terminal';
   import { pathRanges } from '../../termlinks';
   import { scheduler, type PaintTarget } from '../../termrender';
-  import { copyOnSelect } from '../../selection-copy';
+  import { routeCopies } from '../../selection-copy';
   import { guardAutoScroll } from '../../selection-scroll';
   import { settle } from '../../settle';
   import { openFile } from '../../preview';
@@ -268,8 +268,9 @@
         term.loadAddon(fit);
         term.open(el);
         const tl = term;
-        guardAutoScroll((tl as unknown as { selectionManager?: Parameters<typeof guardAutoScroll>[0] }).selectionManager);
-        copyOnSelect(tl,(text) => app.client?.copyText(text) ?? Promise.resolve(), () => highlighting);
+        const sm = (tl as unknown as { selectionManager?: Parameters<typeof guardAutoScroll>[0] & Parameters<typeof routeCopies>[0] }).selectionManager;
+        guardAutoScroll(sm);
+        routeCopies(sm, (text) => app.client?.copyText(text) ?? Promise.resolve());
         tl.registerLinkProvider({
           provideLinks(y, cb) {
             const line = tl.buffer.active.getLine(y);
@@ -518,7 +519,6 @@
   let findQuery = $state('');
   let findMiss = $state(false);
   let hit: Hit | null = null;
-  let highlighting = false;
 
   function findNext(backwards: boolean) {
     const tm = term;
@@ -532,9 +532,7 @@
     if (!h) return void tm.clearSelection();
     const v = viewportFor(h.row, Math.max(0, b.length - tm.rows), tm.rows);
     tm.scrollToLine(v.offset);
-    highlighting = true;
     tm.select(h.col, v.row, findQuery.length);
-    highlighting = false;
   }
 
   function closeFind() {

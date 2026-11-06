@@ -1,0 +1,42 @@
+name: Release PR
+
+on:
+  workflow_dispatch:
+    inputs:
+      title:
+        description: Pull request title
+        type: string
+        default: "chore: release"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-pr
+  cancel-in-progress: false
+
+jobs:
+  open:
+    runs-on: ubuntu-slim
+    timeout-minutes: 5
+    permissions:
+      pull-requests: write
+    steps:
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TITLE: ${{ inputs.title }}
+        run: |
+          existing=$(gh pr list --base main --head next --state open --json url --jq '.[0].url')
+          if [ -n "$existing" ]; then
+            echo "::notice::Release PR already open: $existing"
+            exit 0
+          fi
+          ahead=$(gh api "repos/$GH_REPO/compare/main...next" --jq '.ahead_by')
+          if [ "$ahead" = "0" ]; then
+            echo "::notice::next has no commits ahead of main"
+            exit 0
+          fi
+          url=$(gh pr create --draft --base main --head next --title "$TITLE" \
+            --body "Release of the $ahead commits batched on \`next\`. Run the full QA path of [docs/qa-path.md](docs/qa-path.md), then mark ready and merge with a merge commit.")
+          echo "::notice::Opened $url"
