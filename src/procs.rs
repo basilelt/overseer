@@ -456,24 +456,35 @@ fn other_mem() -> Option<(u64, Option<u64>)> {
 /// kernel in-process, so a status tick never spawns `sysctl` or `vm_stat`.
 #[cfg(target_os = "macos")]
 fn mac_mem() -> Option<(u64, Option<u64>)> {
-    static TOTAL: std::sync::OnceLock<Option<(u64, u64)>> = std::sync::OnceLock::new();
-    let (total, page) = (*TOTAL.get_or_init(|| {
-        let get = |name: &std::ffi::CStr, out: *mut libc::c_void, len: &mut usize| unsafe {
-            libc::sysctlbyname(name.as_ptr(), out, len, std::ptr::null_mut(), 0) == 0
-        };
-        let (mut total, mut page) = (0u64, 0u32);
-        let (mut tl, mut pl) = (size_of::<u64>(), size_of::<u32>());
-        (get(c"hw.memsize", (&mut total as *mut u64).cast(), &mut tl)
-            && get(c"hw.pagesize", (&mut page as *mut u32).cast(), &mut pl))
-        .then_some((total, page as u64))
-    }))?;
+    extern "C" {
+        // Not bound by libc; the kernel page size host_statistics64 counts in (hw.pagesize is
+        // per process and reads 4 KiB for an x86_64 build under Rosetta).
+        fn host_page_size(host: u32, out: *mut usize) -> i32;
+    }
+    static INIT: std::sync::OnceLock<Option<(u64, u64, u32)>> = std::sync::OnceLock::new();
     // libc deprecates mach_host_self in favour of mach2, which this crate does not depend on.
     #[allow(deprecated)]
+    let (total, page, host) = (*INIT.get_or_init(|| unsafe {
+        let (mut total, mut tl) = (0u64, size_of::<u64>());
+        if libc::sysctlbyname(
+            c"hw.memsize".as_ptr(),
+            (&mut total as *mut u64).cast(),
+            &mut tl,
+            std::ptr::null_mut(),
+            0,
+        ) != 0
+        {
+            return None;
+        }
+        let host = libc::mach_host_self();
+        let mut page = 0usize;
+        (host_page_size(host, &mut page) == 0 && page > 0).then_some((total, page as u64, host))
+    }))?;
     let avail = unsafe {
         let mut s: libc::vm_statistics64 = std::mem::zeroed();
         let mut n = libc::HOST_VM_INFO64_COUNT;
         let r = libc::host_statistics64(
-            libc::mach_host_self(),
+            host,
             libc::HOST_VM_INFO64,
             (&mut s as *mut libc::vm_statistics64).cast(),
             &mut n,

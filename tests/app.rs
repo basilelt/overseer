@@ -2450,19 +2450,21 @@ fn ctrl_c_interrupts_the_job_and_exit_reports_the_sigint_status() {
     // A foreground job that only the pty's Ctrl-C can stop; no trap, so bash 3.2 and dash agree.
     send(
         &mut a,
-        "echo ARMED-$((1+1)); sleep 37; s=$?; echo AFTER-$s; exit $s\n",
+        "echo ARMED-$((1+1)); sleep 3719; s=$?; echo AFTER-$s; exit $s\n",
     );
     read_until(&mut a, "ARMED-2");
     std::thread::sleep(Duration::from_millis(300));
     send(&mut a, "\x03");
     read_until(&mut a, "AFTER-130");
-    let alive = std::process::Command::new("pgrep")
-        .args(["-f", "sleep 37"])
+    let pgrep = std::process::Command::new("pgrep")
+        .args(["-f", "sleep 3719"])
         .output()
-        .unwrap()
-        .status
-        .success();
-    assert!(!alive, "the interrupted job is still running");
+        .unwrap();
+    assert_eq!(
+        pgrep.status.code(),
+        Some(1),
+        "the interrupted job is still running or pgrep failed"
+    );
     wait(|| app.ok("GET", &format!("/v1/terms/{id}"), Value::Null)["exited"] == true);
     assert_eq!(
         app.ok("GET", &format!("/v1/terms/{id}"), Value::Null)["exitCode"],
