@@ -2447,14 +2447,13 @@ fn ctrl_c_interrupts_the_job_and_exit_reports_the_sigint_status() {
     );
     let id = t["id"].as_str().unwrap().to_string();
     let mut a = app.ws(&id);
-    // A foreground job that only the pty's Ctrl-C can stop; no trap, so bash 3.2 and dash agree.
-    send(
-        &mut a,
-        "echo ARMED-$((1+1)); sleep 3719; s=$?; echo AFTER-$s; exit $s\n",
-    );
+    // dash drops the rest of the line after a SIGINT and bash 3.2 runs it, so the status is read on its own line.
+    send(&mut a, "echo ARMED-$((1+1)); sleep 3719\n");
     read_until(&mut a, "ARMED-2");
     std::thread::sleep(Duration::from_millis(300));
     send(&mut a, "\x03");
+    std::thread::sleep(Duration::from_millis(300));
+    send(&mut a, "s=$?; echo AFTER-$s; exit $s\n");
     read_until(&mut a, "AFTER-130");
     let pgrep = std::process::Command::new("pgrep")
         .args(["-f", "sleep 3719"])
