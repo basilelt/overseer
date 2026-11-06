@@ -28,7 +28,11 @@ impl Sbx {
     }
 
     fn default_state(&self) -> PathBuf {
-        self.home().join(".local/state/overseer")
+        if cfg!(target_os = "macos") {
+            self.home().join("Library/Application Support/overseer")
+        } else {
+            self.home().join(".local/state/overseer")
+        }
     }
 
     fn other_state(&self) -> PathBuf {
