@@ -19,7 +19,7 @@
   import { t } from '../../i18n.svelte';
   import { attachIme } from '../../ime';
   import { keyToInput } from '../../keys';
-  import { cellAt, ModeTracker, WheelAccumulator, wheelAction } from '../../mouse';
+  import { cellAt, clickMove, ModeTracker, WheelAccumulator, wheelAction } from '../../mouse';
   import { resetViewport, scrollbackBytes, writeAnchored } from '../../scroll';
   import { fontChain, fontFamilies, lineMetrics, sameMetrics, SYMBOL_SAMPLE } from '../../fonts';
   import { applyMods, NO_MODS, type Mods } from '../../mobile/accessory';
@@ -229,6 +229,18 @@
       void pasteFiles(files);
     };
     pane.addEventListener('paste', onPaste, true);
+    const onClick = (e: MouseEvent) => {
+      const tm = term;
+      if (!tm || !io || phone || e.button !== 0 || e.detail !== 1 || e.shiftKey || e.altKey || e.ctrlKey || e.metaKey) return;
+      if (tm.hasSelection() || tm.getViewportY() > 0) return;
+      const rect = (el.querySelector('canvas') ?? el).getBoundingClientRect();
+      const { col, row } = cellAt(e.clientX, e.clientY, rect, tm.cols, tm.rows);
+      const buf = tm.buffer.active;
+      const line = buf.getLine(buf.length - tm.rows + buf.cursorY);
+      const keys = clickMove(col - 1, row - 1, { x: buf.cursorX, y: buf.cursorY }, (x) => line?.getCell(x)?.getWidth() ?? 1, modes.modes());
+      if (keys) io.write(keys);
+    };
+    el.addEventListener('click', onClick);
 
     pickFiles = (files: File[]) => {
       if (!files.length) return;
@@ -397,6 +409,7 @@
       document.fonts?.removeEventListener('loadingdone', onFontsLoaded);
       refit = null;
       pane.removeEventListener('paste', onPaste, true);
+      el.removeEventListener('click', onClick);
       offDrop();
       ro?.disconnect();
       resized.cancel();

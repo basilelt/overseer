@@ -874,7 +874,7 @@ On first launch, once the app is connected (immediately in local mode, after the
 connection on a phone), a welcome card offers **Take the tour** or **Skip**. The tour dims the
 window and highlights the real controls one at a time: host chip, workspaces sidebar, tabs and the
 new-session menu, the Terminal/Chat toggle, the side panel, Tasks, Review, the usage, system and ports
-chips, notifications and hooks, the command palette and Feedback, in 0.25 the Cmd/Ctrl+P palette shortcut, and in 0.27 the demo mode (on the **Demo mode** pill while in the demo, else on the host chip), and in 0.28 the GPU rendering option for terminals, and in 0.29 the clean up of unused worktrees and the import from Switchboard (on its button in Settings, Help, or on the Settings button). Steps whose control is not on
+chips, notifications and hooks, the command palette and Feedback, in 0.25 the Cmd/Ctrl+P palette shortcut, and in 0.27 the demo mode (on the **Demo mode** pill while in the demo, else on the host chip), and in 0.28 the GPU rendering option for terminals, and in 0.29 the clean up of unused worktrees and the import from Switchboard (on its button in Settings, Help, or on the Settings button), and in 0.30 click to move the cursor in a terminal (on the tabs). Steps whose control is not on
 screen (no session selected, a feature the server lacks, phone layout) are skipped. On a phone the
 card is a sheet at the bottom (or top, when the control sits low) and points at the bottom
 navigation, the session strip and the menu.
@@ -1005,8 +1005,13 @@ In the app:
   events, so a Claude Code session inside tmux scrolls tmux's history; a full-screen program
   without mouse reports (less, man) gets Up/Down arrows unless it turned that off
   (`ESC [?1007l`); otherwise the wheel scrolls the terminal's own scrollback. Shift+wheel always
-  scrolls the local scrollback. Clicks and drags always select text locally (they are not sent
-  to the program).
+  scrolls the local scrollback. Drags always select text locally (they are not sent to the
+  program).
+- **Click to move the cursor**: a single click in the line being typed (a shell prompt, the
+  input of Claude Code, Codex or another agent) moves the cursor there by sending Left/Right
+  arrows, like in a text editor. Only the cursor's own row is handled; clicks on other rows,
+  with a modifier, while scrolled back, on a phone, or in a program that reads the mouse itself
+  (tmux with mouse on, vim with `mouse=a`, htop) do nothing.
 
 ### 14.1a Agents
 

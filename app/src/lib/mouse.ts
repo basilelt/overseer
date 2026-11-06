@@ -126,3 +126,13 @@ export function cellAt(clientX: number, clientY: number, rect: { left: number; t
   const row = Math.floor((clientY - rect.top) / ch) + 1;
   return { col: Math.max(1, Math.min(cols, col)), row: Math.max(1, Math.min(rows, row)) };
 }
+
+export function clickMove(col: number, row: number, cursor: { x: number; y: number }, widthAt: (x: number) => number, m: TermModes): string | null {
+  if (m.tracking || row !== cursor.y || col === cursor.x) return null;
+  const from = Math.min(col, cursor.x);
+  const to = Math.max(col, cursor.x);
+  let n = 0;
+  for (let x = from; x < to; x++) if (widthAt(x) !== 0) n++;
+  if (!n) return null;
+  return `\x1b${m.appCursor ? 'O' : '['}${col < cursor.x ? 'D' : 'C'}`.repeat(n);
+}
