@@ -83,7 +83,7 @@ base) and sets one output per job. Each job `needs: changes` and runs only when 
 | `actionlint` | `.github/` |
 | `store-guard` | `.github/`, `scripts/`, `Makefile` (what `scripts/store-guard.sh` scans), `app/fastlane/` and the iOS app icons |
 | `tap` | `scripts/update-tap.sh`, `scripts/update-tap.test.sh` |
-| `ci-scripts` | `.github/actions/`, `scripts/ci-*.sh` (runs `scripts/ci-changes.test.sh`, `scripts/ci-apt.test.sh` and the setup action with apt packages) |
+| `ci-scripts` | `.github/actions/`, `scripts/ci-*.sh` (runs `scripts/check-version*.sh`; runs `scripts/ci-changes.test.sh`, `scripts/check-version.test.sh`, `scripts/ci-apt.test.sh` and the setup action with apt packages) |
 
 - `docs/`, `*.md` and `.github/ISSUE_TEMPLATE/` never trigger a job: a docs-only PR runs `changes`
   alone.
@@ -133,7 +133,8 @@ its `changes` job runs, a few seconds on `ubuntu-slim`. Pushes by `github-action
 |---|---|---|---|
 | ci | `changes` | `ubuntu-slim` | `scripts/ci-changes.sh`: which jobs the PR needs ([Path filtering](#path-filtering)) |
 | ci | `actionlint` | `ubuntu-slim` | `actionlint` (pinned release, checksum verified, cached by version; `ubuntu-slim` has no Docker) |
-| ci | `ci-scripts` | `ubuntu-24.04` | `scripts/ci-changes.test.sh` (path filter), `scripts/ci-apt.test.sh` (offline apt install in Docker), the setup action on real apt packages |
+| ci | `ci-scripts` | `ubuntu-24.04` | `scripts/ci-changes.test.sh` (path filter), `scripts/check-version.test.sh`, `scripts/ci-apt.test.sh` (offline apt install in Docker), the setup action on real apt packages |
+| ci | `release-version` | `ubuntu-slim` | pull requests to `main` only, skipped when docs-only: `mathieudutour/github-tag-action@v7` with the settings of the `tag` job of `release.yml` and `dry_run: true` computes the version the merge will tag, then `scripts/check-version.sh` fails naming each stamped file that differs. Copy the settings by hand when you change them in `release.yml` |
 | ci | `gitleaks` | `ubuntu-slim` | `gitleaks git` (pinned release, checksum verified) over the PR's commits (`base..head`); every PR, no path filter. Known false positives are fingerprinted in `.gitleaksignore` |
 | ci | `rust` | `ubuntu-24.04` | `cargo fmt --check` (root and `api/`), `make lint`, `timeout 1500 make test` |
 | ci | `app` | `ubuntu-24.04` | `make app-test` (vitest with coverage, svelte-check, Tauri crate tests and clippy) |
@@ -274,11 +275,13 @@ it runs):
    nothing. Push the tag with the commit (or before it), not after: a release run that finds no
    `vX.Y.Z` tag at all seeds one from the root `Cargo.toml` version (`custom_tag`) and publishes
    that release. The first merge after that makes `v0.26.4` (or `v0.27.0`).
-3. The build jobs run `scripts/set-version.sh <version>`, which writes the version into
-   `Cargo.toml`, `api/Cargo.toml`, `app/src-tauri/Cargo.toml`, their `Cargo.lock` entries,
-   `app/package.json` and `app/src-tauri/tauri.conf.json` in the CI workspace only. Nothing is
-   committed back: the versions in git stay at their last manual value, the tag is the source of
-   truth for releases. Builds keep `--locked` working because the lock entries are stamped too.
+3. The versions in git tell the truth: the release PR from `next` to `main` carries a
+   `chore(release): vX.Y.Z` commit made with `scripts/set-version.sh X.Y.Z`, which writes the
+   version into `Cargo.toml`, `api/Cargo.toml`, `app/src-tauri/Cargo.toml`, their `Cargo.lock`
+   entries, `app/package.json` and `app/src-tauri/tauri.conf.json`. `X.Y.Z` is the version the
+   merge will tag. The `release-version` job enforces it ([Jobs and runners](#jobs-and-runners)).
+   The build jobs still run `scripts/set-version.sh <version>`; it changes nothing when the
+   files are already stamped, and builds keep `--locked` working.
 4. Tags pushed with `GITHUB_TOKEN` do not trigger workflows, so the artifacts are built in the
    same run (`needs: tag`), not by an `on: push: tags` workflow.
 

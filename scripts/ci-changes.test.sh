@@ -34,6 +34,7 @@ expect "apt script is wide" "rust app windows android actionlint store_guard tap
 expect "ci workflow is wide" "rust app windows android actionlint store_guard tap ci_scripts " .github/workflows/ci.yml
 expect "release workflow" "macos_signing actionlint store_guard " .github/workflows/release.yml
 expect "tap script" "store_guard tap " scripts/update-tap.sh
+expect "version check script" "store_guard ci_scripts " scripts/check-version.sh
 expect "push to next filters like a pull request" "app " app/src/y.ts EVENT=push REF=refs/heads/next
 expect "release push runs everything" "rust app windows android macos_signing macos_procs actionlint store_guard tap ci_scripts " docs/x.md EVENT=push REF=refs/heads/main
 expect "manual run runs everything" "rust app windows android macos_signing macos_procs actionlint store_guard tap ci_scripts " docs/y.md EVENT=workflow_dispatch REF=refs/heads/next
