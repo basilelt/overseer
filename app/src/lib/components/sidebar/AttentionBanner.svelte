@@ -46,7 +46,7 @@
     min-width: 0;
   }
   .item:hover {
-    background: var(--surface-hover);
+    background: var(--attention-hover);
   }
   .dot {
     flex: none;

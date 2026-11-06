@@ -19,11 +19,37 @@ describe('SessionRow', () => {
     expect(h).not.toContain('tabindex="-1"');
   });
 
-  it('reads title, state label and age in its aria-label', () => {
-    // Given a paused session
+  it('keeps its content readable and adds the state for screen readers', () => {
+    // Given a paused session on an SSH host
     // When it renders
-    // Then the label names the title and the state
-    expect(html({ state: 'paused' })).toContain('aria-label="Fix login, Paused"');
+    // Then no aria-label hides the content and the state label is in a sr-only span
+    const h = html({ state: 'paused' }, { host: { name: 'devbox', phase: 'connected' } });
+    expect(h).not.toContain('aria-label');
+    expect(h).toContain('class="sr-only">Paused<');
+    for (const s of ['>Fix login<', '>Ran the tests<', '>5m<', '>devbox<']) expect(h).toContain(s);
+  });
+
+  it('fills the placeholders of the host connection text', () => {
+    // Given a host that is reconnecting
+    // When the row renders
+    // Then the attempt is shown and no placeholder remains
+    const h = html({}, { host: { name: 'devbox', phase: 'reconnecting', attempt: 2 } });
+    expect(h).toContain('Reconnecting (attempt 2)');
+    expect(h).not.toContain('{n}');
+  });
+
+  it('opens the session on click', () => {
+    // Given the component source
+    // When the click handler is read
+    // Then it forwards the event to onselect
+    expect(componentSrc).toMatch(/onclick=\{\(e\) => onselect\(e\)\}/);
+  });
+
+  it('caps the host chip so the chevron stays visible', () => {
+    // Given the component source
+    // When the host styles are read
+    // Then the chip can shrink and truncate
+    expect(componentSrc).toMatch(/\.host \{[^}]*max-width: 40%[^}]*overflow: hidden/s);
   });
 
   it('shows title, last action, age and chevron in that order', () => {
@@ -78,6 +104,14 @@ describe('SessionRow', () => {
     expect(h).toContain('>devbox<');
     expect(h).toContain('Connected');
     expect(html()).not.toContain('class="host');
+  });
+
+  it('uses a dedicated, readable selection token and a text-2 age', () => {
+    // Given the component source
+    // When its styles are read
+    // Then selection has its own token and the age is not text-3
+    expect(componentSrc).toContain('var(--session-row-selected)');
+    expect(componentSrc).not.toContain('--text-3');
   });
 
   it('marks the selected row', () => {

@@ -2,7 +2,8 @@
   import type { SidebarItem } from '../../grouping';
   import { t } from '../../i18n.svelte';
   import { age } from '../../time';
-  import type { ConnPhase } from '../../types';
+  import { connLabel } from '../../conn-label';
+  import type { ConnState } from '../../types';
 
   // host is set for SSH sessions only; `now` comes from the shared clock so rows own no timer.
   let {
@@ -11,17 +12,18 @@
     selected = false,
     host,
     onselect,
-  }: { item: SidebarItem; now: number; selected?: boolean; host?: { name: string; phase: ConnPhase }; onselect: (e?: MouseEvent) => void } = $props();
+  }: { item: SidebarItem; now: number; selected?: boolean; host?: { name: string } & Pick<ConnState, 'phase' | 'attempt' | 'version'>; onselect: (e?: MouseEvent) => void } = $props();
 
   const label = $derived(t(`session.state.${item.state}`));
 </script>
 
-<button class="row" type="button" data-key={item.key} aria-label="{item.title}, {label}" aria-current={selected ? 'true' : undefined} onclick={(e) => onselect(e)}>
+<button class="row" type="button" data-key={item.key} aria-current={selected ? 'true' : undefined} onclick={(e) => onselect(e)}>
+  <span class="sr-only">{label}</span>
   <span class="dot" data-state={item.state} data-hollow={item.state === 'closed' ? '' : undefined} style:--c="var(--state-{item.state})" aria-hidden="true">{item.state === 'paused' ? '❙❙' : ''}</span>
   <span class="title">{item.title}</span>
   {#if item.status}<span class="action">{item.status}</span>{/if}
   <span class="age">{age(item.at, now)}</span>
-  {#if host}<span class="host" title={t(`conn.${host.phase}`)}><span class="hname">{host.name}</span><span class="hst">{t(`conn.${host.phase}`)}</span></span>{/if}
+  {#if host}<span class="host" title={connLabel(host)}><span class="hname">{host.name}</span><span class="hst">{connLabel(host)}</span></span>{/if}
   <span class="chev" aria-hidden="true">›</span>
 </button>
 
@@ -40,9 +42,11 @@
     text-align: left;
     min-width: 0;
   }
-  .row:hover,
-  .row[aria-current='true'] {
+  .row:hover {
     background: var(--surface-hover);
+  }
+  .row[aria-current='true'] {
+    background: var(--session-row-selected);
   }
   .dot {
     flex: none;
@@ -90,11 +94,14 @@
     flex: none;
     margin-left: auto;
     font-size: 11px;
-    color: var(--text-3, var(--text-2));
+    color: var(--text-2);
     font-variant-numeric: tabular-nums;
   }
   .host {
-    flex: none;
+    flex: 0 1 auto;
+    min-width: 0;
+    max-width: 40%;
+    overflow: hidden;
     display: inline-flex;
     gap: 4px;
     padding: 0 6px;
@@ -102,6 +109,15 @@
     background: var(--surface-2);
     font-size: 10px;
     color: var(--text-2);
+  }
+  .hname {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .hst {
+    flex: none;
   }
   .chev {
     flex: none;

@@ -27,6 +27,7 @@
   import { openPrReviews } from '../../github/open.svelte';
   import { diag, dt } from '../../diag.svelte';
   import type { Component } from 'svelte';
+  import { connLabel } from '../../conn-label';
   import { t } from '../../i18n.svelte';
   import { saveSettings, settings, type ThemePref } from '../../settings.svelte';
   import { app } from '../../state.svelte';
@@ -34,9 +35,7 @@
   import RotateCw from '@lucide/svelte/icons/rotate-cw';
 
   const conn = $derived(app.conn);
-  const phase = $derived(
-    conn.phase === 'reconnecting' ? t('conn.reconnecting', { n: conn.attempt ?? 1 }) : conn.phase === 'installing' ? t('conn.installing', { version: conn.version ?? '' }) : t(`conn.${conn.phase}`),
-  );
+  const phase = $derived(connLabel(conn));
   const host = $derived(conn.target.kind === 'local' ? t('host.local') : conn.target.label || t('mobile.more.notConnected'));
   let confirmRestart = $state(false);
   let restarting = $state(false);

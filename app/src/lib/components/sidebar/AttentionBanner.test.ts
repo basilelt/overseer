@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { render } from 'svelte/server';
 import type { AttentionEntry } from '../../attention';
 import AttentionBanner from './AttentionBanner.svelte';
+import componentSrc from './AttentionBanner.svelte?raw';
 
 const e = (key: string, title: string, detail?: string): AttentionEntry => ({ key, title, detail, workspaceId: null, at: '2026-11-05T10:00:00Z' });
 const html = (entries: AttentionEntry[]) => render(AttentionBanner, { props: { entries, onselect: () => {} } }).body;
@@ -31,5 +32,13 @@ describe('AttentionBanner', () => {
     // When it renders
     // Then the dot reads the attention colour token
     expect(html([e('line:a', 'A')])).toContain('var(--state-attention)');
+  });
+
+  it('opens the session on click with its own hover token', () => {
+    // Given the component source
+    // When it is read
+    // Then click forwards the entry and hover differs from the banner background
+    expect(componentSrc).toMatch(/onclick=\{\(\) => onselect\(entry\)\}/);
+    expect(componentSrc).toContain('var(--attention-hover)');
   });
 });
