@@ -1705,9 +1705,17 @@ mod tests {
             .collect()
     }
 
+    // macOS keeps the source mtime on copy, Linux does not: stamp now so a fixture checked out
+    // more than STALE_MS ago is not read as a stale session.
+    fn fresh_copy(from: &Path, to: &Path) {
+        std::fs::copy(from, to).unwrap();
+        let f = std::fs::File::options().write(true).open(to).unwrap();
+        f.set_modified(std::time::SystemTime::now()).unwrap();
+    }
+
     fn copy(name: &str, dir: &Path) -> PathBuf {
         let p = dir.join(Path::new(name).file_name().unwrap());
-        std::fs::copy(fixture(name), &p).unwrap();
+        fresh_copy(&fixture(name), &p);
         p
     }
 
@@ -2119,7 +2127,7 @@ mod tests {
         std::fs::create_dir_all(&sub).unwrap();
         for e in std::fs::read_dir(fixture("chat/agents/subagents")).unwrap() {
             let e = e.unwrap();
-            std::fs::copy(e.path(), sub.join(e.file_name())).unwrap();
+            fresh_copy(&e.path(), &sub.join(e.file_name()));
         }
         (d, p)
     }
