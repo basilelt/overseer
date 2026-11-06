@@ -86,6 +86,13 @@ describe('diagnostics and body', () => {
     expect(body).not.toContain('hunter2');
   });
 
+  it('leaves a marker for the daemon instead of local paths when it uploads the attachments', () => {
+    const body = buildBody(form({ attachments: ['/h/uploads/a.png'] }), true);
+    expect(body).toContain('### Attachments\n@ATTACHMENTS@');
+    expect(body).not.toContain('/h/uploads/a.png');
+    expect(buildBody(form(), true)).not.toContain('@ATTACHMENTS@');
+  });
+
   it('uses a longer fence when the logs contain backticks', () => {
     expect(buildBody(form({ diagnostics: 'a ``` b' }))).toContain('````text\na ``` b\n````');
   });
@@ -115,7 +122,8 @@ describe('agent prompt', () => {
 
   it('adds attachments and a read-only investigation when asked', () => {
     const p = buildPrompt({ ...base, kind: 'idea', attachments: ['/h/a.png'], investigate: true });
-    expect(p).toContain('/h/a.png');
+    expect(p).toContain('already uploaded the attachments');
+    expect(p).not.toContain('drag them');
     expect(p).toContain('Likely cause');
     expect(p).toContain('Read only');
     expect(p).not.toContain('Steps to reproduce');

@@ -1,4 +1,28 @@
 #!/bin/sh
+case $1 in
+  api)
+    shift
+    [ -n "${SB_GH_LOG:-}" ] && echo "api $*" >> "$SB_GH_LOG"
+    case "$*" in *deny/*) echo "HTTP 403: Resource not accessible" >&2; exit 1 ;; esac
+    case "$*" in
+      *git/ref/heads/overseer-attachments*) exit 1 ;;
+      *--jq\ .default_branch*) echo main ;;
+      *--jq\ .object.sha*) echo abc123 ;;
+    esac
+    while [ $# -gt 0 ]; do
+      [ "$1" = --input ] && [ -n "${SB_GH_LOG:-}" ] && cat "$2" >> "$SB_GH_LOG.put"
+      shift
+    done
+    exit 0
+    ;;
+  issue) [ "$2" = create ] || { echo "[]"; exit 0; }
+    for a in "$@"; do
+      case $a in --repo=*) r=${a#--repo=} ;; --body-file=*) cp "${a#--body-file=}" "${SB_GH_LOG:-/dev/null}.body" ;; esac
+    done
+    echo "https://github.com/$r/issues/7"
+    exit 0
+    ;;
+esac
 repo= head=
 for a in "$@"; do
   case $a in

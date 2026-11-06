@@ -41,6 +41,7 @@
 
   const form = $derived({ kind, title, description, attachments: attachments.map((a) => a.path), diagnostics: includeDiag ? diagText : null });
   const body = $derived(buildBody(form));
+  const sentBody = $derived(buildBody(form, true));
   const fullTitle = $derived(issueTitle(form));
   const kinds: Kind[] = ['bug', 'idea', 'other'];
   const placeholder = $derived(ft(kind === 'bug' ? 'descriptionBug' : kind === 'idea' ? 'descriptionIdea' : 'descriptionOther'));
@@ -150,8 +151,10 @@
         cwd,
         cols: 120,
         rows: 32,
+        repo,
+        attachments,
         prompt: buildPrompt({ repo, kind, title: fullTitle, attachments: form.attachments, investigate, inClone: !!cwd }),
-        body,
+        body: sentBody,
       });
       const term = res.term;
       app.followSession(term);
@@ -172,7 +175,7 @@
     if (!client) return;
     busy = true;
     try {
-      const res = await client.request<{ url: string }>('POST', '/v1/feedback/direct', { repo, title: fullTitle, body, labels: labelsFor(kind) });
+      const res = await client.request<{ url: string }>('POST', '/v1/feedback/direct', { repo, title: fullTitle, body: sentBody, labels: labelsFor(kind), attachments });
       feedback.showResult({ url: res.url, comment: false });
     } catch (e) {
       app.notify(ft('failed', { error: unsupported(e) ?? msg(e) }), 'error');

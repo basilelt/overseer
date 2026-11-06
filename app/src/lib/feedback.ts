@@ -5,6 +5,7 @@ export * from './feedback-watch';
 export const DEFAULT_REPO = 'basilelt/overseer';
 export const PRIVACY_URL = `https://github.com/${DEFAULT_REPO}/blob/main/PRIVACY.md`;
 export const REPORT = '@REPORT@';
+export const ATTACHMENTS = '@ATTACHMENTS@';
 export const APP_LINES = 200;
 export const SERVER_LINES = 100;
 export const MAX_BODY = 60_000;
@@ -93,9 +94,9 @@ function fence(text: string): string {
   return `${f}text\n${text}\n${f}`;
 }
 
-export function buildBody(f: Form): string {
+export function buildBody(f: Form, upload = false): string {
   const out = [`**Type:** ${KIND_PREFIX[f.kind]}`, '', f.description.trim()];
-  if (f.attachments.length) out.push('', '### Attachments', ...f.attachments.map((p) => `- \`${p}\``));
+  if (f.attachments.length) out.push('', '### Attachments', ...(upload ? [ATTACHMENTS] : f.attachments.map((p) => `- \`${p}\``)));
   if (f.diagnostics) out.push('', '<details><summary>Diagnostics</summary>', '', fence(f.diagnostics), '', '</details>');
   out.push('', '_Sent from Overseer._');
   return redact(out.join('\n')) + '\n';
@@ -131,7 +132,7 @@ export function buildPrompt(p: PromptInput): string {
     '   - Write the final body to a new file from `mktemp`, never inside a repository.',
   );
   if (p.attachments.length)
-    lines.push(`   - Attachments on this machine: ${p.attachments.join(', ')}. gh cannot upload files: list them under "Attachments" and tell the user to drag them into the issue on GitHub.`);
+    lines.push('   - Overseer already uploaded the attachments and linked them under "Attachments" in the report. Keep that section exactly as it is; do not upload, move or edit the files.');
   if (p.investigate)
     lines.push(
       `4. Before filing, investigate read-only: read the diagnostics, then search ${p.inClone ? 'the code in this checkout' : 'the logs in ~/.overseer'} for the likely cause, and add a short "Likely cause" section with file paths. Read only.`,
