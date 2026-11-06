@@ -3,7 +3,8 @@
   import { t } from '../i18n.svelte';
   import { app } from '../state.svelte';
   import { gitApi } from './api';
-  import { cleanupTargets, planLines, runCleanup } from './cleanup';
+  import { SvelteSet } from 'svelte/reactivity';
+  import { chosen, cleanedMessage, cleanupTargets, planLines, runCleanup } from './cleanup';
   import { gt } from './strings';
   import type { CleanupPlan, Worktree } from './types';
 
@@ -13,7 +14,10 @@
   let error = $state<string | null>(null);
   let busy = $state(false);
 
+  const skipped = new SvelteSet<string>();
   const runnable = $derived(cleanupTargets(plans ?? []));
+  const picked = $derived(chosen(runnable, skipped));
+  const toggle = (id: string) => (skipped.has(id) ? skipped.delete(id) : skipped.add(id));
   const byId = $derived(new Map(worktrees.map((w) => [w.id, w])));
 
   $effect(() => {
@@ -25,10 +29,10 @@
 
   async function confirm() {
     busy = true;
-    const r = await runCleanup(gitApi(app.client!), runnable, (id) => byId.get(id)?.project);
+    const r = await runCleanup(gitApi(app.client!), picked, (id) => byId.get(id)?.project);
     busy = false;
     if (r.failed.length) app.notify(r.failed.map((f) => f.error).join(' · '), 'error');
-    if (r.done.length) app.notify(gt('cleaned', { n: r.done.length }));
+    if (r.done.length) app.notify(cleanedMessage(r.done.length));
     ondone?.();
     onclose();
   }
@@ -45,10 +49,13 @@
       {#each plans as p (p.id)}
         {@const w = byId.get(p.id)}
         <li class:refused={!!p.refused}>
-          <div class="title">
-            <span class="mono branch">{w?.branch ?? '—'}</span>
-            <span class="mono faint path">{p.id}</span>
-          </div>
+          <label class="title">
+            {#if runnable.includes(p.id)}<input type="checkbox" aria-label={gt('pick')} checked={!skipped.has(p.id)} disabled={busy} onchange={() => toggle(p.id)} />{/if}
+            <span class="names">
+              <span class="mono branch">{w?.branch ?? '—'}</span>
+              <span class="mono faint path">{p.id}</span>
+            </span>
+          </label>
           {#each planLines(p) as l, i (i)}
             <div class="line {l.kind}">
               <span class="tag">{l.kind === 'remove' ? '−' : l.kind === 'keep' ? '=' : '!'}</span>
@@ -62,8 +69,8 @@
   {/if}
   {#snippet footer()}
     <button class="btn" onclick={onclose}>{t('common.cancel')}</button>
-    <button class="btn danger" disabled={busy || !runnable.length} onclick={confirm}>
-      {runnable.length ? gt('confirmCleanup', { n: runnable.length }) : gt('nothingToClean')}
+    <button class="btn danger" disabled={busy || !picked.length} onclick={confirm}>
+      {runnable.length ? gt('confirmCleanup', { n: picked.length }) : gt('nothingToClean')}
     </button>
   {/snippet}
 </Modal>
@@ -87,8 +94,17 @@
   }
   .title {
     display: flex;
-    flex-direction: column;
+    gap: 8px;
+    align-items: flex-start;
     margin-bottom: 6px;
+  }
+  .title input {
+    margin-top: 2px;
+  }
+  .names {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
   }
   .branch {
     font-size: 12.5px;

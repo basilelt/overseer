@@ -83,23 +83,21 @@ describe('tour versioning', () => {
 
   it('shows the organize step to users who saw the 0.15 tour', () => {
     expect(modeFor(1)).toBe('whatsNew');
-    expect(stepsFor('whatsNew', 1).map((s) => s.id)).toEqual(['organize', 'settings', 'paletteKey', 'demo', 'gpuTerminal']);
+    expect(stepsFor('whatsNew', 1).map((s) => s.id)).toEqual(['organize', 'settings', 'paletteKey', 'demo', 'gpuTerminal', 'worktreeCleanup', 'switchboard']);
     expect(stepsFor('full', undefined).map((s) => s.id)).toContain('organize');
     expect(targetOf(STEPS.find((s) => s.id === 'organize')!, (n) => n === 'workspaces')).toBe('workspaces');
   });
 
-  it('shows the 0.25, 0.27 and 0.28 steps to users who saw 0.24', () => {
+  it('shows the 0.25 to 0.29 steps to users who saw 0.24', () => {
     expect(modeFor('0.24')).toBe('whatsNew');
-    expect(stepsFor('whatsNew', '0.24').map((s) => s.id)).toEqual(['settings', 'paletteKey', 'demo', 'gpuTerminal']);
+    expect(stepsFor('whatsNew', '0.24').map((s) => s.id)).toEqual(['settings', 'paletteKey', 'demo', 'gpuTerminal', 'worktreeCleanup', 'switchboard']);
     expect(stepsFor('full', undefined).map((s) => s.id)).toContain('settings');
     expect(targetOf(STEPS.find((s) => s.id === 'settings')!, (n) => n === 'settings')).toBe('settings');
   });
 
-  it('shows only the GPU rendering step to users who saw 0.27', () => {
-    expect(TOUR_VERSION).toBe('0.28');
+  it('shows the GPU rendering, worktree cleanup and Switchboard steps to users who saw 0.27', () => {
     expect(modeFor('0.27')).toBe('whatsNew');
-    expect(stepsFor('whatsNew', '0.27').map((s) => s.id)).toEqual(['gpuTerminal']);
-    expect(modeFor('0.28')).toBeNull();
+    expect(stepsFor('whatsNew', '0.27').map((s) => s.id)).toEqual(['gpuTerminal', 'worktreeCleanup', 'switchboard']);
   });
 
   it('points the demo step at the Demo mode pill in the demo, else at the host chip', () => {
@@ -114,15 +112,23 @@ describe('tour versioning', () => {
 
   it('shows the steps added after 0.17 to users who saw the 0.17 tour', () => {
     expect(modeFor('0.17')).toBe('whatsNew');
-    expect(stepsFor('whatsNew', '0.17').map((s) => s.id)).toEqual(['settings', 'paletteKey', 'demo', 'gpuTerminal']);
+    expect(stepsFor('whatsNew', '0.17').map((s) => s.id)).toEqual(['settings', 'paletteKey', 'demo', 'gpuTerminal', 'worktreeCleanup', 'switchboard']);
     expect(STEPS.find((s) => s.id === 'paletteKey')?.since).toBe('0.25');
   });
 
-  it('shows the 0.27 and 0.28 steps to users who saw 0.26', () => {
+  it('shows the 0.27, 0.28 and 0.29 steps to users who saw 0.26', () => {
     expect(modeFor('0.26')).toBe('whatsNew');
-    expect(stepsFor('whatsNew', '0.26').map((s) => s.id)).toEqual(['demo', 'gpuTerminal']);
+    expect(stepsFor('whatsNew', '0.26').map((s) => s.id)).toEqual(['demo', 'gpuTerminal', 'worktreeCleanup', 'switchboard']);
     expect(STEPS.find((s) => s.id === 'gpuTerminal')?.since).toBe('0.28');
-    expect(TOUR_VERSION).toBe('0.28');
+  });
+
+  it('shows the worktree cleanup and Switchboard steps to users who saw 0.28', () => {
+    expect(TOUR_VERSION).toBe('0.29');
+    expect(modeFor('0.28')).toBe('whatsNew');
+    expect(stepsFor('whatsNew', '0.28').map((s) => s.id)).toEqual(['worktreeCleanup', 'switchboard']);
+    expect(targetOf(STEPS.find((s) => s.id === 'switchboard')!, (n) => n === 'switchboard')).toBe('switchboard');
+    expect(modeFor('0.29')).toBeNull();
+    expect(targetOf(STEPS.find((s) => s.id === 'worktreeCleanup')!, (n) => n === 'palette')).toBe('palette');
   });
 
   it('points the GPU rendering step at settings, or the More tab on a phone', () => {
@@ -131,10 +137,18 @@ describe('tour versioning', () => {
     expect(targetOf(step, (n) => n === 'palette')).toBe('palette');
   });
 
+  it('points the Switchboard step at its Settings button, else Settings or the palette', () => {
+    const step = STEPS.find((s) => s.id === 'switchboard')!;
+    expect(step.since).toBe('0.29');
+    expect(targetOf(step, (n) => n === 'switchboard' || n === 'settings')).toBe('switchboard');
+    expect(targetOf(step, (n) => n === 'settings')).toBe('settings');
+    expect(targetOf(step, (n) => n === 'palette')).toBe('palette');
+  });
+
   it('shows nothing once the current release was seen', () => {
     expect(modeFor('0.25', '0.25')).toBeNull();
     expect(modeFor('0.26', '0.25')).toBeNull();
-    expect(modeFor('0.28')).toBeNull();
+    expect(modeFor('0.29')).toBeNull();
     expect(modeFor(2, '0.17')).toBeNull();
   });
 });

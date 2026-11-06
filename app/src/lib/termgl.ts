@@ -92,7 +92,7 @@ export interface RowStyle {
   selection: SelectionCoords | null;
   hoveredLink: number;
   linkRange: LinkRange | null;
-  glyph(text: string, bold: boolean, italic: boolean): { slot: number; colored: boolean };
+  glyph(text: string, bold: boolean, italic: boolean, dark: boolean): { slot: number; colored: boolean };
   text(cell: GhosttyCell, col: number): string;
 }
 
@@ -139,7 +139,7 @@ export function packRow(cells: readonly GhosttyCell[], row: number, cols: number
     out[o + 7] = alpha;
     const cp = cell.codepoint;
     if (cp > 32 || cell.grapheme_len > 0) {
-      const g = style.glyph(style.text(cell, c), (cell.flags & BOLD) !== 0, (cell.flags & ITALIC) !== 0);
+      const g = style.glyph(style.text(cell, c), (cell.flags & BOLD) !== 0, (cell.flags & ITALIC) !== 0, fr * 299 + fg * 587 + fb * 114 < 128000);
       if (g.slot >= 0 && g.slot < NO_GLYPH) {
         u16[c * 6 + 4] = g.slot;
         u16[c * 6 + 5] = g.colored ? 1 : 0;
@@ -212,7 +212,7 @@ export interface Host {
   };
 }
 
-export type Raster = (text: string, font: string, colored: boolean, w: number, h: number, x: number, baseline: number) => TexImageSource;
+export type Raster = (text: string, font: string, colored: boolean, dark: boolean, w: number, h: number, x: number, baseline: number) => TexImageSource;
 
 const COLORED = /\p{Extended_Pictographic}/u;
 
@@ -295,8 +295,25 @@ interface Res {
   u: Record<string, WebGLUniformLocation | null>;
 }
 
+interface Frame {
+  W: number;
+  H: number;
+  cols: number;
+  rows: number;
+  cellW: number;
+  cellH: number;
+  n: number;
+  dpr: number;
+  bg: RGB;
+}
+
 export class GlTerm {
   draws = 0;
+  redraws = 0;
+  settle = 0;
+  private inked = false;
+  onSettle: (() => void) | null = null;
+  private frame: Frame | null = null;
   uploaded = 0;
   rowsPacked = 0;
   lost = false;
@@ -416,6 +433,7 @@ export class GlTerm {
   private alloc(cols: number, rows: number): void {
     this.cols = cols;
     this.rows = rows;
+    this.frame = null;
     this.cells = new Uint8Array(cols * rows * CELL_BYTES);
     this.decos = Array.from({ length: rows }, () => []);
     this.full = true;
@@ -460,14 +478,15 @@ export class GlTerm {
     return this.atlasSize;
   }
 
-  private glyph = (text: string, bold: boolean, italic: boolean): { slot: number; colored: boolean } => {
+  private glyph = (text: string, bold: boolean, italic: boolean, dark: boolean): { slot: number; colored: boolean } => {
     const colored = COLORED.test(text);
-    const key = `${bold ? 'b' : ''}${italic ? 'i' : ''}:${text}`;
+    dark &&= !colored;
+    const key = `${bold ? 'b' : ''}${italic ? 'i' : ''}${dark ? 'd' : ''}:${text}`;
     const make = (slot: number) => {
       const h = this.host;
       const font = `${italic ? 'italic ' : ''}${bold ? 'bold ' : ''}${h.fontSize}px ${h.fontFamily}`;
       const dpr = h.devicePixelRatio || 1;
-      const src = this.raster(text, font, colored, this.slotW, this.slotH, BLEED * h.metrics.width * dpr, h.metrics.baseline * dpr);
+      const src = this.raster(text, font, colored, dark, this.slotW, this.slotH, BLEED * h.metrics.width * dpr, h.metrics.baseline * dpr);
       const gl = this.gl;
       gl.bindTexture(gl.TEXTURE_2D, this.res!.atlas);
       gl.texSubImage2D(gl.TEXTURE_2D, 0, (slot % this.atlasCols) * this.slotW, Math.floor(slot / this.atlasCols) * this.slotH, gl.RGBA, gl.UNSIGNED_BYTE, src);
@@ -548,6 +567,7 @@ export class GlTerm {
         if (!cells) continue;
         packing = y;
         packRow(cells, y, cols, style, this.cells, this.decos[y]);
+        if (this.settle > 0 && !this.inked) for (const c of cells) if (c.codepoint > 32) this.inked = true;
         this.rowsPacked++;
         lo = Math.min(lo, y);
         hi = Math.max(hi, y);
@@ -591,9 +611,39 @@ export class GlTerm {
       at += d.length;
     }
     this.rectData.set(extra, at);
-    const dpr = h.devicePixelRatio || 1;
-    gl.viewport(0, 0, Math.round(W * dpr), Math.round(H * dpr));
     const bg = parseColor(h.theme.background, [0, 0, 0]);
+    const frame: Frame = { W, H, cols, rows, cellW, cellH, n, dpr: h.devicePixelRatio || 1, bg };
+    this.frame = frame;
+    this.paint(frame);
+    if (this.settle > 0 && hi >= lo) {
+      if (this.settle > 1 || this.inked) this.settle--;
+      this.onSettle?.();
+    }
+    buf.clearDirty();
+    return true;
+  }
+
+  startSettle(renders: number): void {
+    this.settle = renders;
+    this.inked = false;
+  }
+
+  redraw(): boolean {
+    const f = this.frame;
+    if (!f || this.lost || !this.res) return false;
+    const gl = this.gl;
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.res.cells);
+    gl.bufferSubData(gl.ARRAY_BUFFER, 0, this.cells, 0, this.cells.length);
+    this.paint(f);
+    this.redraws++;
+    return true;
+  }
+
+  private paint(f: Frame): void {
+    const { W, H, cols, rows, cellW, cellH, n, dpr, bg } = f;
+    const gl = this.gl;
+    const r = this.res!;
+    gl.viewport(0, 0, Math.round(W * dpr), Math.round(H * dpr));
     gl.clearColor(bg[0] / 255, bg[1] / 255, bg[2] / 255, 1);
     gl.clear(gl.COLOR_BUFFER_BIT);
     gl.enable(gl.BLEND);
@@ -623,8 +673,6 @@ export class GlTerm {
       this.draws++;
     }
     gl.bindVertexArray(null);
-    buf.clearDirty();
-    return true;
   }
 }
 
@@ -764,7 +812,7 @@ export function installWebglRenderer(mod: { CanvasRenderer?: { prototype: object
 
 function rasterizer(dpr: number): Raster {
   let ctx: CanvasRenderingContext2D | null = null;
-  return (text, font, colored, w, h, x, baseline) => {
+  return (text, font, colored, dark, w, h, x, baseline) => {
     if (!ctx || ctx.canvas.width !== w || ctx.canvas.height !== h) {
       const c = document.createElement('canvas');
       c.width = w;
@@ -774,18 +822,21 @@ function rasterizer(dpr: number): Raster {
     ctx.clearRect(0, 0, w, h);
     ctx.font = font.replace(/(\d+(?:\.\d+)?)px/, (_, px) => `${Number(px) * dpr}px`);
     ctx.textBaseline = 'alphabetic';
-    ctx.fillStyle = colored ? '#000' : '#fff';
+    // Text rasterizers (Skia, CoreGraphics) draw light ink heavier than dark ink; match the real text luminance or dark text renders bold.
+    ctx.fillStyle = colored || dark ? '#000' : '#fff';
     ctx.fillText(text, x, baseline);
     return ctx.canvas;
   };
 }
+
+const SETTLE_RENDERS = 3;
 
 export function attachOverlay(r: Patched, allowSoftware: boolean): ReturnType<Attach> {
   const src = r.canvas;
   if (!src?.parentNode || typeof document === 'undefined') return null;
   const c = document.createElement('canvas');
   c.style.cssText = 'display:block;position:relative;pointer-events:none;';
-  const gl = c.getContext('webgl2', { alpha: false, antialias: false, depth: false, stencil: false, premultipliedAlpha: true, failIfMajorPerformanceCaveat: !allowSoftware });
+  const gl = c.getContext('webgl2', { alpha: false, antialias: false, depth: false, stencil: false, premultipliedAlpha: true, preserveDrawingBuffer: true, failIfMajorPerformanceCaveat: !allowSoftware });
   if (!gl) return null;
   if (!allowSoftware && softwareGl(gl)) {
     console.warn('webgl terminal: software GL, using canvas');
@@ -807,6 +858,14 @@ export function attachOverlay(r: Patched, allowSoftware: boolean): ReturnType<At
     e.preventDefault();
     term.lost = true;
   };
+  let raf = 0;
+  term.onSettle = () => {
+    if (raf || typeof requestAnimationFrame !== 'function') return;
+    raf = requestAnimationFrame(() => {
+      raf = 0;
+      term.redraw();
+    });
+  };
   const restored = () => {
     try {
       term.init();
@@ -823,8 +882,11 @@ export function attachOverlay(r: Patched, allowSoftware: boolean): ReturnType<At
     resize(cols, rows) {
       place(cols, rows);
       term.resize(cols, rows);
+      term.startSettle(SETTLE_RENDERS);
     },
     dispose() {
+      if (raf) cancelAnimationFrame(raf);
+      raf = 0;
       term.dispose();
       c.removeEventListener('webglcontextlost', lost);
       c.removeEventListener('webglcontextrestored', restored);

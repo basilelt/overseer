@@ -21,6 +21,12 @@ describe('applyEvent', () => {
     expect(s.terms).toEqual([{ ...term, cols: 120, exited: true, exitCode: 0 }]);
   });
 
+  it('drops the line and agent of a term whose update no longer carries them', () => {
+    let s = applyEvent(empty, ev('term.created', { term: { ...term, lineId: 'ln1', agent: 'claude' } }));
+    s = applyEvent(s, ev('term.updated', { term: { ...term, cmd: ['/bin/sh'] } }));
+    expect(s.terms).toEqual([{ ...term, cmd: ['/bin/sh'] }]);
+  });
+
   it('adds, updates and deletes tasks', () => {
     let s = applyEvent(empty, ev('task.created', { task: { id: 'k', status: 'pending' } }));
     s = applyEvent(s, ev('task.updated', { task: { id: 'k', status: 'auto' } }));

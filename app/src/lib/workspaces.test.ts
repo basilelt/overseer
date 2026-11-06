@@ -20,6 +20,7 @@ import {
   planWorkspaceDrop,
   rankAt,
   resolveTab,
+  repoRoot,
   within,
   workspaceTabs,
   wsDropTarget,
@@ -65,6 +66,20 @@ describe('membership', () => {
     expect(m.get('line:wt')).toBe('webshop');
     expect(m.get('line:in')).toBe('sub');
     expect(m.get('line:dot')).toBe('home');
+  });
+
+  it('ignores a subject (null path) when matching by path and still honours an explicit assignment to it', () => {
+    // Given a subject with a null path and a cwd inside the webshop workspace
+    // When membership is computed for an unassigned line and for one assigned to the subject
+    // Then nothing throws, the subject matches no path, and the assignment wins
+    const subject = ws('subj', null as unknown as string, { path: null, kind: 'subject', cwd: '/home/u/work/webshop' });
+    const plain = line('plain', '/home/u/work/webshop/src', 'github.com/o/webshop');
+    const mine = { ...line('mine', '/home/u/work/webshop/src', 'github.com/o/webshop'), local: { workspaceId: 'subj' } };
+    const lines = [plain, mine];
+    const items = sidebarItems(lines, [], []);
+    const m = itemWorkspaces(items, { lines, terms: [], tasks: [] }, [home, subject, webshop], projects);
+    expect(m.get('line:plain')).toBe('webshop');
+    expect(m.get('line:mine')).toBe('subj');
   });
 
   it('puts a session started in a child workspace folder in the child workspace, not in the parent repository workspace', () => {
@@ -120,6 +135,30 @@ describe('membership', () => {
     const lines = [line('w', '/home/u/.overseer/worktrees/webshop-1/task-1', 'github.com/o/webshop')];
     const m = itemWorkspaces(sidebarItems(lines, [], []), { lines, terms: [], tasks: [] }, [work, wts], projects);
     expect(m.get('line:w')).toBe('work');
+  });
+
+  it('keeps sessions of a second clone of a repository in that clone workspace, not in the first clone', () => {
+    const atk = ws('atk', '/home/u/work/atk');
+    const atk2 = ws('atk2', '/home/u/work/atk2');
+    const wts = ws('wts', '/home/u/.overseer/worktrees');
+    const clones: Project[] = [
+      { path: '/home/u/work/atk', name: 'atk', repo: 'github.com/o/pkg' },
+      { path: '/home/u/work/atk2', name: 'atk2', repo: 'github.com/o/pkg' },
+    ];
+    const lines = [line('one', '/home/u/work/atk', 'github.com/o/pkg'), line('two', '/home/u/work/atk2', 'github.com/o/pkg'), line('wt', '/home/u/.overseer/worktrees/atk-1/feat', 'github.com/o/pkg'), line('lost', '/srv/feat', 'github.com/o/pkg')];
+    const m = itemWorkspaces(sidebarItems(lines, [], []), { lines, terms: [], tasks: [] }, [atk, atk2, wts], clones);
+    expect(m.get('line:one')).toBe('atk');
+    expect(m.get('line:two')).toBe('atk2');
+    expect(m.get('line:wt')).toBe('wts');
+    expect(m.has('line:lost')).toBe(false);
+  });
+
+  it('picks the repository root of a line among its clones by path, or the only clone', () => {
+    expect(repoRoot(['/a/atk', '/a/atk2'], '/a/atk2/src')).toBe('/a/atk2');
+    expect(repoRoot(['/a/atk', '/a/atk2'], '/w/atk-1/feat')).toBeUndefined();
+    expect(repoRoot(['/a/atk'], '/w/atk-1/feat')).toBe('/a/atk');
+    expect(repoRoot(undefined, '/a/atk')).toBeUndefined();
+    expect(repoRoot(['/a/atk'], undefined)).toBe('/a/atk');
   });
 
   it('puts an explicitly assigned line or term in its workspace before task and path rules', () => {
@@ -414,8 +453,8 @@ describe('Terminal pane action', () => {
     expect(paneAction(session(), live({ pid: 7, tmuxPane: '%3', busy: false, needsInput: false }))).toBe('attach');
   });
 
-  it('keeps open for a session with a Overseer term', () => {
-    // Given a live session that owns a Overseer term
+  it('keeps open for a session with an Overseer term', () => {
+    // Given a live session that owns an Overseer term
     // When the Terminal pane asks which action to offer
     // Then it gets 'open'
     expect(paneAction(session({ termId: 't1' }), live({ pid: 8, busy: true, needsInput: false }))).toBe('open');

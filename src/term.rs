@@ -169,6 +169,7 @@ pub struct Term {
     gen: AtomicU64,
     holding: AtomicBool,
     killed: AtomicBool,
+    thread: Mutex<Option<String>>,
 }
 
 #[derive(Default)]
@@ -186,6 +187,7 @@ pub struct Spec {
     pub flags: Vec<String>,
     pub profile: Option<crate::profiles::Chip>,
     pub id: Option<String>,
+    pub workspace_id: Option<String>,
 }
 
 static TERMS: Mutex<BTreeMap<String, Arc<Term>>> = Mutex::new(BTreeMap::new());
@@ -554,7 +556,7 @@ pub fn spawn(s: Spec) -> Result<Arc<Term>, String> {
             flags: s.flags,
             sized_by: None,
             profile: s.profile,
-            workspace_id: None,
+            workspace_id: s.workspace_id,
             resume: None,
         }),
         out: Mutex::default(),
@@ -564,6 +566,7 @@ pub fn spawn(s: Spec) -> Result<Arc<Term>, String> {
         gen: AtomicU64::new(0),
         holding: AtomicBool::new(false),
         killed: AtomicBool::new(false),
+        thread: Mutex::new(None),
     });
     lock(&TERMS).insert(id, term.clone());
     publish("term.created", json!({"term": term.to_json()}));
@@ -639,17 +642,41 @@ impl Term {
 
     #[cfg(unix)]
     fn fall_back_to_shell(self: &Arc<Self>) -> bool {
-        if !self.may_fall_back() {
-            return false;
-        }
+        self.may_fall_back() && self.to_shell("exited").is_ok()
+    }
+
+    #[cfg(not(unix))]
+    fn fall_back_to_shell(self: &Arc<Self>) -> bool {
+        false
+    }
+
+    #[cfg(unix)]
+    pub fn to_shell(self: &Arc<Self>, verb: &str) -> Result<(), String> {
         let i = self.info();
         let agent = i.agent.clone().unwrap_or_default();
-        let note = match i.resume.clone() {
+        let resume = i.resume.clone().or_else(|| crate::session_at_exit(&i));
+        let note = match resume {
             Some((session, cmd)) => {
-                format!("{agent} exited. Session {session}, resume with: {cmd}")
+                format!("{agent} {verb}. Session {session}, resume with: {cmd}")
             }
-            None => format!("{agent} exited."),
+            None => format!("{agent} {verb}."),
         };
+        self.detach();
+        self.respawn(vec![
+            "/bin/sh".into(),
+            "-c".into(),
+            "printf '\\r\\n%s\\r\\n\\r\\n' \"$1\"; exec \"${SHELL:-/bin/sh}\"".into(),
+            "sh".into(),
+            note,
+        ])
+    }
+
+    #[cfg(not(unix))]
+    pub fn to_shell(self: &Arc<Self>, _verb: &str) -> Result<(), String> {
+        Err("no shell fallback on this platform".into())
+    }
+
+    pub fn detach(&self) {
         {
             let mut i = lock(&self.info);
             i.agent = None;
@@ -658,19 +685,7 @@ impl Term {
             i.flags = vec![];
             i.resume = None;
         }
-        self.respawn(vec![
-            "/bin/sh".into(),
-            "-c".into(),
-            "printf '\\r\\n%s\\r\\n\\r\\n' \"$1\"; exec \"${SHELL:-/bin/sh}\"".into(),
-            "sh".into(),
-            note,
-        ])
-        .is_ok()
-    }
-
-    #[cfg(not(unix))]
-    fn fall_back_to_shell(self: &Arc<Self>) -> bool {
-        false
+        publish("term.updated", json!({"term": self.to_json()}));
     }
 
     pub fn respawn(self: &Arc<Self>, argv: Vec<String>) -> Result<(), String> {
@@ -820,6 +835,14 @@ impl Term {
         lock(&self.out).submit_ms
     }
 
+    pub fn thread(&self) -> Option<String> {
+        lock(&self.thread).clone()
+    }
+
+    pub fn bind_thread(&self, id: &str) {
+        *lock(&self.thread) = Some(id.to_string());
+    }
+
     pub fn screen(&self) -> Vec<u8> {
         lock(&self.out).ring.iter().copied().collect()
     }
@@ -862,6 +885,10 @@ impl Term {
             i.title_override = title;
         }
         publish("term.updated", json!({"term": self.to_json()}));
+    }
+
+    pub fn workspace_id(&self) -> Option<String> {
+        lock(&self.info).workspace_id.clone()
     }
 
     pub fn set_workspace(&self, id: Option<String>) {
@@ -1074,6 +1101,7 @@ pub fn adopt(s: crate::upgrade::SavedTerm) -> Result<Arc<Term>, String> {
         gen: AtomicU64::new(0),
         holding: AtomicBool::new(false),
         killed: AtomicBool::new(false),
+        thread: Mutex::new(None),
     });
     lock(&TERMS).insert(s.id, term.clone());
     if live {
@@ -1115,6 +1143,11 @@ pub fn get(id: &str) -> Option<Arc<Term>> {
     lock(&TERMS).get(id).cloned()
 }
 
+/// The workspace a term is assigned to, read without cloning its whole info.
+pub fn workspace_of(id: &str) -> Option<String> {
+    get(id)?.workspace_id()
+}
+
 pub fn all() -> Vec<Arc<Term>> {
     lock(&TERMS).values().cloned().collect()
 }
@@ -1141,6 +1174,10 @@ pub fn owner_of(pid: u32, probe: &dyn Probe) -> Option<String> {
         p = probe.ppid(p).filter(|&q| q > 1 && q != p)?;
     }
     None
+}
+
+pub fn of_pid(pid: u32, probe: &dyn Probe) -> Option<Arc<Term>> {
+    owner_of(pid, probe).and_then(|id| get(&id))
 }
 
 pub fn trim_exited(now: i64) -> usize {

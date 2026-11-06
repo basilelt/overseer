@@ -1,5 +1,6 @@
-import { describe, expect, it } from 'vitest';
-import { filePath, fileKind, findPaths, mimeOf } from './files';
+import { describe, expect, it, vi } from 'vitest';
+import { DaemonError, type DaemonClient } from './client';
+import { filePath, fileKind, findPaths, mimeOf, saveFile } from './files';
 
 describe('findPaths', () => {
   it('finds absolute, relative and home paths with known extensions', () => {
@@ -98,5 +99,30 @@ describe('findPaths on long tokens', () => {
   // Then the same matches as before are found
   it('keeps matching paths around punctuation', () => {
     expect(findPaths('(see ../a/b.md) "x/y.json", a//b.png, ~foo.png').map((m) => m.path)).toEqual(['../a/b.md', 'x/y.json', '~foo.png']);
+  });
+});
+
+describe('saveFile', () => {
+  function client(fetchBytes: DaemonClient['fetchBytes']) {
+    return { fetchBytes: vi.fn(fetchBytes), saveDownload: vi.fn(async (name: string) => `/Users/me/Downloads/${name}`) } as unknown as DaemonClient & {
+      fetchBytes: ReturnType<typeof vi.fn>;
+      saveDownload: ReturnType<typeof vi.fn>;
+    };
+  }
+
+  it('fetches the bytes from the daemon and saves them under the file name', async () => {
+    const c = client(async () => new Uint8Array([7, 8, 9]).buffer);
+    const path = await saveFile(c, { path: 'shots/a b.png', term: 't1' }, 'a b.png');
+    expect(path).toBe('/Users/me/Downloads/a b.png');
+    expect(c.fetchBytes).toHaveBeenCalledWith('/v1/file?path=shots%2Fa+b.png&term=t1');
+    expect(c.saveDownload).toHaveBeenCalledWith('a b.png', new Uint8Array([7, 8, 9]));
+  });
+
+  it('does not save when the daemon cannot read the file', async () => {
+    const c = client(async () => {
+      throw new DaemonError(404, 'not found');
+    });
+    await expect(saveFile(c, { path: '/gone.png' }, 'gone.png')).rejects.toThrow('not found');
+    expect(c.saveDownload).not.toHaveBeenCalled();
   });
 });

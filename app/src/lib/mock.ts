@@ -5,7 +5,7 @@ import { phoneParam } from './mobile/layout';
 import { MockGit } from './git/mockGit';
 import { bigDiff, bigPatch, MockReview } from './review/mock';
 import { chatPage, mockScreen, MOCK_COMMANDS, seedAgentChat, seedChat } from './chat/mock';
-import type { Effort, HookResult, HooksStatus, Profile, ProfileChip, ProfilesStore, SourceItem, SourceItems, SubagentDef, TaskSource } from './types';
+import type { Effort, HookResult, HooksStatus, SwitchboardStatus, Profile, ProfileChip, ProfilesStore, SourceItem, SourceItems, SubagentDef, TaskSource } from './types';
 import { mockSystem } from './system/mock';
 import { resolveProfile } from './profiles';
 import { fileKind } from './files';
@@ -485,6 +485,8 @@ function seedWs(now: number): { workspaces: Workspace[]; folders: Folder[]; grou
       name,
       path,
       station: 'atlas',
+      kind: 'dir',
+      cwd: null,
       folderId,
       pinned,
       archived: false,
@@ -514,6 +516,7 @@ interface MockOptions {
   scale?: number;
   storm?: number;
   platform?: PlatformInfo;
+  switchboard?: boolean;
 }
 
 const urlNumber = (k: string) => (typeof location !== 'undefined' ? Number(new URLSearchParams(location.search).get(k)) || 0 : 0);
@@ -601,6 +604,7 @@ export class MockDaemon implements DaemonClient {
   taskSources: (TaskSource & { project: string })[] = [];
   agents: AgentInfo[] = structuredClone(MOCK_AGENTS);
   hooks: HooksStatus = mockHooks();
+  switchboard: SwitchboardStatus = { found: false, dir: null, imported: false, running: false, sessions: 0, tasks: 0, workspaces: 0, hooks: false, settings: {} };
   statusline = { path: '~/.claude/settings.json', installed: false, command: '~/.claude/statusline.sh' as string | null };
   profileStore: ProfilesStore = structuredClone(MOCK_PROFILES);
   git = new MockGit(this);
@@ -643,6 +647,8 @@ export class MockDaemon implements DaemonClient {
     this.activity = seedActivity();
     ({ workspaces: this.workspaces, folders: this.folders, groups: this.groups } = seedWs(now));
     this.live = opts.live ?? true;
+    if (opts.switchboard ?? (typeof location !== 'undefined' && new URLSearchParams(location.search).has('switchboard')))
+      this.switchboard = { found: true, dir: '/home/dev/.switchboard', imported: false, running: true, sessions: 12, tasks: 4, workspaces: 3, hooks: true, settings: { 'overseer.mockImported': '1' } };
     this.delayMs = opts.delayMs ?? 300;
     this.devicePlatform = opts.platform;
   }
@@ -655,6 +661,15 @@ export class MockDaemon implements DaemonClient {
   async request<T>(method: string, path: string, body?: any): Promise<T> {
     await lag(`${method} ${path}`);
     return this.route(method, path, body) as T;
+  }
+
+  private switchboardRoute(method: string): unknown {
+    const s = this.switchboard;
+    if (method === 'GET') return structuredClone(s);
+    if (method !== 'POST') throw new DaemonError(404, `no route ${method} /v1/import/switchboard`);
+    if (!s.found) throw new DaemonError(404, 'no switchboard data found');
+    this.switchboard = { ...s, imported: true, running: false };
+    return { imported: true, sessions: s.sessions, tasks: s.tasks, workspaces: s.workspaces, stopped: s.running, hooks: s.hooks };
   }
 
   private route(method: string, fullPath: string, body: any): unknown {
@@ -687,6 +702,7 @@ export class MockDaemon implements DaemonClient {
     if (method === 'GET' && path === '/v1/agents') return structuredClone(this.agents);
     if (method === 'POST' && path === '/v1/agents/rescan') return structuredClone(this.agents);
     if (method === 'GET' && path === '/v1/hooks/status') return structuredClone(this.hooks);
+    if (path === '/v1/import/switchboard') return this.switchboardRoute(method);
     if (path === '/v1/lifecycle' && (method === 'GET' || method === 'PATCH')) return this.lifecycleRoute(method, body);
     if (method === 'POST' && (path === '/v1/hooks/install' || path === '/v1/hooks/uninstall')) {
       const on = path.endsWith('/install');
@@ -723,10 +739,11 @@ export class MockDaemon implements DaemonClient {
     if ((r = m(/^\/v1\/lines\/([^/]+)\/chat\/agents\/([^/]+)$/))) return this.agentChat(decodeURIComponent(r[1]), decodeURIComponent(r[2]), new URLSearchParams(qs));
     if ((r = m(/^\/v1\/lines\/([^/]+)\/(chat|screen|keys|commands)$/))) return this.chatRoute(decodeURIComponent(r[1]), r[2], new URLSearchParams(qs), body);
     if (method === 'PUT' && (r = m(/^\/v1\/(lines|terms)\/([^/]+)\/workspace$/))) return this.assignWorkspace(r[1], decodeURIComponent(r[2]), body);
-    if ((r = m(/^\/v1\/lines\/([^/]+)\/(activity|diff|hold|close|resume|pin|title)$/))) return this.lineAction(decodeURIComponent(r[1]), r[2], body, !fullPath.includes('dryRun=false'));
+    if ((r = m(/^\/v1\/lines\/([^/]+)\/(activity|diff|hold|close|resume|pin|title)$/))) return this.lineAction(decodeURIComponent(r[1]), r[2], body, !fullPath.includes('dryRun=false'), fullPath.includes('force=true'));
     if ((r = m(/^\/v1\/(workspaces|folders|groups)(?:\/([^/]+))?$/))) return this.wsRoute(method, r[1] as WsKind, r[2] && decodeURIComponent(r[2]), body);
     if (method === 'POST' && path === '/v1/broadcast') return this.broadcast(body);
     if (method === 'POST' && (r = m(/^\/v1\/ports\/([^/]+)\/kill$/))) return this.killPortProcess(decodeURIComponent(r[1]), body);
+    if (method === 'DELETE' && (r = m(/^\/v1\/terms\/([^/]+)$/))) return this.deleteTerm(decodeURIComponent(r[1]));
     if ((r = m(/^\/v1\/terms\/([^/]+)\/(resize|kill|title)$/))) return this.termAction(decodeURIComponent(r[1]), r[2], body);
     if (method === 'GET' && path === '/v1/tasks/auto-organize') return { enabled: this.autoOrganize };
     if (method === 'PUT' && path === '/v1/tasks/auto-organize') {
@@ -802,7 +819,7 @@ export class MockDaemon implements DaemonClient {
     return l;
   }
 
-  private lineAction(id: string, action: string, body: any, dry = false): unknown {
+  private lineAction(id: string, action: string, body: any, dry = false, force = false): unknown {
     const l = this.findLine(id);
     if (dry && (action === 'hold' || action === 'close')) {
       const running = l.line.state !== 'held' && l.line.state !== 'hung-up';
@@ -817,13 +834,19 @@ export class MockDaemon implements DaemonClient {
     }
     switch (action) {
       case 'activity':
-        if (!this.agents.find((a) => a.id === l.line.agent)?.sessions) throw new DaemonError(409, `no session files for ${l.line.agent}`);
-        return structuredClone(this.activity[id]);
+        if (!this.agents.find((a) => a.id === l.line.agent)?.sessions || !this.activity[id]) {
+          return { lineId: id, title: l.local?.title ?? '', goal: '', status: l.line.state, needsInput: !!l.local?.needsInput, busy: !!l.local?.busy, workLog: [], todos: [], editedFiles: [], lastAssistantText: '', transcript: false } satisfies Activity;
+        }
+        return { ...structuredClone(this.activity[id]), transcript: true };
       case 'diff':
         if (l.line.repo === 'unknown') throw new DaemonError(409, 'fatal: not a git repository (or any of the parent directories): .git');
         return { lineId: id, worktree: l.line.worktreePath ?? '', status: ' M src/term.rs\n M tests/term.rs', stat: ' 2 files changed, 21 insertions(+), 3 deletions(-)', diff: bigDiff() ? bigPatch() : DIFF, truncated: false } satisfies Diff;
       case 'hold':
       case 'close': {
+        if (l.local?.busy && !force) {
+          const plan = { lineId: id, action: 'none', steps: [], predicates: { atPrompt: { ok: false, detail: 'turn in progress' } } };
+          throw new DaemonError(409, 'HTTP 409', plan);
+        }
         const from = l.line.state;
         l.line.state = action === 'hold' ? 'held' : 'hung-up';
         l.local = { ...l.local, busy: false, needsInput: false, heldReason: action === 'hold' ? 'user' : undefined };
@@ -863,12 +886,19 @@ export class MockDaemon implements DaemonClient {
     if (method === 'POST' && !id) {
       const name = String(body?.name ?? '').trim();
       let item: Workspace | Folder | Group;
-      if (kind === 'workspaces') {
+      if (kind === 'workspaces' && body?.kind === 'subject') {
+        if (body.path != null) throw new DaemonError(400, 'a subject has no path, give cwd');
+        if (!name) throw new DaemonError(400, 'name required');
+        const cwd = this.subjectCwd(body.cwd);
+        item = { id: `ws_${Math.random().toString(36).slice(2, 8)}`, name, path: null, kind: 'subject', cwd, station: 'atlas', folderId: body?.folderId ?? null, pinned: !!body?.pinned, archived: false, auto: false, rank: Date.now(), tabs: [], notifyIdle: false, createdAt: now, updatedAt: now } as unknown as Workspace;
+      } else if (kind === 'workspaces') {
+        if (body?.kind != null && body.kind !== 'dir') throw new DaemonError(400, 'kind must be "dir" or "subject"');
+        if (body?.cwd != null) throw new DaemonError(400, 'cwd is only for subjects');
         const path = String(body?.path ?? '').trim().replace(/^~(?=\/|$)/, HOME).replace(/\/+$/, '');
         if (!path.startsWith('/')) throw new DaemonError(400, 'path must be absolute');
         const existing = this.workspaces.find((w) => w.path === path);
         if (existing) return structuredClone(existing);
-        item = { id: `ws_${Math.random().toString(36).slice(2, 8)}`, name: name || path.split('/').pop() || path, path, station: 'atlas', folderId: body?.folderId ?? null, pinned: !!body?.pinned, archived: false, auto: false, rank: Date.now(), tabs: [], notifyIdle: false, createdAt: now, updatedAt: now };
+        item = { id: `ws_${Math.random().toString(36).slice(2, 8)}`, name: name || path.split('/').pop() || path, path, station: 'atlas', kind: 'dir', cwd: null, folderId: body?.folderId ?? null, pinned: !!body?.pinned, archived: false, auto: false, rank: Date.now(), tabs: [], notifyIdle: false, createdAt: now, updatedAt: now } as unknown as Workspace;
       } else {
         if (!name) throw new DaemonError(400, 'name required');
         if (kind === 'folders') {
@@ -892,6 +922,10 @@ export class MockDaemon implements DaemonClient {
     }
     if (method === 'PATCH') {
       const { add, remove, id: _i, ...patch } = body ?? {};
+      if (kind === 'workspaces' && 'cwd' in patch) {
+        if ((item as any).kind !== 'subject') throw new DaemonError(400, 'cwd is only for subjects');
+        patch.cwd = this.subjectCwd(patch.cwd);
+      }
       Object.assign(item, patch, { updatedAt: now });
       if (kind === 'groups') {
         const g = item as Group;
@@ -901,6 +935,13 @@ export class MockDaemon implements DaemonClient {
       return structuredClone(item);
     }
     return structuredClone(item);
+  }
+
+  private subjectCwd(raw: unknown): string {
+    const cwd = String(raw ?? '').trim().replace(/^~(?=\/|$)/, HOME).replace(/\/+$/, '');
+    if (!cwd) throw new DaemonError(400, 'cwd required');
+    if (!cwd.startsWith('/')) throw new DaemonError(400, 'cwd must be absolute');
+    return cwd;
   }
 
   private targetsOf(b: BroadcastRequest): string[] {
@@ -976,6 +1017,13 @@ export class MockDaemon implements DaemonClient {
       if (wid !== null && !this.workspaces.some((w) => w.id === wid)) throw new DaemonError(404, `no workspace ${wid}`);
       l.local = { ...l.local, workspaceId: wid };
       this.emit('line.updated', { line: l.line, local: l.local });
+      // Like the daemon: clearing a line also clears its term, or the scan would re-inherit it.
+      if (wid === null) {
+        for (const t of this.terms.filter((x) => x.lineId === l.line.id && x.workspaceId)) {
+          delete t.workspaceId;
+          this.emit('term.updated', { term: { ...t, workspaceId: null } });
+        }
+      }
       return { lineId: id, workspaceId: wid };
     }
     const t = this.terms.find((x) => x.id === id);
@@ -998,6 +1046,14 @@ export class MockDaemon implements DaemonClient {
     }
   }
 
+  private deleteTerm(id: string): unknown {
+    const t = this.terms.find((x) => x.id === id);
+    if (!t) throw new DaemonError(404, `unknown term ${id}`);
+    if (!t.exited) throw new DaemonError(409, 'term is still running; kill it first');
+    this.terms = this.terms.filter((x) => x.id !== id);
+    return { deleted: id };
+  }
+
   private termAction(id: string, action: string, body: any): unknown {
     const t = this.terms.find((x) => x.id === id);
     if (!t) throw new DaemonError(404, `unknown term ${id}`);
@@ -1014,13 +1070,33 @@ export class MockDaemon implements DaemonClient {
       if (!body?.confirm) throw new DaemonError(400, 'confirm required');
       if (t.exited) throw new DaemonError(409, 'term already exited');
       t.exited = true;
-      t.exitCode = 130;
+      t.exitCode = 1;
       this.emit('term.exited', { term: t });
     }
     return structuredClone(t);
   }
 
-  private createTerm(body: NewTerm): Term {
+  private createTerm(body: NewTerm & { workspaceId?: unknown }): Term {
+    const wid = body?.workspaceId;
+    if (wid == null) return this.startTerm(body);
+    if (typeof wid !== 'string') throw new DaemonError(400, 'workspaceId must be a string');
+    const w = this.workspaces.find((x) => x.id === wid) as (Workspace & { kind?: string; cwd?: string | null }) | undefined;
+    if (!w) throw new DaemonError(404, `no workspace ${wid}`);
+    const { workspaceId: _w, ...rest } = body;
+    const term = this.startTerm({ ...rest, cwd: rest.cwd ?? (w.kind === 'subject' ? w.cwd! : w.path!) });
+    const stored = this.terms.find((x) => x.id === term.id);
+    if (stored) stored.workspaceId = w.id;
+    term.workspaceId = w.id;
+    // Like the scan, but only at creation with a given lineId (the daemon also inherits on later scans).
+    const line = this.lines.find((x) => x.line.id === term.lineId);
+    if (line && !line.local?.workspaceId) {
+      line.local = { ...line.local, workspaceId: w.id };
+      this.emit('line.updated', { line: line.line, local: line.local });
+    }
+    return term;
+  }
+
+  private startTerm(body: NewTerm): Term {
     const scopeCwd = body?.cwd;
     const project = body?.worktree && this.projects.find((p) => p.path === body.cwd);
     if (project) {
@@ -1135,6 +1211,14 @@ export class MockDaemon implements DaemonClient {
 
   async savePaste(name: string, bytes: Uint8Array): Promise<string> {
     return `/tmp/overseer-paste/${Date.now()}-${this.storeUpload(name, bytes.length).name}`;
+  }
+
+  async saveDownload(name: string, bytes: Uint8Array): Promise<string> {
+    const url = URL.createObjectURL(new Blob([bytes as BlobPart]));
+    const a = Object.assign(document.createElement('a'), { href: url, download: name });
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 0);
+    return name;
   }
 
   private sourcesOf(project: string): TaskSource[] {
@@ -1896,7 +1980,7 @@ export class MockDaemon implements DaemonClient {
     if (!Number.isInteger(pid) || pid < 0 || pid > 0xffffffff) throw new DaemonError(400, 'pid (number) required');
     if (body?.confirm !== true) throw new DaemonError(400, 'kill needs {"confirm":true}');
     const p = this.detected.find((x) => x.port === port && x.pid === pid);
-    if (!p) throw new DaemonError(404, `no process ${pid} listening on port ${port} in a Overseer terminal`);
+    if (!p) throw new DaemonError(404, `no process ${pid} listening on port ${port} in an Overseer terminal`);
     this.detected = this.detected.filter((x) => x !== p);
     this.publishPorts();
     return structuredClone(p);

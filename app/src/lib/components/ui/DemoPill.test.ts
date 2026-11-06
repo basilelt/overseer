@@ -9,7 +9,12 @@ async function rendered(demo: boolean, props: Record<string, unknown> = {}) {
   vi.resetModules();
   const { render } = await import('svelte/server');
   const { default: DemoPill } = await import('./DemoPill.svelte');
-  return render(DemoPill, { props }).body.replace(/<!--.*?-->/g, '');
+  let html = render(DemoPill, { props }).body;
+  for (let prev = ''; prev !== html; ) {
+    prev = html;
+    html = html.replace(/<!--[\s\S]*?--!?>/g, '');
+  }
+  return html;
 }
 
 afterEach(() => vi.unstubAllGlobals());

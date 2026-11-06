@@ -59,15 +59,15 @@ pub fn hook_command(bin: &Path, state_dir: &Path, agent: &str, event: &str) -> S
     )
 }
 
-fn ours(h: &Value) -> bool {
-    h["command"].as_str().is_some_and(|c| c.contains(MARKER))
+fn ours(h: &Value, marker: &str) -> bool {
+    h["command"].as_str().is_some_and(|c| c.contains(marker))
 }
 
-fn strip(groups: &mut Vec<Value>) {
-    groups.retain(|g| !ours(g));
+fn strip(groups: &mut Vec<Value>, marker: &str) {
+    groups.retain(|g| !ours(g, marker));
     for g in groups.iter_mut() {
         if let Some(hs) = g.get_mut("hooks").and_then(Value::as_array_mut) {
-            hs.retain(|h| !ours(h));
+            hs.retain(|h| !ours(h, marker));
         }
     }
     groups.retain(|g| {
@@ -108,7 +108,7 @@ fn merge_with(
         if arr.iter().any(|g| has(g, &cmd)) {
             continue;
         }
-        strip(arr);
+        strip(arr, MARKER);
         arr.push(entry(cmd));
     }
     root
@@ -141,15 +141,22 @@ pub fn merge_flat(existing: &Value, events: &[&str], command: impl Fn(&str) -> S
 }
 
 pub fn unmerge(existing: &Value) -> Value {
+    unmerge_marker(existing, MARKER)
+}
+
+pub fn unmerge_marker(existing: &Value, marker: &str) -> Value {
     let mut root = existing.clone();
     if let Some(hooks) = root.get_mut("hooks").and_then(Value::as_object_mut) {
         let keys: Vec<String> = hooks.keys().cloned().collect();
         for k in keys {
             if let Some(arr) = hooks.get_mut(&k).and_then(Value::as_array_mut) {
                 let had = arr.iter().any(|g| {
-                    ours(g) || g["hooks"].as_array().is_some_and(|hs| hs.iter().any(ours))
+                    ours(g, marker)
+                        || g["hooks"]
+                            .as_array()
+                            .is_some_and(|hs| hs.iter().any(|h| ours(h, marker)))
                 });
-                strip(arr);
+                strip(arr, marker);
                 if had && arr.is_empty() {
                     hooks.remove(&k);
                 }
@@ -781,14 +788,40 @@ pub fn routes(method: &str, segs: &[&str], body: &Value, state_dir: &Path) -> Op
     Some((200, json!({ "dryRun": !apply, "results": results })))
 }
 
+fn same_dir(a: &Path, b: &Path) -> bool {
+    let c = |p: &Path| p.canonicalize().unwrap_or_else(|_| p.to_path_buf());
+    c(a) == c(b)
+}
+
+pub fn owns_globals(state_dir: &Path) -> bool {
+    same_dir(state_dir, &crate::platform_state_dir())
+}
+
+pub fn points_elsewhere(t: &Target, state_dir: &Path) -> bool {
+    let Ok(text) = std::fs::read_to_string(&t.path) else {
+        return false;
+    };
+    if !text.contains(MARKER) {
+        return false;
+    }
+    let sh = format!(
+        "OVERSEER_STATE_DIR={} ",
+        shell_quote(&state_dir.to_string_lossy())
+    );
+    !text.contains(&sh) && !text.contains(&js_str(state_dir))
+}
+
 pub fn on_daemon_start(state_dir: &Path) {
-    let env = crate::autostart::Env::current(state_dir);
-    if let Err(e) = crate::autostart::refresh(&env, &crate::autostart::run_cmd) {
-        crate::dlog::line("warn", &format!("overseer daemon: service unit: {e}"));
+    let owner = owns_globals(state_dir);
+    if owner {
+        let env = crate::autostart::Env::current(state_dir);
+        if let Err(e) = crate::autostart::refresh(&env, &crate::autostart::run_cmd) {
+            crate::dlog::line("warn", &format!("overseer daemon: service unit: {e}"));
+        }
     }
     let shim = shim_path();
     if let Ok(exe) = std::env::current_exe() {
-        if let Err(e) = ensure_shim(&shim, &exe, true) {
+        if let Err(e) = ensure_shim(&shim, &exe, owner) {
             eprintln!("overseer daemon: {}: {e}", shim.display());
         }
     }
@@ -801,7 +834,25 @@ pub fn on_daemon_start(state_dir: &Path) {
         state_dir,
         stamp: &stamp,
     };
-    for o in run(&targets(), None, &r, |_| false) {
+    let mut ts = targets();
+    if !owner {
+        ts.retain(|t| {
+            let keep = !points_elsewhere(t, state_dir);
+            if !keep {
+                crate::dlog::line(
+                    "warn",
+                    &format!(
+                        "overseer daemon: not repairing hooks in {}: they call another state dir and {} is not the default one ({}); only the daemon on the default state dir manages them",
+                        t.path.display(),
+                        state_dir.display(),
+                        crate::platform_state_dir().display()
+                    ),
+                );
+            }
+            keep
+        });
+    }
+    for o in run(&ts, None, &r, |_| false) {
         if o.written {
             eprintln!(
                 "overseer daemon: hooks in {} now call {}",
@@ -1119,6 +1170,34 @@ mod tests {
         let dry = run(std::slice::from_ref(&t), None, &r, |_| true);
         assert!(dry[0].changed && !dry[0].written && !t.path.exists());
         assert!(dry[0].diff.contains("hook codex Stop"));
+    }
+
+    #[test]
+    fn hooks_calling_another_state_dir_are_foreign() {
+        let d = dir("foreign");
+        let t = target(
+            &d,
+            "claude",
+            "c.json",
+            hooks::CLAUDE_EVENTS,
+            Format::Groups(5),
+        );
+        let (a, b) = (d.join("a"), d.join("b"));
+        assert!(!points_elsewhere(&t, &a));
+        let text = pretty(&merge(&json!({}), hooks::CLAUDE_EVENTS, |e| {
+            hook_command(Path::new("/sb"), &a, "claude", e)
+        }));
+        std::fs::write(&t.path, text).unwrap();
+        assert!(!points_elsewhere(&t, &a));
+        assert!(points_elsewhere(&t, &b));
+        std::fs::write(&t.path, pretty(&existing())).unwrap();
+        assert!(!points_elsewhere(&t, &b));
+    }
+
+    #[test]
+    fn only_the_default_state_dir_owns_globals() {
+        assert!(owns_globals(&crate::platform_state_dir()));
+        assert!(!owns_globals(&dir("not-default")));
     }
 
     #[cfg(unix)]

@@ -802,6 +802,119 @@ fn hold_and_resume_work_on_every_cycle_of_the_same_line() {
     );
 }
 
+fn claude_term(app: &App, cmd: Value, sid: &str) -> (String, String) {
+    let wt = app.fx.wt.to_string_lossy().into_owned();
+    let t = app.ok(
+        "POST",
+        "/v1/terms",
+        json!({"cwd": wt, "cmd": cmd, "cols": 100, "rows": 30}),
+    );
+    let tid = t["id"].as_str().unwrap().to_string();
+    let line = wait_for(|| {
+        app.ok("GET", "/v1/lines?all=true", Value::Null)
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|l| l["line"]["agentSessionId"] == sid && l["local"]["pid"].is_u64())
+            .map(|l| l["line"]["id"].as_str().unwrap().to_string())
+    });
+    (tid, line)
+}
+
+#[test]
+fn closing_an_agent_session_with_shell_leaves_a_shell_in_its_term() {
+    // Given a claude session that is the root process of its term
+    // When the session is closed as the panel does, with shell=true
+    // Then the term keeps running a shell that shows how to resume the session,
+    // detached from the line, and killing the term still ends it
+    let sid = "cccccccc-0000-4000-8000-000000000000";
+    let app = App::new("closeshell", json!({}));
+    let (tid, line) = claude_term(&app, json!(["claude", "--session-id", sid]), sid);
+    let mut ws = app.ws(&tid);
+    read_until(&mut ws, "❯");
+    let r = app.ok(
+        "POST",
+        &format!("/v1/lines/{line}/close?dryRun=false&shell=true"),
+        Value::Null,
+    );
+    assert_eq!(r["action"], "closed", "{r}");
+    let mut ws = app.ws(&tid);
+    read_until(
+        &mut ws,
+        &format!("claude closed. Session {sid}, resume with:"),
+    );
+    let term = app.ok("GET", &format!("/v1/terms/{tid}"), Value::Null);
+    assert_eq!(
+        (&term["exited"], &term["agent"], &term["lineId"]),
+        (&json!(false), &Value::Null, &Value::Null)
+    );
+    send(&mut ws, "echo SHELL-$((40+3))\r");
+    read_until(&mut ws, "SHELL-43");
+    app.ok(
+        "POST",
+        &format!("/v1/terms/{tid}/kill"),
+        json!({"confirm": true}),
+    );
+    wait(|| app.ok("GET", &format!("/v1/terms/{tid}"), Value::Null)["exited"] == true);
+}
+
+#[test]
+fn closing_an_agent_session_without_shell_still_ends_its_term() {
+    // Given a claude session that is the root process of its term
+    // When the session is closed without shell=true, as closing its tab does
+    // Then the term exits
+    let sid = "dddddddd-0000-4000-8000-000000000000";
+    let app = App::new("closenoshell", json!({}));
+    let (tid, line) = claude_term(&app, json!(["claude", "--session-id", sid]), sid);
+    let mut ws = app.ws(&tid);
+    read_until(&mut ws, "❯");
+    let r = app.ok(
+        "POST",
+        &format!("/v1/lines/{line}/close?dryRun=false"),
+        Value::Null,
+    );
+    assert_eq!(r["action"], "closed", "{r}");
+    wait(|| app.ok("GET", &format!("/v1/terms/{tid}"), Value::Null)["exited"] == true);
+}
+
+#[test]
+fn closing_an_agent_session_started_from_a_shell_keeps_that_shell() {
+    // Given a claude session started from the shell of a term
+    // When the session is closed with shell=true
+    // Then the shell keeps running in the term, detached from the line
+    let sid = "eeeeeeee-0000-4000-8000-000000000000";
+    let app = App::new("closenested", json!({}));
+    let (tid, line) = claude_term(
+        &app,
+        json!([
+            "/bin/sh",
+            "-c",
+            format!("claude --session-id {sid}; exec /bin/sh")
+        ]),
+        sid,
+    );
+    let mut ws = app.ws(&tid);
+    read_until(&mut ws, "❯");
+    let r = app.ok(
+        "POST",
+        &format!("/v1/lines/{line}/close?dryRun=false&shell=true"),
+        Value::Null,
+    );
+    assert_eq!(r["action"], "closed", "{r}");
+    wait(|| app.ok("GET", &format!("/v1/terms/{tid}"), Value::Null)["lineId"].is_null());
+    send(&mut ws, "echo SHELL-$((40+4))\r");
+    read_until(&mut ws, "SHELL-44");
+    assert_eq!(
+        app.ok("GET", &format!("/v1/terms/{tid}"), Value::Null)["exited"],
+        false
+    );
+    app.ok(
+        "POST",
+        &format!("/v1/terms/{tid}/kill"),
+        json!({"confirm": true}),
+    );
+}
+
 #[test]
 fn mcp_server_talks_to_the_daemon() {
     let app = App::new("mcp", json!({}));
@@ -1279,11 +1392,11 @@ fn agents_are_detected_and_launched_from_the_table() {
     assert_eq!(l["line"]["agentSessionId"], sid.as_str());
     assert_eq!(l["local"]["resumeVerified"], true);
     let lid = l["line"]["id"].as_str().unwrap().to_string();
-    assert_eq!(
-        app.req("GET", &format!("/v1/lines/{lid}/activity"), Value::Null)
-            .0,
-        409
-    );
+    let (code, act) = app.req("GET", &format!("/v1/lines/{lid}/activity"), Value::Null);
+    assert_eq!(code, 200);
+    assert_eq!(act["transcript"], false);
+    assert_eq!(act["lineId"], lid.as_str());
+    assert!(act["workLog"].as_array().unwrap().is_empty());
     app.ok(
         "POST",
         &format!("/v1/terms/{ctid}/kill"),
@@ -2032,6 +2145,95 @@ fn a_daemon_killed_like_an_oom_kill_restores_its_sessions_when_it_restarts() {
 }
 
 #[test]
+fn a_pin_or_title_is_visible_in_the_very_next_lines_read() {
+    // Given a codex session in a term
+    // When it is pinned and renamed, each time reading /v1/lines right after the PUT returns
+    // Then that read already shows the new value, every time
+    let app = App::new("pinvisible", json!({}));
+    let wt = app.fx.wt.to_string_lossy().into_owned();
+    let t = app.ok(
+        "POST",
+        "/v1/terms",
+        json!({"cwd": wt, "agent": "codex", "cols": 120, "rows": 24}),
+    );
+    let id = t["id"].as_str().unwrap().to_string();
+    let mut ws = app.ws(&id);
+    read_until(&mut ws, "codex ready");
+    send(&mut ws, "busy\r");
+    let lid = wait_for(|| line_of(&app, &id))["line"]["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let local = |key: &str| {
+        app.ok("GET", "/v1/lines?all=true", Value::Null)
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|l| l["line"]["id"] == lid.as_str())
+            .map(|l| l["local"][key].clone())
+            .unwrap()
+    };
+    for i in 0..20 {
+        let on = i % 2 == 0;
+        app.ok(
+            "PUT",
+            &format!("/v1/lines/{lid}/pin"),
+            json!({"pinned": on}),
+        );
+        assert_eq!(local("pinned"), json!(on), "round {i}");
+        let title = format!("name {i}");
+        app.ok(
+            "PUT",
+            &format!("/v1/lines/{lid}/title"),
+            json!({"title": title}),
+        );
+        assert_eq!(local("titleOverride"), json!(title), "round {i}");
+    }
+    app.ok(
+        "POST",
+        &format!("/v1/terms/{id}/kill"),
+        json!({"confirm": true}),
+    );
+}
+
+#[test]
+fn a_term_rename_survives_a_daemon_kill_right_after_it() {
+    // Given a shell term
+    // When it is renamed and the daemon dies immediately, without waiting for any scan
+    // Then the restarted daemon restores the shell with its new title
+    let fx = Fx::new("rename-crash", 0);
+    let call = |m: &str, t: &str, b: Value| {
+        let body = if b.is_null() {
+            String::new()
+        } else {
+            b.to_string()
+        };
+        let (code, out) = fx.req(m, t, &body);
+        (
+            code,
+            serde_json::from_str::<Value>(&out).unwrap_or(Value::Null),
+        )
+    };
+    let cwd = fx.wt.to_string_lossy().into_owned();
+    let d = fx.daemon(false);
+    let (code, t) = call("POST", "/v1/terms", json!({"cwd": cwd, "cmd": ["/bin/sh"]}));
+    assert_eq!(code, 201, "{t}");
+    let id = t["id"].as_str().unwrap().to_string();
+    std::thread::sleep(Duration::from_secs(3));
+    let (code, v) = call(
+        "PUT",
+        &format!("/v1/terms/{id}/title"),
+        json!({"title": "build"}),
+    );
+    assert_eq!(code, 200, "{v}");
+    drop(d);
+    let _d = fx.daemon(false);
+    wait(|| call("GET", &format!("/v1/terms/{id}"), Value::Null).0 == 200);
+    let t = call("GET", &format!("/v1/terms/{id}"), Value::Null).1;
+    assert_eq!(t["titleOverride"], "build", "{t}");
+}
+
+#[test]
 fn file_route_resolves_relative_paths_against_the_line_cwd() {
     use std::io::{Read, Write};
     let sid = "cccccccc-0000-4000-8000-000000000057";
@@ -2302,6 +2504,67 @@ fn an_agent_that_quits_leaves_a_shell_with_its_session_in_the_tab() {
 }
 
 #[test]
+fn an_agent_that_quits_right_after_starting_a_turn_still_leaves_its_session() {
+    // Given a codex session whose first turn just started, before any scan linked it to the term
+    // When codex quits at once
+    // Then the shell note still carries the session and how to resume it
+    let app = App::new("agentquitfast", json!({}));
+    let wt = app.fx.wt.to_string_lossy().into_owned();
+    let t = app.ok(
+        "POST",
+        "/v1/terms",
+        json!({"cwd": wt, "agent": "codex", "cols": 120, "rows": 24}),
+    );
+    let id = t["id"].as_str().unwrap().to_string();
+    let mut ws = app.ws(&id);
+    read_until(&mut ws, "codex ready");
+    send(&mut ws, "busy\r");
+    send(&mut ws, "exit\r");
+    let shown = read_until(&mut ws, ", resume with:");
+    assert!(shown.contains("codex exited. Session "), "{shown:?}");
+}
+
+#[test]
+fn ending_a_busy_agent_session_needs_force_and_then_ends_its_term() {
+    // Given a codex session in a term that is busy with a turn
+    // When the session is closed as ending its tab does, first without and then with force=true
+    // Then the plain close is refused and keeps the term running, and the forced one ends the term
+    let app = App::new("endbusy", json!({}));
+    let wt = app.fx.wt.to_string_lossy().into_owned();
+    let t = app.ok(
+        "POST",
+        "/v1/terms",
+        json!({"cwd": wt, "agent": "codex", "cols": 120, "rows": 24}),
+    );
+    let id = t["id"].as_str().unwrap().to_string();
+    let mut ws = app.ws(&id);
+    read_until(&mut ws, "codex ready");
+    send(&mut ws, "busy\r");
+    let line = wait_for(|| line_of(&app, &id));
+    let lid = line["line"]["id"].as_str().unwrap().to_string();
+    wait(|| line_of(&app, &id).is_some_and(|l| l["local"]["busy"] == true));
+    let (code, r) = app.req(
+        "POST",
+        &format!("/v1/lines/{lid}/close?dryRun=false"),
+        Value::Null,
+    );
+    assert_eq!(code, 409, "{r}");
+    assert_eq!(r["predicates"]["atPrompt"]["ok"], false, "{r}");
+    assert_eq!(
+        app.ok("GET", &format!("/v1/terms/{id}"), Value::Null)["exited"],
+        false
+    );
+    let (code, r) = app.req(
+        "POST",
+        &format!("/v1/lines/{lid}/close?dryRun=false&force=true"),
+        Value::Null,
+    );
+    assert_eq!(code, 200, "{r}");
+    assert_eq!(r["action"], "closed", "{r}");
+    wait(|| app.ok("GET", &format!("/v1/terms/{id}"), Value::Null)["exited"] == true);
+}
+
+#[test]
 fn killing_an_agent_term_closes_it_without_a_shell() {
     // Given a codex session running in a term
     // When the term is killed, as closing its tab does
@@ -2320,4 +2583,104 @@ fn killing_an_agent_term_closes_it_without_a_shell() {
     wait(|| app.ok("GET", &format!("/v1/terms/{id}"), Value::Null)["exited"] == true);
     let term = app.ok("GET", &format!("/v1/terms/{id}"), Value::Null);
     assert_eq!(term["cmd"][0], "codex");
+}
+
+#[test]
+fn codex_line_never_takes_the_pid_of_another_terminal_of_its_repo() {
+    let app = App::new("codexpid", json!({"autoConcurrency": 0}));
+    let wt = app.fx.wt.to_string_lossy().into_owned();
+    let start = || {
+        let t = app.ok("POST", "/v1/terms", json!({"cwd": wt, "agent": "codex"}));
+        let id = t["id"].as_str().unwrap().to_string();
+        let mut ws = app.ws(&id);
+        read_until(&mut ws, "codex ready");
+        (id, t["pid"].as_u64().unwrap(), ws)
+    };
+    let (_a, pid_a, mut ws_a) = start();
+    let (_b, pid_b, mut ws_b) = start();
+    let codex_lines = || -> Vec<(u64, Option<u64>)> {
+        let v = app.ok("GET", "/v1/lines?all=true", Value::Null);
+        let mut out: Vec<(u64, Option<u64>)> = v
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|l| l["line"]["agent"] == "codex")
+            .map(|l| {
+                (
+                    l["line"]["activityMs"].as_u64().unwrap_or(0),
+                    l["local"]["pid"].as_u64(),
+                )
+            })
+            .collect();
+        out.sort();
+        out
+    };
+    send(&mut ws_a, "busy\r");
+    wait_for(|| (codex_lines().len() == 1).then_some(()));
+    for _ in 0..4 {
+        std::thread::sleep(Duration::from_millis(500));
+        let l = codex_lines();
+        assert_eq!(l.len(), 1, "{l:?}");
+        assert_eq!(l[0].1, Some(pid_a), "{l:?} a={pid_a} b={pid_b}");
+    }
+    send(&mut ws_b, "busy\r");
+    wait_for(|| (codex_lines().len() == 2).then_some(()));
+    for _ in 0..4 {
+        std::thread::sleep(Duration::from_millis(500));
+        let mut pids: Vec<Option<u64>> = codex_lines().iter().map(|l| l.1).collect();
+        pids.sort();
+        assert_eq!(pids, [Some(pid_a), Some(pid_b)]);
+    }
+    send(&mut ws_a, "busy\r");
+    std::thread::sleep(Duration::from_secs(2));
+    let mut pids: Vec<Option<u64>> = codex_lines().iter().map(|l| l.1).collect();
+    pids.sort();
+    assert_eq!(pids, [Some(pid_a), Some(pid_b)]);
+}
+
+#[test]
+fn a_restored_feedback_session_resumes_without_its_initial_prompt() {
+    let fx = Fx::new("resume-no-prompt", 0);
+    let log = fx.base.join("stub.log");
+    let spawn = || {
+        let mut c = Command::new(bin());
+        fx.env(&mut c);
+        c.env("SB_BIN", bin())
+            .env("SB_STUB_LOG", &log)
+            .env("SHELL", "/bin/sh")
+            .args(["daemon", "--interval", "1"]);
+        let d = common::Reap::spawn(c.stderr(Stdio::null()));
+        wait(|| UnixStream::connect(&fx.sock).is_ok());
+        d
+    };
+    let stub = || std::fs::read_to_string(&log).unwrap_or_default();
+    let cwd = fx.wt.to_string_lossy().into_owned();
+    let d = spawn();
+    let body = json!({
+        "agent": "claude", "effort": "high", "cwd": cwd,
+        "body": "the app froze",
+        "prompt": "File this issue from @REPORT@ and do not ask questions",
+    });
+    let (code, out) = fx.req("POST", "/v1/feedback/start", &body.to_string());
+    assert_eq!(code, 201, "{out}");
+    let term = serde_json::from_str::<Value>(&out).unwrap()["term"]["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    wait(|| stub().contains("File this issue from"));
+    assert_eq!(stub().lines().count(), 1, "{}", stub());
+    wait(|| {
+        let (_, v) = fx.req("GET", "/v1/lines?all=true", "");
+        v.contains(&term) && v.contains("--effort")
+    });
+    std::thread::sleep(Duration::from_secs(4));
+    drop(d);
+    let _d = spawn();
+    wait(|| stub().lines().count() >= 2);
+    let log = stub();
+    let relaunch = log.lines().nth(1).unwrap();
+    assert!(relaunch.contains("--resume"), "{log}");
+    assert!(relaunch.contains("--effort high"), "{log}");
+    assert!(!relaunch.contains("File this issue"), "{log}");
+    assert!(!relaunch.contains("do not ask"), "{log}");
 }

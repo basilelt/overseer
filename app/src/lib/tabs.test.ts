@@ -1,6 +1,7 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { SidebarItem } from './grouping';
-import { applyShortcut, newTabKey, registerTabKind, stripScroll, TAB_KINDS, tabInfo, tabTitle, type TabKindDef } from './tabs';
+import type { Term } from './types';
+import { applyShortcut, coarsePointer, focusSession, followTerm, newTabKey, rememberTerms, registerTabKind, stripScroll, TAB_KINDS, tabInfo, tabTitle, type TabKindDef } from './tabs';
 import { addTabs, layoutFromTabs, renameTab, reorderTab, split, switchLayout, workspace } from './workspace.svelte';
 
 describe('tab shortcuts', () => {
@@ -112,5 +113,88 @@ describe('registered tab kinds', () => {
 
   it('keeps an argument that itself contains the prefix', () => {
     expect(tabInfo(newTabKey('browser', 'browser:x'), [])).toMatchObject({ kind: 'browser', arg: 'browser:x' });
+  });
+});
+
+describe('followTerm', () => {
+  const line = { key: 'line:a', lineId: 'a', termId: 't1', kind: 'agent', group: 'active', title: '', at: '' } as unknown as SidebarItem;
+  const bound = [{ id: 't1', lineId: 'a' } as Term];
+  const shell = { key: 'term:t1', termId: 't1', kind: 'shell', group: 'active', title: '', at: '' } as unknown as SidebarItem;
+
+  it('moves a closed session tab to the shell left in its term', () => {
+    const termOf = new Map<string, string>();
+    rememberTerms(termOf, [line], bound);
+    expect(followTerm('line:a', [shell], termOf)).toBe('term:t1');
+  });
+
+  it('follows the shell even while the held line is still listed', () => {
+    const termOf = new Map<string, string>();
+    rememberTerms(termOf, [line], bound);
+    expect(followTerm('line:a', [{ ...line, group: 'held' }, shell], termOf)).toBe('term:t1');
+  });
+
+  it('does not remember a line whose term was already detached', () => {
+    const termOf = new Map<string, string>();
+    rememberTerms(termOf, [line], [{ id: 't1' } as Term]);
+    expect(followTerm('line:a', [line, shell], termOf)).toBeNull();
+  });
+
+  it('finds nothing when the term is gone or still bound to a line', () => {
+    const termOf = new Map<string, string>();
+    rememberTerms(termOf, [line], bound);
+    expect(followTerm('line:a', [], termOf)).toBeNull();
+    expect(followTerm('line:a', [{ ...line, key: 'line:b', lineId: 'b' }], termOf)).toBeNull();
+    expect(followTerm('line:z', [shell], termOf)).toBeNull();
+    expect(followTerm('term:t1', [shell], termOf)).toBeNull();
+  });
+});
+
+describe('focusSession', () => {
+  type Fake = { id: string; isConnected: boolean; focus: (o?: unknown) => void };
+  const fake = (id: string, connected = true): Fake => ({ id, isConnected: connected, focus() { active.el = this; } });
+  const active: { el: unknown } = { el: null };
+  const pane = (found: Record<string, Fake | null>) => ({ querySelector: (sel: string) => found[sel] ?? null }) as unknown as Element;
+  const COMPOSER = '.chat .composer textarea';
+  const TERM = '.keep:not(.hidden) [data-terminal]';
+
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('moves focus from the clicked tab to the visible terminal', () => {
+    const term = fake('term');
+    vi.stubGlobal('document', { get activeElement() { return active.el; } });
+    expect(focusSession(pane({ [TERM]: term }))).toBe(true);
+    expect(active.el).toBe(term);
+  });
+
+  it('prefers the chat composer in the chat view', () => {
+    const box = fake('box');
+    vi.stubGlobal('document', { get activeElement() { return active.el; } });
+    expect(focusSession(pane({ [COMPOSER]: box, [TERM]: fake('term') }))).toBe(true);
+    expect(active.el).toBe(box);
+  });
+
+  it('leaves focus alone when the pane has no terminal or composer, or it is detached', () => {
+    active.el = 'tab';
+    vi.stubGlobal('document', { get activeElement() { return active.el; } });
+    expect(focusSession(pane({}))).toBe(false);
+    expect(focusSession(pane({ [TERM]: fake('gone', false) }))).toBe(false);
+    expect(focusSession(null)).toBe(false);
+    expect(active.el).toBe('tab');
+  });
+});
+
+describe('coarsePointer', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('is true on a touch device and false with a mouse', () => {
+    vi.stubGlobal('matchMedia', (q: string) => ({ matches: q === '(pointer: coarse)' }));
+    expect(coarsePointer()).toBe(true);
+    vi.stubGlobal('matchMedia', () => ({ matches: false }));
+    expect(coarsePointer()).toBe(false);
+  });
+
+  it('is false without matchMedia', () => {
+    vi.stubGlobal('matchMedia', undefined);
+    expect(coarsePointer()).toBe(false);
   });
 });

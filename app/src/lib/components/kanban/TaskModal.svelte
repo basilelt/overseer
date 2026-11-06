@@ -26,7 +26,7 @@
 
   const initialAgent = pickAgent(app.agents, settings.defaultAgent);
   const after = app.data.tasks.find((x) => x.id === app.overlayArg);
-  const initialProject = after?.project ?? app.projectFor(app.currentWorkspace?.path) ?? app.allProjects[0]?.path ?? '';
+  const initialProject = after?.project ?? app.projectFor(app.currentWorkspace?.path ?? undefined) ?? app.allProjects[0]?.path ?? '';
   const fallback = (id: string) => ({ model: id === settings.defaultAgent ? settings.defaultModel : '', effort: settings.defaultEffort });
   const initial = initialChoice(resolveProfile(app.profiles, { cwd: initialProject }), findAgent(app.agents, initialAgent), fallback(initialAgent));
 

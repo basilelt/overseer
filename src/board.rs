@@ -216,7 +216,8 @@ pub fn observe(ctx: &Ctx, lines: &[Line]) {
         let state = l["state"].as_str().unwrap_or_default().to_string();
         let body = change_key(e);
         let local = json!({"busy": e["local"]["busy"], "needsInput": e["local"]["needsInput"],
-            "titleOverride": e["local"]["titleOverride"], "workspaceId": e["local"]["workspaceId"]});
+            "titleOverride": e["local"]["titleOverride"], "workspaceId": e["local"]["workspaceId"],
+            "pinned": e["local"]["pinned"]});
         if !first {
             match prev.get(&id) {
                 None => publish("line.created", json!({"line": l, "local": local})),

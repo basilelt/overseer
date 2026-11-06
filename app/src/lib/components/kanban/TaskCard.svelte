@@ -222,6 +222,7 @@
         <span class="progress" title="{status.pct}%"><span class="bar"><span class="fill" style:width="{status.pct}%"></span></span><span class="pct mono">{task.progress?.done}/{task.progress?.total}</span></span>
       {/if}
       {#if !session && task.effort && (findAgent(app.agents, task.agent)?.efforts.length ?? 1)}<span class="effort">{t(`effort.${task.effort}` as Key)}</span>{/if}
+      <span class="tail">
       <span class="age faint">{t(age.key, { n: age.n })}</span>
       {#if !ghost && (!session || onmore)}
         <span class="actions">
@@ -264,6 +265,7 @@
           {/if}
         </span>
       {/if}
+      </span>
     </div>
   </div>
 </div>
@@ -540,7 +542,7 @@
     gap: 3px;
     min-width: 6em;
     max-width: 100%;
-    flex: 0 1 auto;
+    flex: 1 1 6em;
     font-size: 10.5px;
     color: var(--text-3);
   }
@@ -549,26 +551,30 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
+  .tail {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    flex: none;
+    margin-left: auto;
+  }
   .meta .age {
     color: var(--text-3);
     padding-left: 4px;
   }
   .effort {
+    flex: none;
+    white-space: nowrap;
     padding: 0 6px;
     border: 1px solid var(--border);
     border-radius: 4px;
     line-height: 16px;
   }
   .actions {
-    position: absolute;
-    right: -4px;
-    top: 0;
-    bottom: 0;
     display: flex;
+    flex: none;
     align-items: center;
     gap: 2px;
-    padding-left: 12px;
-    background: linear-gradient(to right, transparent, var(--surface) 12px);
     opacity: 0;
     pointer-events: none;
     transition: opacity var(--ease);
@@ -618,9 +624,6 @@
     border-color: var(--border);
   }
   :global(.phone) .actions {
-    position: static;
-    padding-left: 0;
-    background: none;
     opacity: 1;
     pointer-events: auto;
   }

@@ -38,7 +38,8 @@ const prefixIndexes = new WeakMap<Workspace[], PrefixIndex>();
 function prefixIndex(workspaces: Workspace[]): PrefixIndex {
   let ix = prefixIndexes.get(workspaces);
   if (!ix) {
-    ix = { roots: workspaces.map((w) => ({ w, dir: w.path.replace(/\/+$/, '') || '/' })), hits: new Map() };
+    // A subject has no directory, so it never matches by path.
+    ix = { roots: workspaces.filter((w) => w.path != null).map((w) => ({ w, dir: w.path!.replace(/\/+$/, '') || '/' })), hits: new Map() };
     prefixIndexes.set(workspaces, ix);
   }
   return ix;
@@ -49,9 +50,13 @@ function longestPrefix(path: string | undefined, workspaces: Workspace[]): Works
   const ix = prefixIndex(workspaces);
   if (ix.hits.has(path)) return ix.hits.get(path);
   let best: Workspace | undefined;
+  let bestLen = -1;
   for (const { w, dir } of ix.roots) {
     const inside = path === dir || path.startsWith(dir === '/' ? '/' : `${dir}/`);
-    if (inside && (!best || w.path.length > best.path.length)) best = w;
+    if (inside && w.path!.length > bestLen) {
+      best = w;
+      bestLen = w.path!.length;
+    }
   }
   if (ix.hits.size > 4096) ix.hits.clear();
   ix.hits.set(path, best);
@@ -60,7 +65,7 @@ function longestPrefix(path: string | undefined, workspaces: Workspace[]): Works
 
 export interface MemberIndex {
   byId: Map<string, Workspace>;
-  repoRoot: Map<string, string>;
+  repoRoots: Map<string, string[]>;
   taskByLine: Map<string, Task>;
   taskById: Map<string, Task>;
   workspaces: Workspace[];
@@ -79,15 +84,22 @@ export function memberIndex(workspaces: Workspace[], projects: Project[], tasks:
 }
 
 function buildMemberIndex(workspaces: Workspace[], projects: Project[], tasks: Task[]): MemberIndex {
-  const repoRoot = new Map<string, string>();
-  for (const p of projects) if (p.repo && !repoRoot.has(p.repo)) repoRoot.set(p.repo, p.path);
+  const repoRoots = new Map<string, string[]>();
+  for (const p of projects) if (p.repo) repoRoots.set(p.repo, [...(repoRoots.get(p.repo) ?? []), p.path]);
   return {
     byId: new Map(workspaces.map((w) => [w.id, w])),
-    repoRoot,
+    repoRoots,
     taskByLine: new Map(tasks.filter((t) => t.lineId && t.origin !== 'session').map((t) => [t.lineId!, t])),
     taskById: new Map(tasks.map((t) => [t.id, t])),
     workspaces,
   };
+}
+
+export function repoRoot(clones: string[] | undefined, path: string | undefined): string | undefined {
+  if (!clones) return undefined;
+  let best: string | undefined;
+  for (const c of clones) if (path && within(path, c) && (!best || c.length > best.length)) best = c;
+  return best ?? (clones.length === 1 ? clones[0] : undefined);
 }
 
 export function lineWorkspace(l: LocalLine, ix: MemberIndex): Workspace | undefined {
@@ -98,9 +110,10 @@ export function lineWorkspace(l: LocalLine, ix: MemberIndex): Workspace | undefi
   if (byTask) return byTask;
   const wt = l.line.worktreePath;
   const cwd = l.local?.cwd;
-  const p = longestPrefix(cwd && wt && within(cwd, wt) ? cwd : wt || cwd, ix.workspaces);
-  const r = longestPrefix(l.line.repo ? ix.repoRoot.get(l.line.repo) : undefined, ix.workspaces);
-  if (r && (!p || !within(p.path, r.path))) return r;
+  const path = cwd && wt && within(cwd, wt) ? cwd : wt || cwd;
+  const p = longestPrefix(path, ix.workspaces);
+  const r = longestPrefix(l.line.repo ? repoRoot(ix.repoRoots.get(l.line.repo), path) : undefined, ix.workspaces);
+  if (r && (!p || !within(p.path!, r.path!))) return r;
   return p;
 }
 
@@ -302,7 +315,7 @@ export function resolveTab(key: string, items: SidebarItem[]): string | null {
   return null;
 }
 
-function upsert<T extends { id: string }>(list: T[], item: T): T[] {
+export function upsert<T extends { id: string }>(list: T[], item: T): T[] {
   const i = list.findIndex((x) => x.id === item.id);
   if (i < 0) return [...list, item];
   const next = list.slice();
@@ -359,7 +372,7 @@ export function lineActions(item: SidebarItem, line: LocalLine | undefined): Lin
 
 export type PaneAction = 'open' | 'attach' | 'resume' | 'external';
 
-// A live session with neither a Overseer term nor a tmux pane runs in another terminal:
+// A live session with neither an Overseer term nor a tmux pane runs in another terminal:
 // resuming it would start a second writer on the same transcript.
 export function paneAction(item: SidebarItem, line: LocalLine | undefined): PaneAction | null {
   if (!item.lineId) return null;

@@ -20,13 +20,13 @@
   import { attachIme } from '../../ime';
   import { keyToInput } from '../../keys';
   import { cellAt, ModeTracker, WheelAccumulator, wheelAction } from '../../mouse';
-  import { scrollbackBytes, writeAnchored } from '../../scroll';
+  import { resetViewport, scrollbackBytes, writeAnchored } from '../../scroll';
   import { fontChain, fontFamilies, lineMetrics, sameMetrics, SYMBOL_SAMPLE } from '../../fonts';
   import { applyMods, NO_MODS, type Mods } from '../../mobile/accessory';
   import { attachRetryMs } from '../../conn';
   import { termLink, type TermLink } from '../../termlink';
   import { LONG_PRESS_MS, movedTooFar, pinchFontSize, touchDistance } from '../../mobile/gestures';
-  import { canResize, isAgentTerm, shouldReassert, sizedElsewhere } from '../../mobile/termsize';
+  import { canResize, fitTo, isAgentTerm, shouldReassert, sizedElsewhere } from '../../mobile/termsize';
   import { ui } from '../../mobile/ui.svelte';
   import { isNativeAndroid, native } from '../../mobile/native';
   import { customColors, resolvedTheme, saveSettings, settings } from '../../settings.svelte';
@@ -40,7 +40,7 @@
   import { openFile } from '../../preview';
   import type { UploadResult } from '../../types';
   import { basename, bracketed, insertText, planDrop, planPaste, PROGRESS_FROM, uploadedPath, type Refusal } from '../../uploads';
-  import AccessoryBar from '../mobile/AccessoryBar.svelte';
+  const accessoryBar = () => import('../mobile/AccessoryBar.svelte');
 
   let { termId, focused }: { termId: string; focused: boolean } = $props();
 
@@ -291,14 +291,17 @@
         if (area) quietInput(area);
         refit = () => {
           const tm = term;
-          if (!fixed) return fit.fit();
-          if (tm && info && (tm.cols !== info.cols || tm.rows !== info.rows)) tm.resize(info.cols, info.rows);
+          if (!tm) return;
+          if (!fixed) return void fitTo(tm, fit.proposeDimensions());
+          if (info && (tm.cols !== info.cols || tm.rows !== info.rows)) tm.resize(info.cols, info.rows);
         };
         applyFont();
         link = termLink({
           open: (onData, onClose) => app.client!.attachTerm(termId, onData, onClose),
           reset: () => {
-            term?.reset();
+            if (term) resetViewport(term);
+            scrolledBack = false;
+            unseen = false;
             modes.reset();
           },
           data: (bytes) => {
@@ -551,6 +554,10 @@
   }
 
   $effect(() => {
+    if (app.conn.phase === 'connected') untrack(() => link?.resume());
+  });
+
+  $effect(() => {
     if (!focused || phone) return;
     const onAction = (e: Event) => {
       const action = (e as CustomEvent).detail;
@@ -648,7 +655,7 @@
     <div class="exited">{t('term.exited', { code: info?.exitCode ?? '–' })}</div>
   {/if}
   {#if phone && !exited}
-    <AccessoryBar bind:mods onsend={write} onpaste={paste} onupload={() => picker?.click()} oncompose={() => (composing = true)} />
+    {#await accessoryBar() then { default: AccessoryBar }}<AccessoryBar bind:mods onsend={write} onpaste={paste} onupload={() => picker?.click()} oncompose={() => (composing = true)} />{/await}
     <input class="picker" type="file" multiple bind:this={picker} onchange={picked} />
   {/if}
 </div>

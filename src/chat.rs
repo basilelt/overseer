@@ -2410,7 +2410,9 @@ mod tests {
     fn cold_parse_does_not_block_other_chats() {
         use std::ffi::CString;
         use std::os::unix::ffi::OsStrExt;
-        use std::sync::mpsc;
+        use std::os::unix::fs::OpenOptionsExt;
+        use std::sync::atomic::{AtomicBool, Ordering};
+        use std::sync::{mpsc, Arc};
         use std::time::Duration;
         let d = tmp("cold");
         let slow = d.join("slow.json");
@@ -2432,16 +2434,24 @@ mod tests {
         let o = other.clone();
         let b = std::thread::spawn(move || tx.send(page("claude", &o, tail())).unwrap());
         let got = rx.recv_timeout(Duration::from_secs(3));
-        // The FIFO's mtime moves on write, so the catch-up refresh reads it once more.
-        let w = slow.clone();
-        std::thread::spawn(move || {
-            for _ in 0..2 {
-                let mut f = std::fs::OpenOptions::new().write(true).open(&w).unwrap();
-                f.write_all(br#"{"messages": []}"#).unwrap();
+        let stop = Arc::new(AtomicBool::new(false));
+        let (w, halt) = (slow.clone(), stop.clone());
+        let feeder = std::thread::spawn(move || {
+            while !halt.load(Ordering::Relaxed) {
+                if let Ok(mut f) = std::fs::OpenOptions::new()
+                    .write(true)
+                    .custom_flags(libc::O_NONBLOCK)
+                    .open(&w)
+                {
+                    let _ = f.write_all(br#"{"messages": []}"#);
+                }
+                std::thread::sleep(Duration::from_millis(20));
             }
         });
         a.join().unwrap();
         b.join().unwrap();
+        stop.store(true, Ordering::Relaxed);
+        feeder.join().unwrap();
         let got = got.expect("page() on another chat waited for the cold parse");
         assert_eq!(kinds(&got.unwrap()), ["user"]);
         std::fs::remove_dir_all(&d).unwrap();

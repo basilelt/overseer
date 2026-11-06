@@ -10,6 +10,20 @@
 </p>
 
 <p align="center">
+  <a href="https://github.com/basilelt/overseer/releases/latest"><img src="https://img.shields.io/badge/GitHub-Latest_release-181717?style=for-the-badge&logo=github&logoColor=white" alt="GitHub Latest release"></a>
+  <a href="https://apps.obtainium.imranr.dev/redirect?r=obtainium://app/%7B%22id%22%3A%22io.github.basilelt.overseer%22%2C%22url%22%3A%22https%3A%2F%2Fgithub.com%2Fbasilelt%2Foverseer%22%2C%22author%22%3A%22basilelt%22%2C%22name%22%3A%22Overseer%22%2C%22preferredApkIndex%22%3A0%2C%22additionalSettings%22%3A%22%7B%5C%22includePrereleases%5C%22%3Afalse%2C%5C%22apkFilterRegEx%5C%22%3A%5C%22Overseer_.%2A_android%5C%5C%5C%5C.apk%5C%22%2C%5C%22invertAPKFilter%5C%22%3Afalse%7D%22%2C%22overrideSource%22%3A%22GitHub%22%7D"><img src="https://img.shields.io/badge/Obtainium-Android-5C2D91?style=for-the-badge&logo=obtainium&logoColor=white" alt="Obtainium Android"></a>
+  <a href="#google-play-closed-testing"><img src="https://img.shields.io/badge/Google_Play-Beta-01875F?style=for-the-badge&logo=googleplay&logoColor=white" alt="Google Play Beta"></a>
+  <a href="https://testflight.apple.com/join/DZgZFcMk"><img src="https://img.shields.io/badge/TestFlight-iOS_beta-0D96F6?style=for-the-badge&logo=apple&logoColor=white" alt="TestFlight iOS beta"></a>
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/App_Store-Coming_soon-lightgrey?style=for-the-badge&logo=appstore&logoColor=white" alt="App Store Coming soon">
+  <img src="https://img.shields.io/badge/Google_Play-Coming_soon-lightgrey?style=for-the-badge&logo=googleplay&logoColor=white" alt="Google Play Coming soon">
+  <img src="https://img.shields.io/badge/Mac_App_Store-Coming_soon-lightgrey?style=for-the-badge&logo=apple&logoColor=white" alt="Mac App Store Coming soon">
+  <img src="https://img.shields.io/badge/Microsoft_Store-Coming_soon-lightgrey?style=for-the-badge&logoColor=white" alt="Microsoft Store Coming soon">
+</p>
+
+<p align="center">
   <a href="#install">Install</a> ·
   <a href="#features">Features</a> ·
   <a href="docs/user-guide.md">User guide</a> ·
@@ -39,6 +53,8 @@ changes. Switch to **By status** to see at a glance who needs your input, who is
 is done. Agent tabs also have a **Chat** view rebuilt live from the agent's session file.
 Terminals can optionally be drawn on the GPU with WebGL (Settings, Terminal, **GPU rendering**,
 off by default and experimental), which keeps long output smooth.
+Coming from Switchboard, the old name of Overseer? When its data is found, Overseer offers to import
+your sessions, tasks, workspaces and settings in one click (also in Settings, Help).
 
 ![Workspaces](app/docs/screenshots/workspaces-light.png)
 
@@ -86,7 +102,8 @@ commit from the Kanban card when the task is in testing.
 
 A per-project git graph that stays fast on large histories, with agent branches, tasks and PRs
 on it. Worktrees live in one store outside your repositories, show whether they are in use, idle
-or stale, and are cleaned up safely.
+or stale, and are cleaned up safely: **Clean up merged** picks the merged ones with no agent left,
+and you untick the ones to keep.
 
 ![Git graph](app/docs/screenshots/graph-light.png)
 ![Worktrees](app/docs/screenshots/worktrees-dark.png)
@@ -166,11 +183,45 @@ need nothing: the app installs the daemon over SSH on first connection.
 
 Android: install and update the APK from the releases with Obtainium
 ([add it in one tap](https://apps.obtainium.imranr.dev/redirect?r=obtainium://app/%7B%22id%22%3A%22io.github.basilelt.overseer%22%2C%22url%22%3A%22https%3A%2F%2Fgithub.com%2Fbasilelt%2Foverseer%22%2C%22author%22%3A%22basilelt%22%2C%22name%22%3A%22Overseer%22%2C%22preferredApkIndex%22%3A0%2C%22additionalSettings%22%3A%22%7B%5C%22includePrereleases%5C%22%3Afalse%2C%5C%22apkFilterRegEx%5C%22%3A%5C%22Overseer_.%2A_android%5C%5C%5C%5C.apk%5C%22%2C%5C%22invertAPKFilter%5C%22%3Afalse%7D%22%2C%22overrideSource%22%3A%22GitHub%22%7D), settings prefilled), or download it with
-`gh release download --repo basilelt/overseer --pattern '*android.apk'`. Each release also goes
-to a Google Play testing track; Play builds are updated by Play instead of the in-app updater.
-iOS: not distributed
-publicly; building it needs your own Apple developer account and TestFlight. See
+`gh release download --repo basilelt/overseer --pattern '*android.apk'`. Google Play gets a
+release now and then, shipped by hand; Play builds are updated by Play instead of the in-app
+updater. iOS: join the [TestFlight beta](#testflight-ios-beta) (App Store release to follow). Store versions lag behind the GitHub releases. See
 [docs/mobile.md](docs/mobile.md).
+
+#### Google Play (closed testing)
+
+Overseer is in closed testing on Google Play before its public release. To install it from Play
+and get updates there:
+
+1. With the Google account of your Android phone, join the
+   [Overseer testers group](https://groups.google.com/g/overseer-testers) ("Join group").
+2. Open the [testing invitation](https://play.google.com/apps/testing/io.github.basilelt.overseer)
+   with the same account and tap **Become a tester**. If it says the app is not available, the
+   group join has not reached Play yet: wait a few minutes and reload.
+3. Install Overseer from the
+   [Play Store page](https://play.google.com/store/apps/details?id=io.github.basilelt.overseer)
+   (the link from the invitation page). Updates arrive through Play like any app.
+4. Stay in the group and keep the app installed: Play only opens the app to everyone after
+   testers have used it for 14 days. Send feedback from the app (More > Send feedback) or on the
+   Play listing.
+
+No server yet? Tap **Try the demo** on the first screen to explore the app with sample data.
+
+Already using the APK from the releases? The Play build is signed with a different key, so
+Android will not install it over the APK: uninstall the APK first (your servers have to be added
+again). From then on Play updates the app instead of the in-app updater.
+
+#### TestFlight (iOS beta)
+
+Overseer for iPhone and iPad is in public beta on TestFlight before its App Store release:
+
+1. Install [TestFlight](https://apps.apple.com/app/testflight/id899247664) from the App Store.
+2. Open the [Overseer TestFlight invitation](https://testflight.apple.com/join/DZgZFcMk) on your
+   iPhone or iPad and tap **Accept**, then **Install**. If it says the beta is full or not
+   accepting testers, try again later.
+3. New builds arrive through TestFlight; each build expires after 90 days, so keep TestFlight
+   updates on. Send feedback from the app (More > Send feedback) or with **Send Beta Feedback**
+   in TestFlight.
 
 ### Updates
 
@@ -223,6 +274,35 @@ and [AGENTS.md](AGENTS.md) holds the rules every change follows (stability, ener
 draft PR per feature). [app/README.md](app/README.md) covers the app's development loop and the
 mock daemon. `make test` and `make lint` run offline; tmux tests use an isolated server. Report
 security problems privately, as described in [SECURITY.md](SECURITY.md).
+
+### Develop while using the installed app
+
+`scripts/dev.sh` runs Overseer built from your checkout next to the Overseer you use every day,
+without touching it: the dev daemon gets its own `HOME`, state directory and tmux server under
+`~/.overseer-dev` (`OVERSEER_DEV_DIR` changes it), and the dev desktop app runs under its own
+bundle id, `io.github.basilelt.overseer.dev`, so its settings, windows and macOS permissions are
+separate too.
+
+```sh
+scripts/dev.sh up       # build the daemon from this checkout and start it
+scripts/dev.sh app      # desktop app in dev mode (pnpm tauri dev) on the dev daemon
+scripts/dev.sh status   # is the dev daemon running?
+scripts/dev.sh down     # stop the dev daemon; its tmux sessions keep running
+scripts/dev.sh reset    # stop everything dev and delete ~/.overseer-dev
+```
+
+No code signing is needed: `tauri dev` runs an unbundled binary you built, which Gatekeeper does
+not block. Signing only concerns the released `.app` (see [docs/ci.md](docs/ci.md#macos-signing)).
+The dev app is a different app to macOS, so it may ask for Local Network access on its own. The dev `HOME` starts
+with a copy of your `~/.gitconfig` and nothing else: agents started from the dev daemon are not
+logged in until you log in from one of its terminals (for example `claude`, then `/login`). For UI work
+alone, `pnpm dev` in `app/` runs the frontend in a browser on the mock daemon.
+
+Never start a daemon from a checkout with your real `HOME` (for example
+`OVERSEER_STATE_DIR=$PWD/.state target/debug/overseer daemon`): a daemon on a state directory other
+than the default one does not repair your global agent hooks or `~/.overseer/bin/overseer` (it
+logs why), but it shares your agents, tmux and files. Give it its own `HOME`, as `scripts/dev.sh`
+and `scripts/qa/sandbox.sh` do.
 
 ## Documentation
 

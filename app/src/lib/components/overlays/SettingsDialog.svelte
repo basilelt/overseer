@@ -26,10 +26,13 @@
   import type { StatuslineStatus } from '../../usage/types';
   import { hookable } from '../../hooks';
   import { hooks, loadHooks, setHooks } from '../../hooks.svelte';
+  import { loadSwitchboard, switchboard } from '../../switchboard.svelte';
+  import { canImport } from '../../switchboard';
   import { tt } from '../../tour/strings';
   import { replayTour } from '../../tour/replay';
   import { clampScrollback, MAX_SCROLLBACK_LINES, MIN_SCROLLBACK_LINES } from '../../scroll';
   import { browsers } from '../../browsers.svelte';
+  import { toHex6 } from '../../color-hex';
   import { updater } from '../../updater.svelte';
   import { apk } from '../../mobile/apk-update.svelte';
   import { en } from '../../i18n/en';
@@ -44,7 +47,7 @@
   const colorValues = $derived.by(() => {
     const own = customColors(base);
     const css = getComputedStyle(document.documentElement);
-    return Object.fromEntries(COLOR_TOKENS.map((k) => [k, own[k] ?? css.getPropertyValue(`--${k}`).trim()])) as Record<ColorToken, string>;
+    return Object.fromEntries(COLOR_TOKENS.map((k) => [k, toHex6(own[k] ?? css.getPropertyValue(`--${k}`))])) as Record<ColorToken, string>;
   });
   const setColors = (colors: Settings['colors'][typeof base]) => saveSettings({ colors: { ...settings.colors, [base]: colors } });
   let colorTimer: ReturnType<typeof setTimeout> | undefined;
@@ -78,7 +81,10 @@
     return [t(`hooks.mech.${h.mechanism}`), state, h.note].filter(Boolean).join(' · ');
   }
   $effect(() => {
-    untrack(() => loadHooks(true));
+    untrack(() => {
+      loadHooks(true);
+      loadSwitchboard(true);
+    });
   });
 
   let statusline = $state<StatuslineStatus | null>(null);
@@ -141,6 +147,7 @@
     hooks: !!hooks.status,
     updater: updater.enabled && !app.mobile,
     apk: __SELF_UPDATE__ && apk.enabled && apk.updates,
+    switchboard: canImport(switchboard.status),
   });
   const text = (k: Key) => [t(k), en[k]];
   let query = $state('');
@@ -515,6 +522,16 @@
           <div class="row" class:hit={hit('diag', 'diag')}>
             <span>{dt('show')}<small>{dt('sectionHint')}</small></span>
             <button class="btn" onclick={() => diag.open('live')}>{dt('show')}</button>
+          </div>
+        </section>
+      {/if}
+
+      {#if vis('switchboard')}
+        <section>
+          <h3>{t('switchboard.section')}</h3>
+          <div class="row" class:hit={hit('switchboard', 'switchboard')}>
+            <span>{t('switchboard.title')}<small>{t('switchboard.settingsHint')}</small></span>
+            <button class="btn" data-tour="switchboard" onclick={() => app.open('switchboardImport', 'settings')}>{t('switchboard.run')}</button>
           </div>
         </section>
       {/if}

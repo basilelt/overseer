@@ -158,6 +158,7 @@ export interface NewTerm {
   title?: string;
   lineId?: string;
   taskId?: string;
+  workspaceId?: string;
   worktree?: boolean | { branch?: string; base?: string; slug?: string };
 }
 
@@ -294,6 +295,7 @@ export interface Activity {
   todos: Todo[];
   editedFiles: string[];
   lastAssistantText: string;
+  transcript?: boolean;
 }
 
 export interface Diff {
@@ -353,6 +355,7 @@ export type EventType =
   | 'review.thread'
   | 'review.thread_deleted'
   | 'review.delivery'
+  | 'project.added'
   | 'workspace.created'
   | 'workspace.updated'
   | 'workspace.deleted'
@@ -444,6 +447,27 @@ export interface HookAgentStatus {
   current: boolean;
   path?: string;
   note?: string;
+}
+
+export interface SwitchboardStatus {
+  found: boolean;
+  dir: string | null;
+  imported: boolean;
+  running: boolean;
+  sessions: number;
+  tasks: number;
+  workspaces: number;
+  hooks: boolean;
+  settings: Record<string, string>;
+}
+
+export interface SwitchboardResult {
+  imported: boolean;
+  sessions: number;
+  tasks: number;
+  workspaces: number;
+  stopped: boolean;
+  hooks: boolean;
 }
 
 export interface HooksStatus {
@@ -590,7 +614,11 @@ export interface SshHost {
 export interface Workspace {
   id: string;
   name: string;
-  path: string;
+  /** Null for a subject, which has no directory of its own. */
+  path: string | null;
+  kind?: 'dir' | 'subject';
+  /** Default working directory of a subject; null for a dir. */
+  cwd?: string | null;
   station?: string;
   folderId: string | null;
   pinned: boolean;

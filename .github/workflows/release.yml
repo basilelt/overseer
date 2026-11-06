@@ -71,8 +71,6 @@ jobs:
       tag: ${{ steps.tag_version.outputs.new_tag }}
       version: ${{ steps.tag_version.outputs.new_version }}
       android: ${{ steps.optional.outputs.android }}
-      play: ${{ steps.optional.outputs.play }}
-      ios: ${{ steps.optional.outputs.ios }}
       tap: ${{ steps.optional.outputs.tap }}
       msix: ${{ steps.optional.outputs.msix }}
     steps:
@@ -112,16 +110,12 @@ jobs:
         id: optional
         env:
           ANDROID: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' && secrets.ANDROID_KEYSTORE_PASSWORD != '' && secrets.ANDROID_KEY_ALIAS != '' && secrets.ANDROID_KEY_PASSWORD != '' }}
-          IOS: ${{ secrets.APPLE_TEAM_ID != '' && secrets.APPLE_KEY_ID != '' && secrets.APPLE_ISSUER_ID != '' && secrets.APPLE_KEY_CONTENT != '' && secrets.IOS_CERTIFICATE != '' && secrets.IOS_CERTIFICATE_PASSWORD != '' && secrets.IOS_MOBILE_PROVISION != '' }}
           TAP: ${{ secrets.HOMEBREW_TAP_DEPLOY_KEY != '' }}
           MSIX: ${{ secrets.WINDOWS_SELF_SIGN_PFX_BASE64 != '' && secrets.WINDOWS_SELF_SIGN_PFX_PASSWORD != '' }}
           UPDATER: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY != '' }}
-          PLAY: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON != '' }}
         run: |
           {
             echo "android=$ANDROID"
-            echo "play=$PLAY"
-            echo "ios=$IOS"
             echo "tap=$TAP"
             echo "msix=$MSIX"
           } >> "$GITHUB_OUTPUT"
@@ -130,12 +124,6 @@ jobs:
           fi
           if [ "$ANDROID" != "true" ]; then
             echo "::warning title=app-android skipped::ANDROID_KEYSTORE_BASE64, ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS or ANDROID_KEY_PASSWORD is not set: no Android APK in this release (docs/mobile.md)"
-          fi
-          if [ "$ANDROID" = "true" ] && [ "$PLAY" != "true" ]; then
-            echo "::warning title=Google Play skipped::PLAY_SERVICE_ACCOUNT_JSON is not set: the Android App Bundle is built but not uploaded to Google Play (docs/mobile.md)"
-          fi
-          if [ "$IOS" != "true" ]; then
-            echo "::warning title=app-ios skipped::APPLE_TEAM_ID, APPLE_KEY_ID, APPLE_ISSUER_ID, APPLE_KEY_CONTENT, IOS_CERTIFICATE, IOS_CERTIFICATE_PASSWORD or IOS_MOBILE_PROVISION is not set: no TestFlight build (docs/mobile.md)"
           fi
           if [ "$TAP" != "true" ]; then
             echo "::warning title=tap skipped::HOMEBREW_TAP_DEPLOY_KEY is not set: the Homebrew tap is not updated (docs/ci.md)"
@@ -155,12 +143,15 @@ jobs:
         with:
           persist-credentials: false
 
-      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends clang lld llvm musl-tools
-
-      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+      - uses: ./.github/actions/setup
         with:
-          toolchain: stable
-          targets: x86_64-unknown-linux-musl, aarch64-unknown-linux-musl, x86_64-pc-windows-msvc
+          apt: clang lld llvm musl-tools
+          rust: "true"
+          rust-targets: x86_64-unknown-linux-musl, aarch64-unknown-linux-musl, x86_64-pc-windows-msvc
+          rust-workspaces: |
+            . -> target
+            api -> api/target
+          xwin: "true"
 
       - uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2
 
@@ -172,20 +163,6 @@ jobs:
           scripts/ci-runner-check.sh cargo zig cargo-zigbuild cargo-xwin clang lld-link llvm-lib
           target:x86_64-unknown-linux-musl target:aarch64-unknown-linux-musl
           target:x86_64-pc-windows-msvc
-
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
-        with:
-          path: |
-            ~/.cargo/registry/index
-            ~/.cargo/registry/cache
-            ~/.cargo/git/db
-          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('Cargo.lock', 'api/Cargo.lock', 'app/src-tauri/Cargo.lock') }}
-          restore-keys: ${{ runner.os }}-cargo-registry-
-
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
-        with:
-          path: ~/.cache/cargo-xwin
-          key: cargo-xwin-${{ env.XWIN_ARCH }}-v1
 
       - env:
           VERSION: ${{ needs.tag.outputs.version }}
@@ -211,12 +188,10 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+      - uses: ./.github/actions/setup
         with:
-          toolchain: stable
-          targets: aarch64-apple-darwin, x86_64-apple-darwin
-
-      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+          rust: "true"
+          rust-targets: aarch64-apple-darwin, x86_64-apple-darwin
 
       - env:
           VERSION: ${{ needs.tag.outputs.version }}
@@ -252,37 +227,16 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Free disk space
-        run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL
-
-      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev libsoup-3.0-dev libjavascriptcoregtk-4.1-dev libxdo-dev libssl-dev pkg-config patchelf file
-
-      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+      - uses: ./.github/actions/setup
         with:
-          toolchain: stable
-
-      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6
-        with:
-          version: 11
-
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
-        with:
-          node-version: 24
-          cache: pnpm
-          cache-dependency-path: app/pnpm-lock.yaml
-
-      - run: >
-          scripts/ci-runner-check.sh cargo pnpm patchelf file
-          pkg:webkit2gtk-4.1 pkg:gtk+-3.0 pkg:ayatana-appindicator3-0.1 pkg:librsvg-2.0
-
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
-        with:
-          path: |
-            ~/.cargo/registry/index
-            ~/.cargo/registry/cache
-            ~/.cargo/git/db
-          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('Cargo.lock', 'api/Cargo.lock', 'app/src-tauri/Cargo.lock') }}
-          restore-keys: ${{ runner.os }}-cargo-registry-
+          free-disk: all
+          apt: libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev libsoup-3.0-dev libjavascriptcoregtk-4.1-dev libxdo-dev libssl-dev pkg-config patchelf file
+          rust: "true"
+          rust-workspaces: app/src-tauri -> target
+          node: "true"
+          check: >
+            cargo pnpm patchelf file
+            pkg:webkit2gtk-4.1 pkg:gtk+-3.0 pkg:ayatana-appindicator3-0.1 pkg:librsvg-2.0
 
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
@@ -293,8 +247,6 @@ jobs:
       - env:
           VERSION: ${{ needs.tag.outputs.version }}
         run: scripts/set-version.sh "$VERSION" && make app-resources
-
-      - run: pnpm --dir app install --frozen-lockfile
 
       - env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
@@ -330,44 +282,22 @@ jobs:
         with:
           persist-credentials: false
 
-      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends nsis clang lld llvm cmake nasm
-
-      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+      - uses: ./.github/actions/setup
         with:
-          toolchain: stable
-          targets: x86_64-pc-windows-msvc
+          apt: nsis clang lld llvm cmake nasm
+          rust: "true"
+          rust-targets: x86_64-pc-windows-msvc
+          rust-workspaces: app/src-tauri -> target
+          node: "true"
+          xwin: "true"
 
       - uses: taiki-e/install-action@c509219cf42fba86913069efd0ade2458c59337b # v2
         with:
           tool: cargo-xwin
 
-      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6
-        with:
-          version: 11
-
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
-        with:
-          node-version: 24
-          cache: pnpm
-          cache-dependency-path: app/pnpm-lock.yaml
-
       - run: >
           scripts/ci-runner-check.sh cargo cargo-xwin pnpm makensis clang lld-link llvm-lib llvm-rc cmake nasm
           target:x86_64-pc-windows-msvc
-
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
-        with:
-          path: |
-            ~/.cargo/registry/index
-            ~/.cargo/registry/cache
-            ~/.cargo/git/db
-          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('Cargo.lock', 'api/Cargo.lock', 'app/src-tauri/Cargo.lock') }}
-          restore-keys: ${{ runner.os }}-cargo-registry-
-
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
-        with:
-          path: ~/.cache/cargo-xwin
-          key: cargo-xwin-${{ env.XWIN_ARCH }}-v1
 
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
@@ -378,8 +308,6 @@ jobs:
       - env:
           VERSION: ${{ needs.tag.outputs.version }}
         run: scripts/set-version.sh "$VERSION" && make app-resources
-
-      - run: pnpm --dir app install --frozen-lockfile
 
       - env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
@@ -460,26 +388,13 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+      - uses: ./.github/actions/setup
         with:
-          toolchain: stable
-          targets: aarch64-pc-windows-msvc
-
-      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
-        with:
-          workspaces: app/src-tauri -> target
-
-      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6
-        with:
-          version: 11
-
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
-        with:
-          node-version: 24
-          cache: pnpm
-          cache-dependency-path: app/pnpm-lock.yaml
-
-      - run: scripts/ci-runner-check.sh cargo pnpm jq clang target:aarch64-pc-windows-msvc
+          rust: "true"
+          rust-targets: aarch64-pc-windows-msvc
+          rust-workspaces: app/src-tauri -> target
+          node: "true"
+          check: cargo pnpm jq clang target:aarch64-pc-windows-msvc
 
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
@@ -490,8 +405,6 @@ jobs:
       - env:
           VERSION: ${{ needs.tag.outputs.version }}
         run: scripts/set-version.sh "$VERSION" && scripts/app-resources.sh "$VERSION"
-
-      - run: pnpm --dir app install --frozen-lockfile
 
       - env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
@@ -541,25 +454,13 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+      - uses: ./.github/actions/setup
         with:
-          toolchain: stable
-          targets: ${{ matrix.target }}
-
-      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
-        with:
-          workspaces: app/src-tauri -> target
-          key: ${{ matrix.target }}
-
-      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6
-        with:
-          version: 11
-
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
-        with:
-          node-version: 24
-          cache: pnpm
-          cache-dependency-path: app/pnpm-lock.yaml
+          rust: "true"
+          rust-targets: ${{ matrix.target }}
+          rust-workspaces: app/src-tauri -> target
+          rust-cache-key: ${{ matrix.target }}
+          node: "true"
 
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
@@ -570,8 +471,6 @@ jobs:
       - env:
           VERSION: ${{ needs.tag.outputs.version }}
         run: scripts/set-version.sh "$VERSION" && make app-resources
-
-      - run: pnpm --dir app install --frozen-lockfile
 
       - name: Code signing identity
         id: codesign
@@ -679,61 +578,26 @@ jobs:
     if: needs.tag.outputs.tag != '' && needs.tag.outputs.android == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 120
-    outputs:
-      aab: ${{ steps.aab.outcome }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
 
-      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6
+      - uses: ./.github/actions/setup
         with:
-          distribution: temurin
-          java-version: "21"
-
-      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
-        with:
-          toolchain: stable
-
-      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6
-        with:
-          version: 11
-
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
-        with:
-          node-version: 24
-          cache: pnpm
-          cache-dependency-path: app/pnpm-lock.yaml
-
-      - name: Free disk space
-        run: sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL
-
-      - run: scripts/ci-runner-check.sh cargo rustup pnpm java env:ANDROID_HOME env:JAVA_HOME
+          free-disk: keep-android
+          rust: "true"
+          rust-workspaces: app/src-tauri -> target
+          node: "true"
+          java: "true"
+          gradle: "true"
+          check: cargo rustup pnpm java env:ANDROID_HOME env:JAVA_HOME
 
       - run: NDK_HOME=${ANDROID_NDK_LATEST_HOME:-${ANDROID_NDK_HOME:-}} scripts/android-env.sh aarch64-linux-android armv7-linux-androideabi
-
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
-        with:
-          path: |
-            ~/.cargo/registry/index
-            ~/.cargo/registry/cache
-            ~/.cargo/git/db
-          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('Cargo.lock', 'api/Cargo.lock', 'app/src-tauri/Cargo.lock') }}
-          restore-keys: ${{ runner.os }}-cargo-registry-
-
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
-        with:
-          path: |
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-          key: gradle-${{ hashFiles('app/src-tauri/gen/android/**/*.gradle.kts', 'app/src-tauri/gen/android/gradle/wrapper/gradle-wrapper.properties') }}
-          restore-keys: gradle-
 
       - env:
           VERSION: ${{ needs.tag.outputs.version }}
         run: scripts/set-version.sh "$VERSION"
-
-      - run: pnpm --dir app install --frozen-lockfile
 
       - env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
@@ -763,127 +627,8 @@ jobs:
           if-no-files-found: error
           retention-days: 4
 
-      - name: Google Play bundle
-        id: aab
-        continue-on-error: true
-        env:
-          OVERSEER_DISTRIBUTION: play
-          VERSION: ${{ needs.tag.outputs.version }}
-          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-          ANDROID_CERT_SHA256: ${{ vars.ANDROID_CERT_SHA256 }}
-        run: |
-          pnpm --dir app tauri android build --ci --aab --target aarch64 --target armv7
-          scripts/android-aab.sh "play/Overseer_${VERSION}_android.aab"
-          scripts/android-16k.sh "play/Overseer_${VERSION}_android.aab"
-
-      - if: steps.aab.outcome == 'success'
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
-        with:
-          name: play-android
-          path: play/
-          if-no-files-found: error
-          retention-days: 4
-
       - if: always()
         run: rm -f "$RUNNER_TEMP/release.jks"
-
-  app-android-play:
-    needs: [tag, app-android]
-    if: ${{ !cancelled() && needs.tag.outputs.play == 'true' && needs.app-android.outputs.aab == 'success' }}
-    runs-on: ubuntu-slim
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          persist-credentials: false
-
-      - id: play
-        env:
-          PLAY_TRACK: ${{ vars.PLAY_TRACK }}
-          PLAY_RELEASE_STATUS: ${{ vars.PLAY_RELEASE_STATUS }}
-        run: scripts/android-play-track.sh
-
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
-        with:
-          name: play-android
-          path: play
-
-      - uses: r0adkll/upload-google-play@e738b9dd8f2476ea806d921b64aacd24f34515a5 # v1.1.5
-        with:
-          serviceAccountJsonPlainText: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
-          packageName: io.github.basilelt.overseer
-          releaseFiles: play/*.aab
-          track: ${{ steps.play.outputs.track }}
-          status: ${{ steps.play.outputs.status }}
-
-  app-ios:
-    needs: tag
-    if: needs.tag.outputs.tag != '' && needs.tag.outputs.ios == 'true'
-    runs-on: macos-26
-    timeout-minutes: 60
-    continue-on-error: true
-    env:
-      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-      APPLE_DEVELOPMENT_TEAM: ${{ secrets.APPLE_TEAM_ID }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          persist-credentials: false
-
-      - run: scripts/store-guard.sh
-
-      - uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90 # v1
-        with:
-          xcode-version: "26"
-
-      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
-        with:
-          toolchain: stable
-          targets: aarch64-apple-ios
-
-      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
-        with:
-          workspaces: app/src-tauri -> target
-
-      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6
-        with:
-          version: 11
-
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
-        with:
-          node-version: 24
-          cache: pnpm
-          cache-dependency-path: app/pnpm-lock.yaml
-
-      - run: command -v fastlane || brew install fastlane
-
-      - env:
-          VERSION: ${{ needs.tag.outputs.version }}
-        run: scripts/set-version.sh "$VERSION"
-
-      - run: pnpm --dir app install --frozen-lockfile
-
-      - name: Set the Apple team in the Xcode project
-        working-directory: app/src-tauri/gen/apple
-        run: |
-          sed -i '' -E "s/(DEVELOPMENT_TEAM|DevelopmentTeam) = [^;]*;/\1 = $APPLE_TEAM_ID;/" overseer-app.xcodeproj/project.pbxproj
-          sed -i '' -E "s/DEVELOPMENT_TEAM: .*/DEVELOPMENT_TEAM: $APPLE_TEAM_ID/" project.yml
-          grep -c "$APPLE_TEAM_ID" overseer-app.xcodeproj/project.pbxproj
-
-      - working-directory: app
-        env:
-          OVERSEER_APP_DIR: ${{ github.workspace }}/app
-          APPLE_KEY_ID: ${{ secrets.APPLE_KEY_ID }}
-          APPLE_ISSUER_ID: ${{ secrets.APPLE_ISSUER_ID }}
-          APPLE_KEY_CONTENT: ${{ secrets.APPLE_KEY_CONTENT }}
-          IOS_CERTIFICATE: ${{ secrets.IOS_CERTIFICATE }}
-          IOS_CERTIFICATE_PASSWORD: ${{ secrets.IOS_CERTIFICATE_PASSWORD }}
-          IOS_MOBILE_PROVISION: ${{ secrets.IOS_MOBILE_PROVISION }}
-          FASTLANE_SKIP_UPDATE_CHECK: "1"
-          FASTLANE_HIDE_CHANGELOG: "1"
-        run: fastlane ios internal_testflight
 
   publish:
     needs: [tag, servers, servers-macos, app-linux, app-windows, app-windows-msix, app-windows-arm, app-macos, app-android]

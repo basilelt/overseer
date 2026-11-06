@@ -68,7 +68,8 @@ desktop)
   [ -f "$D/daemon.pid" ] || { echo "run $0 start first" >&2; exit 1; }
   "$0" desktop-stop
   mkdir -p "$D/apphome"
-  setsid Xvfb ":$DISPLAY_NUM" -screen 0 1440x900x24 -nolisten tcp >> "$D/xvfb.log" 2>&1 &
+  [ -f "$MESA_EGL" ] || MESA_EGL=
+  setsid env ${MESA_EGL:+__EGL_VENDOR_LIBRARY_FILENAMES="$MESA_EGL"} Xvfb ":$DISPLAY_NUM" -screen 0 1440x900x24 -nolisten tcp >> "$D/xvfb.log" 2>&1 &
   echo $! > "$D/xvfb.pid"
   # The app's devUrl is fixed at localhost:1420, which another checkout's dev server may hold; then
   # Vite and the app share a private network namespace (the daemon and X are on Unix sockets).
@@ -77,7 +78,6 @@ desktop)
     unshare -rn true 2>/dev/null || { echo "port 1420 is taken by another dev server" >&2; exit 1; }
     ns="unshare -rn"
   fi
-  [ -f "$MESA_EGL" ] || MESA_EGL=
   export R D DISPLAY_NUM MESA_EGL
   setsid $ns sh -c '
     ip link set lo up 2>/dev/null || true

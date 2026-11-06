@@ -23,6 +23,23 @@ describe('lineGroup', () => {
   });
 });
 
+describe('sidebarItems feedback sessions', () => {
+  const fb = { id: 'f1', lineId: 'fb', exited: false, cmd: ['claude', 'prompt'], title: 'Feedback', cwd: '/x/work', createdAt: '2026-10-29T09:00:00Z' } as Term;
+  const wt = { worktreePath: '/x/work' };
+
+  it('titles a feedback session with its term title instead of the cwd basename', () => {
+    expect(sidebarItems([line('fb', wt)], [fb], [])[0].title).toBe('Feedback');
+  });
+
+  it('keeps a rename of a feedback session', () => {
+    expect(sidebarItems([line('fb', wt, { titleOverride: 'Mine' })], [fb], [])[0].title).toBe('Mine');
+  });
+
+  it('keeps the cwd basename for a session whose term is not feedback', () => {
+    expect(sidebarItems([line('fb', wt)], [{ ...fb, title: 'zsh' }], [])[0].title).toBe('work');
+  });
+});
+
 describe('sidebarItems', () => {
   const tasks = [{ id: 't1', lineId: 'b', status: 'in_testing', title: 'Task B', description: 'Do B' } as Task];
   const terms = [

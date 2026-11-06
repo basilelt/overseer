@@ -255,3 +255,48 @@ fn commit_file_lists_parse_in_linear_time() {
     );
     assert!(r < LINEAR, "parse_files ratio {r:.1}");
 }
+
+struct Killed(std::sync::Arc<overseer::term::Term>);
+
+impl Drop for Killed {
+    fn drop(&mut self) {
+        let _ = self.0.kill();
+    }
+}
+
+fn term_titled(len: usize) -> Killed {
+    Killed(
+        overseer::term::spawn(overseer::term::Spec {
+            cwd: "/".into(),
+            cmd: vec!["/bin/sh".into()],
+            title: Some("t".repeat(len)),
+            workspace_id: Some("w1".into()),
+            cols: 80,
+            rows: 24,
+            ..Default::default()
+        })
+        .unwrap(),
+    )
+}
+
+#[test]
+fn inheriting_a_term_workspace_does_not_depend_on_the_term_state() {
+    // Given a term with a short title and one with a 100 KB title, both assigned
+    // When the scan's per-line lookup runs on each
+    // Then the cost is the same: only the workspace id is read, not the whole info
+    let (small_t, big_t) = (term_titled(1), term_titled(100_000));
+    let (a, b) = (small_t.0.info().id, big_t.0.info().id);
+    assert_eq!(overseer::term::workspace_of(&a).as_deref(), Some("w1"));
+    assert_eq!(overseer::term::workspace_of(&b).as_deref(), Some("w1"));
+    let mut small = || {
+        std::hint::black_box(overseer::term::workspace_of(&a));
+    };
+    let mut big = || {
+        std::hint::black_box(overseer::term::workspace_of(&b));
+    };
+    let r = scaling(&mut small, &mut big, 3.0);
+    assert!(
+        r < 3.0,
+        "lookup cost grows with the term state: ratio {r:.1}"
+    );
+}

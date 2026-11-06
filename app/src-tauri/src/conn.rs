@@ -159,6 +159,8 @@ impl Reconnect {
 
 type Session = (Target, Arc<Reporter>, Ctx);
 
+const CONNECT_RETRY: Duration = Duration::from_millis(250);
+
 pub struct ConnManager {
     tx: watch::Sender<Option<Arc<DaemonConn>>>,
     monitor: Mutex<Option<JoinHandle<()>>>,
@@ -166,6 +168,7 @@ pub struct ConnManager {
     session: Mutex<Option<Session>>,
     cancelled: std::sync::atomic::AtomicBool,
     wake: tokio::sync::Notify,
+    watch_pace: fn(u32) -> Duration,
 }
 
 impl Default for ConnManager {
@@ -177,6 +180,7 @@ impl Default for ConnManager {
             session: Mutex::new(None),
             cancelled: Default::default(),
             wake: Default::default(),
+            watch_pace: backoff,
         }
     }
 }
@@ -188,6 +192,35 @@ impl ConnManager {
 
     pub fn subscribe(&self) -> watch::Receiver<Option<Arc<DaemonConn>>> {
         self.tx.subscribe()
+    }
+
+    pub async fn current_within(&self, bound: Duration) -> Option<Arc<DaemonConn>> {
+        if let Some(c) = self.current() {
+            return Some(c);
+        }
+        tokio::time::timeout(bound, self.wait_current()).await.ok()
+    }
+
+    pub async fn request(
+        &self,
+        method: &str,
+        path: &str,
+        body: Option<&[u8]>,
+        bound: Duration,
+    ) -> Result<http::Response, String> {
+        let end = std::time::Instant::now() + bound;
+        loop {
+            let left = end.saturating_duration_since(std::time::Instant::now());
+            let conn = self
+                .current_within(left)
+                .await
+                .ok_or("not connected to a daemon")?;
+            match conn.open().await {
+                Ok(io) => return conn.request_on(io, method, path, body).await,
+                Err(e) if left.is_zero() => return Err(e.to_string()),
+                Err(_) => tokio::time::sleep(CONNECT_RETRY).await,
+            }
+        }
     }
 
     pub async fn wait_current(&self) -> Arc<DaemonConn> {
@@ -302,10 +335,9 @@ impl ConnManager {
                     ..ConnState::new("connected", &target)
                 });
                 let me = self.clone();
-                *self.monitor.lock().unwrap() =
-                    Some(tokio::spawn(
-                        async move { me.monitor(target, rep, ctx).await },
-                    ));
+                *self.monitor.lock().unwrap() = Some(tokio::spawn(async move {
+                    me.monitor(target, rep, ctx, None).await
+                }));
                 Ok(())
             }
             Err(e) => {
@@ -313,31 +345,68 @@ impl ConnManager {
                     error: Some(e.clone()),
                     ..ConnState::new("error", &target)
                 });
+                if is_local(&target) {
+                    let me = self.clone();
+                    let lost = e.clone();
+                    *self.monitor.lock().unwrap() = Some(tokio::spawn(async move {
+                        me.monitor(target, rep, ctx, Some(lost)).await
+                    }));
+                }
                 Err(e)
             }
         }
     }
 
-    async fn monitor(self: Arc<Self>, target: Target, rep: Arc<Reporter>, ctx: Ctx) {
+    async fn local_returns(&self) {
+        let mut attempt = 0;
         loop {
-            let Some(conn) = self.current() else { return };
-            let reason = match &*conn {
-                DaemonConn::Tunnel(t) => t.mux.dead().await,
-                _ => loop {
-                    tokio::time::sleep(Duration::from_secs(5)).await;
-                    if tokio::time::timeout(
-                        Duration::from_secs(5),
-                        conn.request("GET", "/v1/version", None),
-                    )
-                    .await
-                    .is_ok_and(|r| r.is_ok())
-                    {
-                        continue;
-                    }
-                    break "the daemon stopped answering".to_string();
-                },
+            tokio::select! {
+                _ = tokio::time::sleep((self.watch_pace)(attempt)) => {}
+                _ = self.wake.notified() => attempt = 0,
+            }
+            attempt += 1;
+            let alive = match transport::local() {
+                Ok(c) => wait_version(&c, 1).await.is_ok(),
+                Err(_) => false,
             };
-            drop(conn);
+            if alive {
+                return;
+            }
+        }
+    }
+
+    async fn monitor(
+        self: Arc<Self>,
+        target: Target,
+        rep: Arc<Reporter>,
+        ctx: Ctx,
+        mut lost: Option<String>,
+    ) {
+        loop {
+            let reason = if let Some(r) = lost.take() {
+                self.local_returns().await;
+                r
+            } else {
+                let Some(conn) = self.current() else { return };
+                let reason = match &*conn {
+                    DaemonConn::Tunnel(t) => t.mux.dead().await,
+                    _ => loop {
+                        tokio::time::sleep(Duration::from_secs(5)).await;
+                        if tokio::time::timeout(
+                            Duration::from_secs(5),
+                            conn.request("GET", "/v1/version", None),
+                        )
+                        .await
+                        .is_ok_and(|r| r.is_ok())
+                        {
+                            continue;
+                        }
+                        break "the daemon stopped answering".to_string();
+                    },
+                };
+                drop(conn);
+                reason
+            };
             crate::diag::warn(
                 "conn",
                 format!("{} connection lost: {reason}", target_label(&target)),
@@ -373,16 +442,24 @@ impl ConnManager {
                         }
                         Next::GiveUp => {
                             rep.set(ConnState {
-                                error: Some(e),
+                                error: Some(e.clone()),
                                 ..ConnState::new("error", &target)
                             });
-                            return;
+                            if !is_local(&target) {
+                                return;
+                            }
+                            lost = Some(e);
+                            break;
                         }
                     },
                 }
             }
         }
     }
+}
+
+fn is_local(t: &Target) -> bool {
+    !matches!(t.kind.as_str(), "ssh" | "direct")
 }
 
 fn target_label(t: &Target) -> String {
@@ -791,6 +868,153 @@ async fn establish_direct(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn conn() -> Option<Arc<DaemonConn>> {
+        Some(Arc::new(DaemonConn::Local("/tmp/x.sock".into())))
+    }
+
+    #[tokio::test]
+    async fn current_within_returns_a_live_connection_at_once() {
+        let m = ConnManager::default();
+        m.tx.send_replace(conn());
+        assert!(m.current_within(Duration::ZERO).await.is_some());
+    }
+
+    #[tokio::test]
+    async fn current_within_waits_for_the_reconnection() {
+        let m = Arc::new(ConnManager::default());
+        let later = m.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(50)).await;
+            later.tx.send_replace(conn());
+        });
+        assert!(m.current_within(Duration::from_secs(5)).await.is_some());
+    }
+
+    fn dead_socket(name: &str) -> (std::path::PathBuf, ConnManager) {
+        let path = std::env::temp_dir().join(format!("ov-{name}-{}.sock", std::process::id()));
+        let _ = std::fs::remove_file(&path);
+        let m = ConnManager::default();
+        m.tx.send_replace(Some(Arc::new(DaemonConn::Local(path.clone()))));
+        (path, m)
+    }
+
+    #[tokio::test]
+    async fn request_retries_refused_connections_until_the_daemon_is_back() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let (path, m) = dead_socket("back");
+        let at = path.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(600)).await;
+            let l = tokio::net::UnixListener::bind(&at).unwrap();
+            let (mut s, _) = l.accept().await.unwrap();
+            let mut buf = [0u8; 512];
+            let _ = s.read(&mut buf).await;
+            s.write_all(b"HTTP/1.1 200 OK\r\ncontent-length: 2\r\nconnection: close\r\n\r\n{}")
+                .await
+                .unwrap();
+        });
+        let res = m
+            .request("POST", "/v1/terms", Some(b"{}"), Duration::from_secs(10))
+            .await
+            .unwrap();
+        assert_eq!(res.head.status, 200);
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[tokio::test]
+    async fn request_reports_the_refusal_once_the_wait_is_over() {
+        let (_, m) = dead_socket("down");
+        let err = m
+            .request("GET", "/v1/lines", None, Duration::from_millis(400))
+            .await
+            .unwrap_err();
+        assert!(!err.contains("not connected"), "{err}");
+    }
+
+    #[tokio::test]
+    async fn request_without_a_connection_waits_then_reports_it() {
+        let m = ConnManager::default();
+        let err = m
+            .request("GET", "/v1/lines", None, Duration::from_millis(50))
+            .await
+            .unwrap_err();
+        assert_eq!(err, "not connected to a daemon");
+    }
+
+    #[tokio::test]
+    async fn current_within_gives_up_after_the_bound() {
+        let m = ConnManager::default();
+        assert!(m.current_within(Duration::from_millis(20)).await.is_none());
+    }
+
+    static ENV: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
+    async fn serve_version(path: &Path) {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let l = tokio::net::UnixListener::bind(path).unwrap();
+        let body = format!("{{\"version\":\"{SERVER_VERSION}\"}}");
+        loop {
+            let (mut s, _) = l.accept().await.unwrap();
+            let body = body.clone();
+            tokio::spawn(async move {
+                let mut buf = [0u8; 1024];
+                let _ = s.read(&mut buf).await;
+                let head = format!(
+                    "HTTP/1.1 200 OK\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
+                    body.len()
+                );
+                let _ = s.write_all(head.as_bytes()).await;
+            });
+        }
+    }
+
+    #[tokio::test]
+    async fn a_local_daemon_that_comes_back_after_the_spawn_failed_is_reconnected_without_retry() {
+        let _g = ENV.lock().await;
+        let dir = std::env::temp_dir().join(format!("ov-watch-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let sock = dir.join("d.sock");
+        let old = (
+            std::env::var_os("OVERSEER_SOCKET"),
+            std::env::var_os("PATH"),
+        );
+        std::env::set_var("OVERSEER_SOCKET", &sock);
+        std::env::set_var("PATH", &dir);
+        let m = Arc::new(ConnManager {
+            watch_pace: |_| Duration::from_millis(20),
+            ..Default::default()
+        });
+        let phases = Arc::new(Mutex::new(Vec::<&'static str>::new()));
+        let seen = phases.clone();
+        let emit: Emit = Arc::new(move |s| seen.lock().unwrap().push(s.phase));
+        let target = Target {
+            kind: "local".into(),
+            host: None,
+            label: "Local".into(),
+        };
+        let err = m.connect(target, emit, Ctx::default()).await.unwrap_err();
+        assert!(err.contains("no overseer binary"), "{err}");
+        assert_eq!(phases.lock().unwrap().last(), Some(&"error"));
+        assert!(m.current().is_none());
+        let server = tokio::spawn({
+            let sock = sock.clone();
+            async move { serve_version(&sock).await }
+        });
+        assert!(m.current_within(Duration::from_secs(10)).await.is_some());
+        assert_eq!(phases.lock().unwrap().last(), Some(&"connected"));
+        m.disconnect();
+        server.abort();
+        match old.0 {
+            Some(v) => std::env::set_var("OVERSEER_SOCKET", v),
+            None => std::env::remove_var("OVERSEER_SOCKET"),
+        }
+        if let Some(v) = old.1 {
+            std::env::set_var("PATH", v);
+        }
+        let _ = std::fs::remove_dir_all(dir);
+    }
 
     #[test]
     fn backoff_grows_and_caps() {

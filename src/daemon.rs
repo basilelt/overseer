@@ -238,6 +238,7 @@ fn term_spec(b: &Value, state_dir: &std::path::Path) -> Result<crate::term::Spec
         title: s("title")?,
         line_id: s("lineId")?,
         task_id: s("taskId")?,
+        workspace_id: s("workspaceId")?,
         ..Default::default()
     };
     if let Some(id) = s("agent")? {
@@ -313,6 +314,11 @@ fn terms(r: &Request, segs: &[&str], body: &Value, ctx: &Ctx) -> Option<(u16, Va
             Value::Array(term::all().iter().map(|t| t.to_json()).collect()),
         ),
         ("POST", ["v1", "terms"]) => {
+            let started = match crate::workspaces::start_body(ctx, body) {
+                Ok(b) => b,
+                Err((c, e)) => return Some(err(c, e)),
+            };
+            let body = &started;
             match term_spec(body, &ctx.state_dir)
                 .map_err(|e| err(400, e))
                 .and_then(|mut s| {
@@ -475,7 +481,13 @@ fn tasks(r: &Request, segs: &[&str], body: &Value, ctx: &Ctx) -> Option<(u16, Va
                 .map(Value::from),
         ),
         ("POST", ["v1", "projects"]) => match tasks::add_project(ctx, body) {
-            Ok((created, p)) => (if created { 201 } else { 200 }, p),
+            Ok((created, p)) => {
+                if created {
+                    crate::board::publish("project.added", json!({"project": p}));
+                    let _ = crate::workspaces::list(ctx);
+                }
+                (if created { 201 } else { 200 }, p)
+            }
             Err((c, e)) => err(c, e),
         },
         ("POST", ["v1", "projects", "discover"]) => res(200, crate::discover::run(ctx)),
@@ -644,9 +656,11 @@ fn activity(ctx: &Ctx, r: &Request, id: &str) -> (u16, Value) {
         &l.session_id,
     )
     .and_then(|p| crate::activity::activity(l.agent, &p, since));
-    let Some(mut a) = a else {
-        return err(409, format!("no transcript for line {}", l.id));
-    };
+    let transcript = a.is_some();
+    let mut a = a.unwrap_or_else(
+        || json!({"workLog": [], "todos": [], "editedFiles": [], "lastAssistantText": ""}),
+    );
+    a["transcript"] = json!(transcript);
     if let Some(t) = &l.title {
         a["title"] = json!(t);
     }
@@ -811,6 +825,7 @@ pub fn handle(ctx: &Ctx, r: &Request) -> (u16, Value) {
         .or_else(|| crate::worktrees::routes(ctx, &r.method, &segs, &body))
         .or_else(|| crate::install::routes(&r.method, &segs, &body, &ctx.state_dir))
         .or_else(|| crate::statusline::routes(&r.method, &segs, &body, &ctx.state_dir))
+        .or_else(|| crate::import::routes(&r.method, &segs, &body, &ctx.state_dir))
         .or_else(|| crate::lifecycle::routes(&r.method, &segs, &body, &ctx.state_dir))
         .or_else(|| crate::termtheme::routes(&r.method, &segs, &body))
         .or_else(|| crate::feedback::routes(ctx, &r.method, &segs, &body))
@@ -867,10 +882,18 @@ pub fn handle(ctx: &Ctx, r: &Request) -> (u16, Value) {
             Ok(rep) => (if rep.ok() { 200 } else { 409 }, rep.to_json()),
             Err(e) => err(404, e),
         },
-        ("POST", ["v1", "lines", id, "close"]) => match actions::close(ctx, id, !dry_run(r)) {
-            Ok(rep) => (if rep.ok() { 200 } else { 409 }, rep.to_json()),
-            Err(e) => err(404, e),
-        },
+        ("POST", ["v1", "lines", id, "close"]) => {
+            match actions::close(
+                ctx,
+                id,
+                !dry_run(r),
+                q(r, "shell") == Some("true"),
+                q(r, "force") == Some("true"),
+            ) {
+                Ok(rep) => (if rep.ok() { 200 } else { 409 }, rep.to_json()),
+                Err(e) => err(404, e),
+            }
+        }
         ("POST", ["v1", "lines", id, "resume"]) => {
             match actions::resume(ctx, id, dry_run(r), actions::Launch::Detached) {
                 Ok(p) => (200, p.to_json()),
@@ -1062,6 +1085,11 @@ pub fn conn(mut s: impl Stream, token: Option<&str>) {
     let (code, v) = handle(&ctx, &req);
     if changes_lines(&req.method, &req.path, code) {
         crate::scanner::poke();
+        if settles_lines(&req.method, &req.path) {
+            if let Ok(lines) = crate::scan(&ctx) {
+                crate::lifecycle::persist(&ctx.state_dir, &lines);
+            }
+        }
     }
     let extra = if crate::scanner::take_scanning() {
         "X-Overseer-Scanning: 1\r\n"
@@ -1075,6 +1103,16 @@ pub fn conn(mut s: impl Stream, token: Option<&str>) {
         extra,
         &serde_json::to_vec(&v).unwrap_or_default(),
     );
+}
+
+fn settles_lines(method: &str, path: &str) -> bool {
+    let segs: Vec<&str> = path.trim_matches('/').split('/').collect();
+    method == "PUT"
+        && matches!(
+            segs.as_slice(),
+            ["v1", "lines", _, "pin" | "title" | "workspace"]
+                | ["v1", "terms", _, "title" | "workspace"]
+        )
 }
 
 fn changes_lines(method: &str, path: &str, code: u16) -> bool {
@@ -1094,9 +1132,11 @@ fn changes_lines(method: &str, path: &str, code: u16) -> bool {
             ]
         ) | ("POST", ["v1", "terms"])
             | ("POST", ["v1", "terms", _, "kill"])
+            | ("PUT", ["v1", "terms", _, "title" | "workspace"])
             | ("DELETE", ["v1", "terms" | "workspaces", _])
             | ("POST", ["v1", "tasks", _, "start"])
             | ("POST", ["v1", "tasks", "organize"])
+            | ("POST", ["v1", "import", "switchboard"])
     )
 }
 
@@ -1292,6 +1332,14 @@ pub fn run(
         }
         Err(e) => return Err(e),
     };
+    if saved.is_none() {
+        if let Some(pid) = live_other_daemon(&state_dir) {
+            return Err(format!(
+                "a daemon is already running on {} (pid {pid})",
+                state_dir.display()
+            ));
+        }
+    }
     let restarted = saved.is_some();
     let _ = std::fs::write(state_dir.join("daemon.pid"), std::process::id().to_string());
     let _wal_keeper = crate::registry::Registry::open(&state_dir).ok();
@@ -1417,6 +1465,23 @@ fn take_lock(
     lock(state_dir)
 }
 
+#[cfg(unix)]
+fn live_other_daemon(state_dir: &Path) -> Option<i32> {
+    let pid: i32 = std::fs::read_to_string(state_dir.join("daemon.pid"))
+        .ok()?
+        .trim()
+        .parse()
+        .ok()
+        .filter(|p| *p > 1 && *p != std::process::id() as i32)?;
+    (unsafe { libc::kill(pid, 0) } == 0 && command_line(pid).is_some_and(|c| looks_like_daemon(&c)))
+        .then_some(pid)
+}
+
+#[cfg(not(unix))]
+fn live_other_daemon(_: &Path) -> Option<i32> {
+    None
+}
+
 pub fn looks_like_daemon(cmdline: &str) -> bool {
     let mut words = cmdline.split_whitespace();
     let named = words.next().is_some_and(|w| {
@@ -1494,7 +1559,8 @@ fn start_unit(state_dir: &Path) -> bool {
         return false;
     }
     if let Ok(exe) = std::env::current_exe() {
-        let _ = crate::install::ensure_shim(&env.shim, &exe, true);
+        let _ =
+            crate::install::ensure_shim(&env.shim, &exe, crate::install::owns_globals(state_dir));
     }
     match crate::autostart::run_cmd("systemctl", &["--user", "start", crate::autostart::UNIT]) {
         Ok(_) => true,
@@ -1741,6 +1807,12 @@ mod tests {
         assert!(changes_lines("PUT", "/v1/lines/x/pin", 200));
         assert!(changes_lines("PUT", "/v1/lines/x/title", 200));
         assert!(changes_lines("PUT", "/v1/lines/x/workspace", 200));
+        assert!(changes_lines("PUT", "/v1/terms/x/title", 200));
+        assert!(changes_lines("PUT", "/v1/terms/x/workspace", 200));
+        assert!(settles_lines("PUT", "/v1/lines/x/pin"));
+        assert!(settles_lines("PUT", "/v1/terms/x/title"));
+        assert!(!settles_lines("POST", "/v1/terms"));
+        assert!(!settles_lines("PUT", "/v1/lines/x/hold"));
         assert!(changes_lines("DELETE", "/v1/workspaces/w", 200));
         assert!(!changes_lines("POST", "/v1/terms", 400));
         assert!(!changes_lines("GET", "/v1/lines", 200));

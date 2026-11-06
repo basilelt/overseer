@@ -59,6 +59,7 @@ export default defineConfig({
   },
   test: {
     environment: 'node',
+    setupFiles: ['src/test/pin-locale.ts', 'src/test/pin-platform.ts'],
     include: ['src/**/*.test.ts'],
     css: { include: [/\.css\?raw$/] },
     coverage: {
@@ -66,7 +67,7 @@ export default defineConfig({
       include: ['src/lib/**/*.ts'],
       exclude: ['src/**/*.test.ts', 'src/**/types.ts', 'src/**/strings.ts', 'src/**/mock*.ts', 'src/lib/i18n/*.ts'],
       reporter: ['text-summary', 'json-summary'],
-      thresholds: { lines: 94, functions: 88, branches: 89, statements: 92 },
+      thresholds: { lines: 94, functions: 88, branches: 89, statements: 93 },
     },
   },
 });

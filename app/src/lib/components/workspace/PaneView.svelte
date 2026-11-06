@@ -25,6 +25,7 @@
   import { claim, KEEP_TERMS, KEEP_TERMS_PHONE, retain, same, type Claim } from '../../keepalive';
 
   const browser = () => import('../browser/BrowserView.svelte');
+  const emptyPane = () => import('./EmptyPane.svelte');
   const chatView = () => import('../chat/ChatView.svelte');
   const sessionWeb = () => import('../browser/SessionWeb.svelte');
   const review = () => TAB_KINDS.review?.load?.() ?? Promise.resolve(null);
@@ -113,9 +114,11 @@
           {/if}
         {/await}
       {:else if tab && (tab.kind === 'graph' || tab.kind === 'worktrees' || tab.kind === 'system' || tab.kind === 'usage' || tab.kind === 'prs')}
-        {#await TAB_KINDS[tab.kind]?.load?.() then View}
-          {#if View}<Boundary name={tab.kind}><View tabKey={tab.key} {tab} {focused} /></Boundary>{/if}
-        {/await}
+        {#key tab.kind}
+          {#await TAB_KINDS[tab.kind]?.load?.() then View}
+            {#if View}<Boundary name={tab.kind}><View tabKey={tab.key} {tab} {focused} /></Boundary>{/if}
+          {/await}
+        {/key}
       {:else if item?.lineId && tab?.kind === 'chat'}
         <Boundary name="chat">{#await chatView() then { default: ChatView }}<ChatView {item} phone={ui.layout === 'phone'} />{/await}</Boundary>
       {:else if item?.lineId && !item.termId}
@@ -128,7 +131,9 @@
             <button class="btn primary" disabled={resuming} onclick={resume}><RotateCcw size={13} />{t(running ? 'line.attach' : 'term.resume')}</button>
           {/if}
         </div>
-      {:else if !item?.termId}
+      {:else if !item}
+        {#await emptyPane() then { default: EmptyPane }}<EmptyPane />{/await}
+      {:else if !item.termId}
         <div class="empty">
           <SquareTerminal size={28} strokeWidth={1.5} />
           <p class="faint">{t('term.empty')}</p>

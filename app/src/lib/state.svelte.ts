@@ -1,6 +1,6 @@
 import { activityDelay } from './activity';
 import { FALLBACK_AGENTS, sessionsAvailable } from './agents';
-import { presence } from './presence';
+import { onPresence, presence } from './presence';
 import { api, type Api } from './api';
 import { DaemonError, getClient, type DaemonClient } from './client';
 import { groupItems, sidebarItems, stableItems, type SidebarItem } from './grouping';
@@ -17,7 +17,7 @@ import { isNoRoute } from './localnet';
 import { startupTarget } from './conn';
 import { activeKey, allTabs, EMPTY_LAYOUT, forgetLayouts, onTabClosed, openInFocused, update, workspace } from './workspace.svelte';
 import { newTabKey } from './tabs';
-import { aggregate, applyWsEvent, EMPTY_WS, isGhost, itemWorkspaces, resolveTab, sameMap, synthesize, type Aggregate, type WsData } from './workspaces';
+import { aggregate, applyWsEvent, EMPTY_WS, isGhost, itemWorkspaces, resolveTab, sameMap, synthesize, upsert, within, type Aggregate, type WsData } from './workspaces';
 import type { Workspace } from './types';
 import type { MenuItem, OpenMenu } from './menu';
 import { isWebLink, resolveLink, type LinkFrom, type LinkGesture, type LinkRoute } from './links';
@@ -27,7 +27,7 @@ import { ui } from './mobile/ui.svelte';
 import { feedback } from './feedback.svelte';
 
 export type View = 'agents' | 'kanban' | 'browser';
-export type Overlay = null | 'taskDetail' | 'palette' | 'connect' | 'settings' | 'task' | 'project' | 'review' | 'ports' | 'system' | 'usage' | 'broadcast' | 'holdAll' | 'name' | 'workspaceNew' | 'profiles' | 'shortcuts' | 'file' | 'notifications' | 'closeTab';
+export type Overlay = null | 'taskDetail' | 'palette' | 'connect' | 'settings' | 'task' | 'project' | 'review' | 'ports' | 'system' | 'usage' | 'broadcast' | 'holdAll' | 'name' | 'workspaceNew' | 'profiles' | 'shortcuts' | 'file' | 'notifications' | 'closeTab' | 'switchboardImport';
 
 export interface FileArg {
   path: string;
@@ -47,6 +47,11 @@ const LOCAL: HostTarget = { kind: 'local', label: 'Local' };
 const EMPTY: Snapshot = { lines: [], terms: [], tasks: [], activity: {} };
 // Bounded backoff after a failed workspaces load (e.g. SQLite locked during an upgrade), then stop.
 const WS_RETRY_MS = [1000, 2000, 5000, 10000];
+
+function withAdded(terms: Term[], added: Map<string, Term>): Term[] {
+  const missing = [...added.values()].filter((t) => !terms.some((x) => x.id === t.id));
+  return missing.length ? [...terms, ...missing] : terms;
+}
 
 class AppState {
   client = $state.raw<DaemonClient | null>(null);
@@ -81,6 +86,7 @@ class AppState {
   wsPersistent = $state(true);
   sidebarMode = $state<SidebarMode>(settings.sidebarMode ?? 'workspaces');
   workspaceId = $state<string>(NO_WORKSPACE);
+  private following: { id: string; goToWorkspace: boolean } | null = null;
   private pendingTab: 'graph' | 'worktrees' | null = initialTab();
   private wsChosen = false;
   multi = $state.raw<Set<string>>(new Set());
@@ -104,6 +110,7 @@ class AppState {
   private wsRetry: ReturnType<typeof setTimeout> | undefined;
   private wsAttempt = 0;
   private refreshing = 0;
+  private added = new Map<string, Term>();
   private eventSeq = 0;
   private touched: Touched = new Map();
 
@@ -232,10 +239,14 @@ class AppState {
     this.data = {
       ...cur,
       lines: mergeFetched(lines, cur.lines, 'line', (l) => l.line.id, this.touched, since),
-      terms: mergeFetched(terms, cur.terms, 'term', (t) => t.id, this.touched, since),
+      terms: withAdded(mergeFetched(terms, cur.terms, 'term', (t) => t.id, this.touched, since), this.added),
       tasks: mergeFetched(tasks, cur.tasks, 'task', (t) => t.id, this.touched, since),
     };
-    if (--this.refreshing === 0) this.touched.clear();
+    if (--this.refreshing === 0) {
+      this.touched.clear();
+      this.added.clear();
+    }
+    this.settleFollow();
     if (complete) {
       this.synced = true;
       pages.useHost(hostKey(this.conn.target));
@@ -310,7 +321,7 @@ class AppState {
     }, WS_RETRY_MS[this.wsAttempt++]);
   }
 
-  private async reloadWs() {
+  async reloadWs() {
     if (!this.connected) return;
     const attempt = this.wsAttempt;
     try {
@@ -375,8 +386,7 @@ class AppState {
   }
 
   upsertWorkspace(w: Workspace) {
-    const has = this.ws.workspaces.some((x) => x.id === w.id);
-    this.ws = { ...this.ws, workspaces: has ? this.ws.workspaces.map((x) => (x.id === w.id ? w : x)) : [...this.ws.workspaces, w] };
+    this.ws = { ...this.ws, workspaces: upsert(this.ws.workspaces, w) };
   }
 
   async patchWorkspace(id: string, patch: Parameters<Api['patchWorkspace']>[1]) {
@@ -434,8 +444,9 @@ class AppState {
       this.loadProfiles();
       return;
     }
-    if (/^(workspace|folder|group)\./.test(e.type)) {
-      this.ws = applyWsEvent(this.ws, e);
+    if (/^(workspace|folder|group|project)\./.test(e.type)) {
+      if (e.data?.project) this.addProject(e.data.project);
+      else this.ws = applyWsEvent(this.ws, e);
       return;
     }
     if (e.type === 'broadcast.delivered') {
@@ -469,6 +480,7 @@ class AppState {
     }
     if (next === prev && e.type !== 'line.activity' && !/^(review|worktree)\./.test(e.type) && e.type !== 'git.changed') return;
     this.data = next;
+    this.settleFollow();
     for (const l of this.listeners) l(prev, next, e);
     if (e.type === 'line.activity' && e.data?.lineId && !e.data.activity) this.scheduleActivity(e.data.lineId);
   }
@@ -522,7 +534,7 @@ class AppState {
     const line = this.data.lines.find((l) => l.line.id === lineId);
     if (line && !sessionsAvailable(this.agents, line.line.agent)) return null;
     const act = await this.api.activity(lineId).catch(() => null);
-    if (!act) return null;
+    if (!act || act.transcript === false) return null;
     const stale = (l: LocalLine) => l.line.id === lineId && (l.local?.needsInput !== act.needsInput || (act.busy !== undefined && l.local?.busy !== act.busy));
     const lines = this.data.lines.some(stale) ? this.data.lines.map((l) => (stale(l) ? { ...l, local: { ...l.local, needsInput: act.needsInput, busy: act.busy ?? l.local?.busy } } : l)) : this.data.lines;
     const prev = this.data.activity[lineId];
@@ -549,20 +561,49 @@ class AppState {
   }
 
   async newSession(agent: string, opts: { cwd?: string; model?: string; effort?: Effort; worktree?: boolean; profile?: string } = {}): Promise<Term> {
-    const cwd = opts.cwd ?? (this.sidebarMode === 'workspaces' ? this.currentWorkspace?.path : undefined);
-    const worktree = (opts.worktree ?? (agent !== 'shell' && !settings.sessionsInCheckout)) && this.inProject(cwd);
+    const scoped = this.sidebarMode === 'workspaces' ? this.currentWorkspace : null;
+    // A subject has no directory: the daemon starts the term in its cwd and assigns it.
+    // A repo workspace is assigned too: the term runs in a worktree outside its path until it reports a line.
+    const subject = scoped && (!opts.cwd || (scoped.kind !== 'subject' && !!scoped.path && within(opts.cwd, scoped.path))) ? scoped.id : undefined;
+    const cwd = opts.cwd ?? scoped?.path ?? undefined;
+    const worktree = (opts.worktree ?? (agent !== 'shell' && !settings.sessionsInCheckout)) && this.inProject(cwd ?? (subject ? (scoped?.cwd ?? undefined) : undefined));
     const size = { cols: 120, rows: 32, ...(worktree ? { worktree: true } : {}) };
     const profile = agent === 'shell' ? undefined : (opts.profile ?? this.nextProfile ?? undefined);
-    const term = await this.api.createTerm(agent === 'shell' ? { cwd, ...size } : { agent, cwd, model: opts.model || undefined, effort: opts.effort, ...(profile ? { profile } : {}), ...size });
+    const term = await this.api.createTerm(agent === 'shell' ? { cwd, ...(subject ? { workspaceId: subject } : {}), ...size } : { agent, cwd, ...(subject ? { workspaceId: subject } : {}), model: opts.model || undefined, effort: opts.effort, ...(profile ? { profile } : {}), ...size });
     if (profile && !opts.profile) this.nextProfile = null;
-    this.upsertTerm(term);
-    this.selectedKey = `term:${term.id}`;
-    this.view = 'agents';
+    this.followSession(term, false);
     return term;
   }
 
+  followSession(term: Term, goToWorkspace = true) {
+    this.upsertTerm(term);
+    this.following = { id: term.id, goToWorkspace };
+    this.focusKey(`term:${term.id}`);
+  }
+
+  private focusKey(key: string) {
+    if (this.following?.goToWorkspace) this.select(key);
+    else {
+      this.selectedKey = key;
+      this.view = 'agents';
+    }
+  }
+
+  private settleFollow() {
+    const id = this.following?.id;
+    if (!id) return;
+    const item = this.items.find((i) => i.termId === id);
+    if (!item) {
+      if (!this.data.terms.some((t) => t.id === id && !t.exited)) this.following = null;
+      return;
+    }
+    const cur = this.selectedKey;
+    if (cur !== item.key && (cur === null || cur === `term:${id}` || !this.items.some((i) => i.key === cur))) this.focusKey(item.key);
+    if (item.lineId) this.following = null;
+  }
+
   openProjectTab(kind: 'graph' | 'worktrees', project?: string) {
-    const p = project ?? this.projectFor(this.sidebarMode === 'workspaces' ? this.currentWorkspace?.path : undefined) ?? this.projects[0]?.path;
+    const p = project ?? this.projectFor(this.sidebarMode === 'workspaces' ? (this.currentWorkspace?.path ?? undefined) : undefined) ?? this.projects[0]?.path;
     if (!p) return;
     const key = newTabKey(kind, p);
     this.view = 'agents';
@@ -580,6 +621,7 @@ class AppState {
   }
 
   upsertTerm(term: Term) {
+    if (this.refreshing) this.added.set(term.id, term);
     if (this.data.terms.some((t) => t.id === term.id)) return;
     this.data = { ...this.data, terms: [...this.data.terms, term] };
   }
@@ -721,6 +763,7 @@ function withColors(projects: Project[], colors: Record<string, string>): Projec
 }
 
 export const app = new AppState();
+onPresence((p) => p.focused && app.reloadWs());
 
 /** Tab rename, move and full-title code, kept out of the startup bundle. */
 let tabMod: typeof import('./tab-lazy') | null = null;

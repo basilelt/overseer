@@ -106,6 +106,8 @@ impl AppState {
     }
 }
 
+const RECONNECT_WAIT: Duration = Duration::from_secs(60);
+
 fn win(state: &AppState, window: &Window) -> Arc<WindowConn> {
     state.window(window.label())
 }
@@ -135,15 +137,17 @@ pub async fn daemon_request(
         ),
         Duration::MAX,
     );
-    let conn = win(&state, &window)
-        .conn
-        .current()
-        .ok_or("not connected to a daemon")?;
     let bytes = body
         .filter(|b| !b.is_null())
         .map(|b| b.to_string().into_bytes());
-    let res = conn
-        .request(&method.to_ascii_uppercase(), &path, bytes.as_deref())
+    let res = win(&state, &window)
+        .conn
+        .request(
+            &method.to_ascii_uppercase(),
+            &path,
+            bytes.as_deref(),
+            RECONNECT_WAIT,
+        )
         .await?;
     Ok(RawResponse {
         status: res.head.status,
@@ -185,7 +189,8 @@ pub async fn daemon_bytes(
     );
     let conn = win(&state, &window)
         .conn
-        .current()
+        .current_within(RECONNECT_WAIT)
+        .await
         .ok_or("not connected to a daemon")?;
     let res = conn
         .request_within("GET", &path, None, Duration::from_secs(120))
@@ -239,7 +244,8 @@ pub async fn upload_file(
         .unwrap_or_else(|| "file".into());
     let conn = win(&state, &window)
         .conn
-        .current()
+        .current_within(RECONNECT_WAIT)
+        .await
         .ok_or("not connected to a daemon")?;
     let file = tokio::fs::File::open(&path)
         .await
@@ -303,6 +309,59 @@ pub fn save_paste(app: AppHandle, request: tauri::ipc::Request<'_>) -> Result<St
         .map_err(|e| format!("{}: {e}", path.display()))?;
     std::io::Write::write_all(&mut file, &bytes).map_err(|e| format!("{}: {e}", path.display()))?;
     Ok(path.to_string_lossy().into_owned())
+}
+
+#[tauri::command]
+pub fn save_download(app: AppHandle, request: tauri::ipc::Request<'_>) -> Result<String, String> {
+    let bytes = raw_body(request.body())?;
+    let raw = request
+        .headers()
+        .get("x-name")
+        .and_then(|v| v.to_str().ok())
+        .map(http::percent_decode)
+        .unwrap_or_default();
+    let paths = app.path();
+    let home = paths.home_dir().ok();
+    let dir = [
+        paths.download_dir().ok(),
+        home.as_ref().map(|h| h.join("Downloads")),
+        paths.document_dir().ok(),
+        home,
+    ]
+    .into_iter()
+    .flatten()
+    .find(|d| d.is_dir())
+    .ok_or("no Downloads folder to save into")?;
+    let (path, mut file) = create_unique(&dir, &paste_name(&raw))?;
+    std::io::Write::write_all(&mut file, &bytes).map_err(|e| format!("{}: {e}", path.display()))?;
+    Ok(path.to_string_lossy().into_owned())
+}
+
+fn create_unique(
+    dir: &std::path::Path,
+    name: &str,
+) -> Result<(std::path::PathBuf, std::fs::File), String> {
+    let (stem, ext) = match name.rfind('.') {
+        Some(i) if i > 0 => (&name[..i], &name[i..]),
+        _ => (name, ""),
+    };
+    for n in 0..1000 {
+        let path = if n == 0 {
+            dir.join(name)
+        } else {
+            dir.join(format!("{stem} ({n}){ext}"))
+        };
+        match std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&path)
+        {
+            Ok(f) => return Ok((path, f)),
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(e) => return Err(format!("{}: {e}", path.display())),
+        }
+    }
+    Err(format!("{}: too many copies of {name}", dir.display()))
 }
 
 fn raw_body(body: &tauri::ipc::InvokeBody) -> Result<std::borrow::Cow<'_, [u8]>, String> {
@@ -401,9 +460,11 @@ async fn attach(
     term_id: &str,
     on_data: Channel<InvokeResponseBody>,
 ) -> Result<u32, String> {
-    let conn = tokio::time::timeout(Duration::from_secs(60), w.conn.wait_current())
+    let conn = w
+        .conn
+        .current_within(RECONNECT_WAIT)
         .await
-        .map_err(|_| "not connected to a daemon")?;
+        .ok_or("not connected to a daemon")?;
     let io = conn.open().await.map_err(|e| e.to_string())?;
     let path = format!("/v1/terms/{}/io", term_id.replace(['/', '?', '#'], ""));
     let socket = tokio::time::timeout(Duration::from_secs(15), ws::connect(io, &conn.path(&path)))
@@ -634,7 +695,7 @@ pub async fn ssh_hosts() -> Vec<crate::sshconfig::SshHost> {
 
 #[cfg(test)]
 mod tests {
-    use super::{paste_name, raw_body, AppState};
+    use super::{create_unique, paste_name, raw_body, AppState};
     use std::sync::Arc;
 
     #[test]
@@ -721,6 +782,25 @@ mod tests {
         );
         assert!(raw_body(&InvokeBody::Json(serde_json::json!([256]))).is_err());
         assert!(raw_body(&InvokeBody::Json(serde_json::json!({"0": 1}))).is_err());
+    }
+
+    #[test]
+    fn downloads_never_overwrite_an_existing_file() {
+        let dir = std::env::temp_dir().join(format!("sb-dl-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let names: Vec<String> = (0..3)
+            .map(|_| {
+                let (p, _) = create_unique(&dir, "icon.png").unwrap();
+                p.file_name().unwrap().to_string_lossy().into_owned()
+            })
+            .collect();
+        assert_eq!(names, ["icon.png", "icon (1).png", "icon (2).png"]);
+        let (p, _) = create_unique(&dir, "README").unwrap();
+        assert!(p.ends_with("README"));
+        let (p, _) = create_unique(&dir, "README").unwrap();
+        assert!(p.ends_with("README (1)"));
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]

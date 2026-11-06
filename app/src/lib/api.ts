@@ -1,7 +1,7 @@
 import { DaemonError, type DaemonClient } from './client';
 import type { StatuslineStatus } from './usage/types';
 import type { DirListing } from './dirs';
-import type { Activity, AgentInfo, BroadcastRequest, ChatPage, CustomCommand, ScreenText, BroadcastResponse, DaemonEnv, Diff, DiscoverResult, FileEdit, Folder, Group, HooksRun, HooksStatus, LocalLine, NewTask, NewTerm, Profile, ProfilesStore, Project, Status, SubagentDef, Task, TaskMessage, Term, Version, Workspace, Lifecycle, LifecyclePatch } from './types';
+import type { Activity, AgentInfo, BroadcastRequest, ChatPage, CustomCommand, ScreenText, BroadcastResponse, DaemonEnv, Diff, DiscoverResult, FileEdit, Folder, Group, HooksRun, HooksStatus, SwitchboardResult, SwitchboardStatus, LocalLine, NewTask, NewTerm, Profile, ProfilesStore, Project, Status, SubagentDef, Task, TaskMessage, Term, Version, Workspace, Lifecycle, LifecyclePatch } from './types';
 
 const enc = encodeURIComponent;
 
@@ -11,7 +11,7 @@ export function api(c: DaemonClient) {
     status: () => c.request<Status>('GET', '/v1/status'),
     lines: () => c.request<LocalLine[]>('GET', '/v1/lines'),
     hold: (id: string) => c.request('POST', `/v1/lines/${enc(id)}/hold?dryRun=false`),
-    close: (id: string) => c.request('POST', `/v1/lines/${enc(id)}/close?dryRun=false`),
+    close: (id: string, shell = false) => c.request('POST', `/v1/lines/${enc(id)}/close?dryRun=false${shell ? '&shell=true' : ''}`),
     resume: (id: string) => c.request<Term>('POST', `/v1/lines/${enc(id)}/resume?dryRun=false`, { target: 'term' }),
     attach: (id: string) => c.request<Term>('POST', `/v1/lines/${enc(id)}/resume?dryRun=false`, { target: 'term', attachOnly: true }),
     pin: (id: string, pinned: boolean) => c.request('PUT', `/v1/lines/${enc(id)}/pin`, { pinned }),
@@ -54,6 +54,8 @@ export function api(c: DaemonClient) {
     rescanAgents: () => c.request<AgentInfo[]>('POST', '/v1/agents/rescan'),
     env: () => c.request<DaemonEnv>('GET', '/v1/env'),
     hooksStatus: () => c.request<HooksStatus>('GET', '/v1/hooks/status'),
+    switchboardStatus: () => c.request<SwitchboardStatus>('GET', '/v1/import/switchboard'),
+    importSwitchboard: () => c.request<SwitchboardResult>('POST', '/v1/import/switchboard', {}),
     lifecycle: () => c.request<Lifecycle>('GET', '/v1/lifecycle'),
     patchLifecycle: (patch: LifecyclePatch) => c.request<Lifecycle>('PATCH', '/v1/lifecycle', patch),
     installHooks: (agents: string[], dryRun = false) => c.request<HooksRun>('POST', '/v1/hooks/install', { agents, dryRun }),

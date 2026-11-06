@@ -21,6 +21,75 @@ pub struct Transcript {
     pub mtime_ms: i64,
 }
 
+const VALUE_FLAGS: &[&str] = &[
+    "--agent",
+    "--agents",
+    "--append-system-prompt",
+    "--autocompact",
+    "--cloud",
+    "--debug",
+    "-d",
+    "--debug-file",
+    "--effort",
+    "--environment",
+    "--fallback-model",
+    "--from-pr",
+    "--input-format",
+    "--json-schema",
+    "--max-budget-usd",
+    "--model",
+    "--name",
+    "-n",
+    "--output-format",
+    "--permission-mode",
+    "--permission-prompts",
+    "--plugin-dir",
+    "--plugin-url",
+    "--prompt-suggestions",
+    "--remote-control",
+    "--remote-control-session-name-prefix",
+    "--setting-sources",
+    "--settings",
+    "--system-prompt",
+    "--system-prompt-snapshot",
+    "--teleport",
+];
+
+const VARIADIC_FLAGS: &[&str] = &[
+    "--add-dir",
+    "--allowedTools",
+    "--allowed-tools",
+    "--betas",
+    "--disallowedTools",
+    "--disallowed-tools",
+    "--file",
+    "--mcp-config",
+    "--tools",
+];
+
+// Resume re-passes these options after `--resume`; a positional prompt left in them would be
+// submitted again on every relaunch.
+pub fn launch_flags(flags: &[String]) -> Vec<String> {
+    let mut out = vec![];
+    let mut it = flags.iter().peekable();
+    while let Some(a) = it.next() {
+        if !a.starts_with('-') {
+            continue;
+        }
+        out.push(a.clone());
+        if VALUE_FLAGS.contains(&a.as_str()) {
+            if let Some(n) = it.next_if(|n| !n.starts_with('-')) {
+                out.push(n.clone());
+            }
+        } else if VARIADIC_FLAGS.contains(&a.as_str()) {
+            while let Some(n) = it.next_if(|n| !n.starts_with('-')) {
+                out.push(n.clone());
+            }
+        }
+    }
+    out
+}
+
 pub struct Live {
     pub pid: u32,
     pub status_ms: i64,
@@ -256,7 +325,7 @@ pub fn live(claude_dir: &Path, probe: &dyn Probe) -> Vec<Live> {
             flags_after(&i.argv, is_claude)
         });
         let launch_id = flags.as_deref().and_then(launch_session);
-        let alive = flags.map(|f| strip_resume(&f));
+        let alive = flags.map(|f| launch_flags(&strip_resume(&f)));
         out.push(Live {
             pid,
             session_id,
@@ -278,6 +347,59 @@ pub fn live(claude_dir: &Path, probe: &dyn Probe) -> Vec<Live> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn v(a: &[&str]) -> Vec<String> {
+        a.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn launch_flags_drop_the_positional_prompt() {
+        assert_eq!(
+            launch_flags(&v(&["--effort", "high", "fix the bug"])),
+            v(&["--effort", "high"])
+        );
+        assert_eq!(
+            launch_flags(&v(&[
+                "--model",
+                "opus",
+                "-p",
+                "do it",
+                "--dangerously-skip-permissions"
+            ])),
+            v(&["--model", "opus", "-p", "--dangerously-skip-permissions"])
+        );
+        assert_eq!(launch_flags(&v(&["do it"])), Vec::<String>::new());
+        assert_eq!(
+            launch_flags(&v(&["--settings={\"a\": 1}", "x"])),
+            v(&["--settings={\"a\": 1}"])
+        );
+    }
+
+    #[test]
+    fn launch_flags_keep_the_values_of_flags_that_take_one() {
+        let f = v(&[
+            "--model",
+            "opus",
+            "--permission-mode",
+            "plan",
+            "--mcp-config",
+            "a.json",
+            "b.json",
+            "--allowedTools",
+            "Bash",
+            "Edit",
+            "--append-system-prompt",
+            "be brief",
+            "-n",
+            "work",
+        ]);
+        assert_eq!(launch_flags(&f), f);
+        let with_prompt = [f.clone(), v(&["--effort", "max", "the task"])].concat();
+        assert_eq!(
+            launch_flags(&with_prompt),
+            [f, v(&["--effort", "max"])].concat()
+        );
+    }
 
     #[test]
     fn a_huge_tail_without_branch_stops_at_the_cap() {

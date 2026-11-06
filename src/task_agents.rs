@@ -210,7 +210,12 @@ fn base_branch(project: &str) -> String {
 
 fn changed_files(wt: &str, base: &str) -> BTreeSet<String> {
     let mut out = BTreeSet::new();
-    let mb = git_out(wt, &["merge-base", "HEAD", base])
+    let upstream = format!("{base}@{{upstream}}");
+    let mut args = vec!["merge-base", "HEAD", base];
+    if git_out(wt, &["rev-parse", "--verify", "-q", &upstream]).is_ok() {
+        args.push(&upstream);
+    }
+    let mb = git_out(wt, &args)
         .map(|s| s.trim().to_string())
         .unwrap_or_default();
     if !mb.is_empty() {
@@ -637,6 +642,59 @@ mod tests {
             porcelain_paths(" M src/a.rs\n?? new.txt\nR  old.rs -> src/b.rs\nA  \"sp ace.rs\"\n"),
             ["src/a.rs", "new.txt", "src/b.rs", "sp ace.rs"]
         );
+    }
+
+    #[test]
+    fn changed_files_ignore_commits_the_local_base_branch_is_behind_on() {
+        let sh = |d: &Path, args: &[&str]| {
+            let ok = std::process::Command::new("git")
+                .current_dir(d)
+                .env("GIT_CONFIG_GLOBAL", "/dev/null")
+                .env("GIT_CONFIG_NOSYSTEM", "1")
+                .args(["-c", "user.email=t@example.com", "-c", "user.name=T"])
+                .args(["-c", "commit.gpgsign=false"])
+                .args(args)
+                .output()
+                .unwrap()
+                .status
+                .success();
+            assert!(ok, "git {args:?}");
+        };
+        let commit = |d: &Path, file: &str| {
+            std::fs::write(d.join(file), file).unwrap();
+            sh(d, &["add", "-A"]);
+            sh(d, &["commit", "-q", "-m", file]);
+        };
+        let d = std::env::temp_dir().join(format!(
+            "sb-overlap-base-{}-{}",
+            std::process::id(),
+            crate::procs::now_ms()
+        ));
+        let up = d.join("up");
+        std::fs::create_dir_all(&up).unwrap();
+        sh(&up, &["init", "-q", "-b", "next"]);
+        commit(&up, "a.txt");
+        sh(&d, &["clone", "-q", "up", "work"]);
+        let work = d.join("work");
+        commit(&up, "landed.txt");
+        sh(&work, &["fetch", "-q", "origin"]);
+        sh(
+            &work,
+            &[
+                "worktree",
+                "add",
+                "-q",
+                "-b",
+                "task/1",
+                "../wt",
+                "origin/next",
+            ],
+        );
+        let wt = d.join("wt");
+        commit(&wt, "mine.txt");
+        let files = changed_files(wt.to_str().unwrap(), "next");
+        assert_eq!(files.into_iter().collect::<Vec<_>>(), ["mine.txt"]);
+        let _ = std::fs::remove_dir_all(&d);
     }
 
     #[test]

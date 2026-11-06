@@ -11,7 +11,7 @@ use std::path::Path;
 
 pub type Res<T> = Result<T, (u16, String)>;
 
-const WS_COLS: &str = "id, name, path, folder_id, pinned, archived, auto, rank, tabs, notify_idle, created_ms, updated_ms";
+const WS_COLS: &str = "id, name, path, folder_id, pinned, archived, auto, rank, tabs, notify_idle, created_ms, updated_ms, kind, cwd";
 const FOLDER_COLS: &str = "id, name, parent_id, rank, collapsed, created_ms, updated_ms";
 const GROUP_COLS: &str = "id, name, rank, members, notify_idle, created_ms, updated_ms";
 
@@ -19,6 +19,7 @@ const GROUP_COLS: &str = "id, name, rank, members, notify_idle, created_ms, upda
 pub struct Workspace {
     pub id: String,
     pub name: String,
+    /// Empty for a subject: it has no directory of its own.
     pub path: String,
     pub folder_id: Option<String>,
     pub pinned: bool,
@@ -29,6 +30,9 @@ pub struct Workspace {
     pub notify_idle: bool,
     pub created_ms: i64,
     pub updated_ms: i64,
+    pub subject: bool,
+    /// Default working directory of a subject; several subjects may share it.
+    pub cwd: Option<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -57,11 +61,19 @@ fn strings(s: String) -> Vec<String> {
     serde_json::from_str(&s).unwrap_or_default()
 }
 
+// The NOT NULL UNIQUE path column holds a placeholder for subjects.
+fn subject_path(id: &str) -> String {
+    format!("subject:{id}")
+}
+
 fn ws_row(r: &Row) -> rusqlite::Result<Workspace> {
+    let subject = r.get::<_, String>(12)? == "subject";
     Ok(Workspace {
         id: r.get(0)?,
         name: r.get(1)?,
-        path: r.get(2)?,
+        path: if subject { String::new() } else { r.get(2)? },
+        subject,
+        cwd: r.get(13)?,
         folder_id: r.get(3)?,
         pinned: r.get(4)?,
         archived: r.get(5)?,
@@ -99,13 +111,23 @@ fn group_row(r: &Row) -> rusqlite::Result<Group> {
 }
 
 impl Workspace {
+    /// Where a new session of this workspace starts.
+    pub fn start_dir(&self) -> &str {
+        match (&self.cwd, self.subject) {
+            (Some(c), true) => c,
+            _ => &self.path,
+        }
+    }
+
     pub fn missing(&self) -> bool {
-        !Path::new(&self.path).is_dir()
+        !Path::new(self.start_dir()).is_dir()
     }
 
     pub fn to_json(&self, station: &str) -> Value {
         json!({
-            "id": self.id, "name": self.name, "path": self.path, "station": station,
+            "id": self.id, "name": self.name, "station": station,
+            "path": (!self.subject).then_some(&self.path),
+            "kind": if self.subject { "subject" } else { "dir" }, "cwd": self.cwd,
             "folderId": self.folder_id, "pinned": self.pinned, "archived": self.archived,
             "auto": self.auto, "rank": self.rank, "tabs": self.tabs, "notifyIdle": self.notify_idle,
             "missing": self.missing(),
@@ -221,7 +243,7 @@ fn save(ctx: &Ctx, reg: &Registry, w: &mut Workspace, kind: &str) -> Res<()> {
     w.updated_ms = now_ms();
     sql(reg.conn.execute(
         "UPDATE workspaces SET name = ?2, folder_id = ?3, pinned = ?4, archived = ?5, rank = ?6, tabs = ?7,
-           notify_idle = ?8, updated_ms = ?9 WHERE id = ?1",
+           notify_idle = ?8, updated_ms = ?9, cwd = ?10 WHERE id = ?1",
         params![
             w.id,
             w.name,
@@ -231,7 +253,8 @@ fn save(ctx: &Ctx, reg: &Registry, w: &mut Workspace, kind: &str) -> Res<()> {
             w.rank,
             json!(w.tabs).to_string(),
             w.notify_idle,
-            w.updated_ms
+            w.updated_ms,
+            w.cwd
         ],
     ))?;
     publish(
@@ -289,9 +312,13 @@ fn folder_ref(reg: &Registry, v: &Value) -> Res<Option<String>> {
 }
 
 fn canonical(path: &str) -> Res<String> {
+    canonical_as(path, "path")
+}
+
+fn canonical_as(path: &str, field: &str) -> Res<String> {
     let path = path.trim();
     if path.is_empty() {
-        return Err(bad("path required"));
+        return Err(bad(format!("{field} required")));
     }
     let path = match path.strip_prefix("~/") {
         Some(rest) => crate::home().join(rest),
@@ -299,7 +326,7 @@ fn canonical(path: &str) -> Res<String> {
         None => Path::new(path).to_path_buf(),
     };
     if !path.is_absolute() {
-        return Err(bad("path must be absolute"));
+        return Err(bad(format!("{field} must be absolute")));
     }
     if !path.is_dir() {
         return Err(bad(format!("{} is not a directory", path.display())));
@@ -310,8 +337,47 @@ fn canonical(path: &str) -> Res<String> {
     Ok(p.to_string_lossy().into_owned())
 }
 
+fn create_subject(ctx: &Ctx, b: &Value) -> Res<(bool, Workspace)> {
+    if !b["path"].is_null() {
+        return Err(bad("a subject has no path, give cwd"));
+    }
+    let name = match &b["name"] {
+        Value::Null => return Err(bad("name required")),
+        v => name_of(v)?,
+    };
+    let cwd = canonical_as(b["cwd"].as_str().unwrap_or_default(), "cwd")?;
+    let reg = db(ctx)?;
+    let folder_id = folder_ref(&reg, &b["folderId"])?;
+    let pinned = match &b["pinned"] {
+        Value::Null => false,
+        v => bool_of(v, "pinned")?,
+    };
+    let now = now_ms();
+    let id = ulid(now);
+    sql(reg.conn.execute(
+        "INSERT INTO workspaces (id, name, path, folder_id, pinned, auto, rank, created_ms, updated_ms, kind, cwd)
+         VALUES (?1, ?2, ?3, ?4, ?5, 0, ?6, ?7, ?7, 'subject', ?8)",
+        params![id, name, subject_path(&id), folder_id, pinned, now as f64, now, cwd],
+    ))?;
+    let w = get(&reg, &id)?;
+    publish(
+        "workspace.created",
+        json!({"workspace": w.to_json(&ctx.config.station_id)}),
+    );
+    Ok((true, w))
+}
+
 pub fn create(ctx: &Ctx, b: &Value) -> Res<(bool, Workspace)> {
     object(b)?;
+    match &b["kind"] {
+        Value::Null => {}
+        Value::String(k) if k == "dir" => {}
+        Value::String(k) if k == "subject" => return create_subject(ctx, b),
+        _ => return Err(bad("kind must be \"dir\" or \"subject\"")),
+    }
+    if !b["cwd"].is_null() {
+        return Err(bad("cwd is only for subjects"));
+    }
     let path = canonical(b["path"].as_str().unwrap_or_default())?;
     let reg = db(ctx)?;
     let folder_id = folder_ref(&reg, &b["folderId"])?;
@@ -364,6 +430,10 @@ pub fn patch(ctx: &Ctx, id: &str, b: &Value) -> Res<Workspace> {
             "notifyIdle" => w.notify_idle = bool_of(v, k)?,
             "rank" => w.rank = rank_of(v)?,
             "tabs" => w.tabs = strs_of(v, k)?,
+            "cwd" if w.subject => {
+                w.cwd = Some(canonical_as(v.as_str().unwrap_or_default(), "cwd")?)
+            }
+            "cwd" => return Err(bad("cwd is only for subjects")),
             _ => {}
         }
     }
@@ -373,10 +443,12 @@ pub fn patch(ctx: &Ctx, id: &str, b: &Value) -> Res<Workspace> {
 
 pub fn delete(reg: &Registry, id: &str) -> Res<Value> {
     let w = get(reg, id)?;
-    sql(reg.conn.execute(
-        "INSERT OR REPLACE INTO workspace_tombstones (path, at_ms) VALUES (?1, ?2)",
-        params![w.path, now_ms()],
-    ))?;
+    if !w.subject {
+        sql(reg.conn.execute(
+            "INSERT OR REPLACE INTO workspace_tombstones (path, at_ms) VALUES (?1, ?2)",
+            params![w.path, now_ms()],
+        ))?;
+    }
     sql(reg
         .conn
         .execute("DELETE FROM workspaces WHERE id = ?1", [id]))?;
@@ -612,6 +684,23 @@ pub fn delete_group(reg: &Registry, id: &str) -> Res<Value> {
     Ok(json!({"deleted": id}))
 }
 
+pub fn repo_root<'a>(projects: &'a [(String, String)], repo: &str, path: &str) -> Option<&'a str> {
+    let clones: Vec<&str> = projects
+        .iter()
+        .filter(|(_, r)| !repo.is_empty() && r == repo)
+        .map(|(p, _)| p.as_str())
+        .collect();
+    clones
+        .iter()
+        .copied()
+        .filter(|p| under(path, p))
+        .max_by_key(|p| p.len())
+        .or(match clones[..] {
+            [only] => Some(only),
+            _ => None,
+        })
+}
+
 pub struct Index {
     pub workspaces: Vec<Workspace>,
     pub tasks: Vec<Task>,
@@ -646,7 +735,7 @@ impl Index {
     fn longest(&self, p: &str) -> Option<&Workspace> {
         self.workspaces
             .iter()
-            .filter(|w| !p.is_empty() && under(p, &w.path))
+            .filter(|w| !w.subject && !p.is_empty() && under(p, &w.path))
             .max_by_key(|w| w.path.len())
     }
 
@@ -670,11 +759,7 @@ impl Index {
             &l.worktree_path
         };
         let prefix = self.longest(path);
-        let repo = self
-            .projects
-            .iter()
-            .find(|(_, r)| !l.repo.is_empty() && *r == l.repo)
-            .and_then(|(p, _)| self.longest(p));
+        let repo = repo_root(&self.projects, &l.repo, path).and_then(|p| self.longest(p));
         match (prefix, repo) {
             (p, Some(r)) if p.is_none_or(|p| !under(&p.path, &r.path)) => Some(r),
             (p, _) => p,
@@ -686,6 +771,20 @@ impl Index {
             .or_else(|| t.task_id.as_deref().and_then(|id| self.of_task(id)))
             .or_else(|| self.longest(&t.cwd))
     }
+}
+
+/// The body of a term start for a workspace: validates `workspaceId` and defaults
+/// the cwd to the workspace's start directory.
+pub fn start_body(ctx: &Ctx, body: &Value) -> Res<Value> {
+    let Some(id) = body["workspaceId"].as_str() else {
+        return Ok(body.clone());
+    };
+    let w = get(&db(ctx)?, id)?;
+    let mut b = body.clone();
+    if b["cwd"].is_null() {
+        b["cwd"] = json!(w.start_dir());
+    }
+    Ok(b)
 }
 
 fn assignment(ctx: &Ctx, b: &Value) -> Res<Option<String>> {
@@ -703,10 +802,30 @@ fn assign_line(ctx: &Ctx, q: &str, b: &Value) -> Res<Value> {
         .map_err(|e| (404, e))?
         .id
         .clone();
-    db(ctx)?
-        .set_mark(&id, "workspace_id", wid.as_deref())
-        .map_err(|e| (500, e))?;
+    let reg = db(ctx)?;
+    let mark = || reg.set_mark(&id, "workspace_id", wid.as_deref());
+    if wid.is_none() {
+        let term = lines
+            .iter()
+            .find(|l| l.id == id)
+            .and_then(|l| l.term_id.as_deref())
+            .and_then(crate::term::get);
+        unassign_in_order(|| term.iter().for_each(|t| t.set_workspace(None)), mark)
+    } else {
+        mark()
+    }
+    .map_err(|e| (500, e))?;
     Ok(json!({"lineId": id, "workspaceId": wid}))
+}
+
+/// Clears the term before the line mark: a scan between the two would otherwise
+/// hand the line its term's assignment back.
+fn unassign_in_order(
+    clear_term: impl FnOnce(),
+    clear_mark: impl FnOnce() -> Result<(), String>,
+) -> Result<(), String> {
+    clear_term();
+    clear_mark()
 }
 
 fn assign_term(ctx: &Ctx, id: &str, b: &Value) -> Res<Value> {
@@ -794,6 +913,8 @@ mod tests {
             notify_idle: false,
             created_ms: 0,
             updated_ms: 0,
+            subject: false,
+            cwd: None,
         }
     }
 
@@ -851,6 +972,48 @@ mod tests {
         let mut cwd = line("f", "", "");
         cwd.cwd = "/home/u/src/lib/sub".into();
         assert_eq!(of(cwd).as_deref(), Some("/home/u/src/lib"));
+    }
+
+    #[test]
+    fn a_session_in_a_second_clone_of_a_repo_stays_in_that_clone_workspace() {
+        let ix = Index {
+            workspaces: vec![
+                ws("/home/u/work/atk"),
+                ws("/home/u/work/atk2"),
+                ws("/home/u/.overseer/worktrees"),
+            ],
+            tasks: vec![],
+            projects: vec![
+                ("/home/u/work/atk".into(), "github.com/o/pkg".into()),
+                ("/home/u/work/atk2".into(), "github.com/o/pkg".into()),
+            ],
+        };
+        let of = |p: &str| {
+            ix.of_line(&line("l", p, "github.com/o/pkg"))
+                .map(|w| w.path.clone())
+        };
+        assert_eq!(of("/home/u/work/atk").as_deref(), Some("/home/u/work/atk"));
+        assert_eq!(
+            of("/home/u/work/atk2/src").as_deref(),
+            Some("/home/u/work/atk2")
+        );
+        assert_eq!(
+            of("/home/u/.overseer/worktrees/atk-1/feat").as_deref(),
+            Some("/home/u/.overseer/worktrees")
+        );
+        assert_eq!(of("/srv/feat"), None);
+    }
+
+    #[test]
+    fn repo_root_picks_the_clone_holding_the_path_or_the_only_clone() {
+        let two = [
+            ("/a/atk".to_string(), "r".to_string()),
+            ("/a/atk2".to_string(), "r".to_string()),
+        ];
+        assert_eq!(repo_root(&two, "r", "/a/atk2/src"), Some("/a/atk2"));
+        assert_eq!(repo_root(&two, "r", "/w/atk-1"), None);
+        assert_eq!(repo_root(&two[..1], "r", "/w/atk-1"), Some("/a/atk"));
+        assert_eq!(repo_root(&two, "", "/a/atk"), None);
     }
 
     #[test]
@@ -950,5 +1113,72 @@ mod tests {
             ix.of_term(&t).map(|w| w.path.as_str()),
             Some("/home/u/src/app")
         );
+    }
+
+    #[test]
+    fn a_subject_never_matches_by_path_but_wins_when_assigned() {
+        // Given a dir workspace holding a line's cwd and a subject sharing that cwd
+        // When membership is resolved before and after assigning the line and a term to the subject
+        // Then the subject is never derived from the cwd and the assignment beats the dir workspace
+        let mut subject = ws("subject:s1");
+        subject.id = "s1".into();
+        subject.path = String::new();
+        subject.subject = true;
+        subject.cwd = Some("/home/u/src/app".into());
+        let ix = Index {
+            workspaces: vec![ws("/home/u/src/app"), subject],
+            tasks: vec![],
+            projects: vec![],
+        };
+        let mut l = line("l1", "/home/u/src/app", "");
+        let mut t = crate::term::Info {
+            cwd: "/home/u/src/app".into(),
+            ..Default::default()
+        };
+        assert_eq!(
+            ix.of_line(&l).map(|w| w.id.as_str()),
+            Some("/home/u/src/app")
+        );
+        assert_eq!(
+            ix.of_term(&t).map(|w| w.id.as_str()),
+            Some("/home/u/src/app")
+        );
+        l.workspace_id = Some("s1".into());
+        t.workspace_id = Some("s1".into());
+        assert_eq!(ix.of_line(&l).map(|w| w.id.as_str()), Some("s1"));
+        assert_eq!(ix.of_term(&t).map(|w| w.id.as_str()), Some("s1"));
+    }
+
+    #[test]
+    fn a_subject_starts_in_its_cwd_and_a_dir_in_its_path() {
+        // Given a subject with a cwd and a dir workspace
+        // When their start directory is asked
+        // Then the subject answers its cwd and the dir its path, and the subject json has no path
+        let mut s = ws("");
+        s.subject = true;
+        s.cwd = Some("/tmp".into());
+        assert_eq!(s.start_dir(), "/tmp");
+        assert!(!s.missing());
+        assert!(s.to_json("st")["path"].is_null());
+        assert_eq!(s.to_json("st")["kind"], "subject");
+        assert_eq!(ws("/home/u").start_dir(), "/home/u");
+        assert_eq!(ws("/home/u").to_json("st")["kind"], "dir");
+    }
+
+    #[test]
+    fn unassigning_a_line_clears_its_term_before_the_mark() {
+        // Given a term assignment and a line mark to clear
+        // When both are cleared through the helper
+        // Then the term is cleared first, so a scan in between cannot re-inherit it
+        let order = std::cell::RefCell::new(vec![]);
+        unassign_in_order(
+            || order.borrow_mut().push("term"),
+            || {
+                order.borrow_mut().push("mark");
+                Ok(())
+            },
+        )
+        .unwrap();
+        assert_eq!(*order.borrow(), ["term", "mark"]);
     }
 }

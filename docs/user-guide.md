@@ -393,7 +393,7 @@ logged to `<state>/actions.log`. Exit code 3 = refused; `--json` prints the repo
 | Check | Refuses when |
 |---|---|
 | alive | no live process, or two processes on the same session |
-| inTmux | the agent is neither in a tmux pane nor in a Overseer (daemon) terminal |
+| inTmux | the agent is neither in a tmux pane nor in an Overseer (daemon) terminal |
 | atPrompt | a turn is running (hook `UserPromptSubmit` without `Stop`, or `status: busy`) |
 | inputEmpty | text is typed in the prompt, or the prompt cannot be recognised on screen |
 | noToolRunning | a Bash tool, a subagent, a background task or an unknown child process runs |
@@ -409,7 +409,7 @@ to get the stub back in its pane after a reboot apply [`docs/toolkit-patch.md`](
 
 `close` marks a line `hung-up` (finished). A live line is held first, with the same checks.
 
-An agent running in a Overseer terminal (daemon term) is held through the daemon
+An agent running in an Overseer terminal (daemon term) is held through the daemon
 (`POST /v1/lines/<id>/hold|close?dryRun=false`, or Hold / Close in the app's chat header): the
 screen checks read the term's own screen, the agent gets SIGTERM, and the same term then shows the
 held stub; Enter in it, or Resume in the app, restarts the agent there. Close also ends the term.
@@ -750,6 +750,7 @@ fake consumer against the API and checks every payload against the schemas.
 
 | Symptom | Cause and fix |
 |---|---|
+| Hooks stopped reaching the installed daemon after running a dev build | A daemon on a non-default state dir (checkout `.state`) used to rewrite the global hooks and `~/.overseer/bin/overseer`. Now only the daemon on the default state dir repairs them, and a daemon on another state dir logs `not repairing hooks` and leaves hooks that call another state dir alone; the default daemon heals hijacked hooks on its next start. Run dev daemons with their own `HOME` (`scripts/dev.sh`, `scripts/qa/sandbox.sh`). |
 | CLI, services or hooks see different lines | They resolve different state dirs (e.g. `bin/overseer` uses `<checkout>/.state`). Set the same `OVERSEER_STATE_DIR` everywhere and rerun `hooks install --apply`. |
 | `board`: `daemon not reachable` | Start `overseer daemon --http 127.0.0.1:0` (or the service). `no loopback board`: restart it with `--http`. |
 | Board answers 403 | Missing or stale token (new at each daemon start): open the URL from `overseer board`; use `127.0.0.1`/`localhost` as host. |
@@ -873,7 +874,7 @@ On first launch, once the app is connected (immediately in local mode, after the
 connection on a phone), a welcome card offers **Take the tour** or **Skip**. The tour dims the
 window and highlights the real controls one at a time: host chip, workspaces sidebar, tabs and the
 new-session menu, the Terminal/Chat toggle, the side panel, Tasks, Review, the usage, system and ports
-chips, notifications and hooks, the command palette and Feedback, in 0.25 the Cmd/Ctrl+P palette shortcut, and in 0.27 the demo mode (on the **Demo mode** pill while in the demo, else on the host chip), and in 0.28 the GPU rendering option for terminals. Steps whose control is not on
+chips, notifications and hooks, the command palette and Feedback, in 0.25 the Cmd/Ctrl+P palette shortcut, and in 0.27 the demo mode (on the **Demo mode** pill while in the demo, else on the host chip), and in 0.28 the GPU rendering option for terminals, and in 0.29 the clean up of unused worktrees and the import from Switchboard (on its button in Settings, Help, or on the Settings button). Steps whose control is not on
 screen (no session selected, a feature the server lacks, phone layout) are skipped. On a phone the
 card is a sheet at the bottom (or top, when the control sits low) and points at the bottom
 navigation, the session strip and the menu.
@@ -898,6 +899,17 @@ instead of the normal renderer, which keeps long, fast output smooth. It needs h
 acceleration; where WebGL is not available the terminals keep the normal renderer. Selection,
 scrolling and colours work the same with either renderer, and turning it off goes back to the normal
 renderer.
+
+**Import from Switchboard.** Overseer was called Switchboard before. When the daemon finds the old
+Switchboard data on its machine and it is not imported yet, a dialog appears once after the app
+connects. It shows how many sessions, tasks and workspaces will come over, and tells you when the
+old Switchboard daemon is still running: it is stopped and its sessions are handed over to
+Overseer, and the agent hooks move too. **Import** runs it, applies the settings of the old app
+(theme, fonts, layout and so on, overwriting the current ones) and reloads Overseer. **Not now**
+closes the dialog until the next launch; **Don't ask again** stops the offer for good. If the
+import fails, the reason is shown in the dialog and nothing else changes. Until the import is done,
+Settings, Help, **Import from Switchboard** opens the same dialog, also after **Don't ask again**.
+Once imported the entry is gone, so newer Overseer data is never overwritten by the old one.
 
 ### 14.0a Demo mode
 
@@ -937,6 +949,10 @@ curl --unix-socket "$S" -X POST -d '{"confirm":true}' http://unix/v1/terms/<id>/
 When an agent quits on its own in a tab (Ctrl+C, `/quit`, `exit`), the tab stays open: it prints
 the session the agent ran and the command that resumes it, then starts your shell there. Killing the
 term, closing the tab or holding the session ends it as before, and task terms are not kept.
+**Close** on a session (side panel or chat) does the same: the agent stops, and its tab keeps a
+shell with `<agent> closed. Session <id>, resume with: …`; an agent started from a shell leaves that
+shell. This is `POST /v1/lines/<id>/close?dryRun=false&shell=true`; without `shell=true` (closing
+the tab, the CLI, the organizer) the term ends with the agent.
 
 `GET /v1/terms/<id>/io` is a WebSocket: the last 2 MiB of output first, then live output (binary
 frames); binary frames sent are typed into the program, `{"resize":{"cols":…,"rows":…}}` text
@@ -1028,7 +1044,9 @@ Markdown is rendered and text-like files (txt, log, JSON, YAML, TOML, CSV, XML) 
 up to 1 MiB displayed. Relative paths resolve against the terminal's current directory; `~` is the
 host's home. The daemon serves any regular file the host user can read, up to 50 MiB, through
 `GET /v1/file`; directories, devices and larger files are refused with a message. **Copy path** puts
-the full path on the clipboard.
+the full path on the clipboard, and **Download** saves a copy of the file into your Downloads
+folder on the device running the app (a file of the same name is kept and the copy gets a ` (1)`
+suffix).
 
 On a phone, long-press a tab in the session strip for **Pin/Unpin** (agent tabs) and **Close**.
 
@@ -1201,7 +1219,8 @@ started from a task keeps that task and gets no second one.
 
 `GET /v1/lines/<id>/activity[?since=RFC3339]` summarises the line's transcript: title, goal (first
 prompt), work log (edits, commands, reads, searches with running/done/failed), the agent's todo
-list, edited files and the last assistant text. `GET /v1/lines/<id>/diff` gives the worktree diff.
+list, edited files and the last assistant text. A line with no transcript (a stub agent, a
+session being closed) answers 200 with empty lists and `"transcript": false`. `GET /v1/lines/<id>/diff` gives the worktree diff.
 The SSE stream `GET /v1/events` adds `term.created|updated|exited`, `task.created|updated|deleted`
 `line.activity` (the transcript grew; at most one per line every 500 ms), `git.changed` and
 `worktree.created|updated|removed` (14.9, 14.10).
@@ -1486,12 +1505,23 @@ Each target answers `sent`, `skipped` (busy or waiting for a permission answer),
 (typed when the agent becomes idle, within an hour, unless the daemon restarts) or `refused`
 (not running, no terminal). `actions.log` records the outcome and the text length, never the text.
 
+A **subject** is a workspace without a directory of its own, for work organised by topic rather than
+by folder. Create it with `POST /v1/workspaces` and `{"kind":"subject","name":"Acme deal","cwd":"~/code/app"}`
+(`folderId` and `pinned` optional); `cwd` is its default working directory, `~` accepted, and several
+subjects may share one. The list returns `kind` (`dir` or `subject`), `cwd`, and a `null` path for subjects;
+`PATCH` accepts `name` and `cwd`. Discovery never creates subjects. A session joins one through the usual
+`PUT /v1/lines/<id>/workspace` and `PUT /v1/terms/<id>/workspace`, which beat its directory, so a session
+inside a folder workspace assigned to a subject shows only in the subject. `POST /v1/terms` takes an
+optional `workspaceId`: the term is assigned at creation, starts in the workspace's `cwd` when none is
+given, and the agent line created from it inherits the assignment. Deleting a subject unassigns its
+sessions and kills nothing.
+
 ### 14.7 Workspaces in the app
 
 A workspace is one project on one host: a repository or any folder, with every agent, shell,
 browser and review tab that belongs to it. The sidebar shows **Workspaces** (default) or
 **By status** (the session list grouped by Needs input, Needs testing, Working, Pushed, Idle,
-Held); the toggle is at the top of the sidebar.
+Stopped: no live agent process, resumable); the toggle is at the top of the sidebar.
 
 - **Tree**: pinned workspaces on top, then your folders (one level of sub-folders) and the
   workspaces outside any folder. Every project the daemon knows gets a workspace: the
@@ -1749,6 +1779,10 @@ opt out). One place, outside your repositories:
   whose branch has commits that are neither pushed nor in the base. The branch is deleted only
   when every commit of it is in the base (or its PR is merged and the tip pushed); otherwise it
   is kept. Nothing is ever forced.
+- **Clean up merged (n)** in the Worktrees toolbar picks the worktrees nobody needs any more: merged
+  into the base (or missing on disk), with no agent session, no terminal and no uncommitted change.
+  The dialog lists each one with a checkbox, all ticked; untick the ones to keep, then confirm.
+  **Clean up stale** and the row's **Clean up** use the same checkboxes.
 
 ```
 P=$(python3 -c 'import urllib.parse,sys;print(urllib.parse.quote(sys.argv[1],safe=""))' ~/src/app)

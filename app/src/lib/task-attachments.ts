@@ -10,6 +10,17 @@ type Uploader = Pick<DaemonClient, 'uploadFile' | 'savePaste'>;
 type Blob = { name: string; size: number; arrayBuffer(): Promise<ArrayBuffer> };
 export type Failure = { name: string; error: string };
 
+export function requirePath(path: string | null | undefined): string {
+  if (!path) throw new Error('the daemon returned no file path');
+  return path;
+}
+
+export async function savePasted(client: Pick<DaemonClient, 'savePaste'>, name: string, bytes: Uint8Array): Promise<string> {
+  return requirePath(await client.savePaste(name, bytes));
+}
+
+const remotePath = (up: { path?: string } | null | undefined) => requirePath(up?.path);
+
 const msg = (e: unknown) => String((e as Error)?.message ?? e);
 
 export async function uploadBlobs(client: Uploader, files: Blob[], fail: (f: Failure) => void): Promise<Attachment[]> {
@@ -23,7 +34,7 @@ export async function uploadBlobs(client: Uploader, files: Blob[], fail: (f: Fai
     try {
       const local = await client.savePaste(name, new Uint8Array(await f.arrayBuffer()));
       const up = await client.uploadFile(local);
-      out.push({ name, path: up.path });
+      out.push({ name, path: remotePath(up) });
     } catch (e) {
       fail({ name, error: msg(e) });
     }
@@ -37,7 +48,7 @@ export async function uploadPaths(client: Uploader, paths: string[], fail: (f: F
     const name = basename(p);
     try {
       const up = await client.uploadFile(p);
-      out.push({ name, path: up.path });
+      out.push({ name, path: remotePath(up) });
     } catch (e) {
       fail({ name, error: msg(e) });
     }

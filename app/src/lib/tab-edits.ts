@@ -21,6 +21,7 @@ const enc = encodeURIComponent;
 /** Daemon calls for custom titles and workspace assignments (PUT /v1/lines|terms/{id}/title|workspace). */
 export function tabApi(c: DaemonClient) {
   return {
+    forceClose: (id: string) => c.request('POST', `/v1/lines/${enc(id)}/close?dryRun=false&force=true`),
     renameLine: (id: string, title: string | null) => c.request<{ lineId: string; titleOverride: string | null }>('PUT', `/v1/lines/${enc(id)}/title`, { title }),
     renameTerm: (id: string, title: string | null) => c.request<Term>('PUT', `/v1/terms/${enc(id)}/title`, { title }),
     assignLineWorkspace: (id: string, workspaceId: string | null) => c.request<{ lineId: string; workspaceId: string | null }>('PUT', `/v1/lines/${enc(id)}/workspace`, { workspaceId }),
@@ -115,11 +116,45 @@ export async function moveToWorkspace(app: App, key: string, workspaceId: string
 
 export function tabClosed(app: App, key: string, end: boolean) {
   const id = exitedTerm(key, app.data.terms);
-  if (id) return app.api.deleteTerm(id).catch(() => {});
+  if (id) return dropTerm(app, id);
   const target = end ? endTarget(key, app.items) : null;
   if (!target) return;
-  const done = 'line' in target ? app.api.close(target.line) : app.api.killTerm(target.term);
-  return done.then(() => app.refresh()).catch((e) => app.notify(String((e as Error)?.message ?? e), 'error'));
+  if ('term' in target) {
+    const term = target.term;
+    ending.add(term);
+    return app.api
+      .killTerm(term)
+      .then(() => reapEnded(app))
+      .catch((e) => {
+        ending.delete(term);
+        app.notify(String((e as Error)?.message ?? e), 'error');
+      });
+  }
+  return client(app)
+    .forceClose(target.line)
+    .then(() => app.refresh())
+    .catch((e) => {
+      app.notify(String((e as Error)?.message ?? e), 'error');
+      return app.refresh();
+    });
+}
+
+const ending = new Set<string>();
+
+function dropTerm(app: App, id: string) {
+  return app.api
+    .deleteTerm(id)
+    .then(() => {
+      app.data = { ...app.data, terms: app.data.terms.filter((x) => x.id !== id) };
+    })
+    .catch(() => {});
+}
+
+export function reapEnded(app: App, terms = app.data.terms) {
+  for (const t of terms) {
+    if (!t.exited || !ending.delete(t.id)) continue;
+    void dropTerm(app, t.id);
+  }
 }
 
 export function tabMenu(app: App, e: MouseEvent, index: number, key: string, item: boolean): MenuItem[] {

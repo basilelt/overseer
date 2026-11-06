@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { uploadBlobs, uploadPaths } from './task-attachments';
+import { requirePath, savePasted, uploadBlobs, uploadPaths } from './task-attachments';
 import { MAX_UPLOAD } from './uploads';
 
 const blob = (name: string, size = 3) => ({ name, size, arrayBuffer: async () => new ArrayBuffer(size) });
@@ -50,5 +50,44 @@ describe('uploadPaths', () => {
     const out = await uploadPaths(client(['b.pdf']), ['/Users/me/a.png', 'C:\\docs\\b.pdf'], fail);
     expect(out).toEqual([{ name: 'a.png', path: '/home/u/.overseer/u/a.png' }]);
     expect(fail).toHaveBeenCalledWith({ name: 'b.pdf', error: 'daemon down' });
+  });
+});
+
+describe('a paste saved to nothing', () => {
+  it('throws a clear error instead of passing null on', async () => {
+    const client = { savePaste: vi.fn(async () => null as never) };
+    await expect(savePasted(client, 'a.png', new Uint8Array(1))).rejects.toThrow('the daemon returned no file path');
+  });
+
+  it('returns the saved path', async () => {
+    const client = { savePaste: vi.fn(async (n: string) => `/tmp/${n}`) };
+    expect(await savePasted(client, 'a.png', new Uint8Array(1))).toBe('/tmp/a.png');
+  });
+
+  it('requirePath rejects an empty path', () => {
+    expect(() => requirePath('')).toThrow('the daemon returned no file path');
+    expect(() => requirePath(undefined)).toThrow('the daemon returned no file path');
+    expect(requirePath('/x')).toBe('/x');
+  });
+});
+
+describe('an upload answered with nothing', () => {
+  const nullClient = () => ({
+    savePaste: vi.fn(async () => '/tmp/p'),
+    uploadFile: vi.fn(async () => null as never),
+  });
+
+  it('reports a clear error for a pasted blob instead of a TypeError', async () => {
+    const fail = vi.fn();
+    const out = await uploadBlobs(nullClient(), [blob('att.txt')], fail);
+    expect(out).toEqual([]);
+    expect(fail).toHaveBeenCalledWith({ name: 'att.txt', error: 'the daemon returned no file path' });
+  });
+
+  it('reports a clear error for a dropped path', async () => {
+    const fail = vi.fn();
+    const out = await uploadPaths(nullClient(), ['/a/att.txt'], fail);
+    expect(out).toEqual([]);
+    expect(fail).toHaveBeenCalledWith({ name: 'att.txt', error: 'the daemon returned no file path' });
   });
 });
