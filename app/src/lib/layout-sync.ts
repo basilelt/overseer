@@ -21,7 +21,7 @@ export interface Reconciled {
   forget: string[];
 }
 
-export function reconcileLayout(layout: Layout, items: SidebarItem[], termOf: Map<string, string>, selected: string | null): Reconciled {
+export function reconcileLayout(layout: Layout, items: SidebarItem[], termOf: Map<string, string>, selected: string | null, pending: ReadonlySet<string> = new Set()): Reconciled {
   let l = layout;
   let sel = selected;
   const forget: string[] = [];
@@ -32,7 +32,7 @@ export function reconcileLayout(layout: Layout, items: SidebarItem[], termOf: Ma
       l = renameTab(l, k, r);
       forget.push(k);
       if (sel === k) sel = r;
-    } else if (!r && !tabInfo(k, items)) {
+    } else if (!r && !tabInfo(k, items) && !(k.startsWith('term:') && pending.has(k.slice(5)))) {
       l = dropKey(l, k);
       forget.push(k);
     }

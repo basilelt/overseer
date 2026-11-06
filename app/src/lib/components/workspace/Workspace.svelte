@@ -87,7 +87,7 @@
         else app.selectedKey = activeKey(workspace.layout);
       }
       rememberTerms(termOf, items, app.data.terms);
-      const rec = reconcileLayout(workspace.layout, items, termOf, app.selectedKey);
+      const rec = reconcileLayout(workspace.layout, items, termOf, app.selectedKey, new Set(app.data.terms.filter((t) => t.lineId && !t.exited).map((t) => t.id)));
       if (rec.layout !== workspace.layout) workspace.layout = rec.layout;
       if (rec.selected !== app.selectedKey) app.selectedKey = rec.selected;
       for (const k of rec.forget) termOf.delete(k);
