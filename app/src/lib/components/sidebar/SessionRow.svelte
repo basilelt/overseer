@@ -65,7 +65,10 @@
   }
   .dot[data-state='paused'] {
     width: auto;
+    height: 10px;
     background: none;
+    font-size: 10px;
+    font-weight: 700;
     letter-spacing: -1px;
   }
   .dot[data-hollow] {

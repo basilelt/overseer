@@ -11,13 +11,13 @@
   };
 
   export const GROUP_COLOR: Record<GroupId, string> = {
-    needs_input: 'var(--st-input)',
+    needs_input: 'var(--state-attention)',
     needs_testing: 'var(--st-testing)',
-    running: 'var(--st-working)',
+    running: 'var(--state-running)',
     pushed: 'var(--st-done)',
-    ready: 'var(--border-strong)',
-    paused: 'var(--st-paused)',
-    stopped: 'var(--st-held)',
+    ready: 'var(--state-open)',
+    paused: 'var(--state-paused)',
+    stopped: 'var(--state-closed)',
   };
 </script>
 
