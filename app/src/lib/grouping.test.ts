@@ -76,10 +76,10 @@ describe('sidebarItems', () => {
   it('carries the process state next to the group', () => {
     expect(items.map((i) => [i.key, i.state])).toEqual([
       ['line:a', 'running'],
-      ['line:b', 'stopped'],
+      ['line:b', 'closed'],
       ['term:s1', 'running'],
     ]);
-    expect(sidebarItems([], [{ id: 'x', exited: true, cmd: ['zsh'], title: '', cwd: '/', createdAt: '' } as Term], [])[0]).toMatchObject({ group: 'stopped', state: 'stopped' });
+    expect(sidebarItems([], [{ id: 'x', exited: true, cmd: ['zsh'], title: '', cwd: '/', createdAt: '' } as Term], [])[0]).toMatchObject({ group: 'stopped', state: 'closed' });
   });
 
   it('carries term, task, goal and status', () => {

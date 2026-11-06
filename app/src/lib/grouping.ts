@@ -1,5 +1,5 @@
 import { FEEDBACK_TITLE, isFeedbackTerm } from './feedback';
-import { sessionState, type SessionState } from './session-state';
+import { isEnded, sessionState, type SessionState } from './session-state';
 import type { LocalLine, Task, Term } from './types';
 
 export type GroupId = 'needs_input' | 'needs_testing' | 'running' | 'pushed' | 'ready' | 'paused' | 'stopped';
@@ -31,15 +31,15 @@ export interface Group {
 
 // needs_testing and pushed sit on top of the process state; paused and stopped lines are never urgent.
 export function lineGroup(l: LocalLine, testing: boolean, termId?: string | null): GroupId | null {
+  if (isEnded(l)) return null;
   const state = sessionState(l, termId).state;
-  if (state === 'closed') return null;
   if (state === 'paused') return 'paused';
   if (l.line.state === 'held') return 'stopped';
-  if (state === 'needs_input') return 'needs_input';
+  if (state === 'attention') return 'needs_input';
   if (testing) return 'needs_testing';
-  if (state === 'running' || state === 'pause_pending') return 'running';
+  if (state === 'running') return 'running';
   if (l.line.prUrl) return 'pushed';
-  return state === 'stopped' ? 'stopped' : 'ready';
+  return state === 'closed' ? 'stopped' : 'ready';
 }
 
 /** The session has no live process: paused on purpose or stopped. */
@@ -82,7 +82,7 @@ export function sidebarItems(lines: LocalLine[], terms: Term[], tasks: Task[], b
       key: `term:${t.id}`,
       kind: t.agent ?? 'shell',
       group: t.exited ? 'stopped' : 'running',
-      state: t.exited ? 'stopped' : 'running',
+      state: t.exited ? 'closed' : 'running',
       title: t.titleOverride || t.title || t.cmd.join(' '),
       renamed: !!t.titleOverride,
       goal: t.cwd,

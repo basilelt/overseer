@@ -31,7 +31,7 @@
   const agent = $derived(line?.line.agent ?? item.kind);
   const local = $derived(line?.local);
   const view = $derived(line ? sessionState(line, item.termId) : null);
-  const alive = $derived(!!view && view.state !== 'paused' && view.state !== 'stopped' && view.state !== 'closed');
+  const alive = $derived(!!view && view.state !== 'paused' && view.state !== 'closed');
   const days = $derived(view?.state === 'paused' ? pausedDays(view.since, clock.now) : null);
   const waiting = $derived(!!local?.needsInput);
   const busy = $derived(!!local?.busy && !waiting);
@@ -363,7 +363,7 @@
 <div class="chat" class:phone>
   <header class="head">
     <span class="state {waiting ? 'input' : view?.state === 'paused' ? 'paused' : busy ? 'busy' : alive ? 'idle' : 'off'}"></span>
-    <span class="status">{view ? t(view.label) : ''}{#if days !== null}<span class="faint"> · {t('session.pausedFor', { n: days })}</span>{/if}</span>
+    <span class="status">{view ? t(view.label) : ''}{#if view?.sub}<span class="faint"> · {t(view.sub.key, 'n' in view.sub ? { n: view.sub.n } : undefined)}</span>{/if}{#if days !== null}<span class="faint"> · {t('session.pausedFor', { n: days })}</span>{/if}</span>
     {#if model}<span class="model faint">{model}</span>{/if}
     <span class="grow"></span>
     {#if view}<SessionBar {view} {acting} {confirmClose} onact={act} />{/if}

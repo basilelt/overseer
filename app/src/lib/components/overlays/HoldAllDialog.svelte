@@ -54,7 +54,7 @@
       try {
         if (mode === 'hold') await app.api.hold(id);
         else if (mode === 'close') await app.api.close(id);
-        else await app.resumeLine({ key: `line:${id}`, lineId: id, kind: '', group: 'stopped', state: 'stopped', title: '', at: '' });
+        else await app.resumeLine({ key: `line:${id}`, lineId: id, kind: '', group: 'stopped', state: 'closed', title: '', at: '' });
         done = { ...done, [id]: 'ok' };
       } catch (e) {
         done = { ...done, [id]: String((e as Error)?.message ?? e) };

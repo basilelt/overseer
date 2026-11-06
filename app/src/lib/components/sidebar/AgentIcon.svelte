@@ -3,13 +3,11 @@
   import type { SessionState } from '../../session-state';
 
   export const STATE_COLOR: Record<SessionState, string> = {
-    running: 'var(--st-working)',
-    needs_input: 'var(--st-input)',
-    ready: 'var(--st-done)',
-    pause_pending: 'var(--st-paused)',
-    paused: 'var(--st-paused)',
-    stopped: 'var(--st-held)',
-    closed: 'var(--st-held)',
+    running: 'var(--state-running)',
+    attention: 'var(--state-attention)',
+    open: 'var(--state-open)',
+    paused: 'var(--state-paused)',
+    closed: 'var(--state-closed)',
   };
 
   export const GROUP_COLOR: Record<GroupId, string> = {

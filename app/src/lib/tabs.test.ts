@@ -18,7 +18,7 @@ describe('tab shortcuts', () => {
 
 describe('tab kinds', () => {
   const items: SidebarItem[] = [
-    { key: 'line:a', kind: 'codex', group: 'ready', state: 'ready', title: 'A', at: '', lineId: 'a' },
+    { key: 'line:a', kind: 'codex', group: 'ready', state: 'open', title: 'A', at: '', lineId: 'a' },
     { key: 'term:s', kind: 'shell', group: 'running', state: 'running', title: 'zsh', at: '', termId: 's' },
   ];
 
@@ -86,7 +86,7 @@ describe('tab titles', () => {
   const label = (kind: string, arg: string) => `${kind}:${arg}`;
 
   it('prefers the sidebar title and falls back to a label for the kind', () => {
-    const item: SidebarItem = { key: 'line:a', kind: 'codex', group: 'ready', state: 'ready', title: 'Fix login', at: '', lineId: 'a' };
+    const item: SidebarItem = { key: 'line:a', kind: 'codex', group: 'ready', state: 'open', title: 'Fix login', at: '', lineId: 'a' };
     expect(tabTitle(tabInfo('line:a', [item])!, label)).toBe('Fix login');
     expect(tabTitle(tabInfo(newTabKey('system', 'cpu'), [])!, label)).toBe('system:cpu');
   });

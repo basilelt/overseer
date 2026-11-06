@@ -23,6 +23,11 @@
   --st-done: #71717a;
   --st-held: #a1a1aa;
   --st-paused: #d97706;
+  --state-running: #3fb950;
+  --state-attention: #f0883e;
+  --state-open: #58a6ff;
+  --state-paused: #a371f7;
+  --state-closed: var(--st-held);
   --overlay: rgba(9, 9, 11, 0.32);
   --shadow: 0 8px 28px rgba(0, 0, 0, 0.12), 0 0 0 1px var(--border);
   --diff-add-bg: rgba(22, 163, 74, 0.1);
