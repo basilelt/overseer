@@ -134,6 +134,10 @@ pub fn parse_usage(v: &Value) -> Option<Vec<Window>> {
     (!out.is_empty() || v.get("limits").is_some() || v.get("five_hour").is_some()).then_some(out)
 }
 
+pub fn tap_covers(tap_at: Option<i64>, now: i64) -> bool {
+    tap_at.is_some_and(|t| now - t < REFRESH_MS)
+}
+
 pub fn due(wanted: bool, now: i64, last_attempt: i64, last_claude_activity: Option<i64>) -> bool {
     wanted
         && now - last_attempt >= REFRESH_MS
@@ -233,6 +237,14 @@ mod tests {
     use std::cell::Cell;
 
     const SECRET: &str = "sk-ant-oat01-SECRETSECRETSECRET";
+
+    #[test]
+    fn statusline_tap_only_replaces_oauth_while_fresh() {
+        assert!(tap_covers(Some(1_000), 1_000 + REFRESH_MS - 1));
+        assert!(!tap_covers(Some(1_000), 1_000 + REFRESH_MS));
+        assert!(!tap_covers(Some(1_000), 1_000 + ACTIVE_MS / 2));
+        assert!(!tap_covers(None, 1_000));
+    }
 
     #[test]
     fn keychain_is_only_read_for_the_default_claude_dir() {

@@ -1,7 +1,8 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import { DaemonError } from '../client';
 import type { DaemonEvent } from '../types';
-import { CHIP_MIN_MS, DEBOUNCE_MS, PANEL_MIN_MS, UsageFeed } from './store.svelte';
+import { CHIP_MIN_MS, DEBOUNCE_MS, PANEL_MIN_MS, RESET_MARGIN_MS, STALE_MS, UsageFeed, limitsRefreshIn } from './store.svelte';
+import type { UsageResponse } from './types';
 import { mockUsage } from './mock';
 
 function setup(visible = { v: true }) {
@@ -36,7 +37,7 @@ describe('usage feed', () => {
     s.emit('usage.updated');
     await vi.advanceTimersByTimeAsync(PANEL_MIN_MS + 10);
     expect(s.calls.length).toBe(2);
-    await vi.advanceTimersByTimeAsync(600_000);
+    await vi.advanceTimersByTimeAsync(STALE_MS - 10_000);
     expect(s.calls.length).toBe(2);
     stop();
     s.emit('usage.updated');
@@ -96,4 +97,128 @@ describe('usage feed', () => {
     await vi.advanceTimersByTimeAsync(60_000);
     expect(s.calls.length).toBe(0);
   });
+  it('refreshes plan limits on screen while nothing else happens', async () => {
+    const s = setup();
+    s.feed.use('local:', s.client, s.subscribe, { range: 'today', by: 'agent', claudeLimits: true });
+    await vi.runOnlyPendingTimersAsync();
+    expect(s.calls.length).toBe(1);
+    await vi.advanceTimersByTimeAsync(STALE_MS + 10);
+    expect(s.calls.length).toBe(2);
+    await vi.advanceTimersByTimeAsync(STALE_MS + 10);
+    expect(s.calls.length).toBe(3);
+  });
+
+  it('refetches as soon as a shown limit window resets', async () => {
+    const s = setup();
+    const r = limited(Date.now() + 60_000);
+    s.client.request.mockImplementation(async (_m: string, path: string) => {
+      s.calls.push(path);
+      return r as never;
+    });
+    s.feed.use('local:', s.client, s.subscribe, { range: 'today', by: 'agent', claudeLimits: true });
+    await vi.runOnlyPendingTimersAsync();
+    await vi.advanceTimersByTimeAsync(59_000);
+    expect(s.calls.length).toBe(1);
+    await vi.advanceTimersByTimeAsync(3_000);
+    expect(s.calls.length).toBe(2);
+  });
+
+  it('still follows usage.updated while a limits refresh is pending', async () => {
+    const s = setup();
+    s.feed.use('local:', s.client, s.subscribe, { range: 'today', by: 'agent', claudeLimits: true });
+    await vi.runOnlyPendingTimersAsync();
+    await vi.advanceTimersByTimeAsync(PANEL_MIN_MS);
+    s.emit('usage.updated');
+    await vi.advanceTimersByTimeAsync(DEBOUNCE_MS + 10);
+    expect(s.calls.length).toBe(2);
+  });
+
+  it('stays idle when no limit is shown', async () => {
+    const s = setup();
+    s.client.request.mockImplementation(async (_m: string, path: string) => {
+      s.calls.push(path);
+      return { ...limited(0), agents: [] } as never;
+    });
+    s.feed.use('local:', s.client, s.subscribe, { range: 'today', by: 'agent' });
+    await vi.runOnlyPendingTimersAsync();
+    await vi.advanceTimersByTimeAsync(3 * STALE_MS);
+    expect(s.calls.length).toBe(1);
+  });
+
+  it('skips the timed refresh while hidden', async () => {
+    const vis = { v: true };
+    const s = setup(vis);
+    s.feed.use('local:', s.client, s.subscribe, { range: 'today', by: 'agent', claudeLimits: true });
+    await vi.runOnlyPendingTimersAsync();
+    vis.v = false;
+    s.feed.visible = false;
+    await vi.advanceTimersByTimeAsync(STALE_MS + 10);
+    expect(s.calls.length).toBe(1);
+  });
+
+  it('drops the timed refresh while unfocused and catches up on focus', async () => {
+    const focus = { v: true };
+    const s = setup();
+    const feed = new UsageFeed(() => true, Date.now, () => 60, () => focus.v);
+    feed.use('local:', s.client, s.subscribe, { range: 'today', by: 'agent', claudeLimits: true });
+    await vi.runOnlyPendingTimersAsync();
+    focus.v = false;
+    (feed as unknown as { onVisibility: () => void }).onVisibility();
+    expect(vi.getTimerCount()).toBe(0);
+    await vi.advanceTimersByTimeAsync(STALE_MS + 10);
+    expect(s.calls.length).toBe(1);
+    focus.v = true;
+    (feed as unknown as { onVisibility: () => void }).onVisibility();
+    await vi.advanceTimersByTimeAsync(10);
+    expect(s.calls.length).toBe(2);
+  });
+
+  it('refetches stale data when the same view is reused', async () => {
+    const s = setup();
+    const stop = s.feed.use('local:', s.client, s.subscribe, { range: 'today', by: 'agent' });
+    await vi.runOnlyPendingTimersAsync();
+    stop();
+    await vi.advanceTimersByTimeAsync(STALE_MS + 10);
+    s.feed.use('local:', s.client, s.subscribe, { range: 'today', by: 'agent' });
+    await vi.advanceTimersByTimeAsync(10);
+    expect(s.calls.length).toBe(2);
+  });
 });
+
+describe('limitsRefreshIn', () => {
+  const now = Date.parse('2026-11-06T12:00:00Z');
+  const win = (resetsAt: string | null, stale = false) => ({ ...limited(0), agents: [{ ...limited(0).agents[0], limits: { source: 'claude', windows: [{ key: '5h', windowMinutes: 300, usedPercent: 1, resetsAt, stale }], hit: null } }] });
+
+  it('waits for the nearest reset plus a margin', () => {
+    expect(limitsRefreshIn(win(new Date(now + 30_000).toISOString()), now)).toBe(30_000 + RESET_MARGIN_MS);
+  });
+
+  it('caps the wait at the stale interval', () => {
+    expect(limitsRefreshIn(win(new Date(now + 3_600_000).toISOString()), now)).toBe(STALE_MS);
+    expect(limitsRefreshIn(win(null), now)).toBe(STALE_MS);
+    expect(limitsRefreshIn(win(new Date(now - 1).toISOString()), now)).toBe(STALE_MS);
+  });
+
+  it('ignores reset windows and agents without limits', () => {
+    expect(limitsRefreshIn(win(new Date(now + 30_000).toISOString(), true), now)).toBeNull();
+    expect(limitsRefreshIn({ ...limited(0), agents: [] }, now)).toBeNull();
+  });
+});
+
+function limited(resetsAt: number): UsageResponse {
+  const base = mockUsage('range=today&by=agent&claudeLimits=1') as UsageResponse;
+  return {
+    ...base,
+    indexing: false,
+    agents: [
+      {
+        ...base.agents[0],
+        limits: {
+          source: 'claude',
+          windows: [{ key: '5h', windowMinutes: 300, usedPercent: 40, resetsAt: new Date(resetsAt).toISOString(), stale: false }],
+          hit: null,
+        },
+      },
+    ],
+  };
+}

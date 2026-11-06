@@ -1432,7 +1432,7 @@ fn worker(db: PathBuf, dirs: Dirs) {
 
 fn claude_limits_due(idx: &Index, tap: Option<&Limits>) -> bool {
     let now = crate::procs::now_ms();
-    if tap.is_some_and(|t| now - t.at < ACTIVE_MS) {
+    if crate::claude_limits::tap_covers(tap.map(|t| t.at), now) {
         return false;
     }
     let (wanted_at, attempt_at, dir) = {
