@@ -102,6 +102,19 @@ describe('MockDaemon', () => {
     await expect(make(Array(21).fill({ path: '/x' }))).rejects.toThrow('at most 20 attachments');
   });
 
+  it('mirrors the daemon on feedback attachments: only supported types, only uploads', async () => {
+    const { m } = setup();
+    const send = (path: string, attachments: unknown) => m.request('POST', path, { repo: 'o/r', title: 't', body: 'b', agent: 'claude', prompt: '@REPORT@', attachments });
+    const shot = await m.uploadFile('/Users/me/shot.png');
+    const notes = await m.uploadFile('/Users/me/notes.txt');
+    for (const path of ['/v1/feedback/direct', '/v1/feedback/start']) {
+      await expect(send(path, [{ path: shot.path, name: shot.name }])).resolves.toBeTruthy();
+      await expect(send(path, [{ path: notes.path, name: notes.name }])).rejects.toMatchObject({ status: 400, message: 'notes.txt: GitHub only accepts png, jpg, jpeg, gif, webp, svg and mp4, mov, webm attachments' });
+      await expect(send(path, [{ path: '/etc/passwd' }])).rejects.toMatchObject({ status: 400, message: '/etc/passwd is not an upload' });
+      await expect(send(path, 'x')).rejects.toThrow('attachments must be a list');
+    }
+  });
+
   it('asks a running agent to approve and merge its PR on approve, like the daemon', async () => {
     const { a } = setup();
     const t = await a.createTask({ title: 'PR', description: '', project: 'infra', agent: 'claude', model: 'opus', effort: 'high' });

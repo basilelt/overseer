@@ -10,6 +10,7 @@ import { mockSystem } from './system/mock';
 import { resolveProfile } from './profiles';
 import { fileKind } from './files';
 import { cleanTitle } from './titles';
+import { attachProblem, IMAGE_EXTS, VIDEO_EXTS } from './feedback';
 import type { DirListing } from './dirs';
 import type { Action, Proposal, Result } from './organize';
 import type {
@@ -727,6 +728,7 @@ export class MockDaemon implements DaemonClient {
     if (method === 'GET' && path === '/v1/env') return { path: '/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin', source: 'login-shell' };
     if (method === 'POST' && path === '/v1/uploads') return this.storeUpload(new URLSearchParams(qs).get('name') ?? '', 0);
     if (method === 'POST' && path === '/v1/terms') return this.createTerm(body);
+    if (method === 'POST' && path === '/v1/feedback/start') this.feedbackAttachments(body.attachments);
     if (method === 'POST' && path === '/v1/feedback/start') return { term: this.createTerm({ agent: body.agent, cwd: body.cwd ?? '/tmp/feedback', title: 'Feedback' }) };
     if (method === 'GET' && path === '/v1/github/review-requests') return mockReviewRequests();
     if ((r = m(/^\/v1\/github\/review-requests\/([^/]+)\/([^/]+)\/(\d+)\/review$/)) && method === 'POST') {
@@ -734,6 +736,7 @@ export class MockDaemon implements DaemonClient {
       const term = this.createTerm({ agent: body.agent, cwd: project, worktree: { branch: `review/pr-${r[3]}` }, title: `PR #${r[3]} ${r[1]}/${r[2]}` });
       return { term, worktree: term.cwd, project, branch: `review/pr-${r[3]}` };
     }
+    if (method === 'POST' && path === '/v1/feedback/direct') this.feedbackAttachments(body.attachments);
     if (method === 'POST' && path === '/v1/feedback/direct') return { url: `https://github.com/${body.repo}/issues/1`, labelled: true };
     if (method === 'POST' && path === '/v1/tasks') return this.createTask(body);
     if ((r = m(/^\/v1\/lines\/([^/]+)\/chat\/agents\/([^/]+)$/))) return this.agentChat(decodeURIComponent(r[1]), decodeURIComponent(r[2]), new URLSearchParams(qs));
@@ -1164,7 +1167,25 @@ export class MockDaemon implements DaemonClient {
     const ext = /\.([A-Za-z0-9]{1,10})$/.exec(name)?.[1]?.toLowerCase();
     const file = `${Math.random().toString(36).slice(2, 8).padEnd(6, '0')}${ext ? `.${ext}` : ''}`;
     this.uploaded.add(`${HOME}/.overseer/u/${file}`);
+    this.sizes.set(`${HOME}/.overseer/u/${file}`, size);
     return { path: `${HOME}/.overseer/u/${file}`, short: `~/.overseer/u/${file}`, name, size };
+  }
+
+  private sizes = new Map<string, number>();
+
+  private feedbackAttachments(list: unknown) {
+    if (list == null) return;
+    if (!Array.isArray(list)) throw new DaemonError(400, 'attachments must be a list');
+    if (list.length > 20) throw new DaemonError(400, 'at most 20 attachments');
+    for (const it of list) {
+      const raw = it?.path;
+      if (typeof raw !== 'string') throw new DaemonError(400, 'attachment path required');
+      if (!this.uploaded.has(raw)) throw new DaemonError(400, raw.startsWith(`${HOME}/.overseer/u/`) ? `${raw}: no such upload` : `${raw} is not an upload`);
+      const name = typeof it.name === 'string' && it.name.trim() ? it.name.trim() : raw.slice(raw.lastIndexOf('/') + 1);
+      const p = attachProblem(name, this.sizes.get(raw) ?? 0);
+      if (p === 'type') throw new DaemonError(400, `${name}: GitHub only accepts ${IMAGE_EXTS.join(', ')} and ${VIDEO_EXTS.join(', ')} attachments`);
+      if (p) throw new DaemonError(400, `${name} is larger than ${p === 'image' ? 10 : 100} MB`);
+    }
   }
 
   private keepAttachments(id: string, list: unknown): string[] {

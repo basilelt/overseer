@@ -1,4 +1,19 @@
 #!/bin/sh
+case "$1 $2" in
+  "issue create")
+    if [ "$3" = --help ]; then
+      [ -f "${SB_GH_DIR:-/nonexistent}/old" ] || echo "      --attach file[#alt]   Attach a file"
+      exit 0
+    fi
+    [ -n "${SB_GH_LOG:-}" ] && echo "issue $*" >> "$SB_GH_LOG"
+    for a in "$@"; do
+      case $a in --repo=*) r=${a#--repo=} ;; --body-file=*) cp "${a#--body-file=}" "${SB_GH_LOG:-/dev/null}.body" ;; esac
+    done
+    echo "https://github.com/$r/issues/7"
+    case $r in partial/*) echo "failed to upload clip.mov: file too large for this plan" >&2; exit 1 ;; esac
+    exit 0
+    ;;
+esac
 repo= head=
 for a in "$@"; do
   case $a in
