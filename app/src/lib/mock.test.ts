@@ -138,6 +138,198 @@ describe('MockDaemon', () => {
     expect((await a.lines()).find((l) => l.line.id === 'ln_06')!.line.state).toBe('hung-up');
   });
 
+  it('ignores force on hold and answers 409 for a busy line, like the daemon', async () => {
+    // Given a busy line
+    // When it is held with force=true
+    // Then the daemon ignores force: 409 with the failed atPrompt predicate, and the line stays active
+    const { m, a } = setup();
+    await expect(m.request('POST', '/v1/lines/ln_06/hold?dryRun=false&force=true')).rejects.toMatchObject({
+      status: 409,
+      body: { lineId: 'ln_06', action: 'none', predicates: { atPrompt: { ok: false, detail: 'agent is mid-turn' } } },
+    });
+    expect((await a.lines()).find((l) => l.line.id === 'ln_06')!.line.state).toBe('active');
+  });
+
+  it('refuses a plain hold of a pinned line or one waiting for input with 409, like the daemon', async () => {
+    // Given an idle pinned line and a line that waits for the user
+    // When each is held without afterTurn
+    // Then both get 409 naming notPinned / notNeedsInput and stay active
+    const { m, a } = setup();
+    await a.pin('ln_09', true);
+    await expect(a.hold('ln_09')).rejects.toMatchObject({ status: 409, body: { predicates: { notPinned: { ok: false, detail: 'line is pinned' } } } });
+    await expect(a.hold('ln_01')).rejects.toMatchObject({ status: 409, body: { predicates: { notNeedsInput: { ok: false, detail: 'agent is waiting for you' } } } });
+    await expect(m.request('POST', '/v1/lines/ln_09/hold')).rejects.toMatchObject({ status: 409 });
+    const states = (await a.lines()).filter((l) => ['ln_09', 'ln_01'].includes(l.line.id)).map((l) => l.line.state);
+    expect(states).toEqual(['active', 'idle']);
+  });
+
+  it('refuses a plain hold of a held or hung-up line with 409 on alive, like the daemon', async () => {
+    // Given a held line and a line that was closed
+    // When each is held
+    // Then both fail the alive predicate with 409 and keep their state
+    const { a } = setup();
+    await a.close('ln_09');
+    for (const id of ['ln_11', 'ln_09']) {
+      await expect(a.hold(id)).rejects.toMatchObject({ status: 409, body: { predicates: { alive: { ok: false, detail: 'no live agent process for this line' } } } });
+    }
+    const states = (await a.lines()).filter((l) => ['ln_11', 'ln_09'].includes(l.line.id)).map((l) => l.line.state);
+    expect(states).toEqual(['hung-up', 'held']);
+  });
+
+  it('answers a forced dry-run close of a busy line with 200 would-close, like the daemon', async () => {
+    // Given a busy line
+    // When a dry-run close is forced, and an unforced one is asked
+    // Then the forced one plans would-close without touching it and the unforced one is 409
+    const { m, a } = setup();
+    const plan = (await m.request('POST', '/v1/lines/ln_06/close?force=true')) as { action: string };
+    expect(plan.action).toBe('would-close');
+    expect((await a.lines()).find((l) => l.line.id === 'ln_06')!.line.state).toBe('active');
+    await expect(m.request('POST', '/v1/lines/ln_06/close')).rejects.toMatchObject({ status: 409 });
+  });
+
+  it('exposes the running subagents on the line and keeps a pending hold while they run', async () => {
+    // Given an idle line, and the same line with a subagent still running
+    // When it is held after the turn, then the subagent stops
+    // Then local.subagents is 0 or 1 like the daemon, the hold waits for the subagent and applies after
+    const { m, a } = setup();
+    const get = async () => (await a.lines()).find((l) => l.line.id === 'ln_09')!;
+    expect((await get()).local?.subagents).toBe(0);
+    (m.lines.find((l) => l.line.id === 'ln_09')!.local as { subagents: number }).subagents = 1;
+    expect((await a.holdAfterTurn('ln_09')).action).toBe('hold-pending');
+    m.tick();
+    expect((await get()).local?.holdPending).toBe(true);
+    (m.lines.find((l) => l.line.id === 'ln_09')!.local as { subagents: number }).subagents = 0;
+    m.tick();
+    expect((await get()).line.state).toBe('held');
+  });
+
+  it('queues an afterTurn hold with the noToolRunning predicate while a subagent runs, like the daemon', async () => {
+    // Given an idle line with one running subagent
+    // When it is held after the turn
+    // Then the pending body names noToolRunning with the daemon's detail
+    const { m, a } = setup();
+    (m.lines.find((l) => l.line.id === 'ln_09')!.local as { subagents: number }).subagents = 1;
+    const r = await a.holdAfterTurn('ln_09');
+    expect(r.action).toBe('hold-pending');
+    expect(r.predicates?.noToolRunning).toEqual({ ok: false, detail: 'a subagent is running' });
+  });
+
+  it('drops a pending hold blocked by a background task after the grace with line.hold_refused, like the daemon', async () => {
+    // Given an idle line with a background task and a pending hold
+    // When the mock ticks before and after the 10 s grace
+    // Then the hold is dropped with a hold_refused event, and the line is never held
+    vi.useFakeTimers();
+    try {
+      const { m, a, events } = setup();
+      (m.lines.find((l) => l.line.id === 'ln_09')!.local as { tasks: number }).tasks = 1;
+      expect((await a.holdAfterTurn('ln_09')).action).toBe('hold-pending');
+      m.tick();
+      vi.advanceTimersByTime(9_000);
+      m.tick();
+      const get = async () => (await a.lines()).find((l) => l.line.id === 'ln_09')!;
+      expect((await get()).local?.holdPending).toBe(true);
+      vi.advanceTimersByTime(1_000);
+      m.tick();
+      expect((await get()).local?.holdPending).toBeUndefined();
+      expect((await get()).line.state).toBe('idle');
+      const refused = events.filter((e) => (e.type as string) === 'line.hold_refused').map((e) => e.data);
+      expect(refused).toEqual([{ lineId: 'ln_09', failed: [{ name: 'noToolRunning', detail: 'a background task is running' }], error: null }]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('drops a pending hold of a line pinned after it was queued, never holding it, like the daemon', async () => {
+    // Given an idle line with a pending hold that gets pinned afterwards
+    // When the mock ticks before and after the 10 s grace
+    // Then it is not held, and after the grace it is dropped with a hold_refused naming notPinned
+    vi.useFakeTimers();
+    try {
+      const { m, a, events } = setup();
+      (m.lines.find((l) => l.line.id === 'ln_09')!.local as { tasks: number }).tasks = 1;
+      expect((await a.holdAfterTurn('ln_09')).action).toBe('hold-pending');
+      await a.pin('ln_09', true);
+      m.tick();
+      vi.advanceTimersByTime(10_000);
+      m.tick();
+      const l = (await a.lines()).find((x) => x.line.id === 'ln_09')!;
+      expect(l.line.state).not.toBe('held');
+      expect(l.local?.holdPending).toBeUndefined();
+      const refused = events.filter((e) => (e.type as string) === 'line.hold_refused').map((e) => e.data);
+      expect(refused).toEqual([
+        { lineId: 'ln_09', failed: [{ name: 'noToolRunning', detail: 'a background task is running' }, { name: 'notPinned', detail: 'line is pinned' }], error: null },
+      ]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('queues a hold on a busy line, applies it when the turn ends and stamps heldAt', async () => {
+    // Given a busy line
+    // When it is held with afterTurn, then the mock ticks twice
+    // Then the turn ends first, the hold applies on the next tick with heldAt, and resume clears heldAt
+    const { m, a } = setup();
+    const get = async () => (await a.lines()).find((l) => l.line.id === 'ln_06')!;
+    const r = await a.holdAfterTurn('ln_06');
+    expect(r.action).toBe('hold-pending');
+    expect((await get()).local?.holdPending).toBe(true);
+    expect((await get()).line.state).toBe('active');
+    m.tick();
+    expect((await get()).local?.busy).toBe(false);
+    expect((await get()).line.state).toBe('active');
+    expect((await get()).local?.holdPending).toBe(true);
+    m.tick();
+    const held = await get();
+    expect(held.line.state).toBe('held');
+    expect(held.local?.holdPending).toBeUndefined();
+    expect(Number.isNaN(Date.parse(held.local!.heldAt!))).toBe(false);
+    await a.resume('ln_06');
+    expect((await get()).local?.heldAt).toBeUndefined();
+  });
+
+  it('cancels a pending hold and answers an unknown line with 404 like the daemon', async () => {
+    // Given a pending hold
+    // When it is cancelled, then the turn ends
+    // Then the line is never held; cancelling an unknown line is a 404
+    const { m, a } = setup();
+    await a.holdAfterTurn('ln_04');
+    expect(await a.cancelHold('ln_04')).toEqual({ lineId: 'ln_04', holdPending: false });
+    m.tick();
+    const l = (await a.lines()).find((x) => x.line.id === 'ln_04')!;
+    expect(l.line.state).toBe('active');
+    expect(l.local?.holdPending).toBeUndefined();
+    await expect(a.cancelHold('nope')).rejects.toMatchObject({ status: 404, message: expect.stringContaining("no line matches 'nope'") });
+  });
+
+  it('keeps a pending hold while the agent waits for the user and answers a dry run like the daemon', async () => {
+    // Given a line that waits for the user
+    // When a dry-run afterTurn hold is asked, then a real one, then the mock ticks
+    // Then the dry run changes nothing and says would-hold-pending, and the hold stays pending
+    const { m, a } = setup();
+    const get = async () => (await a.lines()).find((l) => l.line.id === 'ln_01')!;
+    const dry = await m.request('POST', '/v1/lines/ln_01/hold?afterTurn=true');
+    expect((dry as { action: string }).action).toBe('would-hold-pending');
+    expect((await get()).local?.holdPending).toBeUndefined();
+    expect((await a.holdAfterTurn('ln_01')).action).toBe('hold-pending');
+    m.tick();
+    m.tick();
+    expect((await get()).line.state).toBe('active');
+    expect((await get()).local?.holdPending).toBe(true);
+  });
+
+  it('holds an idle line at once with afterTurn and refuses a pinned or stopped one', async () => {
+    // Given an idle line, a pinned busy line and a held line
+    // When each is held with afterTurn
+    // Then the idle one is held, the others get 409 and nothing is pending
+    const { a } = setup();
+    const idle = (await a.lines()).find((l) => l.line.state === 'idle')!;
+    expect((await a.holdAfterTurn(idle.line.id)).action).toBe('held');
+    await expect(a.holdAfterTurn(idle.line.id)).rejects.toMatchObject({ status: 409 });
+    await a.pin('ln_04', true);
+    await expect(a.holdAfterTurn('ln_04')).rejects.toMatchObject({ status: 409 });
+    expect((await a.lines()).find((l) => l.line.id === 'ln_04')!.local?.holdPending).toBeUndefined();
+  });
+
   it('keeps a reducer snapshot in sync with its events', async () => {
     const { m, a, events } = setup();
     let s: Snapshot = { lines: await a.lines(), terms: await a.terms(), tasks: await a.tasks(), activity: {} };

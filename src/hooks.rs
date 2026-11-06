@@ -146,9 +146,16 @@ pub fn apply(h: &mut HookState, ev: &Value) {
             h.busy = true;
             h.needs_input = false;
         }
-        "Stop" | "StopFailure" | "SessionEnd" => {
+        "Stop" | "StopFailure" => {
             h.busy = false;
             h.needs_input = false;
+        }
+        // The session is gone: a lost SubagentStop must not outlive it.
+        "SessionEnd" => {
+            h.busy = false;
+            h.needs_input = false;
+            h.subagents = 0;
+            h.tasks = 0;
         }
         "Notification" => {
             h.needs_input = !matches!(
@@ -322,6 +329,24 @@ mod tests {
         assert!(!h.busy && !h.needs_input);
         let none = spool_record("amp", "Stop", b"{}", None, |_| None, 1);
         assert_eq!(session_key("amp", &none), None);
+    }
+
+    #[test]
+    fn a_lost_subagent_stop_is_cleared_by_stop_never_but_by_session_end_and_start() {
+        // Given a session whose turn ended with a subagent and a task still counted
+        // When Stop arrives, then SessionEnd, and separately SessionStart
+        // Then Stop keeps the counts and both SessionEnd and SessionStart reset them
+        let ev = |e: &str| json!({"event": e, "at": 1});
+        let mut h = HookState::default();
+        for e in ["UserPromptSubmit", "SubagentStart", "TaskCreated", "Stop"] {
+            apply(&mut h, &ev(e));
+        }
+        assert!(!h.busy && h.subagents == 1 && h.tasks == 1);
+        let mut again = h.clone();
+        apply(&mut again, &ev("SessionStart"));
+        assert!(again.subagents == 0 && again.tasks == 0);
+        apply(&mut h, &ev("SessionEnd"));
+        assert!(h.subagents == 0 && h.tasks == 0);
     }
 
     #[test]

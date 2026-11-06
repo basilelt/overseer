@@ -27,10 +27,11 @@
         "task.deleted",
         "line.activity",
         "line.chat",
+        "line.hold_refused",
         "port.opened",
         "port.closed"
       ],
-      "description": "term.*, task.*, line.activity, line.chat and port.* come only from a station daemon's /v1/events (contract/app-daemon.md §7), never from the API."
+      "description": "term.*, task.*, line.activity, line.chat, line.hold_refused ({lineId, failed:[{name,detail}], error?}: a pending hold was dropped) and port.* come only from a station daemon's /v1/events (contract/app-daemon.md §7), never from the API."
     },
     "at": { "type": "string", "format": "date-time" },
     "data": { "type": "object" }

@@ -1,8 +1,9 @@
 import { FEEDBACK_TITLE, isFeedbackTerm } from './feedback';
+import { isEnded, sessionState, type SessionState } from './session-state';
 import type { LocalLine, Task, Term } from './types';
 
-export type GroupId = 'needs_input' | 'needs_testing' | 'working' | 'pushed' | 'idle' | 'held';
-export const GROUP_ORDER: GroupId[] = ['needs_input', 'needs_testing', 'working', 'pushed', 'idle', 'held'];
+export type GroupId = 'needs_input' | 'needs_testing' | 'running' | 'pushed' | 'ready' | 'paused' | 'stopped';
+export const GROUP_ORDER: GroupId[] = ['needs_input', 'needs_testing', 'running', 'pushed', 'ready', 'paused', 'stopped'];
 
 export type ItemKind = string;
 
@@ -10,6 +11,8 @@ export interface SidebarItem {
   key: string;
   kind: ItemKind;
   group: GroupId;
+  /** The process state shown on the row; the group may be a task or PR bucket on top of it. */
+  state: SessionState;
   title: string;
   /** The title is the user's custom one, not the auto title. */
   renamed?: boolean;
@@ -26,16 +29,21 @@ export interface Group {
   items: SidebarItem[];
 }
 
-export function lineGroup(l: LocalLine, testing: boolean): GroupId | null {
-  const { line, local } = l;
-  if (line.state === 'hung-up') return null;
-  if (line.state === 'held') return 'held';
-  if (local?.needsInput) return 'needs_input';
+// needs_testing and pushed sit on top of the process state; paused and stopped lines are never urgent.
+export function lineGroup(l: LocalLine, testing: boolean, termId?: string | null): GroupId | null {
+  if (isEnded(l)) return null;
+  const state = sessionState(l, termId).state;
+  if (state === 'paused') return 'paused';
+  if (l.line.state === 'held') return 'stopped';
+  if (state === 'attention') return 'needs_input';
   if (testing) return 'needs_testing';
-  if (local?.busy) return 'working';
-  if (line.prUrl) return 'pushed';
-  return 'idle';
+  if (state === 'running') return 'running';
+  if (l.line.prUrl) return 'pushed';
+  return state === 'closed' ? 'stopped' : 'ready';
 }
+
+/** The session has no live process: paused on purpose or stopped. */
+export const isOff = (i: Pick<SidebarItem, 'group'>): boolean => i.group === 'paused' || i.group === 'stopped';
 
 function lineTitle(l: LocalLine): string {
   return l.local?.title || l.line.ticketKey || l.line.branch || l.line.worktreePath?.split('/').pop() || l.line.id;
@@ -49,20 +57,22 @@ export function sidebarItems(lines: LocalLine[], terms: Term[], tasks: Task[], b
   const feedbackLines = new Set(terms.filter((t) => t.lineId && isFeedbackTerm(t)).map((t) => t.lineId!));
   const items: SidebarItem[] = [];
   for (const l of lines) {
-    const group = lineGroup(l, testing.has(l.line.id));
+    const termId = termByLine.get(l.line.id) ?? l.local?.termId;
+    const group = lineGroup(l, testing.has(l.line.id), termId);
     if (!group) continue;
     const task = taskByLine.get(l.line.id);
     items.push({
       key: `line:${l.line.id}`,
       kind: l.line.agent,
       group,
+      state: sessionState(l, termId).state,
       title: l.local?.titleOverride || (task?.title ?? (feedbackLines.has(l.line.id) ? FEEDBACK_TITLE : lineTitle(l))),
       renamed: !!l.local?.titleOverride,
       goal: briefs[l.line.id]?.goal ?? task?.description,
       status: briefs[l.line.id]?.status,
       at: l.line.lastActivityAt,
       lineId: l.line.id,
-      termId: termByLine.get(l.line.id) ?? l.local?.termId,
+      termId,
       taskId: task?.id,
     });
   }
@@ -71,7 +81,8 @@ export function sidebarItems(lines: LocalLine[], terms: Term[], tasks: Task[], b
     items.push({
       key: `term:${t.id}`,
       kind: t.agent ?? 'shell',
-      group: t.exited ? 'idle' : 'working',
+      group: t.exited ? 'stopped' : 'running',
+      state: t.exited ? 'closed' : 'running',
       title: t.titleOverride || t.title || t.cmd.join(' '),
       renamed: !!t.titleOverride,
       goal: t.cwd,
@@ -83,7 +94,7 @@ export function sidebarItems(lines: LocalLine[], terms: Term[], tasks: Task[], b
   return items;
 }
 
-const ITEM_FIELDS: (keyof SidebarItem)[] = ['key', 'kind', 'group', 'title', 'goal', 'status', 'at', 'lineId', 'termId', 'taskId'];
+const ITEM_FIELDS: (keyof SidebarItem)[] = ['key', 'kind', 'group', 'state', 'title', 'goal', 'status', 'at', 'lineId', 'termId', 'taskId'];
 
 function sameItem(a: SidebarItem, b: SidebarItem): boolean {
   for (const f of ITEM_FIELDS) if (a[f] !== b[f]) return false;
@@ -103,7 +114,11 @@ export function stableItems(prev: SidebarItem[], next: SidebarItem[]): SidebarIt
   return same ? prev : out;
 }
 
+// An unreadable date (not starting with a year digit) is the oldest, as timeBucket files it.
+const dated = (s: string): boolean => s >= '0' && s < ':';
+
 export function newestFirst(a: { at: string }, b: { at: string }): number {
+  if (!dated(a.at) || !dated(b.at)) return dated(a.at) === dated(b.at) ? 0 : dated(a.at) ? -1 : 1;
   return a.at < b.at ? 1 : a.at > b.at ? -1 : 0;
 }
 

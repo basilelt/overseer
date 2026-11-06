@@ -104,9 +104,10 @@ paths:
       parameters:
         - { name: lineId, in: path, required: true, schema: { type: string } }
         - { name: dryRun, in: query, schema: { type: boolean, default: true } }
+        - { name: afterTurn, in: query, schema: { type: boolean, default: false }, description: "When the only failed predicates are turn-bound (atPrompt, inputEmpty, noToolRunning, notNeedsInput), queue the hold (action hold-pending, local.holdPending) and apply it on the busy to idle transition once the agent does not wait for the user. Any other failure is refused as usual. An idle line is held at once." }
       responses:
         "200":
-          description: Predicate results and action taken
+          description: Predicate results and action taken (hold-pending: queued, predicates show what blocks it now)
           content:
             application/json:
               schema: { $ref: "#/components/schemas/HoldResult" }
@@ -115,6 +116,26 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/HoldResult" }
+    delete:
+      summary: Cancel a pending hold (idempotent)
+      operationId: cancelHold
+      parameters:
+        - { name: lineId, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: No hold is pending any more
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [lineId, holdPending]
+                properties:
+                  lineId: { type: string }
+                  holdPending: { type: boolean, enum: [false] }
+        "404":
+          description: Unknown line
+        "409":
+          description: The pending hold was already taken and is being applied
   /lines/{lineId}/close:
     post:
       summary: Mark hung-up (does not stop a running process unless hold succeeds first)
@@ -2137,6 +2158,10 @@ components:
             needsInput: { type: boolean }
             pinned: { type: boolean }
             heldReason: { type: string, enum: [user, lost] }
+            heldAt: { type: string, format: date-time, description: "UTC time the line was held (user or lost); present only while held, cleared on resume" }
+            holdPending: { type: boolean, description: "Present and true while a hold waits for the end of the turn (POST hold with afterTurn=true); survives a daemon restart; cleared when applied, cancelled, refused (see the line.hold_refused event) or the line hangs up" }
+            subagents: { type: integer, minimum: 0, description: "Subagents the hooks report as running (SubagentStart minus SubagentStop); 0 when unknown or not alive; reset by SessionStart and SessionEnd. A line with subagents > 0 is working even when busy is false." }
+            tasks: { type: integer, minimum: 0, description: "Background tasks the hooks report as running (TaskCreated minus TaskCompleted, Claude only); 0 when unknown or not alive" }
             orphan: { type: boolean }
             duplicate: { type: boolean }
             tmuxPane: { type: string, examples: ["%19"] }
@@ -2155,7 +2180,7 @@ components:
           type: object
           additionalProperties: { type: object, properties: { ok: { type: boolean }, detail: { type: string } } }
         lineId: { type: string }
-        action: { type: string, enum: [none, would-hold, held, would-close, closed] }
+        action: { type: string, enum: [none, would-hold, hold-pending, would-hold-pending, held, would-close, closed] }
         steps: { type: array, items: { type: string }, description: Actions planned (dry run) or done }
         error: { type: string }
     HookEvent:

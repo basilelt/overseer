@@ -781,6 +781,7 @@ fn hold_and_resume_work_on_every_cycle_of_the_same_line() {
         );
         assert_eq!(held["action"], "held", "cycle {cycle}: {held}");
         wait(|| state() == "held");
+        wait(|| line_json(&app, &line)["local"]["heldAt"].is_string());
         let mut ws = app.ws(&tid);
         read_until(&mut ws, "press Enter to resume");
         let (code, r) = app.req(
@@ -792,6 +793,7 @@ fn hold_and_resume_work_on_every_cycle_of_the_same_line() {
         assert_eq!(r["id"], tid.as_str());
         wait(|| resumes() == cycle);
         wait(|| state() != "held");
+        wait(|| line_json(&app, &line)["local"]["heldAt"].is_null());
         let mut ws = app.ws(&tid);
         read_until(&mut ws, "❯");
     }
@@ -819,6 +821,273 @@ fn claude_term(app: &App, cmd: Value, sid: &str) -> (String, String) {
             .map(|l| l["line"]["id"].as_str().unwrap().to_string())
     });
     (tid, line)
+}
+
+fn line_json(app: &App, line: &str) -> Value {
+    app.ok("GET", "/v1/lines?all=true", Value::Null)
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|l| l["line"]["id"] == line)
+        .cloned()
+        .unwrap()
+}
+
+#[test]
+fn holding_a_busy_line_after_the_turn_waits_for_the_turn_to_end() {
+    // Given a claude session that is mid-turn
+    // When it is held with afterTurn=true, then its turn ends
+    // Then the hold stays pending (still alive) and applies on the busy to idle transition
+    let sid = "dddddddd-0000-4000-8000-000000000001";
+    let app = App::new("holdafter", json!({}));
+    let (tid, line) = claude_term(&app, json!(["claude", "--session-id", sid]), sid);
+    let mut ws = app.ws(&tid);
+    read_until(&mut ws, "❯");
+    send(&mut ws, "busy\r");
+    wait(|| line_json(&app, &line)["local"]["busy"] == true);
+    let (code, v) = app.req(
+        "POST",
+        &format!("/v1/lines/{line}/hold?dryRun=false&afterTurn=true"),
+        Value::Null,
+    );
+    assert_eq!(
+        (code, v["action"].as_str()),
+        (200, Some("hold-pending")),
+        "{v}"
+    );
+    wait(|| line_json(&app, &line)["local"]["holdPending"] == true);
+    assert_ne!(line_json(&app, &line)["line"]["state"], "held");
+    send(&mut ws, "done\r");
+    wait(|| line_json(&app, &line)["line"]["state"] == "held");
+    let l = line_json(&app, &line);
+    assert!(l["local"]["holdPending"].is_null(), "{l}");
+    assert_eq!(l["local"]["heldReason"], "user");
+    let at = l["local"]["heldAt"].as_str().unwrap();
+    assert!(at.ends_with('Z') && at.len() >= 20, "{at}");
+    app.ok(
+        "POST",
+        &format!("/v1/terms/{tid}/kill"),
+        json!({"confirm": true}),
+    );
+}
+
+#[test]
+fn a_pending_hold_can_be_cancelled_and_never_applies() {
+    // Given a busy claude session with a pending hold
+    // When the pending hold is cancelled with DELETE and the turn ends
+    // Then the line is never held
+    let sid = "dddddddd-0000-4000-8000-000000000002";
+    let app = App::new("holdcancel", json!({}));
+    let (tid, line) = claude_term(&app, json!(["claude", "--session-id", sid]), sid);
+    let mut ws = app.ws(&tid);
+    read_until(&mut ws, "❯");
+    send(&mut ws, "busy\r");
+    wait(|| line_json(&app, &line)["local"]["busy"] == true);
+    let hold = format!("/v1/lines/{line}/hold?dryRun=false&afterTurn=true");
+    assert_eq!(app.ok("POST", &hold, Value::Null)["action"], "hold-pending");
+    wait(|| line_json(&app, &line)["local"]["holdPending"] == true);
+    let (code, v) = app.req("DELETE", &format!("/v1/lines/{line}/hold"), Value::Null);
+    assert_eq!(
+        (code, v["holdPending"].as_bool()),
+        (200, Some(false)),
+        "{v}"
+    );
+    wait(|| line_json(&app, &line)["local"]["holdPending"].is_null());
+    send(&mut ws, "done\r");
+    wait(|| line_json(&app, &line)["local"]["busy"] == false);
+    std::thread::sleep(Duration::from_secs(3));
+    let l = line_json(&app, &line);
+    assert_ne!(l["line"]["state"], "held", "{l}");
+    assert!(l["local"]["heldAt"].is_null(), "{l}");
+    let (code, v) = app.req("DELETE", "/v1/lines/nope-nope/hold", Value::Null);
+    assert_eq!(code, 404, "{v}");
+    app.ok(
+        "POST",
+        &format!("/v1/terms/{tid}/kill"),
+        json!({"confirm": true}),
+    );
+}
+
+#[test]
+fn after_turn_holds_an_idle_line_now_and_still_refuses_a_pinned_one() {
+    // Given an idle claude session
+    // When it is held with afterTurn=true, once pinned and once not
+    // Then the pinned line is refused (nothing pending) and the other is held at once
+    let sid = "dddddddd-0000-4000-8000-000000000004";
+    let app = App::new("holdidle", json!({}));
+    let (tid, line) = claude_term(&app, json!(["claude", "--session-id", sid]), sid);
+    let mut ws = app.ws(&tid);
+    read_until(&mut ws, "❯");
+    send(&mut ws, "busy\r");
+    wait(|| line_json(&app, &line)["local"]["busy"] == true);
+    app.ok(
+        "PUT",
+        &format!("/v1/lines/{line}/pin"),
+        json!({"pinned": true}),
+    );
+    let hold = format!("/v1/lines/{line}/hold?dryRun=false&afterTurn=true");
+    let (code, v) = app.req("POST", &hold, Value::Null);
+    assert_eq!(code, 409, "{v}");
+    assert_eq!(v["predicates"]["notPinned"]["ok"], false);
+    app.ok(
+        "PUT",
+        &format!("/v1/lines/{line}/pin"),
+        json!({"pinned": false}),
+    );
+    send(&mut ws, "done\r");
+    wait(|| line_json(&app, &line)["local"]["busy"] == false);
+    let (code, v) = app.req("POST", &hold, Value::Null);
+    assert_eq!((code, v["action"].as_str()), (200, Some("held")), "{v}");
+    wait(|| line_json(&app, &line)["line"]["state"] == "held");
+    app.ok(
+        "POST",
+        &format!("/v1/terms/{tid}/kill"),
+        json!({"confirm": true}),
+    );
+}
+
+fn child_pid(app: &App, name: &str) -> i32 {
+    let f = app.fx.base.join(format!("stub.log.{name}"));
+    wait_for(|| std::fs::read_to_string(&f).ok()?.trim().parse().ok())
+}
+
+fn gone(pid: i32) -> bool {
+    unsafe { libc::kill(pid, 0) != 0 }
+}
+
+#[test]
+fn holding_a_line_stops_the_processes_its_agent_left_behind() {
+    // Given an idle agent whose MCP-like children outlive it, one of them ignoring SIGTERM
+    // When the line is held
+    // Then both children are gone, and the term still runs the held stub
+    let sid = "dddddddd-0000-4000-8000-000000000005";
+    let app = App::with_env(
+        "holdtree",
+        json!({}),
+        &[("OVERSEER_HOLD_TIMEOUT_MS", "1500")],
+    );
+    let (tid, line) = claude_term(&app, json!(["claude", "--session-id", sid]), sid);
+    let mut ws = app.ws(&tid);
+    read_until(&mut ws, "❯");
+    send(&mut ws, "mcp\r");
+    let polite = child_pid(&app, "mcp");
+    send(&mut ws, "mcpstubborn\r");
+    let stubborn = child_pid(&app, "mcpstubborn");
+    assert!(!gone(polite) && !gone(stubborn));
+    let held = app.ok(
+        "POST",
+        &format!("/v1/lines/{line}/hold?dryRun=false"),
+        Value::Null,
+    );
+    assert_eq!(held["action"], "held", "{held}");
+    assert!(held["steps"].to_string().contains("got SIGKILL"), "{held}");
+    wait(|| gone(polite) && gone(stubborn));
+    let mut ws = app.ws(&tid);
+    read_until(&mut ws, "press Enter to resume");
+    app.ok(
+        "POST",
+        &format!("/v1/terms/{tid}/kill"),
+        json!({"confirm": true}),
+    );
+}
+
+#[test]
+fn a_pending_hold_blocked_for_good_is_dropped_and_the_refusal_is_recorded() {
+    // Given a busy session with a pending hold
+    // When the line is pinned meanwhile and its turn ends
+    // Then the pending hold is dropped (not held, nothing queued) and the refusal is logged
+    let sid = "dddddddd-0000-4000-8000-000000000006";
+    let app = App::new("holdblocked", json!({}));
+    let (tid, line) = claude_term(&app, json!(["claude", "--session-id", sid]), sid);
+    let mut ws = app.ws(&tid);
+    read_until(&mut ws, "❯");
+    send(&mut ws, "busy\r");
+    wait(|| line_json(&app, &line)["local"]["busy"] == true);
+    let hold = format!("/v1/lines/{line}/hold?dryRun=false&afterTurn=true");
+    assert_eq!(app.ok("POST", &hold, Value::Null)["action"], "hold-pending");
+    wait(|| line_json(&app, &line)["local"]["holdPending"] == true);
+    app.ok(
+        "PUT",
+        &format!("/v1/lines/{line}/pin"),
+        json!({"pinned": true}),
+    );
+    send(&mut ws, "done\r");
+    wait(|| line_json(&app, &line)["local"]["holdPending"].is_null());
+    let l = line_json(&app, &line);
+    assert_ne!(l["line"]["state"], "held", "{l}");
+    let log = std::fs::read_to_string(app.fx.state.join("actions.log")).unwrap();
+    assert!(
+        log.contains("hold-pending-refused") && log.contains("notPinned"),
+        "{log}"
+    );
+    app.ok(
+        "POST",
+        &format!("/v1/terms/{tid}/kill"),
+        json!({"confirm": true}),
+    );
+}
+
+#[test]
+fn a_pending_hold_waits_for_the_subagents_after_the_turn_ended() {
+    // Given a claude session whose turn ended while one subagent still runs, with a pending hold
+    // When twice the grace period (2 s) passes, then the subagent stops
+    // Then local.subagents shows 1, the hold stays pending meanwhile and applies after the stop
+    let sid = "dddddddd-0000-4000-8000-000000000006";
+    let app = App::with_env("holdsub", json!({}), &[("OVERSEER_HOLD_GRACE_MS", "2000")]);
+    let (tid, line) = claude_term(&app, json!(["claude", "--session-id", sid]), sid);
+    let mut ws = app.ws(&tid);
+    read_until(&mut ws, "❯");
+    assert_eq!(line_json(&app, &line)["local"]["subagents"], 0);
+    send(&mut ws, "busy\r");
+    wait(|| line_json(&app, &line)["local"]["busy"] == true);
+    send(&mut ws, "sub\r");
+    wait(|| line_json(&app, &line)["local"]["subagents"] == 1);
+    let hold = format!("/v1/lines/{line}/hold?dryRun=false&afterTurn=true");
+    assert_eq!(app.ok("POST", &hold, Value::Null)["action"], "hold-pending");
+    send(&mut ws, "done\r");
+    wait(|| line_json(&app, &line)["local"]["busy"] == false);
+    std::thread::sleep(Duration::from_secs(4));
+    let l = line_json(&app, &line);
+    assert_eq!(l["local"]["subagents"], 1, "{l}");
+    assert_eq!(l["local"]["holdPending"], true, "{l}");
+    assert_ne!(l["line"]["state"], "held", "{l}");
+    send(&mut ws, "unsub\r");
+    wait(|| line_json(&app, &line)["line"]["state"] == "held");
+    let l = line_json(&app, &line);
+    assert_eq!(l["local"]["subagents"], 0, "{l}");
+    assert!(l["local"]["holdPending"].is_null(), "{l}");
+    app.ok(
+        "POST",
+        &format!("/v1/terms/{tid}/kill"),
+        json!({"confirm": true}),
+    );
+}
+
+#[test]
+fn holding_without_after_turn_still_refuses_a_busy_line() {
+    // Given a busy claude session
+    // When it is held without afterTurn
+    // Then the hold is refused as before and nothing is pending
+    let sid = "dddddddd-0000-4000-8000-000000000003";
+    let app = App::new("holdbusy", json!({}));
+    let (tid, line) = claude_term(&app, json!(["claude", "--session-id", sid]), sid);
+    let mut ws = app.ws(&tid);
+    read_until(&mut ws, "❯");
+    send(&mut ws, "busy\r");
+    wait(|| line_json(&app, &line)["local"]["busy"] == true);
+    let (code, v) = app.req(
+        "POST",
+        &format!("/v1/lines/{line}/hold?dryRun=false"),
+        Value::Null,
+    );
+    assert_eq!(code, 409, "{v}");
+    assert_eq!(v["predicates"]["atPrompt"]["ok"], false);
+    assert!(line_json(&app, &line)["local"]["holdPending"].is_null());
+    app.ok(
+        "POST",
+        &format!("/v1/terms/{tid}/kill"),
+        json!({"confirm": true}),
+    );
 }
 
 #[test]

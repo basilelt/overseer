@@ -1,14 +1,12 @@
 <script lang="ts">
   import { sentHistory } from '../../chat/history';
   import ArrowDown from '@lucide/svelte/icons/arrow-down';
-  import Pause from '@lucide/svelte/icons/pause';
-  import Power from '@lucide/svelte/icons/power';
-  import RotateCcw from '@lucide/svelte/icons/rotate-ccw';
   import SquareTerminal from '@lucide/svelte/icons/square-terminal';
-  import OctagonX from '@lucide/svelte/icons/octagon-x';
   import { onMount, setContext, tick, untrack } from 'svelte';
   import { DaemonError } from '../../client';
   import { t } from '../../i18n.svelte';
+  import { pausedDays, sessionState, stateDot, type SessionAction } from '../../session-state';
+  import SessionBar from '../session/SessionBar.svelte';
   import { app } from '../../state.svelte';
   import type { SidebarItem } from '../../grouping';
   import type { Term } from '../../types';
@@ -32,9 +30,10 @@
   const line = $derived(app.data.lines.find((l) => l.line.id === lineId));
   const agent = $derived(line?.line.agent ?? item.kind);
   const local = $derived(line?.local);
-  const alive = $derived(!!line && line.line.state !== 'held' && line.line.state !== 'hung-up' && (local?.pid !== undefined || !!item.termId));
+  const view = $derived(line ? sessionState(line, item.termId) : null);
+  const alive = $derived(!!view && view.state !== 'paused' && view.state !== 'closed');
+  const days = $derived(view?.state === 'paused' ? pausedDays(view.since, clock.now) : null);
   const waiting = $derived(!!local?.needsInput);
-  const busy = $derived(!!local?.busy && !waiting);
 
   let chat = $state.raw<ChatState>(EMPTY_CHAT);
   let unsupported = $state<string | null>(null);
@@ -51,7 +50,7 @@
   let growing = false;
   let again = false;
   let stale = false;
-  let acting = $state<'hold' | 'close' | 'esc' | 'resume' | null>(null);
+  let acting = $state<SessionAction | null>(null);
   let confirmClose = $state(false);
   let probe = $state(0);
 
@@ -328,7 +327,7 @@
     setMode(item, 'terminal');
   }
 
-  async function act(kind: 'hold' | 'close' | 'esc' | 'resume') {
+  async function act(kind: SessionAction) {
     if (kind === 'close' && !confirmClose) {
       confirmClose = true;
       setTimeout(() => (confirmClose = false), 3000);
@@ -337,14 +336,17 @@
     confirmClose = false;
     acting = kind;
     try {
-      if (kind === 'esc') await app.api.keys(lineId, ['esc']);
-      else if (kind === 'hold') {
+      if (kind === 'interrupt') await app.api.keys(lineId, ['esc']);
+      else if (kind === 'pause') {
+        // TODO(holdAfterTurn): call app.api.holdAfterTurn(lineId) once the client lands, so a busy turn finishes first.
         await app.api.hold(lineId);
-        app.notify(t('chat.held'));
+        app.notify(t('chat.paused'));
       } else if (kind === 'close') {
         await app.api.close(lineId, true);
         chats.drop(cacheKey(lineId));
         app.notify(t('chat.closed'));
+      } else if (kind === 'cancelPause') {
+        // TODO(cancelHold): call app.api.cancelHold(lineId) once the client lands; the bar only offers it while holdPending.
       } else {
         const term = (await app.api.resume(lineId)) as Term;
         if (term?.id) app.upsertTerm(term);
@@ -359,19 +361,11 @@
 
 <div class="chat" class:phone>
   <header class="head">
-    <span class="state {waiting ? 'input' : busy ? 'busy' : alive ? 'idle' : 'off'}"></span>
-    <span class="status">{t(waiting ? 'chat.status.waiting' : busy ? 'chat.status.working' : alive ? 'chat.status.idle' : line?.line.state === 'held' ? 'chat.status.held' : 'chat.status.stopped')}</span>
+    <span class="state {stateDot(view)}"></span>
+    <span class="status">{view ? t(view.label) : ''}{#if view?.sub}<span class="faint"> · {t(view.sub.key, 'n' in view.sub ? { n: view.sub.n } : undefined)}</span>{/if}{#if days !== null}<span class="faint"> · {t('session.pausedFor', { n: days })}</span>{/if}</span>
     {#if model}<span class="model faint">{model}</span>{/if}
     <span class="grow"></span>
-    {#if alive}
-      <button class="icon-btn" title={t('chat.interrupt')} aria-label={t('chat.interrupt')} disabled={acting !== null} onclick={() => act('esc')}><OctagonX size={15} /></button>
-      <button class="icon-btn" title={t('chat.hold')} aria-label={t('chat.hold')} disabled={acting !== null || !!local?.pinned} onclick={() => act('hold')}><Pause size={15} /></button>
-    {/if}
-    {#if line && line.line.state !== 'hung-up'}
-      <button class="icon-btn" class:confirm={confirmClose} title={t(confirmClose ? 'chat.closeConfirm' : 'chat.close')} aria-label={t('chat.close')} disabled={acting !== null} onclick={() => act('close')}
-        ><Power size={15} />{#if confirmClose}<span class="cc">{t('chat.closeConfirm')}</span>{/if}</button
-      >
-    {/if}
+    {#if view}<SessionBar {view} {acting} {confirmClose} onact={act} />{/if}
   </header>
 
   {#if unsupported}
@@ -417,10 +411,6 @@
     <PromptCard {lineId} {agent} {waiting} {probe} onterminal={toTerminal} />
     {#if alive}
       <Composer {lineId} {agent} {local} {phone} history={sentHistory(chat.entries)} onsent={(text) => { if (isPickerCommand(text)) probe++; }} />
-    {:else if line && line.line.state !== 'hung-up'}
-      <div class="resume">
-        <button class="btn primary" disabled={acting !== null} onclick={() => act('resume')}><RotateCcw size={13} />{t('term.resume')}</button>
-      </div>
     {/if}
   {/if}
 </div>
@@ -455,6 +445,13 @@
   .state.busy {
     background: var(--st-working);
   }
+  .state.paused {
+    background: var(--st-paused);
+  }
+  .state.ended {
+    background: transparent;
+    box-shadow: inset 0 0 0 1px var(--st-held);
+  }
   .state.idle {
     background: var(--st-done);
   }
@@ -472,16 +469,7 @@
   .grow {
     flex: 1;
   }
-  .confirm {
-    color: var(--st-failed);
-    width: auto;
-    gap: 4px;
-    padding: 0 6px;
-  }
-  .cc {
-    font-size: 11px;
-  }
-  .phone .head .icon-btn {
+  .phone .head :global(.icon-btn) {
     min-width: 40px;
     min-height: 40px;
     justify-content: center;
@@ -633,14 +621,5 @@
   .phone .ag {
     max-width: 280px;
     min-height: 32px;
-  }
-  .resume {
-    display: flex;
-    justify-content: center;
-    padding: 10px;
-    border-top: 1px solid var(--border);
-  }
-  .phone .resume .btn {
-    min-height: 44px;
   }
 </style>

@@ -6,6 +6,7 @@ import type { app as App } from './state.svelte';
 import { osId, routeOf } from './os-notify';
 import type { Snapshot } from './reduce';
 import type { DaemonEvent, LocalLine, Task, Term } from './types';
+import { stateOfGroup } from './test-fixtures';
 
 const line = (id: string, agent: string, local: LocalLine['local'], state: LocalLine['line']['state'] = 'active'): LocalLine => ({
   line: { id, agent, state, lastActivityAt: '', worktreePath: `/home/u/work/${id}-repo` },
@@ -288,11 +289,11 @@ describe('notification helpers', () => {
 
 describe('startNotifications', () => {
   type Listener = (prev: Snapshot, next: Snapshot, e: DaemonEvent) => void;
-  const item = (key: string, group: SidebarItem['group']): SidebarItem => ({ key, kind: 'claude' as SidebarItem['kind'], group, title: key, at: '' });
+  const item = (key: string, group: SidebarItem['group']): SidebarItem => ({ key, kind: 'claude' as SidebarItem['kind'], group, state: stateOfGroup(group), title: key, at: '' });
 
   function fakeApp() {
     const listeners = new Set<Listener>();
-    const members: Record<string, SidebarItem[]> = { w1: [item('line:a', 'working')], g1: [item('line:a', 'working')] };
+    const members: Record<string, SidebarItem[]> = { w1: [item('line:a', 'running')], g1: [item('line:a', 'running')] };
     const app = {
       data: snap([]),
       itemWs: new Map([['line:a', 'w1']]),
@@ -374,15 +375,15 @@ describe('startNotifications', () => {
   it('announces a watched workspace and group going all idle, but not on the first look', () => {
     const { app, members, emit } = fakeApp();
     startNotifications(app as unknown as typeof App);
-    members.w1 = [item('line:a', 'idle')];
+    members.w1 = [item('line:a', 'ready')];
     emit(snap([line('a', 'claude', {})]), { at: 'ev-0' });
     vi.advanceTimersByTime(1500);
     expect(app.notice).not.toHaveBeenCalled();
-    members.w1 = [item('line:a', 'working')];
-    members.g1 = [item('line:a', 'working')];
+    members.w1 = [item('line:a', 'running')];
+    members.g1 = [item('line:a', 'running')];
     emit(snap([line('a', 'claude', { busy: true })]), { at: 'ev-1' });
-    members.w1 = [item('line:a', 'idle')];
-    members.g1 = [item('line:a', 'idle')];
+    members.w1 = [item('line:a', 'ready')];
+    members.g1 = [item('line:a', 'ready')];
     emit(snap([line('a', 'claude', { busy: true })]), { at: 'ev-2' });
     vi.advanceTimersByTime(1500);
     const idle = app.notice.mock.calls.map(([n]) => n).filter((n) => n.kind === 'allIdle');
