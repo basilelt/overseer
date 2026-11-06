@@ -1,4 +1,4 @@
-import { popReopenable, pushClosed } from './closed-tabs';
+import { closedShells, popReopenable, pushClosed } from './closed-tabs';
 
 export type SplitDir = 'none' | 'horizontal' | 'vertical';
 
@@ -147,6 +147,7 @@ export const savedLayouts: Map<string, Layout> = saved;
 export function forgetLayouts() {
   saved.clear();
   closed.clear();
+  closedShells.clear();
 }
 
 let tabClosed: ((key: string, end: boolean) => void) | null = null;
@@ -160,6 +161,15 @@ export function closeTabAt(i: number, key: string, end = true) {
   update((l) => closeTab(l, i, key));
   closed.set(layoutId, pushClosed(closed.get(layoutId) ?? [], key));
   tabClosed?.(key, end);
+}
+
+export function closePaneAt(i: number) {
+  const tabs = workspace.layout.panes[i]?.tabs;
+  if (!tabs || workspace.layout.panes.length < 2) return;
+  let stack = closed.get(layoutId) ?? [];
+  for (const key of tabs) stack = pushClosed(stack, key);
+  closed.set(layoutId, stack);
+  update((l) => closePane(l, i));
 }
 
 export function takeClosed(reopen: (key: string) => string | null): string | null {

@@ -10,6 +10,7 @@ import { mockSystem } from './system/mock';
 import { resolveProfile } from './profiles';
 import { fileKind } from './files';
 import { cleanTitle } from './titles';
+import { attachProblem, IMAGE_EXTS, VIDEO_EXTS } from './feedback';
 import type { DirListing } from './dirs';
 import type { Action, Proposal, Result } from './organize';
 import type {
@@ -729,6 +730,7 @@ export class MockDaemon implements DaemonClient {
     if (method === 'GET' && path === '/v1/env') return { path: '/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin', source: 'login-shell' };
     if (method === 'POST' && path === '/v1/uploads') return this.storeUpload(new URLSearchParams(qs).get('name') ?? '', 0);
     if (method === 'POST' && path === '/v1/terms') return this.createTerm(body);
+    if (method === 'POST' && path === '/v1/feedback/start') this.feedbackAttachments(body.attachments);
     if (method === 'POST' && path === '/v1/feedback/start') return { term: this.createTerm({ agent: body.agent, cwd: body.cwd ?? '/tmp/feedback', title: 'Feedback' }) };
     if (method === 'GET' && path === '/v1/github/review-requests') return mockReviewRequests();
     if ((r = m(/^\/v1\/github\/review-requests\/([^/]+)\/([^/]+)\/(\d+)\/review$/)) && method === 'POST') {
@@ -736,6 +738,7 @@ export class MockDaemon implements DaemonClient {
       const term = this.createTerm({ agent: body.agent, cwd: project, worktree: { branch: `review/pr-${r[3]}` }, title: `PR #${r[3]} ${r[1]}/${r[2]}` });
       return { term, worktree: term.cwd, project, branch: `review/pr-${r[3]}` };
     }
+    if (method === 'POST' && path === '/v1/feedback/direct') this.feedbackAttachments(body.attachments);
     if (method === 'POST' && path === '/v1/feedback/direct') return { url: `https://github.com/${body.repo}/issues/1`, labelled: true };
     if (method === 'POST' && path === '/v1/tasks') return this.createTask(body);
     if ((r = m(/^\/v1\/lines\/([^/]+)\/chat\/agents\/([^/]+)$/))) return this.agentChat(decodeURIComponent(r[1]), decodeURIComponent(r[2]), new URLSearchParams(qs));
@@ -838,7 +841,7 @@ export class MockDaemon implements DaemonClient {
     const predicates = this.holdChecks(l);
     const failed = Object.entries(predicates).filter(([, p]) => !p.ok).map(([k]) => k);
     // Like the daemon: only turn-bound failures queue; alive and notPinned are refused.
-    if (failed.some((k) => !['atPrompt', 'noToolRunning', 'notNeedsInput'].includes(k))) throw new DaemonError(409, 'refused', { lineId: id, action: 'none', predicates, steps: [] });
+    if (failed.some((k) => !['atPrompt', 'inputEmpty', 'noToolRunning', 'notNeedsInput'].includes(k))) throw new DaemonError(409, 'refused', { lineId: id, action: 'none', predicates, steps: [] });
     if (!failed.length) return dry ? { lineId: id, action: 'would-hold', predicates, steps: [`SIGTERM ${l.local?.pid ?? '?'}`] } : this.holdNow(l);
     if (dry) return { lineId: id, action: 'would-hold-pending', predicates, steps: [`record a pending hold on ${id}`, 'hold it when the turn ends and the agent is not waiting for you'] };
     l.local = { ...l.local, holdPending: true };
@@ -867,7 +870,9 @@ export class MockDaemon implements DaemonClient {
     const tool = l.local?.subagents ? 'a subagent is running' : l.local?.tasks ? 'a background task is running' : '';
     return {
       alive: check(alive, 'no live agent process for this line'),
+      inTmux: { ok: true },
       atPrompt: check(!l.local?.busy, 'agent is mid-turn'),
+      inputEmpty: { ok: true },
       noToolRunning: check(!tool, tool),
       notPinned: check(!l.local?.pinned, 'line is pinned'),
       notNeedsInput: check(!l.local?.needsInput, 'agent is waiting for you'),
@@ -891,6 +896,7 @@ export class MockDaemon implements DaemonClient {
       const predicates = action === 'close' && (force || !alive) ? {} : this.holdChecks(l);
       const plan = { lineId: id, action: 'none', predicates, steps: alive ? [`SIGTERM ${l.local?.pid ?? '?'}`] : [] };
       if (Object.values(predicates).some((p) => !p.ok)) throw new DaemonError(409, 'HTTP 409', plan);
+      if (action === 'close') plan.steps.push(`mark ${id} hung-up${alive ? '' : ' (no live process)'}`);
       if (dry) return { ...plan, action: action === 'hold' ? 'would-hold' : 'would-close' };
     }
     switch (action) {
@@ -1223,7 +1229,25 @@ export class MockDaemon implements DaemonClient {
     const ext = /\.([A-Za-z0-9]{1,10})$/.exec(name)?.[1]?.toLowerCase();
     const file = `${Math.random().toString(36).slice(2, 8).padEnd(6, '0')}${ext ? `.${ext}` : ''}`;
     this.uploaded.add(`${HOME}/.overseer/u/${file}`);
+    this.sizes.set(`${HOME}/.overseer/u/${file}`, size);
     return { path: `${HOME}/.overseer/u/${file}`, short: `~/.overseer/u/${file}`, name, size };
+  }
+
+  private sizes = new Map<string, number>();
+
+  private feedbackAttachments(list: unknown) {
+    if (list == null) return;
+    if (!Array.isArray(list)) throw new DaemonError(400, 'attachments must be a list');
+    if (list.length > 20) throw new DaemonError(400, 'at most 20 attachments');
+    for (const it of list) {
+      const raw = it?.path;
+      if (typeof raw !== 'string') throw new DaemonError(400, 'attachment path required');
+      if (!this.uploaded.has(raw)) throw new DaemonError(400, raw.startsWith(`${HOME}/.overseer/u/`) ? `${raw}: no such upload` : `${raw} is not an upload`);
+      const name = typeof it.name === 'string' && it.name.trim() ? it.name.trim() : raw.slice(raw.lastIndexOf('/') + 1);
+      const p = attachProblem(name, this.sizes.get(raw) ?? 0);
+      if (p === 'type') throw new DaemonError(400, `${name}: GitHub only accepts ${IMAGE_EXTS.join(', ')} and ${VIDEO_EXTS.join(', ')} attachments`);
+      if (p) throw new DaemonError(400, `${name} is larger than ${p === 'image' ? 10 : 100} MB`);
+    }
   }
 
   private keepAttachments(id: string, list: unknown): string[] {

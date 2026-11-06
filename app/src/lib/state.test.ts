@@ -1078,6 +1078,17 @@ describe('sessions', () => {
     expect(m.calls).not.toContain('POST /v1/terms/tm_shell2/kill');
   });
 
+  it('starts a shell in the same folder when an ended terminal tab is reopened', async () => {
+    const { runShortcut } = await import('./keyboard');
+    const cwd = app.data.terms.find((x) => x.id === 'tm_shell1')!.cwd;
+    workspace.layout = openInFocused(EMPTY_LAYOUT, 'term:tm_shell1');
+    closeTabAt(0, 'term:tm_shell1');
+    await vi.waitFor(() => expect(app.data.terms.some((x) => x.id === 'tm_shell1')).toBe(false), { timeout: 5000 });
+    runShortcut({ id: 'reopenTab' });
+    await vi.waitFor(() => expect(m.calls).toContain('POST /v1/terms'), { timeout: 5000 });
+    expect((m.bodies['POST /v1/terms'].at(-1) as { cwd: string }).cwd).toBe(cwd);
+  });
+
   it('offers Hide tab and Close for a session tab, and only Close for a non-session tab', async () => {
     const { tabMenu } = await import('./tab-edits');
     const line = app.items.find((i) => i.lineId)!;

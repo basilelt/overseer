@@ -812,8 +812,15 @@ folder, accept and the request runs; other agents get it pasted once they are re
 **Send directly** creates the issue with `gh` on the host without an agent. **Open on GitHub**
 copies the report and opens a prefilled new-issue page, for when you are offline or have no
 `gh`. The repository is `basilelt/overseer` unless you change Settings > Feedback >
-Feedback repository. `gh` cannot attach files to issues: attachment paths are listed in the issue
-for you to drag in.
+Feedback repository.
+
+Attachments are uploaded into the issue with `gh --attach` (gh 2.99 or later), the same storage as
+a drag and drop on github.com: images show inline and videos play. GitHub accepts PNG, JPEG, GIF,
+WebP and SVG up to 10 MB, and MP4, MOV and WebM up to 100 MB (10 MB on a free GitHub plan, which
+the sheet warns about). The sheet refuses other types and larger files, and the daemon refuses
+them too. With an older `gh`, or when GitHub refuses a file, the issue is still created and lists
+that file as not uploaded with the reason, and the app shows GitHub's message. GitHub may require
+write access to the repository to attach files.
 
 ### `doctor` items
 
@@ -880,7 +887,7 @@ On first launch, once the app is connected (immediately in local mode, after the
 connection on a phone), a welcome card offers **Take the tour** or **Skip**. The tour dims the
 window and highlights the real controls one at a time: host chip, workspaces sidebar, tabs and the
 new-session menu, the Terminal/Chat toggle, the side panel, Tasks, Review, the usage, system and ports
-chips, notifications and hooks, the command palette and Feedback, in 0.25 the Cmd/Ctrl+P palette shortcut, and in 0.27 the demo mode (on the **Demo mode** pill while in the demo, else on the host chip), and in 0.28 the GPU rendering option for terminals, and in 0.29 the clean up of unused worktrees and the import from Switchboard (on its button in Settings, Help, or on the Settings button), and in 0.30 the Graphite and Solarized Soft themes (on Settings, or More on a phone). Steps whose control is not on
+chips, notifications and hooks, the command palette and Feedback, in 0.25 the Cmd/Ctrl+P palette shortcut, and in 0.27 the demo mode (on the **Demo mode** pill while in the demo, else on the host chip), and in 0.28 the GPU rendering option for terminals, and in 0.29 the clean up of unused worktrees and the import from Switchboard (on its button in Settings, Help, or on the Settings button), and in 0.30 the Graphite and Solarized Soft themes (on Settings, or More on a phone), and click to move the cursor in a terminal (on the tabs). Steps whose control is not on
 screen (no session selected, a feature the server lacks, phone layout) are skipped. On a phone the
 card is a sheet at the bottom (or top, when the control sits low) and points at the bottom
 navigation, the session strip and the menu.
@@ -1015,8 +1022,13 @@ In the app:
   events, so a Claude Code session inside tmux scrolls tmux's history; a full-screen program
   without mouse reports (less, man) gets Up/Down arrows unless it turned that off
   (`ESC [?1007l`); otherwise the wheel scrolls the terminal's own scrollback. Shift+wheel always
-  scrolls the local scrollback. Clicks and drags always select text locally (they are not sent
-  to the program).
+  scrolls the local scrollback. Drags always select text locally (they are not sent to the
+  program).
+- **Click to move the cursor**: a single click in the line being typed (a shell prompt, the
+  input of Claude Code, Codex or another agent) moves the cursor there by sending Left/Right
+  arrows, like in a text editor. Only the cursor's own row is handled; clicks on other rows,
+  with a modifier, while scrolled back, on a phone, or in a program that reads the mouse itself
+  (tmux with mouse on, vim with `mouse=a`, htop) do nothing.
 
 ### 14.1a Agents
 
@@ -1458,13 +1470,18 @@ shows the change, `--apply` writes it, `uninstall --apply` reverts it. If the Ov
 gone, the wrapped command falls back to running yours directly. The limits then update on each
 Claude reply and show "from the status line". Independently, with Settings → Usage → "Fetch Claude plan limits" (off by default) the daemon asks
 Anthropic for them with the local Claude Code login, the same call Claude Code makes: at most every
-5 minutes, only while the app shows usage and a Claude session replied in the last hour. Nothing
+5 minutes, only while the app shows usage and a Claude session replied in the last hour. When the
+status line tap is on, its limits are used while they are under 5 minutes old, and the call to
+Anthropic fills in after that (for example for usage on claude.ai). Nothing
 else leaves the machine, and the login is never refreshed or logged. When the login has expired
 the panel says "Limits unavailable — open Claude Code to refresh login"; opening Claude Code
 renews it. With the setting off, Claude shows tokens and cost only, plus "limit" when a request
 was refused. Costs are estimates from public per-token API prices (`PRICES` in `src/usage.rs`); a
-subscription is not billed that way. The app fetches only when the daemon reports a change (the
-chip at most every 10 s, an open panel at most every 2 s) and pauses while the window is hidden.
+subscription is not billed that way. The app fetches when the daemon reports a change (the
+chip at most every 10 s, an open panel at most every 2 s). While plan limits are shown and the
+window is focused, it also refetches every 5 minutes and right after the nearest window resets,
+so the percentages stay current when Claude runs outside Overseer or a window resets. It stops
+while the window is hidden or unfocused and catches up when you come back.
 
 ### 14.5 MCP server for agents
 
@@ -1670,7 +1687,8 @@ shortcuts.
   workspace folder instead of opening the `+` menu.
 - **Reopen** brings back agents, shells, browser, review, graph and other tabs; a running agent
   re-attaches, an agent whose
-  session ended reopens on its Resume button.
+  session ended reopens on its Resume button, and an ended shell starts again in the same folder
+  (a new shell: its scrollback is gone). Closing a pane records all of its tabs.
 
 ### 14.8 Live review
 

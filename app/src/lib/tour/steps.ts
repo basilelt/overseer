@@ -1,4 +1,4 @@
-export type StepId = 'host' | 'workspaces' | 'tabs' | 'view' | 'panel' | 'kanban' | 'review' | 'chips' | 'notify' | 'profiles' | 'palette' | 'paletteKey' | 'organize' | 'settings' | 'feedback' | 'demo' | 'gpuTerminal' | 'worktreeCleanup' | 'switchboard' | 'graphite' | 'solarized';
+export type StepId = 'host' | 'workspaces' | 'tabs' | 'view' | 'panel' | 'kanban' | 'review' | 'chips' | 'notify' | 'profiles' | 'palette' | 'paletteKey' | 'organize' | 'settings' | 'feedback' | 'demo' | 'gpuTerminal' | 'worktreeCleanup' | 'switchboard' | 'graphite' | 'solarized' | 'clickCursor';
 
 export interface Step {
   id: StepId;
@@ -29,6 +29,7 @@ export const STEPS: Step[] = [
   { id: 'switchboard', targets: ['switchboard', 'settings', 'palette'], since: '0.29' },
   { id: 'graphite', targets: ['settings', 'palette'], since: '0.30' },
   { id: 'solarized', targets: ['settings', 'palette'], since: '0.30' },
+  { id: 'clickCursor', targets: ['tabs'], since: '0.30' },
 ];
 
 export type Mode = 'full' | 'whatsNew';

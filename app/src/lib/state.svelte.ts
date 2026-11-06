@@ -15,6 +15,7 @@ import { dispatch, type NoticeInput } from './os-notify';
 import type { Activity, AgentInfo, ConnState, DaemonEvent, Effort, HostTarget, LocalLine, LocalNetworkReport, ProfilesStore, Project, Term, TaskMessage } from './types';
 import { isNoRoute } from './localnet';
 import { startupTarget } from './conn';
+import { rememberShell } from './closed-tabs';
 import { activeKey, allTabs, EMPTY_LAYOUT, forgetLayouts, onTabClosed, openInFocused, update, workspace } from './workspace.svelte';
 import { newTabKey } from './tabs';
 import { aggregate, applyWsEvent, EMPTY_WS, isGhost, itemWorkspaces, resolveTab, sameMap, synthesize, upsert, within, type Aggregate, type WsData } from './workspaces';
@@ -775,6 +776,9 @@ export function tabLazy() {
 }
 
 onTabClosed((key, end) => {
+  const item = app.items.find((i) => i.key === key);
+  const cwd = item?.kind === 'shell' ? app.data.terms.find((t) => t.id === item.termId)?.cwd : undefined;
+  if (cwd) rememberShell(key, cwd);
   if (app.connected) void tabLazy().then((m) => m.tabClosed(app, key, end));
 });
 

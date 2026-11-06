@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildBody, buildDiagnostics, buildPrompt, findClone, issueTitle, labelsFor, newIssueUrl, wantsDiagnostics, PRIVACY_URL, redact, REPORT, repoSlug, stripAnsi, UrlWatcher, isFeedbackTerm, validate, validRepo, type Form } from './feedback';
+import { attachProblem, ATTACH_ACCEPT, buildBody, buildDiagnostics, buildPrompt, findClone, issueTitle, labelsFor, newIssueUrl, wantsDiagnostics, PRIVACY_URL, redact, REPORT, repoSlug, stripAnsi, UrlWatcher, isFeedbackTerm, validate, validRepo, type Form } from './feedback';
 
 const form = (over: Partial<Form> = {}): Form => ({ kind: 'bug', title: '', description: 'It crashes', attachments: [], diagnostics: null, ...over });
 const enc = new TextEncoder();
@@ -86,6 +86,13 @@ describe('diagnostics and body', () => {
     expect(body).not.toContain('hunter2');
   });
 
+  it('leaves a marker for the daemon instead of local paths when it uploads the attachments', () => {
+    const body = buildBody(form({ attachments: ['/h/uploads/a.png'] }), true);
+    expect(body).toContain('### Attachments\n@ATTACHMENTS@');
+    expect(body).not.toContain('/h/uploads/a.png');
+    expect(buildBody(form(), true)).not.toContain('@ATTACHMENTS@');
+  });
+
   it('uses a longer fence when the logs contain backticks', () => {
     expect(buildBody(form({ diagnostics: 'a ``` b' }))).toContain('````text\na ``` b\n````');
   });
@@ -110,12 +117,14 @@ describe('agent prompt', () => {
     expect(p).toContain('`bug`, `feedback`');
     expect(p).toContain('ISSUE_URL=<url>');
     expect(p).not.toContain('Likely cause');
-    expect(p).not.toContain('Attachments on this machine');
+    expect(p).not.toContain('--attach');
   });
 
   it('adds attachments and a read-only investigation when asked', () => {
     const p = buildPrompt({ ...base, kind: 'idea', attachments: ['/h/a.png'], investigate: true });
+    expect(p).toContain('--attach <path>');
     expect(p).toContain('/h/a.png');
+    expect(p).toContain('2.99');
     expect(p).toContain('Likely cause');
     expect(p).toContain('Read only');
     expect(p).not.toContain('Steps to reproduce');
@@ -223,5 +232,24 @@ describe('isFeedbackTerm', () => {
 describe('privacy policy', () => {
   it('links to the policy on the default repository main branch', () => {
     expect(PRIVACY_URL).toBe('https://github.com/basilelt/overseer/blob/main/PRIVACY.md');
+  });
+});
+
+describe('attachProblem', () => {
+  const MB = 1024 * 1024;
+  it('accepts the images and videos GitHub takes, whatever the case', () => {
+    for (const n of ['a.png', 'a.JPG', 'a.jpeg', 'a.gif', 'a.webp', 'a.svg', 'a.mp4', 'a.MOV', 'a.webm']) expect(attachProblem(n, MB)).toBeNull();
+  });
+  it('rejects other types and names without an extension', () => {
+    for (const n of ['notes.txt', 'a.zip', 'png', 'a.png.exe', '']) expect(attachProblem(n)).toBe('type');
+  });
+  it('caps images at 10 MB and videos at 100 MB', () => {
+    expect(attachProblem('a.png', 10 * MB)).toBeNull();
+    expect(attachProblem('a.png', 10 * MB + 1)).toBe('image');
+    expect(attachProblem('a.mov', 100 * MB)).toBeNull();
+    expect(attachProblem('a.mov', 100 * MB + 1)).toBe('video');
+  });
+  it('builds the picker accept list from the same extensions', () => {
+    expect(ATTACH_ACCEPT).toBe('.png,.jpg,.jpeg,.gif,.webp,.svg,.mp4,.mov,.webm');
   });
 });
