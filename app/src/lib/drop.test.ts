@@ -3,12 +3,21 @@ import { dropPoint, pickZone, type DropZone } from './drop';
 
 type DragEvent = { payload: { type: 'enter' | 'over' | 'drop' | 'leave'; position: { x: number; y: number }; paths: string[] } };
 const webview = vi.hoisted(() => ({ handler: null as ((e: DragEvent) => void) | null, calls: 0, fail: false }));
-vi.mock('@tauri-apps/api/webview', () => ({
-  getCurrentWebview: () => ({
+vi.mock('@tauri-apps/api/window', () => ({
+  getCurrentWindow: () => ({
     onDragDropEvent: async (fn: (e: DragEvent) => void) => {
       webview.calls++;
       if (webview.fail) throw new Error('no webview');
       webview.handler = fn;
+      return () => {};
+    },
+  }),
+}));
+const child = vi.hoisted(() => ({ calls: 0 }));
+vi.mock('@tauri-apps/api/webview', () => ({
+  getCurrentWebview: () => ({
+    onDragDropEvent: async () => {
+      child.calls++;
       return () => {};
     },
   }),
@@ -152,7 +161,14 @@ describe('dropZone', () => {
     expect(a.log).toEqual([]);
   });
 
-  it('subscribes to the webview once for many zones', async () => {
+  it('listens on the window, which still gets drops once a browser child webview is open', async () => {
+    const { dropZone } = await load();
+    dropZone(tracked(leftF, 1).z);
+    await vi.waitFor(() => expect(webview.handler).not.toBeNull());
+    expect(child.calls).toBe(0);
+  });
+
+  it('subscribes to the window once for many zones', async () => {
     const { dropZone } = await load();
     dropZone(tracked(leftF, 1).z);
     dropZone(tracked(rightF, 1).z);
