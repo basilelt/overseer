@@ -49,3 +49,11 @@ describe('tab strip', () => {
     expect(bar).toMatch(/onkeydown=\{\(e\) => e\.key === 'Enter' && activate\(key\)\}/);
   });
 });
+
+describe('new tab menu', () => {
+  it('only starts sessions; views live in the command palette', () => {
+    const menu = bar.slice(bar.indexOf('function addMenu'), bar.indexOf('function openAdd'));
+    expect(menu).toContain('app.newSession');
+    for (const view of ['browser', 'graph', 'worktrees', 'system', 'usage', 'prs', 'reviewKey', 'tabs.reviewChanges']) expect(menu).not.toContain(view);
+  });
+});

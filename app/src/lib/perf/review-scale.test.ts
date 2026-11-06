@@ -1,44 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { parseDiff, tokenize } from '../diff';
 import { layout } from '../git/layout';
+import { expectLinear, counted } from './work';
 import { graphOrder, nextStep } from '../review/linked.svelte';
 import { buildRows, fileTree, keepUnchanged, placeThreads } from '../review/rows';
 import type { ReviewStore } from '../review/store.svelte';
 import type { ReviewFile, ReviewHunk, ReviewLine, Thread } from '../review/types';
-
-const LINEAR = 30;
-
-function reps(fn: () => void): number {
-  let n = 1;
-  for (;;) {
-    const t = performance.now();
-    for (let i = 0; i < n; i++) fn();
-    if (performance.now() - t >= 2 || n >= 4096) return n;
-    n *= 2;
-  }
-}
-
-function per(fn: () => void, n: number): number {
-  const t = performance.now();
-  for (let i = 0; i < n; i++) fn();
-  return (performance.now() - t) / n;
-}
-
-function scaling(small: () => void, big: () => void, runs = 7): number {
-  let best = Infinity;
-  for (let attempt = 0; attempt < 3 && best >= LINEAR; attempt++) {
-    const ns = reps(small);
-    const nb = reps(big);
-    let a = Infinity;
-    let b = Infinity;
-    for (let i = 0; i < runs; i++) {
-      a = Math.min(a, per(small, ns));
-      b = Math.min(b, per(big, nb));
-    }
-    best = Math.min(best, b / a);
-  }
-  return best;
-}
 
 function hunk(k: number): ReviewHunk {
   const start = k * 40 + 1;
@@ -87,47 +54,60 @@ describe('review diff at scale', () => {
   });
 
   it('unified and split rows scale linearly with hunk count', () => {
-    const small = file('a.rs', 100);
-    const big = file('a.rs', 1000);
-    expect(buildRows(big, 'unified').length).toBe(buildRows(small, 'unified').length * 10 - 9);
-    expect(scaling(() => buildRows(small, 'unified'), () => buildRows(big, 'unified'))).toBeLessThan(LINEAR);
-    expect(scaling(() => buildRows(small, 'split'), () => buildRows(big, 'split'))).toBeLessThan(LINEAR);
+    expect(buildRows(file('a.rs', 1000), 'unified').length).toBe(buildRows(file('a.rs', 100), 'unified').length * 10 - 9);
+    for (const mode of ['unified', 'split'] as const) {
+      const make = (hunks: number) => () => {
+        const f = counted(file('a.rs', hunks));
+        return () => void buildRows(f, mode);
+      };
+      expectLinear(make(100), make(1000));
+    }
   });
 
   it('placing review threads scales linearly with rows and threads', () => {
-    const small = file('a.rs', 200);
-    const big = file('a.rs', 2000);
-    const rs = buildRows(small, 'unified');
-    const rb = buildRows(big, 'unified');
-    const ts = threads(small, 40);
-    const tb = threads(big, 400);
-    const placed = placeThreads(rb, tb);
+    const input = (hunks: number, n: number) => {
+      const f = file('a.rs', hunks);
+      return { rows: buildRows(f, 'unified'), ts: threads(f, n) };
+    };
+    const big = input(2000, 400);
+    const placed = placeThreads(big.rows, big.ts);
     expect([...placed.byRow.values()].flat().length + placed.top.length).toBe(400);
-    expect(scaling(() => placeThreads(rs, ts), () => placeThreads(rb, tb))).toBeLessThan(LINEAR);
+    const make = (hunks: number, n: number) => () => {
+      const i = input(hunks, n);
+      const rows = counted(i.rows);
+      const ts = counted(i.ts);
+      return () => void placeThreads(rows, ts);
+    };
+    expectLinear(make(200, 40), make(2000, 400));
   });
 
   it('the file tree scales linearly for nested paths', () => {
-    const files = (n: number) => Array.from({ length: n }, (_, i) => file(`src/pkg${i % 10}/mod${Math.floor(i / 10) % 10}/f${i}.ts`, 0));
-    const small = files(500);
-    const big = files(5000);
-    expect(scaling(() => fileTree(small), () => fileTree(big))).toBeLessThan(LINEAR);
+    const files = (n: number) => Array.from({ length: n }, (_, i) => file(`src/pkg${i % 5}/mod${i % 2}/f${i}.ts`, 0));
+    const make = (n: number) => () => {
+      const fs = counted(files(n));
+      return () => void fileTree(fs);
+    };
+    expectLinear(make(500), make(5000));
   });
 
   it('the file tree scales linearly for one flat directory', () => {
     const files = (n: number) => Array.from({ length: n }, (_, i) => file(`vendor/f${i}.ts`, 0));
-    const small = files(200);
-    const big = files(2000);
-    expect(scaling(() => fileTree(small), () => fileTree(big))).toBeLessThan(LINEAR);
+    const make = (n: number) => () => {
+      const fs = counted(files(n));
+      return () => void fileTree(fs);
+    };
+    expectLinear(make(200), make(2000));
   });
 
   it('parsing and tokenizing a unified diff scales linearly', () => {
-    const small = patch(20, 20);
-    const big = patch(200, 20);
-    expect(parseDiff(big).length).toBe(200);
-    const run = (text: string) => () => {
-      for (const f of parseDiff(text)) for (const h of f.hunks) for (const l of h.lines) tokenize(l.text);
+    expect(parseDiff(patch(200, 20)).length).toBe(200);
+    const make = (files: number) => () => {
+      const text = patch(files, 20);
+      return () => {
+        for (const f of parseDiff(text)) for (const h of f.hunks) for (const l of h.lines) tokenize(l.text);
+      };
     };
-    expect(scaling(run(small), run(big))).toBeLessThan(LINEAR);
+    expectLinear(make(20), make(200));
   });
 });
 
@@ -143,10 +123,12 @@ describe('git graph layout at scale', () => {
   }
 
   it('lays out commits in time linear to history length', () => {
-    const small = history(2000);
-    const big = history(20000);
-    expect(layout(big).rows.length).toBe(20000);
-    expect(scaling(() => layout(small), () => layout(big))).toBeLessThan(LINEAR);
+    expect(layout(history(20000)).rows.length).toBe(20000);
+    const make = (n: number) => () => {
+      const commits = counted(history(n));
+      return () => void layout(commits);
+    };
+    expectLinear(make(2000), make(20000));
   });
 });
 
@@ -172,11 +154,14 @@ describe('review graph order across linked worktrees at scale', () => {
   }
 
   it('walks every node of every linked graph once, linear in nodes, with the order memoized per graph', () => {
-    const small = stores(200);
+    expect(walk(stores(200))).toBe(1000);
     const big = stores(2000);
-    expect(walk(small)).toBe(1000);
     expect(walk(big)).toBe(10000);
     expect(graphOrder(big[1])).toBe(graphOrder(big[1]));
-    expect(scaling(() => walk(small), () => walk(big))).toBeLessThan(LINEAR);
+    const make = (n: number) => () => {
+      const list = counted(stores(n));
+      return () => void walk(list);
+    };
+    expectLinear(make(200), make(2000));
   });
 });
