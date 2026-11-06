@@ -196,15 +196,13 @@ fn import_stops_the_old_daemon_process() {
     std::thread::sleep(Duration::from_millis(200));
     let _d = daemon(&fx, &old);
     assert_eq!(get(&fx, "/v1/import/switchboard")["running"], true);
-    // Reap it as it dies: macOS has no /proc to tell a zombie from a live process.
-    let reaper = std::thread::spawn(move || fake.wait());
     let (code, body) = fx.req("POST", "/v1/import/switchboard", "{}");
     assert_eq!(code, 200, "{body}");
     assert_eq!(
         serde_json::from_str::<Value>(&body).unwrap()["stopped"],
         true
     );
-    assert!(reaper.join().unwrap().is_ok());
+    assert!(fake.wait().is_ok());
     assert_eq!(get(&fx, "/v1/import/switchboard")["running"], false);
 }
 
