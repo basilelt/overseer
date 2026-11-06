@@ -94,6 +94,8 @@ jobs:
 
       - run: scripts/check-version.test.sh
 
+      - run: scripts/qa/qa.test.sh
+
       - env:
           CI_APT_TEST_IMAGE: mirror.gcr.io/library/ubuntu:24.04
         run: scripts/ci-apt.test.sh
