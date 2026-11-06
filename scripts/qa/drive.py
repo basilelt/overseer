@@ -21,9 +21,18 @@ MODES = {
 
 
 def newest_chromium():
-    root = os.environ.get("PLAYWRIGHT_BROWSERS_PATH") or os.path.expanduser("~/.cache/ms-playwright")
+    roots = [os.environ.get("PLAYWRIGHT_BROWSERS_PATH")]
+    roots = [r for r in roots if r] or [
+        os.path.expanduser("~/.cache/ms-playwright"),
+        os.path.expanduser("~/Library/Caches/ms-playwright"),
+    ]
+    patterns = (
+        "chromium_headless_shell-*/*/chrome-headless-shell",
+        "chromium-*/*/chrome",
+        "chromium-*/*/Chromium.app/Contents/MacOS/Chromium",
+    )
     found = []
-    for pattern in ("chromium_headless_shell-*/*/chrome-headless-shell", "chromium-*/*/chrome"):
+    for root, pattern in ((r, p) for r in roots for p in patterns):
         for path in glob.glob(os.path.join(root, pattern)):
             m = re.search(r"-(\d+)/", path)
             if m and os.access(path, os.X_OK):

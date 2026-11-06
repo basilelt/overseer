@@ -1,12 +1,33 @@
 #!/bin/sh
 set -eu
 cmd=${1:-start}
-R=$(cd "$(dirname "$0")/../.." && pwd)
+R=$(cd "${0%/*}/../.." && pwd)
 D=${QA_DIR:-/tmp/sbqa}
 PORT=${QA_PORT:-47811}
 WEB=${QA_WEB:-4918}
 DISPLAY_NUM=${QA_DISPLAY:-93}
 MESA_EGL=/usr/share/glvnd/egl_vendor.d/50_mesa.json
+BIN=${CARGO_TARGET_DIR:-$R/target}/debug/overseer
+
+# Daemon PATH: the stubs first, then Homebrew when present (tmux, git live there on macOS).
+daemon_path=$R/tests/stubs
+for d in /opt/homebrew/bin /usr/local/bin; do
+  [ -d "$d" ] && daemon_path=$daemon_path:$d
+done
+daemon_path=$daemon_path:/usr/bin:/bin
+
+# macOS has no setsid: run a new session through python3 instead.
+if command -v setsid >/dev/null 2>&1; then
+  SETSID=$(command -v setsid)
+  SETSID_ARG=
+else
+  SETSID=$(command -v python3 || true)
+  SETSID_ARG=$R/scripts/qa/setsid.py
+fi
+
+linux_only() {
+  [ "$(uname -s)" = Linux ] || { echo "$1 needs Xvfb and WebKitGTK: Linux only, use the browser modes on macOS" >&2; exit 1; }
+}
 
 stop_pid() {
   if [ -f "$1" ]; then kill "$(cat "$1")" 2>/dev/null || true; fi
@@ -19,6 +40,15 @@ stop_group() {
 }
 
 case $cmd in
+launcher)
+  echo "${SETSID##*/}"
+  ;;
+bin)
+  echo "$BIN"
+  ;;
+daemon-path)
+  echo "$daemon_path"
+  ;;
 build)
   (cd "$R" && nice -n 10 cargo build -j 2 --offline)
   (cd "$R/app" && nice -n 10 pnpm exec vite build --outDir "$D/dist" --emptyOutDir)
@@ -33,13 +63,13 @@ start)
       && GIT_CONFIG_GLOBAL=/dev/null git -c user.name=qa -c user.email=qa@example.com commit -qm init)
   fi
   sed "s/__QA_PORT__/$PORT/" "$R/scripts/qa/shim.js" > "$D/shim.js"
-  env -i PATH="$R/tests/stubs:/usr/bin:/bin" HOME="$D/home" SHELL=/bin/sh TERM=xterm-256color LANG=C.UTF-8 \
+  env -i PATH="$daemon_path" HOME="$D/home" SHELL=/bin/sh TERM=xterm-256color LANG=C.UTF-8 \
     XDG_RUNTIME_DIR="$D/run" CLAUDE_CONFIG_DIR="$D/home/.claude" CODEX_HOME="$D/home/.codex" \
     OVERSEER_STATE_DIR="$D/state" OVERSEER_TMUX_SOCKET="$D/tmux.sock" OVERSEER_LOGIN_ENV=0 \
     GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 GIT_AUTHOR_NAME=qa GIT_AUTHOR_EMAIL=qa@example.com \
     GIT_COMMITTER_NAME=qa GIT_COMMITTER_EMAIL=qa@example.com \
-    SB_BIN="$R/target/debug/overseer" SB_STUB_LOG="$D/stub.log" \
-    setsid "$R/target/debug/overseer" daemon --interval 1 >> "$D/daemon.log" 2>&1 &
+    SB_BIN="$BIN" SB_STUB_LOG="$D/stub.log" \
+    "$SETSID" ${SETSID_ARG:+"$SETSID_ARG"} "$BIN" daemon --interval 1 >> "$D/daemon.log" 2>&1 &
   i=0
   until python3 -c 'import socket,sys; socket.socket(socket.AF_UNIX).connect(sys.argv[1])' "$D/state/daemon.sock" 2>/dev/null; do
     i=$((i+1))
@@ -47,9 +77,9 @@ start)
     sleep 0.2
   done
   cp "$D/state/daemon.pid" "$D/daemon.pid"
-  setsid python3 "$R/scripts/qa/bridge.py" "$D/state/daemon.sock" "$PORT" "$D/dist" >> "$D/bridge.log" 2>&1 &
+  "$SETSID" ${SETSID_ARG:+"$SETSID_ARG"} python3 "$R/scripts/qa/bridge.py" "$D/state/daemon.sock" "$PORT" "$D/dist" >> "$D/bridge.log" 2>&1 &
   echo $! > "$D/bridge.pid"
-  setsid python3 -m http.server "$WEB" -d "$D/dist" -b 127.0.0.1 >> "$D/web.log" 2>&1 &
+  "$SETSID" ${SETSID_ARG:+"$SETSID_ARG"} python3 -m http.server "$WEB" -d "$D/dist" -b 127.0.0.1 >> "$D/web.log" 2>&1 &
   echo $! > "$D/web.pid"
   for port in "$PORT" "$WEB"; do
     i=0
@@ -62,9 +92,11 @@ start)
   echo "daemon $D/state/daemon.sock  api http://127.0.0.1:$PORT  app http://127.0.0.1:$WEB/"
   ;;
 desktop-build)
+  linux_only desktop-build
   (cd "$R/app/src-tauri" && nice -n 10 cargo build -j 2 --offline)
   ;;
 desktop)
+  linux_only desktop
   [ -f "$D/daemon.pid" ] || { echo "run $0 start first" >&2; exit 1; }
   "$0" desktop-stop
   mkdir -p "$D/apphome"
@@ -98,6 +130,7 @@ desktop)
   echo "desktop app on DISPLAY=:$DISPLAY_NUM, log $D/app.log; screenshot with: $0 shot <name>"
   ;;
 shot)
+  linux_only shot
   DISPLAY=":$DISPLAY_NUM" import -window root "$D/${2:-shot}.png"
   echo "$D/${2:-shot}.png"
   ;;

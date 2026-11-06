@@ -92,6 +92,8 @@ jobs:
 
       - run: scripts/ci-changes.test.sh
 
+      - run: scripts/qa/qa.test.sh
+
       - run: scripts/check-version.test.sh
 
       - env:
