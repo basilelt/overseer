@@ -19,6 +19,7 @@
   import { clock, tickWhile } from '../../chat/clock.svelte';
   import { gesture, isWebLink } from '../../links';
   import { Flights } from '../../chat/flight';
+  import { closeConfirm } from '../../chat/close-confirm';
   import Entry from './Entry.svelte';
   import Composer from './Composer.svelte';
   import PromptCard from './PromptCard.svelte';
@@ -53,6 +54,11 @@
   let stale = false;
   let acting = $state<SessionAction | null>(null);
   let confirmClose = $state(false);
+  const closeArm = closeConfirm((v) => (confirmClose = v));
+  $effect(() => {
+    void lineId;
+    return () => closeArm.reset();
+  });
   let probe = $state(0);
 
   const visibleEntries = $derived(chat.entries.slice(Math.max(0, chat.entries.length - shown)));
@@ -330,11 +336,10 @@
 
   async function act(kind: SessionAction) {
     if (kind === 'close' && !confirmClose) {
-      confirmClose = true;
-      setTimeout(() => (confirmClose = false), 3000);
+      closeArm.arm();
       return;
     }
-    confirmClose = false;
+    closeArm.reset();
     acting = kind;
     try {
       const r = await runSessionAction(app.api, lineId, kind);
