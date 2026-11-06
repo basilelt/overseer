@@ -7,6 +7,7 @@ pub mod broadcast;
 pub mod chat;
 pub mod claude;
 pub mod claude_limits;
+pub mod cli;
 pub mod codex;
 pub mod daemon;
 pub mod deliver;
@@ -64,6 +65,7 @@ use registry::HookState;
 use serde_json::{json, Value};
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use sys::DirBuilderExt;
 use util::{format_rfc3339, shell_quote, ticket};
 
@@ -339,7 +341,7 @@ pub fn default_state_dir() -> PathBuf {
         .unwrap_or_else(platform_state_dir)
 }
 
-fn platform_state_dir() -> PathBuf {
+pub fn platform_state_dir() -> PathBuf {
     if cfg!(windows) {
         if let Some(d) = std::env::var_os("LOCALAPPDATA").filter(|v| !v.is_empty()) {
             return PathBuf::from(d).join("overseer");
@@ -607,6 +609,7 @@ fn claude_found_from(
 // fresh `codex` shows no thread id: those are paired with threads in their cwd on times that do
 // not move. A fresh process only owns a thread created after it started, or one used since.
 const CODEX_SLACK_MS: i64 = 2_000;
+const CODEX_TYPED_MS: i64 = 3_000;
 
 fn codex_found(ctx: &Ctx, hooks: &HashMap<String, HookState>) -> Vec<Found> {
     let threads = codex::threads(&ctx.codex_dir, &ctx.state_dir);
@@ -644,6 +647,34 @@ fn codex_found(ctx: &Ctx, hooks: &HashMap<String, HookState>) -> Vec<Found> {
             owner[i] = Some(j);
         }
     }
+    let terms: Vec<Option<Arc<term::Term>>> = procs
+        .iter()
+        .map(|(pid, ..)| term::of_pid(*pid, ctx.probe))
+        .collect();
+    for (i, t) in threads.iter().enumerate().filter(|(_, t)| !t.archived) {
+        if owner[i].is_some() {
+            continue;
+        }
+        let hit = (0..procs.len()).find(|j| {
+            !claimed.contains(j)
+                && terms[*j].as_ref().and_then(|x| x.thread()).as_deref() == Some(&t.id)
+        });
+        if let Some(j) = hit {
+            claimed.insert(j);
+            owner[i] = Some(j);
+        }
+    }
+    let open = |i: usize| !threads[i].archived && threads[i].cwd.is_some();
+    let names_other =
+        |argv: &[String], id: &str| argv.iter().any(|a| a != id && ids.contains(a.as_str()));
+    let mut newest: Vec<usize> = (0..threads.len()).filter(|i| open(*i)).collect();
+    newest.sort_by_key(|i| std::cmp::Reverse(threads[*i].started_ms));
+    let mut recent: Vec<usize> = (0..threads.len()).filter(|i| open(*i)).collect();
+    recent.sort_by_key(|i| std::cmp::Reverse(threads[*i].activity_ms));
+    let typed_at = |j: usize, at: Option<i64>| {
+        let s = terms[j].as_ref().map_or(0, |x| x.submit_ms());
+        s > 0 && at.is_some_and(|at| (s - at).abs() <= CODEX_TYPED_MS)
+    };
     let mut cwds = BTreeMap::new();
     let mut in_cwd = |pid: u32, cwd: &str| {
         cwds.entry(pid)
@@ -651,51 +682,53 @@ fn codex_found(ctx: &Ctx, hooks: &HashMap<String, HookState>) -> Vec<Found> {
             .as_deref()
             == Some(cwd)
     };
-    let open = |i: usize| !threads[i].archived && threads[i].cwd.is_some();
-    let names_other =
-        |argv: &[String], id: &str| argv.iter().any(|a| a != id && ids.contains(a.as_str()));
-    let mut newest: Vec<usize> = (0..threads.len()).filter(|i| open(*i)).collect();
-    newest.sort_by_key(|i| std::cmp::Reverse(threads[*i].started_ms));
-    for i in newest {
+    let mut fits_new = vec![vec![false; procs.len()]; threads.len()];
+    let mut fits_used = fits_new.clone();
+    for i in newest.iter().chain(recent.iter()).copied() {
         let t = &threads[i];
-        if owner[i].is_some() {
-            continue;
-        }
         let cwd = t.cwd.as_deref().unwrap_or_default();
-        let hit = (0..procs.len()).rev().find(|j| {
-            let (pid, argv, start) = &procs[*j];
-            !claimed.contains(j)
-                && !codex::reopens(argv)
-                && !names_other(argv, &t.id)
+        for (j, (pid, argv, start)) in procs.iter().enumerate() {
+            if names_other(argv, &t.id) || !in_cwd(*pid, cwd) {
+                continue;
+            }
+            fits_new[i][j] = !codex::reopens(argv)
                 && start
                     .zip(t.started_ms)
-                    .is_none_or(|(s, c)| c + CODEX_SLACK_MS >= s)
-                && in_cwd(*pid, cwd)
-        });
-        if let Some(j) = hit {
-            claimed.insert(j);
-            owner[i] = Some(j);
+                    .is_none_or(|(s, c)| c + CODEX_SLACK_MS >= s);
+            fits_used[i][j] =
+                codex::reopens(argv) || start.is_none_or(|s| t.activity_ms + CODEX_SLACK_MS >= s);
         }
     }
-    let mut recent: Vec<usize> = (0..threads.len()).filter(|i| open(*i)).collect();
-    recent.sort_by_key(|i| std::cmp::Reverse(threads[*i].activity_ms));
-    for i in recent {
-        let t = &threads[i];
-        if owner[i].is_some() {
-            continue;
-        }
-        let cwd = t.cwd.as_deref().unwrap_or_default();
-        let hit = (0..procs.len()).find(|j| {
-            let (pid, argv, start) = &procs[*j];
-            !claimed.contains(j)
-                && !names_other(argv, &t.id)
-                && (codex::reopens(argv)
-                    || start.is_none_or(|s| t.activity_ms + CODEX_SLACK_MS >= s))
-                && in_cwd(*pid, cwd)
-        });
-        if let Some(j) = hit {
-            claimed.insert(j);
-            owner[i] = Some(j);
+    for (order, fits, stamp) in [(newest, &fits_new, true), (recent, &fits_used, false)] {
+        loop {
+            let mut moved = false;
+            for &i in &order {
+                if owner[i].is_some() {
+                    continue;
+                }
+                let free: Vec<usize> = (0..procs.len())
+                    .filter(|j| !claimed.contains(j) && fits[i][*j])
+                    .collect();
+                let at = if stamp {
+                    threads[i].started_ms
+                } else {
+                    Some(threads[i].activity_ms)
+                };
+                let typed: Vec<usize> = free.iter().copied().filter(|j| typed_at(*j, at)).collect();
+                let pick = match (free.as_slice(), typed.as_slice()) {
+                    ([j], _) | (_, [j]) => *j,
+                    _ => continue,
+                };
+                if let Some(x) = &terms[pick] {
+                    x.bind_thread(&threads[i].id);
+                }
+                claimed.insert(pick);
+                owner[i] = Some(pick);
+                moved = true;
+            }
+            if !moved {
+                break;
+            }
         }
     }
     threads
@@ -875,6 +908,7 @@ pub fn resume_flags(agent: &str, flags: &[String]) -> Vec<String> {
     let flags = procs::rejoin_split_json(flags);
     match agent {
         "codex" => codex::launch_flags(&flags),
+        "claude" => claude::launch_flags(&flags),
         _ => flags,
     }
 }
@@ -893,12 +927,40 @@ pub fn resume_command(agent: &str, cwd: &str, session_id: &str, flags: &[String]
     format!("cd {} && {}", shell_quote(cwd), argv.join(" "))
 }
 
+fn scan_linked(ctx: &Ctx) -> Result<Vec<Line>, String> {
+    let lines = scan_now(ctx)?;
+    term::link_lines(&lines);
+    Ok(lines)
+}
+
 pub fn scan(ctx: &Ctx) -> Result<Vec<Line>, String> {
-    scanner::fresh(|| scan_now(ctx))
+    scanner::fresh(|| scan_linked(ctx))
 }
 
 pub fn current_lines(ctx: &Ctx) -> Result<Vec<Line>, String> {
-    scanner::current(|| scan_now(ctx))
+    scanner::current(|| scan_linked(ctx))
+}
+
+pub fn session_at_exit(t: &term::Info) -> Option<(String, String)> {
+    let agent = t.agent.as_deref()?;
+    let ctx = Ctx::from_env(&procs::System);
+    let lines = scan(&ctx).ok()?;
+    let pick = lines
+        .iter()
+        .find(|l| l.term_id.as_deref() == Some(t.id.as_str()))
+        .or_else(|| {
+            lines
+                .iter()
+                .filter(|l| {
+                    l.term_id.is_none()
+                        && l.pid.is_none()
+                        && l.agent == agent
+                        && l.cwd == t.cwd
+                        && l.last_activity_ms >= t.created_ms
+                })
+                .max_by_key(|l| l.last_activity_ms)
+        })?;
+    Some((pick.session_id.clone(), pick.resume_command.clone()))
 }
 
 type UpsertKey = (PathBuf, u64, &'static str, String);
@@ -1188,6 +1250,13 @@ fn scan_now(ctx: &Ctx) -> Result<Vec<Line>, String> {
             .find(|p| p.held.as_deref() == Some(id.as_str()) && !p.dead)
             .map(|p| p.id.clone());
         l.id = id;
+        if l.workspace_id.is_none() {
+            let from_term = l.term_id.as_deref().and_then(term::workspace_of);
+            if let Some(w) = from_term {
+                reg.set_mark(&l.id, "workspace_id", Some(&w))?;
+                l.workspace_id = Some(w);
+            }
+        }
         l.resume_command = resume_command(l.agent, &l.cwd, &l.session_id, &args);
         l.launch_args = args;
         lines.push(l);

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { loadLocale, setLocale } from './i18n.svelte';
-import { LOG_LINES, Updater, brewError, brewMessage, brewStepLabel, dialogAction, pillLabel, type CheckResult, type InstallKind, type ProgressEvent, type UpdaterBackend } from './updater.svelte';
+import { BREW_UPGRADE, LOG_LINES, Updater, brewError, brewMessage, brewStepLabel, dialogAction, pillLabel, type CheckResult, type InstallKind, type ProgressEvent, type UpdaterBackend } from './updater.svelte';
 
 const available = (kind: InstallKind = 'bundle'): CheckResult => ({
   status: 'available',
@@ -104,6 +104,20 @@ describe('updater check', () => {
     expect(pillLabel(u)).toBeNull();
   });
 
+  it('reports a clear error, not a TypeError, when the backend returns nothing', async () => {
+    const u = new Updater(backend({ check: async () => null as unknown as CheckResult }));
+    await u.check(true);
+    expect(u.phase).toBe('error');
+    expect(u.error).toBe('Not available here');
+    expect(u.error).not.toContain('null');
+  });
+
+  it('keeps the version empty when the status comes back empty', async () => {
+    const u = new Updater(backend({ status: async () => null as never }));
+    await u.refreshStatus();
+    expect(u.current).toBe('');
+  });
+
   it('does nothing without a backend', async () => {
     const u = new Updater(null);
     expect(u.enabled).toBe(false);
@@ -196,6 +210,10 @@ describe('updater install', () => {
 });
 
 describe('homebrew update', () => {
+  it('copyable upgrade names the tap so Homebrew trusts the cask', () => {
+    expect(BREW_UPGRADE).toBe('brew update && brew upgrade --cask basilelt/tap/overseer');
+  });
+
   function controlled() {
     let emit: (e: ProgressEvent) => void = () => {};
     let finish: (v: string | null) => void = () => {};
@@ -240,7 +258,7 @@ describe('homebrew update', () => {
     expect(c.b.brew).toHaveBeenCalledWith(null, expect.any(Function));
     await u.check();
     expect(u.phase).toBe('updated');
-    await u.brewRestart();
+    await u.restart();
     expect(u.phase).toBe('restarting');
     expect(c.b.brewRelaunch).toHaveBeenCalledOnce();
     expect(c.b.relaunch).not.toHaveBeenCalled();
@@ -348,10 +366,10 @@ describe('homebrew update', () => {
   it('reports a failed relaunch', async () => {
     const u = new Updater(backend({ check: async () => available('homebrew'), brewRelaunch: async () => Promise.reject(new Error('open exited with 1')) }));
     await u.check();
-    await u.brewRestart();
+    await u.restart();
     expect(u.phase).toBe('available');
     await u.brewUpgrade();
-    await u.brewRestart();
+    await u.restart();
     expect(u.phase).toBe('updated');
     expect(u.error).toBe('open exited with 1');
     expect(dialogAction(u)).toBe('restart');

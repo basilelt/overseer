@@ -123,11 +123,19 @@ describe('MockDaemon', () => {
 
   it('holds a line and resumes it into a term', async () => {
     const { a, events } = setup();
-    await a.hold('ln_06');
-    expect((await a.lines()).find((l) => l.line.id === 'ln_06')!.line.state).toBe('held');
+    await a.hold('ln_10');
+    expect((await a.lines()).find((l) => l.line.id === 'ln_10')!.line.state).toBe('held');
     const term = await a.resume('ln_11');
     expect(term.lineId).toBe('ln_11');
     expect(events.map((e) => e.type)).toContain('line.state_changed');
+  });
+
+  it('refuses to hold or close a busy line unless the close is forced, like the daemon', async () => {
+    const { m, a } = setup();
+    await expect(a.hold('ln_06')).rejects.toThrow('HTTP 409');
+    await expect(a.close('ln_06')).rejects.toThrow('HTTP 409');
+    await m.request('POST', '/v1/lines/ln_06/close?dryRun=false&force=true');
+    expect((await a.lines()).find((l) => l.line.id === 'ln_06')!.line.state).toBe('hung-up');
   });
 
   it('keeps a reducer snapshot in sync with its events', async () => {
@@ -182,13 +190,13 @@ describe('MockDaemon', () => {
     await expect(a.killTerm('tm_shell1')).rejects.toMatchObject({ status: 409 });
   });
 
-  it('answers 409 for the activity of agents without session files', async () => {
+  it('answers an empty activity without a transcript for agents without session files', async () => {
     const { a } = setup();
     const lines = await a.lines();
     const copilot = lines.find((l) => l.line.agent === 'copilot')!;
-    await expect(a.activity(copilot.line.id)).rejects.toMatchObject({ status: 409 });
+    expect(await a.activity(copilot.line.id)).toMatchObject({ lineId: copilot.line.id, transcript: false, workLog: [], todos: [], editedFiles: [] });
     expect((await a.terms()).some((t) => t.lineId === copilot.line.id && t.agent === 'copilot')).toBe(true);
-    expect((await a.activity('ln_06')).lineId).toBe('ln_06');
+    expect(await a.activity('ln_06')).toMatchObject({ lineId: 'ln_06', transcript: true });
   });
 
   it('creates projects at the repository root and rejects non repositories', async () => {
@@ -245,6 +253,47 @@ describe('MockDaemon', () => {
     await a.deleteWorkspace(w.id);
     expect((await a.lines()).find((x) => x.line.id === l.id)?.local?.workspaceId ?? null).toBeNull();
     expect((await a.terms()).find((t) => t.id === sh.id)?.workspaceId ?? null).toBeNull();
+  });
+
+  it('creates subjects like the daemon: no path, a shared cwd, strict validation, terms started in it', async () => {
+    // Given the mock daemon
+    // When two subjects share a cwd, bad bodies are sent and a shell starts for a subject without a cwd
+    // Then both exist with a null path, bad input is a 400, the term takes the cwd and the workspace, and cwd patches only apply to subjects
+    const { m, a } = setup();
+    const post = (b: object) => m.request<any>('POST', '/v1/workspaces', b);
+    const s1 = await post({ kind: 'subject', name: 'Deal A', cwd: '~/shared' });
+    const s2 = await post({ kind: 'subject', name: 'Deal B', cwd: s1.cwd });
+    expect(s1).toMatchObject({ kind: 'subject', path: null });
+    expect(s1.cwd).toMatch(/\/shared$/);
+    expect(s2.cwd).toBe(s1.cwd);
+    for (const b of [{ kind: 'subject', cwd: '/x' }, { kind: 'subject', name: 'x' }, { kind: 'subject', name: 'x', cwd: 'rel' }, { kind: 'subject', name: 'x', cwd: '/x', path: '/x' }, { kind: 'folder', path: '/x' }, { path: '/x', cwd: '/x' }]) {
+      await expect(post(b)).rejects.toMatchObject({ status: 400 });
+    }
+    const t = await m.request<any>('POST', '/v1/terms', { workspaceId: s1.id, cmd: ['zsh'] });
+    expect(t).toMatchObject({ cwd: s1.cwd, workspaceId: s1.id });
+    await expect(m.request('POST', '/v1/terms', { workspaceId: 'nope' })).rejects.toMatchObject({ status: 404 });
+    await expect(m.request('POST', '/v1/terms', { workspaceId: 3 })).rejects.toMatchObject({ status: 400 });
+    const p = await m.request<any>('PATCH', `/v1/workspaces/${s1.id}`, { cwd: '/tmp' });
+    expect(p.cwd).toBe('/tmp');
+    const dir = (await a.workspaces()).find((x) => !x.auto)!;
+    await expect(m.request('PATCH', `/v1/workspaces/${dir.id}`, { cwd: '/tmp' })).rejects.toMatchObject({ status: 400 });
+    await a.deleteWorkspace(s1.id);
+    expect((await a.terms()).find((x) => x.id === t.id)?.workspaceId ?? null).toBeNull();
+  });
+
+  it('clears the term of a line when the line is unassigned and lets a line inherit its term assignment', async () => {
+    // Given a subject and a term started for it on an existing line
+    // When the line is unassigned
+    // Then the line inherited the assignment at start, and unassigning clears the term too
+    const { m, a } = setup();
+    const s = await m.request<any>('POST', '/v1/workspaces', { kind: 'subject', name: 'S', cwd: '/tmp' });
+    const line = (await a.lines()).find((x) => !x.local?.workspaceId)!.line;
+    const t = await m.request<any>('POST', '/v1/terms', { workspaceId: s.id, cmd: ['zsh'], lineId: line.id });
+    expect((await a.terms()).find((x) => x.id === t.id)?.workspaceId).toBe(s.id);
+    expect((await a.lines()).find((x) => x.line.id === line.id)?.local?.workspaceId).toBe(s.id);
+    await a.assignLineWorkspace(line.id, null);
+    expect((await a.lines()).find((x) => x.line.id === line.id)?.local?.workspaceId ?? null).toBeNull();
+    expect((await a.terms()).find((x) => x.id === t.id)?.workspaceId ?? null).toBeNull();
   });
 
   it('keeps a missing user workspace in the list', async () => {

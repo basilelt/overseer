@@ -17,7 +17,7 @@
 
   const store = $derived(app.profiles);
   const wsPath = $derived(scope ?? app.currentWorkspace?.path ?? null);
-  const wsName = $derived(app.ws.workspaces.find((w) => w.path === wsPath)?.name ?? wsPath ?? '');
+  const wsName = $derived(app.ws.workspaces.find((w) => !!wsPath && w.path === wsPath)?.name ?? wsPath ?? '');
   const agents = $derived(taskAgents(app.agents).filter((a) => a.installed && store?.support[a.id] && Object.keys(store.support[a.id]).length));
 
   let draft = $state<Profile[]>(structuredClone($state.snapshot(app.profiles?.profiles.filter((p) => !p.builtin) ?? [])));

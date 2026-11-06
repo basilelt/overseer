@@ -230,6 +230,11 @@ describe('webglMode and softwareGl', () => {
     expect(softwareGl(fakeGl({ renderer: 'llvmpipe (LLVM 17)' }).gl)).toBe(true);
     expect(softwareGl(fakeGl({ renderer: 'ANGLE (AMD Radeon)' }).gl)).toBe(false);
   });
+
+  it('cannot tell software from hardware when WebKit masks the renderer', () => {
+    expect(softwareGl(fakeGl({ renderer: 'Apple GPU' }).gl)).toBe(false);
+    expect(softwareGl(fakeGl({ renderer: 'WebKit WebGL' }).gl)).toBe(false);
+  });
 });
 
 describe('GlTerm', () => {
@@ -572,6 +577,13 @@ describe('attachOverlay', () => {
     expect(attachOverlay(setup(fakeGl({ renderer: 'SwiftShader' }).gl).r, true)).not.toBeNull();
   });
 
+  it('keeps the drawing buffer so WebKit never presents a stale frame after a resize', async () => {
+    const { attachOverlay } = await import('./termgl');
+    const { r, overlay } = setup(fakeGl().gl);
+    expect(attachOverlay(r, false)).not.toBeNull();
+    expect(overlay.getContext).toHaveBeenCalledWith('webgl2', expect.objectContaining({ preserveDrawingBuffer: true }));
+  });
+
   it('sizes the overlay over the canvas and rasterizes glyphs at device scale', async () => {
     const { attachOverlay } = await import('./termgl');
     const { gl, log } = fakeGl();
@@ -640,6 +652,45 @@ describe('attachOverlay', () => {
     a.term.render(grid(2, 10));
     expect(raf.queue.size).toBe(0);
     expect(a.term.redraws).toBe(3);
+  });
+
+  it('keeps redrawing through blank frames until the replayed text lands', async () => {
+    const { attachOverlay } = await import('./termgl');
+    const { r } = setup(fakeGl().gl);
+    const raf = frames();
+    const a = attachOverlay(r, false)!;
+    a.resize(10, 2);
+    for (let i = 0; i < 6; i++) {
+      a.term.render(grid(2, 10, () => ' '));
+      expect(raf.queue.size).toBe(1);
+      raf.flush();
+    }
+    expect(a.term.redraws).toBe(6);
+    a.term.render(grid(2, 10));
+    expect(raf.queue.size).toBe(1);
+    raf.flush();
+    expect(a.term.redraws).toBe(7);
+    a.term.render(grid(2, 10));
+    expect(raf.queue.size).toBe(0);
+  });
+
+  it('does not spend the redraw window on renders that change nothing', async () => {
+    const { attachOverlay } = await import('./termgl');
+    const { r } = setup(fakeGl().gl);
+    const raf = frames();
+    const a = attachOverlay(r, false)!;
+    a.resize(10, 2);
+    const buf = grid(2, 10);
+    a.term.render(buf);
+    raf.flush();
+    expect(a.term.settle).toBe(2);
+    for (let i = 0; i < 5; i++) a.term.render(buf);
+    expect(raf.queue.size).toBe(0);
+    expect(a.term.settle).toBe(2);
+    buf.setRow(0, 'hello');
+    a.term.render(buf);
+    expect(raf.queue.size).toBe(1);
+    expect(a.term.settle).toBe(1);
   });
 
   it('coalesces the redraw when several renders land in one frame', async () => {

@@ -151,12 +151,13 @@ on a TCP port on the server.
 Install the desktop app, and the `overseer` CLI/daemon if you want it on this machine:
 
 ```sh
-brew tap basilelt/tap https://github.com/basilelt/homebrew-tap.git
-brew install --cask overseer
-brew install overseer
+brew install --cask basilelt/tap/overseer
+brew install --formula basilelt/tap/overseer
 ```
 
-Upgrade with `brew update && brew upgrade --cask overseer && brew upgrade overseer`.
+The full `basilelt/tap/...` name taps the repository and tells Homebrew to trust these packages,
+so no `brew trust` or `--trust` step is needed. Upgrade with
+`brew update && brew upgrade --cask basilelt/tap/overseer && brew upgrade --formula basilelt/tap/overseer`.
 
 The app is signed with a Developer ID and notarized by Apple, so macOS opens it without a
 warning. Each release asset carries a build provenance attestation:
@@ -297,6 +298,12 @@ The dev app is a different app to macOS, so it may ask for Local Network access 
 with a copy of your `~/.gitconfig` and nothing else: agents started from the dev daemon are not
 logged in until you log in from one of its terminals (for example `claude`, then `/login`). For UI work
 alone, `pnpm dev` in `app/` runs the frontend in a browser on the mock daemon.
+
+Never start a daemon from a checkout with your real `HOME` (for example
+`OVERSEER_STATE_DIR=$PWD/.state target/debug/overseer daemon`): a daemon on a state directory other
+than the default one does not repair your global agent hooks or `~/.overseer/bin/overseer` (it
+logs why), but it shares your agents, tmux and files. Give it its own `HOME`, as `scripts/dev.sh`
+and `scripts/qa/sandbox.sh` do.
 
 ## Documentation
 

@@ -13,7 +13,7 @@
 
   const q = $derived(filter.trim().toLowerCase());
   const match = (w: Workspace) =>
-    w.name.toLowerCase().includes(q) || w.path.toLowerCase().includes(q) || app.membersOf(w.id).some((i) => i.title.toLowerCase().includes(q));
+    w.name.toLowerCase().includes(q) || (w.path ?? w.cwd ?? '').toLowerCase().includes(q) || app.membersOf(w.id).some((i) => i.title.toLowerCase().includes(q));
   const tree = $derived(buildTree(app.ws, { showArchived, filter: q ? match : undefined }));
   const others = $derived(app.membersOf(NO_WORKSPACE));
   const groups = $derived(app.ws.groups.slice().sort(byRank));
@@ -106,7 +106,7 @@
         <WorkspaceRow
           id={w.id}
           name={w.name}
-          path={w.path}
+          path={w.path ?? w.cwd ?? undefined}
           agg={app.aggregates.get(w.id)}
           selected={app.workspaceId === w.id}
           pinned
@@ -152,7 +152,7 @@
         <WorkspaceRow
           id={w.id}
           name={w.name}
-          path={w.path}
+          path={w.path ?? w.cwd ?? undefined}
           agg={app.aggregates.get(w.id)}
           selected={app.workspaceId === w.id}
           archived={w.archived}

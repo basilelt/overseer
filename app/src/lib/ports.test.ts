@@ -178,7 +178,7 @@ describe('MockDaemon ports and prompts', () => {
     await expect(m.request('POST', '/v1/ports/70000/kill', { pid: p.pid, confirm: true })).rejects.toMatchObject({ status: 400 });
     await expect(m.request('POST', '/v1/ports/5173/kill', { confirm: true })).rejects.toThrow('pid (number) required');
     await expect(m.request('POST', '/v1/ports/5173/kill', { pid: p.pid })).rejects.toThrow('kill needs {"confirm":true}');
-    await expect(m.request('POST', '/v1/ports/5173/kill', { pid: p.pid + 1, confirm: true })).rejects.toMatchObject({ status: 404 });
+    await expect(m.request('POST', '/v1/ports/5173/kill', { pid: p.pid + 1, confirm: true })).rejects.toMatchObject({ status: 404, message: expect.stringContaining('in an Overseer terminal') });
     expect(await m.request('POST', '/v1/ports/5173/kill', { pid: p.pid, confirm: true })).toMatchObject({ port: 5173, pid: p.pid });
     stop();
     expect(states.at(-1)!.detected.map((x) => x.port)).toEqual([8000]);

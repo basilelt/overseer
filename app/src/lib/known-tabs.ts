@@ -3,6 +3,7 @@ import type { SidebarItem } from './grouping';
 export interface KnownTabs {
   known: string[];
   tabs?: string[];
+  active?: string | null;
 }
 
 const KEY = 'overseer.knownTabs';

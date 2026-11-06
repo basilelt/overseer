@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { Ghostty, Terminal } from 'ghostty-web';
 import { ModeTracker, wheelAction } from './mouse';
-import { anchoredViewport, clampScrollback, DEFAULT_SCROLLBACK_LINES, scrollbackBytes, writeAnchored } from './scroll';
+import { anchoredViewport, clampScrollback, DEFAULT_SCROLLBACK_LINES, resetViewport, scrollbackBytes, writeAnchored } from './scroll';
 
 const COLS = 80;
 const ROWS = 24;
@@ -136,5 +136,26 @@ describe('anchoredViewport', () => {
     expect(clampScrollback(10)).toBe(1000);
     expect(clampScrollback(1e9)).toBe(50_000);
     expect(scrollbackBytes(10_000)).toBe(16_000_000);
+  });
+
+  it('a terminal reset while scrolled back replays to the bottom, not to the top of the history', () => {
+    const term = headless(scrollbackBytes(DEFAULT_SCROLLBACK_LINES));
+    Object.assign(term, { renderer: { clear() {}, render() {} } });
+    term.write(history(300));
+    term.scrollToLine(10);
+    expect(term.getViewportY()).toBeGreaterThan(0);
+    resetViewport(term);
+    expect(term.getViewportY()).toBe(0);
+    expect(writeAnchored(term, history(300))).toBe(false);
+    expect(term.getViewportY()).toBe(0);
+  });
+
+  it('a terminal reset while at the bottom replays to the bottom', () => {
+    const term = headless(scrollbackBytes(DEFAULT_SCROLLBACK_LINES));
+    Object.assign(term, { renderer: { clear() {}, render() {} } });
+    term.write(history(300));
+    resetViewport(term);
+    expect(writeAnchored(term, history(300))).toBe(false);
+    expect(term.getViewportY()).toBe(0);
   });
 });

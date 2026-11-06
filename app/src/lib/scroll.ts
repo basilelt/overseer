@@ -23,6 +23,11 @@ export interface Viewport {
   write(data: string | Uint8Array): void;
 }
 
+export function resetViewport(term: { reset(): void; scrollToBottom(): void }): void {
+  term.reset();
+  term.scrollToBottom();
+}
+
 export function anchoredViewport(before: number, grown: number, length: number): number {
   if (!(before > 0)) return 0;
   return Math.max(0, Math.min(length, before + grown));

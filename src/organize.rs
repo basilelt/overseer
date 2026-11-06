@@ -705,9 +705,16 @@ pub fn build(ctx: &Ctx) -> Result<Value, (u16, Value)> {
         )
         .and_then(|p| crate::activity::activity(l.agent, &p, Some(ctx.now_ms)))
     };
+    // Subjects have no directory to organize or archive by.
+    let dirs: Vec<Workspace> = ix
+        .workspaces
+        .iter()
+        .filter(|w| !w.subject)
+        .cloned()
+        .collect();
     let plan = deterministic(&Input {
         lines: &lines,
-        workspaces: &ix.workspaces,
+        workspaces: &dirs,
         folders: &folders,
         groups: &groups,
         projects: &ix.projects,
@@ -809,10 +816,12 @@ impl Ops for Live<'_, '_> {
         }
     }
     fn hold(&self, l: &Line) -> Result<(), String> {
-        report(Ok(crate::actions::hold_line(self.0, l, true, true, false)))
+        report(Ok(crate::actions::hold_line(
+            self.0, l, true, true, false, false,
+        )))
     }
     fn close(&self, l: &Line) -> Result<(), String> {
-        report(crate::actions::close_line(self.0, l, true, false))
+        report(crate::actions::close_line(self.0, l, true, false, false))
     }
     fn create_workspace(&self, b: &Value) -> Res<(bool, Workspace)> {
         workspaces::create(self.0, b)
@@ -1299,6 +1308,8 @@ mod tests {
             notify_idle: false,
             created_ms: NOW,
             updated_ms: NOW,
+            subject: false,
+            cwd: None,
         }
     }
 

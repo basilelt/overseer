@@ -68,6 +68,20 @@ describe('membership', () => {
     expect(m.get('line:dot')).toBe('home');
   });
 
+  it('ignores a subject (null path) when matching by path and still honours an explicit assignment to it', () => {
+    // Given a subject with a null path and a cwd inside the webshop workspace
+    // When membership is computed for an unassigned line and for one assigned to the subject
+    // Then nothing throws, the subject matches no path, and the assignment wins
+    const subject = ws('subj', null as unknown as string, { path: null, kind: 'subject', cwd: '/home/u/work/webshop' });
+    const plain = line('plain', '/home/u/work/webshop/src', 'github.com/o/webshop');
+    const mine = { ...line('mine', '/home/u/work/webshop/src', 'github.com/o/webshop'), local: { workspaceId: 'subj' } };
+    const lines = [plain, mine];
+    const items = sidebarItems(lines, [], []);
+    const m = itemWorkspaces(items, { lines, terms: [], tasks: [] }, [home, subject, webshop], projects);
+    expect(m.get('line:plain')).toBe('webshop');
+    expect(m.get('line:mine')).toBe('subj');
+  });
+
   it('puts a session started in a child workspace folder in the child workspace, not in the parent repository workspace', () => {
     const atRoot = { ...line('root', '/home/u/work/webshop', 'github.com/o/webshop'), local: { cwd: '/home/u/work/webshop' } };
     const inChild = { ...line('child', '/home/u/work/webshop', 'github.com/o/webshop'), local: { cwd: '/home/u/work/webshop/web/src' } };
@@ -439,8 +453,8 @@ describe('Terminal pane action', () => {
     expect(paneAction(session(), live({ pid: 7, tmuxPane: '%3', busy: false, needsInput: false }))).toBe('attach');
   });
 
-  it('keeps open for a session with a Overseer term', () => {
-    // Given a live session that owns a Overseer term
+  it('keeps open for a session with an Overseer term', () => {
+    // Given a live session that owns an Overseer term
     // When the Terminal pane asks which action to offer
     // Then it gets 'open'
     expect(paneAction(session({ termId: 't1' }), live({ pid: 8, busy: true, needsInput: false }))).toBe('open');

@@ -4,6 +4,7 @@ import { DaemonError, setClient } from './client';
 import { t } from './i18n.svelte';
 import { MockDaemon } from './mock';
 import { center } from './notifications.svelte';
+import { setPresence } from './presence';
 import { pages } from './session-pages.svelte';
 import { settings, workspaceFor } from './settings.svelte';
 import { app, NO_WORKSPACE, projectName, statusLine } from './state.svelte';
@@ -451,6 +452,32 @@ describe('daemon events', () => {
     expect(changed).not.toHaveBeenCalled();
   });
 
+  it('adds a project announced after the connection', () => {
+    const p: Project = { path: '/late/repo', name: 'repo', repo: 'late/repo' };
+    m.emit('project.added', { project: p });
+    expect(app.projects.some((x) => x.path === '/late/repo')).toBe(true);
+    m.emit('project.added', { project: p });
+    expect(app.projects.filter((x) => x.path === '/late/repo')).toHaveLength(1);
+    m.emit('project.added', {});
+  });
+
+  it('rechecks the workspaces when the window comes back to the foreground', async () => {
+    setPresence({ focused: false });
+    const before = m.calls.filter((c) => c === 'GET /v1/workspaces').length;
+    m.override['GET /v1/workspaces'] = () => [{ ...app.ws.workspaces[0], missing: true }];
+    setPresence({ focused: true });
+    await vi.waitFor(() => expect(app.ws.workspaces[0].missing).toBe(true));
+    expect(m.calls.filter((c) => c === 'GET /v1/workspaces').length).toBe(before + 1);
+  });
+
+  it('stops rechecking the workspaces once disconnected', async () => {
+    await app.disconnect();
+    const before = m.calls.length;
+    setPresence({ focused: false });
+    setPresence({ focused: true });
+    expect(m.calls.length).toBe(before);
+  });
+
   it('reloads the profiles when they change', async () => {
     m.emit('profiles.changed', {});
     await vi.waitFor(() => expect(m.calls).toContain('GET /v1/profiles'));
@@ -576,6 +603,14 @@ describe('loadActivity', () => {
     await connect();
     expect(await app.loadActivity('ln_10')).toBeNull();
     expect(m.calls).toEqual([]);
+  });
+
+  it('returns nothing for a line without a transcript and leaves the snapshot alone', async () => {
+    await connect();
+    m.override['GET /v1/lines/ln_03/activity'] = () => ({ lineId: 'ln_03', title: '', goal: '', status: 'active', needsInput: false, busy: false, workLog: [], todos: [], editedFiles: [], lastAssistantText: '', transcript: false });
+    const data = app.data;
+    expect(await app.loadActivity('ln_03')).toBeNull();
+    expect(app.data).toBe(data);
   });
 
   it('returns nothing when the request fails', async () => {
@@ -783,10 +818,82 @@ describe('sessions', () => {
   it('starts an agent in a worktree of the current workspace project', async () => {
     app.selectWorkspace('ws_webshop');
     const term = await app.newSession('claude', { model: 'opus' });
-    expect(m.bodies['POST /v1/terms']).toEqual([{ agent: 'claude', cwd: app.currentWorkspace!.path, model: 'opus', effort: undefined, cols: 120, rows: 32, worktree: true }]);
+    expect(m.bodies['POST /v1/terms']).toEqual([{ agent: 'claude', cwd: app.currentWorkspace!.path, workspaceId: 'ws_webshop', model: 'opus', effort: undefined, cols: 120, rows: 32, worktree: true }]);
     expect(app.data.terms.some((x) => x.id === term.id)).toBe(true);
     expect(app.selectedKey).toBe(`term:${term.id}`);
     expect(app.view).toBe('agents');
+  });
+
+  describe('following a session just started', () => {
+    const lineFor = async () => {
+      const all = await m.request<{ line: { id: string } }[]>('GET', '/v1/lines');
+      return { ...all[0].line, id: 'ln_new', state: 'active' };
+    };
+
+    it('selects the line when the term gets linked before the line is known', async () => {
+      const term = await app.newSession('claude');
+      const line = await lineFor();
+      m.emit('term.updated', { term: { ...term, lineId: line.id } });
+      expect(app.items.some((i) => i.key === `term:${term.id}`)).toBe(false);
+      m.emit('line.updated', { line });
+      expect(app.items.find((i) => i.lineId === line.id)?.termId).toBe(term.id);
+      expect(app.selectedKey).toBe(`line:${line.id}`);
+      expect(app.selected?.lineId).toBe(line.id);
+    });
+
+    it('selects the line when it arrives together with the term link', async () => {
+      const term = await app.newSession('claude');
+      const line = await lineFor();
+      m.emit('line.updated', { line });
+      m.emit('term.updated', { term: { ...term, lineId: line.id } });
+      expect(app.selectedKey).toBe(`line:${line.id}`);
+    });
+
+    it('leaves the selection alone once the user picked another session', async () => {
+      const term = await app.newSession('claude');
+      const line = await lineFor();
+      m.emit('term.updated', { term: { ...term, lineId: line.id } });
+      const other = app.items.find((i) => i.key.startsWith('line:'))!.key;
+      app.select(other);
+      m.emit('line.updated', { line });
+      expect(app.selectedKey).toBe(other);
+    });
+
+    it('stops following when the term is gone', async () => {
+      const term = await app.newSession('claude');
+      m.emit('term.exited', { term: { ...term, exited: true } });
+      const line = await lineFor();
+      m.emit('line.updated', { line });
+      expect(app.selectedKey).toBe(`term:${term.id}`);
+    });
+
+    it('opens the workspace that holds a session started from elsewhere', async () => {
+      app.selectWorkspace('ws_webshop');
+      const base = await app.newSession('shell');
+      const term = { ...base, id: 'tm_feedback', cwd: '/tmp/elsewhere', workspaceId: null } as Term;
+      app.followSession(term);
+      expect(app.selectedKey).toBe('term:tm_feedback');
+      expect(app.workspaceId).toBe(NO_WORKSPACE);
+    });
+  });
+
+  it('lists a session under its workspace before it reports a line', async () => {
+    app.selectWorkspace('ws_webshop');
+    const term = await app.newSession('codex');
+    expect(term.cwd).not.toBe(app.currentWorkspace!.path);
+    expect(app.itemWs.get(`term:${term.id}`)).toBe('ws_webshop');
+  });
+
+  it('assigns a shell started in the workspace too', async () => {
+    app.selectWorkspace('ws_webshop');
+    await app.newSession('shell');
+    expect((m.bodies['POST /v1/terms'].at(-1) as { workspaceId?: string }).workspaceId).toBe('ws_webshop');
+  });
+
+  it('does not assign a session started in a directory outside the workspace', async () => {
+    app.selectWorkspace('ws_webshop');
+    await app.newSession('claude', { cwd: '/tmp' });
+    expect((m.bodies['POST /v1/terms'].at(-1) as { workspaceId?: string }).workspaceId).toBeUndefined();
   });
 
   it('starts in the checkout when the user prefers it or outside a project', async () => {
@@ -798,10 +905,42 @@ describe('sessions', () => {
     expect(m.bodies['POST /v1/terms'].map((b) => (b as { worktree?: boolean }).worktree)).toEqual([undefined, undefined, undefined]);
   });
 
+  describe('in a subject', () => {
+    const repo = '/home/alice/Documents/Github/work/webshop';
+    const subject = async () => {
+      const w = await m.request<{ id: string }>('POST', '/v1/workspaces', { kind: 'subject', name: 'Deal', cwd: repo });
+      await vi.waitFor(() => expect(app.ws.workspaces.some((x) => x.id === w.id)).toBe(true));
+      app.selectWorkspace(w.id);
+      return w.id;
+    };
+
+    it('sends the workspaceId and no cwd, and still starts agents in a worktree of the subject cwd repo', async () => {
+      // Given a subject whose cwd is a project repository, selected in the sidebar
+      // When an agent and a shell are started
+      // Then both bodies carry workspaceId and no cwd, and only the agent asks for a worktree
+      const id = await subject();
+      await app.newSession('claude');
+      await app.newSession('shell');
+      expect(m.bodies['POST /v1/terms']).toEqual([
+        { agent: 'claude', cwd: undefined, workspaceId: id, model: undefined, effort: undefined, cols: 120, rows: 32, worktree: true },
+        { cwd: undefined, workspaceId: id, cols: 120, rows: 32 },
+      ]);
+    });
+
+    it('lets an explicit cwd win and sends no workspaceId', async () => {
+      // Given a selected subject
+      // When a session starts with an explicit cwd
+      // Then the body has that cwd and no workspaceId
+      await subject();
+      await app.newSession('shell', { cwd: '/tmp' });
+      expect(m.bodies['POST /v1/terms']).toEqual([{ cwd: '/tmp', cols: 120, rows: 32 }]);
+    });
+  });
+
   it('starts a plain shell without agent options or worktree', async () => {
     app.nextProfile = 'p1';
     await app.newSession('shell', { cwd: '/home/alice/Documents/Github/work/webshop', model: 'x' });
-    expect(m.bodies['POST /v1/terms']).toEqual([{ cwd: '/home/alice/Documents/Github/work/webshop', cols: 120, rows: 32 }]);
+    expect(m.bodies['POST /v1/terms']).toEqual([{ cwd: '/home/alice/Documents/Github/work/webshop', workspaceId: 'ws_webshop', cols: 120, rows: 32 }]);
     expect(app.nextProfile).toBe('p1');
   });
 

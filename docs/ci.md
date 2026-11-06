@@ -326,12 +326,12 @@ asked, so a missing secret fails them.
 | `MACOS_SELF_SIGN_P12_BASE64`, `MACOS_SELF_SIGN_P12_PASSWORD` | stable self-signed macOS code signature ([macOS signing](#macos-signing)) | ad-hoc signature: macOS forgets the Local Network grant on every update |
 | `APPLE_CERTIFICATE`, `APPLE_CERTIFICATE_PASSWORD`, `APPLE_SIGNING_IDENTITY` | Developer ID signature of the macOS app (wins over the self-signed one) | self-signed or ad-hoc, as above |
 | `WINDOWS_SELF_SIGN_PFX_BASE64`, `WINDOWS_SELF_SIGN_PFX_PASSWORD` | self-signed `.msix` packages for x64 and arm64 and `overseer-msix.cer` in the release ([MSIX](#msix)) | no `.msix`, the NSIS installers ship as before |
-| `APPLE_KEY_ID`, `APPLE_ISSUER_ID`, `APPLE_KEY_CONTENT` | App Store Connect API key (Developer role; `APPLE_KEY_CONTENT` is the `.p8` text): notarization of the Developer ID app, and the store `ios` job (App Manager or Admin role to submit for review) | with a Developer ID set, `app-macos` fails instead of shipping an app Gatekeeper blocks |
+| `APPLE_KEY_ID`, `APPLE_ISSUER_ID`, `APPLE_KEY_CONTENT` | App Store Connect API key (Developer role; `APPLE_KEY_CONTENT` is the `.p8` text): notarization of the Developer ID app; `APPLE_ISSUER_ID` is shared with the store key | with a Developer ID set, `app-macos` fails instead of shipping an app Gatekeeper blocks |
 | `HOMEBREW_TAP_DEPLOY_KEY` | the `tap` job: the private half of an SSH deploy key with write access on `basilelt/homebrew-tap` only (create with `ssh-keygen -t ed25519`, add the public half under the tap's Settings > Deploy keys with "Allow write access") | `tap` skipped, the tap keeps the previous version |
 | `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD` | `app-android`: signed release APK ([docs/mobile.md](mobile.md#android-once-by-whoever-holds-the-release-key)) | `app-android` skipped, no APK in the release |
 | `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD` | also the store `android` job: the AAB is signed with the same key, the Play upload key | store `android` fails |
 | `PLAY_SERVICE_ACCOUNT_JSON` | store `android`: upload of the App Bundle to Google Play ([docs/mobile.md](mobile.md#google-play-once-by-the-play-console-account-holder)) | store `android` fails |
-| `APPLE_TEAM_ID`, `APPLE_KEY_ID`, `APPLE_ISSUER_ID`, `APPLE_KEY_CONTENT`, `IOS_CERTIFICATE`, `IOS_CERTIFICATE_PASSWORD`, `IOS_MOBILE_PROVISION` | store `ios`: App Store submission ([docs/mobile.md](mobile.md#ios-once-by-the-apple-developer-account-holder)) | store `ios` fails |
+| `APPLE_TEAM_ID`, `ASC_KEY_ID`, `APPLE_ISSUER_ID`, `ASC_KEY_CONTENT` (App Manager or Admin key, needed to submit for review), `IOS_CERTIFICATE`, `IOS_CERTIFICATE_PASSWORD`, `IOS_MOBILE_PROVISION` | store `ios`: App Store submission ([docs/mobile.md](mobile.md#ios-once-by-the-apple-developer-account-holder)) | store `ios` fails |
 
 Repository variables (same page, Variables tab; `PLAY_TRACK` and `PLAY_RELEASE_STATUS`, used by
 the former automatic Play upload, are no longer read and can be deleted):
@@ -422,8 +422,9 @@ daemon binaries for macOS and Linux, both arches). The `tap` job, after `publish
    `main` to the branch and delete it, so users never get a formula or cask that fails brew's checks.
 
 The tap repository must exist first (public, with one commit on its default branch; the job
-creates `Casks/` and `Formula/`). Users: `brew tap basilelt/tap`, then `brew install overseer`
-and/or `brew install --cask overseer`.
+creates `Casks/` and `Formula/`). Users: `brew install --formula basilelt/tap/overseer` and/or
+`brew install --cask basilelt/tap/overseer`; the fully qualified name taps the repository and
+makes Homebrew trust the formula or cask, so users never run `brew trust` themselves.
 
 Every release asset also gets a GitHub build provenance attestation (the `publish` job attests
 each file listed in `SHA256SUMS`): `gh attestation verify <file> --repo basilelt/overseer`
@@ -449,7 +450,8 @@ checks that a download was built by this workflow from this repository.
   to date with its base: when it is behind, the merged tree differs from the tested one, and for
   `main` the release gate then runs CI again before tagging. Repository admins can bypass the `next`
   ruleset when merging a PR (`bypass_mode: pull_request`: no direct push), for exceptional cases;
-  `main` has no bypass. Both name their branch literally (`refs/heads/main`, `refs/heads/next`), not
+  on `main` they bypass it always (`bypass_mode: always`, direct push included), for urgent CI or
+  release fixes only. Both name their branch literally (`refs/heads/main`, `refs/heads/next`), not
   `~DEFAULT_BRANCH`, since the default branch is `next`. `release-tags` forbids deleting `v*` and
   `latest` (repository admins can bypass); moving them is an update, so the `tag` job still can.
 - The secrets and the variables above, as each feature is wanted.

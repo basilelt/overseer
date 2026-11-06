@@ -21,6 +21,7 @@ const enc = encodeURIComponent;
 /** Daemon calls for custom titles and workspace assignments (PUT /v1/lines|terms/{id}/title|workspace). */
 export function tabApi(c: DaemonClient) {
   return {
+    forceClose: (id: string) => c.request('POST', `/v1/lines/${enc(id)}/close?dryRun=false&force=true`),
     renameLine: (id: string, title: string | null) => c.request<{ lineId: string; titleOverride: string | null }>('PUT', `/v1/lines/${enc(id)}/title`, { title }),
     renameTerm: (id: string, title: string | null) => c.request<Term>('PUT', `/v1/terms/${enc(id)}/title`, { title }),
     assignLineWorkspace: (id: string, workspaceId: string | null) => c.request<{ lineId: string; workspaceId: string | null }>('PUT', `/v1/lines/${enc(id)}/workspace`, { workspaceId }),
@@ -129,7 +130,13 @@ export function tabClosed(app: App, key: string, end: boolean) {
         app.notify(String((e as Error)?.message ?? e), 'error');
       });
   }
-  return app.api.close(target.line).then(() => app.refresh()).catch((e) => app.notify(String((e as Error)?.message ?? e), 'error'));
+  return client(app)
+    .forceClose(target.line)
+    .then(() => app.refresh())
+    .catch((e) => {
+      app.notify(String((e as Error)?.message ?? e), 'error');
+      return app.refresh();
+    });
 }
 
 const ending = new Set<string>();

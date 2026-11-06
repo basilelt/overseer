@@ -40,7 +40,7 @@
   }
 </script>
 
-<Modal title={task ? t('review.title', { n: task.number }) : t('common.error')} {onclose} width={1280}>
+<Modal title={task ? t('review.title', { n: task.number }) : t('common.error')} {onclose} width={1280} fill>
   {#if task}
     <div class="head">
       <div class="title">{task.title}</div>
@@ -75,6 +75,7 @@
 
 <style>
   .head {
+    flex: none;
     display: flex;
     flex-direction: column;
     gap: 4px;
@@ -96,14 +97,14 @@
   }
   .frame {
     display: flex;
-    height: min(calc(76vh - 200px), 760px);
-    min-height: 220px;
+    flex: 1 1 0;
+    min-height: 320px;
     border: 1px solid var(--border);
     border-radius: var(--radius);
     overflow: hidden;
   }
   :global(.phone) .frame {
-    height: min(calc(90dvh - 330px), 760px);
+    min-height: 470px;
   }
   .state {
     display: flex;

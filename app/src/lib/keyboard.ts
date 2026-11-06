@@ -53,7 +53,9 @@ function closeActive() {
 function reopenClosed() {
   const key = takeClosed((k) => {
     const r = resolveTab(k, app.items);
-    return r && tabInfo(r, app.items) ? r : null;
+    if (!r || !tabInfo(r, app.items)) return null;
+    if (r.startsWith('term:') && !app.data.terms.some((t: { id: string }) => t.id === r.slice(5))) return null;
+    return r;
   });
   if (!key) return;
   update((l) => openInFocused(l, key));

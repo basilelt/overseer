@@ -203,8 +203,8 @@ What updates itself depends on how the app was installed:
 On a Homebrew install, **Update** runs, from the app (`update_brew` in `updater.rs`):
 
 1. `brew` from `/opt/homebrew/bin`, `/usr/local/bin`, then the `PATH`;
-2. `brew update` (so the tap sees the new version), `brew upgrade --cask overseer`, and
-   `brew upgrade --formula overseer` when `brew list --formula overseer` says the CLI is
+2. `brew update` (so the tap sees the new version), `brew upgrade --cask basilelt/tap/overseer`,
+   and `brew upgrade --formula basilelt/tap/overseer` when `brew list --formula overseer` says the CLI is
    installed; then `brew list --cask --versions overseer` must show the offered version or a
    newer one (the tap may already carry a later release), or the upgrade output must say
    `was successfully upgraded` without the installed version being older; the dialog then names
@@ -219,8 +219,10 @@ area. When it is done, **Restart to finish** removes the quarantine flag of
 `/Applications/Overseer.app` (or `~/Applications`), starts it with `open -n` and quits, so the
 new bundle runs. Failures say what to do: tap not trusted (**Trust and retry** runs
 `brew trust <tap>` first), token refused (401/403/404, or git cannot read the tap), Homebrew not
-found, or Homebrew still on the old version. The copyable `brew update && brew upgrade --cask
-overseer` stays under the button.
+found, or Homebrew still on the old version. The upgrade uses the fully qualified
+`basilelt/tap/overseer`, which makes Homebrew trust the cask and formula, so an install made
+before tap trust existed upgrades without the trust prompt. The copyable
+`brew update && brew upgrade --cask basilelt/tap/overseer` stays under the button.
 
 Release notes are rendered from their Markdown (`src/lib/release-notes.ts`): headings, bullets,
 bold, inline code and http(s) links, which open in the system browser; compare links are reduced to

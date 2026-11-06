@@ -129,6 +129,44 @@ describe('termLink', () => {
     expect(h.conns).toHaveLength(2);
   });
 
+  it('re-attaches a link that gave up once the connection returns', async () => {
+    const h = harness(null);
+    const done = h.link.attach();
+    h.opens[0].reject('terminal attach failed');
+    await done;
+    vi.runAllTimers();
+    expect(h.conns).toHaveLength(1);
+    h.link.resume();
+    expect(h.conns).toHaveLength(2);
+    h.opens[1].resolve();
+    await flush();
+    expect(h.ups).toEqual([h.conns[1].io]);
+  });
+
+  it('does not resume a live link, a pending attach or a finished terminal', async () => {
+    const h = harness(null);
+    const done = h.link.attach();
+    h.link.resume();
+    h.opens[0].resolve();
+    await done;
+    h.link.resume();
+    expect(h.conns).toHaveLength(1);
+    h.conns[0].close();
+    expect(h.ended).toBe(1);
+    h.link.resume();
+    expect(h.conns).toHaveLength(1);
+  });
+
+  it('does not resume after dispose', async () => {
+    const h = harness(null);
+    const done = h.link.attach();
+    h.opens[0].reject('x');
+    await done;
+    h.link.dispose();
+    h.link.resume();
+    expect(h.conns).toHaveLength(1);
+  });
+
   it('cancels a pending retry when a resize reattaches first', async () => {
     const h = harness();
     const done = h.link.attach();

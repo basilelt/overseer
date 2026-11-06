@@ -27,7 +27,7 @@ export function emptyPane(o: EmptyPaneInput): EmptyPaneView {
   const ws = scoped ? o.workspace! : null;
   const missing = !!ws?.missing;
   return {
-    workspace: ws ? { name: ws.name, path: ws.path, missing } : null,
+    workspace: ws ? { name: ws.name, path: ws.path ?? ws.cwd ?? '', missing } : null,
     noSessions: !!ws && o.members === 0,
     agent: pickAgent(o.agents, o.defaultAgent),
     canStart: o.connected && !missing,

@@ -9,19 +9,30 @@ const rule = (src: string, selector: string) => {
 const prop = (body: string, name: string) => body.match(new RegExp(`(?:^|[\\s;])${name}:\\s*([^;]+);`))?.[1].trim() ?? '';
 
 describe('review dialog layout', () => {
-  const modalVh = Number(prop(rule(modal, '.modal'), 'max-height').match(/^(\d+)vh$/)?.[1]);
-
-  it('keeps the diff frame shorter than the modal body so the submit bar sits above the footer', () => {
-    const height = prop(rule(dialog, '.frame'), 'height');
-    const vh = Number(height.match(/calc\((\d+)vh\s*-\s*(\d+)px\)/)?.[1]);
-    const reserve = Number(height.match(/calc\((\d+)vh\s*-\s*(\d+)px\)/)?.[2]);
-    expect(height).not.toMatch(/\b62vh\b/);
-    expect(vh).toBeLessThanOrEqual(modalVh);
-    expect(reserve).toBeGreaterThanOrEqual(190);
+  it('opts the modal into fill so the body is a flex column with a definite height', () => {
+    expect(dialog).toMatch(/<Modal[^>]*\sfill>/);
+    expect(prop(rule(modal, '.modal.fill'), 'height')).toBe('76vh');
+    expect(prop(rule(modal, ':global(.phone) .modal.fill'), 'height')).toBe('90dvh');
+    const content = rule(modal, '.content.fill');
+    expect(prop(content, 'flex')).toBe('1 1 0');
+    expect(prop(content, 'display')).toBe('flex');
+    expect(prop(content, 'flex-direction')).toBe('column');
+    expect(prop(content, 'min-height')).toBe('0');
   });
 
-  it('sizes the frame for the phone sheet from its dynamic viewport height', () => {
-    const phone = prop(rule(dialog, ':global(.phone) .frame'), 'height');
-    expect(phone).toMatch(/calc\(90dvh\s*-\s*\d+px\)/);
+  it('lets the diff frame take the remaining space instead of a viewport subtraction', () => {
+    const frame = rule(dialog, '.frame');
+    expect(prop(frame, 'flex')).toMatch(/^1 1 0/);
+    expect(prop(frame, 'min-height')).toBe('320px');
+    expect(prop(frame, 'height')).toBe('');
+    expect(dialog).not.toMatch(/calc\(\d+d?vh\s*-/);
+  });
+
+  it('gives the phone frame room for the review chrome plus a readable diff', () => {
+    expect(prop(rule(dialog, ':global(.phone) .frame'), 'min-height')).toBe('470px');
+  });
+
+  it('keeps the dialog header from shrinking', () => {
+    expect(prop(rule(dialog, '.head'), 'flex')).toBe('none');
   });
 });

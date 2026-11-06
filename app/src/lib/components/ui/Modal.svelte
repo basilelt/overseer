@@ -4,7 +4,7 @@
   import { t } from '../../i18n.svelte';
   import { onBack } from '../../mobile/back';
 
-  let { title, onclose, width = 520, children, footer }: { title: string; onclose: () => void; width?: number; children: Snippet; footer?: Snippet } = $props();
+  let { title, onclose, width = 520, fill = false, children, footer }: { title: string; onclose: () => void; width?: number; fill?: boolean; children: Snippet; footer?: Snippet } = $props();
 
   $effect(() => onBack(() => onclose()));
 
@@ -44,12 +44,12 @@
 </script>
 
 <div class="backdrop" role="presentation" onmousedown={(e) => e.target === e.currentTarget && onclose()}>
-  <div class="modal" role="dialog" aria-modal="true" aria-label={title} tabindex="-1" bind:this={modal} onkeydown={trap} style:width="{width}px">
+  <div class="modal" class:fill role="dialog" aria-modal="true" aria-label={title} tabindex="-1" bind:this={modal} onkeydown={trap} style:width="{width}px">
     <header>
       <h2>{title}</h2>
       <button class="icon-btn" aria-label={t('common.close')} onclick={onclose}><X size={16} /></button>
     </header>
-    <div class="content">{@render children()}</div>
+    <div class="content" class:fill>{@render children()}</div>
     {#if footer}<footer>{@render footer()}</footer>{/if}
   </div>
 </div>
@@ -74,6 +74,9 @@
     box-shadow: var(--shadow);
     overflow: hidden;
   }
+  .modal.fill {
+    height: 76vh;
+  }
   .modal:focus {
     outline: none;
   }
@@ -91,6 +94,12 @@
   .content {
     padding: 4px 16px 16px;
     overflow: auto;
+  }
+  .content.fill {
+    flex: 1 1 0;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
   }
   footer {
     display: flex;
@@ -110,6 +119,9 @@
     border-radius: 14px 14px 0 0;
     padding-bottom: var(--safe-bottom);
     animation: sheet-up 180ms cubic-bezier(0.2, 0, 0, 1);
+  }
+  :global(.phone) .modal.fill {
+    height: 90dvh;
   }
   :global(.phone) header {
     position: relative;

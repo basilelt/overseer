@@ -35,4 +35,17 @@ describe('tab strip', () => {
     expect(rule('.tab:hover .num')).toMatch(/visibility:\s*hidden/);
     expect(rule('.x')).not.toMatch(/z-index/);
   });
+
+  it('moves the pane toolbar under the tabs in a narrow pane instead of squeezing the strip', () => {
+    expect(rule('.tabbar-box')).toMatch(/container-type:\s*inline-size/);
+    expect(bar).toMatch(/@container \(max-width:\s*\d+px\)/);
+    expect(bar.slice(bar.indexOf('@container'))).toMatch(/\.tabs\s*\{[^}]*flex:\s*1 0 100%/);
+    expect(rule('.actions')).toMatch(/flex:\s*none/);
+  });
+
+  it('hands keyboard focus to the session after a mouse click on its tab, never on touch or Enter', () => {
+    expect(bar).toMatch(/e\.detail > 0 && !coarsePointer\(\) && tabInfo\(key, app\.items\)\?\.item/);
+    expect(bar).toMatch(/requestAnimationFrame\(\(\) => focusSession\(pane\)\)/);
+    expect(bar).toMatch(/onkeydown=\{\(e\) => e\.key === 'Enter' && activate\(key\)\}/);
+  });
 });
