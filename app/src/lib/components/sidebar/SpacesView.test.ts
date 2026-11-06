@@ -35,6 +35,13 @@ describe('SpacesView wiring', () => {
 });
 
 describe('SpacesView folders', () => {
+  it('ignores folder chevrons while a filter is active', () => {
+    // Given the component source
+    // When the folder toggle is read
+    // Then it returns before flipping anything when filtering
+    expect(src).toMatch(/async function toggleFolder\(id: string\) \{\n    if \(drag\.suppressed\) return;\n    if \(q\) return;/);
+  });
+
   it('renders the folder tree of folderSpaces, archived ones included on demand, with pointer drag and drop', () => {
     // Given the component source
     // When it is read
@@ -169,5 +176,14 @@ describe('Sidebar workspaces layout', () => {
     expect(sidebarSrc).toMatch(/onclick=\{\(\) => \(showArchived = !showArchived\)\}/);
     expect(sidebarSrc).toContain("t('ws.new')");
     expect(sidebarSrc).toContain("t('ws.newFolder')");
+  });
+
+  it('counts only listed sessions, leaving plain shells out, in the By status header', () => {
+    // Given the sidebar source
+    // When the By status count is read
+    // Then it filters shells out of app.items instead of showing the raw length
+    expect(sidebarSrc).toContain("app.items.filter((i) => i.kind !== 'shell').length");
+    expect(sidebarSrc).toContain('{listed}</span>');
+    expect(sidebarSrc).not.toContain('{app.items.length}');
   });
 });

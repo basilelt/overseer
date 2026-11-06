@@ -7,7 +7,6 @@
   import StatePills from './StatePills.svelte';
   import WorkspaceFrame from './WorkspaceFrame.svelte';
 
-  // Purely presentational: the parent owns the expand state, the clock and the open action.
   let {
     row,
     now,

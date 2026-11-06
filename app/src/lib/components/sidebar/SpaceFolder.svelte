@@ -6,7 +6,6 @@
   import type { SpaceNode } from '../../spaces';
   import StatePills from './StatePills.svelte';
 
-  // Depth 0 is a section title, deeper folders are rows; the pinned section (no folder) cannot fold.
   // dropPos and target mark where a dragged item would land; the folder and pinned zones are found by their data-drop.
   let {
     node,

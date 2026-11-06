@@ -831,7 +831,7 @@ export class MockDaemon implements DaemonClient {
     if (l.local?.holdPending) {
       l.local = { ...l.local, holdPending: undefined };
       this.emit('line.updated', { line: l.line, local: l.local });
-    }
+    } else if (this.applyingHolds.has(id)) throw new DaemonError(409, 'the hold is already being applied');
     return { lineId: id, holdPending: false };
   }
 
@@ -850,6 +850,7 @@ export class MockDaemon implements DaemonClient {
   }
 
   private blockedSince = new Map<string, number>();
+  private applyingHolds = new Set<string>();
 
   /** A lasting failed predicate (task, pin) blocks a pending hold; like the daemon it is dropped once blocked for 10 s. */
   private dropBlockedHold(p: LocalLine, failed: { name: string; detail?: string }[]) {
@@ -1736,6 +1737,7 @@ export class MockDaemon implements DaemonClient {
   }
 
   tick() {
+    this.applyingHolds.clear();
     this.drainQueue();
     // Like the daemon: a pending hold is applied by the scan after the turn ended and only
     // when the agent is not waiting for the user; a busy turn ends on this tick.
@@ -1756,6 +1758,7 @@ export class MockDaemon implements DaemonClient {
         if (failed.length) this.dropBlockedHold(p, failed.map(([name, c]) => ({ name, detail: c.detail })));
         else {
           this.blockedSince.delete(id);
+          this.applyingHolds.add(id);
           this.holdNow(p);
         }
       }
