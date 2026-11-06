@@ -22,6 +22,8 @@ pub struct Marks {
     pub origin: Option<String>,
     pub env_ref: Option<String>,
     pub workspace_id: Option<String>,
+    pub hold_pending: bool,
+    pub held_at: Option<String>,
 }
 
 #[derive(Default, Clone, Debug, PartialEq)]
@@ -182,6 +184,8 @@ const ADDED_COLUMNS: &[(&str, &str, &str)] = &[
     ("lines", "workspace_id", "TEXT"),
     ("workspaces", "kind", "TEXT NOT NULL DEFAULT 'dir'"),
     ("workspaces", "cwd", "TEXT"),
+    ("lines", "hold_pending", "INTEGER NOT NULL DEFAULT 0"),
+    ("lines", "held_at", "TEXT"),
     ("tasks", "rank", "REAL"),
     ("tasks", "origin", "TEXT"),
     ("tasks", "manual_status", "TEXT"),
@@ -252,7 +256,7 @@ impl Registry {
         self.conn
             .query_row(
                 "SELECT id, ticket_override, pinned, held_by_user, closed_at IS NOT NULL, launch_args,
-                   owner_override, origin, env_ref, title_override, workspace_id
+                   owner_override, origin, env_ref, title_override, workspace_id, hold_pending, held_at
                  FROM lines WHERE agent = ?1 AND session_id = ?2",
                 params![agent, session_id],
                 |r| {
@@ -270,6 +274,8 @@ impl Registry {
                         env_ref: r.get(8)?,
                         title_override: r.get(9)?,
                         workspace_id: r.get(10)?,
+                        hold_pending: r.get(11)?,
+                        held_at: r.get(12)?,
                     })
                 },
             )
@@ -361,12 +367,25 @@ impl Registry {
             .map_err(|e| e.to_string())
     }
 
+    /// Atomically takes a pending hold: true only for the caller that cleared it.
+    pub fn claim_hold_pending(&self, id: &str) -> Result<bool, String> {
+        self.conn
+            .execute(
+                "UPDATE lines SET hold_pending = 0 WHERE id = ?1 AND hold_pending = 1",
+                params![id],
+            )
+            .map(|n| n == 1)
+            .map_err(|e| e.to_string())
+    }
+
     pub fn set_mark(&self, id: &str, col: &str, value: Option<&str>) -> Result<(), String> {
         let sql = match col {
             "ticket_override" => "UPDATE lines SET ticket_override = ?2 WHERE id = ?1",
             "pinned" => "UPDATE lines SET pinned = COALESCE(?2, 0) WHERE id = ?1",
             "held_by_user" => "UPDATE lines SET held_by_user = COALESCE(?2, 0) WHERE id = ?1",
             "closed_at" => "UPDATE lines SET closed_at = ?2 WHERE id = ?1",
+            "hold_pending" => "UPDATE lines SET hold_pending = COALESCE(?2, 0) WHERE id = ?1",
+            "held_at" => "UPDATE lines SET held_at = ?2 WHERE id = ?1",
             "env_ref" => "UPDATE lines SET env_ref = ?2 WHERE id = ?1",
             "title_override" => "UPDATE lines SET title_override = ?2 WHERE id = ?1",
             "workspace_id" => "UPDATE lines SET workspace_id = ?2 WHERE id = ?1",
@@ -546,6 +565,45 @@ mod tests {
                 .unwrap()
                 .pinned
         );
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn pending_hold_and_held_at_persist_across_reopen_and_clear() {
+        // Given a line with a pending hold and a held-at time
+        // When the registry is reopened
+        // Then both marks are still there, and clearing them removes them
+        let dir = std::env::temp_dir().join(format!("sb-reg-pend-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let reg = Registry::open(&dir).unwrap();
+        let l = Line {
+            agent: "claude",
+            session_id: "s1".into(),
+            key: "s1".into(),
+            station_id: "st".into(),
+            state: "idle",
+            ..Default::default()
+        };
+        let (id, _) = reg.upsert_line(&l, None, None, 1_000).unwrap();
+        assert!(!reg.marks("claude", "s1").unwrap().hold_pending);
+        reg.set_mark(&id, "hold_pending", Some("1")).unwrap();
+        reg.set_mark(&id, "held_at", Some("2026-01-02T03:04:05Z"))
+            .unwrap();
+        drop(reg);
+        let reg = Registry::open(&dir).unwrap();
+        let m = reg.marks("claude", "s1").unwrap();
+        assert!(m.hold_pending);
+        assert_eq!(m.held_at.as_deref(), Some("2026-01-02T03:04:05Z"));
+        assert!(reg.claim_hold_pending(&id).unwrap(), "first claim wins");
+        assert!(
+            !reg.claim_hold_pending(&id).unwrap(),
+            "a pending hold is taken once"
+        );
+        assert!(!reg.marks("claude", "s1").unwrap().hold_pending);
+        reg.set_mark(&id, "held_at", None).unwrap();
+        let m = reg.marks("claude", "s1").unwrap();
+        assert!(!m.hold_pending && m.held_at.is_none());
         std::fs::remove_dir_all(dir).unwrap();
     }
 

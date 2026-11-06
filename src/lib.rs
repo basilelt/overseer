@@ -141,6 +141,8 @@ pub struct Line {
     pub env_ref: Option<String>,
     pub term_id: Option<String>,
     pub workspace_id: Option<String>,
+    pub hold_pending: bool,
+    pub held_at: Option<String>,
 }
 
 struct Found {
@@ -1157,6 +1159,9 @@ fn scan_now(ctx: &Ctx) -> Result<Vec<Line>, String> {
     let mut lines = vec![];
     let mut upserted = vec![];
     let db = db_id(&ctx.state_dir);
+    // An empty process list is a failed probe (pid 1 always exists): it proves no loss.
+    let listed = std::cell::OnceCell::new();
+    let probe_ok = || *listed.get_or_init(|| !ctx.probe.list().is_empty());
     for (f, pid, term_id, info, pane, rss) in probed {
         let branch = f
             .branch
@@ -1244,6 +1249,24 @@ fn scan_now(ctx: &Ctx) -> Result<Vec<Line>, String> {
         if alive && (marks.held_pid != 0 || marks.closed) && pid != Some(marks.held_pid as u32) {
             reg.set_mark(&id, "held_by_user", None)?;
             reg.set_mark(&id, "closed_at", None)?;
+        }
+        // The line left the held state (resumed) or hung up: drop stale pause marks.
+        let still_held = marks.held_pid != 0 && pid == Some(marks.held_pid as u32);
+        l.held_at = marks.held_at.clone();
+        if l.state == "held" {
+            if l.held_at.is_none() && (marks.held_pid != 0 || probe_ok()) {
+                let at = format_rfc3339(ctx.now_ms);
+                reg.set_mark(&id, "held_at", Some(&at))?;
+                l.held_at = Some(at);
+            }
+        } else if l.held_at.is_some() && !still_held {
+            reg.set_mark(&id, "held_at", None)?;
+            l.held_at = None;
+        }
+        l.hold_pending = marks.hold_pending;
+        if l.hold_pending && (marks.closed || !alive && probe_ok()) {
+            reg.set_mark(&id, "hold_pending", None)?;
+            l.hold_pending = false;
         }
         l.held_pane = panes
             .iter()
@@ -1358,6 +1381,12 @@ impl Line {
         }
         if let Some(r) = self.held_reason {
             local["heldReason"] = json!(r);
+        }
+        if let Some(a) = &self.held_at {
+            local["heldAt"] = json!(a);
+        }
+        if self.hold_pending {
+            local["holdPending"] = json!(true);
         }
         if let Some(t) = &self.title {
             local["title"] = json!(t);
