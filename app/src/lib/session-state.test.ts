@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isEnded, pausedDays, STATE_URGENCY, SESSION_ACTIONS, sessionState, type SessionAction } from './session-state';
+import { isEnded, stateDot, pausedDays, STATE_URGENCY, SESSION_ACTIONS, sessionState, type SessionAction } from './session-state';
 import type { LocalLine } from './types';
 
 const line = (over: Partial<LocalLine['line']> = {}, local: LocalLine['local'] = { pid: 42 }): LocalLine => ({
@@ -212,5 +212,29 @@ describe('pausedDays', () => {
 describe('STATE_URGENCY', () => {
   it('orders the five states from most to least urgent', () => {
     expect(STATE_URGENCY).toEqual(['attention', 'running', 'open', 'paused', 'closed']);
+  });
+});
+
+describe('stateDot', () => {
+  const dot = (l: LocalLine) => stateDot(sessionState(l));
+
+  it('follows the state, so the dot and the label agree', () => {
+    expect(dot(line({}, { pid: 42, busy: true }))).toBe('busy');
+    expect(dot(line({}, { pid: 42, needsInput: true }))).toBe('input');
+    expect(dot(line({ state: 'idle' }, { pid: 42 }))).toBe('idle');
+    expect(dot(line({ state: 'held' }, { heldReason: 'user' }))).toBe('paused');
+    expect(dot(line({ state: 'held' }, { heldReason: 'lost' }))).toBe('off');
+  });
+
+  it('is busy for sub-agents on an idle parent, since the label says Running', () => {
+    expect(dot(line({ state: 'idle' }, { pid: 42, busy: false, subagents: 2 }))).toBe('busy');
+  });
+
+  it('gives an ended line its own dot', () => {
+    expect(dot(line({ state: 'hung-up' }, { pid: 42, busy: true }))).toBe('ended');
+  });
+
+  it('is off when there is no view', () => {
+    expect(stateDot(null)).toBe('off');
   });
 });

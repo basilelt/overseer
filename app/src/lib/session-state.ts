@@ -91,6 +91,14 @@ export function sessionState(l: LocalLine, termId?: string | null): SessionView 
   };
 }
 
+const DOT = { attention: 'input', running: 'busy', open: 'idle', paused: 'paused', closed: 'off' } as const;
+
+// The header dot class, derived from the same view as the label so the two never disagree.
+export function stateDot(view: SessionView | null): 'input' | 'busy' | 'idle' | 'paused' | 'off' | 'ended' {
+  if (!view) return 'off';
+  return view.ended ? 'ended' : DOT[view.state];
+}
+
 // Whole days a session has been paused, or null when it is under a day or the time is unknown.
 export function pausedDays(since: string | undefined, now: number): number | null {
   const at = since ? Date.parse(since) : NaN;

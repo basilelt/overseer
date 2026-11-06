@@ -5,7 +5,7 @@
   import { onMount, setContext, tick, untrack } from 'svelte';
   import { DaemonError } from '../../client';
   import { t } from '../../i18n.svelte';
-  import { pausedDays, sessionState, type SessionAction } from '../../session-state';
+  import { pausedDays, sessionState, stateDot, type SessionAction } from '../../session-state';
   import SessionBar from '../session/SessionBar.svelte';
   import { app } from '../../state.svelte';
   import type { SidebarItem } from '../../grouping';
@@ -33,7 +33,6 @@
   const view = $derived(line ? sessionState(line, item.termId) : null);
   const alive = $derived(!!view && view.state !== 'paused' && view.state !== 'closed');
   const days = $derived(view?.state === 'paused' ? pausedDays(view.since, clock.now) : null);
-  const DOT = { attention: 'input', running: 'busy', open: 'idle', paused: 'paused', closed: 'off' } as const;
   const waiting = $derived(!!local?.needsInput);
 
   let chat = $state.raw<ChatState>(EMPTY_CHAT);
@@ -362,7 +361,7 @@
 
 <div class="chat" class:phone>
   <header class="head">
-    <span class="state {view ? DOT[view.state] : 'off'}"></span>
+    <span class="state {stateDot(view)}"></span>
     <span class="status">{view ? t(view.label) : ''}{#if view?.sub}<span class="faint"> · {t(view.sub.key, 'n' in view.sub ? { n: view.sub.n } : undefined)}</span>{/if}{#if days !== null}<span class="faint"> · {t('session.pausedFor', { n: days })}</span>{/if}</span>
     {#if model}<span class="model faint">{model}</span>{/if}
     <span class="grow"></span>
@@ -448,6 +447,10 @@
   }
   .state.paused {
     background: var(--st-paused);
+  }
+  .state.ended {
+    background: transparent;
+    box-shadow: inset 0 0 0 1px var(--st-held);
   }
   .state.idle {
     background: var(--st-done);
