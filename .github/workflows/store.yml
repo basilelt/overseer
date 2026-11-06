@@ -89,10 +89,10 @@ jobs:
     steps:
       - name: Required secrets
         env:
-          OK: ${{ secrets.APPLE_TEAM_ID != '' && secrets.APPLE_KEY_ID != '' && secrets.APPLE_ISSUER_ID != '' && secrets.APPLE_KEY_CONTENT != '' && secrets.IOS_CERTIFICATE != '' && secrets.IOS_CERTIFICATE_PASSWORD != '' && secrets.IOS_MOBILE_PROVISION != '' }}
+          OK: ${{ secrets.APPLE_TEAM_ID != '' && secrets.ASC_KEY_ID != '' && secrets.APPLE_ISSUER_ID != '' && secrets.ASC_KEY_CONTENT != '' && secrets.IOS_CERTIFICATE != '' && secrets.IOS_CERTIFICATE_PASSWORD != '' && secrets.IOS_MOBILE_PROVISION != '' }}
         run: |
           if [ "$OK" != "true" ]; then
-            echo "::error title=ios::APPLE_TEAM_ID, APPLE_KEY_ID, APPLE_ISSUER_ID, APPLE_KEY_CONTENT, IOS_CERTIFICATE, IOS_CERTIFICATE_PASSWORD and IOS_MOBILE_PROVISION must be set (docs/mobile.md)"
+            echo "::error title=ios::APPLE_TEAM_ID, ASC_KEY_ID, APPLE_ISSUER_ID, ASC_KEY_CONTENT, IOS_CERTIFICATE, IOS_CERTIFICATE_PASSWORD and IOS_MOBILE_PROVISION must be set (docs/mobile.md)"
             exit 1
           fi
 
@@ -142,9 +142,9 @@ jobs:
       - working-directory: app
         env:
           OVERSEER_APP_DIR: ${{ github.workspace }}/app
-          APPLE_KEY_ID: ${{ secrets.APPLE_KEY_ID }}
+          APPLE_KEY_ID: ${{ secrets.ASC_KEY_ID }}
           APPLE_ISSUER_ID: ${{ secrets.APPLE_ISSUER_ID }}
-          APPLE_KEY_CONTENT: ${{ secrets.APPLE_KEY_CONTENT }}
+          APPLE_KEY_CONTENT: ${{ secrets.ASC_KEY_CONTENT }}
           IOS_CERTIFICATE: ${{ secrets.IOS_CERTIFICATE }}
           IOS_CERTIFICATE_PASSWORD: ${{ secrets.IOS_CERTIFICATE_PASSWORD }}
           IOS_MOBILE_PROVISION: ${{ secrets.IOS_MOBILE_PROVISION }}

@@ -262,9 +262,9 @@ team id comes from the `APPLE_TEAM_ID` secret at build time.
    | Secret | Value |
    |---|---|
    | `APPLE_TEAM_ID` | the 10-character Apple Developer team id (Membership details) |
-   | `APPLE_KEY_ID` | App Store Connect API key id (Users and Access > Integrations; the App Manager or Admin role, needed to submit for review) |
-   | `APPLE_ISSUER_ID` | issuer id of that key |
-   | `APPLE_KEY_CONTENT` | the `.p8` file content |
+   | `ASC_KEY_ID` | App Store Connect API key id (Users and Access > Integrations; the App Manager or Admin role, needed to submit for review; separate from the Developer-role notarization key in `APPLE_KEY_ID`) |
+   | `APPLE_ISSUER_ID` | issuer id of the account (shared by every key) |
+   | `ASC_KEY_CONTENT` | that key's `.p8` file content |
    | `IOS_CERTIFICATE` | `base64 -w0 dist.p12` |
    | `IOS_CERTIFICATE_PASSWORD` | password of that `.p12` |
    | `IOS_MOBILE_PROVISION` | `base64 -w0` of the App Store `.mobileprovision` |
