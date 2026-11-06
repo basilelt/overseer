@@ -53,7 +53,7 @@ export function validate(f: Form, repo: string): Problem | null {
 }
 
 export function issueTitle(f: Pick<Form, 'kind' | 'title' | 'description'>): string {
-  const own = f.title.trim() || f.description.trim().split('\n')[0].trim();
+  const own = redact(f.title.trim() || f.description.trim().split('\n')[0].trim());
   const short = own.length > 80 ? `${own.slice(0, 79).trimEnd()}…` : own;
   return `${KIND_PREFIX[f.kind]}: ${short}`;
 }
