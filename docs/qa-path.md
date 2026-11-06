@@ -147,7 +147,7 @@ Each step is **Do → Expect**. Check every screenshot for overlaps, clipped tex
 
 ### K. Other views
 
-- **K1** Tab bar **+** → Browser, Review changes, Git graph, Worktrees, System, Usage, PR reviews → each opens with content or a clear empty state, and no console errors.
+- **K1** Ctrl+P → **Views** section → Review changes, Open browser, Open the Git graph, Open the worktrees, System, Usage, PR reviews → each opens with content or a clear empty state, and no console errors. Tab bar **+** lists only agents and the shell.
 - **K1b** Worktrees tab with a merged, agentless worktree and a busy one → **Clean up merged (n)** counts only the merged one; the dialog lists it ticked; untick → the confirm button disables; tick → **Clean up 1** removes it and its branch, the busy one stays.
 - **K2** The command palette lists and runs commands. The Keyboard shortcuts sheet (the `?` next to Keyboard in Settings, the palette's **Keyboard shortcuts** command, or Ctrl+/) matches what the shortcuts do. Ctrl+P (Cmd+P on macOS) opens the palette outside a terminal and Escape closes it; in a shell terminal Ctrl+P reaches the shell (history recall) and Ctrl+Shift+P opens the palette; Cmd/Ctrl+K still works. The sheet lists Ctrl+K, Ctrl+Shift+P and Ctrl+P (marked "outside a terminal") for the palette.
 - **K3** PR reviews while offline: put a `gh` stub first on the daemon's `PATH` whose `api graphql` fails with a connection error and whose `auth token` succeeds (`auth status` fails, as the real one does without a network), restart the daemon, open **PR reviews** → "Could not load review requests" with "GitHub could not be reached: …" and the connection error, no sign-in hint. With `auth token` failing too → "GitHub CLI not signed in" and `gh auth login`.

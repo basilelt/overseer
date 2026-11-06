@@ -576,6 +576,7 @@ export const en = {
   'palette.placeholder': 'Type a command or search sessions…',
   'palette.empty': 'No matching command',
   'palette.section.sessions': 'Sessions',
+  'palette.section.views': 'Views',
   'palette.section.actions': 'Actions',
   'palette.newSession': 'New {name} session',
   'palette.openKanban': 'Open tasks board',

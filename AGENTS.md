@@ -88,6 +88,14 @@ Every minor or major release (`x.y.0` or `x.0.0`) ships a tour of what it adds; 
 
 For any change to what the app shows, build the frontend in mock mode (`VITE_MOCK=1 pnpm exec vite build`), serve it with `pnpm exec vite preview`, and take headless Chromium screenshots of the touched views (desktop 1440×900 light and dark, phone 390×844 with `?phone=1`; `?theme=light|dark`). Look at every screenshot and fix overlaps, overflow, clipped text and unreadable contrast before pushing. Stop the preview server and the browser afterwards.
 
+## One way to do each thing
+
+Every command has one home. Before adding a button, menu entry or shortcut, check whether the command palette (Ctrl/Cmd+P) already does it; if it does, do not add another entry point.
+
+- **The palette is the default**: opening a view (graphs, panels, review, usage, PR lists...) or running a command goes in `CommandPalette.svelte`, in the section it belongs to. Add a visible control only when the action is used constantly in that exact spot, and then remove the duplicates.
+- **Menus stay on topic**: a menu only lists what its button says. The tab bar `+` starts sessions; it does not open views.
+- **Phone is the exception**: the phone has no keyboard palette shortcut, so `MobileMore` may list views the desktop only reaches through the palette.
+
 ## UI strings
 
 - Write every user-visible string in English only, in `app/src/lib/i18n/en.ts` (or the module's namespace there, such as `usage.*`), and read it with `t()` or the module helper. Never hand-write other languages.
