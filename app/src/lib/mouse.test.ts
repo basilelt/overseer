@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { cellAt, ModeTracker, WheelAccumulator, wheelAction, wheelReport, type TermModes } from './mouse';
+import { cellAt, clickMove, ModeTracker, WheelAccumulator, wheelAction, wheelReport, type TermModes } from './mouse';
 
 const base: TermModes = { tracking: false, sgr: false, urxvt: false, utf8: false, alt: false, alternateScroll: true, appCursor: false };
 const at = { deltaY: 0, deltaMode: 0 as const, col: 3, row: 7 };
@@ -87,5 +87,37 @@ describe('wheel', () => {
     expect(cellAt(10, 20, rect, 80, 20)).toEqual({ col: 1, row: 1 });
     expect(cellAt(25, 45, rect, 80, 20)).toEqual({ col: 2, row: 2 });
     expect(cellAt(5000, 5000, rect, 80, 20)).toEqual({ col: 80, row: 20 });
+  });
+});
+
+describe('clickMove', () => {
+  const narrow = () => 1;
+  const cur = { x: 10, y: 4 };
+
+  it('sends left arrows for a click before the cursor on its row', () => {
+    expect(clickMove(7, 4, cur, narrow, base)).toBe('\x1b[D'.repeat(3));
+  });
+
+  it('sends right arrows for a click after the cursor', () => {
+    expect(clickMove(12, 4, cur, narrow, base)).toBe('\x1b[C\x1b[C');
+  });
+
+  it('uses application cursor keys when DECCKM is set', () => {
+    expect(clickMove(9, 4, cur, narrow, { ...base, appCursor: true })).toBe('\x1bOD');
+  });
+
+  it('counts a wide character once', () => {
+    const wide = (x: number) => (x === 8 ? 0 : x === 7 ? 2 : 1);
+    expect(clickMove(6, 4, cur, wide, base)).toBe('\x1b[D'.repeat(3));
+  });
+
+  it('works in the alternate screen, where Codex draws its composer', () => {
+    expect(clickMove(9, 4, cur, narrow, { ...base, alt: true })).toBe('\x1b[D');
+  });
+
+  it('does nothing on another row, on the cursor, or when the app reads the mouse', () => {
+    expect(clickMove(3, 2, cur, narrow, base)).toBeNull();
+    expect(clickMove(10, 4, cur, narrow, base)).toBeNull();
+    expect(clickMove(3, 4, cur, narrow, { ...base, tracking: true })).toBeNull();
   });
 });
