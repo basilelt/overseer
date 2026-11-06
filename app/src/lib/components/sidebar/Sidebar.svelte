@@ -17,7 +17,7 @@
   import LayoutList from '@lucide/svelte/icons/layout-list';
   import ListTree from '@lucide/svelte/icons/list-tree';
   import SpacesView from './SpacesView.svelte';
-  import StatusList from './StatusList.svelte';
+  import StatesView from './StatesView.svelte';
   import WorkspaceTree from './WorkspaceTree.svelte';
 
   const unplaced = $derived(app.connected && app.wsPersistent ? unplacedCount(app.data.lines, app.ws.workspaces, app.projects, app.data.tasks) : 0);
@@ -85,7 +85,7 @@
   {#if app.sidebarMode === 'workspaces'}
     {#if compact}<SpacesView {filter} />{:else}<WorkspaceTree {filter} {showArchived} />{/if}
   {:else}
-    <StatusList {filter} />
+    <StatesView {filter} />
   {/if}
   {#if selection.length > 1}
     <div class="selbar" role="toolbar" aria-label={t('ws.selection', { n: selection.length })}>

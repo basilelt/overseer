@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { SidebarItem } from './grouping';
-import { hostFor, spaces, toggleOpen } from './spaces';
+import { filterItems, hostFor, spaces, toggleOpen, visibleIds } from './spaces';
 import type { Workspace } from './types';
 
 const ws = (id: string, name: string, over: Partial<Workspace> = {}) => ({ id, name, rank: 1, pinned: false, archived: false, ...over }) as Workspace;
@@ -155,5 +155,24 @@ describe('spaces', () => {
     // When toggling
     // Then the saved ids survive
     expect(toggleOpen(['a', 'b'], 'c', new Set(['']), 'a')).toEqual(['a', 'b', 'c']);
+  });
+
+  it('visibleIds lists the workspaces a session can sit under', () => {
+    // Given live, archived and ghost workspaces
+    // When the visible ids are taken
+    // Then only the live one remains
+    const all = [ws('a', 'A'), ws('b', 'B', { archived: true }), ws('g', 'G', { auto: true, missing: true } as Partial<Workspace>)];
+    expect([...visibleIds(all)]).toEqual(['a']);
+  });
+
+  it('filterItems keeps a session whose title or workspace name matches, and everything without a filter', () => {
+    // Given two sessions in two workspaces
+    // When filtering by a workspace name, a title, and nothing
+    // Then the matches stay
+    const items = [it_('k1', 'open', { title: 'Fix login' }), it_('k2', 'open', { title: 'Docs' })];
+    const name = (key: string) => (key === 'k1' ? 'webshop' : 'infra');
+    expect(filterItems(items, name, 'INFRA').map((i) => i.key)).toEqual(['k2']);
+    expect(filterItems(items, name, 'login').map((i) => i.key)).toEqual(['k1']);
+    expect(filterItems(items, name, '  ')).toBe(items);
   });
 });

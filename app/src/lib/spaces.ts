@@ -18,12 +18,24 @@ export interface Spaces {
   empty: Workspace[];
 }
 
+const isVisible = (w: Workspace) => !isGhost(w) && !w.archived;
+
+// The workspaces a session can be listed under; any other falls to the unassigned.
+export const visibleIds = (workspaces: Workspace[]): Set<string> => new Set(workspaces.filter(isVisible).map((w) => w.id));
+
+// Keeps the sessions whose title or workspace name contains the filter.
+export function filterItems(items: SidebarItem[], wsName: (key: string) => string, filter: string): SidebarItem[] {
+  const q = filter.trim().toLowerCase();
+  if (!q) return items;
+  return items.filter((i) => i.title.toLowerCase().includes(q) || wsName(i.key).toLowerCase().includes(q));
+}
+
 // Mode "Espaces": one pass over the items, then the workspaces with sessions (pinned first) and the empty ones.
 // Sessions whose workspace is hidden (archived, ghost, unknown) fall to the "other" row.
 export function spaces(workspaces: Workspace[], items: SidebarItem[], wsOf: ReadonlyMap<string, string>, filter: string): Spaces {
   const q = filter.trim().toLowerCase();
   const live = workspaces
-    .filter((w) => !isGhost(w) && !w.archived)
+    .filter(isVisible)
     .sort((a, b) => Number(b.pinned) - Number(a.pinned) || a.rank - b.rank || a.name.localeCompare(b.name));
   const visible = new Set(live.map((w) => w.id));
   const by = new Map<string, SidebarItem[]>();
