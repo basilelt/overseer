@@ -41,17 +41,19 @@ function patches(): Patch[] {
   const out: Patch[] = [];
   const A = Array.prototype as unknown as Record<PropertyKey, Fn>;
   const wrapIter = (orig: Fn): Fn =>
-    function (this: unknown, ...a) {
-      const it = orig.apply(this, a) as { next: () => unknown };
+    function (this: unknown) {
+      // `arguments` + apply: a spread would go through the patched array iterator and count itself.
+      const it = orig.apply(this, arguments as unknown as unknown[]) as { next: () => unknown };
       const next = it.next;
       it.next = () => (bump(1), next.call(it));
       return it;
     };
   for (const k of callbackMethods) {
     const orig = A[k];
-    out.push([A, k, function (this: unknown, cb: unknown, ...rest: unknown[]) {
-      if (typeof cb !== 'function') return orig.call(this, cb, ...rest);
-      return orig.call(this, function (this: unknown, ...args: unknown[]) { bump(1); return cb.apply(this, args); }, ...rest);
+    out.push([A, k, function (this: unknown) {
+      const cb = arguments[0];
+      if (typeof cb === 'function') arguments[0] = function (this: unknown) { bump(1); return cb.apply(this, arguments); };
+      return orig.apply(this, arguments as unknown as unknown[]);
     }]);
   }
   const sort = A.sort;
@@ -72,8 +74,10 @@ function patches(): Patch[] {
     }
     for (const k of ['values', 'keys', 'entries', Symbol.iterator]) out.push([M, k, wrapIter(M[k])]);
     const each = M.forEach;
-    out.push([M, 'forEach', function (this: unknown, cb: (...a: unknown[]) => unknown, ...rest: unknown[]) {
-      return each.call(this, (...args: unknown[]) => (bump(1), cb(...args)), ...rest);
+    out.push([M, 'forEach', function (this: unknown) {
+      const cb = arguments[0];
+      if (typeof cb === 'function') arguments[0] = function (this: unknown) { bump(1); return cb.apply(this, arguments); };
+      return each.apply(this, arguments as unknown as unknown[]);
     }]);
   }
   const S = String.prototype as unknown as Record<string, Fn>;
@@ -89,14 +93,15 @@ function patches(): Patch[] {
 }
 
 export function countWork(run: () => void): number {
-  const saved = patches().map(([o, k, fn]) => {
-    const d = Object.getOwnPropertyDescriptor(o, k)!;
-    Object.defineProperty(o, k, { ...d, value: fn });
-    return [o, k, d] as const;
-  });
-  work = 0;
-  active = true;
+  const saved: (readonly [object, PropertyKey, PropertyDescriptor])[] = [];
   try {
+    for (const [o, k, fn] of patches()) {
+      const d = Object.getOwnPropertyDescriptor(o, k)!;
+      Object.defineProperty(o, k, { ...d, value: fn });
+      saved.push([o, k, d]);
+    }
+    work = 0;
+    active = true;
     run();
     return work;
   } finally {

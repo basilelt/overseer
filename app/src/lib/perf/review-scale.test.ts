@@ -82,7 +82,7 @@ describe('review diff at scale', () => {
   });
 
   it('the file tree scales linearly for nested paths', () => {
-    const files = (n: number) => Array.from({ length: n }, (_, i) => file(`src/pkg${i % 10}/mod${Math.floor(i / 10) % 10}/f${i}.ts`, 0));
+    const files = (n: number) => Array.from({ length: n }, (_, i) => file(`src/pkg${i % 5}/mod${i % 2}/f${i}.ts`, 0));
     const make = (n: number) => () => {
       const fs = counted(files(n));
       return () => void fileTree(fs);

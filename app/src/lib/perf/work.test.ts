@@ -3,14 +3,14 @@ import { countWork, counted, growth } from './work';
 
 const nums = (n: number) => Array.from({ length: n }, (_, i) => i);
 
+// Blind spot: plain index loops over arrays the code builds itself are not counted (e.g. the
+// lane scans in git/layout.ts); they stay bounded by the counted indexOf calls beside them.
 describe('work counter', () => {
   it('counts nothing outside a measured run and restores the built-ins afterwards', () => {
     const find = Array.prototype.find;
     const indexOf = String.prototype.indexOf;
     const a = nums(10);
-    const n = countWork(() => void a.find((x) => x === 9));
-    expect(n).toBeGreaterThanOrEqual(10);
-    expect(n).toBeLessThan(13);
+    expect(countWork(() => void a.find((x) => x === 9))).toBe(10);
     expect(Array.prototype.find).toBe(find);
     expect(String.prototype.indexOf).toBe(indexOf);
     expect(countWork(() => {})).toBe(0);
@@ -20,6 +20,19 @@ describe('work counter', () => {
     const map = Map.prototype.get;
     expect(() => countWork(() => { throw new Error('boom'); })).toThrow('boom');
     expect(Map.prototype.get).toBe(map);
+  });
+
+  it('keeps thisArg and the native TypeError on non-function callbacks, without counting itself', () => {
+    const ctx = { seen: 0 };
+    const m = new Map([[1, 1], [2, 2]]);
+    const n = countWork(() => {
+      m.forEach(function (this: typeof ctx) { this.seen++; }, ctx);
+      [1, 2, 3].forEach(function (this: typeof ctx) { this.seen++; }, ctx);
+    });
+    expect(ctx.seen).toBe(5);
+    expect(n).toBe(5);
+    expect(() => countWork(() => new Map().forEach(42 as never))).toThrow(TypeError);
+    expect(() => countWork(() => [1].forEach(42 as never))).toThrow(TypeError);
   });
 
   it('sees a linear scan per item as quadratic and one pass as linear', () => {
