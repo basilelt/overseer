@@ -138,6 +138,71 @@ describe('MockDaemon', () => {
     expect((await a.lines()).find((l) => l.line.id === 'ln_06')!.line.state).toBe('hung-up');
   });
 
+  it('ignores force on hold and answers 409 for a busy line, like the daemon', async () => {
+    // Given a busy line
+    // When it is held with force=true
+    // Then the daemon ignores force: 409 with the failed atPrompt predicate, and the line stays active
+    const { m, a } = setup();
+    await expect(m.request('POST', '/v1/lines/ln_06/hold?dryRun=false&force=true')).rejects.toMatchObject({
+      status: 409,
+      body: { lineId: 'ln_06', action: 'none', predicates: { atPrompt: { ok: false, detail: 'agent is mid-turn' } } },
+    });
+    expect((await a.lines()).find((l) => l.line.id === 'ln_06')!.line.state).toBe('active');
+  });
+
+  it('refuses a plain hold of a pinned line or one waiting for input with 409, like the daemon', async () => {
+    // Given an idle pinned line and a line that waits for the user
+    // When each is held without afterTurn
+    // Then both get 409 naming notPinned / notNeedsInput and stay active
+    const { m, a } = setup();
+    await a.pin('ln_09', true);
+    await expect(a.hold('ln_09')).rejects.toMatchObject({ status: 409, body: { predicates: { notPinned: { ok: false, detail: 'line is pinned' } } } });
+    await expect(a.hold('ln_01')).rejects.toMatchObject({ status: 409, body: { predicates: { notNeedsInput: { ok: false, detail: 'agent is waiting for you' } } } });
+    await expect(m.request('POST', '/v1/lines/ln_09/hold')).rejects.toMatchObject({ status: 409 });
+    const states = (await a.lines()).filter((l) => ['ln_09', 'ln_01'].includes(l.line.id)).map((l) => l.line.state);
+    expect(states).toEqual(['active', 'idle']);
+  });
+
+  it('refuses a plain hold of a held or hung-up line with 409 on alive, like the daemon', async () => {
+    // Given a held line and a line that was closed
+    // When each is held
+    // Then both fail the alive predicate with 409 and keep their state
+    const { a } = setup();
+    await a.close('ln_09');
+    for (const id of ['ln_11', 'ln_09']) {
+      await expect(a.hold(id)).rejects.toMatchObject({ status: 409, body: { predicates: { alive: { ok: false, detail: 'no live agent process for this line' } } } });
+    }
+    const states = (await a.lines()).filter((l) => ['ln_11', 'ln_09'].includes(l.line.id)).map((l) => l.line.state);
+    expect(states).toEqual(['hung-up', 'held']);
+  });
+
+  it('answers a forced dry-run close of a busy line with 200 would-close, like the daemon', async () => {
+    // Given a busy line
+    // When a dry-run close is forced, and an unforced one is asked
+    // Then the forced one plans would-close without touching it and the unforced one is 409
+    const { m, a } = setup();
+    const plan = (await m.request('POST', '/v1/lines/ln_06/close?force=true')) as { action: string };
+    expect(plan.action).toBe('would-close');
+    expect((await a.lines()).find((l) => l.line.id === 'ln_06')!.line.state).toBe('active');
+    await expect(m.request('POST', '/v1/lines/ln_06/close')).rejects.toMatchObject({ status: 409 });
+  });
+
+  it('exposes the running subagents on the line and keeps a pending hold while they run', async () => {
+    // Given an idle line, and the same line with a subagent still running
+    // When it is held after the turn, then the subagent stops
+    // Then local.subagents is 0 or 1 like the daemon, the hold waits for the subagent and applies after
+    const { m, a } = setup();
+    const get = async () => (await a.lines()).find((l) => l.line.id === 'ln_09')!;
+    expect((await get()).local?.subagents).toBe(0);
+    (m.lines.find((l) => l.line.id === 'ln_09')!.local as { subagents: number }).subagents = 1;
+    expect((await a.holdAfterTurn('ln_09')).action).toBe('hold-pending');
+    m.tick();
+    expect((await get()).local?.holdPending).toBe(true);
+    (m.lines.find((l) => l.line.id === 'ln_09')!.local as { subagents: number }).subagents = 0;
+    m.tick();
+    expect((await get()).line.state).toBe('held');
+  });
+
   it('queues a hold on a busy line, applies it when the turn ends and stamps heldAt', async () => {
     // Given a busy line
     // When it is held with afterTurn, then the mock ticks twice
