@@ -20,7 +20,8 @@ fn test_path(stubs: &Path) -> String {
         let dir = std::env::split_paths(&host).find(|d| d.join("tmux").is_file())?;
         (dir != Path::new("/usr/bin") && dir != Path::new("/bin")).then_some(dir)
     });
-    let mut p = format!("{}:/usr/bin:/bin", stubs.display());
+    // /usr/sbin holds lsof on macOS.
+    let mut p = format!("{}:/usr/bin:/bin:/usr/sbin:/sbin", stubs.display());
     if let Some(d) = dir {
         p.push(':');
         p.push_str(&d.display().to_string());

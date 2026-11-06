@@ -57,9 +57,12 @@ fn get(fx: &Fx, path: &str) -> Value {
 }
 
 fn localstorage(fx: &Fx) {
-    let dir = fx
-        .base
-        .join("home/.local/share/fr.armtek.switchboard/WebKit/ls");
+    let home = fx.base.join("home");
+    let dir = if cfg!(target_os = "macos") {
+        home.join("Library/WebKit/fr.armtek.switchboard/WebKit/ls")
+    } else {
+        home.join(".local/share/fr.armtek.switchboard/WebKit/ls")
+    };
     std::fs::create_dir_all(&dir).unwrap();
     let c = Connection::open(dir.join("localstorage.sqlite3")).unwrap();
     c.execute_batch("CREATE TABLE ItemTable (key TEXT UNIQUE, value BLOB NOT NULL)")
@@ -193,13 +196,15 @@ fn import_stops_the_old_daemon_process() {
     std::thread::sleep(Duration::from_millis(200));
     let _d = daemon(&fx, &old);
     assert_eq!(get(&fx, "/v1/import/switchboard")["running"], true);
+    // Reap it as it dies: macOS has no /proc to tell a zombie from a live process.
+    let reaper = std::thread::spawn(move || fake.wait());
     let (code, body) = fx.req("POST", "/v1/import/switchboard", "{}");
     assert_eq!(code, 200, "{body}");
     assert_eq!(
         serde_json::from_str::<Value>(&body).unwrap()["stopped"],
         true
     );
-    assert!(fake.wait().is_ok());
+    assert!(reaper.join().unwrap().is_ok());
     assert_eq!(get(&fx, "/v1/import/switchboard")["running"], false);
 }
 
