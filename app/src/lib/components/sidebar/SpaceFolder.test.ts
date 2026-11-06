@@ -4,6 +4,7 @@ import type { SpaceNode } from '../../spaces';
 import type { Folder } from '../../types';
 import type { WorkspaceSummary } from '../../workspace-summary';
 import SpaceFolder from './SpaceFolder.svelte';
+import src from './SpaceFolder.svelte?raw';
 
 type FolderNode = Extract<SpaceNode, { type: 'folder' }>;
 const summary = (attention = 0, running = 0, paused = 0, closed = 0): WorkspaceSummary => ({
@@ -13,7 +14,7 @@ const summary = (attention = 0, running = 0, paused = 0, closed = 0): WorkspaceS
 });
 const folder = { id: 'e', name: 'Endurance', parentId: null, rank: 1, collapsed: false } as Folder;
 const node = (over: Partial<FolderNode> = {}): FolderNode => ({ type: 'folder', key: 'f:e', folder, depth: 0, open: true, folders: 2, spaces: 4, summary: summary(1, 2, 1, 3), ...over });
-const html = (n: FolderNode) => render(SpaceFolder, { props: { node: n, ontoggle: () => {} } }).body;
+const html = (n: FolderNode, extra: Record<string, unknown> = {}) => render(SpaceFolder, { props: { node: n, ontoggle: () => {}, ...extra } }).body;
 
 describe('SpaceFolder', () => {
   it('shows a top-level folder as an expanded section title with its folder and workspace counts', () => {
@@ -78,3 +79,30 @@ describe('SpaceFolder', () => {
     expect(html(node({ depth: 1, summary: summary() }))).not.toContain('class="total');
   });
 });
+
+describe('SpaceFolder interactions', () => {
+  it('is a drop zone for its folder, shows the drop marker, and opens its menu on right-click', () => {
+    // Given a section and a nested row, one dragged over
+    // When they render and the source is read
+    // Then both carry data-drop="folder" with the id, the marker class follows dropPos, and oncontextmenu calls onmenu
+    const h = html(node(), { dropPos: 'inside' });
+    expect(h).toContain('data-drop="folder"');
+    expect(h).toContain('data-id="e"');
+    expect(h).toMatch(/class="[^"]*inside/);
+    const row = html(node({ depth: 1 }), { dropPos: 'before' });
+    expect(row).toContain('data-drop="folder"');
+    expect(row).toMatch(/class="[^"]*drop-before/);
+    expect(src).toMatch(/oncontextmenu=\{\(e\) => onmenu && \(e\.preventDefault\(\), onmenu\(e\)\)\}/);
+    expect(src).toMatch(/\{onpointerdown\}/);
+  });
+
+  it('makes the pinned section a drop zone for pinning, with the highlight while hovered', () => {
+    // Given the pinned section (no folder), hovered by a dragged workspace
+    // When it renders
+    // Then it is data-drop="pinned" and highlighted only when targeted
+    expect(html(node({ folder: null }), { target: true })).toMatch(/class="[^"]*target/);
+    expect(html(node({ folder: null }))).not.toMatch(/class="[^"]*target/);
+    expect(html(node({ folder: null }))).toContain('data-drop="pinned"');
+  });
+});
+

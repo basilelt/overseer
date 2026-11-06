@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { GROUP_COLOR, STATE_COLOR } from './AgentIcon.svelte';
-import { WS_COLOR } from './WorkspaceRow.svelte';
+import { WS_COLOR } from '../../ws-color';
 import chatSrc from '../chat/ChatView.svelte?raw';
 
 // Old group/workspace ids that name a session state, and the state they stand for.
@@ -14,7 +14,7 @@ describe('one palette for session states', () => {
     for (const [group, state] of Object.entries(SAME)) expect(GROUP_COLOR[group as keyof typeof SAME]).toBe(STATE_COLOR[state]);
   });
 
-  it('colours the workspace tree dots like the session row', () => {
+  it('colours the workspace and group dots like the session row', () => {
     // Given the colour of each state on a session row
     // When a workspace aggregates to that state
     // Then its dot uses the same token

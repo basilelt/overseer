@@ -19,10 +19,10 @@ export interface Spaces {
   empty: Workspace[];
 }
 
-const isVisible = (w: Workspace) => !isGhost(w) && !w.archived;
+const isVisible = (w: Workspace, showArchived = false) => !isGhost(w) && (showArchived || !w.archived);
 
 // The workspaces a session can be listed under; any other falls to the unassigned.
-export const visibleIds = (workspaces: Workspace[]): Set<string> => new Set(workspaces.filter(isVisible).map((w) => w.id));
+export const visibleIds = (workspaces: Workspace[]): Set<string> => new Set(workspaces.filter((w) => isVisible(w)).map((w) => w.id));
 
 // Keeps the sessions whose title or workspace name contains the filter.
 export function filterItems(items: SidebarItem[], wsName: (key: string) => string, filter: string): SidebarItem[] {
@@ -32,11 +32,11 @@ export function filterItems(items: SidebarItem[], wsName: (key: string) => strin
 }
 
 // Mode "Espaces": one pass over the items, then the workspaces with sessions (pinned first) and the empty ones.
-// Sessions whose workspace is hidden (archived, ghost, unknown) fall to the "other" row.
-export function spaces(workspaces: Workspace[], items: SidebarItem[], wsOf: ReadonlyMap<string, string>, filter: string): Spaces {
+// Sessions whose workspace is hidden (archived unless showArchived, ghost, unknown) fall to the "other" row.
+export function spaces(workspaces: Workspace[], items: SidebarItem[], wsOf: ReadonlyMap<string, string>, filter: string, showArchived = false): Spaces {
   const q = filter.trim().toLowerCase();
   const live = workspaces
-    .filter(isVisible)
+    .filter((w) => isVisible(w, showArchived))
     .sort((a, b) => Number(b.pinned) - Number(a.pinned) || a.rank - b.rank || a.name.localeCompare(b.name));
   const visible = new Set(live.map((w) => w.id));
   const by = new Map<string, SidebarItem[]>();
@@ -48,15 +48,16 @@ export function spaces(workspaces: Workspace[], items: SidebarItem[], wsOf: Read
     if (list) list.push(it);
     else by.set(id, [it]);
   }
-  // A name match keeps every session; a title match keeps only the sessions that match.
-  const narrow = (name: string | null, mine: SidebarItem[]) => (!q || (name !== null && name.toLowerCase().includes(q)) ? mine : mine.filter((i) => i.title.toLowerCase().includes(q)));
+  // A name or path match keeps every session; a title match keeps only the sessions that match.
+  const named = (w: Workspace | null) => !!w && [w.name, w.path, w.cwd].some((x) => x?.toLowerCase().includes(q));
+  const narrow = (w: Workspace | null, mine: SidebarItem[]) => (!q || named(w) ? mine : mine.filter((i) => i.title.toLowerCase().includes(q)));
   const rows: SpaceRow[] = [];
   const empty: Workspace[] = [];
   for (const w of live) {
     const all = by.get(w.id) ?? [];
-    const mine = narrow(w.name, all);
+    const mine = narrow(w, all);
     if (mine.length) rows.push({ id: w.id, name: w.name, workspace: w, items: mine, summary: workspaceSummary(mine) });
-    else if (!all.length && (!q || w.name.toLowerCase().includes(q))) empty.push(w);
+    else if (!all.length && (!q || named(w))) empty.push(w);
   }
   const others = narrow(null, by.get('') ?? []);
   if (others.length) rows.push({ id: '', name: null, workspace: null, items: others, summary: workspaceSummary(others) });
@@ -192,4 +193,12 @@ export function toggleOpen(saved: string[] | undefined, id: string, known: Reado
   const next = new Set((saved ?? [fallback]).filter((x) => known.size <= 1 || known.has(x)));
   if (!next.delete(id)) next.add(id);
   return [...next];
+}
+
+// The expanded list after picking id, or null when nothing changes. An unset list stands for "the active workspace only":
+// picking another one pins that default first, otherwise the previous workspace would fold as the active one changes.
+export function openOnPick(saved: string[] | undefined, active: string, id: string): string[] | null {
+  const open = saved ?? [active];
+  if (open.includes(id)) return null;
+  return [...open, id];
 }
