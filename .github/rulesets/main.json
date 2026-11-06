@@ -82,6 +82,10 @@
           {
             "context": "gitleaks",
             "integration_id": 15368
+          },
+          {
+            "context": "release-version",
+            "integration_id": 15368
           }
         ]
       }
