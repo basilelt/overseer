@@ -2447,11 +2447,23 @@ fn ctrl_c_interrupts_the_job_and_exit_reports_the_sigint_status() {
     );
     let id = t["id"].as_str().unwrap().to_string();
     let mut a = app.ws(&id);
-    send(&mut a, "trap 'echo GOT-$((20+1))' INT; sleep 30\n");
+    // dash drops the rest of the line after a SIGINT and bash 3.2 runs it, so the status is read on its own line.
+    send(&mut a, "echo ARMED-$((1+1)); sleep 3719\n");
+    read_until(&mut a, "ARMED-2");
     std::thread::sleep(Duration::from_millis(300));
     send(&mut a, "\x03");
-    read_until(&mut a, "GOT-21");
-    send(&mut a, "exit\n");
+    std::thread::sleep(Duration::from_millis(300));
+    send(&mut a, "s=$?; echo AFTER-$s; exit $s\n");
+    read_until(&mut a, "AFTER-130");
+    let pgrep = std::process::Command::new("pgrep")
+        .args(["-f", "sleep 3719"])
+        .output()
+        .unwrap();
+    assert_eq!(
+        pgrep.status.code(),
+        Some(1),
+        "the interrupted job is still running or pgrep failed"
+    );
     wait(|| app.ok("GET", &format!("/v1/terms/{id}"), Value::Null)["exited"] == true);
     assert_eq!(
         app.ok("GET", &format!("/v1/terms/{id}"), Value::Null)["exitCode"],

@@ -57,9 +57,12 @@ fn get(fx: &Fx, path: &str) -> Value {
 }
 
 fn localstorage(fx: &Fx) {
-    let dir = fx
-        .base
-        .join("home/.local/share/fr.armtek.switchboard/WebKit/ls");
+    let home = fx.base.join("home");
+    let dir = if cfg!(target_os = "macos") {
+        home.join("Library/WebKit/fr.armtek.switchboard/WebKit/ls")
+    } else {
+        home.join(".local/share/fr.armtek.switchboard/WebKit/ls")
+    };
     std::fs::create_dir_all(&dir).unwrap();
     let c = Connection::open(dir.join("localstorage.sqlite3")).unwrap();
     c.execute_batch("CREATE TABLE ItemTable (key TEXT UNIQUE, value BLOB NOT NULL)")

@@ -61,7 +61,15 @@ pub fn read_creds(claude_dir: &Path) -> Option<Creds> {
     if let Ok(raw) = std::fs::read_to_string(claude_dir.join(".credentials.json")) {
         return parse_creds(&raw);
     }
+    if !keychain_applies(claude_dir) {
+        return None;
+    }
     keychain().and_then(|raw| parse_creds(&raw))
+}
+
+/// Claude Code keeps the keychain login under one fixed name only for `~/.claude`.
+fn keychain_applies(claude_dir: &Path) -> bool {
+    claude_dir == crate::home().join(".claude")
 }
 
 #[cfg(target_os = "macos")]
@@ -225,6 +233,16 @@ mod tests {
     use std::cell::Cell;
 
     const SECRET: &str = "sk-ant-oat01-SECRETSECRETSECRET";
+
+    #[test]
+    fn keychain_is_only_read_for_the_default_claude_dir() {
+        // Given the default Claude dir and a custom one
+        let home = crate::home();
+        // When asking whether the shared keychain item applies
+        // Then only the default dir may use it, so tests and custom dirs never read the host login
+        assert!(keychain_applies(&home.join(".claude")));
+        assert!(!keychain_applies(Path::new("/tmp/custom-claude")));
+    }
 
     fn fixture() -> Value {
         let p = Path::new(env!("CARGO_MANIFEST_DIR"))

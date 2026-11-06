@@ -437,9 +437,63 @@ pub fn mem_bytes() -> Option<(u64, Option<u64>)> {
         };
         Some((kb("MemTotal:")?, kb("MemAvailable:")))
     } else {
-        let total = run("sysctl", &["-n", "hw.memsize"])?.trim().parse().ok()?;
-        Some((total, None))
+        other_mem()
     }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn other_mem() -> Option<(u64, Option<u64>)> {
+    let total = run("sysctl", &["-n", "hw.memsize"])?.trim().parse().ok()?;
+    Some((total, None))
+}
+
+#[cfg(target_os = "macos")]
+fn other_mem() -> Option<(u64, Option<u64>)> {
+    mac_mem()
+}
+
+/// Total memory is read once; available (free + inactive + speculative pages) comes from the
+/// kernel in-process, so a status tick never spawns `sysctl` or `vm_stat`.
+#[cfg(target_os = "macos")]
+fn mac_mem() -> Option<(u64, Option<u64>)> {
+    extern "C" {
+        // Not bound by libc; the kernel page size host_statistics64 counts in (hw.pagesize is
+        // per process and reads 4 KiB for an x86_64 build under Rosetta).
+        fn host_page_size(host: u32, out: *mut usize) -> i32;
+    }
+    static INIT: std::sync::OnceLock<Option<(u64, u64, u32)>> = std::sync::OnceLock::new();
+    // libc deprecates mach_host_self in favour of mach2, which this crate does not depend on.
+    #[allow(deprecated)]
+    let (total, page, host) = (*INIT.get_or_init(|| unsafe {
+        let (mut total, mut tl) = (0u64, size_of::<u64>());
+        if libc::sysctlbyname(
+            c"hw.memsize".as_ptr(),
+            (&mut total as *mut u64).cast(),
+            &mut tl,
+            std::ptr::null_mut(),
+            0,
+        ) != 0
+        {
+            return None;
+        }
+        let host = libc::mach_host_self();
+        let mut page = 0usize;
+        (host_page_size(host, &mut page) == 0 && page > 0).then_some((total, page as u64, host))
+    }))?;
+    let avail = unsafe {
+        let mut s: libc::vm_statistics64 = std::mem::zeroed();
+        let mut n = libc::HOST_VM_INFO64_COUNT;
+        let r = libc::host_statistics64(
+            host,
+            libc::HOST_VM_INFO64,
+            (&mut s as *mut libc::vm_statistics64).cast(),
+            &mut n,
+        );
+        (r == 0).then(|| {
+            (s.free_count as u64 + s.inactive_count as u64 + s.speculative_count as u64) * page
+        })
+    };
+    Some((total, avail))
 }
 
 pub fn flags_after(argv: &[String], is_bin: impl Fn(&str) -> bool) -> Option<Vec<String>> {
@@ -523,6 +577,18 @@ pub fn strip_resume(flags: &[String]) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn mac_memory_is_read_in_process_with_a_cached_total() {
+        // Given a macOS host
+        // When reading memory twice, with no ps-like process spawned (none is involved)
+        let (total, avail) = mac_mem().unwrap();
+        let (again, _) = mac_mem().unwrap();
+        // Then the total is stable and the available memory is a sane share of it
+        assert_eq!(total, again);
+        assert!(avail.is_some_and(|a| a > 0 && a <= total));
+    }
 
     #[cfg(target_os = "macos")]
     #[test]

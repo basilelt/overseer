@@ -10,6 +10,42 @@ use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Output, Stdio};
 use std::sync::atomic::{AtomicI64, AtomicUsize, Ordering};
+
+/// Stubs and the system dirs, plus a dir holding only a symlink to the host's tmux when it
+/// lives elsewhere (Homebrew on macOS); the rest of the host PATH stays hidden.
+fn test_path(stubs: &Path) -> String {
+    static TMUX_DIR: std::sync::OnceLock<Option<PathBuf>> = std::sync::OnceLock::new();
+    let dir = TMUX_DIR.get_or_init(|| {
+        let host = std::env::var_os("PATH")?;
+        let tmux = std::env::split_paths(&host)
+            .map(|d| d.join("tmux"))
+            .find(|t| t.is_file())?;
+        let parent = tmux.parent()?;
+        if parent == Path::new("/usr/bin") || parent == Path::new("/bin") {
+            return None;
+        }
+        let dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join("tmux-bin");
+        std::fs::create_dir_all(&dir).ok()?;
+        let link = dir.join("tmux");
+        if std::fs::read_link(&link).ok().as_deref() != Some(tmux.as_path()) {
+            let tmp = dir.join(format!("tmux.{}", std::process::id()));
+            let _ = std::fs::remove_file(&tmp);
+            std::os::unix::fs::symlink(&tmux, &tmp).ok()?;
+            std::fs::rename(&tmp, &link).ok()?;
+        }
+        Some(dir)
+    });
+    let mut p = format!("{}:/usr/bin:/bin", stubs.display());
+    if cfg!(target_os = "macos") {
+        // lsof lives in /usr/sbin on macOS.
+        p.push_str(":/usr/sbin:/sbin");
+    }
+    if let Some(d) = dir {
+        p.push(':');
+        p.push_str(&d.display().to_string());
+    }
+    p
+}
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tungstenite::{Message, WebSocket};
@@ -89,7 +125,7 @@ impl T {
     pub fn env(&self, c: &mut Command) {
         let stubs = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/stubs");
         c.env_clear()
-            .env("PATH", format!("{}:/usr/bin:/bin", stubs.display()))
+            .env("PATH", test_path(&stubs))
             .env("HOME", self.base.join("home"))
             .env("SHELL", "/bin/sh")
             .env("XDG_RUNTIME_DIR", self.base.join("run"))
@@ -340,7 +376,7 @@ impl Fx {
         let stubs = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/stubs");
         let p = |p: PathBuf| p.into_os_string();
         vec![
-            ("PATH", format!("{}:/usr/bin:/bin", stubs.display()).into()),
+            ("PATH", test_path(&stubs).into()),
             ("HOME", p(self.base.join("home"))),
             ("LANG", "C.UTF-8".into()),
             ("XDG_RUNTIME_DIR", p(self.base.join("run"))),
