@@ -151,12 +151,13 @@ on a TCP port on the server.
 Install the desktop app, and the `overseer` CLI/daemon if you want it on this machine:
 
 ```sh
-brew tap basilelt/tap https://github.com/basilelt/homebrew-tap.git
-brew install --cask overseer
-brew install overseer
+brew install --cask basilelt/tap/overseer
+brew install --formula basilelt/tap/overseer
 ```
 
-Upgrade with `brew update && brew upgrade --cask overseer && brew upgrade overseer`.
+The full `basilelt/tap/...` name taps the repository and tells Homebrew to trust these packages,
+so no `brew trust` or `--trust` step is needed. Upgrade with
+`brew update && brew upgrade --cask basilelt/tap/overseer && brew upgrade --formula basilelt/tap/overseer`.
 
 The app is signed with a Developer ID and notarized by Apple, so macOS opens it without a
 warning. Each release asset carries a build provenance attestation:
