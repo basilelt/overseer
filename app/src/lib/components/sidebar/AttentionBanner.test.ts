@@ -5,7 +5,7 @@ import AttentionBanner from './AttentionBanner.svelte';
 import componentSrc from './AttentionBanner.svelte?raw';
 
 const e = (key: string, title: string, detail?: string): AttentionEntry => ({ key, title, detail, workspaceId: null, at: '2026-11-05T10:00:00Z' });
-const html = (entries: AttentionEntry[]) => render(AttentionBanner, { props: { entries, onselect: () => {} } }).body;
+const html = (entries: AttentionEntry[], pathOf?: (e: AttentionEntry) => string | undefined) => render(AttentionBanner, { props: { entries, onselect: () => {}, pathOf } }).body;
 
 describe('AttentionBanner', () => {
   it('renders nothing when no session needs attention', () => {
@@ -40,5 +40,21 @@ describe('AttentionBanner', () => {
     // Then click forwards the entry and hover differs from the banner background
     expect(componentSrc).toMatch(/onclick=\{\(\) => onselect\(entry\)\}/);
     expect(componentSrc).toContain('var(--attention-hover)');
+  });
+
+  it('shows the folder path of the session workspace under its title when given one', () => {
+    // Given a session in Endurance › core › endurance-core and one outside any workspace
+    // When the banner renders with a path lookup
+    // Then the path shows once, for the first one only
+    const h = html([e('line:a', 'Hermes'), e('line:b', 'Loose')], (x) => (x.key === 'line:a' ? 'Endurance › core › endurance-core' : undefined));
+    expect(h).toContain('>Endurance › core › endurance-core<');
+    expect(h.match(/class="path/g)).toHaveLength(1);
+  });
+
+  it('shows no path without a lookup', () => {
+    // Given a session and no path lookup, as in the by-state view
+    // When the banner renders
+    // Then no path line is output
+    expect(html([e('line:a', 'Hermes')])).not.toContain('class="path');
   });
 });

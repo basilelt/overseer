@@ -3,8 +3,8 @@ import { attention } from '../attention';
 import { byState } from '../by-state';
 import type { SidebarItem } from '../grouping';
 import type { SessionState } from '../session-state';
-import type { Workspace } from '../types';
-import { spaces } from '../spaces';
+import type { Folder, Workspace } from '../types';
+import { folderSpaces, spaceTrail, spaces } from '../spaces';
 import { bucketByTime, timeBucket } from '../time-bucket';
 import { workspaceSessions } from '../workspace-sessions';
 import { workspaceSummary } from '../workspace-summary';
@@ -61,6 +61,32 @@ describe('session lists scale with the session count', () => {
       expect(big / small).toBeGreaterThanOrEqual(10);
       expect(big / small).toBeLessThan(20);
     }
+  });
+
+  it('folderSpaces and spaceTrail scale with workspaces and folders, never quadratic', () => {
+    // Given n workspaces over n/5 folders nested three deep, and n sessions, for n = 100 and 1000
+    // When the folder tree and every workspace trail are built
+    // Then 10x the input costs between 10x and 20x the reads of folder, workspace and session fields
+    const reads = [100, 1000].map((n) => {
+      const f = fixture(n);
+      let count = 0;
+      const spy = <T extends object>(o: T): T =>
+        new Proxy(o, {
+          get(x, p) {
+            count++;
+            return x[p as keyof T];
+          },
+        });
+      const folders = Array.from({ length: n / 5 }, (_, i) => spy({ id: `f${i}`, name: `f${i}`, parentId: i % 3 ? `f${i - 1}` : null, rank: i, collapsed: i % 7 === 0 } as Folder));
+      const workspaces = Array.from({ length: n }, (_, i) => spy({ id: `w${i}`, name: `ws${i}`, rank: i, pinned: i % 50 === 0, archived: false, folderId: `f${i % (n / 5)}` } as Workspace));
+      const wsOf = new Map(f.items.map((it, i) => [`k${i}`, `w${(i * 31) % n}`]));
+      folderSpaces(spaces(workspaces, f.items, wsOf, ''), folders, '');
+      const trail = spaceTrail({ workspaces, folders, groups: [] });
+      for (let i = 0; i < n; i++) trail(`w${i}`);
+      return count + f.reads();
+    });
+    expect(reads[1]! / reads[0]!).toBeGreaterThanOrEqual(10);
+    expect(reads[1]! / reads[0]!).toBeLessThan(20);
   });
 
   it('parses each date once: timeBucket, bucketByTime, byState and workspaceSessions', () => {
