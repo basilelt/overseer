@@ -72,14 +72,15 @@
   }
   .title {
     flex: 0 1 auto;
-    max-width: 60%;
+    min-width: 40%;
+    max-width: 100%;
     font-weight: 700;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
   .action {
-    flex: 1;
+    flex: 1 1 0;
     min-width: 0;
     color: var(--text-2);
     font-size: 12px;
@@ -99,7 +100,7 @@
   }
   .host {
     flex: 0 1 auto;
-    min-width: 0;
+    min-width: min-content;
     max-width: 40%;
     overflow: hidden;
     display: inline-flex;
@@ -111,7 +112,7 @@
     color: var(--text-2);
   }
   .hname {
-    min-width: 0;
+    min-width: 3ch;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;

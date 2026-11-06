@@ -962,6 +962,7 @@ export const en = {
   'ws.showArchived': 'Show archived',
   'ws.pinned': 'Pinned',
   'ws.dropToPin': 'Drop here to pin',
+  'ws.closedOne': '+ 1 closed',
   'ws.closedMore': '+ {n} closed',
   'ws.noSession': 'No session',
   'ws.layoutTree': 'Show the folder tree',

@@ -53,7 +53,7 @@
       <SessionRow item={it} {now} {host} selected={selectedKey === it.key} onselect={() => onselect(it.key)} />
     {/each}
     {#if sessions.closed.count}
-      <button class="more" type="button" aria-expanded={closedOpen} onclick={onclosed}>{t('ws.closedMore', { n: sessions.closed.count })}</button>
+      <button class="more" type="button" aria-expanded={closedOpen} onclick={onclosed}>{sessions.closed.count === 1 ? t('ws.closedOne') : t('ws.closedMore', { n: sessions.closed.count })}</button>
       {#if closedOpen}
         {#each sessions.closed.buckets as b (b.bucket)}
           <div class="bucket">{t(`ws.bucket.${b.bucket}`)}</div>

@@ -130,4 +130,20 @@ describe('SessionRow', () => {
     expect(src).not.toMatch(/border(-color)?:[^;]*(--c|--state)/);
     expect(src).not.toMatch(/transition|animation/);
   });
+
+  it('gives the title priority: the last action shrinks first', () => {
+    // Given the component source
+    // When the flex rules are read
+    // Then the title keeps a minimum width and the action takes the leftover
+    expect(componentSrc).toMatch(/\.title \{[^}]*flex: 0 1 auto[^}]*min-width: 40%/s);
+    expect(componentSrc).toMatch(/\.action \{[^}]*flex: 1 1 0[^}]*min-width: 0/s);
+  });
+
+  it('never clips the connection status: only the host name shrinks', () => {
+    // Given the component source
+    // When the chip styles are read
+    // Then the chip keeps its status and a minimum host name width
+    expect(componentSrc).toMatch(/\.host \{[^}]*min-width: min-content/s);
+    expect(componentSrc).toMatch(/\.hname \{[^}]*min-width: 3ch/s);
+  });
 });

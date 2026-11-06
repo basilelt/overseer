@@ -25,7 +25,7 @@
   let filter = $state('');
   let showArchived = $state(false);
   // The compact view is the default; the folder tree stays one click away until it is retired.
-  const compact = $derived((settings.workspacesLayout ?? 'spaces') === 'spaces');
+  const compact = $derived(settings.workspacesLayout !== 'tree');
   const modes: { id: SidebarMode; label: () => string }[] = [
     { id: 'workspaces', label: () => t('ws.title') },
     { id: 'status', label: () => t('ws.byStatus') },
@@ -58,14 +58,14 @@
       <button class="icon-btn" title={t('ws.newFolder')} aria-label={t('ws.newFolder')} disabled={!app.connected || !app.wsPersistent} onclick={() => createFolder()}
         ><FolderPlus size={14} /></button
       >
-      <button
+      {#if !compact}<button
         class="icon-btn"
         class:active={showArchived}
         title={t('ws.showArchived')}
         aria-label={t('ws.showArchived')}
         aria-pressed={showArchived}
         onclick={() => (showArchived = !showArchived)}><Archive size={14} /></button
-      >
+      >{/if}
     {:else}
       <span class="count faint">{app.items.length}</span>
     {/if}

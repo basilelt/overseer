@@ -1,11 +1,10 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { attention } from '../../attention';
-  import { connLabel } from '../../conn-label';
   import { t } from '../../i18n.svelte';
-  import { onPresence, presence } from '../../presence';
   import { saveSettings, settings } from '../../settings.svelte';
-  import { spaces } from '../../spaces';
+  import { hostFor, spaces, toggleOpen } from '../../spaces';
+  import { visibleClock } from '../../visible-clock';
   import { app } from '../../state.svelte';
   import { workspaceMenu } from '../../wsactions';
   import AttentionBanner from './AttentionBanner.svelte';
@@ -17,34 +16,17 @@
   let closedOpen = $state(new Set<string>());
 
   // One clock for the whole view, paused while the window is hidden.
-  onMount(() => {
-    let id: ReturnType<typeof setInterval> | undefined;
-    const sync = () => {
-      clearInterval(id);
-      id = undefined;
-      if (!presence().visible) return;
-      now = Date.now();
-      id = setInterval(() => (now = Date.now()), 30_000);
-    };
-    sync();
-    const off = onPresence(sync);
-    return () => {
-      off();
-      clearInterval(id);
-    };
-  });
+  onMount(() => visibleClock((n) => (now = n)));
 
   const view = $derived(spaces(app.ws.workspaces, app.items, app.itemWs, filter));
   const banner = $derived(attention(app.items, app.itemWs));
   const opened = $derived(new Set(settings.spacesOpen ?? [app.workspaceId]));
   // Every session of a connection runs on that connection's host.
-  const target = $derived(app.conn.target);
-  const host = $derived(target.kind === 'ssh' ? { name: target.host ?? target.label, phase: app.conn.phase, attempt: app.conn.attempt, version: app.conn.version } : undefined);
+  const host = $derived(hostFor(app.conn));
+  const q = $derived(filter.trim());
 
   function toggle(id: string) {
-    const next = new Set(opened);
-    if (!next.delete(id)) next.add(id);
-    saveSettings({ spacesOpen: [...next] });
+    saveSettings({ spacesOpen: toggleOpen(settings.spacesOpen, id, new Set(['', ...app.ws.workspaces.map((w) => w.id)]), app.workspaceId) });
   }
 
   function toggleClosed(id: string) {
@@ -80,7 +62,7 @@
       </div>
     </div>
   {/if}
-  {#if !view.rows.length && !view.empty.length}<p class="none faint">{t('ws.empty')}</p>{/if}
+  {#if !view.rows.length && !view.empty.length}<p class="none faint">{q ? t('common.none') : t('ws.empty')}</p>{/if}
 </div>
 
 <style>

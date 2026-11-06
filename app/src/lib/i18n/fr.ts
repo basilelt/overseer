@@ -964,6 +964,7 @@ export const dict: Partial<Dict> = {
   'ws.showArchived': 'Afficher les archivés',
   'ws.pinned': 'Épinglés',
   'ws.dropToPin': 'Déposer ici pour épingler',
+  'ws.closedOne': '+ 1 fermée',
   'ws.closedMore': '+ {n} fermées',
   'ws.noSession': 'Sans session',
   'ws.layoutTree': "Afficher l'arbre des dossiers",

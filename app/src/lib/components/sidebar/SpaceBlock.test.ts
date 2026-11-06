@@ -70,4 +70,13 @@ describe('SpaceBlock', () => {
     expect(componentSrc).toMatch(/onclick=\{ontoggle\}/);
     expect(componentSrc).not.toMatch(/transition|animation/);
   });
+
+  it('words the closed count in singular and plural', () => {
+    // Given one closed session, then two
+    // When it renders expanded
+    // Then the label is singular for one
+    expect(html([item('l', 'open'), item('c', 'closed')], { open: true })).toContain('+ 1 closed');
+    expect(html([item('l', 'open'), item('c', 'closed'), item('d', 'closed')], { open: true })).toContain('+ 2 closed');
+    expect(componentSrc).toContain("ws.closedOne");
+  });
 });
