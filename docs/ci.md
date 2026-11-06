@@ -139,7 +139,7 @@ its `changes` job runs, a few seconds on `ubuntu-slim`. Pushes by `github-action
 |---|---|---|---|
 | ci | `changes` | `ubuntu-slim` | `scripts/ci-changes.sh`: which jobs the PR needs ([Path filtering](#path-filtering)) |
 | ci | `actionlint` | `ubuntu-slim` | `actionlint` (pinned release, checksum verified, cached by version; `ubuntu-slim` has no Docker) |
-| ci | `ci-scripts` | `ubuntu-24.04` | `scripts/ci-changes.test.sh` (path filter), `scripts/check-version.test.sh`, `scripts/ci-apt.test.sh` (offline apt install in Docker), the setup action on real apt packages |
+| ci | `ci-scripts` | `ubuntu-24.04` | `scripts/ci-changes.test.sh` (path filter), `scripts/ci-glibc.test.sh` (glibc floor check), `scripts/check-version.test.sh`, `scripts/ci-apt.test.sh` (offline apt install in Docker), the setup action on real apt packages |
 | ci | `release-version` | `ubuntu-slim` | pull requests to `main` only, skipped when docs-only: `mathieudutour/github-tag-action@v7` with the settings of the `tag` job of `release.yml` and `dry_run: true` computes the version the merge will tag, then `scripts/check-version.sh` fails naming each stamped file that differs. Required on `main` once `.github/rulesets/main.json` is applied (a skipped job counts as passed). Copy the settings by hand when you change them in `release.yml` |
 | ci | `gitleaks` | `ubuntu-slim` | `gitleaks git` (pinned release, checksum verified) over the PR's commits (`base..head`); every PR, no path filter. Known false positives are fingerprinted in `.gitleaksignore` |
 | ci | `rust` | `ubuntu-24.04` | `cargo fmt --check` (root and `api/`), `make lint`, `timeout 1500 make test` |
@@ -155,7 +155,7 @@ its `changes` job runs, a few seconds on `ubuntu-slim`. Pushes by `github-action
 | release | `tag` | `ubuntu-slim` | next `vX.Y.Z` tag, moves `vX`, `vX.Y`, `latest`; checks which optional secrets are set |
 | release | `servers` | `ubuntu-24.04` | `make dist-cross`: daemon for Linux musl x86_64/aarch64 and Windows x86_64 (MSVC), `overseer-api` Linux musl x86_64 |
 | release | `servers-macos` | `macos-26` | `make dist-darwin`: daemon for macOS x86_64/aarch64, built natively so it links FSEvents (CoreServices needs the Apple SDK) |
-| release | `app-linux` | `ubuntu-24.04`, `ubuntu-24.04-arm` | `.deb`, `.AppImage`, `.rpm` for x86_64 and aarch64, each built natively |
+| release | `app-linux` | `ubuntu-22.04`, `ubuntu-22.04-arm` | `.deb`, `.AppImage`, `.rpm` for x86_64 and aarch64, each built natively on the oldest supported Ubuntu so they run on glibc 2.35; `scripts/ci-glibc.sh` fails the job if any bundled ELF needs a newer glibc. GitHub retires these runners on 2027-04-17 (actions/runner-images#14254): move the build into a `ubuntu:22.04` container on `ubuntu-24.04` before then |
 | release | `app-windows` | `ubuntu-24.04` | NSIS installer `*_x64-setup.exe`, cross-built with `cargo-xwin` |
 | release | `app-windows-msix` | `windows-latest` | `Overseer_<v>_x64.msix` from the `app-windows` executable (`scripts/msix.sh`); skipped without the MSIX secrets |
 | release | `app-windows-arm` | `windows-11-arm` | NSIS installer `*_arm64-setup.exe` and `Overseer_<v>_arm64.msix`, built natively |
