@@ -438,8 +438,31 @@ pub fn mem_bytes() -> Option<(u64, Option<u64>)> {
         Some((kb("MemTotal:")?, kb("MemAvailable:")))
     } else {
         let total = run("sysctl", &["-n", "hw.memsize"])?.trim().parse().ok()?;
-        Some((total, None))
+        Some((total, run("vm_stat", &[]).and_then(|o| parse_vm_stat(&o))))
     }
+}
+
+/// Reclaimable memory on macOS: free, inactive and speculative pages.
+fn parse_vm_stat(out: &str) -> Option<u64> {
+    let page: u64 = out
+        .lines()
+        .next()?
+        .split("page size of ")
+        .nth(1)?
+        .split_whitespace()
+        .next()?
+        .parse()
+        .ok()?;
+    let pages = |k: &str| -> Option<u64> {
+        out.lines()
+            .find_map(|l| l.strip_prefix(k))?
+            .trim()
+            .trim_end_matches('.')
+            .parse()
+            .ok()
+    };
+    let n = pages("Pages free:")? + pages("Pages inactive:")? + pages("Pages speculative:")?;
+    Some(n * page)
 }
 
 pub fn flags_after(argv: &[String], is_bin: impl Fn(&str) -> bool) -> Option<Vec<String>> {
@@ -523,6 +546,20 @@ pub fn strip_resume(flags: &[String]) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn vm_stat_available_memory_is_free_inactive_and_speculative_pages() {
+        // Given the output of macOS vm_stat with 16 KiB pages
+        let out = "Mach Virtual Memory Statistics: (page size of 16384 bytes)\n\
+                   Pages free:                                   100.\n\
+                   Pages active:                                 999.\n\
+                   Pages inactive:                                50.\n\
+                   Pages speculative:                             10.\n";
+        // When the available memory is parsed
+        // Then it sums free, inactive and speculative pages in bytes
+        assert_eq!(parse_vm_stat(out), Some(160 * 16384));
+        assert_eq!(parse_vm_stat("garbage"), None);
+    }
 
     #[cfg(target_os = "macos")]
     #[test]
