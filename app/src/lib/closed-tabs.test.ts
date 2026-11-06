@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { MAX_CLOSED, popReopenable, pushClosed } from './closed-tabs';
-import { closeTabAt, forgetLayouts, layoutFromTabs, paneInDirection, split, switchLayout, takeClosed, workspace } from './workspace.svelte';
+import { closedShells, MAX_CLOSED, popReopenable, pushClosed, rememberShell } from './closed-tabs';
+import { closePaneAt, closeTabAt, forgetLayouts, layoutFromTabs, paneInDirection, split, switchLayout, takeClosed, workspace } from './workspace.svelte';
 
 describe('closed tab stack', () => {
   it('keeps the last ten, newest first, without duplicates', () => {
@@ -32,6 +32,40 @@ describe('closed tab stack', () => {
     expect(takeClosed((k) => k)).toBe('line:a');
     expect(takeClosed((k) => k)).toBe('term:b');
     expect(takeClosed((k) => k)).toBeNull();
+  });
+});
+
+describe('closing a pane', () => {
+  it('records every tab of the pane so they can be reopened', () => {
+    forgetLayouts();
+    switchLayout('#status', 'ws1', () => ({ ...layoutFromTabs(['a']), split: 'horizontal', panes: [{ tabs: ['a'], active: 'a' }, { tabs: ['b', 'c'], active: 'c' }], focused: 1 }));
+    closePaneAt(1);
+    expect(workspace.layout.panes).toEqual([{ tabs: ['a'], active: 'a' }]);
+    expect(takeClosed((k) => k)).toBe('c');
+    expect(takeClosed((k) => k)).toBe('b');
+    expect(takeClosed((k) => k)).toBeNull();
+  });
+
+  it('keeps the last pane open', () => {
+    forgetLayouts();
+    switchLayout('#status', 'ws1', () => layoutFromTabs(['a']));
+    closePaneAt(0);
+    expect(workspace.layout.panes).toEqual([{ tabs: ['a'], active: 'a' }]);
+    expect(takeClosed((k) => k)).toBeNull();
+  });
+});
+
+describe('closed shells', () => {
+  it('remembers the latest folder per tab and stays bounded', () => {
+    forgetLayouts();
+    rememberShell('term:a', '/one');
+    rememberShell('term:a', '/two');
+    expect(closedShells.get('term:a')).toBe('/two');
+    for (let i = 0; i < MAX_CLOSED * 6; i++) rememberShell(`term:${i}`, '/x');
+    expect(closedShells.size).toBe(MAX_CLOSED * 5);
+    expect(closedShells.has('term:a')).toBe(false);
+    forgetLayouts();
+    expect(closedShells.size).toBe(0);
   });
 });
 

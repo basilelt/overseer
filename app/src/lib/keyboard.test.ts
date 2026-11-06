@@ -38,6 +38,7 @@ vi.mock('@tauri-apps/api/menu', () => ({
 }));
 
 import { allowed, answerCloseTab, closeTabKey, hint, isMac, newWindow, runShortcut, startShortcuts } from './keyboard';
+import { rememberShell } from './closed-tabs';
 import { ui } from './mobile/ui.svelte';
 import { DEFAULT_SETTINGS, settings } from './settings.svelte';
 import { tour } from './tour/tour.svelte';
@@ -461,6 +462,39 @@ describe('runShortcut: tabs', () => {
     closeTabKey('term:t1', false);
     runShortcut({ id: 'reopenTab' });
     expect(workspace.layout.panes[0].tabs).toContain('term:t1');
+  });
+
+  it('starts a new shell in the folder of an ended terminal', async () => {
+    app.connected = true;
+    app.items = [{ key: 'term:t1', termId: 't1', kind: 'shell' }];
+    setLayout(layoutFromTabs(['term:t1', 'browser:a'], 'term:t1'));
+    rememberShell('term:t1', '/work/repo');
+    closeTabKey('term:t1', true);
+    app.data.terms = [];
+    runShortcut({ id: 'reopenTab' });
+    expect(app.newSession).toHaveBeenCalledWith('shell', { cwd: '/work/repo' });
+    expect(workspace.layout.panes[0].tabs).toEqual(['browser:a']);
+    runShortcut({ id: 'reopenTab' });
+    expect(app.newSession).toHaveBeenCalledTimes(1);
+  });
+
+  it('reports a shell that cannot be started again', async () => {
+    app.connected = true;
+    app.newSession.mockRejectedValueOnce(new Error('no pty'));
+    setLayout(layoutFromTabs(['term:t1', 'browser:a'], 'term:t1'));
+    rememberShell('term:t1', '/work');
+    closeTabKey('term:t1', true);
+    runShortcut({ id: 'reopenTab' });
+    await vi.waitFor(() => expect(app.notify).toHaveBeenCalledWith('no pty', 'error'));
+  });
+
+  it('skips an ended terminal while offline', () => {
+    app.connected = false;
+    setLayout(layoutFromTabs(['term:t1', 'browser:a'], 'term:t1'));
+    rememberShell('term:t1', '/work');
+    closeTabKey('term:t1', true);
+    runShortcut({ id: 'reopenTab' });
+    expect(app.newSession).not.toHaveBeenCalled();
   });
 
   it('re-attaches a reopened live session that has no terminal yet', async () => {
