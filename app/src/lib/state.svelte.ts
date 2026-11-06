@@ -707,8 +707,10 @@ class AppState {
   }
 
   progress(text: string, fraction?: number) {
-    this.toast = { text, kind: 'info', progress: fraction === undefined ? undefined : Math.max(0, Math.min(1, fraction)) };
+    const progress = fraction === undefined ? undefined : Math.max(0, Math.min(1, fraction));
+    this.toast = { text, kind: 'info', progress };
     clearTimeout(this.toastTimer);
+    if (progress === 1) this.toastTimer = setTimeout(() => (this.toast = null), 1500);
   }
 }
 
