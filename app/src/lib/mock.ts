@@ -819,19 +819,37 @@ export class MockDaemon implements DaemonClient {
     return l;
   }
 
+  private holdOrClose(l: LocalLine, action: 'hold' | 'close', dry: boolean, force: boolean) {
+    const id = l.line.id;
+    const alive = l.line.state !== 'held' && l.line.state !== 'hung-up';
+    const close = action === 'close';
+    const c = (ok: boolean, detail: string) => (ok ? { ok } : { ok, detail });
+    const predicates: Record<string, { ok: boolean; detail?: string }> =
+      close && (force || !alive)
+        ? {}
+        : {
+            alive: c(alive, 'no live agent process for this line'),
+            inTmux: { ok: true },
+            atPrompt: c(!l.local?.busy, 'agent is mid-turn'),
+            inputEmpty: { ok: true },
+            noToolRunning: { ok: true },
+            notPinned: c(!l.local?.pinned, 'line is pinned'),
+            notNeedsInput: c(!l.local?.needsInput, 'agent is waiting for you'),
+          };
+    const steps = alive ? [`SIGTERM ${l.local?.pid ?? '?'}`] : [];
+    if (Object.values(predicates).some((p) => !p.ok)) throw new DaemonError(409, 'HTTP 409', { lineId: id, predicates, action: 'none', steps });
+    if (close) steps.push(`mark ${id} hung-up${alive ? '' : ' (no live process)'}`);
+    if (dry) return { lineId: id, predicates, action: close ? 'would-close' : 'would-hold', steps };
+    const from = l.line.state;
+    l.line.state = close ? 'hung-up' : 'held';
+    l.local = { ...l.local, busy: false, needsInput: false, heldReason: close ? undefined : 'user' };
+    this.emit(close ? 'line.hung_up' : 'line.state_changed', { line: l.line, from, to: l.line.state, local: l.local });
+    return { lineId: id, predicates, action: close ? 'closed' : 'held', steps };
+  }
+
   private lineAction(id: string, action: string, body: any, dry = false, force = false): unknown {
     const l = this.findLine(id);
-    if (dry && (action === 'hold' || action === 'close')) {
-      const running = l.line.state !== 'held' && l.line.state !== 'hung-up';
-      const plan = {
-        lineId: id,
-        action: action === 'hold' ? 'held' : 'closed',
-        steps: running ? [`SIGTERM ${l.local?.pid ?? '?'}`] : [],
-        predicates: { alive: running ? { ok: true } : { ok: false, detail: 'not running' }, atPrompt: l.local?.busy ? { ok: false, detail: 'turn in progress' } : { ok: true } },
-      };
-      if (!running || l.local?.busy) throw new DaemonError(409, 'refused', { ...plan, error: running ? 'turn in progress' : 'not running' });
-      return plan;
-    }
+    if (action === 'hold' || action === 'close') return this.holdOrClose(l, action, dry, force);
     switch (action) {
       case 'activity':
         if (!this.agents.find((a) => a.id === l.line.agent)?.sessions || !this.activity[id]) {
@@ -841,18 +859,6 @@ export class MockDaemon implements DaemonClient {
       case 'diff':
         if (l.line.repo === 'unknown') throw new DaemonError(409, 'fatal: not a git repository (or any of the parent directories): .git');
         return { lineId: id, worktree: l.line.worktreePath ?? '', status: ' M src/term.rs\n M tests/term.rs', stat: ' 2 files changed, 21 insertions(+), 3 deletions(-)', diff: bigDiff() ? bigPatch() : DIFF, truncated: false } satisfies Diff;
-      case 'hold':
-      case 'close': {
-        if (l.local?.busy && !force) {
-          const plan = { lineId: id, action: 'none', steps: [], predicates: { atPrompt: { ok: false, detail: 'turn in progress' } } };
-          throw new DaemonError(409, 'HTTP 409', plan);
-        }
-        const from = l.line.state;
-        l.line.state = action === 'hold' ? 'held' : 'hung-up';
-        l.local = { ...l.local, busy: false, needsInput: false, heldReason: action === 'hold' ? 'user' : undefined };
-        this.emit(action === 'hold' ? 'line.state_changed' : 'line.hung_up', { line: l.line, from, to: l.line.state, local: l.local });
-        return { lineId: id, action: action === 'hold' ? 'held' : 'closed', predicates: {} };
-      }
       case 'pin':
         l.local = { ...l.local, pinned: !!body?.pinned };
         this.emit('line.updated', { line: l.line, local: l.local });
