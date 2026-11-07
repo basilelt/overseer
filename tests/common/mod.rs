@@ -665,6 +665,10 @@ pub struct App {
 
 impl App {
     pub fn new(tag: &str, config: Value) -> App {
+        App::with_env(tag, config, &[])
+    }
+
+    pub fn with_env(tag: &str, config: Value, env: &[(&str, &str)]) -> App {
         let fx = Fx::new(tag, 0);
         let mut cfg = config;
         cfg["stationId"] = json!("vm-local");
@@ -676,6 +680,7 @@ impl App {
         c.env("SB_BIN", bin())
             .env("SB_STUB_LOG", fx.base.join("stub.log"))
             .env("SHELL", "/bin/sh")
+            .envs(env.iter().copied())
             .args(["daemon", "--interval", "1"]);
         let d = Reap::spawn(c.stderr(Stdio::null()));
         wait(|| UnixStream::connect(&fx.sock).is_ok());

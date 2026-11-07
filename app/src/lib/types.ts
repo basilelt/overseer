@@ -39,6 +39,12 @@ export interface LineLocal {
   needsInput?: boolean;
   pinned?: boolean;
   heldReason?: 'user' | 'lost';
+  // When the session was held, and whether a pause waits for the current turn to end.
+  heldAt?: string;
+  holdPending?: boolean;
+  // Running subagents and background tasks reported by hooks; 0 when unknown.
+  subagents?: number;
+  tasks?: number;
   orphan?: boolean;
   duplicate?: boolean;
   tmuxPane?: string;
@@ -332,6 +338,7 @@ export type EventType =
   | 'line.updated'
   | 'line.state_changed'
   | 'line.hung_up'
+  | 'line.hold_refused'
   | 'line.activity'
   | 'line.chat'
   | 'term.created'

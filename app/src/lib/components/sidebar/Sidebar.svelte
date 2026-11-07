@@ -14,8 +14,8 @@
   import { saveSettings, settings } from '../../settings.svelte';
   import { organizer } from '../../organize.svelte';
   import { nudgeVisible, unplacedCount } from '../../organize';
-  import StatusList from './StatusList.svelte';
-  import WorkspaceTree from './WorkspaceTree.svelte';
+  import SpacesView from './SpacesView.svelte';
+  import StatesView from './StatesView.svelte';
 
   const unplaced = $derived(app.connected && app.wsPersistent ? unplacedCount(app.data.lines, app.ws.workspaces, app.projects, app.data.tasks) : 0);
   const nudge = $derived(nudgeVisible(unplaced, settings.organizeNudgeAt));
@@ -71,9 +71,9 @@
     </div>
   {/if}
   {#if app.sidebarMode === 'workspaces'}
-    <WorkspaceTree {filter} {showArchived} />
+    <SpacesView {filter} {showArchived} />
   {:else}
-    <StatusList {filter} />
+    <StatesView {filter} />
   {/if}
   {#if selection.length > 1}
     <div class="selbar" role="toolbar" aria-label={t('ws.selection', { n: selection.length })}>

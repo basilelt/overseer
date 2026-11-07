@@ -190,6 +190,8 @@ function seedLines(now: number): LocalLine[] {
       pid: s.state === 'held' ? undefined : 4100 + i,
       busy: !!s.busy,
       needsInput: !!s.needsInput,
+      subagents: 0,
+      tasks: 0,
       title: s.title,
       heldReason: s.state === 'held' ? (s.ago > 600 ? 'lost' : 'user') : undefined,
     },
@@ -742,7 +744,8 @@ export class MockDaemon implements DaemonClient {
     if ((r = m(/^\/v1\/lines\/([^/]+)\/chat\/agents\/([^/]+)$/))) return this.agentChat(decodeURIComponent(r[1]), decodeURIComponent(r[2]), new URLSearchParams(qs));
     if ((r = m(/^\/v1\/lines\/([^/]+)\/(chat|screen|keys|commands)$/))) return this.chatRoute(decodeURIComponent(r[1]), r[2], new URLSearchParams(qs), body);
     if (method === 'PUT' && (r = m(/^\/v1\/(lines|terms)\/([^/]+)\/workspace$/))) return this.assignWorkspace(r[1], decodeURIComponent(r[2]), body);
-    if ((r = m(/^\/v1\/lines\/([^/]+)\/(activity|diff|hold|close|resume|pin|title)$/))) return this.lineAction(decodeURIComponent(r[1]), r[2], body, !fullPath.includes('dryRun=false'), fullPath.includes('force=true'));
+    if (method === 'DELETE' && (r = m(/^\/v1\/lines\/([^/]+)\/hold$/))) return this.cancelHold(decodeURIComponent(r[1]));
+    if ((r = m(/^\/v1\/lines\/([^/]+)\/(activity|diff|hold|close|resume|pin|title)$/))) return this.lineAction(decodeURIComponent(r[1]), r[2], body, !fullPath.includes('dryRun=false'), new URLSearchParams(qs).get('afterTurn') === 'true', fullPath.includes('force=true'));
     if ((r = m(/^\/v1\/(workspaces|folders|groups)(?:\/([^/]+))?$/))) return this.wsRoute(method, r[1] as WsKind, r[2] && decodeURIComponent(r[2]), body);
     if (method === 'POST' && path === '/v1/broadcast') return this.broadcast(body);
     if (method === 'POST' && (r = m(/^\/v1\/ports\/([^/]+)\/kill$/))) return this.killPortProcess(decodeURIComponent(r[1]), body);
@@ -822,37 +825,80 @@ export class MockDaemon implements DaemonClient {
     return l;
   }
 
-  private holdOrClose(l: LocalLine, action: 'hold' | 'close', dry: boolean, force: boolean) {
-    const id = l.line.id;
-    const alive = l.line.state !== 'held' && l.line.state !== 'hung-up';
-    const close = action === 'close';
-    const c = (ok: boolean, detail: string) => (ok ? { ok } : { ok, detail });
-    const predicates: Record<string, { ok: boolean; detail?: string }> =
-      close && (force || !alive)
-        ? {}
-        : {
-            alive: c(alive, 'no live agent process for this line'),
-            inTmux: { ok: true },
-            atPrompt: c(!l.local?.busy, 'agent is mid-turn'),
-            inputEmpty: { ok: true },
-            noToolRunning: { ok: true },
-            notPinned: c(!l.local?.pinned, 'line is pinned'),
-            notNeedsInput: c(!l.local?.needsInput, 'agent is waiting for you'),
-          };
-    const steps = alive ? [`SIGTERM ${l.local?.pid ?? '?'}`] : [];
-    if (Object.values(predicates).some((p) => !p.ok)) throw new DaemonError(409, 'HTTP 409', { lineId: id, predicates, action: 'none', steps });
-    if (close) steps.push(`mark ${id} hung-up${alive ? '' : ' (no live process)'}`);
-    if (dry) return { lineId: id, predicates, action: close ? 'would-close' : 'would-hold', steps };
-    const from = l.line.state;
-    l.line.state = close ? 'hung-up' : 'held';
-    l.local = { ...l.local, busy: false, needsInput: false, heldReason: close ? undefined : 'user' };
-    this.emit(close ? 'line.hung_up' : 'line.state_changed', { line: l.line, from, to: l.line.state, local: l.local });
-    return { lineId: id, predicates, action: close ? 'closed' : 'held', steps };
+  private cancelHold(id: string) {
+    const l = this.lines.find((x) => x.line.id === id);
+    if (!l) throw new DaemonError(404, `no line matches '${id}'`);
+    if (l.local?.holdPending) {
+      l.local = { ...l.local, holdPending: undefined };
+      this.emit('line.updated', { line: l.line, local: l.local });
+    }
+    return { lineId: id, holdPending: false };
   }
 
-  private lineAction(id: string, action: string, body: any, dry = false, force = false): unknown {
+  /** Hold with afterTurn: queue while the turn runs or the agent waits for the user, like the daemon. */
+  private holdAfterTurn(l: LocalLine, dry: boolean): unknown {
+    const id = l.line.id;
+    const predicates = this.holdChecks(l);
+    const failed = Object.entries(predicates).filter(([, p]) => !p.ok).map(([k]) => k);
+    // Like the daemon: only turn-bound failures queue; alive and notPinned are refused.
+    if (failed.some((k) => !['atPrompt', 'inputEmpty', 'noToolRunning', 'notNeedsInput'].includes(k))) throw new DaemonError(409, 'refused', { lineId: id, action: 'none', predicates, steps: [] });
+    if (!failed.length) return dry ? { lineId: id, action: 'would-hold', predicates, steps: [`SIGTERM ${l.local?.pid ?? '?'}`] } : this.holdNow(l);
+    if (dry) return { lineId: id, action: 'would-hold-pending', predicates, steps: [`record a pending hold on ${id}`, 'hold it when the turn ends and the agent is not waiting for you'] };
+    l.local = { ...l.local, holdPending: true };
+    this.emit('line.updated', { line: l.line, local: l.local });
+    return { lineId: id, action: 'hold-pending', predicates, steps: [`record a pending hold on ${id}`, 'hold it when the turn ends and the agent is not waiting for you'] };
+  }
+
+  private blockedSince = new Map<string, number>();
+
+  /** A lasting failed predicate (task, pin) blocks a pending hold; like the daemon it is dropped once blocked for 10 s. */
+  private dropBlockedHold(p: LocalLine, failed: { name: string; detail?: string }[]) {
+    const id = p.line.id;
+    const since = this.blockedSince.get(id) ?? Date.now();
+    this.blockedSince.set(id, since);
+    if (Date.now() - since < 10_000) return;
+    this.blockedSince.delete(id);
+    p.local = { ...p.local, holdPending: undefined };
+    this.emit('line.hold_refused', { lineId: id, failed, error: null });
+    this.emit('line.updated', { line: p.line, local: p.local });
+  }
+
+  /** The daemon's hold predicates the mock can evaluate, with its details. */
+  private holdChecks(l: LocalLine): Record<string, { ok: boolean; detail?: string }> {
+    const alive = l.line.state !== 'held' && l.line.state !== 'hung-up';
+    const check = (ok: boolean, detail: string) => (ok ? { ok } : { ok, detail });
+    const tool = l.local?.subagents ? 'a subagent is running' : l.local?.tasks ? 'a background task is running' : '';
+    return {
+      alive: check(alive, 'no live agent process for this line'),
+      inTmux: { ok: true },
+      atPrompt: check(!l.local?.busy, 'agent is mid-turn'),
+      inputEmpty: { ok: true },
+      noToolRunning: check(!tool, tool),
+      notPinned: check(!l.local?.pinned, 'line is pinned'),
+      notNeedsInput: check(!l.local?.needsInput, 'agent is waiting for you'),
+    };
+  }
+
+  private holdNow(l: LocalLine) {
+    const from = l.line.state;
+    l.line.state = 'held';
+    l.local = { ...l.local, busy: false, needsInput: false, holdPending: undefined, heldReason: 'user', heldAt: new Date().toISOString() };
+    this.emit('line.state_changed', { line: l.line, from, to: 'held', local: l.local });
+    return { lineId: l.line.id, action: 'held', predicates: {} };
+  }
+
+  private lineAction(id: string, action: string, body: any, dry = false, afterTurn = false, force = false): unknown {
     const l = this.findLine(id);
-    if (action === 'hold' || action === 'close') return this.holdOrClose(l, action, dry, force);
+    if (action === 'hold' && afterTurn) return this.holdAfterTurn(l, dry);
+    if (action === 'hold' || action === 'close') {
+      // The daemon ignores force on hold; on close it skips the predicates of a live line.
+      const alive = l.line.state !== 'held' && l.line.state !== 'hung-up';
+      const predicates = action === 'close' && (force || !alive) ? {} : this.holdChecks(l);
+      const plan = { lineId: id, action: 'none', predicates, steps: alive ? [`SIGTERM ${l.local?.pid ?? '?'}`] : [] };
+      if (Object.values(predicates).some((p) => !p.ok)) throw new DaemonError(409, 'HTTP 409', plan);
+      if (action === 'close') plan.steps.push(`mark ${id} hung-up${alive ? '' : ' (no live process)'}`);
+      if (dry) return { ...plan, action: action === 'hold' ? 'would-hold' : 'would-close' };
+    }
     switch (action) {
       case 'activity':
         if (!this.agents.find((a) => a.id === l.line.agent)?.sessions || !this.activity[id]) {
@@ -862,6 +908,15 @@ export class MockDaemon implements DaemonClient {
       case 'diff':
         if (l.line.repo === 'unknown') throw new DaemonError(409, 'fatal: not a git repository (or any of the parent directories): .git');
         return { lineId: id, worktree: l.line.worktreePath ?? '', status: ' M src/term.rs\n M tests/term.rs', stat: ' 2 files changed, 21 insertions(+), 3 deletions(-)', diff: bigDiff() ? bigPatch() : DIFF, truncated: false } satisfies Diff;
+      case 'hold':
+      case 'close': {
+        if (action === 'hold') return this.holdNow(l);
+        const from = l.line.state;
+        l.line.state = 'hung-up';
+        l.local = { ...l.local, busy: false, needsInput: false, holdPending: undefined, heldReason: undefined, heldAt: undefined };
+        this.emit('line.hung_up', { line: l.line, from, to: l.line.state, local: l.local });
+        return { lineId: id, action: 'closed', predicates: {} };
+      }
       case 'pin':
         l.local = { ...l.local, pinned: !!body?.pinned };
         this.emit('line.updated', { line: l.line, local: l.local });
@@ -875,11 +930,18 @@ export class MockDaemon implements DaemonClient {
       }
       case 'resume': {
         const existing = this.terms.find((t) => t.lineId === id && !t.exited);
-        if (existing) return existing;
+        if (existing) {
+          if (l.line.state === 'held') {
+            l.line.state = 'active';
+            l.local = { ...l.local, heldReason: undefined, heldAt: undefined };
+            this.emit('line.state_changed', { line: l.line, from: 'held', to: 'active', local: l.local });
+          }
+          return existing;
+        }
         if (body?.attachOnly) throw new DaemonError(409, 'the agent is not running: resume it to start it again');
         const from = l.line.state;
         l.line.state = 'active';
-        l.local = { ...l.local, heldReason: undefined };
+        l.local = { ...l.local, heldReason: undefined, heldAt: undefined };
         this.emit('line.state_changed', { line: l.line, from, to: 'active', local: l.local });
         return this.spawn({ cwd: l.line.worktreePath ?? ROOT, cmd: [l.line.agent, '--resume', id], cols: 120, rows: 32, title: l.local?.title, lineId: id }, l.line.agent);
       }
@@ -1675,6 +1737,29 @@ export class MockDaemon implements DaemonClient {
 
   tick() {
     this.drainQueue();
+    // Like the daemon: a pending hold is applied by the scan after the turn ended and only
+    // when the agent is not waiting for the user; a busy turn ends on this tick.
+    // Like the daemon: a dead line loses its pending hold, a turn or a subagent keeps it waiting,
+    // and any other failed predicate drops it after the grace.
+    for (const p of this.lines.filter((x) => x.local?.holdPending)) {
+      const id = p.line.id;
+      if (p.line.state === 'held' || p.line.state === 'hung-up') {
+        p.local = { ...p.local, holdPending: undefined };
+        this.blockedSince.delete(id);
+        this.emit('line.updated', { line: p.line, local: p.local });
+      } else if (p.local?.busy) {
+        p.local = { ...p.local, busy: false };
+        this.emit('line.updated', { line: p.line, local: p.local });
+      } else if (p.local?.needsInput || p.local?.subagents) this.blockedSince.delete(id);
+      else {
+        const failed = Object.entries(this.holdChecks(p)).filter(([, c]) => !c.ok);
+        if (failed.length) this.dropBlockedHold(p, failed.map(([name, c]) => ({ name, detail: c.detail })));
+        else {
+          this.blockedSince.delete(id);
+          this.holdNow(p);
+        }
+      }
+    }
     const running = this.tasks.filter((t) => t.status === 'in_progress');
     const t = running[this.seq % Math.max(1, running.length)];
     if (t?.progress) {

@@ -407,6 +407,11 @@ aborted and reverted), and the pane shows
 `overseer resume <line>` does the same from elsewhere. A held line stays held after a reboot;
 to get the stub back in its pane after a reboot apply [`docs/toolkit-patch.md`](toolkit-patch.md).
 
+A pause queued for the end of the turn (`afterTurn`) also waits for running sub-agents. A
+background task does not wait: after `OVERSEER_HOLD_GRACE_MS` (default 10 s) the pause is dropped
+and the app is told. If an agent lost its sub-agent end event, the pause waits until the session
+ends or restarts, the line is closed, or you cancel the pause.
+
 `close` marks a line `hung-up` (finished). A live line is held first, with the same checks.
 
 An agent running in an Overseer terminal (daemon term) is held through the daemon
@@ -856,6 +861,7 @@ Station (mostly for tests and services):
 | `OVERSEER_TMUX_SNAPSHOT` | `~/.local/state/tmux-snapshot/latest/state.json` | Snapshot file read for launch flags. |
 | `OVERSEER_NOW` | current time | Fixed RFC 3339 "now". |
 | `OVERSEER_HOLD_TIMEOUT_MS` | `10000` | Wait for the agent to exit after SIGTERM in `hold` (abort and revert after). |
+| `OVERSEER_HOLD_GRACE_MS` | `10000` | How long a lasting block (e.g. a background task) must last before a pending `afterTurn` hold is dropped. |
 | `OVERSEER_START_TIMEOUT_MS` | `30000` | Wait for the agent's prompt in `start`, `relaunch`, `patch --local`. |
 | `OVERSEER_RELAY_TIMEOUT_MS` | `15000` | Board relay wait for the outcome. |
 | `OVERSEER_TASK_ID` | set by the daemon | In an agent started for a task: its task id (MCP `id` default). |
@@ -881,7 +887,7 @@ On first launch, once the app is connected (immediately in local mode, after the
 connection on a phone), a welcome card offers **Take the tour** or **Skip**. The tour dims the
 window and highlights the real controls one at a time: host chip, workspaces sidebar, tabs and the
 new-session menu, the Terminal/Chat toggle, the side panel, Tasks, Review, the usage, system and ports
-chips, notifications and hooks, the command palette and Feedback, in 0.25 the Cmd/Ctrl+P palette shortcut, and in 0.27 the demo mode (on the **Demo mode** pill while in the demo, else on the host chip), and in 0.28 the GPU rendering option for terminals, and in 0.29 the clean up of unused worktrees and the import from Switchboard (on its button in Settings, Help, or on the Settings button), and in 0.30 click to move the cursor in a terminal (on the tabs). Steps whose control is not on
+chips, notifications and hooks, the command palette and Feedback, in 0.25 the Cmd/Ctrl+P palette shortcut, and in 0.27 the demo mode (on the **Demo mode** pill while in the demo, else on the host chip), and in 0.28 the GPU rendering option for terminals, and in 0.29 the clean up of unused worktrees and the import from Switchboard (on its button in Settings, Help, or on the Settings button), and in 0.30 the Graphite and Solarized Soft themes (on Settings, or More on a phone), and click to move the cursor in a terminal (on the tabs). Steps whose control is not on
 screen (no session selected, a feature the server lacks, phone layout) are skipped. On a phone the
 card is a sheet at the bottom (or top, when the control sits low) and points at the bottom
 navigation, the session strip and the menu.
@@ -900,6 +906,10 @@ logs, feedback). The search box at the top of the sidebar has focus when Setting
 setting's name or description, in the app language or in English, and only the matching settings stay,
 highlighted, with a count per category; Esc clears the search. On a phone the categories are a list
 that opens a section, with a back button.
+
+**Solarized Soft** (Settings > General > Appearance) has deep teal backgrounds and warm terminal colors inspired by Solarized. Text and accent colors are brighter for readability. Its customizations are saved independently from Graphite, Light and Dark; **Reset** restores only Solarized Soft.
+
+**Graphite** (Settings > General > Appearance) is a softer dark theme with gray panels and a pale blue accent. Light, Dark and System remain available. Color customizations are saved separately for Graphite, Light and Dark; **Reset** restores only the selected palette. Terminals follow its background and text colors.
 
 **GPU rendering** (Settings > Terminal, off by default, experimental) draws terminals with WebGL
 instead of the normal renderer, which keeps long, fast output smooth. It needs hardware graphics
@@ -1540,19 +1550,22 @@ browser and review tab that belongs to it. The sidebar shows **Workspaces** (def
 **By status** (the session list grouped by Needs input, Needs testing, Working, Pushed, Idle,
 Stopped: no live agent process, resumable); the toggle is at the top of the sidebar.
 
-- **Tree**: pinned workspaces on top, then your folders (one level of sub-folders) and the
-  workspaces outside any folder. Every project the daemon knows gets a workspace: the
+- **Spaces**: pinned workspaces on top, then your folders (one level of sub-folders) and the
+  workspaces outside any folder. Each workspace is one block with its sessions under it: click its
+  name to open it (its tab strip and `+` show), the chevron only folds it. A group section at the
+  bottom lists your groups; click one to open it. Every project the daemon knows gets a workspace: the
   repositories its agents ran in, and the git repositories it finds under `discoverRoots`
   (3.1; by default `~/Documents/Github`, `~/src`, `~/code`, `~/projects`, `~/dev`), scanned at
   start, every 10 minutes and with **Rescan folders** in the `+` menu or the palette. `+` adds one
   from any folder (`~` is fine), the folder button adds a folder, the archive button shows
   archived workspaces. When a workspace's folder is renamed or deleted, a workspace created
   automatically is hidden (it comes back with the folder; the new name is found by the next
-  scan) and one you added stays, marked "Folder missing". Drag a workspace onto another to reorder, onto a folder to move it in, onto
-  **Pinned** to pin it; drag folders the same way. Right-click for rename, pin, move, broadcast,
+  scan) and one you added stays, marked "Folder missing". Drag a workspace header onto another to reorder, onto a folder to move it in, onto
+  **Pinned** to pin it; drag folders the same way. Right-click a workspace, folder, group, the
+  **Other** row or a session for rename, pin, move, broadcast,
   hold all, resume all, "notify me when all agents are idle", archive and delete. A folder
   remembers whether it is collapsed.
-- **Row**: the most urgent state of its agents (Needs input, then Running, then Needs testing,
+- **Block**: the most urgent state of its sessions (Needs input, then Running, then Needs testing,
   then Idle; shells do not count) with how many agents are in it, the last status line ("Claude
   finished", "Asking: …"), the host and its connection state, and the folder path.
 - **Membership**: a line belongs to the workspace of its task's project, else to the workspace

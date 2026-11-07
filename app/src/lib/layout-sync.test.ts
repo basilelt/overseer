@@ -6,7 +6,7 @@ import { rememberTerms } from './tabs';
 import type { Term } from './types';
 import { layoutFromTabs } from './workspace.svelte';
 
-const item = (key: string, over: Partial<SidebarItem> = {}): SidebarItem => ({ key, kind: 'claude', group: 'working', title: key, at: '2026-10-29T10:00:00Z', ...over });
+const item = (key: string, over: Partial<SidebarItem> = {}): SidebarItem => ({ key, kind: 'claude', group: 'running', state: 'running', title: key, at: '2026-10-29T10:00:00Z', ...over });
 
 function memoryStorage() {
   const data = new Map<string, string>();

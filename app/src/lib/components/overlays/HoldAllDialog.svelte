@@ -5,6 +5,7 @@
   import { app } from '../../state.svelte';
   import { t } from '../../i18n.svelte';
   import type { HoldPlan } from '../../api';
+  import { isOff } from '../../grouping';
   import { targetItems, targetName } from '../../wsactions';
 
   let { onclose }: { onclose: () => void } = $props();
@@ -14,7 +15,7 @@
   const checked = mode !== 'resume';
   const target = app.broadcastTarget ?? { kind: 'items' as const, keys: [] };
   const name = targetName(target);
-  const lines = targetItems(target).filter((i) => i.lineId && (mode === 'close' || (mode === 'hold' ? i.group !== 'held' : i.group === 'held')));
+  const lines = targetItems(target).filter((i) => i.lineId && (mode === 'close' || (mode === 'hold' ? !isOff(i) : isOff(i))));
 
   let plans = $state<Record<string, HoldPlan | 'loading'>>({});
   let chosen = $state(new Set<string>());
@@ -53,7 +54,7 @@
       try {
         if (mode === 'hold') await app.api.hold(id);
         else if (mode === 'close') await app.api.close(id);
-        else await app.resumeLine({ key: `line:${id}`, lineId: id, kind: '', group: 'held', title: '', at: '' });
+        else await app.resumeLine({ key: `line:${id}`, lineId: id, kind: '', group: 'stopped', state: 'closed', title: '', at: '' });
         done = { ...done, [id]: 'ok' };
       } catch (e) {
         done = { ...done, [id]: String((e as Error)?.message ?? e) };

@@ -29,7 +29,7 @@
   import { canResize, fitTo, isAgentTerm, shouldReassert, sizedElsewhere } from '../../mobile/termsize';
   import { ui } from '../../mobile/ui.svelte';
   import { isNativeAndroid, native } from '../../mobile/native';
-  import { customColors, resolvedTheme, saveSettings, settings } from '../../settings.svelte';
+  import { colorPalette, customColors, resolvedTheme, saveSettings, settings } from '../../settings.svelte';
   import { app } from '../../state.svelte';
   import { loadGhostty, termTheme } from '../../terminal';
   import { pathRanges } from '../../termlinks';
@@ -272,7 +272,7 @@
           ghostty,
           fontFamily: fontChain(settings.terminalFont),
           fontSize,
-          theme: termTheme(theme, customColors(theme)),
+          theme: termTheme(theme, customColors(), colorPalette()),
           cursorBlink: true,
           scrollback: scrollbackBytes(settings.scrollbackLines),
         });

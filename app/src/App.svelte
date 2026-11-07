@@ -49,7 +49,7 @@
   });
   $effect(() => {
     const theme = resolvedTheme();
-    const report = themeReport(theme, customColors(theme));
+    const report = themeReport(theme, customColors());
     if (app.connected && app.conn.phase === 'connected') app.client?.request('POST', '/v1/theme', report).catch(() => {});
   });
 

@@ -27,6 +27,7 @@
   import { openPrReviews } from '../../github/open.svelte';
   import { diag, dt } from '../../diag.svelte';
   import type { Component } from 'svelte';
+  import { connLabel } from '../../conn-label';
   import { t } from '../../i18n.svelte';
   import { saveSettings, settings, type ThemePref } from '../../settings.svelte';
   import { app } from '../../state.svelte';
@@ -34,9 +35,7 @@
   import RotateCw from '@lucide/svelte/icons/rotate-cw';
 
   const conn = $derived(app.conn);
-  const phase = $derived(
-    conn.phase === 'reconnecting' ? t('conn.reconnecting', { n: conn.attempt ?? 1 }) : conn.phase === 'installing' ? t('conn.installing', { version: conn.version ?? '' }) : t(`conn.${conn.phase}`),
-  );
+  const phase = $derived(connLabel(conn));
   const host = $derived(conn.target.kind === 'local' ? t('host.local') : conn.target.label || t('mobile.more.notConnected'));
   let confirmRestart = $state(false);
   let restarting = $state(false);
@@ -57,6 +56,8 @@
     { id: 'auto', label: () => t('settings.theme.system') },
     { id: 'light', label: () => t('settings.theme.light') },
     { id: 'dark', label: () => t('settings.theme.dark') },
+    { id: 'graphite', label: () => t('settings.theme.graphite') },
+    { id: 'solarized', label: () => t('settings.theme.solarized') },
   ];
 
   const tools: { icon: Component<{ size?: number }>; label: () => string; run: () => void; disabled?: () => boolean; badge?: () => number }[] = [
@@ -118,7 +119,7 @@
   </div>
 
   <h3>{t('mobile.more.appearance')}</h3>
-  <div class="seg" role="radiogroup" aria-label={t('settings.theme')}>
+  <div class="seg themes" role="radiogroup" aria-label={t('settings.theme')}>
     {#each themes as th (th.id)}
       <button role="radio" aria-checked={settings.theme === th.id} class:on={settings.theme === th.id} onclick={() => saveSettings({ theme: th.id })}>{th.label()}</button>
     {/each}
@@ -213,6 +214,13 @@
     border: 1px solid var(--border);
     border-radius: var(--radius-lg);
     background: var(--surface-2);
+  }
+  .themes {
+    flex-wrap: wrap;
+  }
+  .seg.themes button {
+    flex-basis: 28%;
+    white-space: nowrap;
   }
   .seg button {
     flex: 1;

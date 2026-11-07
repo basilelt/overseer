@@ -284,10 +284,42 @@ pub fn is_claude(arg: &str) -> bool {
     arg.contains("claude")
 }
 
+/// Last parsed content of each session file: Claude rewrites it in place, so a scan can read it
+/// torn mid-write, and that one read must not make a live session vanish.
+static LAST_GOOD: OnceLock<Mutex<HashMap<PathBuf, Value>>> = OnceLock::new();
+
+fn read_session(path: &Path, seen: &mut HashSet<PathBuf>) -> Option<Value> {
+    let bytes = std::fs::read(path).ok()?;
+    let mut cache = LAST_GOOD
+        .get_or_init(Default::default)
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+    seen.insert(path.to_path_buf());
+    match serde_json::from_slice::<Value>(&bytes) {
+        Ok(v) => {
+            cache.insert(path.to_path_buf(), v.clone());
+            Some(v)
+        }
+        Err(_) => cache.get(path).cloned(),
+    }
+}
+
 pub fn live(claude_dir: &Path, probe: &dyn Probe) -> Vec<Live> {
-    let Ok(dir) = std::fs::read_dir(claude_dir.join("sessions")) else {
+    let sessions = claude_dir.join("sessions");
+    let Ok(dir) = std::fs::read_dir(&sessions) else {
         return vec![];
     };
+    let mut seen = HashSet::new();
+    let out = live_in(dir, probe, &mut seen);
+    LAST_GOOD
+        .get_or_init(Default::default)
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .retain(|p, _| !p.starts_with(&sessions) || seen.contains(p));
+    out
+}
+
+fn live_in(dir: std::fs::ReadDir, probe: &dyn Probe, seen: &mut HashSet<PathBuf>) -> Vec<Live> {
     let mut out = vec![];
     for e in dir.flatten() {
         let path = e.path();
@@ -299,10 +331,7 @@ pub fn live(claude_dir: &Path, probe: &dyn Probe) -> Vec<Live> {
         else {
             continue;
         };
-        let Some(v) = std::fs::read(&path)
-            .ok()
-            .and_then(|b| serde_json::from_slice::<Value>(&b).ok())
-        else {
+        let Some(v) = read_session(&path, seen) else {
             continue;
         };
         let Some(session_id) = v["sessionId"].as_str().map(str::to_string) else {
@@ -399,6 +428,56 @@ mod tests {
             launch_flags(&with_prompt),
             [f, v(&["--effort", "max"])].concat()
         );
+    }
+
+    struct Alive(std::cell::Cell<bool>);
+    impl Probe for Alive {
+        fn info(&self, pid: u32) -> Option<crate::procs::ProcInfo> {
+            (pid == 4242 && self.0.get()).then(|| crate::procs::ProcInfo {
+                start: Some("77".into()),
+                argv: v(&["claude", "--session-id", "s1"]),
+                start_ms: None,
+            })
+        }
+        fn list(&self) -> Vec<(u32, Vec<String>)> {
+            vec![]
+        }
+        fn cwd(&self, _: u32) -> Option<String> {
+            None
+        }
+    }
+
+    #[test]
+    fn a_session_file_read_mid_rewrite_keeps_the_session_live() {
+        // Given a live claude session whose sessions file was read once
+        // When a scan reads it torn by an in-place rewrite, then the process exits
+        // Then the session stays live with its last status, and is gone once the process is
+        let dir = std::env::temp_dir().join(format!("sb-claude-torn-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("sessions")).unwrap();
+        let file = dir.join("sessions/4242.json");
+        let body = r#"{"pid":4242,"sessionId":"s1","cwd":"/w","procStart":"77","status":"busy"}"#;
+        std::fs::write(&file, body).unwrap();
+        let probe = Alive(std::cell::Cell::new(true));
+        let first = live(&dir, &probe);
+        assert_eq!(first.len(), 1);
+        assert!(first[0].alive.is_some() && first[0].busy);
+        std::fs::write(&file, &body[..body.len() / 2]).unwrap();
+        let torn = live(&dir, &probe);
+        assert_eq!(torn.len(), 1, "a torn read must not drop the session");
+        assert_eq!(torn[0].session_id, "s1");
+        assert!(torn[0].alive.is_some() && torn[0].busy);
+        probe.0.set(false);
+        assert!(live(&dir, &probe).iter().all(|l| l.alive.is_none()));
+        std::fs::remove_file(&file).unwrap();
+        assert!(live(&dir, &probe).is_empty());
+        std::fs::write(&file, "").unwrap();
+        probe.0.set(true);
+        assert!(
+            live(&dir, &probe).is_empty(),
+            "no stale cache once the file was gone"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

@@ -878,9 +878,20 @@ pub fn handle(ctx: &Ctx, r: &Request) -> (u16, Value) {
             }
             Err(e) => err(500, e),
         },
-        ("POST", ["v1", "lines", id, "hold"]) => match actions::hold(ctx, id, !dry_run(r)) {
-            Ok(rep) => (if rep.ok() { 200 } else { 409 }, rep.to_json()),
-            Err(e) => err(404, e),
+        ("POST", ["v1", "lines", id, "hold"]) => {
+            let held = if q(r, "afterTurn") == Some("true") {
+                actions::hold_after_turn(ctx, id, !dry_run(r))
+            } else {
+                actions::hold(ctx, id, !dry_run(r))
+            };
+            match held {
+                Ok(rep) => (if rep.ok() { 200 } else { 409 }, rep.to_json()),
+                Err(e) => err(404, e),
+            }
+        }
+        ("DELETE", ["v1", "lines", id, "hold"]) => match actions::cancel_pending_hold(ctx, id) {
+            Ok(id) => (200, json!({"lineId": id, "holdPending": false})),
+            Err((code, e)) => err(code, e),
         },
         ("POST", ["v1", "lines", id, "close"]) => {
             match actions::close(
@@ -1403,6 +1414,7 @@ pub fn run(
                     crate::term::link_lines(&lines);
                     crate::term::trim_exited(ctx.now_ms);
                     crate::lifecycle::persist(&state_dir, &lines);
+                    actions::apply_pending_holds(&ctx, &lines);
                     crate::tasks::tick(&ctx, &lines);
                     crate::review::tick(&ctx, &lines);
                     crate::broadcast::tick(&ctx, &lines);

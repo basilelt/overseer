@@ -2,7 +2,7 @@
   import type { SidebarItem } from '../../grouping';
   import { t } from '../../i18n.svelte';
   import { age } from '../../time';
-  import AgentIcon, { GROUP_COLOR } from './AgentIcon.svelte';
+  import AgentIcon, { GROUP_COLOR, STATE_COLOR } from './AgentIcon.svelte';
 
   let { item, selected, now, onselect }: { item: SidebarItem; selected: boolean; now: number; onselect: (e?: MouseEvent) => void } = $props();
 </script>
@@ -20,6 +20,7 @@
   <div class="top">
     <AgentIcon kind={item.kind} />
     <span class="title">{item.title}</span>
+    <span class="st" title={t(`session.state.${item.state}`)} style:--c={STATE_COLOR[item.state]}><span class="sd"></span>{t(`session.state.${item.state}`)}</span>
     <span class="age faint">{age(item.at, now)}</span>
   </div>
   {#if item.goal && item.kind === 'shell'}<div class="line muted mono path">{item.goal}</div>
@@ -70,6 +71,26 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+  .st {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    flex: 0 1 auto;
+    min-width: 0;
+    max-width: 45%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 11px;
+    color: var(--text-2);
+  }
+  .sd {
+    flex: none;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--c);
   }
   .age {
     font-size: 11px;
