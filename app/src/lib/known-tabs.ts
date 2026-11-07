@@ -1,9 +1,11 @@
 import type { SidebarItem } from './grouping';
+import type { Layout } from './workspace.svelte';
 
 export interface KnownTabs {
   known: string[];
   tabs?: string[];
   active?: string | null;
+  shape?: Layout;
 }
 
 const KEY = 'overseer.knownTabs';
