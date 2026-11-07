@@ -242,6 +242,7 @@ fn stamp(probe: &dyn crate::procs::Probe, pid: u32) -> Option<Stamp> {
 
 /// Same process as when the stamp was taken. macOS has no `start`, so `start_ms` counts too;
 /// a stamp with neither can never be verified.
+#[cfg(unix)]
 fn same_process(now: &Stamp, then: &Stamp) -> bool {
     match (&now.0, &then.0, now.1, then.1) {
         (None, None, None, None) => false,
@@ -266,6 +267,7 @@ fn descendants(ctx: &Ctx, pid: u32) -> Vec<(u32, Option<Stamp>)> {
     out
 }
 
+#[cfg(unix)]
 fn alive_same(probe: &dyn crate::procs::Probe, pid: u32, then: &Option<Stamp>) -> bool {
     match (stamp(probe, pid), then) {
         (Some(now), Some(then)) => same_process(&now, then),
@@ -273,6 +275,7 @@ fn alive_same(probe: &dyn crate::procs::Probe, pid: u32, then: &Option<Stamp>) -
     }
 }
 
+#[cfg(unix)]
 fn signal_tree(
     probe: &dyn crate::procs::Probe,
     tree: &[(u32, Option<Stamp>)],
@@ -1211,6 +1214,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn a_reused_pid_is_not_signalled_even_without_a_start_tick_stamp() {
         // Given a descendant recorded on a platform that only reports start_ms (macOS)
         // When its pid is reused by a process that started later, or is unchanged
