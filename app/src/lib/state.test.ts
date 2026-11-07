@@ -534,6 +534,21 @@ describe('daemon events', () => {
     expect(center.entries[0].source).toBe('Local diff');
   });
 
+  it('toasts why a queued pause was cancelled when the daemon refuses it', () => {
+    app.onEvent(event('line.hold_refused', { lineId: 'ln_01', failed: [{ name: 'noToolRunning', detail: 'a tool subprocess is running' }], error: null }));
+    expect(app.toast).toMatchObject({ text: t('chat.pauseRefused', { reason: 'a tool subprocess is running' }), kind: 'info' });
+    expect(app.toast?.text).toBe('Pause cancelled: a tool subprocess is running');
+  });
+
+  it('joins every failed check detail and falls back to the check name or the error', () => {
+    app.onEvent(event('line.hold_refused', { lineId: 'ln_01', failed: [{ name: 'noToolRunning', detail: 'a subagent is running' }, { name: 'notPinned' }], error: null }));
+    expect(app.toast?.text).toBe('Pause cancelled: a subagent is running, notPinned');
+    app.onEvent(event('line.hold_refused', { lineId: 'ln_01', failed: [], error: 'daemon busy' }));
+    expect(app.toast?.text).toBe('Pause cancelled: daemon busy');
+    app.onEvent(event('line.hold_refused', { lineId: 'ln_01' }));
+    expect(app.toast?.text).toBe('Pause cancelled');
+  });
+
   it('notifies change listeners of session updates and unsubscribes', () => {
     const changed = vi.fn();
     const off = app.onChange(changed);

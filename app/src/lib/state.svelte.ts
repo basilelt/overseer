@@ -469,6 +469,12 @@ class AppState {
       if (e.data?.message?.id) for (const l of this.messageListeners) l(e.data.message);
       return;
     }
+    if (e.type === 'line.hold_refused') {
+      const failed = (e.data?.failed ?? []) as { name: string; detail?: string }[];
+      const why = failed.map((c) => c.detail || c.name).join(', ') || (e.data?.error as string | null | undefined) || '';
+      this.notify(why ? t('chat.pauseRefused', { reason: why }) : t('chat.pauseCancelled'));
+      return;
+    }
     if (e.type === 'line.chat') {
       if (e.data?.lineId) for (const l of this.chatListeners) l(e.data);
       return;
