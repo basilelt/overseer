@@ -19,6 +19,7 @@ import {
   paneAction,
   moveKey,
   planFolderDrop,
+  folderDropRefusal,
   planWorkspaceDrop,
   rankAt,
   resolveTab,
@@ -313,6 +314,18 @@ describe('sidebar tree', () => {
     expect(planFolderDrop(data, 'alice', { type: 'folder', id: 'acme', pos: 'inside' })).toBeNull();
     expect(planFolderDrop(data, 'uni', { type: 'folder', id: 'labs', pos: 'inside' })).toBeNull();
     expect(planFolderDrop(data, 'labs', { type: 'root' })).toMatchObject({ parentId: null });
+  });
+
+  it('names the reason a folder drop is refused', () => {
+    expect(folderDropRefusal(data, 'alice', { type: 'folder', id: 'acme', pos: 'inside' })).toBe('ws.folderDepth');
+    expect(folderDropRefusal(data, 'uni', { type: 'folder', id: 'labs', pos: 'inside' })).toBe('ws.folderDepth');
+    expect(folderDropRefusal(data, 'alice', { type: 'folder', id: 'labs', pos: 'inside' })).toBe('ws.folderDepth');
+    expect(folderDropRefusal(data, 'alice', { type: 'folder', id: 'labs', pos: 'before' })).toBe('ws.folderDepth');
+    expect(folderDropRefusal(data, 'uni', { type: 'pinned' })).toBe('ws.folderDropTarget');
+    expect(folderDropRefusal(data, 'uni', { type: 'folder', id: 'uni', pos: 'inside' })).toBeNull();
+    expect(folderDropRefusal(data, 'uni', { type: 'folder', id: 'acme', pos: 'inside' })).toBeNull();
+    expect(folderDropRefusal(data, 'labs', { type: 'root' })).toBeNull();
+    expect(folderDropRefusal(data, 'nope', { type: 'root' })).toBeNull();
   });
 
   it('computes midpoint ranks', () => {

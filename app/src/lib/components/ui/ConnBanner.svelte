@@ -15,6 +15,9 @@
   import { hooksOffer } from '../../hooks';
   import { hooks, hooksLater, hooksNever, loadHooks, setHooks } from '../../hooks.svelte';
   import { settings } from '../../settings.svelte';
+  import { isDemo } from '../../demo';
+
+  const demo = isDemo();
 
   const conn = $derived(app.conn);
   let dismissed = $state<string | null>(null);
@@ -45,6 +48,7 @@
   }
 </script>
 
+{#if !demo}
 {#if conn.prompt && app.overlay !== 'connect'}
   <div class="banner" role="alert">
     <KeyRound size={14} />
@@ -92,6 +96,7 @@
     <button class="btn" onclick={hooksLater}>{t('hooks.notNow')}</button>
     <button class="btn ghost" onclick={hooksNever}>{t('hooks.never')}</button>
   </div>
+{/if}
 {/if}
 
 <style>

@@ -19,6 +19,7 @@ function setup(under: Element | null, over: Partial<DragDeps> = {}) {
     elementAt: () => under,
     patchWorkspace: vi.fn(async () => {}),
     patchFolder: vi.fn(async () => {}),
+    refuse: vi.fn(),
     ...over,
   } satisfies DragDeps;
   return { deps, drag: new WsDrag(deps) };
@@ -125,6 +126,29 @@ describe('WsDrag', () => {
     await drag.end();
     // Then no patch is sent
     expect(deps.patchFolder).not.toHaveBeenCalled();
+  });
+
+  it('tells why a folder dropped onto its own sub-folder is refused', async () => {
+    const data = () => ({ workspaces: [], folders: [f('x', 1), f('y', 2, { parentId: 'x' })], groups: [] });
+    const { deps, drag } = setup(at({ drop: 'folder', id: 'y' }), { data });
+    drag.start(ev(0, 0), 'folder', 'x');
+    drag.move(ev(0, 50));
+    await drag.end();
+    expect(deps.patchFolder).not.toHaveBeenCalled();
+    expect(deps.refuse).toHaveBeenCalledWith('ws.folderDepth');
+  });
+
+  it('tells why a folder dropped onto a workspace is refused, and stays silent for a drop on itself', async () => {
+    const onWs = setup(at({ drop: 'workspace', id: 'a' }));
+    onWs.drag.start(ev(0, 0), 'folder', 'x');
+    onWs.drag.move(ev(0, 50));
+    await onWs.drag.end();
+    expect(onWs.deps.refuse).toHaveBeenCalledWith('ws.folderDropTarget');
+    const onSelf = setup(at({ drop: 'folder', id: 'x' }));
+    onSelf.drag.start(ev(0, 0), 'folder', 'x');
+    onSelf.drag.move(ev(0, 50));
+    await onSelf.drag.end();
+    expect(onSelf.deps.refuse).not.toHaveBeenCalled();
   });
 
   it('abandons a drag on cancel without patching, and without swallowing the next click', async () => {
