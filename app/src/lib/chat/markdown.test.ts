@@ -98,3 +98,13 @@ describe('parseMarkdownCached', () => {
     expect(b).toEqual({ type: 'code', lang: '', code: 'docs/J3 modifications.pdf' });
   });
 });
+
+describe('spaced paths in prose', () => {
+  it('links nothing for a spaced path outside a code span', () => {
+    expect(inline('Also docs/J3 modifications.pdf in prose.')).not.toContain('file-link');
+  });
+
+  it('links the whole spaced path inside a code span', () => {
+    expect(inline('`docs/J3 modifications.txt`')).toContain('data-file="docs/J3 modifications.txt"');
+  });
+});

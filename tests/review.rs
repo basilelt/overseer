@@ -191,9 +191,9 @@ fn live_review_comments_reach_the_agent_and_come_back() {
         400
     );
     assert_eq!(app.req("GET", "/v1/review", Value::Null).0, 400);
-    assert_eq!(r["triage"]["byKind"], json!({"comment": 5}));
-    assert_eq!(r["files"][0]["hunks"][0]["tags"][0]["kind"], "comment");
-    assert_eq!(r["files"][0]["risk"], 0);
+    assert_eq!(r["triage"]["byKind"], json!({"logic": 5}));
+    assert_eq!(r["files"][0]["hunks"][0]["tags"][0]["kind"], "logic");
+    assert_eq!(r["files"][0]["risk"], 100);
     let g = app.ok("GET", &format!("/v1/review/graph?task={task}"), Value::Null);
     assert_eq!(g["revision"], r["revision"]);
     assert_eq!(g["order"], json!(["a.txt", "new.txt"]));

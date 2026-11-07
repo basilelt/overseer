@@ -95,6 +95,14 @@ describe('chat markdown rendering cost', () => {
     expect(scaling(() => findPaths(word(12)), () => findPaths(word(24)))).toBeLessThan(LINEAR);
   });
 
+  it('spaced path tails scale linearly with the number of paths', () => {
+    const line = (n: number) => Array.from({ length: n }, (_, i) => `docs/d${i % 9} file${i % 7}.pdf`).join(' ');
+    const small = line(200);
+    const big = line(2000);
+    expect(findPaths(small)).toEqual([]);
+    expect(scaling(() => findPaths(small), () => findPaths(big))).toBeLessThan(LINEAR);
+  });
+
   it('caps the tool diff LCS so huge edits stay linear', () => {
     const text = (n: number) => Array.from({ length: n }, (_, i) => `line ${i} ${i % 3 ? 'same' : 'diff'}`).join('\n');
     const edit = (n: number) => ({ old: text(n), new: text(n).replace(/diff/g, 'changed') });
