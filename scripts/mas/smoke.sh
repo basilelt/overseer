@@ -113,7 +113,7 @@ run_probes() {
   "$p" ptyioctl 2>&1 | tee -a "$OUT/probe-all.txt" | take >/dev/null
   "$p" libproc 2>&1 | tee -a "$OUT/probe-all.txt" | take >/dev/null
   "$p" misc "$CP" "$HOME" 2>&1 | tee -a "$OUT/probe-all.txt" | take >/dev/null
-  ls -la "$GRANT" >"$OUT/grant-dir-after$P.txt" 2>&1
+  ls -la "$GRANT" >"$OUT/grant-dir-after${P%:}.txt" 2>&1
   find "$GRANT" -maxdepth 1 -name "*.txt" ! -name seed.txt -delete
 }
 
@@ -151,7 +151,7 @@ stop_app() {
 app_env() {
   local extra=
   [ "$P" = exc: ] && extra=/opt/homebrew/bin:
-  printf 'PATH=%s%s:/usr/bin:/bin:/usr/sbin:/sbin' "$extra" "$(dirname "$GITBIN")"
+  printf 'PATH=%s:%s/usr/bin:/bin:/usr/sbin:/sbin' "$(dirname "$GITBIN")" "$extra"
 }
 
 drive() {
@@ -169,8 +169,8 @@ drive() {
       git -c user.name=qa -c user.email=qa@example.com add -A &&
       git -c user.name=qa -c user.email=qa@example.com commit -qm init
   )
-  PREFIX=$P python3 "$R/scripts/mas/drive.py" "$sock" "$base" "$RES" "$GRANT" 2>&1 | tee -a "$OUT/drive$P.log" >/dev/null
-  find "$CA" -maxdepth 6 2>/dev/null | head -400 >"$OUT/container-tree$P.txt"
+  PREFIX=$P python3 "$R/scripts/mas/drive.py" "$sock" "$base" "$RES" "$GRANT" 2>&1 | tee -a "$OUT/drive${P%:}.log" >/dev/null
+  find "$CA" -maxdepth 6 2>/dev/null | head -400 >"$OUT/container-tree${P%:}.txt"
 }
 
 app() {

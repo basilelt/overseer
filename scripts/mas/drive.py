@@ -137,7 +137,7 @@ def t_status():
 
 def t_stub():
     c = f"{BASE}"
-    code, body = term(["/bin/sh", "-c", f"SB_STUB_LOG={c}/stub.log exec {c}/stubs/agent"])
+    code, body = term(["/bin/sh", "-c", f"SB_STUB_LOG={c}/stub.log exec /bin/sh {c}/stubs/agent"])
     if code != 201 and code != 200:
         rec("pty_stub_agent_session", "FAIL", f"POST /v1/terms {code} {body}")
         return

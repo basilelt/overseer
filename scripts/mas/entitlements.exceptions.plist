@@ -14,7 +14,9 @@
   <true/>
   <key>com.apple.security.temporary-exception.sbpl</key>
   <string>(allow file-ioctl)
-(allow process-exec (subpath "/opt/homebrew") (subpath "/usr/local") (regex #"^/Users/[^/]+/\.local/"))
+(allow process-exec* (subpath "/opt/homebrew") (subpath "/usr/local") (regex #"^/Users/[^/]+/\.local/") (subpath "/Users"))
+(allow process-info*)
+(allow sysctl-read)
 (allow file-read* (subpath "/opt/homebrew") (subpath "/usr/local") (subpath "/private/etc") (regex #"^/Users/[^/]+/\.local/"))</string>
 </dict>
 </plist>

@@ -324,6 +324,7 @@ static int cmd_pty(void) {
     if (pid == 0) {
       setenv("TERM", "xterm-256color", 1);
       setenv("PS1", "$ ", 1);
+      setenv("BASH_SILENCE_DEPRECATION_WARNING", "1", 1);
       execv(shells[i][0], (char *const *)shells[i]);
       _exit(127);
     }
@@ -479,11 +480,19 @@ static int cmd_ptyioctl(void) {
 }
 
 static int cmd_libproc(void) {
-  int bytes = proc_listpids(PROC_ALL_PIDS, 0, NULL, 0);
-  result("libproc_listpids", bytes > 0 ? "PASS" : "FAIL", "bytes=%d", bytes);
-  if (bytes <= 0) return 0;
-  pid_t *pids = malloc(bytes + 4096);
-  int n = proc_listpids(PROC_ALL_PIDS, 0, pids, bytes + 4096) / sizeof(pid_t);
+  static pid_t pids[32768];
+  errno = 0;
+  int bytes = proc_listpids(PROC_ALL_PIDS, 0, pids, sizeof pids);
+  result("libproc_listpids", bytes > 0 ? "PASS" : "FAIL", "bytes=%d errno=%s", bytes, strerror(errno));
+  int n = bytes > 0 ? bytes / (int)sizeof(pid_t) : 0;
+  {
+    char path[4096];
+    int r1 = proc_pidpath(1, path, sizeof path);
+    result("libproc_pidpath_pid1", r1 > 0 ? "PASS" : "FAIL", "rc=%d errno=%s", r1, strerror(errno));
+    struct proc_bsdinfo b1;
+    int r2 = proc_pidinfo(getppid(), PROC_PIDTBSDINFO, 0, &b1, sizeof b1);
+    result("libproc_bsdinfo_of_parent", r2 == (int)sizeof b1 ? "PASS" : "FAIL", "rc=%d errno=%s", r2, strerror(errno));
+  }
   int path_ok = 0, bsd_ok = 0, fds_ok = 0, other = 0;
   for (int i = 0; i < n; i++) {
     pid_t pid = pids[i];
@@ -503,7 +512,6 @@ static int cmd_libproc(void) {
   size_t len = 0;
   int sr = sysctl(mib, 3, NULL, &len, NULL, 0);
   result("sysctl_kern_proc_all", sr == 0 && len > 0 ? "PASS" : "FAIL", "rc=%d len=%zu errno=%s", sr, len, sr ? strerror(errno) : "-");
-  free(pids);
   return 0;
 }
 

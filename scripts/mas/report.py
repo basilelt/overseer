@@ -16,7 +16,7 @@ feature_rules = [
     ("agent hooks (~/.claude ~/.codex ~/.gemini)", re.compile(r"\.claude|\.codex|\.gemini|\.config/", re.I)),
     ("keychain / security", re.compile(r"securityd|keychain|Security|trustd|com\.apple\.SecurityServer|ocspd", re.I)),
     ("tmux", re.compile(r"tmux", re.I)),
-    ("ps / lsof / process info", re.compile(r"process-info|sysctl|proc_|lsof|/bin/ps|kernel-", re.I)),
+    ("ps / lsof / process info", re.compile(r"process-info|sysctl|proc_|lsof|/bin/ps|kernel-|forbidden-exec-sugid", re.I)),
     ("network", re.compile(r"network-|socket|nsurlsessiond|dnssd|mDNSResponder|cfprefsd.*network", re.I)),
     ("exec locations", re.compile(r"process-exec|/opt/homebrew|/usr/local|\.local/bin|/bin/|/usr/bin|/usr/sbin", re.I)),
     ("shell env (login shell)", re.compile(r"\.zsh|\.zprofile|\.zlogin|\.zshrc|\.zshenv|\.profile|\.bash|/etc/z|/etc/profile|path_helper", re.I)),
@@ -32,6 +32,7 @@ def feature(proc, op, path):
     return "other"
 
 
+OURS = {"overseer-app", "overseer", "probe", "probe-helper", "zsh", "sh", "bash", "git", "xcrun", "tmux", "node", "ps", "lsof", "security", "launchctl", "env", "sleep", "cat", "tty", "agent", "ovs-script.sh", "ovs-dummy", "stty", "ls", "claude", "codex", "gh", "login", "grant"}
 groups = collections.defaultdict(lambda: collections.Counter())
 rx = re.compile(r"Sandbox: (\S+?)\((\d+)\) deny\(\d+\) (\S+)(?: (.*))?$")
 total = 0
@@ -41,6 +42,8 @@ if os.path.exists(raw):
         if not m:
             continue
         proc, _, op, path = m.groups()
+        if proc not in OURS and not proc.startswith(("com.apple.WebKit", "overseer")):
+            continue
         path = (path or "").strip().replace(home, "~")
         path = re.sub(r"\.sb-[0-9a-f]+-\w+", ".sb-X", path)
         path = re.sub(r"/ttys\d+", "/ttysN", path)
