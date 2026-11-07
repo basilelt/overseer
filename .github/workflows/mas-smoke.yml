@@ -52,9 +52,17 @@ jobs:
       - name: Sign with the sandbox entitlements
         run: scripts/mas/smoke.sh sign
 
+      - name: Install agent CLIs
+        if: always()
+        run: scripts/mas/smoke.sh install-agents
+
       - name: Sandbox probes
         if: always()
         run: scripts/mas/smoke.sh probes
+
+      - name: Agent CLIs under grants
+        if: always()
+        run: scripts/mas/smoke.sh agents
 
       - name: Run the sandboxed app
         if: always()

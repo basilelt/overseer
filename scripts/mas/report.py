@@ -53,7 +53,7 @@ if os.path.exists(raw):
 
 lines = ["## macOS App Sandbox smoke", "", "| Check | Result | Detail |", "|---|---|---|"]
 for name, verdict, detail in rows:
-    d = detail.replace("|", "\\|")[:260]
+    d = detail.replace("|", "\\|")[: (700 if name.startswith(("pipe_", "exec_claude", "exec_codex")) else 260)]
     lines.append(f"| {name} | {verdict} | {d} |")
 passed = sum(1 for r in rows if r[1] == "PASS")
 failed = sum(1 for r in rows if r[1] == "FAIL")

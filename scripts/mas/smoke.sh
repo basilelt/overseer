@@ -130,6 +130,121 @@ probes() {
   P=
 }
 
+realpath_of() {
+  python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$1"
+}
+
+CLS_RW=com.apple.app-sandbox.read-write
+CLS_RO=com.apple.app-sandbox.read
+
+install_agents() {
+  mkdir -p "$OUT/agents"
+  curl -fsSL https://claude.ai/install.sh -o "$OUT/agents/claude-install.sh" 2>"$OUT/agents/curl.err" && bash "$OUT/agents/claude-install.sh" >"$OUT/agents/claude-install.log" 2>&1
+  if [ -x "$HOME/.local/bin/claude" ]; then
+    rec install_claude_native PASS "$HOME/.local/bin/claude -> $(realpath_of "$HOME/.local/bin/claude")"
+  else
+    rec install_claude_native FAIL "$(tail -c 300 "$OUT/agents/claude-install.log" 2>&1)"
+  fi
+  npm i -g --prefix "$HOME/.npm-global" @anthropic-ai/claude-code @openai/codex >"$OUT/agents/npm.log" 2>&1
+  local t
+  for t in claude codex; do
+    if [ -e "$HOME/.npm-global/bin/$t" ]; then
+      rec "install_${t}_npm" PASS "$HOME/.npm-global/bin/$t -> $(realpath_of "$HOME/.npm-global/bin/$t")"
+    else
+      rec "install_${t}_npm" FAIL "$(tail -c 300 "$OUT/agents/npm.log")"
+    fi
+  done
+}
+
+try() {
+  local name=$1 cls=$2 exe=$3
+  shift 3
+  : >"$CP/toks"
+  local g
+  for g in "$@"; do
+    "$OUT/grant" issue "$g" "$cls" >>"$CP/toks" 2>/dev/null
+  done
+  PATH=$NODEDIR:$PATH "$PROBE/Contents/MacOS/probe" grantexec "$name" "$CP/toks" - - 30 "$exe" --version 2>&1 | take >/dev/null
+}
+
+exec_matrix() {
+  local label=$1 exe=$2
+  [ -e "$exe" ] || { rec "exec_${label}" FAIL "not installed"; return; }
+  local real bindir realdir
+  real=$(realpath_of "$exe")
+  bindir=$(dirname "$exe")
+  realdir=$(dirname "$real")
+  try "exec_${label}_nogrant" "$CLS_RW" "$exe"
+  local c cls
+  for c in rw ro; do
+    cls=$CLS_RW
+    [ $c = ro ] && cls=$CLS_RO
+    try "exec_${label}_folder_of_link_${c}" "$cls" "$exe" "$bindir"
+    try "exec_${label}_folder_of_target_${c}" "$cls" "$exe" "$realdir"
+    try "exec_${label}_file_link_${c}" "$cls" "$exe" "$exe"
+    try "exec_${label}_file_target_${c}" "$cls" "$exe" "$real"
+    try "exec_${label}_all_dirs_and_node_${c}" "$cls" "$exe" "$bindir" "$realdir" "$NODEDIR"
+    try "exec_${label}_target_file_and_node_${c}" "$cls" "$exe" "$real" "$exe" "$NODEDIR/node"
+  done
+  local nm
+  nm=$(basename "$exe")
+  cp "$real" "$CP/copy-runner-$nm" 2>/dev/null && chmod +x "$CP/copy-runner-$nm"
+  : >"$CP/toks"
+  PATH=$NODEDIR:$PATH "$PROBE/Contents/MacOS/probe" grantexec "exec_${label}_copy_into_container_by_runner" - - - 30 "$CP/copy-runner-$nm" --version 2>&1 | take >/dev/null
+  "$OUT/grant" issue "$realdir" "$CLS_RO" >"$CP/toks" 2>/dev/null
+  "$PROBE/Contents/MacOS/probe" copyexec "exec_${label}_copy_into_container_by_sandbox" "$CP/toks" "$real" "$CP/copy-sandbox-$nm" 2>&1 | take >/dev/null
+}
+
+pipes() {
+  local label=$1 exe=$2 kind=$3
+  [ -e "$exe" ] || return 0
+  local real bindir realdir
+  real=$(realpath_of "$exe")
+  bindir=$(dirname "$exe")
+  realdir=$(dirname "$real")
+  : >"$CP/toks"
+  local g
+  for g in "$bindir" "$realdir" "$NODEDIR" "$GRANT"; do
+    "$OUT/grant" issue "$g" "$CLS_RW" >>"$CP/toks" 2>/dev/null
+  done
+  touch "$OUT/marker"
+  sleep 1
+  local p="$PROBE/Contents/MacOS/probe"
+  export PATH=$NODEDIR:$PATH
+  if [ "$kind" = claude ]; then
+    ANTHROPIC_API_KEY=sk-ant-dummy "$p" grantexec "pipe_${label}_print_stream_json" "$CP/toks" "$GRANT" - 90 "$exe" -p "say hi" --output-format stream-json --verbose 2>&1 | take >/dev/null
+    printf '%s\n%s\n' '{"type":"user","message":{"role":"user","content":"hi"}}' '{"type":"user","message":{"role":"user","content":"and again"}}' >"$CP/two-turn.jsonl"
+    ANTHROPIC_API_KEY=sk-ant-dummy "$p" grantexec "pipe_${label}_two_turn_stream_json" "$CP/toks" "$GRANT" "$CP/two-turn.jsonl" 90 "$exe" -p --input-format stream-json --output-format stream-json --verbose 2>&1 | take >/dev/null
+    rm -rf "$HOME/claude-real" "$HOME/claude-real2"
+    mkdir -p "$HOME/claude-real" "$HOME/claude-real2"
+    echo '{"model":"sonnet"}' >"$HOME/claude-real/settings.json"
+    echo '{"model":"sonnet"}' >"$HOME/claude-real2/settings.json"
+    "$OUT/grant" issue "$HOME/claude-real" "$CLS_RW" >>"$CP/toks" 2>/dev/null
+    CLAUDE_CONFIG_DIR=$HOME/claude-real ANTHROPIC_API_KEY=sk-ant-dummy "$p" grantexec "pipe_${label}_config_dir_granted_real" "$CP/toks" "$GRANT" - 90 "$exe" -p "say hi" --output-format stream-json --verbose 2>&1 | take >/dev/null
+    rec "info_${label}_real_config_dir_after" INFO "$(cd "$HOME/claude-real" && find . -maxdepth 3 | head -30 | tr '\n' ' ')"
+    CLAUDE_CONFIG_DIR=$HOME/claude-real2 ANTHROPIC_API_KEY=sk-ant-dummy "$p" grantexec "pipe_${label}_config_dir_not_granted" "$CP/toks" "$GRANT" - 90 "$exe" -p "say hi" --output-format stream-json --verbose 2>&1 | take >/dev/null
+    rec "info_${label}_real_config_dir2_after" INFO "$(cd "$HOME/claude-real2" && find . -maxdepth 3 | head -30 | tr '\n' ' ')"
+  else
+    OPENAI_API_KEY=dummy "$p" grantexec "pipe_${label}_exec_json" "$CP/toks" "$GRANT" - 90 "$exe" exec --json hi 2>&1 | take >/dev/null
+  fi
+  rec "info_${label}_files_touched_in_container" INFO "$(find "$CP" -newer "$OUT/marker" -maxdepth 4 2>/dev/null | sed "s|$CP||" | head -40 | tr '\n' ' ')"
+}
+
+agents() {
+  P=
+  GRANT=$(cd "$GRANT" && pwd -P)
+  build_probe "$ENT"
+  NODEDIR=$(dirname "$(realpath_of "$(command -v node)")")
+  rec info_node_dir INFO "$NODEDIR"
+  "$PROBE/Contents/MacOS/probe" execs "$HOME" "$GITBIN" "$CP" >/dev/null 2>&1
+  exec_matrix claude_native "$HOME/.local/bin/claude"
+  exec_matrix claude_npm "$HOME/.npm-global/bin/claude"
+  exec_matrix codex_npm "$HOME/.npm-global/bin/codex"
+  pipes claude_native "$HOME/.local/bin/claude" claude
+  pipes claude_npm "$HOME/.npm-global/bin/claude" claude
+  pipes codex_npm "$HOME/.npm-global/bin/codex" codex
+}
+
 wait_sock() {
   local i=0
   while [ $i -lt "$2" ]; do
@@ -233,6 +348,8 @@ report() {
 case $cmd in
 sign) sign_app ;;
 probes) probes ;;
+install-agents) install_agents ;;
+agents) agents ;;
 app) app ;;
 denials) denials ;;
 report) report ;;

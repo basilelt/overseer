@@ -29,7 +29,7 @@ extern int64_t sandbox_extension_consume(const char *token);
 #define CLASS_RW "com.apple.app-sandbox.read-write"
 
 static void result(const char *name, const char *verdict, const char *fmt, ...) {
-  char d[600];
+  char d[2400];
   va_list ap;
   va_start(ap, fmt);
   vsnprintf(d, sizeof d, fmt, ap);
@@ -45,6 +45,9 @@ static void check(const char *name, int want_ok, int got_ok, const char *detail)
          got_ok ? "allowed" : "denied", detail);
 }
 
+static const char *RUN_STDIN = NULL;
+static const char *RUN_CWD = NULL;
+
 static int run(char *const argv[], int tmo, char *out, size_t n) {
   int p[2];
   if (pipe(p)) return -1;
@@ -55,8 +58,9 @@ static int run(char *const argv[], int tmo, char *out, size_t n) {
     dup2(p[1], 2);
     close(p[0]);
     close(p[1]);
-    int z = open("/dev/null", O_RDONLY);
+    int z = open(RUN_STDIN ? RUN_STDIN : "/dev/null", O_RDONLY);
     if (z >= 0) dup2(z, 0);
+    if (RUN_CWD && chdir(RUN_CWD)) dprintf(2, "chdir %s: %s\n", RUN_CWD, strerror(errno));
     execv(argv[0], argv);
     dprintf(2, "execv %s: %s", argv[0], strerror(errno));
     _exit(127);
@@ -127,8 +131,8 @@ static void spawn_check(const char *name, int want_ok, char *const argv[], const
   check(name, want_ok, ok, d);
 }
 
-static int cmd_issue(const char *path) {
-  char *t = sandbox_extension_issue_file(CLASS_RW, path, 0);
+static int cmd_issue(const char *path, const char *cls) {
+  char *t = sandbox_extension_issue_file(cls ? cls : CLASS_RW, path, 0);
   if (!t) {
     fprintf(stderr, "issue failed: %s\n", strerror(errno));
     return 1;
@@ -540,6 +544,56 @@ static int cmd_orphan(const char *dir, const char *tokfile) {
   return 0;
 }
 
+static void consume_all(const char *tokfile, int *ok, int *all) {
+  *ok = 0;
+  *all = 0;
+  if (!strcmp(tokfile, "-")) return;
+  FILE *f = fopen(tokfile, "r");
+  if (!f) return;
+  char line[8192];
+  while (fgets(line, sizeof line, f)) {
+    size_t n = strlen(line);
+    while (n && (line[n - 1] == '\n' || line[n - 1] == ' ')) line[--n] = 0;
+    if (!n) continue;
+    (*all)++;
+    if (sandbox_extension_consume(line) > 0) (*ok)++;
+  }
+  fclose(f);
+}
+
+static int cmd_grantexec(int argc, char **argv) {
+  const char *name = argv[2], *tokfile = argv[3], *cwd = argv[4], *in = argv[5];
+  int tmo = atoi(argv[6]);
+  int ok, all;
+  consume_all(tokfile, &ok, &all);
+  RUN_CWD = strcmp(cwd, "-") ? cwd : NULL;
+  RUN_STDIN = strcmp(in, "-") ? in : NULL;
+  static char out[6000];
+  int rc = run(&argv[7], tmo, out, sizeof out - 1);
+  int lenient = !strncmp(name, "pipe_", 5);
+  int bad = rc == 127 || rc == -2 || rc >= 128 || strstr(out, "Operation not permitted") || strstr(out, "sandbox");
+  int good = lenient ? (!bad && *out) : rc == 0;
+  result(name, good ? "PASS" : "FAIL", "tokens=%d/%d rc=%d out=%.1500s", ok, all, rc, out);
+  return 0;
+}
+
+static int cmd_copyexec(const char *name, const char *tokfile, const char *src, const char *dst) {
+  int ok, all;
+  consume_all(tokfile, &ok, &all);
+  char out[800] = "";
+  char *cp[] = {"/bin/cp", (char *)src, (char *)dst, NULL};
+  int rc = run(cp, 20, out, sizeof out - 1);
+  chmod(dst, 0755);
+  char xo[600] = "";
+  char *xa[] = {"/usr/bin/xattr", "-l", (char *)dst, NULL};
+  run(xa, 10, xo, sizeof xo - 1);
+  char eo[800] = "";
+  char *ex[] = {(char *)dst, "--version", NULL};
+  int er = run(ex, 20, eo, sizeof eo - 1);
+  result(name, er == 0 ? "PASS" : "FAIL", "tokens=%d/%d cp_rc=%d cp_out=%.200s xattr=[%.200s] exec_rc=%d out=%.300s", ok, all, rc, out, xo, er, eo);
+  return 0;
+}
+
 static int cmd_write(const char *path) { return try_write(path) ? 0 : 1; }
 
 static int cmd_daemon(const char *bin, const char *sock) {
@@ -554,7 +608,9 @@ static int cmd_daemon(const char *bin, const char *sock) {
 int main(int argc, char **argv) {
   if (argc < 2) return 2;
   const char *m = argv[1];
-  if (!strcmp(m, "issue") && argc > 2) return cmd_issue(argv[2]);
+  if (!strcmp(m, "issue") && argc > 2) return cmd_issue(argv[2], argc > 3 ? argv[3] : NULL);
+  if (!strcmp(m, "grantexec") && argc > 7) return cmd_grantexec(argc, argv);
+  if (!strcmp(m, "copyexec") && argc > 5) return cmd_copyexec(argv[2], argv[3], argv[4], argv[5]);
   if (!strcmp(m, "suite") && argc > 5) return cmd_suite(argv[2], argv[3], argv[4], argv[5], argc > 6 ? argv[6] : NULL);
   if (!strcmp(m, "peer") && argc > 3) return cmd_peer(argv[2], argv[3]);
   if (getenv("PROBE_GIT")) GITBIN = getenv("PROBE_GIT");
