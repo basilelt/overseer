@@ -103,6 +103,20 @@
   --lane-5: #cc8580;
 }
 
+:root[data-palette='custom'] {
+  --bg-subtle: color-mix(in srgb, var(--bg) 97%, var(--text));
+  --surface-2: color-mix(in srgb, var(--surface) 98%, var(--text));
+  --surface-hover: color-mix(in srgb, var(--surface) 96%, var(--text));
+  --surface-active: color-mix(in srgb, var(--surface) 92%, var(--text));
+  --border-strong: color-mix(in srgb, var(--border) 75%, var(--text));
+  --text-3: var(--text-2);
+  --ws-frame-border: var(--border);
+  --ws-frame-bg: var(--surface);
+  --session-row-bg: var(--bg);
+  --session-row-selected: var(--surface-active);
+  --attention-hover: var(--surface-hover);
+}
+
 :root[data-theme='dark'][data-palette='graphite'] {
   --bg: #202124;
   --bg-subtle: #25262A;

@@ -14,7 +14,9 @@
   import NotificationSettings from './NotificationSettings.svelte';
   import { adaptChoice, findAgent, hasModel, taskAgents } from '../../agents';
   import { localeName, locales, t, type Key } from '../../i18n.svelte';
-  import { COLOR_TOKENS, colorOverrides, colorPalette, customColors, saveSettings, settings, type ColorToken, type Settings, type ThemePref } from '../../settings.svelte';
+  import { COLOR_TOKENS, saveSettings, settings, type ColorToken, type Mode, type PresetColors, type ThemePref } from '../../settings.svelte';
+  import { contrastWarnings, fullColors, presetsFor, readableOn } from '../../theme-edit';
+  import { createPreset, deletePreset, editPreset, selectPreset } from '../../theme-edit.svelte';
   import { app } from '../../state.svelte';
   import { diag, dt } from '../../diag.svelte';
   import { feedback, ft } from '../../feedback.svelte';
@@ -41,31 +43,55 @@
   let { onclose }: { onclose: () => void } = $props();
   const apkSettings = __SELF_UPDATE__ ? () => import('../mobile/ApkUpdateSettings.svelte') : null;
 
-  const themes: ThemePref[] = ['auto', 'light', 'dark', 'graphite', 'solarized'];
-  const themeKey: Record<ThemePref, Key> = { auto: 'settings.theme.system', light: 'settings.theme.light', dark: 'settings.theme.dark', graphite: 'settings.theme.graphite', solarized: 'settings.theme.solarized' };
-  const base = $derived(colorPalette());
-  const colorValues = $derived.by(() => {
-    const own = customColors(base);
-    const css = getComputedStyle(document.documentElement);
-    return Object.fromEntries(COLOR_TOKENS.map((k) => [k, toHex6(own[k] ?? css.getPropertyValue(`--${k}`))])) as Record<ColorToken, string>;
-  });
-  const setColors = (colors: Settings['colors'][typeof base]) => saveSettings({ colors: { ...settings.colors, [base]: colors } });
+  const themes: ThemePref[] = ['auto', 'light', 'dark'];
+  const themeKey: Record<ThemePref, Key> = { auto: 'settings.theme.system', light: 'settings.theme.light', dark: 'settings.theme.dark' };
+  const modes: Mode[] = ['light', 'dark'];
+  const presetOf = (m: Mode) => (m === 'dark' ? settings.darkPreset : settings.lightPreset);
+  const customOf = (m: Mode) => settings.customPresets.find((p) => p.id === presetOf(m) && p.mode === m);
+  let draft = $state<{ id: string; name: string; colors: PresetColors } | null>(null);
+  const warnings = $derived(draft ? contrastWarnings(draft.colors) : []);
+  let dirty = false;
   let colorTimer: ReturnType<typeof setTimeout> | undefined;
-  let pending: { theme: typeof base; colors: Settings['colors'][typeof base] } | undefined;
-  const flushColor = () => {
+  const flushDraft = () => {
     clearTimeout(colorTimer);
-    if (pending) saveSettings({ colors: { ...settings.colors, [pending.theme]: { ...colorOverrides(pending.theme), ...pending.colors } } });
-    pending = undefined;
+    if (dirty && draft) editPreset(draft.id, { name: draft.name.trim() || undefined, colors: $state.snapshot(draft.colors) });
+    dirty = false;
   };
-  // WebKit's native picker can fire `change` on every drag step; saving recreates terminals, so preview live and save once settled.
-  function pickColor(k: ColorToken, v: string) {
-    document.documentElement.style.setProperty(`--${k}`, v);
-    if (pending?.theme !== base) flushColor();
-    pending = { theme: base, colors: { ...pending?.colors, [k]: v } };
+  // WebKit's native picker can fire `input` on every drag step; saving recreates terminals, so preview live and save once settled.
+  function touchDraft() {
+    dirty = true;
     clearTimeout(colorTimer);
-    colorTimer = setTimeout(flushColor, 300);
+    colorTimer = setTimeout(flushDraft, 300);
   }
-  $effect(() => flushColor);
+  function openEditor(id: string) {
+    flushDraft();
+    const p = settings.customPresets.find((x) => x.id === id);
+    draft = p ? { id, name: p.name, colors: fullColors($state.snapshot(p)) } : null;
+  }
+  function closeEditor() {
+    flushDraft();
+    draft = null;
+  }
+  function choosePreset(m: Mode, id: string) {
+    closeEditor();
+    selectPreset(m, id);
+  }
+  function newPreset(m: Mode) {
+    closeEditor();
+    openEditor(createPreset(m, t('settings.palette.custom')));
+  }
+  function removePreset(id: string) {
+    dirty = false;
+    clearTimeout(colorTimer);
+    draft = null;
+    deletePreset(id);
+  }
+  function pickColor(k: ColorToken, v: string) {
+    if (!draft) return;
+    draft.colors[k] = v;
+    touchDraft();
+  }
+  $effect(() => flushDraft);
   const agents = $derived(taskAgents(app.agents));
   const info = $derived(findAgent(app.agents, settings.defaultAgent));
   const efforts = $derived<Effort[]>(info?.efforts ?? ['low', 'medium', 'high', 'max']);
@@ -236,19 +262,57 @@
               </select>
             </div>
           {/if}
-          {#if row('appearance', 'colors')}
-            <div class="row" class:hit={hit('appearance', 'colors')}>
-              <span>{t(base === 'solarized' ? 'settings.colors.solarized' : base === 'graphite' ? 'settings.colors.graphite' : base === 'dark' ? 'settings.colors.dark' : 'settings.colors.light')}<small>{t('settings.colorsHint')}</small></span>
-              <button class="btn" disabled={!Object.keys(colorOverrides(base)).length} onclick={() => { pending = undefined; setColors({}); }}>{t('settings.colors.reset')}</button>
-            </div>
-            <div class="colors">
-              {#each COLOR_TOKENS as k}
-                <label>
-                  <input type="color" value={colorValues[k]} oninput={(e) => pickColor(k, e.currentTarget.value)} />
-                  <span>{t(`settings.color.${k}`)}</span>
+          {#if row('appearance', 'palettes')}
+            {#each modes as m}
+              <div class="row" class:hit={hit('appearance', 'palettes')}>
+                <span>{t(m === 'dark' ? 'settings.palette.dark' : 'settings.palette.light')}</span>
+                <div class="palette-ctl">
+                  <select aria-label={t(m === 'dark' ? 'settings.palette.dark' : 'settings.palette.light')} value={presetOf(m)} onchange={(e) => choosePreset(m, e.currentTarget.value)}>
+                    {#each presetsFor(m) as b}
+                      <option value={b.id}>{t(b.label)}</option>
+                    {/each}
+                    {#each settings.customPresets.filter((p) => p.mode === m) as p (p.id)}
+                      <option value={p.id}>{p.name}</option>
+                    {/each}
+                  </select>
+                  <button class="btn" onclick={() => newPreset(m)}>{t('settings.palette.new')}</button>
+                  {#if customOf(m)}
+                    <button class="btn" aria-pressed={draft?.id === customOf(m)?.id} onclick={() => (draft?.id === customOf(m)?.id ? closeEditor() : openEditor(customOf(m)!.id))}>{t('review.edit')}</button>
+                    <button class="btn" onclick={() => removePreset(customOf(m)!.id)}>{t('common.delete')}</button>
+                  {/if}
+                </div>
+              </div>
+            {/each}
+            {#if draft}
+              <div class="editor" role="group" aria-label={t('review.edit')}>
+                <label class="row stacked">
+                  <span>{t('ws.name')}</span>
+                  <input value={draft.name} maxlength="40" spellcheck="false" oninput={(e) => { if (draft) draft.name = e.currentTarget.value; touchDraft(); }} />
                 </label>
-              {/each}
-            </div>
+                <div class="edit-body">
+                  <div class="colors">
+                    {#each COLOR_TOKENS as k}
+                      <label>
+                        <input type="color" value={draft.colors[k]} oninput={(e) => pickColor(k, e.currentTarget.value)} />
+                        <span>{t(`settings.color.${k}`)}</span>
+                      </label>
+                    {/each}
+                  </div>
+                  <div class="preview" aria-hidden="true" style:background={draft.colors.bg} style:color={draft.colors.text} style:border-color={draft.colors.border}>
+                    <strong>{draft.name}</strong>
+                    <span style:color={draft.colors['text-2']}>{t('settings.color.text-2')}</span>
+                    <div class="card" style:background={draft.colors.surface} style:border-color={draft.colors.border}>
+                      <span>{t('settings.color.surface')}</span>
+                      <button class="accent" tabindex="-1" style:background={draft.colors.accent} style:color={readableOn(draft.colors.accent)}>{t('settings.color.accent')}</button>
+                    </div>
+                  </div>
+                </div>
+                {#each warnings as w}
+                  <p class="warn" role="status">{t('settings.palette.lowContrast', { fg: t(`settings.color.${w.fg}`), bg: t(`settings.color.${w.bg}`), ratio: w.ratio.toFixed(1) })}</p>
+                {/each}
+                <button class="btn" onclick={closeEditor}>{t('tour.done')}</button>
+              </div>
+            {/if}
           {/if}
         </section>
       {/if}
@@ -787,6 +851,66 @@
   }
   .themes {
     flex-wrap: wrap;
+  }
+  .palette-ctl {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    align-items: center;
+    gap: 6px;
+  }
+  .edit-body {
+    align-self: stretch;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: 8px 20px;
+  }
+  .edit-body .colors {
+    grid-template-columns: 1fr;
+    min-width: 170px;
+  }
+  .edit-body .preview {
+    flex: 1;
+    min-width: 200px;
+    align-self: flex-start;
+  }
+  .editor {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 4px 0 10px;
+  }
+  .editor .warn {
+    margin: 0;
+    font-size: 12px;
+    color: var(--st-paused);
+  }
+  .preview {
+    align-self: stretch;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 10px 12px;
+    border: 1px solid;
+    border-radius: var(--radius-lg);
+    font-size: 13px;
+  }
+  .preview .card {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 8px 10px;
+    border: 1px solid;
+    border-radius: var(--radius);
+  }
+  .preview .accent {
+    padding: 3px 10px;
+    border: 0;
+    border-radius: var(--radius);
+    font: inherit;
   }
   .themes button {
     white-space: nowrap;
