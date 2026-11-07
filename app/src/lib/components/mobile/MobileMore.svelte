@@ -56,8 +56,6 @@
     { id: 'auto', label: () => t('settings.theme.system') },
     { id: 'light', label: () => t('settings.theme.light') },
     { id: 'dark', label: () => t('settings.theme.dark') },
-    { id: 'graphite', label: () => t('settings.theme.graphite') },
-    { id: 'solarized', label: () => t('settings.theme.solarized') },
   ];
 
   const tools: { icon: Component<{ size?: number }>; label: () => string; run: () => void; disabled?: () => boolean; badge?: () => number }[] = [

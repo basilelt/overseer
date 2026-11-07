@@ -887,7 +887,7 @@ On first launch, once the app is connected (immediately in local mode, after the
 connection on a phone), a welcome card offers **Take the tour** or **Skip**. The tour dims the
 window and highlights the real controls one at a time: host chip, workspaces sidebar, tabs and the
 new-session menu, the Terminal/Chat toggle, the side panel, Tasks, Review, the usage, system and ports
-chips, notifications and hooks, the command palette and Feedback, in 0.25 the Cmd/Ctrl+P palette shortcut, and in 0.27 the demo mode (on the **Demo mode** pill while in the demo, else on the host chip), and in 0.28 the GPU rendering option for terminals, and in 0.29 the clean up of unused worktrees and the import from Switchboard (on its button in Settings, Help, or on the Settings button), and in 0.30 the Graphite and Solarized Soft themes (on Settings, or More on a phone), and click to move the cursor in a terminal (on the tabs). Steps whose control is not on
+chips, notifications and hooks, the command palette and Feedback, in 0.25 the Cmd/Ctrl+P palette shortcut, and in 0.27 the demo mode (on the **Demo mode** pill while in the demo, else on the host chip), and in 0.28 the GPU rendering option for terminals, and in 0.29 the clean up of unused worktrees and the import from Switchboard (on its button in Settings, Help, or on the Settings button), and in 0.30 click to move the cursor in a terminal (on the tabs), and in 0.31 the Light and Dark palettes (on Settings, or More on a phone). Steps whose control is not on
 screen (no session selected, a feature the server lacks, phone layout) are skipped. On a phone the
 card is a sheet at the bottom (or top, when the control sits low) and points at the bottom
 navigation, the session strip and the menu.
@@ -907,9 +907,21 @@ setting's name or description, in the app language or in English, and only the m
 highlighted, with a count per category; Esc clears the search. On a phone the categories are a list
 that opens a section, with a back button.
 
-**Solarized Soft** (Settings > General > Appearance) has deep teal backgrounds and warm terminal colors inspired by Solarized. Text and accent colors are brighter for readability. Its customizations are saved independently from Graphite, Light and Dark; **Reset** restores only Solarized Soft.
+**Theme and palettes** (Settings > General > Appearance). **Theme** is System, Light or Dark; System
+follows your operating system live, so Overseer switches when your computer does. Each of Light and Dark
+has its own **palette**, used whenever that mode is on screen. The Dark palettes are **Default dark**,
+**Graphite** (softer gray panels and a pale blue accent) and **Solarized Soft** (deep teal panels and warm
+terminal colors); the Light palette is **Default light**. Picking a palette never changes the theme, so
+System keeps following your OS.
 
-**Graphite** (Settings > General > Appearance) is a softer dark theme with gray panels and a pale blue accent. Light, Dark and System remain available. Color customizations are saved separately for Graphite, Light and Dark; **Reset** restores only the selected palette. Terminals follow its background and text colors.
+Press **New** next to a palette to make your own for that mode. It starts from the palette selected and has
+six colors (accent, background, panels, borders, text and secondary text) chosen with color pickers; the
+other shades are derived from them. A preview updates as you pick, and a warning appears when text is
+below the 4.5:1 contrast needed to read it comfortably. Change the name in the field, **Edit** to adjust a
+custom palette later and **Delete** to remove it (the mode returns to its default palette). Terminals follow the background and text colors.
+Palettes are saved with your other settings. Older settings migrate on first launch: a saved Graphite or
+Solarized Soft theme becomes the Dark theme with that Dark palette, and colors you had changed become a
+custom palette, so nothing looks different.
 
 **GPU rendering** (Settings > Terminal, off by default, experimental) draws terminals with WebGL
 instead of the normal renderer, which keeps long, fast output smooth. It needs hardware graphics

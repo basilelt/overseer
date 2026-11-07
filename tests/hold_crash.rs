@@ -1,0 +1,52 @@
+mod common;
+
+use common::{read_until, send, wait, wait_for, App};
+use serde_json::{json, Value};
+use std::time::Duration;
+
+fn line_json(app: &App, line: &str) -> Value {
+    app.ok("GET", "/v1/lines?all=true", Value::Null)
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|l| l["line"]["id"] == line)
+        .cloned()
+        .unwrap()
+}
+
+#[test]
+fn a_pending_hold_survives_a_daemon_crash_and_applies_when_the_turn_ends() {
+    // Given a busy claude session with a pending hold
+    // When the daemon is killed with SIGKILL and restarted, which restores the session
+    // Then the hold is not dropped: the restored agent is idle, so it applies and the line is held
+    let sid = "dddddddd-0000-4000-8000-000000000009";
+    let mut app = App::with_env("holdcrash", json!({}), &[("SB_STUB_BOOT", "3")]);
+    let wt = app.fx.wt.to_string_lossy().into_owned();
+    let t = app.ok(
+        "POST",
+        "/v1/terms",
+        json!({"cwd": wt, "cmd": ["claude", "--session-id", sid], "cols": 100, "rows": 30}),
+    );
+    let tid = t["id"].as_str().unwrap().to_string();
+    let line = wait_for(|| {
+        app.ok("GET", "/v1/lines?all=true", Value::Null)
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|l| l["line"]["agentSessionId"] == sid && l["local"]["pid"].is_u64())
+            .map(|l| l["line"]["id"].as_str().unwrap().to_string())
+    });
+    let mut ws = app.ws(&tid);
+    read_until(&mut ws, "❯");
+    send(&mut ws, "busy\r");
+    wait(|| line_json(&app, &line)["local"]["busy"] == true);
+    let hold = format!("/v1/lines/{line}/hold?dryRun=false&afterTurn=true");
+    assert_eq!(app.ok("POST", &hold, Value::Null)["action"], "hold-pending");
+    wait(|| line_json(&app, &line)["local"]["holdPending"] == true);
+    std::thread::sleep(Duration::from_secs(3));
+    drop(ws);
+    app.crash_and_restart();
+    wait(|| line_json(&app, &line)["local"]["pid"].is_u64());
+    wait(|| line_json(&app, &line)["line"]["state"] == "held");
+    wait(|| line_json(&app, &line)["local"]["holdPending"] != true);
+}

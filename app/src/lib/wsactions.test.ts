@@ -516,17 +516,73 @@ describe('itemMenu', () => {
     app.items = [item];
     app.data.lines = [liveLine('a')];
     const items = itemMenu('line:a');
-    expect(labels(items).slice(0, 3)).toEqual([t('line.attach'), t('action.hold'), t('line.close')]);
+    expect(labels(items).slice(0, 3)).toEqual([t('line.attach'), t('session.action.pause'), t('line.close')]);
     expect(items[3].separator).toBe(true);
     expect(pick(items, t('line.close')).danger).toBe(true);
     await pick(items, t('line.attach')).run!();
     expect(app.openTerm).toHaveBeenCalledWith(item);
     expect(app.select).toHaveBeenCalledWith('line:a');
-    pick(items, t('action.hold')).run!();
-    expect(app.open).toHaveBeenLastCalledWith('holdAll', 'hold');
     pick(items, t('line.close')).run!();
     expect(app.open).toHaveBeenLastCalledWith('holdAll', 'close');
     expect(app.broadcastTarget).toEqual({ kind: 'items', keys: ['line:a'] });
+  });
+
+  it('pauses a single session with the chat header action and never opens the bulk dialog', async () => {
+    app.items = [{ key: 'line:a', lineId: 'a' }];
+    app.data.lines = [liveLine('a')];
+    app.api.holdAfterTurn = vi.fn(async () => ({ action: 'hold-pending' }));
+    await pick(itemMenu('line:a'), t('session.action.pause')).run!();
+    expect(app.api.holdAfterTurn).toHaveBeenCalledWith('a');
+    expect(app.notify).toHaveBeenCalledWith(t('session.state.pause_pending'));
+    expect(app.open).not.toHaveBeenCalled();
+  });
+
+  it('says the session is paused when it was idle', async () => {
+    app.items = [{ key: 'line:a', lineId: 'a' }];
+    app.data.lines = [liveLine('a')];
+    app.api.holdAfterTurn = vi.fn(async () => ({ action: 'hold' }));
+    await pick(itemMenu('line:a'), t('session.action.pause')).run!();
+    expect(app.notify).toHaveBeenCalledWith(t('chat.paused'));
+  });
+
+  it('offers to cancel a queued pause instead', async () => {
+    app.items = [{ key: 'line:a', lineId: 'a' }];
+    app.data.lines = [liveLine('a', { local: { pid: 1, tmuxPane: '%1', holdPending: true } })];
+    app.api.cancelHold = vi.fn(async () => ({}));
+    const items = itemMenu('line:a');
+    expect(labels(items)).not.toContain(t('session.action.pause'));
+    await pick(items, t('session.action.cancelPause')).run!();
+    expect(app.api.cancelHold).toHaveBeenCalledWith('a');
+    expect(app.notify).toHaveBeenCalledWith(t('chat.pauseCancelled'));
+  });
+
+  it('resumes a paused session that still has its terminal, with the chat header action', async () => {
+    const item = { key: 'line:a', lineId: 'a', termId: 't' };
+    app.items = [item];
+    app.data.lines = [liveLine('a', { line: { id: 'a', state: 'held' } })];
+    const items = itemMenu('line:a');
+    expect(labels(items).slice(0, 3)).toEqual([t('line.open'), t('action.resume'), t('line.close')]);
+    await pick(items, t('action.resume')).run!();
+    expect(app.resumeLine).toHaveBeenCalledWith(item);
+    expect(app.select).toHaveBeenCalledWith('line:a');
+  });
+
+  it('reports a refused pause', async () => {
+    app.items = [{ key: 'line:a', lineId: 'a' }];
+    app.data.lines = [liveLine('a')];
+    app.api.holdAfterTurn = vi.fn(async () => {
+      throw new Error('pinned');
+    });
+    await pick(itemMenu('line:a'), t('session.action.pause')).run!();
+    expect(app.notify).toHaveBeenCalledWith(t('chat.actionFailed', { reason: 'pinned' }), 'error');
+  });
+
+  it('keeps the bulk hold dialog for a multi-selection', () => {
+    app.items = [{ key: 'line:a', lineId: 'a' }, { key: 'line:b', lineId: 'b' }];
+    app.data.lines = [liveLine('a'), liveLine('b')];
+    app.multi = new Set(['line:a', 'line:b']);
+    pick(itemMenu('line:a'), t('action.hold')).run!();
+    expect(app.open).toHaveBeenLastCalledWith('holdAll', 'hold');
   });
 
   it('resumes a held session', async () => {

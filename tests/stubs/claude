@@ -28,6 +28,7 @@ hook() {
 tool=
 cleanup() { [ -n "$tool" ] && kill "$tool" 2>/dev/null; rm -f "$dir/sessions/$$.json"; exit 0; }
 trap cleanup TERM HUP
+[ -n "${SB_STUB_BOOT:-}" ] && sleep "$SB_STUB_BOOT"
 status idle
 hook SessionStart
 prompt() { printf '%s\n' "────────────────────────────────────────"; printf '❯ '; }

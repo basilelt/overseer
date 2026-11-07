@@ -549,8 +549,9 @@
     }
     .actions {
       flex: 1 0 100%;
+      flex-wrap: wrap;
       justify-content: flex-end;
-      height: 34px;
+      min-height: 34px;
       border-top: 1px solid var(--border);
     }
   }

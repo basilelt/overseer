@@ -21,6 +21,7 @@
   import { requirePath, savePasted } from '../../task-attachments';
   import { applySlash, commandsFor, enterAction, lineCount, slashMatches, slashQuery, type SendMode, type SlashCommand } from '../../chat/composer';
   import { ChatSender } from '../../chat/sender.svelte';
+  import { clearComposerHeight, reportComposerHeight } from '../../chat/composer-height';
 
   let { lineId, agent, local, phone, history = [], onsent }: { lineId: string; agent: string; local: LineLocal | undefined; phone: boolean; history?: string[]; onsent?: (text: string) => void } = $props();
   let back: Recall = { index: -1, draft: '' };
@@ -106,14 +107,28 @@
 
   $effect(() => {
     const el = root;
-    if (!phone || !el || typeof ResizeObserver === 'undefined') return;
-    const style = document.documentElement.style;
-    const ro = new ResizeObserver(() => style.setProperty('--composer-h', `${el.offsetHeight}px`));
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const key = Symbol('composer');
+    const ro = new ResizeObserver(() => reportComposerHeight(key, el.offsetHeight));
     ro.observe(el);
     return () => {
       ro.disconnect();
-      style.removeProperty('--composer-h');
+      clearComposerHeight(key);
     };
+  });
+
+  $effect(() => {
+    const el = box;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    let width = el.clientWidth;
+    const ro = new ResizeObserver(() => {
+      if (el.clientWidth === width) return;
+      width = el.clientWidth;
+      sized = { length: Infinity, lines: Infinity };
+      autosize();
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
   });
 
   function insert(s: string) {

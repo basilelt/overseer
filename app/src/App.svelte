@@ -15,7 +15,7 @@
   import { followReview, openReviewFromHash } from './lib/review/open';
   import { isTauri } from './lib/client';
   import { themeReport } from './lib/terminal';
-  import { customColors, resolvedTheme, saveSettings, setSystemDark, settings } from './lib/settings.svelte';
+  import { colorPalette, customColors, resolvedTheme, saveSettings, setSystemDark, settings } from './lib/settings.svelte';
   import Resizer from './lib/components/ui/Resizer.svelte';
   import Boundary from './lib/components/ui/Boundary.svelte';
   import { PANEL, SIDEBAR, clampWidth } from './lib/resize';
@@ -49,7 +49,7 @@
   });
   $effect(() => {
     const theme = resolvedTheme();
-    const report = themeReport(theme, customColors());
+    const report = themeReport(theme, customColors(), colorPalette());
     if (app.connected && app.conn.phase === 'connected') app.client?.request('POST', '/v1/theme', report).catch(() => {});
   });
 

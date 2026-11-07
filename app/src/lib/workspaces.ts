@@ -288,6 +288,17 @@ export function planFolderDrop(d: WsData, id: string, target: DropTarget): Parti
   return { parentId, rank: placeAmong(d.folders.filter((x) => (x.parentId ?? null) === parentId), id, anchor.id, target.pos) };
 }
 
+export function folderDropRefusal(d: WsData, id: string, target: DropTarget): 'ws.folderDropTarget' | 'ws.folderDepth' | null {
+  if (!d.folders.some((x) => x.id === id)) return null;
+  if (target.type === 'workspace' || target.type === 'pinned') return 'ws.folderDropTarget';
+  if (target.type === 'root') return null;
+  const anchor = d.folders.find((x) => x.id === target.id);
+  if (!anchor || anchor.id === id) return null;
+  const hasChildren = d.folders.some((x) => x.parentId === id);
+  if (target.pos === 'inside') return anchor.parentId || hasChildren ? 'ws.folderDepth' : null;
+  return anchor.parentId && (hasChildren || anchor.parentId === id) ? 'ws.folderDepth' : null;
+}
+
 export function moveKey(keys: string[], key: string, to: number): string[] {
   const from = keys.indexOf(key);
   if (from < 0) return keys;
@@ -360,8 +371,10 @@ export function lineActions(item: SidebarItem, line: LocalLine | undefined): Lin
   if (!item.lineId || !line) return [];
   const alive = lineAlive(line);
   const out: LineAction[] = [];
-  if (item.termId) out.push('open');
-  else if (alive && line.local?.tmuxPane) out.push('attach');
+  if (item.termId) {
+    out.push('open');
+    if (!alive) out.push('resume');
+  } else if (alive && line.local?.tmuxPane) out.push('attach');
   else if (!alive) out.push('resume');
   if (alive && (line.local?.tmuxPane || item.termId) && !line.local?.pinned) out.push('hold');
   out.push('close');

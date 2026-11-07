@@ -935,6 +935,14 @@ fn scan_linked(ctx: &Ctx) -> Result<Vec<Line>, String> {
     Ok(lines)
 }
 
+fn term_hosts_session(session_id: &str) -> bool {
+    !session_id.is_empty()
+        && term::all().iter().any(|t| {
+            let i = t.info();
+            !i.exited && i.session.as_deref() == Some(session_id)
+        })
+}
+
 pub fn scan(ctx: &Ctx) -> Result<Vec<Line>, String> {
     scanner::fresh(|| scan_linked(ctx))
 }
@@ -1264,7 +1272,8 @@ fn scan_now(ctx: &Ctx) -> Result<Vec<Line>, String> {
             l.held_at = None;
         }
         l.hold_pending = marks.hold_pending;
-        if l.hold_pending && (marks.closed || !alive && probe_ok()) {
+        let restarting = !alive && term_hosts_session(&l.session_id);
+        if l.hold_pending && (marks.closed || !alive && !restarting && probe_ok()) {
             reg.set_mark(&id, "hold_pending", None)?;
             l.hold_pending = false;
         }

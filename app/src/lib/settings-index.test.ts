@@ -240,11 +240,11 @@ describe('escape', () => {
   });
 });
 
-it('finds Graphite theme and its color controls in settings search', () => {
+it('finds the Graphite palette and its color controls in settings search', () => {
   const hits = search('graphite', all, en2);
-  expect(hits.hits.appearance).toEqual(expect.arrayContaining(['theme', 'colors']));
+  expect(hits.hits.appearance).toEqual(['palettes']);
 });
 
 it('finds Solarized Soft and its color controls in settings search', () => {
-  expect(search('solarized soft', all, en2).hits.appearance).toEqual(expect.arrayContaining(['theme', 'colors']));
+  expect(search('solarized soft', all, en2).hits.appearance).toEqual(['palettes']);
 });

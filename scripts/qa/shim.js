@@ -121,7 +121,7 @@
     mobile_system_dark: () => null,
     mobile_system_bars: () => null,
     'plugin:window|set_badge_count': () => null,
-    'plugin:window|theme': () => 'dark',
+    'plugin:window|theme': () => (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'),
     'plugin:app|register_listener': () => null,
     'plugin:notification|register_listener': () => null,
     save_download: (a, o) => { window.__qaDownload = { name: decodeURIComponent(o?.headers?.['x-name'] ?? ''), size: a?.byteLength ?? a?.length ?? 0 }; return '/home/qa/Downloads/' + window.__qaDownload.name; },
