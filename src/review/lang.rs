@@ -141,7 +141,7 @@ pub fn of(path: &str) -> Lang {
         "py" => Lang::Python,
         "go" => Lang::Go,
         "dart" => Lang::Dart,
-        "md" | "markdown" | "txt" | "rst" | "adoc" => Lang::Doc,
+        "md" | "markdown" | "rst" | "adoc" => Lang::Doc,
         _ => Lang::Other,
     }
 }
