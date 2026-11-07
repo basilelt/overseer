@@ -92,6 +92,7 @@
           open={opened.has(r.id)}
           closedOpen={closedOpen.has(r.id)}
           selectedKey={app.selectedKey}
+          multi={app.multi}
           selected={app.workspaceId === r.id}
           tabDrop={!!r.workspace && app.tabDrop === r.id}
           dropPos={drag.posOf('workspace', r.id)}

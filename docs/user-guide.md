@@ -1563,7 +1563,9 @@ Stopped: no live agent process, resumable); the toggle is at the top of the side
   scan) and one you added stays, marked "Folder missing". Drag a workspace header onto another to reorder, onto a folder to move it in, onto
   **Pinned** to pin it; drag folders the same way. Right-click a workspace, folder, group, the
   **Other** row or a session for rename, pin, move, broadcast,
-  hold all, resume all, "notify me when all agents are idle", archive and delete. A folder
+  hold all, resume all, "notify me when all agents are idle", archive and delete. On a touch
+  screen (iPad, tablet) press and hold the same rows to open the same menus; a short tap still
+  selects. Sessions picked with Cmd/Ctrl+click are tinted with the accent colour. A folder
   remembers whether it is collapsed.
 - **Block**: the most urgent state of its sessions (Needs input, then Running, then Needs testing,
   then Idle; shells do not count) with how many agents are in it, the last status line ("Claude
