@@ -49,6 +49,9 @@ describe('redaction', () => {
     expect(redact('GITHUB_TOKEN=ghp_ABCDEFGHijklmnop1234')).toBe('GITHUB_TOKEN=***');
     expect(redact('using ghp_ABCDEFGHijklmnop1234 now')).toBe('using ghp_*** now');
     expect(redact('key github_pat_11AAAAAAA0123456789_abc')).toBe('key github_pat_***');
+    expect(redact('aws AKIAIOSFODNN7EXAMPLE end')).toBe('aws *** end');
+    expect(redact('tmp ASIAIOSFODNN7EXAMPLE')).toBe('tmp ***');
+    expect(redact('AKIA short xAKIAIOSFODNN7EXAMPLE AKIAIOSFODNN7EXAMPLEX')).toBe('AKIA short xAKIAIOSFODNN7EXAMPLE AKIAIOSFODNN7EXAMPLEX');
     expect(redact('OPENAI sk-proj-abcdefghijklmnopqrstuv')).toBe('OPENAI sk-***');
     expect(redact('password = hunter2 and more')).toBe('password = *** and more');
     expect(redact('ssh://bob:pa55@host:22/x')).toBe('ssh://bob:***@host:22/x');
