@@ -1,6 +1,10 @@
 import type { DaemonClient } from './client';
 import { api } from './api';
 
+export function isMissingFile(message: string): boolean {
+  return /no such file or directory|os error 2\b/i.test(message);
+}
+
 export type FileKind = 'image' | 'video' | 'audio' | 'pdf' | 'markdown' | 'text';
 
 const KINDS: Record<string, FileKind> = {

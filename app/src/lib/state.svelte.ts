@@ -764,7 +764,7 @@ function briefs(activity: Snapshot['activity']) {
 
 export function statusLine(a: Activity): string | undefined {
   const last = a.workLog.at(-1);
-  if (a.needsInput || !last) return a.lastAssistantText.split('\n')[0] || undefined;
+  if (a.needsInput || !last) return a.lastAssistantText.split('\n')[0].replace(/`/g, '') || undefined;
   return last.label;
 }
 

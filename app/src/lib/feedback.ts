@@ -74,6 +74,7 @@ export function redact(s: string): string {
     .replace(/\b(bearer)\s+[^\s"']+/gi, '$1 ***')
     .replace(new RegExp(`(^|[^A-Za-z0-9])(${SECRET_KEYS})(["']?\\s*[=:]\\s*["']?)[^\\s"',;&})\\]]+`, 'gi'), (_m, pre: string, k: string, sep: string) => `${pre}${k}${sep}***`)
     .replace(/(^|[^A-Za-z0-9])(github_pat_|gh[pousr]_)\w{8,}/g, '$1$2***')
+    .replace(/(^|[^A-Za-z0-9])(AKIA|ASIA)[A-Z0-9]{16}(?![A-Za-z0-9])/g, '$1***')
     .replace(/(^|[^\w])sk-[\w-]{16,}/g, '$1sk-***');
 }
 

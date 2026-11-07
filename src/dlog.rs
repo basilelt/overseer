@@ -268,6 +268,14 @@ fn secret_end(b: &[u8], i: usize) -> Option<usize> {
         let e = run(b, i + 3, |c| is_word(c) || c == b'-');
         return (e - (i + 3) >= 16).then_some(e);
     }
+    if b[i..].starts_with(b"AKIA") || b[i..].starts_with(b"ASIA") {
+        let e = i + 20;
+        let key = b.get(i + 4..e)?;
+        let upper = key
+            .iter()
+            .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit());
+        return (upper && !b.get(e).is_some_and(|c| is_word(*c))).then_some(e);
+    }
     None
 }
 
@@ -364,6 +372,9 @@ GITHUB_TOKEN=ghp_abc => GITHUB_TOKEN=***
 authorization=Basic dXNlcjpw => authorization=Basic ***
 push with ghp_A1b2C3_d4 ok => push with *** ok
 gho_x ghu_y ghs_z ghr_w => *** *** *** ***
+key AKIAIOSFODNN7EXAMPLE end => key *** end
+tmp ASIAIOSFODNN7EXAMPLE end => tmp *** end
+AKIA short and xAKIAIOSFODNN7EXAMPLE stay => AKIA short and xAKIAIOSFODNN7EXAMPLE stay
 pat github_pat_11AB_cd => pat ***
 key sk-abcdefghijklmnop-123 end => key *** end
 sk-short stays => sk-short stays

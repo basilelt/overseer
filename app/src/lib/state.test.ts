@@ -131,6 +131,7 @@ describe('statusLine', () => {
   it('shows the first line of the last answer when the agent waits or has no steps', () => {
     expect(statusLine(act({ needsInput: true, workLog: [{ label: 'x' }] as Activity['workLog'], lastAssistantText: 'Which file?\nmore' }))).toBe('Which file?');
     expect(statusLine(act({ lastAssistantText: 'Done.\nDetails' }))).toBe('Done.');
+    expect(statusLine(act({ lastAssistantText: 'See `docs/a.md` and ``x``' }))).toBe('See docs/a.md and x');
   });
 
   it('is empty when there is nothing to say', () => {
