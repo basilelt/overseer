@@ -980,6 +980,8 @@ export const en = {
   'ws.folders': '{n} folders',
   'ws.spacesOne': '1 workspace',
   'ws.spaces': '{n} workspaces',
+  'ws.folderDepth': 'Folders can only be one level deep',
+  'ws.folderDropTarget': 'Folders can only be dropped among other folders',
   'ws.dropToPin': 'Drop here to pin',
   'ws.section.running': 'Running',
   'ws.section.open': 'Open',

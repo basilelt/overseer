@@ -43,6 +43,10 @@ describe('tab strip', () => {
     expect(rule('.actions')).toMatch(/flex:\s*none/);
   });
 
+  it('wraps the toolbar buttons in a very narrow pane so none is clipped', () => {
+    expect(bar.slice(bar.indexOf('@container'))).toMatch(/\.actions\s*\{[^}]*flex-wrap:\s*wrap[^}]*min-height:\s*34px/);
+  });
+
   it('hands keyboard focus to the session after a mouse click on its tab, never on touch or Enter', () => {
     expect(bar).toMatch(/e\.detail > 0 && !coarsePointer\(\) && tabInfo\(key, app\.items\)\?\.item/);
     expect(bar).toMatch(/requestAnimationFrame\(\(\) => focusSession\(pane\)\)/);

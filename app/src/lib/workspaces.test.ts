@@ -19,6 +19,7 @@ import {
   paneAction,
   moveKey,
   planFolderDrop,
+  folderDropRefusal,
   planWorkspaceDrop,
   rankAt,
   resolveTab,
@@ -315,6 +316,18 @@ describe('sidebar tree', () => {
     expect(planFolderDrop(data, 'labs', { type: 'root' })).toMatchObject({ parentId: null });
   });
 
+  it('names the reason a folder drop is refused', () => {
+    expect(folderDropRefusal(data, 'alice', { type: 'folder', id: 'acme', pos: 'inside' })).toBe('ws.folderDepth');
+    expect(folderDropRefusal(data, 'uni', { type: 'folder', id: 'labs', pos: 'inside' })).toBe('ws.folderDepth');
+    expect(folderDropRefusal(data, 'alice', { type: 'folder', id: 'labs', pos: 'inside' })).toBe('ws.folderDepth');
+    expect(folderDropRefusal(data, 'alice', { type: 'folder', id: 'labs', pos: 'before' })).toBe('ws.folderDepth');
+    expect(folderDropRefusal(data, 'uni', { type: 'pinned' })).toBe('ws.folderDropTarget');
+    expect(folderDropRefusal(data, 'uni', { type: 'folder', id: 'uni', pos: 'inside' })).toBeNull();
+    expect(folderDropRefusal(data, 'uni', { type: 'folder', id: 'acme', pos: 'inside' })).toBeNull();
+    expect(folderDropRefusal(data, 'labs', { type: 'root' })).toBeNull();
+    expect(folderDropRefusal(data, 'nope', { type: 'root' })).toBeNull();
+  });
+
   it('computes midpoint ranks', () => {
     const sib = [
       { id: 'a', rank: 1 },
@@ -377,6 +390,13 @@ describe('Other sessions actions', () => {
     expect(acts('pane')).toEqual(['attach', 'hold', 'close']);
     expect(acts('daemon')).toEqual(['open', 'hold', 'close']);
     expect(acts('dead')).toEqual(['resume', 'close']);
+  });
+
+  it('offers resume next to open for a held session whose terminal is still attached', () => {
+    const held = live('held', { pid: 8, busy: false, needsInput: false }, 'held');
+    const term = { id: 't9', lineId: 'held', cwd: '/srv', exited: false, cmd: ['claude'], title: 'claude', createdAt: at } as Term;
+    const items = sidebarItems([held], [term], []);
+    expect(lineActions(items.find((i) => i.lineId === 'held')!, held)).toEqual(['open', 'resume', 'close']);
   });
 
   it('offers no line actions for plain terminals', () => {

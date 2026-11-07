@@ -1,6 +1,7 @@
+import { t, type Key } from './i18n.svelte';
 import { app } from './state.svelte';
 import type { Folder, Workspace } from './types';
-import { planFolderDrop, planWorkspaceDrop, type DropPos, type DropTarget, type WsData } from './workspaces';
+import { folderDropRefusal, planFolderDrop, planWorkspaceDrop, type DropPos, type DropTarget, type WsData } from './workspaces';
 
 export interface DragDeps {
   persistent: () => boolean;
@@ -8,6 +9,7 @@ export interface DragDeps {
   elementAt: (x: number, y: number) => Element | null;
   patchWorkspace: (id: string, patch: Partial<Workspace>) => Promise<unknown>;
   patchFolder: (id: string, patch: Partial<Folder>) => Promise<unknown>;
+  refuse: (reason: Key) => void;
 }
 
 // Folder moves show at once and roll back with a notice when the daemon refuses.
@@ -29,6 +31,7 @@ const appDeps = (): DragDeps => ({
   elementAt: (x, y) => document.elementFromPoint(x, y),
   patchWorkspace: (id, patch) => app.patchWorkspace(id, patch),
   patchFolder,
+  refuse: (reason) => app.notify(t(reason), 'error'),
 });
 
 // Pointer drag of workspaces and folders in the sidebar; drop zones carry data-drop="workspace|folder|pinned|root" and data-id.
@@ -90,6 +93,10 @@ export class WsDrag {
     } else {
       const patch = planFolderDrop(this.#deps.data(), d.id, target);
       if (patch) await this.#deps.patchFolder(d.id, patch);
+      else {
+        const reason = folderDropRefusal(this.#deps.data(), d.id, target);
+        if (reason) this.#deps.refuse(reason);
+      }
     }
   };
 

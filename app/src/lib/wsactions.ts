@@ -14,6 +14,7 @@ import Play from '@lucide/svelte/icons/play';
 import RotateCcw from '@lucide/svelte/icons/rotate-ccw';
 import SquareTerminal from '@lucide/svelte/icons/square-terminal';
 import SquarePlus from '@lucide/svelte/icons/square-plus';
+import Undo2 from '@lucide/svelte/icons/undo-2';
 import Trash from '@lucide/svelte/icons/trash-2';
 import Users from '@lucide/svelte/icons/users';
 import X from '@lucide/svelte/icons/x';
@@ -22,6 +23,7 @@ import type { MenuItem } from './menu';
 import { app, NO_WORKSPACE, type BroadcastTarget } from './state.svelte';
 import type { Folder, Group, Workspace } from './types';
 import { byRank, lineActions, type LineAction } from './workspaces';
+import { runSessionAction } from './session-action';
 import { movableStatuses, taskForItem } from './kanban-core';
 import { isTargetMuted, toggleTargetMute } from './os-notify';
 
@@ -231,13 +233,29 @@ function runLineAction(a: LineAction, key: string, keys: string[]) {
     .catch(fail);
 }
 
+function pauseLine(lineId: string, kind: 'pause' | 'cancelPause') {
+  return runSessionAction(app.api, lineId, kind)
+    .then((r) => r.notice && app.notify(t(r.notice)))
+    .catch((e) => app.notify(t('chat.actionFailed', { reason: String((e as Error)?.message ?? e) }), 'error'));
+}
+
 function lineMenu(key: string, keys: string[]): MenuItem[] {
   const item = app.items.find((i) => i.key === key);
   const line = item?.lineId ? app.data.lines.find((l) => l.line.id === item.lineId) : undefined;
   const acts = item ? lineActions(item, line) : [];
   if (!acts.length) return [];
+  const single = keys.length === 1 && !!item?.lineId;
+  const pending = !!line?.local?.holdPending;
   return [
-    ...acts.map((a) => ({ label: t(LINE_ACTION[a].label), icon: LINE_ACTION[a].icon, danger: a === 'close', run: () => runLineAction(a, key, keys) })),
+    ...acts.map((a) =>
+      a === 'hold' && single
+        ? {
+            label: t(pending ? 'session.action.cancelPause' : 'session.action.pause'),
+            icon: pending ? Undo2 : Pause,
+            run: () => pauseLine(item!.lineId!, pending ? 'cancelPause' : 'pause'),
+          }
+        : { label: t(LINE_ACTION[a].label), icon: LINE_ACTION[a].icon, danger: a === 'close', run: () => runLineAction(a, key, keys) },
+    ),
     { label: '', separator: true },
   ];
 }
