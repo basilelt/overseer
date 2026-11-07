@@ -257,7 +257,7 @@ class AppState {
     this.agents = agents;
     if (this.client && complete) feedback.resume(this.client, terms, (text, kind, action) => this.notify(text, kind, action));
     this.setWs(ws, projects);
-    if (!this.selectedKey && this.items.length && !this.currentWorkspace?.tabs.length) this.selectedKey = this.groups.find((g) => g.items.length)?.items[0].key ?? null;
+    if (!this.selectedKey && this.items.length && !this.currentWorkspace?.tabs.length) this.selectedKey = groupItems(this.scopeItems()).find((g) => g.items.length)?.items[0].key ?? null;
     if (this.pendingTab) {
       const kind = this.pendingTab;
       this.pendingTab = null;
@@ -358,6 +358,11 @@ class AppState {
 
   membersOf(workspaceId: string) {
     return this.items.filter((i) => (this.itemWs.get(i.key) ?? NO_WORKSPACE) === workspaceId);
+  }
+
+  scopeItems(): SidebarItem[] {
+    if (this.sidebarMode === 'status') return this.items;
+    return this.workspaceId.startsWith('group:') ? this.groupItems(this.workspaceId.slice(6)) : this.membersOf(this.workspaceId);
   }
 
   groupItems(groupId: string) {

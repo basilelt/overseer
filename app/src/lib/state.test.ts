@@ -234,6 +234,50 @@ describe('connecting', () => {
     expect(m.hits(/GET \/v1\/lines$/)).toHaveLength(1);
   });
 
+  it('selects nothing from another workspace when a dropped connection comes back on an empty workspace', async () => {
+    await connect();
+    const empty = await app.api.createWorkspace({ path: '/srv/newproj' });
+    await app.refresh();
+    app.selectWorkspace(empty.id);
+    app.selectedKey = null;
+    expect(app.membersOf(empty.id)).toEqual([]);
+    m.onState!({ phase: 'reconnecting', target: local, attempt: 1 });
+    m.onState!({ phase: 'connected', target: local });
+    await vi.waitFor(() => expect(m.hits(/GET \/v1\/lines$/)).toHaveLength(2));
+    await vi.waitFor(() => expect((app as unknown as { refreshing: number }).refreshing).toBe(0));
+    expect(app.workspaceId).toBe(empty.id);
+    expect(app.selectedKey).toBeNull();
+  });
+
+  it('selects the first item of the current workspace when it has no saved tabs', async () => {
+    await connect();
+    const ws = app.ws.workspaces.find((w) => app.membersOf(w.id).length && w.id !== app.workspaceId) ?? app.currentWorkspace!;
+    app.selectWorkspace(ws.id);
+    app.selectedKey = null;
+    await app.refresh();
+    expect(app.selectedKey).not.toBeNull();
+    expect(app.membersOf(ws.id).map((i) => i.key)).toContain(app.selectedKey);
+  });
+
+  it('selects the first member of the current group when nothing is selected', async () => {
+    await connect();
+    const last = app.items[app.items.length - 1].key;
+    const g = await app.api.createGroup({ name: 'solo', members: [last] });
+    await app.refresh();
+    app.selectWorkspace(`group:${g.id}`);
+    app.selectedKey = null;
+    await app.refresh();
+    expect(app.selectedKey).toBe(last);
+  });
+
+  it('selects the first item of every workspace in the status view', async () => {
+    await connect();
+    app.setSidebarMode('status');
+    app.selectedKey = null;
+    await app.refresh();
+    expect(app.selectedKey).toBe(app.groups.find((g) => g.items.length)?.items[0].key);
+  });
+
   it('forgets the session on disconnect and remembers the choice', async () => {
     await connect();
     workspace.layout = openInFocused(EMPTY_LAYOUT, 'line:ln_01');
