@@ -660,7 +660,8 @@ pub fn wait_for<V>(mut f: impl FnMut() -> Option<V>) -> V {
 
 pub struct App {
     pub fx: Fx,
-    _d: Reap,
+    env: Vec<(String, String)>,
+    _d: Option<Reap>,
 }
 
 impl App {
@@ -675,6 +676,18 @@ impl App {
         cfg["worktreeDir"] = json!(fx.base.join("worktrees"));
         cfg["worktreeFetch"] = json!(false);
         std::fs::write(fx.state.join("config.json"), cfg.to_string()).unwrap();
+        let d = App::spawn_daemon(&fx, env);
+        App {
+            fx,
+            env: env
+                .iter()
+                .map(|(k, v)| (k.to_string(), v.to_string()))
+                .collect(),
+            _d: Some(d),
+        }
+    }
+
+    fn spawn_daemon(fx: &Fx, env: &[(&str, &str)]) -> Reap {
         let mut c = Command::new(bin());
         fx.env(&mut c);
         c.env("SB_BIN", bin())
@@ -684,7 +697,17 @@ impl App {
             .args(["daemon", "--interval", "1"]);
         let d = Reap::spawn(c.stderr(Stdio::null()));
         wait(|| UnixStream::connect(&fx.sock).is_ok());
-        App { fx, _d: d }
+        d
+    }
+
+    pub fn crash_and_restart(&mut self) {
+        drop(self._d.take());
+        let env: Vec<(&str, &str)> = self
+            .env
+            .iter()
+            .map(|(k, v)| (k.as_str(), v.as_str()))
+            .collect();
+        self._d = Some(App::spawn_daemon(&self.fx, &env));
     }
 
     pub fn req(&self, method: &str, target: &str, body: Value) -> (u16, Value) {
