@@ -1166,6 +1166,54 @@ fn closing_an_agent_session_with_shell_leaves_a_shell_in_its_term() {
 }
 
 #[test]
+fn closing_a_resumed_session_with_shell_prints_the_resume_note() {
+    // Given a claude session that was held and resumed, so it runs under the stub wrapper
+    // When it is closed as the panel does, with shell=true
+    // Then the term shows the closed note and a shell, like a never-held session
+    let sid = "cccccccc-0000-4000-8000-000000000001";
+    let app = App::new("closeresumed", json!({}));
+    let (tid, line) = claude_term(&app, json!(["claude", "--session-id", sid]), sid);
+    let mut ws = app.ws(&tid);
+    read_until(&mut ws, "❯");
+    app.ok(
+        "POST",
+        &format!("/v1/lines/{line}/hold?dryRun=false"),
+        Value::Null,
+    );
+    wait(|| line_json(&app, &line)["line"]["state"] == "held");
+    let mut ws = app.ws(&tid);
+    read_until(&mut ws, "press Enter to resume");
+    app.ok(
+        "POST",
+        &format!("/v1/lines/{line}/resume?dryRun=false"),
+        json!({"target": "term"}),
+    );
+    wait(|| line_json(&app, &line)["line"]["state"] != "held");
+    let mut ws = app.ws(&tid);
+    read_until(&mut ws, "❯");
+    app.ok(
+        "POST",
+        &format!("/v1/lines/{line}/close?dryRun=false&shell=true"),
+        Value::Null,
+    );
+    let mut ws = app.ws(&tid);
+    read_until(
+        &mut ws,
+        &format!("claude closed. Session {sid}, resume with:"),
+    );
+    let term = app.ok("GET", &format!("/v1/terms/{tid}"), Value::Null);
+    assert_eq!(
+        (&term["exited"], &term["agent"], &term["lineId"]),
+        (&json!(false), &Value::Null, &Value::Null)
+    );
+    app.ok(
+        "POST",
+        &format!("/v1/terms/{tid}/kill"),
+        json!({"confirm": true}),
+    );
+}
+
+#[test]
 fn closing_an_agent_session_without_shell_still_ends_its_term() {
     // Given a claude session that is the root process of its term
     // When the session is closed without shell=true, as closing its tab does

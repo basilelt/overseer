@@ -373,6 +373,10 @@ fn execute_hold_term(
             done.push(format!("closed term {id}"));
         }
         (false, true) => done.push(format!("term {id} runs a shell; stub not started")),
+        (false, false) if shell && is_stub_wrapper(&t.info().cmd) => {
+            t.to_shell("closed")?;
+            done.push(format!("left a shell in term {id}"));
+        }
         (false, false) if shell => {
             t.detach();
             done.push(format!("left the shell of term {id}"));
