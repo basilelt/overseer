@@ -849,6 +849,12 @@ pub fn list(ctx: &Ctx, path: &str) -> Res<Value> {
     if let Ok(c) = wd.canonicalize() {
         managed_root.push(c.to_string_lossy().into_owned());
     }
+    if let Some(old) = crate::storage::legacy_worktree_dir() {
+        managed_root.push(old.to_string_lossy().into_owned());
+        if let Ok(c) = old.canonicalize() {
+            managed_root.push(c.to_string_lossy().into_owned());
+        }
+    }
     let shared = Shared {
         root: &root,
         repo: &repo,

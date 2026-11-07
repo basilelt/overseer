@@ -2150,7 +2150,7 @@ fn task_attachments_move_out_of_the_upload_sweep_and_go_with_the_task() {
     let kept = app
         .fx
         .base
-        .join(format!("home/.overseer/tasks/{id}/Screen_Shot.png"));
+        .join(format!("state/tasks/{id}/Screen_Shot.png"));
     assert_eq!(std::fs::read(&kept).unwrap(), b"png");
     assert!(!Path::new(up["path"].as_str().unwrap()).exists());
     assert_eq!(
@@ -2185,7 +2185,7 @@ fn uploads_stream_to_a_short_home_path_and_report_env() {
     assert!(path.is_absolute());
     assert_eq!(
         path.parent().unwrap(),
-        app.fx.base.join("home/.overseer/u"),
+        app.fx.base.join("state/u"),
         "{}",
         path.display()
     );
@@ -2193,7 +2193,7 @@ fn uploads_stream_to_a_short_home_path_and_report_env() {
     let file = path.file_name().unwrap().to_string_lossy().into_owned();
     assert_eq!(file.len(), "a1b2c3.txt".len(), "{file}");
     assert!(file.ends_with(".txt"));
-    assert_eq!(v["short"], format!("~/.overseer/u/{file}"));
+    assert_eq!(v["short"], path.to_string_lossy().as_ref());
 
     let big = "x".repeat(3 << 20);
     let (code, out) = app.fx.req("POST", "/v1/uploads?name=big.bin", &big);
@@ -3131,7 +3131,7 @@ fn direct_feedback_lists_files_when_gh_is_too_old_to_attach() {
         issue.contains("(not uploaded: gh 2.99+ is needed to attach files)"),
         "{issue}"
     );
-    assert!(issue.contains("~/.overseer/u/"), "{issue}");
+    assert!(issue.contains("/state/u/"), "{issue}");
 }
 
 #[test]

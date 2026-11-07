@@ -153,7 +153,7 @@ export function buildPrompt(p: PromptInput): string {
     );
   if (p.investigate)
     lines.push(
-      `4. Before filing, investigate read-only: read the diagnostics, then search ${p.inClone ? 'the code in this checkout' : 'the logs in ~/.overseer'} for the likely cause, and add a short "Likely cause" section with file paths. Read only.`,
+      `4. Before filing, investigate read-only: read the diagnostics, then search ${p.inClone ? 'the code in this checkout' : 'the logs in the Overseer state folder'} for the likely cause, and add a short "Likely cause" section with file paths. Read only.`,
     );
   lines.push(
     '',

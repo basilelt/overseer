@@ -187,9 +187,13 @@ fn overlays(ctx: &Ctx, root: &str, repo: &str, all: &[Ref]) -> Vec<Value> {
         .canonicalize()
         .map(|p| p.to_string_lossy().into_owned())
         .unwrap_or_else(|_| wd.clone());
+    let legacy = crate::storage::legacy_worktree_dir()
+        .map(|p| p.to_string_lossy().into_owned())
+        .unwrap_or_default();
     for e in &entries {
-        let managed =
-            e.path.starts_with(&format!("{wd}/")) || e.path.starts_with(&format!("{wdc}/"));
+        let managed = e.path.starts_with(&format!("{wd}/"))
+            || e.path.starts_with(&format!("{wdc}/"))
+            || (!legacy.is_empty() && e.path.starts_with(&format!("{legacy}/")));
         if let (true, Some(b)) = (managed, &e.branch) {
             let i = slot(&mut by, b);
             by[i].1.entry("worktree").or_insert(json!(e.path));

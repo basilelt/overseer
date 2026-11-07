@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+### Everything under the state directory
+
+- **No more `~/.overseer`**: worktrees (`worktrees/`), files sent from the app (`u/`), task
+  attachments (`tasks/`), PR review clones (`reviews/`) and the stable `bin/overseer` shim now live
+  in the state directory (`~/Library/Application Support/overseer` on macOS,
+  `~/.local/state/overseer` on Linux). The first start moves `u/` and `tasks/` over and leaves a
+  symlink at the old path; existing worktrees and review clones stay where they are and keep working;
+  the old shim becomes a link to the new one and agent hooks are rewritten to it. Server binaries on
+  remote hosts stay in `~/.overseer/server`, so any app version can still upgrade any server.
+
 ### Sessions survive a server crash
 
 - **A crashed or restarted server brings its sessions back**: the server restored terminals and

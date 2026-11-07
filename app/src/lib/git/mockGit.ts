@@ -193,7 +193,7 @@ export class MockGit {
   }
 
   store(name: string) {
-    return `/home/alice/.overseer/worktrees/${name}-${hashStr(name).toString(16).padStart(8, '0').slice(0, 8)}`;
+    return `/home/alice/.local/state/overseer/worktrees/${name}-${hashStr(name).toString(16).padStart(8, '0').slice(0, 8)}`;
   }
 
   private seedWorktrees(path: string, name: string, repo: Repo) {

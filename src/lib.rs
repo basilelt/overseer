@@ -44,6 +44,7 @@ pub mod screen;
 pub mod session_tasks;
 pub mod shellenv;
 pub mod statusline;
+pub mod storage;
 pub mod sync;
 pub mod sys;
 pub mod sysmon;
@@ -307,7 +308,7 @@ pub fn load_config(state_dir: &Path) -> Config {
             .unwrap_or_default(),
         worktree_dir: s("worktreeDir")
             .map(|p| expand(&p))
-            .unwrap_or_else(|| home().join(".overseer/worktrees")),
+            .unwrap_or_else(|| state_dir.join("worktrees")),
         start_args: strs("startArgs"),
         memory_policy: (v["memoryPolicy"]["enabled"] == true).then(|| {
             v["memoryPolicy"]["thresholdPercent"]

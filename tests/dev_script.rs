@@ -10,8 +10,9 @@ impl Dev {
     fn new(name: &str) -> Dev {
         let base = std::env::temp_dir().join(format!("dsh-{name}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&base);
-        std::fs::create_dir_all(base.join("home/.overseer/bin")).unwrap();
-        std::fs::write(base.join("home/.overseer/bin/overseer"), "installed").unwrap();
+        std::fs::create_dir_all(base.join("real-state/bin")).unwrap();
+        std::fs::create_dir_all(base.join("home")).unwrap();
+        std::fs::write(base.join("real-state/bin/overseer"), "installed").unwrap();
         std::fs::write(base.join("home/.gitconfig"), "[user]\n\tname = dev\n").unwrap();
         Dev { base }
     }
@@ -73,10 +74,15 @@ fn up_starts_an_isolated_daemon_and_down_stops_it() {
     assert!(ok(&d.run(&["status"])).contains("running"));
 
     assert_eq!(
-        std::fs::read_to_string(d.base.join("home/.overseer/bin/overseer")).unwrap(),
+        std::fs::read_to_string(d.base.join("real-state/bin/overseer")).unwrap(),
         "installed"
     );
-    assert!(!d.base.join("real-state").exists());
+    assert_eq!(
+        std::fs::read_dir(d.base.join("real-state"))
+            .unwrap()
+            .count(),
+        1
+    );
     assert!(!d.base.join("home/.local/state/overseer").exists());
     assert!(d.base.join("dev/home/.gitconfig").is_file());
 
@@ -96,7 +102,7 @@ fn reset_removes_the_dev_dir() {
     ok(&d.run(&["reset"]));
     assert!(!alive(&pid));
     assert!(!d.base.join("dev").exists());
-    assert!(d.base.join("home/.overseer/bin/overseer").is_file());
+    assert!(d.base.join("real-state/bin/overseer").is_file());
 }
 
 #[test]

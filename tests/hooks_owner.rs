@@ -43,8 +43,8 @@ impl Sbx {
         std::fs::read_to_string(self.home().join(".claude/settings.json")).unwrap_or_default()
     }
 
-    fn shim(&self) -> PathBuf {
-        self.home().join(".overseer/bin/overseer")
+    fn shim(&self, state: &Path) -> PathBuf {
+        state.join("bin/overseer")
     }
 
     fn cmd(&self, state: &Path) -> Command {
@@ -120,7 +120,7 @@ fn dev_daemon_leaves_hooks_of_the_default_state_dir_alone() {
 fn dev_daemon_does_not_repoint_the_cli_shim() {
     let b = Sbx::new("shim");
     b.install_hooks(&b.default_state());
-    let shim = b.shim();
+    let shim = b.shim(&b.default_state());
     let installed = b.base.join("installed-overseer");
     std::fs::write(&installed, "x").unwrap();
     std::fs::remove_file(&shim).unwrap();
@@ -147,8 +147,8 @@ fn default_state_daemon_heals_hooks_hijacked_by_another_state_dir() {
 #[test]
 fn default_state_daemon_repoints_the_cli_shim() {
     let b = Sbx::new("healshim");
-    b.install_hooks(&b.other_state());
-    let shim = b.shim();
+    b.install_hooks(&b.default_state());
+    let shim = b.shim(&b.default_state());
     let stale = b.base.join("stale-overseer");
     std::fs::write(&stale, "x").unwrap();
     std::fs::remove_file(&shim).unwrap();
@@ -163,7 +163,7 @@ fn sandbox_with_its_own_home_installs_and_keeps_its_hooks() {
     let state = b.other_state();
     assert!(b.settings().is_empty());
     let (d, log) = b.daemon(&state);
-    wait(|| b.shim().exists());
+    wait(|| b.shim(&state).exists());
     let (code, body) = exchange(
         UnixStream::connect(&b.sock).unwrap(),
         "POST",
@@ -185,4 +185,101 @@ fn sandbox_with_its_own_home_installs_and_keeps_its_hooks() {
 fn wait_quiet(_log: &Path) -> bool {
     std::thread::sleep(std::time::Duration::from_millis(500));
     true
+}
+
+fn legacy_home(b: &Sbx) -> PathBuf {
+    let legacy = b.home().join(".overseer");
+    std::fs::create_dir_all(legacy.join("u")).unwrap();
+    std::fs::create_dir_all(legacy.join("tasks/t1")).unwrap();
+    std::fs::create_dir_all(legacy.join("bin")).unwrap();
+    std::fs::write(legacy.join("u/a1b2c3.png"), "img").unwrap();
+    std::fs::write(legacy.join("tasks/t1/note.txt"), "note").unwrap();
+    legacy
+}
+
+#[test]
+fn default_state_daemon_moves_legacy_storage_and_repoints_hooks() {
+    let b = Sbx::new("storage");
+    let state = b.default_state();
+    b.install_hooks(&state);
+    let new_shim = b.shim(&state);
+    let legacy = legacy_home(&b);
+    let old_shim = legacy.join("bin/overseer");
+    std::os::unix::fs::symlink(bin(), &old_shim).unwrap();
+    let stale = b.settings().replace(
+        &new_shim.to_string_lossy().into_owned(),
+        &old_shim.to_string_lossy(),
+    );
+    std::fs::write(b.home().join(".claude/settings.json"), &stale).unwrap();
+    assert!(stale.contains(".overseer/bin/overseer"));
+    let (_d, log) = b.daemon(&state);
+    wait(|| !b.settings().contains(".overseer/bin/overseer"));
+    assert!(b
+        .settings()
+        .contains(&new_shim.to_string_lossy().into_owned()));
+    assert_eq!(
+        std::fs::read_to_string(state.join("u/a1b2c3.png")).unwrap(),
+        "img"
+    );
+    assert_eq!(
+        std::fs::read_to_string(state.join("tasks/t1/note.txt")).unwrap(),
+        "note"
+    );
+    assert_eq!(
+        std::fs::read_link(legacy.join("u")).unwrap(),
+        state.join("u")
+    );
+    assert_eq!(
+        std::fs::read_to_string(legacy.join("u/a1b2c3.png")).unwrap(),
+        "img"
+    );
+    wait(|| std::fs::read_link(&old_shim).is_ok_and(|p| p == new_shim));
+    let text = std::fs::read_to_string(&log).unwrap();
+    assert!(text.contains("storage: moved"), "{text}");
+
+    let (code, body) = exchange(
+        UnixStream::connect(&b.sock).unwrap(),
+        "POST",
+        "/v1/uploads?name=x.txt",
+        "hello",
+        "unix",
+    );
+    assert_eq!(code, 201, "{body}");
+    let v: serde_json::Value = serde_json::from_str(&body).unwrap();
+    let path = PathBuf::from(v["path"].as_str().unwrap());
+    assert_eq!(path.parent().unwrap(), state.join("u"));
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), "hello");
+}
+
+#[test]
+fn storage_move_is_repeatable_across_daemon_restarts() {
+    let b = Sbx::new("storage-twice");
+    let state = b.default_state();
+    legacy_home(&b);
+    let (d, _log) = b.daemon(&state);
+    wait(|| state.join("u/a1b2c3.png").is_file());
+    drop(d);
+    let _ = std::fs::remove_file(&b.sock);
+    let (_d2, log2) = b.daemon(&state);
+    let _ = wait_quiet(&log2);
+    assert_eq!(
+        std::fs::read_to_string(state.join("u/a1b2c3.png")).unwrap(),
+        "img"
+    );
+    assert!(!std::fs::read_to_string(&log2).unwrap().contains("storage:"));
+}
+
+#[test]
+fn dev_daemon_leaves_legacy_storage_alone() {
+    let b = Sbx::new("storage-dev");
+    let legacy = legacy_home(&b);
+    let (_d, log) = b.daemon(&b.other_state());
+    wait(|| {
+        std::fs::read_to_string(&log)
+            .unwrap_or_default()
+            .contains("listening")
+    });
+    assert!(!legacy.join("u").is_symlink());
+    assert!(legacy.join("u/a1b2c3.png").is_file());
+    assert!(!b.other_state().join("u").exists());
 }

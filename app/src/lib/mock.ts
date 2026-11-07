@@ -1229,9 +1229,9 @@ export class MockDaemon implements DaemonClient {
     const name = raw.split(/[\\/]/).pop()?.replace(/[^\w.-]/g, '_').replace(/^\.+/, '') || 'upload';
     const ext = /\.([A-Za-z0-9]{1,10})$/.exec(name)?.[1]?.toLowerCase();
     const file = `${Math.random().toString(36).slice(2, 8).padEnd(6, '0')}${ext ? `.${ext}` : ''}`;
-    this.uploaded.add(`${HOME}/.overseer/u/${file}`);
-    this.sizes.set(`${HOME}/.overseer/u/${file}`, size);
-    return { path: `${HOME}/.overseer/u/${file}`, short: `~/.overseer/u/${file}`, name, size };
+    this.uploaded.add(`${HOME}/.local/state/overseer/u/${file}`);
+    this.sizes.set(`${HOME}/.local/state/overseer/u/${file}`, size);
+    return { path: `${HOME}/.local/state/overseer/u/${file}`, short: `~/.local/state/overseer/u/${file}`, name, size };
   }
 
   private sizes = new Map<string, number>();
@@ -1243,7 +1243,7 @@ export class MockDaemon implements DaemonClient {
     for (const it of list) {
       const raw = it?.path;
       if (typeof raw !== 'string') throw new DaemonError(400, 'attachment path required');
-      if (!this.uploaded.has(raw)) throw new DaemonError(400, raw.startsWith(`${HOME}/.overseer/u/`) ? `${raw}: no such upload` : `${raw} is not an upload`);
+      if (!this.uploaded.has(raw)) throw new DaemonError(400, raw.startsWith(`${HOME}/.local/state/overseer/u/`) ? `${raw}: no such upload` : `${raw} is not an upload`);
       const name = typeof it.name === 'string' && it.name.trim() ? it.name.trim() : raw.slice(raw.lastIndexOf('/') + 1);
       const p = attachProblem(name, this.sizes.get(raw) ?? 0);
       if (p === 'type') throw new DaemonError(400, `${name}: GitHub only accepts ${IMAGE_EXTS.join(', ')} and ${VIDEO_EXTS.join(', ')} attachments`);
@@ -1258,7 +1258,7 @@ export class MockDaemon implements DaemonClient {
     const files = list.map((it) => {
       const raw = it?.path;
       if (typeof raw !== 'string') throw new DaemonError(400, 'attachment path required');
-      const dir = `${HOME}/.overseer/u/`;
+      const dir = `${HOME}/.local/state/overseer/u/`;
       if (!this.uploaded.has(raw)) throw new DaemonError(400, raw.startsWith(dir) ? `${raw}: no such upload` : `${raw} is not an upload`);
       const n = typeof it.name === 'string' ? it.name.trim() : '';
       const plain = n && !/[/\\\0]/.test(n) && n !== '.' && n !== '..';
@@ -1266,8 +1266,8 @@ export class MockDaemon implements DaemonClient {
     });
     const kept: string[] = [];
     files.forEach(({ raw, name }, i) => {
-      const to = `${HOME}/.overseer/tasks/${id}/${name}`;
-      kept.push(kept.includes(to) ? `${HOME}/.overseer/tasks/${id}/${i + 1}-${name}` : to);
+      const to = `${HOME}/.local/state/overseer/tasks/${id}/${name}`;
+      kept.push(kept.includes(to) ? `${HOME}/.local/state/overseer/tasks/${id}/${i + 1}-${name}` : to);
       this.uploaded.delete(raw);
     });
     return kept;
@@ -2173,7 +2173,7 @@ function mockHooks(): HooksStatus {
     ...(note ? { note } : {}),
   });
   return {
-    shim: '/home/dev/.overseer/bin/overseer',
+    shim: '/home/dev/.local/state/overseer/bin/overseer',
     agents: [
       row('claude', 'Claude Code', 'hooks', true, '/home/dev/.claude/settings.json'),
       row('codex', 'Codex', 'hooks', true, '/home/dev/.codex/hooks.json', 'Codex runs edited hooks only after you trust them again'),

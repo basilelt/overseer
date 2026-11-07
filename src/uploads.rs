@@ -57,12 +57,11 @@ fn cap(s: &str) -> String {
     }
 }
 
-pub const SHORT_DIR: &str = ".overseer/u";
 const ID_LEN: usize = 6;
 const ALPHABET: &[u8; 36] = b"abcdefghijklmnopqrstuvwxyz0123456789";
 
 pub fn dir() -> PathBuf {
-    crate::home().join(SHORT_DIR)
+    crate::storage::uploads_dir(&crate::default_state_dir())
 }
 
 fn id(attempt: u32) -> String {
@@ -128,10 +127,8 @@ pub fn store(dir: &Path, name: &str, len: u64, body: impl Read) -> Res<PathBuf> 
     }
 }
 
-pub const TASK_DIR: &str = ".overseer/tasks";
-
 pub fn task_dir(id: &str) -> PathBuf {
-    crate::home().join(TASK_DIR).join(id)
+    crate::storage::tasks_dir(&crate::default_state_dir()).join(id)
 }
 
 pub fn attachments(uploads: &Path, list: &Value) -> Result<Vec<(PathBuf, String)>, String> {
@@ -182,8 +179,10 @@ pub fn keep(dest: &Path, files: &[(PathBuf, String)]) -> Result<Vec<PathBuf>, St
 
 pub fn short(path: &Path, home: &Path) -> String {
     match path.strip_prefix(home) {
-        Ok(rel) => format!("~/{}", rel.to_string_lossy()),
-        Err(_) => path.to_string_lossy().into_owned(),
+        Ok(rel) if !rel.to_string_lossy().contains(char::is_whitespace) => {
+            format!("~/{}", rel.to_string_lossy())
+        }
+        _ => path.to_string_lossy().into_owned(),
     }
 }
 
@@ -322,6 +321,15 @@ mod tests {
         assert!(v["path"].as_str().unwrap().ends_with(".txt"));
         assert_eq!(receive(&d, Some(".."), 1, &b"x"[..]).unwrap_err().0, 400);
         let _ = std::fs::remove_dir_all(d.parent().unwrap());
+    }
+
+    #[test]
+    fn short_keeps_the_absolute_path_when_the_tilde_form_would_need_quoting() {
+        let home = Path::new("/Users/u");
+        let p = Path::new("/Users/u/Library/Application Support/overseer/u/a1b2c3.pdf");
+        assert_eq!(short(p, home), p.to_string_lossy());
+        let q = Path::new("/Users/u/.local/state/overseer/u/a1b2c3.pdf");
+        assert_eq!(short(q, home), "~/.local/state/overseer/u/a1b2c3.pdf");
     }
 
     #[test]

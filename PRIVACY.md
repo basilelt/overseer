@@ -40,7 +40,7 @@ Overseer is a developer tool and is not directed at children under 13.
 ## Deleting your data
 
 All app data is on your device and your servers. Uninstall the app or clear its storage to delete
-it from the device; remove the `~/.overseer` folder to delete it from a server.
+it from the device; remove the Overseer state folder (`~/.local/state/overseer`, and `~/.overseer` for what older versions stored) to delete it from a server.
 
 ## Changes
 
