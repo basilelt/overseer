@@ -32,9 +32,21 @@ Make sure the CLI, the services and the hooks resolve the same dir.
 
 State dir: `$OVERSEER_STATE_DIR` (mode `0700`). It holds `overseer.db` (`0600`), `spool/`
 (hook events), `actions.log`, `status.json`, `daemon.sock`, `daemon.lock`, `board.json`, `sync.json`,
-`sync.db`, `user.json`, `stations/`, `commands/`, `tmp/` and the optional `config.json`. Files
-sent from the app go to `~/.overseer/u/` (see 14.1), not to the state dir; an `uploads/` dir
-left by older versions is emptied after 7 days and removed.
+`sync.db`, `user.json`, `stations/`, `commands/`, `tmp/` and the optional `config.json`. It is
+`~/Library/Application Support/overseer` on macOS and `$XDG_STATE_HOME/overseer`
+(`~/.local/state/overseer`) on Linux, and everything Overseer stores lives under it: `worktrees/`
+(the default `worktreeDir`), `u/` (files sent from the app, see 14.1), `tasks/<id>/` (task
+attachments), `reviews/` (PR review clones) and `bin/overseer` (the stable shim, below). An `uploads/`
+dir left by older versions is emptied after 7 days and removed.
+
+Older versions kept those under `~/.overseer`. The first daemon start on the default state dir
+moves `~/.overseer/u` and `~/.overseer/tasks` into it and leaves a symlink at the old place, so
+paths already typed into terminals or saved in tasks keep working; it logs each move to `daemon.log`.
+Nothing is deleted, and an interrupted move finishes on the next start. Existing worktrees and
+review clones stay where they are (git records their absolute paths) and keep being listed and
+cleaned as before; only new ones go to the new place. `~/.overseer/bin/overseer` becomes a symlink
+to the new shim. `~/.overseer/server/<version>/` is unchanged: it is where the app puts server
+binaries on a remote host (14.4), a layout shared by every app and server version.
 
 ```json
 {
@@ -48,7 +60,7 @@ left by older versions is emptied after 7 days and removed.
   "remoteCommand": "overseer",
   "yardUrl": "http://yard.example.com",
   "repos": { "github.com/acme/live": "~/src/work/live" },
-  "worktreeDir": "~/.overseer/worktrees",
+  "worktreeDir": "~/worktrees",
   "discoverRoots": ["~/Documents/Github", "~/src"],
   "startArgs": ["--permission-mode", "acceptEdits"],
   "memoryPolicy": { "enabled": false, "thresholdPercent": 85 }
@@ -67,7 +79,7 @@ left by older versions is emptied after 7 days and removed.
 | `remoteCommand` | `overseer` | The `overseer` to run on the other station over ssh. |
 | `yardUrl` | none | Board env links: `envRef` opens `<yardUrl>/envs/<envRef>`. |
 | `repos` | none | Normalised repo (`github.com/acme/live`, lowercase, no `.git`) to local clone path; used by `start` and `patch --local`. |
-| `worktreeDir` | `~/.overseer/worktrees` | The worktree store: task and app sessions go to `<worktreeDir>/<repo>-<hash>/<branch>` (14.9); `start` and `patch --local` also create theirs under it. Was `~/worktrees`. |
+| `worktreeDir` | `<state dir>/worktrees` (macOS: `~/Library/Developer/overseer/worktrees`, a path without spaces for build tools) | The worktree store: task and app sessions go to `<worktreeDir>/<repo>-<hash>/<branch>` (14.9); `start` and `patch --local` also create theirs under it. Was `~/.overseer/worktrees` before 0.33; worktrees created there keep working. |
 | `discoverRoots` | those of `~/Documents/Github`, `~/src`, `~/code`, `~/projects`, `~/dev` that exist | Folders scanned three levels deep for git repositories (at daemon start, every 10 minutes, **Rescan folders** in the app); each one becomes a project with a workspace. `[]` turns discovery off. |
 | `worktreeFetch` | `true` | `git fetch origin <default branch>` (10 s timeout) before creating a worktree from the base. |
 | `worktreeStaleDays` | `14` | A clean, unused worktree without activity for longer is `stale` (cleanup suggested). |
@@ -112,10 +124,11 @@ hooks did not fire, fall back to terminal activity: in a daemon terminal, a line
 agent keeps writing after you pressed Enter, and its turn ends after 4 s without output. Amp has no
 needs-input event; Cursor Agent fires only some hooks in the CLI.
 
-Hooks call `~/.overseer/bin/overseer`, a symlink the daemon points at its own binary on
+Hooks call `<state dir>/bin/overseer`, a symlink the daemon points at its own binary on
 every start and hot upgrade, so a server upgrade never breaks them. When the daemon starts and
 finds Overseer hook entries that name another binary (older installs wrote
-`~/.overseer/server/<version>/overseer`), it rewrites them in place with the same merge,
+`~/.overseer/server/<version>/overseer` or the former shim `~/.overseer/bin/overseer`), it rewrites
+them in place with the same merge,
 backup and validation. Files without Overseer entries are never touched.
 
 Codex runs edited hooks only after you trust them again (open codex and accept the prompt);
@@ -131,7 +144,7 @@ The hook program only appends `{agent, event, at, sessionId, cwd, pid, tmuxPane,
 The app can install the daemon's own service for you (14.4, **Keep the server running**): a
 `systemd --user` unit `~/.config/systemd/user/overseer-daemon.service` on Linux, a LaunchAgent
 `~/Library/LaunchAgents/dev.overseer.daemon.plist` on macOS, both running the stable shim
-`~/.overseer/bin/overseer daemon`. Otherwise Overseer installs no service. `deploy/`
+`<state dir>/bin/overseer daemon`. Otherwise Overseer installs no service. `deploy/`
 contains ready-made files to copy and edit, for setups that want different flags or the sync
 service:
 
@@ -802,7 +815,7 @@ logs and code, read-only, and add a likely cause.
 
 **Send with <agent>** opens a new tab on the active host running your default agent CLI, in a
 local clone of the feedback repository when one is a known project (else in
-`~/.overseer/feedback/work`). The agent searches existing issues with `gh issue list`, comments
+`<state dir>/feedback/work`). The agent searches existing issues with `gh issue list`, comments
 on a matching one or creates one issue with `gh issue create`, as you (your own `gh` login), with
 labels `bug`, `enhancement` or `feedback` when it may. Once it prints `ISSUE_URL=…`, the app shows
 "Issue created" with the link. The tab stays open so you can follow and answer the agent. Claude
@@ -1015,14 +1028,14 @@ In the app:
   (bash and fish do this by default or ignore it; Overseer never edits your dotfiles.)
 - **Images and files**: paste an image (Cmd/Ctrl+V with a screenshot on the clipboard) or drop
   files on a terminal. The app uploads them to the daemon (`POST /v1/uploads`, 50 MB per file)
-  which stores each one as `~/.overseer/u/<6-character id>.<ext>` (mode `0600`, deleted after 7
+  which stores each one as `<state dir>/u/<6-character id>.<ext>` (mode `0600`, deleted after 7
   days), then types the path followed by a space as a bracketed paste when the program asked for
-  it. Other files are typed short, `~/.overseer/u/a1b2c3.pdf`; images keep their absolute path
+  it. Other files are typed short, `~/.local/state/overseer/u/a1b2c3.pdf` (the absolute path when it would contain a space, as on macOS); images keep their absolute path
   so Claude Code recognises them and shows `[Image #1]` instead of the path. Nothing is submitted:
   press Enter yourself. Dropping a file on a local terminal types its own path without copying it.
   A toast shows the upload (with progress for large files). Folders cannot be uploaded. The
-  daemon's answer carries both forms: `{"path": "/home/me/.overseer/u/a1b2c3.png", "short":
-  "~/.overseer/u/a1b2c3.png", "name", "size"}`.
+  daemon's answer carries both forms: `{"path": "/home/me/.local/state/overseer/u/a1b2c3.png", "short":
+  "~/.local/state/overseer/u/a1b2c3.png", "name", "size"}`.
 - **Font**: Settings → Terminal → Font family takes any installed font by name (suggestions:
   MesloLGS NF, JetBrainsMono Nerd Font, FiraCode Nerd Font, Hack Nerd Font, SF Mono, Menlo;
   several comma-separated), with the font size and the line height (1–2). The default is the
@@ -1290,7 +1303,7 @@ request, the event stream, every terminal and every forwarded port over that one
 - **Keep the server running**: after the first connection to a host the app offers once to start
   the server at boot. **Keep running** (or Settings → Server → **Keep server running after
   reboot**) writes and enables `~/.config/systemd/user/overseer-daemon.service`
-  (`ExecStart=~/.overseer/bin/overseer daemon`, `Restart=on-failure`, `OOMPolicy=continue`) on Linux, or the
+  (`ExecStart=<state dir>/bin/overseer daemon`, `Restart=on-failure`, `OOMPolicy=continue`) on Linux, or the
   LaunchAgent `dev.overseer.daemon` on macOS (which starts at login). It does not start a second
   daemon; `daemon --detach` starts the unit when it is installed. The unit points at the shim, so
   hot upgrades keep it valid. A user unit starts at boot only when lingering is on: Settings shows
@@ -1785,7 +1798,7 @@ PR reviews") or, on the phone, More → PR reviews.
 - The list loads when the tab is shown and when the window regains focus; the daemon keeps it for
   60 s. **Refresh** fetches it again right away. Nothing runs in the background.
 - **Review with agent** checks the PR out in a fresh worktree (`review/pr-<number>`) of your local
-  clone, or of a partial clone under `~/.overseer/reviews/<owner>/<repo>` when you have none,
+  clone, or of a partial clone under `<state dir>/reviews/<owner>/<repo>` (or the one an older version made in `~/.overseer/reviews`) when you have none,
   then starts your default agent there and opens it next to a live review of that worktree. A
   first clone of a large repository can take a while: the tab says it is preparing and the agent
   opens by itself when it is ready. Running it again on the same PR reuses the worktree and
@@ -1803,7 +1816,7 @@ current checkout" in the workspace `+` menu, or pick "Start in the current check
 opt out). One place, outside your repositories:
 
 ```
-~/.overseer/worktrees/<repo-name>-<hash>/<branch with / as ->
+<worktreeDir>/<repo-name>-<hash>/<branch with / as ->
   sb-claude-1029-0930        branch sb/claude/1029-0930   (an agent session)
   task-7-fix-login           branch task/7-fix-login      (task #7)
 ```
@@ -1834,7 +1847,7 @@ opt out). One place, outside your repositories:
 P=$(python3 -c 'import urllib.parse,sys;print(urllib.parse.quote(sys.argv[1],safe=""))' ~/src/app)
 curl --unix-socket "$S" "http://unix/v1/projects/$P/worktrees"
 curl --unix-socket "$S" -X POST -d '{"project":"/home/me/src/app","agent":"claude","slug":"fix login"}' http://unix/v1/worktrees
-W=$(python3 -c 'import urllib.parse,sys;print(urllib.parse.quote(sys.argv[1],safe=""))' ~/.overseer/worktrees/app-1a2b3c4d/sb-claude-fix-login)
+W=$(python3 -c 'import urllib.parse,sys;print(urllib.parse.quote(sys.argv[1],safe=""))' ~/.local/state/overseer/worktrees/app-1a2b3c4d/sb-claude-fix-login)
 curl --unix-socket "$S" -X POST -d '{}' "http://unix/v1/worktrees/$W/cleanup"                 # dry run
 curl --unix-socket "$S" -X POST -d '{"dryRun":false}' "http://unix/v1/worktrees/$W/cleanup"
 ```
@@ -1924,10 +1937,10 @@ exits: Resume then reopens the session it was last in (`lines.session_now`). Two
   `Claude Code-credentials` only for the opt-in Claude plan limits; whole transcripts and `subagents/` once, then appended
   lines, for usage), `$CODEX_HOME` or `~/.codex` (copy of `state_N.sqlite`, or rollouts), `/proc` or `ps`/`lsof`, `git` with `GIT_OPTIONAL_LOCKS=0`, `tmux list-panes`,
   `~/.local/state/tmux-snapshot/latest/state.json`.
-- Writes: the state dir (including `usage.db`), files sent from the app in `~/.overseer/u/`,
+- Writes: the state dir (including `usage.db`), files sent from the app in `<state dir>/u/`,
   the daemon's service file when you turn on **Keep server running after reboot**
   (`~/.config/systemd/user/overseer-daemon.service` or
-  `~/Library/LaunchAgents/dev.overseer.daemon.plist`), plus `hooks install --apply` and the app's hook switches (the agents' hook files, with backups, and Overseer's own plugin files), the `~/.overseer/bin/overseer` symlink,
+  `~/Library/LaunchAgents/dev.overseer.daemon.plist`), plus `hooks install --apply` and the app's hook switches (the agents' hook files, with backups, and Overseer's own plugin files), the `<state dir>/bin/overseer` symlink (and the old `~/.overseer/bin/overseer` link to it),
   `hold`/`close --yes` (SIGTERM to the agent, `@sb_held` and the stub in its pane), `resume`
   (relaunches the agent), Board commit/stash, relayed commands when `acceptRemoteCommands` is on,
   and the worktrees and tmux sessions created by `start` and `patch --local`; the worktree store

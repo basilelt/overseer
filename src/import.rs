@@ -599,10 +599,7 @@ fn run_import(state_dir: &Path, dir: &Path) -> Result<Value, String> {
     merge_or_clone(state_dir, dir, "sync.db", "")?;
     let home = crate::home();
     for d in COPY_HOME_DIRS {
-        copy_missing(
-            &home.join(".switchboard").join(d),
-            &home.join(".overseer").join(d),
-        )?;
+        copy_missing(&home.join(".switchboard").join(d), &state_dir.join(d))?;
     }
     let hooks = import_hooks(state_dir);
     Registry::open(state_dir)?

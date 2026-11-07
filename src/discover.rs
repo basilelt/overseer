@@ -58,11 +58,9 @@ fn visit(dir: &Path, depth: usize, skip: &[PathBuf], out: &mut Vec<PathBuf>) {
 }
 
 pub fn run(ctx: &Ctx) -> Res<Value> {
-    let found = walk(
-        &ctx.config.discover_roots,
-        DEPTH,
-        std::slice::from_ref(&ctx.config.worktree_dir),
-    );
+    let mut skip = vec![ctx.config.worktree_dir.clone()];
+    skip.extend(crate::storage::legacy_worktree_dir());
+    let found = walk(&ctx.config.discover_roots, DEPTH, &skip);
     let reg = Registry::open(&ctx.state_dir).map_err(|e| (500, e))?;
     let sql = |e: rusqlite::Error| -> (u16, String) { (500, e.to_string()) };
     let known: HashSet<String> = {

@@ -47,7 +47,7 @@ increases on any breaking change to this document; the app refuses a daemon whos
 `pid`, and `upgradedFrom` (the previous version, only after a hot upgrade).
 
 `POST /v1/upgrade` `{"path"?: "<binary>", "version"?: "x.y.z", "force"?: bool}` hot-upgrades the
-daemon in place (ADR 0034). `version` means `$HOME/.overseer/server/<version>/overseer`.
+daemon in place (ADR 0034). `version` means `$HOME/.overseer/server/<version>/overseer`; this remote layout is part of the app/daemon contract and does not follow the state dir.
 `202 {"from","to","epoch"}` once the new binary passed its pre-flight; the daemon then re-executes
 itself with the same pid, terms and socket, and the response's `epoch` appears in `/v1/version`.
 `400` bad or missing binary, `409` incompatible binary (protocol, takeover format, not newer
@@ -199,12 +199,12 @@ remote term: the app uploads it, then types the returned path into the term.
 `POST /v1/uploads?name=<percent-encoded file name>` with the raw file as the body
 (`Content-Type: application/octet-stream`) and a `Content-Length` header:
 
-- **201** `{"path":"/home/u/.overseer/u/a1b2c3.png","short":"~/.overseer/u/a1b2c3.png","name":"screenshot.png","size":48213}`.
+- **201** `{"path":"/home/u/.local/state/overseer/u/a1b2c3.png","short":"~/.local/state/overseer/u/a1b2c3.png","name":"screenshot.png","size":48213}`.
 - **400** name empty, `.`/`..`, or containing `/`, `\` or NUL; or the body ended before
   `Content-Length` bytes (the partial file is removed). **411** no `Content-Length` (chunked
   bodies are refused). **413** more than 50 MiB (52 428 800 bytes), refused before reading.
 - The body is streamed to disk, not buffered. The file is stored as
-  `~/.overseer/u/<id>.<ext>` (directory `0700`, file `0600`): `<id>` is 6 random characters
+  `<state dir>/u/<id>.<ext>` (directory `0700`, file `0600`): `<id>` is 6 random characters
   `[a-z0-9]`, `<ext>` the lower-cased extension of the sanitised name (≤ 10 alphanumerics, none
   when absent). `name` is the name sanitised to `[A-Za-z0-9._-]` (other characters → `_`, leading
   dots dropped, ≤ 80 characters). `short` is `path` with the home directory written `~`.
@@ -303,7 +303,7 @@ timeout). The result is cached 60 s; `refresh=1` bypasses the cache.
 `POST /v1/github/review-requests/{owner}/{repo}/{number}/review`
 `{"agent","model"?,"effort"?,"cols"?,"rows"?}` prepares the PR and starts the agent on it:
 
-1. Clone: the known project for the repo, else `~/.overseer/reviews/<owner>/<repo>`, created
+1. Clone: the known project for the repo, else `<state dir>/reviews/<owner>/<repo>` (an existing `~/.overseer/reviews/<owner>/<repo>` is reused), created
    with `gh repo clone <owner>/<repo> <dir> -- --filter=blob:none` (10 min timeout).
 2. Worktree: `git fetch origin pull/<number>/head`, then a worktree of branch `review/pr-<number>`
    at that commit in the usual store (`POST /v1/worktrees` rules). When that worktree already
@@ -1472,7 +1472,7 @@ Every agent session or task started from the app runs in its own worktree by def
 offers "run in current checkout" per start).
 
 - **Store**: `<worktreeDir>/<repo-name>-<hash>/<dir>`; `worktreeDir` (`config.json`) defaults
-  to `~/.overseer/worktrees` (outside every repository); `<hash>` = 8 hex digits of the
+  to `<state dir>/worktrees`, `~/Library/Developer/overseer/worktrees` for the default macOS daemon (outside every repository; `~/.overseer/worktrees` before 0.33); `<hash>` = 8 hex digits of the
   FNV-1a 64 hash of the main worktree root path; `<dir>` = the branch with `/` turned into `-`.
 - **Branches**: `sb/<agent>/<slug>` for agent sessions (`<slug>` defaults to `MMDD-HHMM` of the
   start, UTC), `task/<number>-<slug>` for tasks, `sb/<slug>` for a worktree created without an

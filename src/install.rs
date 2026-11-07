@@ -13,7 +13,7 @@ pub fn shim_path() -> PathBuf {
     } else {
         "overseer"
     };
-    crate::home().join(".overseer/bin").join(name)
+    crate::storage::shim_dir(&crate::default_state_dir()).join(name)
 }
 
 pub fn ensure_shim(shim: &Path, real: &Path, replace: bool) -> std::io::Result<bool> {
@@ -823,6 +823,16 @@ pub fn on_daemon_start(state_dir: &Path) {
     if let Ok(exe) = std::env::current_exe() {
         if let Err(e) = ensure_shim(&shim, &exe, owner) {
             eprintln!("overseer daemon: {}: {e}", shim.display());
+        }
+        if owner {
+            match crate::storage::link_legacy_shim(&crate::storage::legacy_dir(), &shim) {
+                Ok(true) => crate::dlog::line(
+                    "info",
+                    "overseer daemon: ~/.overseer/bin/overseer now links to the shim in the state dir",
+                ),
+                Ok(false) => {}
+                Err(e) => crate::dlog::line("warn", &format!("overseer daemon: legacy shim: {e}")),
+            }
         }
     }
     let bin = hook_bin();

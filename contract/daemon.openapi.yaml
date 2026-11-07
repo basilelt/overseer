@@ -560,7 +560,7 @@ paths:
             schema: { type: string, format: binary }
       responses:
         "201":
-          description: "Stored as ~/.overseer/u/<6 chars>.<ext> (mode 0600), deleted after 7 days"
+          description: "Stored as <state dir>/u/<6 chars>.<ext> (mode 0600), deleted after 7 days"
           content:
             application/json:
               schema:
@@ -2218,7 +2218,7 @@ components:
       type: object
       required: [shim, agents]
       properties:
-        shim: { type: string, description: "Binary the hooks call (~/.overseer/bin/overseer)" }
+        shim: { type: string, description: "Binary the hooks call (<state dir>/bin/overseer)" }
         agents:
           type: array
           items:
@@ -2402,7 +2402,7 @@ components:
         attachments:
           type: array
           maxItems: 20
-          description: "Files from POST /v1/uploads; each moves to ~/.overseer/tasks/{id}/ (out of the 7-day upload sweep, removed with the task) and its path is listed under \"Attachments:\" at the end of the description. 400 when a path is not a file in the upload folder"
+          description: "Files from POST /v1/uploads; each moves to <state dir>/tasks/{id}/ (out of the 7-day upload sweep, removed with the task) and its path is listed under \"Attachments:\" at the end of the description. 400 when a path is not a file in the upload folder"
           items:
             type: object
             required: [path]

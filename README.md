@@ -305,7 +305,7 @@ alone, `pnpm dev` in `app/` runs the frontend in a browser on the mock daemon.
 
 Never start a daemon from a checkout with your real `HOME` (for example
 `OVERSEER_STATE_DIR=$PWD/.state target/debug/overseer daemon`): a daemon on a state directory other
-than the default one does not repair your global agent hooks or `~/.overseer/bin/overseer` (it
+than the default one does not repair your global agent hooks or the `bin/overseer` shim of the default state directory (it
 logs why), but it shares your agents, tmux and files. Give it its own `HOME`, as `scripts/dev.sh`
 and `scripts/qa/sandbox.sh` do.
 

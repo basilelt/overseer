@@ -629,6 +629,7 @@ pub fn delete(ctx: &Ctx, id: &str) -> Res<Value> {
     }
     let dependents = remove(&reg, id)?;
     let _ = std::fs::remove_dir_all(crate::uploads::task_dir(id));
+    let _ = std::fs::remove_dir_all(crate::storage::legacy_dir().join("tasks").join(id));
     publish("task.deleted", json!({"id": id}));
     for d in dependents {
         publish(

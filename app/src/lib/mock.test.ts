@@ -88,7 +88,7 @@ describe('MockDaemon', () => {
     const notes = await m.uploadFile('/Users/me/notes.txt');
     const t = await a.createTask({ title: 'Look', description: 'See files\n', project: '/p', agent: 'claude', model: '', attachments: [{ path: shot.path, name: 'Screen Shot.png' }, { path: notes.path }] });
     const file = notes.path.split('/').pop();
-    const dir = `${notes.path.split('/.overseer/')[0]}/.overseer/tasks/${t.id}`;
+    const dir = `${notes.path.split('/.local/state/overseer/')[0]}/.local/state/overseer/tasks/${t.id}`;
     expect(t.description).toBe(`See files\n\nAttachments:\n- ${dir}/Screen_Shot.png\n- ${dir}/${file}`);
     await expect(a.createTask({ title: 'Again', description: '', project: '/p', agent: 'claude', model: '', attachments: [{ path: shot.path }] })).rejects.toThrow('no such upload');
   });
@@ -525,7 +525,7 @@ describe('MockDaemon', () => {
     const seen: number[] = [];
     const res = await m.uploadFile('/Users/me/Desktop/Screen Shot.png', (p) => seen.push(p.sent / p.total));
     expect(res).toMatchObject({ name: 'Screen_Shot.png' });
-    expect(res.path).toMatch(/^\/home\/alice\/\.overseer\/u\/[a-z0-9]{6}\.png$/);
+    expect(res.path).toMatch(/^\/home\/alice\/\.local\/state\/overseer\/u\/[a-z0-9]{6}\.png$/);
     expect(res.short).toBe(res.path.replace('/home/alice', '~'));
     expect(seen).toEqual([0, 0.25, 0.5, 0.75, 1]);
     expect(await m.savePaste('image.png', new Uint8Array(3))).toMatch(/^\/tmp\/overseer-paste\/\d+-image\.png$/);

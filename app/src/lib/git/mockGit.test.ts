@@ -88,7 +88,7 @@ describe('mock worktrees', () => {
     const { g } = setup();
     const l = await g.worktrees(PROJECT);
     expect(l.worktrees[0].kind).toBe('main');
-    expect(l.store).toMatch(/\.overseer\/worktrees\/overseer-[0-9a-f]{8}$/);
+    expect(l.store).toMatch(/\.local\/state\/overseer\/worktrees\/overseer-[0-9a-f]{8}$/);
     expect(new Set(l.worktrees.map((w) => w.state))).toEqual(new Set(['idle', 'in_use', 'stale', 'missing']));
     expect(l.orphans.every((w) => w.kind === 'orphan')).toBe(true);
     expect(l.worktrees.filter((w) => w.kind === 'managed').every((w) => w.path.startsWith(`${l.store}/`))).toBe(true);
@@ -154,7 +154,7 @@ describe('mock worktrees', () => {
   it('starts sessions in a new worktree and tasks in place on request', async () => {
     const { m, a } = setup();
     const term = await a.createTerm({ agent: 'claude', cwd: PROJECT, worktree: true });
-    expect(term.cwd).toMatch(/\.overseer\/worktrees\/overseer-[0-9a-f]{8}\/sb-claude-\d{4}-\d{4}$/);
+    expect(term.cwd).toMatch(/\.local\/state\/overseer\/worktrees\/overseer-[0-9a-f]{8}\/sb-claude-\d{4}-\d{4}$/);
     const t = await a.createTask({ title: 'Fix login page', description: '', project: PROJECT, agent: 'claude', model: '' });
     const started = await a.startTask(t.id);
     expect(started.branch).toBe(`task/${t.number}-fix-login-page`);

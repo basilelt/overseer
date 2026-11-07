@@ -1351,6 +1351,11 @@ pub fn run(
             ));
         }
     }
+    if crate::install::owns_globals(&state_dir) {
+        for line in crate::storage::migrate(&state_dir, &crate::storage::legacy_dir()) {
+            crate::dlog::line("info", &format!("overseer daemon: storage: {line}"));
+        }
+    }
     let restarted = saved.is_some();
     let _ = std::fs::write(state_dir.join("daemon.pid"), std::process::id().to_string());
     let _wal_keeper = crate::registry::Registry::open(&state_dir).ok();

@@ -306,6 +306,13 @@ fn git(dir: &str, args: &[&str], timeout: Duration) -> Res<String> {
     run("git", Some(Path::new(dir)), args, timeout)
 }
 
+fn clones_dir(repo: &str, legacy: &Path, current: &Path) -> PathBuf {
+    if !current.join(repo).join(".git").exists() && legacy.join(repo).join(".git").exists() {
+        return legacy.to_path_buf();
+    }
+    current.to_path_buf()
+}
+
 pub fn prepare(
     ctx: &Ctx,
     bin: &str,
@@ -522,7 +529,11 @@ fn run_job(dir: &Path, job: &Value, agent: &'static crate::agents::Agent) -> Res
             prepare(
                 &ctx,
                 "gh",
-                &crate::home().join(".overseer/reviews"),
+                &clones_dir(
+                    &repo,
+                    &crate::storage::legacy_reviews_dir(),
+                    &crate::storage::reviews_dir(&crate::default_state_dir()),
+                ),
                 job["local"].as_str().map(String::from),
                 &repo,
                 number,
@@ -614,6 +625,18 @@ mod tests {
         assert!(p.contains("Never approve on your own initiative"));
         assert!(p.contains("until I explicitly confirm"));
         assert!(prompt("acme/api", 7, None).contains("the base branch"));
+    }
+
+    #[test]
+    fn existing_clones_stay_where_they_are_and_new_ones_use_the_state_dir() {
+        let d = std::env::temp_dir().join(format!("sb-clones-{}", std::process::id()));
+        let (old, new) = (d.join("old"), d.join("new"));
+        std::fs::create_dir_all(old.join("o/kept/.git")).unwrap();
+        assert_eq!(clones_dir("o/kept", &old, &new), old);
+        assert_eq!(clones_dir("o/fresh", &old, &new), new);
+        std::fs::create_dir_all(new.join("o/kept/.git")).unwrap();
+        assert_eq!(clones_dir("o/kept", &old, &new), new);
+        let _ = std::fs::remove_dir_all(&d);
     }
 
     #[test]
