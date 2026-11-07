@@ -943,7 +943,7 @@ export class MockDaemon implements DaemonClient {
         l.line.state = 'active';
         l.local = { ...l.local, heldReason: undefined, heldAt: undefined };
         this.emit('line.state_changed', { line: l.line, from, to: 'active', local: l.local });
-        return this.spawn({ cwd: l.line.worktreePath ?? ROOT, cmd: [l.line.agent, '--resume', id], cols: 120, rows: 32, title: l.local?.title, lineId: id }, l.line.agent);
+        return this.spawn({ cwd: l.line.worktreePath ?? ROOT, cmd: [l.line.agent, '--resume', id], cols: 120, rows: 32, title: l.local?.title ?? undefined, lineId: id }, l.line.agent);
       }
     }
     return {};

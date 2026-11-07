@@ -540,7 +540,10 @@ pub fn hold_after_turn(ctx: &Ctx, q: &str, apply: bool) -> Result<Report, String
         match Registry::open(&ctx.state_dir)
             .and_then(|reg| reg.set_mark(&l.id, "hold_pending", Some("1")))
         {
-            Ok(()) => r.action = "hold-pending",
+            Ok(()) => {
+                forget_pending_clocks(&l.id);
+                r.action = "hold-pending";
+            }
             Err(e) => {
                 r.action = "none";
                 r.pending = false;
@@ -562,6 +565,7 @@ pub fn cancel_pending_hold(ctx: &Ctx, q: &str) -> Result<String, (u16, String)> 
     let claimed = Registry::open(&ctx.state_dir)
         .and_then(|r| r.claim_hold_pending(&l.id))
         .map_err(|e| (500, e))?;
+    forget_pending_clocks(&l.id);
     if !claimed
         && INFLIGHT
             .lock()
@@ -609,10 +613,14 @@ pub(crate) fn pending_verdict(l: &Line, checks: &[Check]) -> Pending {
 /// process still exiting right after the turn ended does not cancel it.
 const BLOCK_GRACE_MS: i64 = 10_000;
 
-fn parse_grace(v: Option<&str>) -> i64 {
+fn parse_grace_or(v: Option<&str>, default: i64) -> i64 {
     v.and_then(|v| v.parse().ok())
         .filter(|ms| *ms >= 0)
-        .unwrap_or(BLOCK_GRACE_MS)
+        .unwrap_or(default)
+}
+
+fn parse_grace(v: Option<&str>) -> i64 {
+    parse_grace_or(v, BLOCK_GRACE_MS)
 }
 
 fn grace_ms() -> i64 {
@@ -622,17 +630,40 @@ fn grace_ms() -> i64 {
 static BLOCKED: std::sync::Mutex<Option<std::collections::HashMap<String, i64>>> =
     std::sync::Mutex::new(None);
 
-/// True once the line has been blocked for the grace period; `None` forgets it.
-fn blocked_long_enough(id: &str, now_ms: Option<i64>) -> bool {
+const SUBAGENT_WAIT_MS: i64 = 1_800_000;
+
+fn subagent_wait_ms() -> i64 {
+    parse_grace_or(
+        std::env::var("OVERSEER_HOLD_SUBAGENT_MS").ok().as_deref(),
+        SUBAGENT_WAIT_MS,
+    )
+}
+
+fn elapsed_over(key: String, now_ms: Option<i64>, limit: i64) -> bool {
     let mut g = BLOCKED.lock().unwrap_or_else(|e| e.into_inner());
     let map = g.get_or_insert_with(Default::default);
     match now_ms {
-        Some(now) => now - *map.entry(id.to_string()).or_insert(now) >= grace_ms(),
+        Some(now) => now - *map.entry(key).or_insert(now) >= limit,
         None => {
-            map.remove(id);
+            map.remove(&key);
             false
         }
     }
+}
+
+/// True once the line has been blocked for the grace period; `None` forgets it.
+fn blocked_long_enough(id: &str, now_ms: Option<i64>) -> bool {
+    elapsed_over(id.to_string(), now_ms, grace_ms())
+}
+
+/// True once the line has waited on subagents for the bounded wait; `None` forgets it.
+fn subagents_waited_too_long(id: &str, now_ms: Option<i64>) -> bool {
+    elapsed_over(format!("sub:{id}"), now_ms, subagent_wait_ms())
+}
+
+fn forget_pending_clocks(id: &str) {
+    blocked_long_enough(id, None);
+    subagents_waited_too_long(id, None);
 }
 
 static INFLIGHT: std::sync::LazyLock<std::sync::Mutex<std::collections::HashSet<String>>> =
@@ -683,7 +714,12 @@ fn refuse_pending(ctx: &Ctx, l: &Line, failed: Value, error: Option<&str>) {
 /// stalls the scan loop; the others stay queued, or are dropped when something lasting blocks them.
 pub fn apply_pending_holds(ctx: &Ctx, lines: &[Line]) {
     for l in lines.iter().filter(|l| l.hold_pending && l.alive()) {
-        let checks = if l.busy_known && l.busy || l.needs_input {
+        let turn_active = l.busy_known && l.busy || l.needs_input;
+        let on_subagents = !turn_active && l.hook.as_ref().is_some_and(|h| h.subagents > 0);
+        if !on_subagents {
+            subagents_waited_too_long(&l.id, None);
+        }
+        let checks = if turn_active || on_subagents {
             vec![]
         } else {
             evaluate(&hold_input(ctx, l))
@@ -691,18 +727,28 @@ pub fn apply_pending_holds(ctx: &Ctx, lines: &[Line]) {
         match pending_verdict(l, &checks) {
             Pending::Wait => {
                 blocked_long_enough(&l.id, None);
+                if on_subagents
+                    && subagents_waited_too_long(&l.id, Some(ctx.now_ms))
+                    && Registry::open(&ctx.state_dir).and_then(|r| r.claim_hold_pending(&l.id))
+                        == Ok(true)
+                {
+                    forget_pending_clocks(&l.id);
+                    let failed =
+                        json!([{"name": "subagents", "detail": "subagents never finished"}]);
+                    refuse_pending(ctx, l, failed, None);
+                }
             }
             Pending::Blocked(failed) => {
                 if blocked_long_enough(&l.id, Some(ctx.now_ms))
                     && Registry::open(&ctx.state_dir).and_then(|r| r.claim_hold_pending(&l.id))
                         == Ok(true)
                 {
-                    blocked_long_enough(&l.id, None);
+                    forget_pending_clocks(&l.id);
                     refuse_pending(ctx, l, checks_json(&failed), None);
                 }
             }
             Pending::Run => {
-                blocked_long_enough(&l.id, None);
+                forget_pending_clocks(&l.id);
                 let Some(guard) = Inflight::begin(&l.id) else {
                     continue;
                 };
@@ -1317,6 +1363,45 @@ mod tests {
         assert_eq!(parse_grace(Some("2000")), 2_000);
         assert_eq!(parse_grace(Some("-1")), BLOCK_GRACE_MS);
         assert_eq!(parse_grace(Some("soon")), BLOCK_GRACE_MS);
+    }
+
+    #[test]
+    fn forgetting_a_pending_hold_restarts_the_grace_and_subagent_clocks() {
+        // Given a line blocked and waiting on subagents since t=1000
+        // When its pending clocks are forgotten (cancelled or queued again)
+        // Then the next check starts a fresh clock instead of expiring at once
+        blocked_long_enough("forget-1", Some(1_000));
+        subagents_waited_too_long("forget-1", Some(1_000));
+        forget_pending_clocks("forget-1");
+        assert!(!blocked_long_enough(
+            "forget-1",
+            Some(1_000 + BLOCK_GRACE_MS)
+        ));
+        assert!(!subagents_waited_too_long(
+            "forget-1",
+            Some(1_000 + SUBAGENT_WAIT_MS)
+        ));
+        forget_pending_clocks("forget-1");
+    }
+
+    #[test]
+    fn the_subagent_wait_is_bounded_and_independent_of_the_grace_clock() {
+        // Given a line waiting on subagents since t=1000
+        // When it is checked before and after the bounded wait, and the grace clock is reset
+        // Then it expires only after the wait, and the grace reset does not restart it
+        assert!(!subagents_waited_too_long("subwait-1", Some(1_000)));
+        blocked_long_enough("subwait-1", None);
+        assert!(!subagents_waited_too_long(
+            "subwait-1",
+            Some(1_000 + SUBAGENT_WAIT_MS - 1)
+        ));
+        assert!(subagents_waited_too_long(
+            "subwait-1",
+            Some(1_000 + SUBAGENT_WAIT_MS)
+        ));
+        forget_pending_clocks("subwait-1");
+        assert_eq!(parse_grace_or(Some("5"), SUBAGENT_WAIT_MS), 5);
+        assert_eq!(parse_grace_or(None, SUBAGENT_WAIT_MS), SUBAGENT_WAIT_MS);
     }
 
     #[test]

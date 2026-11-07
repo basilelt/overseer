@@ -273,6 +273,62 @@ fn pinning_a_line_announces_the_pin_in_the_line_update() {
 }
 
 #[test]
+fn line_updates_carry_the_same_local_as_the_line_list() {
+    // Given a daemon with one held local session line and a client listening to events
+    // When the line is pinned, then unpinned
+    // Then each announced update carries the local the line list serves, held fields included
+    let fx = Fx::new("evlocal", 1);
+    let _d = fx.daemon(false);
+    let mut s = UnixStream::connect(&fx.sock).unwrap();
+    write!(s, "GET /v1/events HTTP/1.1\r\nHost: unix\r\n\r\n").unwrap();
+    let (tx, rx) = mpsc::channel();
+    std::thread::spawn(move || {
+        for l in BufReader::new(s).lines() {
+            let Ok(l) = l else { return };
+            if let Some(d) = l.strip_prefix("data: ") {
+                if tx.send(js(d)).is_err() {
+                    return;
+                }
+            }
+        }
+    });
+    let id = js(&fx.req("GET", "/v1/lines", "").1)[0]["line"]["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    for pinned in [true, false] {
+        fx.req(
+            "PUT",
+            &format!("/v1/lines/{id}/pin"),
+            &format!(r#"{{"pinned":{pinned}}}"#),
+        );
+        let end = Instant::now() + Duration::from_secs(10);
+        let ev = loop {
+            let ev = rx
+                .recv_timeout(Duration::from_millis(200))
+                .unwrap_or(Value::Null);
+            if ev["data"]["line"]["id"] == id.as_str() && ev["data"]["local"]["pinned"] == pinned {
+                break ev["data"]["local"].clone();
+            }
+            assert!(Instant::now() < end, "no line event with pinned={pinned}");
+        };
+        let served = js(&fx.req("GET", "/v1/lines", "").1)[0]["local"].clone();
+        assert_eq!(served["heldReason"], "lost", "{served}");
+        for k in [
+            "heldReason",
+            "heldAt",
+            "holdPending",
+            "subagents",
+            "tasks",
+            "resumeCommand",
+            "cwd",
+        ] {
+            assert_eq!(ev[k], served[k], "{k}: {ev} vs {served}");
+        }
+    }
+}
+
+#[test]
 fn line_title_override_is_set_shared_and_cleared() {
     // Given a daemon with one local session line and a client listening to events
     // When a client renames the line, then clears the custom title

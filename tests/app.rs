@@ -1028,6 +1028,44 @@ fn a_pending_hold_blocked_for_good_is_dropped_and_the_refusal_is_recorded() {
 }
 
 #[test]
+fn a_pending_hold_is_refused_when_the_subagents_never_finish() {
+    // Given a claude session whose turn ended while a subagent still runs, with a pending hold
+    // When the subagent never stops and the bounded subagent wait (2 s) passes
+    // Then the pending hold is dropped and the refusal is logged
+    let sid = "dddddddd-0000-4000-8000-000000000007";
+    let app = App::with_env(
+        "holdsublost",
+        json!({}),
+        &[("OVERSEER_HOLD_SUBAGENT_MS", "2000")],
+    );
+    let (tid, line) = claude_term(&app, json!(["claude", "--session-id", sid]), sid);
+    let mut ws = app.ws(&tid);
+    read_until(&mut ws, "❯");
+    send(&mut ws, "busy\r");
+    wait(|| line_json(&app, &line)["local"]["busy"] == true);
+    send(&mut ws, "sub\r");
+    wait(|| line_json(&app, &line)["local"]["subagents"] == 1);
+    let hold = format!("/v1/lines/{line}/hold?dryRun=false&afterTurn=true");
+    assert_eq!(app.ok("POST", &hold, Value::Null)["action"], "hold-pending");
+    send(&mut ws, "done\r");
+    let logged = || std::fs::read_to_string(app.fx.state.join("actions.log")).unwrap_or_default();
+    wait(|| logged().contains("hold-pending-refused"));
+    wait(|| line_json(&app, &line)["local"]["holdPending"].is_null());
+    let l = line_json(&app, &line);
+    assert_ne!(l["line"]["state"], "held", "{l}");
+    let log = logged();
+    assert!(
+        log.contains("hold-pending-refused") && log.contains("subagents"),
+        "{log}"
+    );
+    app.ok(
+        "POST",
+        &format!("/v1/terms/{tid}/kill"),
+        json!({"confirm": true}),
+    );
+}
+
+#[test]
 fn a_pending_hold_waits_for_the_subagents_after_the_turn_ended() {
     // Given a claude session whose turn ended while one subagent still runs, with a pending hold
     // When twice the grace period (2 s) passes, then the subagent stops
