@@ -3,7 +3,7 @@
   import Markdown from '../chat/Markdown.svelte';
   import { app, type FileArg } from '../../state.svelte';
   import { api } from '../../api';
-  import { fileKind, mimeOf, saveFile } from '../../files';
+  import { fileKind, isMissingFile, mimeOf, saveFile } from '../../files';
   import { t } from '../../i18n.svelte';
 
   let { file, onclose }: { file: FileArg; onclose: () => void } = $props();
@@ -39,7 +39,9 @@
           } else url = made = URL.createObjectURL(new Blob([buf], { type: mimeOf(path) }));
         },
         (e) => {
-          if (alive) error = e instanceof Error ? e.message : String(e);
+          if (!alive) return;
+          const m = e instanceof Error ? e.message : String(e);
+          error = isMissingFile(m) ? t('file.missing') : m;
         },
       );
     return () => {

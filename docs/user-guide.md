@@ -407,6 +407,11 @@ aborted and reverted), and the pane shows
 `overseer resume <line>` does the same from elsewhere. A held line stays held after a reboot;
 to get the stub back in its pane after a reboot apply [`docs/toolkit-patch.md`](toolkit-patch.md).
 
+A pause queued for the end of the turn (`afterTurn`) also waits for running sub-agents. A
+background task does not wait: after `OVERSEER_HOLD_GRACE_MS` (default 10 s) the pause is dropped
+and the app is told. If an agent lost its sub-agent end event, the pause waits until the session
+ends or restarts, the line is closed, or you cancel the pause.
+
 `close` marks a line `hung-up` (finished). A live line is held first, with the same checks.
 
 An agent running in an Overseer terminal (daemon term) is held through the daemon
@@ -807,8 +812,15 @@ folder, accept and the request runs; other agents get it pasted once they are re
 **Send directly** creates the issue with `gh` on the host without an agent. **Open on GitHub**
 copies the report and opens a prefilled new-issue page, for when you are offline or have no
 `gh`. The repository is `basilelt/overseer` unless you change Settings > Feedback >
-Feedback repository. `gh` cannot attach files to issues: attachment paths are listed in the issue
-for you to drag in.
+Feedback repository.
+
+Attachments are uploaded into the issue with `gh --attach` (gh 2.99 or later), the same storage as
+a drag and drop on github.com: images show inline and videos play. GitHub accepts PNG, JPEG, GIF,
+WebP and SVG up to 10 MB, and MP4, MOV and WebM up to 100 MB (10 MB on a free GitHub plan, which
+the sheet warns about). The sheet refuses other types and larger files, and the daemon refuses
+them too. With an older `gh`, or when GitHub refuses a file, the issue is still created and lists
+that file as not uploaded with the reason, and the app shows GitHub's message. GitHub may require
+write access to the repository to attach files.
 
 ### `doctor` items
 
@@ -849,6 +861,7 @@ Station (mostly for tests and services):
 | `OVERSEER_TMUX_SNAPSHOT` | `~/.local/state/tmux-snapshot/latest/state.json` | Snapshot file read for launch flags. |
 | `OVERSEER_NOW` | current time | Fixed RFC 3339 "now". |
 | `OVERSEER_HOLD_TIMEOUT_MS` | `10000` | Wait for the agent to exit after SIGTERM in `hold` (abort and revert after). |
+| `OVERSEER_HOLD_GRACE_MS` | `10000` | How long a lasting block (e.g. a background task) must last before a pending `afterTurn` hold is dropped. |
 | `OVERSEER_START_TIMEOUT_MS` | `30000` | Wait for the agent's prompt in `start`, `relaunch`, `patch --local`. |
 | `OVERSEER_RELAY_TIMEOUT_MS` | `15000` | Board relay wait for the outcome. |
 | `OVERSEER_TASK_ID` | set by the daemon | In an agent started for a task: its task id (MCP `id` default). |
@@ -874,7 +887,7 @@ On first launch, once the app is connected (immediately in local mode, after the
 connection on a phone), a welcome card offers **Take the tour** or **Skip**. The tour dims the
 window and highlights the real controls one at a time: host chip, workspaces sidebar, tabs and the
 new-session menu, the Terminal/Chat toggle, the side panel, Tasks, Review, the usage, system and ports
-chips, notifications and hooks, the command palette and Feedback, in 0.25 the Cmd/Ctrl+P palette shortcut, and in 0.27 the demo mode (on the **Demo mode** pill while in the demo, else on the host chip), and in 0.28 the GPU rendering option for terminals, and in 0.29 the clean up of unused worktrees and the import from Switchboard (on its button in Settings, Help, or on the Settings button). Steps whose control is not on
+chips, notifications and hooks, the command palette and Feedback, in 0.25 the Cmd/Ctrl+P palette shortcut, and in 0.27 the demo mode (on the **Demo mode** pill while in the demo, else on the host chip), and in 0.28 the GPU rendering option for terminals, and in 0.29 the clean up of unused worktrees and the import from Switchboard (on its button in Settings, Help, or on the Settings button), and in 0.30 the Graphite and Solarized Soft themes (on Settings, or More on a phone), and click to move the cursor in a terminal (on the tabs). Steps whose control is not on
 screen (no session selected, a feature the server lacks, phone layout) are skipped. On a phone the
 card is a sheet at the bottom (or top, when the control sits low) and points at the bottom
 navigation, the session strip and the menu.
@@ -893,6 +906,10 @@ logs, feedback). The search box at the top of the sidebar has focus when Setting
 setting's name or description, in the app language or in English, and only the matching settings stay,
 highlighted, with a count per category; Esc clears the search. On a phone the categories are a list
 that opens a section, with a back button.
+
+**Solarized Soft** (Settings > General > Appearance) has deep teal backgrounds and warm terminal colors inspired by Solarized. Text and accent colors are brighter for readability. Its customizations are saved independently from Graphite, Light and Dark; **Reset** restores only Solarized Soft.
+
+**Graphite** (Settings > General > Appearance) is a softer dark theme with gray panels and a pale blue accent. Light, Dark and System remain available. Color customizations are saved separately for Graphite, Light and Dark; **Reset** restores only the selected palette. Terminals follow its background and text colors.
 
 **GPU rendering** (Settings > Terminal, off by default, experimental) draws terminals with WebGL
 instead of the normal renderer, which keeps long, fast output smooth. It needs hardware graphics
@@ -1005,8 +1022,13 @@ In the app:
   events, so a Claude Code session inside tmux scrolls tmux's history; a full-screen program
   without mouse reports (less, man) gets Up/Down arrows unless it turned that off
   (`ESC [?1007l`); otherwise the wheel scrolls the terminal's own scrollback. Shift+wheel always
-  scrolls the local scrollback. Clicks and drags always select text locally (they are not sent
-  to the program).
+  scrolls the local scrollback. Drags always select text locally (they are not sent to the
+  program).
+- **Click to move the cursor**: a single click in the line being typed (a shell prompt, the
+  input of Claude Code, Codex or another agent) moves the cursor there by sending Left/Right
+  arrows, like in a text editor. Only the cursor's own row is handled; clicks on other rows,
+  with a modifier, while scrolled back, on a phone, or in a program that reads the mouse itself
+  (tmux with mouse on, vim with `mouse=a`, htop) do nothing.
 
 ### 14.1a Agents
 
@@ -1448,13 +1470,18 @@ shows the change, `--apply` writes it, `uninstall --apply` reverts it. If the Ov
 gone, the wrapped command falls back to running yours directly. The limits then update on each
 Claude reply and show "from the status line". Independently, with Settings → Usage → "Fetch Claude plan limits" (off by default) the daemon asks
 Anthropic for them with the local Claude Code login, the same call Claude Code makes: at most every
-5 minutes, only while the app shows usage and a Claude session replied in the last hour. Nothing
+5 minutes, only while the app shows usage and a Claude session replied in the last hour. When the
+status line tap is on, its limits are used while they are under 5 minutes old, and the call to
+Anthropic fills in after that (for example for usage on claude.ai). Nothing
 else leaves the machine, and the login is never refreshed or logged. When the login has expired
 the panel says "Limits unavailable — open Claude Code to refresh login"; opening Claude Code
 renews it. With the setting off, Claude shows tokens and cost only, plus "limit" when a request
 was refused. Costs are estimates from public per-token API prices (`PRICES` in `src/usage.rs`); a
-subscription is not billed that way. The app fetches only when the daemon reports a change (the
-chip at most every 10 s, an open panel at most every 2 s) and pauses while the window is hidden.
+subscription is not billed that way. The app fetches when the daemon reports a change (the
+chip at most every 10 s, an open panel at most every 2 s). While plan limits are shown and the
+window is focused, it also refetches every 5 minutes and right after the nearest window resets,
+so the percentages stay current when Claude runs outside Overseer or a window resets. It stops
+while the window is hidden or unfocused and catches up when you come back.
 
 ### 14.5 MCP server for agents
 
@@ -1523,19 +1550,24 @@ browser and review tab that belongs to it. The sidebar shows **Workspaces** (def
 **By status** (the session list grouped by Needs input, Needs testing, Working, Pushed, Idle,
 Stopped: no live agent process, resumable); the toggle is at the top of the sidebar.
 
-- **Tree**: pinned workspaces on top, then your folders (one level of sub-folders) and the
-  workspaces outside any folder. Every project the daemon knows gets a workspace: the
+- **Spaces**: pinned workspaces on top, then your folders (one level of sub-folders) and the
+  workspaces outside any folder. Each workspace is one block with its sessions under it: click its
+  name to open it (its tab strip and `+` show), the chevron only folds it. A group section at the
+  bottom lists your groups; click one to open it. Every project the daemon knows gets a workspace: the
   repositories its agents ran in, and the git repositories it finds under `discoverRoots`
   (3.1; by default `~/Documents/Github`, `~/src`, `~/code`, `~/projects`, `~/dev`), scanned at
   start, every 10 minutes and with **Rescan folders** in the `+` menu or the palette. `+` adds one
   from any folder (`~` is fine), the folder button adds a folder, the archive button shows
   archived workspaces. When a workspace's folder is renamed or deleted, a workspace created
   automatically is hidden (it comes back with the folder; the new name is found by the next
-  scan) and one you added stays, marked "Folder missing". Drag a workspace onto another to reorder, onto a folder to move it in, onto
-  **Pinned** to pin it; drag folders the same way. Right-click for rename, pin, move, broadcast,
-  hold all, resume all, "notify me when all agents are idle", archive and delete. A folder
+  scan) and one you added stays, marked "Folder missing". Drag a workspace header onto another to reorder, onto a folder to move it in, onto
+  **Pinned** to pin it; drag folders the same way. Right-click a workspace, folder, group, the
+  **Other** row or a session for rename, pin, move, broadcast,
+  hold all, resume all, "notify me when all agents are idle", archive and delete. On a touch
+  screen (iPad, tablet) press and hold the same rows to open the same menus; a short tap still
+  selects. Sessions picked with Cmd/Ctrl+click are tinted with the accent colour. A folder
   remembers whether it is collapsed.
-- **Row**: the most urgent state of its agents (Needs input, then Running, then Needs testing,
+- **Block**: the most urgent state of its sessions (Needs input, then Running, then Needs testing,
   then Idle; shells do not count) with how many agents are in it, the last status line ("Claude
   finished", "Asking: …"), the host and its connection state, and the folder path.
 - **Membership**: a line belongs to the workspace of its task's project, else to the workspace
@@ -1547,7 +1579,8 @@ Stopped: no live agent process, resumable); the toggle is at the top of the side
   the agent glyph and a status dot per tab. Tabs keep a compact width with long titles cut, and
   the selected tab shows its full title; when they do not fit, the strip scrolls with the mouse
   wheel or trackpad, and hovering a tab shows its full title. `+` starts any installed agent or a shell in the
-  workspace folder, opens a browser tab or **Review changes** of the selected agent. Drag tabs
+  workspace folder. Views (browser, **Review changes**, Git graph, worktrees, System, Usage, PR reviews)
+  open from the **Views** section of the command palette (Cmd/Ctrl+P). Drag tabs
   to reorder, middle-click or `×` to close (this ends the agent or shell; right-click > **Hide tab
   (keep running)** only hides it), split right or down. The
   order is saved in the daemon, so it comes back on another machine.
@@ -1659,7 +1692,8 @@ shortcuts.
   workspace folder instead of opening the `+` menu.
 - **Reopen** brings back agents, shells, browser, review, graph and other tabs; a running agent
   re-attaches, an agent whose
-  session ended reopens on its Resume button.
+  session ended reopens on its Resume button, and an ended shell starts again in the same folder
+  (a new shell: its scrollback is gone). Closing a pane records all of its tabs.
 
 ### 14.8 Live review
 
@@ -1727,7 +1761,7 @@ A GitHub-style review of what an agent changed, while it works (ADR 0030, contra
 ### 14.8a PR reviews (GitHub)
 
 The **PR reviews** tab lists the open pull requests where your GitHub account is a requested
-reviewer, directly or through a team. Open it from the `+` tab menu, the command palette ("Open
+reviewer, directly or through a team. Open it from the command palette ("Open
 PR reviews") or, on the phone, More → PR reviews.
 
 - It uses the GitHub CLI already signed in on the host running Overseer (`gh`), so nothing
@@ -1799,7 +1833,7 @@ changes and abort on conflicts (the error names the files).
 
 ### 14.10 Git graph
 
-The app's Git graph tab (workspace `+` menu or palette) draws a project's history with lanes (branches, remote branches, tags, HEAD,
+The app's Git graph tab (command palette, "Open the Git graph") draws a project's history with lanes (branches, remote branches, tags, HEAD,
 merges), with Overseer's knowledge on top: the agent and its state on the tip of its branch,
 the task number, the ticket and the PR state. Filters: all branches, current, agents only (the
 branches of lines, tasks and worktrees), author; search by sha or subject. A commit shows its

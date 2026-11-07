@@ -52,7 +52,8 @@ the side panel shows what the agent is doing: last message, work log, todos, edi
 changes. Switch to **By status** to see at a glance who needs your input, who is running and who
 is done. Agent tabs also have a **Chat** view rebuilt live from the agent's session file.
 Terminals can optionally be drawn on the GPU with WebGL (Settings, Terminal, **GPU rendering**,
-off by default and experimental), which keeps long output smooth.
+off by default and experimental), which keeps long output smooth. Clicking in the line you are
+typing, in a shell or an agent like Claude Code or Codex, moves the cursor there like in a text editor.
 Coming from Switchboard, the old name of Overseer? When its data is found, Overseer offers to import
 your sessions, tasks, workspaces and settings in one click (also in Settings, Help).
 
@@ -135,6 +136,8 @@ on a TCP port on the server.
 - **Notifications** when an agent needs input or finishes, from agent hooks Overseer can
   install for you.
 - **Usage and system monitor**: agent quotas, token usage, CPU and RAM in the title bar.
+- **Solarized Soft theme**: deep teal panels and warm terminal colors inspired by Solarized, with brighter text for readability. Choose it in Settings → General → Appearance ([preview](app/docs/screenshots/solarized.png)).
+- **Graphite theme**: a softer dark palette with gray panels and a pale blue accent. Choose it in Settings → General → Appearance; your Light and Dark colors stay saved separately ([preview](app/docs/screenshots/graphite.png)).
 - **Settings with search**: categories in a sidebar, and a search box that finds any setting by name or description, in your language or in English.
 - **Command palette** (history, actions, sessions) and keyboard shortcuts.
 - **Organize my sessions**: a proposed workspace layout you approve before anything moves.
@@ -167,7 +170,8 @@ repository's release workflow.
 ### Linux and Windows
 
 Download from the latest release (`.AppImage`, `.deb` or `.rpm` on Linux x64 and arm64,
-`-setup.exe` or `.msix` on Windows x64 and arm64). The `.msix` is self-signed: import
+`-setup.exe` or `.msix` on Windows x64 and arm64). The Linux builds need glibc 2.35 or newer
+(Ubuntu 22.04, Debian 12, Fedora 36 and later). The `.msix` is self-signed: import
 `overseer-msix.cer` from the release into Local Machine > Trusted People once, then open the
 `.msix`; it does not update itself, use the `-setup.exe` for in-app updates. For example:
 

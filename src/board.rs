@@ -215,9 +215,7 @@ pub fn observe(ctx: &Ctx, lines: &[Line]) {
         let id = l["id"].as_str().unwrap_or_default().to_string();
         let state = l["state"].as_str().unwrap_or_default().to_string();
         let body = change_key(e);
-        let local = json!({"busy": e["local"]["busy"], "needsInput": e["local"]["needsInput"],
-            "titleOverride": e["local"]["titleOverride"], "workspaceId": e["local"]["workspaceId"],
-            "pinned": e["local"]["pinned"]});
+        let local = event_local(e);
         if !first {
             match prev.get(&id) {
                 None => publish("line.created", json!({"line": l, "local": local})),
@@ -255,6 +253,26 @@ pub fn observe(ctx: &Ctx, lines: &[Line]) {
         prev_st.insert(id, on);
     }
     *prev = seen;
+}
+
+fn event_local(entry: &Value) -> Value {
+    let mut local = match entry.get("local") {
+        Some(l) if l.is_object() => l.clone(),
+        _ => return json!({}),
+    };
+    for k in [
+        "holdPending",
+        "heldReason",
+        "heldAt",
+        "title",
+        "termId",
+        "pid",
+    ] {
+        if local.get(k).is_none() {
+            local[k] = Value::Null;
+        }
+    }
+    local
 }
 
 fn change_key(entry: &Value) -> String {

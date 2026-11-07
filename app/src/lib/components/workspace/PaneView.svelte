@@ -9,7 +9,7 @@
   import RotateCcw from '@lucide/svelte/icons/rotate-ccw';
   import SquareTerminal from '@lucide/svelte/icons/square-terminal';
   import { t } from '../../i18n.svelte';
-  import { customColors, resolvedTheme } from '../../settings.svelte';
+  import { colorPalette, customColors } from '../../settings.svelte';
   import { app } from '../../state.svelte';
   import { focusPane, update, type Pane } from '../../workspace.svelte';
   import TabBar from './TabBar.svelte';
@@ -51,7 +51,7 @@
   let resuming = $state(false);
 
   const activeTerm = $derived(item?.termId && !(item.lineId && tab?.kind === 'chat') ? item.termId : null);
-  const look = $derived(`${resolvedTheme()}:${customColors().bg}:${customColors().text}`);
+  const look = $derived(`${colorPalette()}:${customColors().bg}:${customColors().text}`);
   let kept = $state<string[]>([]);
   let keptLook = '';
   let claimed: Claim | null = null;

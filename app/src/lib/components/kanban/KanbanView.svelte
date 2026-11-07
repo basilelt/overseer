@@ -8,11 +8,12 @@
   import Sparkles from '@lucide/svelte/icons/sparkles';
   import LoaderCircle from '@lucide/svelte/icons/loader-circle';
   import MessageSquare from '@lucide/svelte/icons/message-square';
+  import { isOff } from '../../grouping';
   import { projectName, app } from '../../state.svelte';
   import { saveSettings, settings } from '../../settings.svelte';
   import { holdAll } from '../../wsactions';
   import { t, type Key } from '../../i18n.svelte';
-  import { autoSummary, blockers, byId, canDrop, cardStatus, chainOf, columns, dropTarget, edgeSpeed, insertIndex, isSession, matrix, moveTask, nextUp, organizing, QUADRANTS, quadrantFlags, rankAt, revertTask, shiftStatus, moveAction, shownCount, grown, CARD_EST, frameLoop, insertBefore, type Quadrant } from '../../kanban';
+  import { autoSummary, blockers, byId, canDrop, cardStatus, chainOf, columns, dropTarget, edgeSpeed, insertIndex, isSession, matrix, moveTask, nextUp, organizing, QUADRANTS, quadrantFlags, rankAt, revertTask, shiftStatus, moveAction, shownCount, grown, newTaskId, CARD_EST, frameLoop, insertBefore, type Quadrant } from '../../kanban';
   import { reveal } from '../../reveal';
   import { inFlight, single } from '../../inflight';
   import { agentName } from '../../agents';
@@ -28,7 +29,7 @@
   import { LONG_PRESS_MS, movedTooFar, swipeDirection } from '../../mobile/gestures';
   import { columnAfterSwipe } from '../../mobile/layout';
   import { edgeMoves, edgeRank, initialColumn, moveChoices, type Edge } from '../../mobile/kanbanPhone';
-  import { untrack } from 'svelte';
+  import { tick, untrack } from 'svelte';
 
   const FALLBACK = ['#64748b', '#0891b2', '#7c3aed', '#db2777', '#65a30d', '#ea580c'];
 
@@ -141,6 +142,18 @@
 
   let shown = $state<Record<string, number>>({});
   const windowed = (key: string, tasks: Task[]) => tasks.slice(0, shownCount(shown[key], tasks.length, movingId ? tasks.findIndex((x) => x.id === movingId) : -1));
+  let known: Set<string> | null = null;
+  $effect(() => {
+    const all = app.data.tasks;
+    const added = newTaskId(known, all);
+    known = new Set(all.map((x) => x.id));
+    if (!added || !phone || !phoneCol) return;
+    const at = phoneCol.tasks.findIndex((x) => x.id === added);
+    if (at < 0) return;
+    const key = `p:${phoneCol.status}`;
+    untrack(() => (shown = { ...shown, [key]: shownCount(shown[key], phoneCol.tasks.length, at) }));
+    tick().then(() => document.querySelector(`.pcol [data-task="${CSS.escape(added)}"]`)?.scrollIntoView({ block: 'nearest' }));
+  });
   function more(key: string, total: number) {
     const n = grown(shown[key], total);
     if (n !== shown[key]) shown = { ...shown, [key]: n };
@@ -291,7 +304,7 @@
 
   function holdSession(task: Task) {
     const key = `line:${task.lineId}`;
-    if (task.lineId && app.items.some((i) => i.key === key && i.group !== 'held')) holdAll({ kind: 'items', keys: [key] }, 'hold');
+    if (task.lineId && app.items.some((i) => i.key === key && !isOff(i))) holdAll({ kind: 'items', keys: [key] }, 'hold');
   }
 
   function open(task: Task) {

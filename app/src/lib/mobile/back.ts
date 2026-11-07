@@ -73,3 +73,7 @@ export function pushTab(history: MobileTab[], from: MobileTab, to: MobileTab, ma
   next.push(from);
   return next.slice(-max);
 }
+
+export function escapeCloses(e: { key: string; defaultPrevented: boolean }, open: boolean): boolean {
+  return open && e.key === 'Escape' && !e.defaultPrevented;
+}

@@ -3,6 +3,7 @@ import { api } from './api';
 import { broadcastBody, summarize, targetRows } from './broadcast';
 import type { SidebarItem } from './grouping';
 import { MockDaemon } from './mock';
+import { stateOfGroup } from './test-fixtures';
 import { idleTransitions } from './notify';
 import type { DaemonEvent } from './types';
 
@@ -10,6 +11,7 @@ const item = (key: string, group: SidebarItem['group'], over: Partial<SidebarIte
   key,
   kind: 'claude',
   group,
+  state: stateOfGroup(group),
   title: key,
   at: '',
   lineId: key.startsWith('line:') ? key.slice(5) : undefined,
@@ -18,16 +20,17 @@ const item = (key: string, group: SidebarItem['group'], over: Partial<SidebarIte
 });
 
 describe('broadcast dialog', () => {
-  const items = [item('line:busy', 'working'), item('line:idle', 'idle'), item('line:ask', 'needs_input'), item('line:held', 'held'), item('term:sh', 'working', { kind: 'shell' })];
+  const items = [item('line:busy', 'running'), item('line:idle', 'ready'), item('line:ask', 'needs_input'), item('line:paused', 'paused'), item('line:off', 'stopped'), item('term:sh', 'running', { kind: 'shell' })];
 
-  it('checks idle agents by default, never shells or held lines', () => {
+  it('checks idle agents by default, never shells, paused or stopped lines', () => {
     const rows = targetRows(items, false);
     expect(rows.map((r) => [r.key, r.state, r.selectable, r.checked])).toEqual([
       ['line:idle', 'idle', true, true],
       ['term:sh', 'idle', true, false],
       ['line:ask', 'needs_input', false, false],
       ['line:busy', 'busy', false, false],
-      ['line:held', 'held', false, false],
+      ['line:paused', 'paused', false, false],
+      ['line:off', 'stopped', false, false],
     ]);
   });
 
@@ -92,7 +95,7 @@ describe('mock daemon workspaces and broadcast', () => {
     const m = new MockDaemon({ live: false });
     const a = api(m);
     expect(await a.holdPlan('ln_09')).toMatchObject({ lineId: 'ln_09', predicates: { alive: { ok: true } } });
-    expect((await a.holdPlan('ln_04')).error).toBe('turn in progress');
+    expect((await a.holdPlan('ln_04')).predicates?.atPrompt).toEqual({ ok: false, detail: 'agent is mid-turn' });
     expect(m.lines.find((l) => l.line.id === 'ln_09')!.line.state).toBe('idle');
   });
 });

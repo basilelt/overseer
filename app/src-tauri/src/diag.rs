@@ -653,6 +653,46 @@ pub fn session_end() {
     }
 }
 
+#[cfg(all(unix, desktop))]
+pub fn quit_signal() -> std::io::Result<impl std::future::Future<Output = &'static str>> {
+    use tokio::signal::unix::{signal, SignalKind};
+    let mut term = signal(SignalKind::terminate())?;
+    let mut hup = signal(SignalKind::hangup())?;
+    let mut int = signal(SignalKind::interrupt())?;
+    Ok(async move {
+        tokio::select! {
+            _ = term.recv() => "SIGTERM",
+            _ = hup.recv() => "SIGHUP",
+            _ = int.recv() => "SIGINT",
+        }
+    })
+}
+
+#[cfg(all(unix, desktop))]
+fn end_on_signal(name: &str) {
+    info("session", format!("received {name}, quitting"));
+    session_end();
+}
+
+#[cfg(all(unix, desktop))]
+pub fn quit_on_signals(app: AppHandle) {
+    tauri::async_runtime::spawn(async move {
+        let quit = match quit_signal() {
+            Ok(q) => q,
+            Err(e) => return warn("session", format!("signal handlers not installed: {e}")),
+        };
+        let name = quit.await;
+        end_on_signal(name);
+        app.exit(0);
+        tokio::time::sleep(Duration::from_secs(5)).await;
+        warn(
+            "session",
+            format!("still running 5 s after {name}, exiting now"),
+        );
+        std::process::exit(1);
+    });
+}
+
 pub fn log_dir() -> Option<PathBuf> {
     lock(&SINK).dir.clone()
 }
@@ -1135,6 +1175,37 @@ mod tests {
         let _ = fs::remove_dir_all(&d);
         fs::create_dir_all(&d).unwrap();
         d
+    }
+
+    #[cfg(all(unix, desktop))]
+    #[tokio::test]
+    async fn sigterm_is_caught_instead_of_killing_the_app() {
+        let quit = quit_signal().unwrap();
+        let sent = std::process::Command::new("kill")
+            .args(["-TERM", &std::process::id().to_string()])
+            .status()
+            .unwrap();
+        assert!(sent.success());
+        let got = tokio::time::timeout(Duration::from_secs(5), quit).await;
+        assert_eq!(got.ok(), Some("SIGTERM"));
+    }
+
+    #[cfg(all(unix, desktop))]
+    #[test]
+    fn a_graceful_signal_records_a_clean_exit() {
+        let d = tmp("sigterm-clean");
+        let path = d.join(SENTINEL);
+        let sentinel = Sentinel {
+            pid: std::process::id(),
+            state: "active".into(),
+            ..Default::default()
+        };
+        write_atomic(&path, sentinel.render().as_bytes()).unwrap();
+        *lock(&SESSION) = Some((path.clone(), sentinel));
+        end_on_signal("SIGTERM");
+        assert!(!path.exists());
+        assert!(lock(&SESSION).is_none());
+        let _ = fs::remove_dir_all(&d);
     }
 
     #[test]

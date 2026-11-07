@@ -10,14 +10,16 @@ done
 dir=${CLAUDE_CONFIG_DIR:?}
 mkdir -p "$dir/sessions"
 echo "$$ $*" >> "${SB_STUB_LOG:?}"
-start=$(cut -d' ' -f22 /proc/$$/stat)
+# procStart is /proc's start tick; empty elsewhere, where the daemon compares startedAt instead.
+start=$(cut -d' ' -f22 /proc/$$/stat 2>/dev/null || true)
+started=$(date +%s)000
 proj="$dir/projects/$(printf '%s' "$PWD" | sed 's/[^A-Za-z0-9]/-/g')"
 mkdir -p "$proj"
 printf '{"type":"user","sessionId":"%s","cwd":"%s","timestamp":"%s"}\n' "$sid" "$PWD" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$proj/$sid.jsonl"
 status() {
   now=$(date +%s)000
   printf '{"pid":%s,"sessionId":"%s","cwd":"%s","startedAt":%s,"procStart":"%s","status":"%s","updatedAt":%s,"statusUpdatedAt":%s,"kind":"interactive"}\n' \
-    $$ "$sid" "$PWD" "$now" "$start" "$1" "$now" "$now" > "$dir/sessions/$$.json"
+    $$ "$sid" "$PWD" "$started" "$start" "$1" "$now" "$now" > "$dir/sessions/$$.json"
 }
 hook() {
   printf '{"session_id":"%s","cwd":"%s","hook_event_name":"%s","prompt":"PRIVATE"}' "$sid" "$PWD" "$1" |
@@ -36,10 +38,14 @@ while IFS= read -r line; do
     done) status idle; hook Stop ;;
     tool) sh -c ': shell-snapshots/snapshot-sh-1.sh; sleep 60; :' & tool=$! ;;
     untool) kill "$tool"; tool= ;;
+    mcp) set -m; sh -c ': mcp-server; sleep 300; :' & echo $! > "$SB_STUB_LOG.mcp"; set +m ;;
+    mcpstubborn) set -m; sh -c ': mcp-server; trap "" TERM; while :; do sleep 1; done' & echo $! > "$SB_STUB_LOG.mcpstubborn"; set +m ;;
     ask) hook PermissionRequest ;;
     approved) hook PostToolUse ;;
     sub) hook SubagentStart ;;
     unsub) hook SubagentStop ;;
+    task) hook TaskCreated ;;
+    untask) hook TaskCompleted ;;
     *) printf 'got: %s\n' "$line" ;;
   esac
   prompt

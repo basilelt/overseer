@@ -112,6 +112,24 @@ describe('soft keyboard (Android / iOS)', () => {
     expect(sent).toEqual(['\x7f']);
   });
 
+  it('keeps sending Backspace when a composition never ended and the field is empty', () => {
+    fire('compositionstart', { data: '' });
+    const bs = { key: 'Backspace', code: 'Backspace', keyCode: 8 };
+    for (let i = 0; i < 3; i++) {
+      const e = fire('keydown', bs);
+      if (!e.defaultPrevented && i === 0) fire('beforeinput', { inputType: 'deleteContentBackward', data: null });
+      fire('keyup', bs);
+    }
+    expect(sent).toEqual(['\x7f', '\x7f', '\x7f']);
+  });
+
+  it('leaves Backspace to the IME while a composition is really open', () => {
+    fire('compositionstart', { data: '' });
+    fire('keydown', { key: 'Backspace', code: 'Backspace', keyCode: 229, isComposing: true });
+    fire('keydown', { key: 'Backspace', code: 'Backspace', keyCode: 8, isComposing: true });
+    expect(sent).toEqual([]);
+  });
+
   it('sends Enter from insertLineBreak and from a real Enter keydown', () => {
     fire('keydown', imeKey());
     fire('beforeinput', { inputType: 'insertLineBreak', data: null });

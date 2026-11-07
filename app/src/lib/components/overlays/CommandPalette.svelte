@@ -71,7 +71,7 @@
     group?: GroupId;
     icon?: Component<{ size?: number }>;
     agent?: string;
-    section: 'sessions' | 'actions';
+    section: 'sessions' | 'views' | 'actions';
     keys?: string;
     run: () => unknown;
   }
@@ -80,8 +80,9 @@
     app.view = 'agents';
     window.dispatchEvent(new CustomEvent('sb:split', { detail: dir }));
   };
-  const nextTheme: Record<ThemePref, ThemePref> = { auto: 'light', light: 'dark', dark: 'auto' };
+  const nextTheme: Record<ThemePref, ThemePref> = { auto: 'light', light: 'dark', dark: 'graphite', graphite: 'solarized', solarized: 'auto' };
   const action = (id: string, key: Key, icon: Cmd['icon'], run: () => unknown): Cmd => ({ id, label: t(key), icon, section: 'actions', run });
+  const view = (id: string, key: Key, icon: Cmd['icon'], run: () => unknown): Cmd => ({ ...action(id, key, icon, run), section: 'views' });
   const connected = app.connected;
 
   const sessionActions: Cmd[] = connected
@@ -123,18 +124,20 @@
         ...(app.view === 'agents' ? [tabAction('tab-new', 'palette.newTab', Plus, 'newTab'), tabAction('tab-close', 'palette.closeTab', X2, 'closeTab'), tabAction('tab-reopen', 'palette.reopenTab', Undo2, 'reopenTab')] : []),
       ]
     : [];
+  const views: Cmd[] = [
+    ...(connected ? [view('review', 'review.palette', GitPullRequest, () => reviewChanges()), view('review-beside', 'review.beside', GitPullRequest, () => reviewChanges(true))] : []),
+    view('browser', 'palette.openBrowser', Globe, () => (app.view = 'browser')),
+    view('graph', 'palette.openGit', GitGraph, () => app.openProjectTab('graph')),
+    view('worktrees', 'palette.openWorktrees', FolderTree, () => app.openProjectTab('worktrees')),
+    ...(connected ? [{ id: 'system', label: st('open'), icon: Activity, section: 'views', run: () => app.open('system') } as Cmd] : []),
+    ...(connected ? [{ id: 'usage', label: ust('open'), icon: Gauge, section: 'views', run: () => app.open('usage') } as Cmd] : []),
+    ...(connected ? [{ id: 'prs', label: gt('open'), icon: GitPullRequestArrow, section: 'views', run: () => openPrReviews() } as Cmd] : []),
+  ];
   const actions: Cmd[] = ([
-    ...(connected ? [action('review', 'review.palette', GitPullRequest, () => reviewChanges()), action('review-beside', 'review.beside', GitPullRequest, () => reviewChanges(true))] : []),
     ...(beside.key ? [action('review-close', 'review.close', GitPullRequest, () => closeSideReview())] : []),
     ...sessionActions,
     action('kanban', 'palette.openKanban', KanbanSquare, () => (app.view = 'kanban')),
     action('agents', 'palette.openAgents', LayoutGrid, () => (app.view = 'agents')),
-    action('browser', 'palette.openBrowser', Globe, () => (app.view = 'browser')),
-    action('graph', 'palette.openGit', GitGraph, () => app.openProjectTab('graph')),
-    action('worktrees', 'palette.openWorktrees', FolderTree, () => app.openProjectTab('worktrees')),
-    ...(connected ? [{ id: 'system', label: st('open'), icon: Activity, section: 'actions', run: () => app.open('system') } as Cmd] : []),
-    ...(connected ? [{ id: 'usage', label: ust('open'), icon: Gauge, section: 'actions', run: () => app.open('usage') } as Cmd] : []),
-    ...(connected ? [{ id: 'prs', label: gt('open'), icon: GitPullRequestArrow, section: 'actions', run: () => openPrReviews() } as Cmd] : []),
     action('connect', connected ? 'palette.switchHost' : 'palette.connectHost', Server, () => app.open('connect')),
     ...(connected ? [action('disconnect', 'palette.disconnect', Unplug, () => app.disconnect())] : []),
     action('theme', 'palette.toggleTheme', SunMoon, () => saveSettings({ theme: nextTheme[settings.theme] })),
@@ -200,6 +203,7 @@
   );
   const results = $derived<{ item: Cmd; match: Match }[]>([
     ...rank(query, sessions, (c) => c.label).slice(0, query ? 8 : 5),
+    ...rank(query, views, (c) => c.label),
     ...rank(query, actions, (c) => c.label),
   ]);
 
@@ -252,7 +256,7 @@
     <ul id="palette-list" role="listbox" bind:this={list}>
       {#each results as { item, match }, i (item.id)}
         {#if i === 0 || results[i - 1].item.section !== item.section}
-          <li class="section" role="presentation">{t(item.section === 'sessions' ? 'palette.section.sessions' : 'palette.section.actions')}</li>
+          <li class="section" role="presentation">{t(`palette.section.${item.section}`)}</li>
         {/if}
         <li
           id="palette-{i}"
@@ -270,7 +274,7 @@
           </span>
           {#if item.keys}<kbd class="keys">{item.keys}</kbd>{/if}
           {#if item.hint}
-            <span class="hint"><span class="dot" style:background="var(--st-{item.group === 'needs_input' ? 'input' : item.group === 'working' ? 'working' : item.group === 'needs_testing' ? 'testing' : 'held'})"></span>{item.hint}</span>
+            <span class="hint"><span class="dot" style:background="var(--st-{item.group === 'needs_input' ? 'input' : item.group === 'running' ? 'working' : item.group === 'needs_testing' ? 'testing' : item.group === 'paused' ? 'paused' : 'held'})"></span>{item.hint}</span>
           {/if}
         </li>
       {:else}

@@ -93,7 +93,11 @@ fn alive(pid: i32) -> bool {
             .rsplit(')')
             .next()
             .is_some_and(|r| r.trim_start().starts_with('Z')),
-        Err(_) => true,
+        // No /proc (macOS): a zombie shows as Z in ps.
+        Err(_) => !std::process::Command::new("ps")
+            .args(["-o", "stat=", "-p", &pid.to_string()])
+            .output()
+            .is_ok_and(|o| String::from_utf8_lossy(&o.stdout).trim().starts_with('Z')),
     }
 }
 

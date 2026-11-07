@@ -1,12 +1,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { SidebarItem } from './grouping';
 import { loadKnown, saveKnown } from './known-tabs';
-import { reconcileLayout, restoreLayout, savedActive } from './layout-sync';
+import { arrangePanes, layoutShape, reconcileLayout, restoreLayout, savedActive } from './layout-sync';
 import { rememberTerms } from './tabs';
 import type { Term } from './types';
 import { layoutFromTabs } from './workspace.svelte';
 
-const item = (key: string, over: Partial<SidebarItem> = {}): SidebarItem => ({ key, kind: 'claude', group: 'working', title: key, at: '2026-10-29T10:00:00Z', ...over });
+const item = (key: string, over: Partial<SidebarItem> = {}): SidebarItem => ({ key, kind: 'claude', group: 'running', state: 'running', title: key, at: '2026-10-29T10:00:00Z', ...over });
 
 function memoryStorage() {
   const data = new Map<string, string>();
@@ -40,6 +40,25 @@ describe('closing a session opened from the status list', () => {
     expect(out.layout).toBe(l);
     expect(out.selected).toBe('browser:x');
     expect(out.forget).toEqual([]);
+  });
+});
+
+describe('a term linked to a line the app has not received yet', () => {
+  const older = item('line:old', { lineId: 'old', termId: 't0' });
+
+  it('keeps its tab and its selection until the line arrives', () => {
+    const l = layoutFromTabs(['line:old', 'term:t1'], 'term:t1');
+    const out = reconcileLayout(l, [older], new Map(), 'term:t1', new Set(['t1']));
+    expect(out.layout).toBe(l);
+    expect(out.selected).toBe('term:t1');
+    expect(out.forget).toEqual([]);
+  });
+
+  it('moves the tab to the line once it arrives', () => {
+    const fresh = item('line:new', { lineId: 'new', termId: 't1' });
+    const out = reconcileLayout(layoutFromTabs(['line:old', 'term:t1'], 'term:t1'), [older, fresh], new Map(), 'term:t1', new Set(['t1']));
+    expect(out.layout.panes[0]).toEqual({ tabs: ['line:old', 'line:new'], active: 'line:new' });
+    expect(out.selected).toBe('line:new');
   });
 });
 
@@ -80,5 +99,45 @@ describe('restoring tabs after a reload', () => {
     vi.stubGlobal('localStorage', memoryStorage());
     saveKnown('local', 'ws1', { known: ['line:a'], active: 'line:a' });
     expect(loadKnown('local', 'ws1')).toEqual({ known: ['line:a'], active: 'line:a' });
+  });
+});
+
+describe('restoring a split after a reload', () => {
+  const items = [item('line:a'), item('line:b'), item('line:c'), item('line:d')];
+  const split = { split: 'vertical' as const, panes: [{ tabs: ['line:a', 'line:c'], active: 'line:c' }, { tabs: ['line:b'], active: 'line:b' }], focused: 1, ratio: 0.3 };
+
+  it('saves nothing for a single pane', () => {
+    expect(layoutShape(layoutFromTabs(['line:a']))).toBeUndefined();
+  });
+
+  it('round-trips panes, sizes, focus and the active tab of each pane', () => {
+    const shape = layoutShape({ ...split, panes: split.panes });
+    const l = restoreLayout({ known: [], tabs: ['line:a', 'line:b', 'line:c'], active: 'line:b', shape }, items);
+    expect(l).toEqual(split);
+  });
+
+  it('puts each tab back in its pane for a workspace and appends unplaced tabs to the focused pane', () => {
+    const l = arrangePanes(layoutFromTabs(['line:a', 'line:b', 'line:c', 'line:d'], 'line:b'), { known: [], shape: split }, items);
+    expect(l.panes.map((p) => p.tabs)).toEqual([['line:a', 'line:c'], ['line:b', 'line:d']]);
+    expect(l.split).toBe('vertical');
+    expect(l.ratio).toBe(0.3);
+  });
+
+  it('drops tabs that are gone and keeps the split even when a pane empties', () => {
+    const l = arrangePanes(layoutFromTabs(['line:a', 'line:c'], 'line:a'), { known: [], shape: split }, items);
+    expect(l.panes.map((p) => p.tabs)).toEqual([['line:a', 'line:c'], []]);
+    expect(l.panes[1].active).toBeNull();
+  });
+
+  it('ignores a malformed shape', () => {
+    const flat = layoutFromTabs(['line:a'], 'line:a');
+    expect(arrangePanes(flat, { known: [], shape: { split: 'vertical', panes: [] } as never }, items)).toBe(flat);
+    expect(arrangePanes(flat, { known: [] }, items)).toBe(flat);
+  });
+
+  it('survives the localStorage round trip', () => {
+    vi.stubGlobal('localStorage', memoryStorage());
+    saveKnown('local', '#status', { known: [], tabs: ['line:a', 'line:b'], active: 'line:a', shape: split });
+    expect(loadKnown('local', '#status')?.shape).toEqual(split);
   });
 });

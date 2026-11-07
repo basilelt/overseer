@@ -9,13 +9,30 @@ const line = (id: string, over: Partial<LocalLine['line']> = {}, local: LocalLin
 });
 
 describe('lineGroup', () => {
-  it('ranks held over needs input over testing over working over pushed', () => {
-    expect(lineGroup(line('a', { state: 'held' }, { needsInput: true }), true)).toBe('held');
-    expect(lineGroup(line('a', {}, { needsInput: true, busy: true }), true)).toBe('needs_input');
-    expect(lineGroup(line('a', {}, { busy: true }), true)).toBe('needs_testing');
-    expect(lineGroup(line('a', { prUrl: 'x' }, { busy: true }), false)).toBe('working');
+  it('ranks paused over needs input over testing over running over pushed', () => {
+    expect(lineGroup(line('a', { state: 'held' }, { needsInput: true, heldReason: 'user' }), true)).toBe('paused');
+    expect(lineGroup(line('a', {}, { pid: 1, needsInput: true, busy: true }), true)).toBe('needs_input');
+    expect(lineGroup(line('a', {}, { pid: 1, busy: true }), true)).toBe('needs_testing');
+    expect(lineGroup(line('a', { prUrl: 'x' }, { pid: 1, busy: true }), false)).toBe('running');
+    expect(lineGroup(line('a', { prUrl: 'x' }, { pid: 1 }), false)).toBe('pushed');
+    expect(lineGroup(line('a', { state: 'idle' }, { pid: 1 }), false)).toBe('ready');
+  });
+
+  it('keeps a pause waiting for the end of the turn in the running group', () => {
+    expect(lineGroup(line('a', {}, { pid: 1, busy: true, holdPending: true }), false)).toBe('running');
+  });
+
+  it('splits paused on purpose from stopped, whatever the testing or PR state', () => {
+    expect(lineGroup(line('a', { state: 'held' }, { heldReason: 'user' }), true)).toBe('paused');
+    expect(lineGroup(line('a', { state: 'held' }, { heldReason: 'lost' }), true)).toBe('stopped');
+    expect(lineGroup(line('a', { state: 'held' }), false)).toBe('stopped');
+  });
+
+  it('is stopped when an active line has no process or terminal, unless a PR or testing keeps it visible', () => {
+    expect(lineGroup(line('a'), false)).toBe('stopped');
+    expect(lineGroup(line('a'), false, 't1')).toBe('ready');
     expect(lineGroup(line('a', { prUrl: 'x' }), false)).toBe('pushed');
-    expect(lineGroup(line('a', { state: 'idle' }), false)).toBe('idle');
+    expect(lineGroup(line('a'), true)).toBe('needs_testing');
   });
 
   it('drops hung-up lines', () => {
@@ -50,10 +67,19 @@ describe('sidebarItems', () => {
 
   it('maps lines and loose terms', () => {
     expect(items.map((i) => [i.key, i.group])).toEqual([
-      ['line:a', 'working'],
+      ['line:a', 'running'],
       ['line:b', 'needs_testing'],
-      ['term:s1', 'working'],
+      ['term:s1', 'running'],
     ]);
+  });
+
+  it('carries the process state next to the group', () => {
+    expect(items.map((i) => [i.key, i.state])).toEqual([
+      ['line:a', 'running'],
+      ['line:b', 'closed'],
+      ['term:s1', 'running'],
+    ]);
+    expect(sidebarItems([], [{ id: 'x', exited: true, cmd: ['zsh'], title: '', cwd: '/', createdAt: '' } as Term], [])[0]).toMatchObject({ group: 'stopped', state: 'closed' });
   });
 
   it('carries term, task, goal and status', () => {
@@ -77,7 +103,7 @@ describe('sidebarItems', () => {
   it('groups in fixed order, newest first', () => {
     const groups = groupItems(items);
     expect(groups.map((g) => g.id)).toEqual(GROUP_ORDER);
-    expect(groups.find((g) => g.id === 'working')!.items.map((i) => i.key)).toEqual(['term:s1', 'line:a']);
+    expect(groups.find((g) => g.id === 'running')!.items.map((i) => i.key)).toEqual(['term:s1', 'line:a']);
   });
 });
 

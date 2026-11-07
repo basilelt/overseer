@@ -604,10 +604,28 @@ export class MockReview {
     return { worktree: wt, branch, base: 'main', mergeBase: '7fdd760aa', head: 'b2b2b2b2b2', revision: '1', truncated: false, readOnly: true, commits: [this.commit(1, 'Reconnect the SSH tunnel after sleep', 180)], recent: [], ...annotate(files) };
   }
 
+  private sampleSide(wt: string): { branch: string; files: MockFile[]; commits: string[]; ago: number; agents: number } | null {
+    if (wt === MOCK_WORKTREE || wt === MOCK_ROOT || wt === MOCK_SUBMODULE || wt.startsWith(MOCK_MISSING)) return null;
+    const { lines: ls, tasks } = this.data();
+    const task = tasks.find((x) => (x.worktreePath ?? ls.find((l) => l.line.id === x.lineId)?.line.worktreePath) === wt);
+    const line = ls.find((l) => l.line.worktreePath === wt);
+    if (!task && !line) return null;
+    const title = task?.title ?? line?.local?.title ?? line?.line.branch ?? 'Sample change';
+    const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'change';
+    const path = `src/${slug}.ts`;
+    return {
+      branch: line?.line.branch ?? task?.branch ?? 'main',
+      ago: 5,
+      agents: 0,
+      commits: [title],
+      files: [{ path, oldPath: path, status: 'modified', base: `export function ${slug.replace(/-(\w)/g, (_, c: string) => c.toUpperCase())}() {\n  return 0;\n}\n`, now: `export function ${slug.replace(/-(\w)/g, (_, c: string) => c.toUpperCase())}() {\n  return 1;\n}\n` }],
+    };
+  }
+
   diff(wt: string, branch?: string | null): ReviewDiff {
     if (wt.startsWith(MOCK_MISSING)) throw new DaemonError(410, `the worktree folder ${MOCK_MISSING} no longer exists`);
     if (branch) return this.branchDiff(wt, branch);
-    const side = this.side[wt] ?? this.linkedSide[wt];
+    const side = this.side[wt] ?? this.linkedSide[wt] ?? this.sampleSide(wt);
     if (side) {
       const files = side.files.map((f) => this.fileJson(f));
       return { worktree: wt, branch: side.branch, base: 'main', mergeBase: '7fdd760aa', head: hash(wt), revision: hash(wt), truncated: false, commits: side.commits.map((m, i) => this.commit(i, m, side.ago + i * 5)), recent: [], ...annotate(files) };

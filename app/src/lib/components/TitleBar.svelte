@@ -8,7 +8,7 @@
   import { feedback, ft } from '../feedback.svelte';
   import { t } from '../i18n.svelte';
   import { app, type View } from '../state.svelte';
-  import { toggleSplit, update, workspace } from '../workspace.svelte';
+  import { closePaneAt, toggleSplit, update, workspace } from '../workspace.svelte';
   import AgentAvatars from './titlebar/AgentAvatars.svelte';
   import HostChip from './titlebar/HostChip.svelte';
   import PortsChip from './ports/PortsChip.svelte';
@@ -46,7 +46,7 @@
       class:active={workspace.layout.panes.length > 1}
       title={t('title.layout')}
       aria-label={t('title.layout')}
-      onclick={() => update(toggleSplit)}><Columns2 size={15} /></button
+      onclick={() => (workspace.layout.panes.length > 1 ? closePaneAt(1) : update(toggleSplit))}><Columns2 size={15} /></button
     >
     <NewSessionMenu />
     <button class="icon-btn" data-tour="palette" title={t('title.history')} aria-label={t('title.history')} onclick={() => app.open('palette')}

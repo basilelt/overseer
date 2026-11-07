@@ -5,36 +5,31 @@
 </script>
 
 <script lang="ts">
-  import Gauge from '@lucide/svelte/icons/gauge';
   import { ust } from '../../usage/strings';
-  import GitPullRequestArrow from '@lucide/svelte/icons/git-pull-request-arrow';
   import { gt } from '../../github/strings';
   import Columns2 from '@lucide/svelte/icons/columns-2';
   import Rows2 from '@lucide/svelte/icons/rows-2';
   import X from '@lucide/svelte/icons/x';
-  import GitBranch from '@lucide/svelte/icons/git-branch';
-  import FolderTree from '@lucide/svelte/icons/folder-tree';
   import OctagonX from '@lucide/svelte/icons/octagon-x';
   import Plus from '@lucide/svelte/icons/plus';
   import Globe from '@lucide/svelte/icons/globe';
   import GitCompare from '@lucide/svelte/icons/git-compare';
   import Megaphone from '@lucide/svelte/icons/megaphone';
-  import Activity from '@lucide/svelte/icons/activity';
   import { st } from '../../system/strings';
   import { saveSettings, settings } from '../../settings.svelte';
   import { projectName } from '../../state.svelte';
   import { ordered } from '../../agents';
-  import { coarsePointer, focusSession, newTabKey, stripScroll, tabInfo, type TabInfo } from '../../tabs';
+  import { coarsePointer, focusSession, stripScroll, tabInfo, type TabInfo } from '../../tabs';
   import { broadcastTo } from '../../wsactions';
   import { wsDropTarget } from '../../workspaces';
   import type { MenuItem } from '../../menu';
   import { t, type Key } from '../../i18n.svelte';
   import { app, tabLazy } from '../../state.svelte';
   import { whenIdle } from '../../idle';
-  import { closePane, closeTabAt, openInFocused, reorderTab, split, update, type Pane } from '../../workspace.svelte';
+  import { closePaneAt, closeTabAt, openInFocused, reorderTab, split, update, type Pane } from '../../workspace.svelte';
   import AgentIcon, { GROUP_COLOR } from '../sidebar/AgentIcon.svelte';
   import ReviewBadge from '../review/ReviewBadge.svelte';
-  import { itemTarget, modeFor, reviewKey, reviewTitle, setReviewMode } from '../../review/open';
+  import { itemTarget, modeFor, reviewTitle, setReviewMode } from '../../review/open';
   import type { ReviewMode } from '../../review/pane';
   import { chatCapable } from '../../chat/viewmode';
   import ModeToggle from '../chat/ModeToggle.svelte';
@@ -102,34 +97,15 @@
     return tab.key;
   }
 
-  function reviewLine(): string | null {
-    if (activeItem?.lineId) return activeItem.lineId;
-    const members = app.sidebarMode === 'workspaces' ? app.membersOf(app.workspaceId) : app.items;
-    return members.find((m) => m.lineId)?.lineId ?? null;
-  }
-
   function addMenu(): MenuItem[] {
     const start = (id: string) => () => app.newSession(id).catch((e) => app.notify(String((e as Error)?.message ?? e), 'error'));
     const agents = ordered(app.agents).filter((a) => a.id !== 'shell');
     const shell = app.agents.find((a) => a.id === 'shell');
-    const line = reviewLine();
-    const open = (key: string) => () => {
-      update((l) => openInFocused({ ...l, focused: index }, key));
-      app.selectedKey = key;
-    };
-    const project = app.projectFor(app.sidebarMode === 'workspaces' ? app.currentWorkspace?.path ?? undefined : undefined) ?? app.projectFor(activeItem?.lineId ? app.data.lines.find((l) => l.line.id === activeItem.lineId)?.line.worktreePath : undefined) ?? app.projects[0]?.path;
     return [
       ...agents.map((a) => ({ label: a.name, agent: a.id, default: a.id === settings.defaultAgent, disabled: !a.installed, hint: a.installed ? undefined : (a.install ?? t('agents.notInstalled')), run: start(a.id) })),
       { label: t('tabs.inCheckout'), checked: settings.sessionsInCheckout, run: () => saveSettings({ sessionsInCheckout: !settings.sessionsInCheckout }) },
       { label: '', separator: true },
       { label: shell?.name ?? t('tabs.shell'), agent: 'shell', run: start('shell') },
-      { label: t('tabs.browser'), icon: Globe, run: open(newTabKey('browser', '')) },
-      { label: t('tabs.reviewChanges'), icon: GitCompare, disabled: !line, run: line ? open(reviewKey({ lineId: line })) : undefined },
-      { label: t('tabs.gitGraph'), icon: GitBranch, disabled: !project, run: project ? open(newTabKey('graph', project)) : undefined },
-      { label: t('tabs.worktrees'), icon: FolderTree, disabled: !project, run: project ? open(newTabKey('worktrees', project)) : undefined },
-      { label: st('title'), icon: Activity, disabled: !app.connected, run: open(newTabKey('system', 'host')) },
-      { label: ust('title'), icon: Gauge, disabled: !app.connected, run: open(newTabKey('usage', 'host')) },
-      { label: gt('title'), icon: GitPullRequestArrow, disabled: !app.connected, run: open(newTabKey('prs', 'github')) },
     ];
   }
 
@@ -383,7 +359,7 @@
       ><Rows2 size={14} /></button
     >
     {#if canClose}
-      <button class="icon-btn" title={t('term.closePane')} aria-label={t('term.closePane')} onclick={() => update((l) => closePane(l, index))}
+      <button class="icon-btn" title={t('term.closePane')} aria-label={t('term.closePane')} onclick={() => closePaneAt(index)}
         ><X size={14} /></button
       >
     {/if}

@@ -33,21 +33,27 @@ export interface Line {
 }
 
 export interface LineLocal {
-  pid?: number;
+  pid?: number | null;
   rssBytes?: number;
   busy?: boolean;
   needsInput?: boolean;
   pinned?: boolean;
-  heldReason?: 'user' | 'lost';
+  heldReason?: null | 'user' | 'lost';
+  // When the session was held, and whether a pause waits for the current turn to end.
+  heldAt?: string | null;
+  holdPending?: boolean | null;
+  // Running subagents and background tasks reported by hooks; 0 when unknown.
+  subagents?: number;
+  tasks?: number;
   orphan?: boolean;
   duplicate?: boolean;
   tmuxPane?: string;
   tmuxSession?: string;
   resumeCommand?: string;
   resumeVerified?: boolean;
-  title?: string;
+  title?: string | null;
   titleOverride?: string | null;
-  termId?: string;
+  termId?: string | null;
   workspaceId?: string | null;
   cwd?: string;
 }
@@ -332,6 +338,7 @@ export type EventType =
   | 'line.updated'
   | 'line.state_changed'
   | 'line.hung_up'
+  | 'line.hold_refused'
   | 'line.activity'
   | 'line.chat'
   | 'term.created'

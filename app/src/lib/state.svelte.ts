@@ -15,6 +15,7 @@ import { dispatch, type NoticeInput } from './os-notify';
 import type { Activity, AgentInfo, ConnState, DaemonEvent, Effort, HostTarget, LocalLine, LocalNetworkReport, ProfilesStore, Project, Term, TaskMessage } from './types';
 import { isNoRoute } from './localnet';
 import { startupTarget } from './conn';
+import { rememberShell } from './closed-tabs';
 import { activeKey, allTabs, EMPTY_LAYOUT, forgetLayouts, onTabClosed, openInFocused, update, workspace } from './workspace.svelte';
 import { newTabKey } from './tabs';
 import { aggregate, applyWsEvent, EMPTY_WS, isGhost, itemWorkspaces, resolveTab, sameMap, synthesize, upsert, within, type Aggregate, type WsData } from './workspaces';
@@ -256,7 +257,7 @@ class AppState {
     this.agents = agents;
     if (this.client && complete) feedback.resume(this.client, terms, (text, kind, action) => this.notify(text, kind, action));
     this.setWs(ws, projects);
-    if (!this.selectedKey && this.items.length && !this.currentWorkspace?.tabs.length) this.selectedKey = this.groups.find((g) => g.items.length)?.items[0].key ?? null;
+    if (!this.selectedKey && this.items.length && !this.currentWorkspace?.tabs.length) this.selectedKey = groupItems(this.scopeItems()).find((g) => g.items.length)?.items[0].key ?? null;
     if (this.pendingTab) {
       const kind = this.pendingTab;
       this.pendingTab = null;
@@ -357,6 +358,11 @@ class AppState {
 
   membersOf(workspaceId: string) {
     return this.items.filter((i) => (this.itemWs.get(i.key) ?? NO_WORKSPACE) === workspaceId);
+  }
+
+  scopeItems(): SidebarItem[] {
+    if (this.sidebarMode === 'status') return this.items;
+    return this.workspaceId.startsWith('group:') ? this.groupItems(this.workspaceId.slice(6)) : this.membersOf(this.workspaceId);
   }
 
   groupItems(groupId: string) {
@@ -466,6 +472,12 @@ class AppState {
     }
     if (e.type === 'task.message') {
       if (e.data?.message?.id) for (const l of this.messageListeners) l(e.data.message);
+      return;
+    }
+    if (e.type === 'line.hold_refused') {
+      const failed = (e.data?.failed ?? []) as { name: string; detail?: string }[];
+      const why = failed.map((c) => c.detail || c.name).join(', ') || (e.data?.error as string | null | undefined) || '';
+      this.notify(why ? t('chat.pauseRefused', { reason: why }) : t('chat.pauseCancelled'));
       return;
     }
     if (e.type === 'line.chat') {
@@ -707,8 +719,10 @@ class AppState {
   }
 
   progress(text: string, fraction?: number) {
-    this.toast = { text, kind: 'info', progress: fraction === undefined ? undefined : Math.max(0, Math.min(1, fraction)) };
+    const progress = fraction === undefined ? undefined : Math.max(0, Math.min(1, fraction));
+    this.toast = { text, kind: 'info', progress };
     clearTimeout(this.toastTimer);
+    if (progress === 1) this.toastTimer = setTimeout(() => (this.toast = null), 1500);
   }
 }
 
@@ -750,7 +764,7 @@ function briefs(activity: Snapshot['activity']) {
 
 export function statusLine(a: Activity): string | undefined {
   const last = a.workLog.at(-1);
-  if (a.needsInput || !last) return a.lastAssistantText.split('\n')[0] || undefined;
+  if (a.needsInput || !last) return a.lastAssistantText.split('\n')[0].replace(/`/g, '') || undefined;
   return last.label;
 }
 
@@ -773,6 +787,9 @@ export function tabLazy() {
 }
 
 onTabClosed((key, end) => {
+  const item = app.items.find((i) => i.key === key);
+  const cwd = item?.kind === 'shell' ? app.data.terms.find((t) => t.id === item.termId)?.cwd : undefined;
+  if (cwd) rememberShell(key, cwd);
   if (app.connected) void tabLazy().then((m) => m.tabClosed(app, key, end));
 });
 

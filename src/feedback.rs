@@ -13,6 +13,11 @@ const MAX_BODY: usize = 60_000;
 const MAX_PROMPT: usize = 16_000;
 const KEEP: Duration = Duration::from_secs(7 * 24 * 3600);
 const GH_TIMEOUT: Duration = Duration::from_secs(45);
+pub const ATTACHMENTS: &str = "@ATTACHMENTS@";
+const IMAGE_MAX: u64 = 10 * 1024 * 1024;
+const VIDEO_MAX: u64 = 100 * 1024 * 1024;
+const IMAGES: [&str; 6] = ["png", "jpg", "jpeg", "gif", "webp", "svg"];
+const VIDEOS: [&str; 3] = ["mp4", "mov", "webm"];
 const POSITIONAL: [&str; 2] = ["claude", "codex"];
 
 pub fn routes(ctx: &Ctx, method: &str, segs: &[&str], body: &Value) -> Option<(u16, Value)> {
@@ -129,7 +134,9 @@ fn start(ctx: &Ctx, b: &Value) -> Res<Value> {
     }
     let agent = agent_for(b)?;
     let cwd = workdir(&ctx.state_dir, text(b, "cwd"))?;
-    let report = write_report(&ctx.state_dir, body, SystemTime::now())?;
+    let files = attachments(b)?;
+    let body = body.replace(ATTACHMENTS, &listed(&files, ""));
+    let report = write_report(&ctx.state_dir, &body, SystemTime::now())?;
     let term = launch(ctx, agent, b, cwd, fill(prompt, &report), "Feedback")?;
     Ok(json!({ "term": term, "report": report.to_string_lossy() }))
 }
@@ -252,7 +259,13 @@ pub fn label_problem(stderr: &str) -> bool {
     s.contains("label")
 }
 
-pub fn args(repo: &str, title: &str, body_file: &Path, labels: &[String]) -> Vec<String> {
+pub fn args(
+    repo: &str,
+    title: &str,
+    body_file: &Path,
+    labels: &[String],
+    attach: &[PathBuf],
+) -> Vec<String> {
     let mut a = vec![
         "issue".to_string(),
         "create".into(),
@@ -261,6 +274,11 @@ pub fn args(repo: &str, title: &str, body_file: &Path, labels: &[String]) -> Vec
         format!("--body-file={}", body_file.to_string_lossy()),
     ];
     a.extend(labels.iter().map(|l| format!("--label={l}")));
+    a.extend(
+        attach
+            .iter()
+            .map(|p| format!("--attach={}", p.to_string_lossy())),
+    );
     a
 }
 
@@ -289,25 +307,94 @@ fn gh(args: &[String]) -> Res<(bool, String, String)> {
     ))
 }
 
+fn attachments(b: &Value) -> Res<Vec<(PathBuf, String)>> {
+    let files =
+        crate::uploads::attachments(&crate::uploads::dir(), &b["attachments"]).map_err(bad)?;
+    for (path, name) in &files {
+        let ext = crate::uploads::ext(name).unwrap_or_default();
+        let max = if IMAGES.contains(&ext.as_str()) {
+            IMAGE_MAX
+        } else if VIDEOS.contains(&ext.as_str()) {
+            VIDEO_MAX
+        } else {
+            return Err(bad(format!(
+                "{name}: GitHub only accepts {} and {} attachments",
+                IMAGES.join(", "),
+                VIDEOS.join(", ")
+            )));
+        };
+        if std::fs::metadata(path).is_ok_and(|m| m.len() > max) {
+            return Err(bad(format!("{name} is larger than {} MB", max >> 20)));
+        }
+    }
+    Ok(files)
+}
+
+fn gh_can_attach() -> bool {
+    let a = ["issue", "create", "--help"].map(String::from);
+    matches!(gh(&a), Ok((true, out, _)) if out.contains("--attach"))
+}
+
+fn listed(files: &[(PathBuf, String)], why: &str) -> String {
+    let home = crate::home();
+    files
+        .iter()
+        .map(|(path, _)| {
+            let shown = crate::uploads::short(path, &home);
+            if why.is_empty() {
+                format!("- `{shown}`")
+            } else {
+                format!("- `{shown}` (not uploaded: {why})")
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn checked_title(b: &Value) -> Res<String> {
+    let title = text(b, "title");
+    if title.is_empty() || title.len() > 256 || title.contains('\n') {
+        return Err(bad("title must be one line of 1 to 256 characters"));
+    }
+    Ok(crate::dlog::redact(title))
+}
+
 fn direct(ctx: &Ctx, b: &Value) -> Res<Value> {
     let repo = text(b, "repo");
     if !valid_repo(repo) {
         return Err(bad("repo must look like owner/name"));
     }
-    let title = text(b, "title");
-    if title.is_empty() || title.len() > 256 || title.contains('\n') {
-        return Err(bad("title must be one line of 1 to 256 characters"));
-    }
+    let title = checked_title(b)?;
+    let title = title.as_str();
     let body = checked_body(b)?;
     let labels = labels(b);
-    let report = write_report(&ctx.state_dir, body, SystemTime::now())?;
-    let (mut ok, mut out, mut err) = gh(&args(repo, title, &report, &labels))?;
+    let files = attachments(b)?;
+    let can_attach = !files.is_empty() && gh_can_attach();
+    let note = match (files.is_empty(), can_attach) {
+        (true, _) => "(none)".to_string(),
+        (false, true) => "Attached below.".to_string(),
+        (false, false) => listed(&files, "gh 2.99+ is needed to attach files"),
+    };
+    let body = body.replace(ATTACHMENTS, &note);
+    let attach: Vec<PathBuf> = if can_attach {
+        files.into_iter().map(|f| f.0).collect()
+    } else {
+        vec![]
+    };
+    let report = write_report(&ctx.state_dir, &body, SystemTime::now())?;
+    let (mut ok, mut out, mut err) = gh(&args(repo, title, &report, &labels, &attach))?;
     let mut labelled = !labels.is_empty();
-    if !ok && labelled && label_problem(&err) {
-        (ok, out, err) = gh(&args(repo, title, &report, &[]))?;
+    if !ok && labelled && issue_url(&out).is_none() && label_problem(&err) {
+        (ok, out, err) = gh(&args(repo, title, &report, &[], &attach))?;
         labelled = false;
     }
     let _ = std::fs::remove_file(&report);
+    let first = err.lines().map(str::trim).find(|l| !l.is_empty());
+    if !ok && !attach.is_empty() && issue_url(&out).is_some() {
+        let url = issue_url(&out);
+        let warning = crate::dlog::redact(first.unwrap_or("some attachments were not uploaded"));
+        return Ok(json!({ "url": url, "labelled": labelled, "attachWarning": warning }));
+    }
     if !ok {
         let first = err
             .lines()
@@ -358,12 +445,28 @@ mod tests {
     }
 
     #[test]
+    fn redacts_secrets_in_the_title() {
+        let t = checked_title(
+            &json!({"title": "Bug: SECRET sk-ant-api03-abcdefghijklmnop1234567890 token=abc123"}),
+        )
+        .unwrap();
+        assert!(!t.contains("abcdefghijklmnop") && !t.contains("abc123"));
+        assert!(t.starts_with("Bug: SECRET "));
+        assert_eq!(
+            checked_title(&json!({"title": " plain "})).unwrap(),
+            "plain"
+        );
+        assert!(checked_title(&json!({"title": "a\nb"})).is_err());
+    }
+
+    #[test]
     fn builds_gh_arguments() {
         let a = args(
             "o/r",
             "Bug: --help me",
             Path::new("/s/report.md"),
             &["bug".into(), "feedback".into()],
+            &[PathBuf::from("/u/a.png")],
         );
         assert_eq!(
             a,
@@ -374,10 +477,11 @@ mod tests {
                 "--title=Bug: --help me",
                 "--body-file=/s/report.md",
                 "--label=bug",
-                "--label=feedback"
+                "--label=feedback",
+                "--attach=/u/a.png"
             ]
         );
-        assert!(!args("o/r", "t", Path::new("/f"), &[])
+        assert!(!args("o/r", "t", Path::new("/f"), &[], &[])
             .iter()
             .any(|x| x.starts_with("--label")));
     }
@@ -447,6 +551,24 @@ mod tests {
             fill("Read @REPORT@ first; keep @REPORT@.", Path::new("/s/r.md")),
             "Read /s/r.md first; keep /s/r.md."
         );
+    }
+
+    #[test]
+    fn lists_files_that_could_not_be_attached() {
+        let files = vec![(PathBuf::from("/u/c3.mov"), "clip.mov".to_string())];
+        assert!(
+            listed(&files, "gh 2.99+ is needed").ends_with("(not uploaded: gh 2.99+ is needed)")
+        );
+        assert!(
+            listed(&files, "").starts_with("- `") && !listed(&files, "").contains("not uploaded")
+        );
+    }
+
+    #[test]
+    fn rejects_attachments_outside_the_uploads_dir() {
+        let b = json!({"attachments": [{"path": "/etc/passwd"}]});
+        assert_eq!(attachments(&b).unwrap_err().0, 400);
+        assert!(attachments(&json!({})).unwrap().is_empty());
     }
 
     #[test]

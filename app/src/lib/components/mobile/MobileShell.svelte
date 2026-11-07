@@ -24,7 +24,7 @@
   import MobileReviews from './MobileReviews.svelte';
   import MobileMore from './MobileMore.svelte';
   import { apk, pillLabel } from '../../mobile/apk-update.svelte';
-  import { backAction, backHandlers, closeTop, pushTab, setBackRunner } from '../../mobile/back';
+  import { backAction, backHandlers, closeTop, escapeCloses, pushTab, setBackRunner } from '../../mobile/back';
   import { native } from '../../mobile/native';
   import { diag } from '../../diag.svelte';
   import { tour } from '../../tour/tour.svelte';
@@ -197,6 +197,8 @@
     <Sidebar />
   </div>
 {/if}
+
+<svelte:window onkeydown={(e) => escapeCloses(e, ui.panel) && (ui.panel = false)} />
 
 {#if ui.panel && app.selected?.lineId}
   <div class="sheet" role="dialog" aria-modal="true" aria-label={t('mobile.shell.activity')}>

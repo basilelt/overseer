@@ -19,7 +19,7 @@
   import { t } from '../../i18n.svelte';
   import { attachIme } from '../../ime';
   import { keyToInput } from '../../keys';
-  import { cellAt, ModeTracker, WheelAccumulator, wheelAction } from '../../mouse';
+  import { cellAt, clickMove, ModeTracker, WheelAccumulator, wheelAction } from '../../mouse';
   import { resetViewport, scrollbackBytes, writeAnchored } from '../../scroll';
   import { fontChain, fontFamilies, lineMetrics, sameMetrics, SYMBOL_SAMPLE } from '../../fonts';
   import { applyMods, NO_MODS, type Mods } from '../../mobile/accessory';
@@ -29,12 +29,12 @@
   import { canResize, fitTo, isAgentTerm, shouldReassert, sizedElsewhere } from '../../mobile/termsize';
   import { ui } from '../../mobile/ui.svelte';
   import { isNativeAndroid, native } from '../../mobile/native';
-  import { customColors, resolvedTheme, saveSettings, settings } from '../../settings.svelte';
+  import { colorPalette, customColors, resolvedTheme, saveSettings, settings } from '../../settings.svelte';
   import { app } from '../../state.svelte';
   import { loadGhostty, termTheme } from '../../terminal';
   import { pathRanges } from '../../termlinks';
   import { scheduler, type PaintTarget } from '../../termrender';
-  import { copyOnSelect } from '../../selection-copy';
+  import { routeCopies } from '../../selection-copy';
   import { guardAutoScroll } from '../../selection-scroll';
   import { settle } from '../../settle';
   import { openFile } from '../../preview';
@@ -229,6 +229,18 @@
       void pasteFiles(files);
     };
     pane.addEventListener('paste', onPaste, true);
+    const onClick = (e: MouseEvent) => {
+      const tm = term;
+      if (!tm || !io || phone || e.button !== 0 || e.detail !== 1 || e.shiftKey || e.altKey || e.ctrlKey || e.metaKey) return;
+      if (tm.hasSelection() || tm.getViewportY() > 0) return;
+      const rect = (el.querySelector('canvas') ?? el).getBoundingClientRect();
+      const { col, row } = cellAt(e.clientX, e.clientY, rect, tm.cols, tm.rows);
+      const buf = tm.buffer.active;
+      const line = buf.getLine(buf.length - tm.rows + buf.cursorY);
+      const keys = clickMove(col - 1, row - 1, { x: buf.cursorX, y: buf.cursorY }, (x) => line?.getCell(x)?.getWidth() ?? 1, modes.modes());
+      if (keys) io.write(keys);
+    };
+    el.addEventListener('click', onClick);
 
     pickFiles = (files: File[]) => {
       if (!files.length) return;
@@ -260,7 +272,7 @@
           ghostty,
           fontFamily: fontChain(settings.terminalFont),
           fontSize,
-          theme: termTheme(theme, customColors(theme)),
+          theme: termTheme(theme, customColors(), colorPalette()),
           cursorBlink: true,
           scrollback: scrollbackBytes(settings.scrollbackLines),
         });
@@ -268,8 +280,9 @@
         term.loadAddon(fit);
         term.open(el);
         const tl = term;
-        guardAutoScroll((tl as unknown as { selectionManager?: Parameters<typeof guardAutoScroll>[0] }).selectionManager);
-        copyOnSelect(tl,(text) => app.client?.copyText(text) ?? Promise.resolve(), () => highlighting);
+        const sm = (tl as unknown as { selectionManager?: Parameters<typeof guardAutoScroll>[0] & Parameters<typeof routeCopies>[0] }).selectionManager;
+        guardAutoScroll(sm);
+        routeCopies(sm, (text) => app.client?.copyText(text) ?? Promise.resolve());
         tl.registerLinkProvider({
           provideLinks(y, cb) {
             const line = tl.buffer.active.getLine(y);
@@ -396,6 +409,7 @@
       document.fonts?.removeEventListener('loadingdone', onFontsLoaded);
       refit = null;
       pane.removeEventListener('paste', onPaste, true);
+      el.removeEventListener('click', onClick);
       offDrop();
       ro?.disconnect();
       resized.cancel();
@@ -518,7 +532,6 @@
   let findQuery = $state('');
   let findMiss = $state(false);
   let hit: Hit | null = null;
-  let highlighting = false;
 
   function findNext(backwards: boolean) {
     const tm = term;
@@ -532,9 +545,7 @@
     if (!h) return void tm.clearSelection();
     const v = viewportFor(h.row, Math.max(0, b.length - tm.rows), tm.rows);
     tm.scrollToLine(v.offset);
-    highlighting = true;
     tm.select(h.col, v.row, findQuery.length);
-    highlighting = false;
   }
 
   function closeFind() {

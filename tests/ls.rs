@@ -352,6 +352,20 @@ fn ids_are_stable_and_launch_args_survive_process_death() {
 }
 
 #[test]
+fn an_empty_process_list_does_not_stamp_held_at_but_a_real_loss_does() {
+    // Given live lines, then a scan whose process list is empty (a failed probe)
+    // When the probe recovers without the agents, still listing other processes
+    // Then the failed scan stamps no heldAt, and the scan that sees the agents gone does
+    let fx = Fx::new();
+    fx.scan(&fx.probe());
+    let blind = fx.scan(&Fake::default());
+    assert_eq!(find(&blind, S1).held_at, None);
+    let other = Fake(vec![(999, "1", argv("sleep 1"), None)]);
+    let lost = fx.scan(&other);
+    assert!(find(&lost, S1).held_at.is_some());
+}
+
+#[test]
 fn unchanged_lines_skip_the_write_but_a_new_database_gets_every_row() {
     let fx = Fx::new();
     let count = || {

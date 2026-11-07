@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { DaemonError, type DaemonClient } from './client';
-import { filePath, fileKind, findPaths, mimeOf, saveFile } from './files';
+import { isMissingFile, filePath, fileKind, findPaths, mimeOf, saveFile } from './files';
 
 describe('findPaths', () => {
   it('finds absolute, relative and home paths with known extensions', () => {
@@ -124,5 +124,35 @@ describe('saveFile', () => {
     });
     await expect(saveFile(c, { path: '/gone.png' }, 'gone.png')).rejects.toThrow('not found');
     expect(c.saveDownload).not.toHaveBeenCalled();
+  });
+});
+
+describe('findPaths on paths with spaces in prose', () => {
+  it('does not link the tail of a spaced path', () => {
+    expect(findPaths('Also docs/J3 modifications.pdf in prose.')).toEqual([]);
+  });
+
+  it('does not link the tail after a home directory fragment', () => {
+    expect(findPaths('see ~/My Docs/J3 modifications.pdf')).toEqual([]);
+  });
+
+  it('still links consecutive complete paths', () => {
+    expect(findPaths('src/a.json b.json').map((m) => m.path)).toEqual(['src/a.json', 'b.json']);
+  });
+
+  it('still links a spaceless path after plain words', () => {
+    expect(findPaths('open docs/spec.pdf now').map((m) => m.path)).toEqual(['docs/spec.pdf']);
+  });
+});
+
+describe('isMissingFile', () => {
+  it('recognises the daemon error for a path that does not exist', () => {
+    expect(isMissingFile('/tmp/x.md: No such file or directory (os error 2)')).toBe(true);
+    expect(isMissingFile('x: os error 2')).toBe(true);
+  });
+
+  it('leaves other errors alone', () => {
+    expect(isMissingFile('Permission denied (os error 13)')).toBe(false);
+    expect(isMissingFile('os error 22')).toBe(false);
   });
 });

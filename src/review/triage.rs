@@ -600,6 +600,13 @@ mod tests {
     }
 
     #[test]
+    fn plain_text_files_are_logic_not_comments() {
+        let txt = file("notes/a.txt", "@@ -1,0 +1,1 @@\n+line1\n");
+        let t = analyze(&[txt]);
+        assert_eq!(kinds(&t, 0), [vec![("logic", 0, 1)]]);
+    }
+
+    #[test]
     fn generated_tests_and_comments_by_path_and_content() {
         let lock = file("app/pnpm-lock.yaml", "@@ -1,1 +1,1 @@\n-a: 1\n+a: 2\n");
         let gen = file(

@@ -8,14 +8,15 @@
   import Users from '@lucide/svelte/icons/users';
   import X from '@lucide/svelte/icons/x';
   import { t } from '../../i18n.svelte';
+  import { touchContextMenu } from '../../mobile/touch-menu';
   import { app, type SidebarMode } from '../../state.svelte';
   import { broadcastTo, createFolder, groupPicker, rescanFolders } from '../../wsactions';
   import WandSparkles from '@lucide/svelte/icons/wand-sparkles';
   import { saveSettings, settings } from '../../settings.svelte';
   import { organizer } from '../../organize.svelte';
   import { nudgeVisible, unplacedCount } from '../../organize';
-  import StatusList from './StatusList.svelte';
-  import WorkspaceTree from './WorkspaceTree.svelte';
+  import SpacesView from './SpacesView.svelte';
+  import StatesView from './StatesView.svelte';
 
   const unplaced = $derived(app.connected && app.wsPersistent ? unplacedCount(app.data.lines, app.ws.workspaces, app.projects, app.data.tasks) : 0);
   const nudge = $derived(nudgeVisible(unplaced, settings.organizeNudgeAt));
@@ -25,6 +26,7 @@
     { id: 'workspaces', label: () => t('ws.title') },
     { id: 'status', label: () => t('ws.byStatus') },
   ];
+  const listed = $derived(app.items.filter((i) => i.kind !== 'shell').length);
   const selection = $derived([...app.multi]);
   const addMenu = () => [
     { label: t('ws.new'), icon: Plus, run: () => app.open('workspaceNew') },
@@ -32,7 +34,7 @@
   ];
 </script>
 
-<aside class="sidebar" data-tour="workspaces">
+<aside class="sidebar" data-tour="workspaces" use:touchContextMenu>
   <header>
     <div class="modes" role="tablist" aria-label={t('ws.mode')}>
       {#each modes as m (m.id)}
@@ -55,7 +57,7 @@
         onclick={() => (showArchived = !showArchived)}><Archive size={14} /></button
       >
     {:else}
-      <span class="count faint">{app.items.length}</span>
+      <span class="count faint">{listed}</span>
     {/if}
   </header>
   <label class="filter">
@@ -71,9 +73,9 @@
     </div>
   {/if}
   {#if app.sidebarMode === 'workspaces'}
-    <WorkspaceTree {filter} {showArchived} />
+    <SpacesView {filter} {showArchived} />
   {:else}
-    <StatusList {filter} />
+    <StatesView {filter} />
   {/if}
   {#if selection.length > 1}
     <div class="selbar" role="toolbar" aria-label={t('ws.selection', { n: selection.length })}>
@@ -98,6 +100,7 @@
     border-right: 1px solid var(--border);
     background: var(--bg-subtle);
     min-height: 0;
+    -webkit-touch-callout: none;
   }
   header {
     display: flex;

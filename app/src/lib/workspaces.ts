@@ -1,4 +1,4 @@
-import { newestFirst, type GroupId, type SidebarItem } from './grouping';
+import { isOff, newestFirst, type GroupId, type SidebarItem } from './grouping';
 import { isKnown } from './known-tabs';
 import type { Snapshot } from './reduce';
 import type { DaemonEvent, Folder, Group, LocalLine, Project, Task, Term, Workspace } from './types';
@@ -11,8 +11,8 @@ export interface WsData {
 
 export const EMPTY_WS: WsData = { workspaces: [], folders: [], groups: [] };
 
-export type WsState = 'needs_input' | 'working' | 'needs_testing' | 'idle';
-export const WS_STATE_ORDER: WsState[] = ['needs_input', 'working', 'needs_testing', 'idle'];
+export type WsState = 'needs_input' | 'running' | 'needs_testing' | 'ready' | 'paused' | 'stopped';
+export const WS_STATE_ORDER: WsState[] = ['needs_input', 'running', 'needs_testing', 'ready', 'paused', 'stopped'];
 
 export interface Aggregate {
   state: WsState;
@@ -153,33 +153,20 @@ export function liveWorkspaces(workspaces: Workspace[]): Workspace[] {
   return live;
 }
 
-export function wsState(group: GroupId): WsState | null {
-  switch (group) {
-    case 'needs_input':
-      return 'needs_input';
-    case 'working':
-      return 'working';
-    case 'needs_testing':
-      return 'needs_testing';
-    case 'held':
-      return null;
-    default:
-      return 'idle';
-  }
+export function wsState(group: GroupId): WsState {
+  return group === 'pushed' ? 'ready' : group;
 }
 
 export function aggregate(items: SidebarItem[]): Aggregate {
-  const counts: Record<WsState, number> = { needs_input: 0, working: 0, needs_testing: 0, idle: 0 };
+  const counts: Record<WsState, number> = { needs_input: 0, running: 0, needs_testing: 0, ready: 0, paused: 0, stopped: 0 };
   const agentsOnly = items.filter((i) => i.kind !== 'shell');
   let latest: SidebarItem | undefined;
   for (const it of agentsOnly) {
-    const s = wsState(it.group);
-    if (!s) continue;
-    counts[s]++;
-    if (it.status && (!latest || it.at > latest.at)) latest = it;
+    counts[wsState(it.group)]++;
+    if (it.status && !isOff(it) && (!latest || it.at > latest.at)) latest = it;
   }
-  const agents = WS_STATE_ORDER.reduce((n, s) => n + counts[s], 0);
-  const state = WS_STATE_ORDER.find((s) => counts[s] > 0) ?? 'idle';
+  const agents = agentsOnly.length;
+  const state = WS_STATE_ORDER.find((s) => counts[s] > 0) ?? 'ready';
   let top: SidebarItem | undefined;
   for (const i of agentsOnly) if (wsState(i.group) === state && (!top || i.at > top.at)) top = i;
   const status = state === 'needs_input' || state === 'needs_testing' ? (top?.status ?? latest?.status) : (latest?.status ?? top?.status);
@@ -188,9 +175,20 @@ export function aggregate(items: SidebarItem[]): Aggregate {
   return { state, counts, agents, status, statusKey: top?.key, at };
 }
 
+// The two most urgent states of a workspace, so paused or stopped sessions never read as idle.
+export function summaryParts(agg: Aggregate | undefined): { state: WsState; count: number }[] {
+  const parts = agg ? WS_STATE_ORDER.filter((s) => agg.counts[s] > 0).map((s) => ({ state: s, count: agg.counts[s] })) : [];
+  return parts.length ? parts.slice(0, 2) : [{ state: 'ready', count: 0 }];
+}
+
+export function summaryText(parts: { state: WsState; count: number }[], label: (s: WsState) => string): string {
+  if (parts.length === 1 && parts[0]!.count <= 1) return label(parts[0]!.state);
+  return parts.map((p) => `${p.count} ${label(p.state).toLowerCase()}`).join(' · ');
+}
+
 export function allIdle(items: SidebarItem[]): boolean {
-  const live = items.filter((i) => wsState(i.group) !== null && i.kind !== 'shell');
-  return live.length > 0 && live.every((i) => i.group === 'idle' || i.group === 'pushed');
+  const live = items.filter((i) => !isOff(i) && i.kind !== 'shell');
+  return live.length > 0 && live.every((i) => i.group === 'ready' || i.group === 'pushed');
 }
 
 export function byRank<T extends { rank: number; name: string }>(a: T, b: T): number {
@@ -301,7 +299,7 @@ export function moveKey(keys: string[], key: string, to: number): string[] {
 export function workspaceTabs(saved: string[], members: SidebarItem[], items: SidebarItem[], known?: Set<string>): string[] {
   const resolved = saved.map((k) => resolveTab(k, items)).filter((k): k is string => !!k);
   const seen = new Set(resolved);
-  const live = members.filter((m) => m.group !== 'held' && !seen.has(m.key) && !(known && isKnown(m, known))).sort((a, b) => newestFirst(b, a));
+  const live = members.filter((m) => !isOff(m) && !seen.has(m.key) && !(known && isKnown(m, known))).sort((a, b) => newestFirst(b, a));
   return [...new Set([...resolved, ...live.map((m) => m.key)])];
 }
 
@@ -356,7 +354,7 @@ export function synthesize(projects: Project[]): Workspace[] {
 
 export type LineAction = 'open' | 'attach' | 'resume' | 'hold' | 'close';
 
-const lineAlive = (line: LocalLine) => line.local?.pid !== undefined && line.line.state !== 'held' && line.line.state !== 'hung-up';
+const lineAlive = (line: LocalLine) => line.local?.pid != null && line.line.state !== 'held' && line.line.state !== 'hung-up';
 
 export function lineActions(item: SidebarItem, line: LocalLine | undefined): LineAction[] {
   if (!item.lineId || !line) return [];

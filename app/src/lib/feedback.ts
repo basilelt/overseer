@@ -5,6 +5,13 @@ export * from './feedback-watch';
 export const DEFAULT_REPO = 'basilelt/overseer';
 export const PRIVACY_URL = `https://github.com/${DEFAULT_REPO}/blob/main/PRIVACY.md`;
 export const REPORT = '@REPORT@';
+export const ATTACHMENTS = '@ATTACHMENTS@';
+export const IMAGE_EXTS = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg'];
+export const VIDEO_EXTS = ['mp4', 'mov', 'webm'];
+export const ATTACH_ACCEPT = [...IMAGE_EXTS, ...VIDEO_EXTS].map((e) => `.${e}`).join(',');
+export const IMAGE_MAX = 10 * 1024 * 1024;
+export const VIDEO_MAX = 100 * 1024 * 1024;
+export const VIDEO_FREE_MAX = 10 * 1024 * 1024;
 export const APP_LINES = 200;
 export const SERVER_LINES = 100;
 export const MAX_BODY = 60_000;
@@ -25,6 +32,15 @@ export interface Form {
 
 export type Problem = 'description' | 'repo' | 'tooLong';
 
+export type AttachProblem = 'type' | 'image' | 'video';
+
+export function attachProblem(name: string, size = 0): AttachProblem | null {
+  const ext = /\.([A-Za-z0-9]{1,10})$/.exec(name)?.[1]?.toLowerCase() ?? '';
+  if (IMAGE_EXTS.includes(ext)) return size > IMAGE_MAX ? 'image' : null;
+  if (VIDEO_EXTS.includes(ext)) return size > VIDEO_MAX ? 'video' : null;
+  return 'type';
+}
+
 export function validRepo(repo: string): boolean {
   return /^(?![-.])[A-Za-z0-9_.-]+\/(?![-.])[A-Za-z0-9_.-]+$/.test(repo.trim());
 }
@@ -37,7 +53,7 @@ export function validate(f: Form, repo: string): Problem | null {
 }
 
 export function issueTitle(f: Pick<Form, 'kind' | 'title' | 'description'>): string {
-  const own = f.title.trim() || f.description.trim().split('\n')[0].trim();
+  const own = redact(f.title.trim() || f.description.trim().split('\n')[0].trim());
   const short = own.length > 80 ? `${own.slice(0, 79).trimEnd()}…` : own;
   return `${KIND_PREFIX[f.kind]}: ${short}`;
 }
@@ -58,6 +74,7 @@ export function redact(s: string): string {
     .replace(/\b(bearer)\s+[^\s"']+/gi, '$1 ***')
     .replace(new RegExp(`(^|[^A-Za-z0-9])(${SECRET_KEYS})(["']?\\s*[=:]\\s*["']?)[^\\s"',;&})\\]]+`, 'gi'), (_m, pre: string, k: string, sep: string) => `${pre}${k}${sep}***`)
     .replace(/(^|[^A-Za-z0-9])(github_pat_|gh[pousr]_)\w{8,}/g, '$1$2***')
+    .replace(/(^|[^A-Za-z0-9])(AKIA|ASIA)[A-Z0-9]{16}(?![A-Za-z0-9])/g, '$1***')
     .replace(/(^|[^\w])sk-[\w-]{16,}/g, '$1sk-***');
 }
 
@@ -93,9 +110,9 @@ function fence(text: string): string {
   return `${f}text\n${text}\n${f}`;
 }
 
-export function buildBody(f: Form): string {
+export function buildBody(f: Form, upload = false): string {
   const out = [`**Type:** ${KIND_PREFIX[f.kind]}`, '', f.description.trim()];
-  if (f.attachments.length) out.push('', '### Attachments', ...f.attachments.map((p) => `- \`${p}\``));
+  if (f.attachments.length) out.push('', '### Attachments', ...(upload ? [ATTACHMENTS] : f.attachments.map((p) => `- \`${p}\``)));
   if (f.diagnostics) out.push('', '<details><summary>Diagnostics</summary>', '', fence(f.diagnostics), '', '</details>');
   out.push('', '_Sent from Overseer._');
   return redact(out.join('\n')) + '\n';
@@ -131,7 +148,9 @@ export function buildPrompt(p: PromptInput): string {
     '   - Write the final body to a new file from `mktemp`, never inside a repository.',
   );
   if (p.attachments.length)
-    lines.push(`   - Attachments on this machine: ${p.attachments.join(', ')}. gh cannot upload files: list them under "Attachments" and tell the user to drag them into the issue on GitHub.`);
+    lines.push(
+      `   - Attachments (local files): ${p.attachments.join(', ')}. Pass each one with \`--attach <path>\` on the \`gh issue create\` (or \`gh issue comment\`) command; gh uploads it to the issue. Check \`gh issue create --help\` lists \`--attach\`; if gh is too old (needs 2.99+), keep the "Attachments" list of paths from the report and tell the user to update gh or drag the files into the issue. If gh refuses a file, keep it listed under "Attachments" with the reason. Once attached, replace that list in the body with "Attached below."`,
+    );
   if (p.investigate)
     lines.push(
       `4. Before filing, investigate read-only: read the diagnostics, then search ${p.inClone ? 'the code in this checkout' : 'the logs in ~/.overseer'} for the likely cause, and add a short "Likely cause" section with file paths. Read only.`,

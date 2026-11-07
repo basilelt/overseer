@@ -31,7 +31,7 @@ export function parseReviewKey(key: string): ReviewTarget | null {
 }
 
 export interface Known {
-  lines: { line: { id: string; worktreePath?: string; branch?: string }; local?: { title?: string; titleOverride?: string | null } }[];
+  lines: { line: { id: string; worktreePath?: string; branch?: string }; local?: { title?: string | null; titleOverride?: string | null } }[];
   tasks: { id: string; number: number; title: string; worktreePath?: string | null; lineId?: string | null; branch?: string | null }[];
   terms?: { id: string; cwd: string; lineId?: string | null }[];
 }

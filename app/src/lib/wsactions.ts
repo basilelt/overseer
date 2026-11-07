@@ -286,3 +286,18 @@ export function itemMenu(key: string): MenuItem[] {
     })),
   ];
 }
+
+// Click on a session row: Ctrl/Meta/Shift toggles it in the multi-selection, a plain click opens it alone.
+export function selectSession(key: string, e?: MouseEvent) {
+  if (e && (e.metaKey || e.ctrlKey || e.shiftKey)) {
+    const next = new Set(app.multi);
+    if (!next.delete(key)) next.add(key);
+    if (app.selectedKey && !next.size) next.add(app.selectedKey);
+    app.multi = next;
+    return;
+  }
+  app.multi = new Set();
+  app.select(key);
+}
+
+export const itemMenuAt = (key: string, title: string, e: MouseEvent) => app.openMenu(e, title, itemMenu(key));

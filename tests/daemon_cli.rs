@@ -190,6 +190,8 @@ fn a_second_daemon_on_a_locked_state_dir_exits_and_leaves_the_first_alone() {
     wait_for(|| sb.version().is_some());
     let pid = std::fs::read_to_string(sb.state.join("daemon.pid")).unwrap();
     assert_eq!(pid.trim(), a.0.id().to_string());
+    // The first daemon writes status.json on its first tick; snapshot only after it.
+    wait_for(|| sb.state.join("status.json").exists());
     let before = names(&sb.state);
     let db = std::fs::metadata(sb.state.join("overseer.db")).unwrap();
 

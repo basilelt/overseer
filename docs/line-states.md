@@ -56,6 +56,20 @@ works exactly. The Board shows the reason. After a reboot every recent line is `
 - `orphan`: process alive and its tmux session has no attached client. Surfaced, never killed.
 - `duplicate`: two live processes on the same `agentSessionId`.
 
+## Pending hold (afterTurn)
+
+`POST /v1/lines/{id}/hold?afterTurn=true` queues the hold when only turn-bound predicates fail.
+It applies once the turn ended and nothing is left to wait for.
+
+- It waits while the line is busy, needs input, or `local.subagents > 0`.
+- The counts come from `SubagentStart`/`SubagentStop` and `TaskCreated`/`TaskCompleted`. `Stop` keeps
+  them; `SessionStart` and `SessionEnd` reset them. `local.subagents` and `local.tasks` are always
+  present and 0 when the line is not alive.
+- Background tasks do not wait: they block, and the hold is dropped after the grace
+  (`OVERSEER_HOLD_GRACE_MS`, default 10 s) with a `line.hold_refused` event.
+- A lost `SubagentStop` means an indefinite wait. It ends with `SessionEnd`/`SessionStart` (`/clear`),
+  process death, `close`, or cancelling the pause (`DELETE /v1/lines/{id}/hold`).
+
 ## Hold safety
 
 `hold` runs only if every predicate is true; each is a separate function with its own test.

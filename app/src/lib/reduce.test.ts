@@ -14,6 +14,14 @@ describe('applyEvent', () => {
     expect(s.lines).toEqual([{ line: { id: 'a', state: 'idle' }, local: { busy: true } }]);
   });
 
+  it('clears the pause and shows the paused state from the full local of an update', () => {
+    let s = applyEvent(empty, ev('line.created', { line: { id: 'a', state: 'active' }, local: { busy: true } }));
+    s = applyEvent(s, ev('line.updated', { line: { id: 'a', state: 'active' }, local: { busy: false, holdPending: true, subagents: 2 } }));
+    expect(s.lines[0].local).toMatchObject({ holdPending: true, subagents: 2 });
+    s = applyEvent(s, ev('line.state_changed', { line: { id: 'a', state: 'held' }, from: 'active', to: 'held', local: { holdPending: null, heldReason: 'user', heldAt: 'now', subagents: 0 } }));
+    expect(s.lines[0].local).toMatchObject({ holdPending: null, heldReason: 'user', subagents: 0 });
+  });
+
   it('applies term created, updated and exited', () => {
     let s = applyEvent(empty, ev('term.created', { term }));
     s = applyEvent(s, ev('term.updated', { term: { ...term, cols: 120 } }));

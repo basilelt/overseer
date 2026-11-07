@@ -55,9 +55,9 @@ export const SECTIONS: Section[] = [
 ];
 
 export const ENTRIES: Entry[] = [
-  { id: 'theme', section: 'appearance', keys: ['settings.theme', 'settings.theme.system', 'settings.theme.light', 'settings.theme.dark'] },
+  { id: 'theme', section: 'appearance', keys: ['settings.theme', 'settings.theme.system', 'settings.theme.light', 'settings.theme.dark', 'settings.theme.graphite', 'settings.theme.solarized'] },
   { id: 'language', section: 'appearance', keys: ['settings.language'] },
-  { id: 'colors', section: 'appearance', keys: ['settings.colors.light', 'settings.colors.dark', 'settings.colorsHint', 'settings.color.accent', 'settings.color.bg', 'settings.color.surface', 'settings.color.border', 'settings.color.text', 'settings.color.text-2'] },
+  { id: 'colors', section: 'appearance', keys: ['settings.colors.light', 'settings.colors.dark', 'settings.colors.graphite', 'settings.colors.solarized', 'settings.colorsHint', 'settings.color.accent', 'settings.color.bg', 'settings.color.surface', 'settings.color.border', 'settings.color.text', 'settings.color.text-2'] },
   { id: 'linkTarget', section: 'links', keys: ['settings.linkTarget', 'settings.linkTarget.overseer', 'settings.linkTarget.default'] },
   { id: 'linkAsk', section: 'links', keys: ['settings.linkAsk', 'settings.linkAskHint'] },
   { id: 'fontFamily', section: 'terminal', keys: ['settings.fontFamily', 'settings.fontFamilyHint'] },

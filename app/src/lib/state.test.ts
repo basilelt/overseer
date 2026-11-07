@@ -131,6 +131,7 @@ describe('statusLine', () => {
   it('shows the first line of the last answer when the agent waits or has no steps', () => {
     expect(statusLine(act({ needsInput: true, workLog: [{ label: 'x' }] as Activity['workLog'], lastAssistantText: 'Which file?\nmore' }))).toBe('Which file?');
     expect(statusLine(act({ lastAssistantText: 'Done.\nDetails' }))).toBe('Done.');
+    expect(statusLine(act({ lastAssistantText: 'See `docs/a.md` and ``x``' }))).toBe('See docs/a.md and x');
   });
 
   it('is empty when there is nothing to say', () => {
@@ -232,6 +233,50 @@ describe('connecting', () => {
     m.onState!({ phase: 'connected', target: local });
     await new Promise((r) => setTimeout(r, 0));
     expect(m.hits(/GET \/v1\/lines$/)).toHaveLength(1);
+  });
+
+  it('selects nothing from another workspace when a dropped connection comes back on an empty workspace', async () => {
+    await connect();
+    const empty = await app.api.createWorkspace({ path: '/srv/newproj' });
+    await app.refresh();
+    app.selectWorkspace(empty.id);
+    app.selectedKey = null;
+    expect(app.membersOf(empty.id)).toEqual([]);
+    m.onState!({ phase: 'reconnecting', target: local, attempt: 1 });
+    m.onState!({ phase: 'connected', target: local });
+    await vi.waitFor(() => expect(m.hits(/GET \/v1\/lines$/)).toHaveLength(2));
+    await vi.waitFor(() => expect((app as unknown as { refreshing: number }).refreshing).toBe(0));
+    expect(app.workspaceId).toBe(empty.id);
+    expect(app.selectedKey).toBeNull();
+  });
+
+  it('selects the first item of the current workspace when it has no saved tabs', async () => {
+    await connect();
+    const ws = app.ws.workspaces.find((w) => app.membersOf(w.id).length && w.id !== app.workspaceId) ?? app.currentWorkspace!;
+    app.selectWorkspace(ws.id);
+    app.selectedKey = null;
+    await app.refresh();
+    expect(app.selectedKey).not.toBeNull();
+    expect(app.membersOf(ws.id).map((i) => i.key)).toContain(app.selectedKey);
+  });
+
+  it('selects the first member of the current group when nothing is selected', async () => {
+    await connect();
+    const last = app.items[app.items.length - 1].key;
+    const g = await app.api.createGroup({ name: 'solo', members: [last] });
+    await app.refresh();
+    app.selectWorkspace(`group:${g.id}`);
+    app.selectedKey = null;
+    await app.refresh();
+    expect(app.selectedKey).toBe(last);
+  });
+
+  it('selects the first item of every workspace in the status view', async () => {
+    await connect();
+    app.setSidebarMode('status');
+    app.selectedKey = null;
+    await app.refresh();
+    expect(app.selectedKey).toBe(app.groups.find((g) => g.items.length)?.items[0].key);
   });
 
   it('forgets the session on disconnect and remembers the choice', async () => {
@@ -532,6 +577,21 @@ describe('daemon events', () => {
     app.onEvent(event('review.failed', { title: 'Local diff' }));
     await vi.waitFor(() => expect(center.entries).toHaveLength(1));
     expect(center.entries[0].source).toBe('Local diff');
+  });
+
+  it('toasts why a queued pause was cancelled when the daemon refuses it', () => {
+    app.onEvent(event('line.hold_refused', { lineId: 'ln_01', failed: [{ name: 'noToolRunning', detail: 'a tool subprocess is running' }], error: null }));
+    expect(app.toast).toMatchObject({ text: t('chat.pauseRefused', { reason: 'a tool subprocess is running' }), kind: 'info' });
+    expect(app.toast?.text).toBe('Pause cancelled: a tool subprocess is running');
+  });
+
+  it('joins every failed check detail and falls back to the check name or the error', () => {
+    app.onEvent(event('line.hold_refused', { lineId: 'ln_01', failed: [{ name: 'noToolRunning', detail: 'a subagent is running' }, { name: 'notPinned' }], error: null }));
+    expect(app.toast?.text).toBe('Pause cancelled: a subagent is running, notPinned');
+    app.onEvent(event('line.hold_refused', { lineId: 'ln_01', failed: [], error: 'daemon busy' }));
+    expect(app.toast?.text).toBe('Pause cancelled: daemon busy');
+    app.onEvent(event('line.hold_refused', { lineId: 'ln_01' }));
+    expect(app.toast?.text).toBe('Pause cancelled');
   });
 
   it('notifies change listeners of session updates and unsubscribes', () => {
@@ -1078,6 +1138,17 @@ describe('sessions', () => {
     expect(m.calls).not.toContain('POST /v1/terms/tm_shell2/kill');
   });
 
+  it('starts a shell in the same folder when an ended terminal tab is reopened', async () => {
+    const { runShortcut } = await import('./keyboard');
+    const cwd = app.data.terms.find((x) => x.id === 'tm_shell1')!.cwd;
+    workspace.layout = openInFocused(EMPTY_LAYOUT, 'term:tm_shell1');
+    closeTabAt(0, 'term:tm_shell1');
+    await vi.waitFor(() => expect(app.data.terms.some((x) => x.id === 'tm_shell1')).toBe(false), { timeout: 5000 });
+    runShortcut({ id: 'reopenTab' });
+    await vi.waitFor(() => expect(m.calls).toContain('POST /v1/terms'), { timeout: 5000 });
+    expect((m.bodies['POST /v1/terms'].at(-1) as { cwd: string }).cwd).toBe(cwd);
+  });
+
   it('offers Hide tab and Close for a session tab, and only Close for a non-session tab', async () => {
     const { tabMenu } = await import('./tab-edits');
     const line = app.items.find((i) => i.lineId)!;
@@ -1210,16 +1281,24 @@ describe('toasts', () => {
     expect(center.entries[0]).toMatchObject({ kind: 'error', title: 'Disk full' });
   });
 
-  it('keeps a progress toast until it is replaced and clamps the fraction', () => {
+  it('keeps an unfinished progress toast until it is replaced and clamps the fraction', () => {
     vi.useFakeTimers();
     app.notify('x');
-    app.progress('Uploading', 1.5);
+    app.progress('Uploading', 0.5);
     vi.advanceTimersByTime(60_000);
-    expect(app.toast).toEqual({ text: 'Uploading', kind: 'info', progress: 1 });
+    expect(app.toast).toEqual({ text: 'Uploading', kind: 'info', progress: 0.5 });
     app.progress('Uploading', -1);
     expect(app.toast?.progress).toBe(0);
     app.progress('Waiting');
     expect(app.toast?.progress).toBeUndefined();
+  });
+
+  it('hides a finished progress toast when nothing replaces it', () => {
+    vi.useFakeTimers();
+    app.progress('Uploading', 1.5);
+    expect(app.toast).toEqual({ text: 'Uploading', kind: 'info', progress: 1 });
+    vi.advanceTimersByTime(1500);
+    expect(app.toast).toBeNull();
   });
 
   it('shows notices as toasts and records them', async () => {
