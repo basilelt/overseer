@@ -1,4 +1,4 @@
-import { FEEDBACK_TITLE, isFeedbackTerm } from './feedback';
+import { FEEDBACK_TITLE, isFeedbackTerm } from './feedback-watch';
 import { isEnded, sessionState, type SessionState } from './session-state';
 import type { LocalLine, Task, Term } from './types';
 
