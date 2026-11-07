@@ -200,11 +200,11 @@ and get updates there:
 
 1. With the Google account of your Android phone, join the
    [Overseer testers group](https://groups.google.com/g/overseer-testers) ("Join group").
-2. Open the [testing invitation](https://play.google.com/apps/testing/io.github.basilelt.overseer)
+2. Open the [testing invitation](https://play.google.com/apps/testing/io.github.basilelt.overseer.pro)
    with the same account and tap **Become a tester**. If it says the app is not available, the
    group join has not reached Play yet: wait a few minutes and reload.
 3. Install Overseer from the
-   [Play Store page](https://play.google.com/store/apps/details?id=io.github.basilelt.overseer)
+   [Play Store page](https://play.google.com/store/apps/details?id=io.github.basilelt.overseer.pro)
    (the link from the invitation page). Updates arrive through Play like any app.
 4. Stay in the group and keep the app installed: Play only opens the app to everyone after
    testers have used it for 14 days. Send feedback from the app (More > Send feedback) or on the
