@@ -35,4 +35,9 @@ describe('command palette views', () => {
     expect(views).toContain('Open the Git graph');
     expect(views).not.toContain('Review changes');
   });
+
+  it('lists Install skills and plugins under Actions only when connected', async () => {
+    expect(section(await rendered(true), 'Actions')).toContain('Install skills and plugins');
+    expect(await rendered(false)).not.toContain('Install skills and plugins');
+  });
 });

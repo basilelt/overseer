@@ -136,6 +136,10 @@ on a TCP port on the server.
   mode** pill stays in the title bar; **Exit demo** returns to your own hosts and settings, untouched.
 - **Notifications** when an agent needs input or finishes, from agent hooks Overseer can
   install for you.
+- **Skills and plugins in one click**: install RTK (trims shell output before the agent reads it),
+  Caveman (terse replies) or Ponytail (simplest code that works) for Claude Code, Codex, Gemini CLI,
+  opencode, Copilot CLI, Cursor Agent, Amp or Antigravity, from Settings → Agents or the command
+  palette. The install runs in a terminal you can watch.
 - **Usage and system monitor**: agent quotas, token usage, CPU and RAM in the title bar.
 - **Light and Dark palettes**: choose System, Light or Dark as the theme (System follows your OS live), then pick a palette for each mode: Default, Graphite or Solarized Soft for Dark, or make your own with color pickers, a live preview and a contrast warning. Find them in Settings → General → Appearance ([Graphite](app/docs/screenshots/graphite.png), [Solarized Soft](app/docs/screenshots/solarized.png)).
 - **Settings with search**: categories in a sidebar, and a search box that finds any setting by name or description, in your language or in English.
