@@ -93,8 +93,8 @@ export function termTheme(theme: 'light' | 'dark', colors: { bg?: string; text?:
   return { ...base, background: bg, foreground: fg, cursor: fg, cursorAccent: bg };
 }
 
-export function themeReport(theme: 'light' | 'dark', colors: { bg?: string; text?: string } = {}) {
-  const p = termTheme(theme, colors);
+export function themeReport(theme: 'light' | 'dark', colors: { bg?: string; text?: string } = {}, palette?: ColorPalette) {
+  const p = termTheme(theme, colors, palette);
   return { dark: theme === 'dark', fg: p.foreground, bg: p.background };
 }
 
