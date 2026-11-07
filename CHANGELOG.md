@@ -11,6 +11,8 @@
   symlink at the old path; existing worktrees and review clones stay where they are and keep working;
   the old shim becomes a link to the new one and agent hooks are rewritten to it. Server binaries on
   remote hosts stay in `~/.overseer/server`, so any app version can still upgrade any server.
+- **Worktrees on macOS** go to `~/Library/Developer/overseer/worktrees`, a path without spaces
+  that build tools accept; set `worktreeDir` in `config.json` to put them elsewhere.
 
 ### Sessions survive a server crash
 

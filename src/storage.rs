@@ -132,6 +132,21 @@ mod tests {
         assert_eq!(crate::load_config(&d).worktree_dir, Path::new("/srv/wt"));
     }
 
+    #[test]
+    fn the_default_daemon_keeps_macos_worktrees_out_of_application_support() {
+        let p = crate::platform_state_dir();
+        let wt = crate::default_worktree_dir(&p);
+        if cfg!(target_os = "macos") {
+            assert_eq!(
+                wt,
+                crate::home().join("Library/Developer/overseer/worktrees")
+            );
+            assert!(!wt.to_string_lossy().contains(' '));
+        } else {
+            assert_eq!(wt, p.join("worktrees"));
+        }
+    }
+
     #[cfg(unix)]
     #[test]
     fn migrate_moves_uploads_and_tasks_and_keeps_old_paths_readable() {

@@ -1472,7 +1472,7 @@ Every agent session or task started from the app runs in its own worktree by def
 offers "run in current checkout" per start).
 
 - **Store**: `<worktreeDir>/<repo-name>-<hash>/<dir>`; `worktreeDir` (`config.json`) defaults
-  to `<state dir>/worktrees` (outside every repository; `~/.overseer/worktrees` before 0.33); `<hash>` = 8 hex digits of the
+  to `<state dir>/worktrees`, `~/Library/Developer/overseer/worktrees` for the default macOS daemon (outside every repository; `~/.overseer/worktrees` before 0.33); `<hash>` = 8 hex digits of the
   FNV-1a 64 hash of the main worktree root path; `<dir>` = the branch with `/` turned into `-`.
 - **Branches**: `sb/<agent>/<slug>` for agent sessions (`<slug>` defaults to `MMDD-HHMM` of the
   start, UTC), `task/<number>-<slug>` for tasks, `sb/<slug>` for a worktree created without an

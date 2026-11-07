@@ -79,7 +79,7 @@ binaries on a remote host (14.4), a layout shared by every app and server versio
 | `remoteCommand` | `overseer` | The `overseer` to run on the other station over ssh. |
 | `yardUrl` | none | Board env links: `envRef` opens `<yardUrl>/envs/<envRef>`. |
 | `repos` | none | Normalised repo (`github.com/acme/live`, lowercase, no `.git`) to local clone path; used by `start` and `patch --local`. |
-| `worktreeDir` | `<state dir>/worktrees` | The worktree store: task and app sessions go to `<worktreeDir>/<repo>-<hash>/<branch>` (14.9); `start` and `patch --local` also create theirs under it. Was `~/.overseer/worktrees` before 0.33; worktrees created there keep working. |
+| `worktreeDir` | `<state dir>/worktrees` (macOS: `~/Library/Developer/overseer/worktrees`, a path without spaces for build tools) | The worktree store: task and app sessions go to `<worktreeDir>/<repo>-<hash>/<branch>` (14.9); `start` and `patch --local` also create theirs under it. Was `~/.overseer/worktrees` before 0.33; worktrees created there keep working. |
 | `discoverRoots` | those of `~/Documents/Github`, `~/src`, `~/code`, `~/projects`, `~/dev` that exist | Folders scanned three levels deep for git repositories (at daemon start, every 10 minutes, **Rescan folders** in the app); each one becomes a project with a workspace. `[]` turns discovery off. |
 | `worktreeFetch` | `true` | `git fetch origin <default branch>` (10 s timeout) before creating a worktree from the base. |
 | `worktreeStaleDays` | `14` | A clean, unused worktree without activity for longer is `stale` (cleanup suggested). |
@@ -1816,7 +1816,7 @@ current checkout" in the workspace `+` menu, or pick "Start in the current check
 opt out). One place, outside your repositories:
 
 ```
-<state dir>/worktrees/<repo-name>-<hash>/<branch with / as ->
+<worktreeDir>/<repo-name>-<hash>/<branch with / as ->
   sb-claude-1029-0930        branch sb/claude/1029-0930   (an agent session)
   task-7-fix-login           branch task/7-fix-login      (task #7)
 ```
