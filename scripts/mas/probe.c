@@ -614,6 +614,11 @@ int main(int argc, char **argv) {
   if (!strcmp(m, "suite") && argc > 5) return cmd_suite(argv[2], argv[3], argv[4], argv[5], argc > 6 ? argv[6] : NULL);
   if (!strcmp(m, "peer") && argc > 3) return cmd_peer(argv[2], argv[3]);
   if (getenv("PROBE_GIT")) GITBIN = getenv("PROBE_GIT");
+  if (getenv("PROBE_TOKFILE")) {
+    int a, b;
+    consume_all(getenv("PROBE_TOKFILE"), &a, &b);
+    result("info_tokens_consumed", "INFO", "%d/%d", a, b);
+  }
   if (!strcmp(m, "execs") && argc > 4) return cmd_execs(argv[2], argv[3], argv[4]);
   if (!strcmp(m, "ptyioctl")) return cmd_ptyioctl();
   if (!strcmp(m, "libproc")) return cmd_libproc();

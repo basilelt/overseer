@@ -136,6 +136,8 @@ realpath_of() {
 
 CLS_RW=com.apple.app-sandbox.read-write
 CLS_RO=com.apple.app-sandbox.read
+CLS_EX=com.apple.sandbox.executable
+CLS_PTY=com.apple.sandbox.pty
 
 install_agents() {
   mkdir -p "$OUT/agents"
@@ -163,6 +165,7 @@ try() {
   local g
   for g in "$@"; do
     "$OUT/grant" issue "$g" "$cls" >>"$CP/toks" 2>/dev/null
+    [ -n "${ALSO:-}" ] && "$OUT/grant" issue "$g" "$ALSO" >>"$CP/toks" 2>/dev/null
   done
   PATH=$NODEDIR:$PATH "$PROBE/Contents/MacOS/probe" grantexec "$name" "$CP/toks" - - 30 "$exe" --version 2>&1 | take >/dev/null
 }
@@ -186,6 +189,11 @@ exec_matrix() {
     try "exec_${label}_all_dirs_and_node_${c}" "$cls" "$exe" "$bindir" "$realdir" "$NODEDIR"
     try "exec_${label}_target_file_and_node_${c}" "$cls" "$exe" "$real" "$exe" "$NODEDIR/node"
   done
+  try "exec_${label}_x_file_link_exec_class" "$CLS_EX" "$exe" "$exe"
+  try "exec_${label}_x_file_target_exec_class" "$CLS_EX" "$exe" "$real"
+  try "exec_${label}_x_folders_exec_class" "$CLS_EX" "$exe" "$bindir" "$realdir" "$NODEDIR"
+  ALSO=$CLS_RW try "exec_${label}_x_folders_exec_plus_rw" "$CLS_EX" "$exe" "$bindir" "$realdir" "$NODEDIR"
+  ALSO=$CLS_RW try "exec_${label}_x_files_exec_plus_rw" "$CLS_EX" "$exe" "$exe" "$real"
   local nm
   nm=$(basename "$exe")
   cp "$real" "$CP/copy-runner-$nm" 2>/dev/null && chmod +x "$CP/copy-runner-$nm"
@@ -206,6 +214,7 @@ pipes() {
   local g
   for g in "$bindir" "$realdir" "$NODEDIR" "$GRANT"; do
     "$OUT/grant" issue "$g" "$CLS_RW" >>"$CP/toks" 2>/dev/null
+    "$OUT/grant" issue "$g" "$CLS_EX" >>"$CP/toks" 2>/dev/null
   done
   touch "$OUT/marker"
   sleep 1
@@ -237,6 +246,12 @@ agents() {
   NODEDIR=$(dirname "$(realpath_of "$(command -v node)")")
   rec info_node_dir INFO "$NODEDIR"
   "$PROBE/Contents/MacOS/probe" execs "$HOME" "$GITBIN" "$CP" >/dev/null 2>&1
+  : >"$CP/ptytoks"
+  "$OUT/grant" issue /dev "$CLS_PTY" >>"$CP/ptytoks" 2>/dev/null
+  "$OUT/grant" issue /dev/ptmx "$CLS_PTY" >>"$CP/ptytoks" 2>/dev/null
+  P=ptyext:
+  PROBE_TOKFILE="$CP/ptytoks" "$PROBE/Contents/MacOS/probe" ptyioctl 2>&1 | take >/dev/null
+  P=
   exec_matrix claude_native "$HOME/.local/bin/claude"
   exec_matrix claude_npm "$HOME/.npm-global/bin/claude"
   exec_matrix codex_npm "$HOME/.npm-global/bin/codex"
