@@ -25,6 +25,7 @@
   import { applyMods, NO_MODS, type Mods } from '../../mobile/accessory';
   import { attachRetryMs } from '../../conn';
   import { termLink, type TermLink } from '../../termlink';
+  import { replayGuard } from '../../termreplay';
   import { LONG_PRESS_MS, movedTooFar, pinchFontSize, touchDistance } from '../../mobile/gestures';
   import { canResize, fitTo, isAgentTerm, shouldReassert, sizedElsewhere } from '../../mobile/termsize';
   import { ui } from '../../mobile/ui.svelte';
@@ -160,6 +161,7 @@
     document.addEventListener('visibilitychange', onVisibility);
     const stopTouch = touchGestures();
     const modes = new ModeTracker();
+    const replay = replayGuard();
     const wheel = new WheelAccumulator();
 
     const send = (text: string) => {
@@ -316,8 +318,11 @@
             scrolledBack = false;
             unseen = false;
             modes.reset();
+            closed = false;
+            replay.begin();
           },
           data: (bytes) => {
+            replay.chunk();
             modes.feed(bytes);
             if (!term) return;
             writing = true;
@@ -347,6 +352,7 @@
           if (!scrolledBack) unseen = false;
         });
         const typed = (d: string) => {
+          if (!replay.allow(d)) return;
           if (!writing) toBottom();
           if (mods.ctrl === 'off' && mods.alt === 'off') return void io?.write(d);
           const p = applyMods(d, mods);
@@ -416,6 +422,7 @@
       stopIme?.();
       stopShown?.();
       link?.dispose();
+      replay.dispose();
       link = null;
       io = null;
       term?.dispose();
@@ -565,7 +572,12 @@
   }
 
   $effect(() => {
-    if (app.conn.phase === 'connected') untrack(() => link?.resume());
+    const connected = app.conn.phase === 'connected';
+    const alive = !!info && !info.exited;
+    untrack(() => {
+      if (connected) link?.resume();
+      if (alive) link?.revive();
+    });
   });
 
   $effect(() => {

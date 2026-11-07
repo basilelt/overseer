@@ -157,6 +157,39 @@ describe('termLink', () => {
     expect(h.conns).toHaveLength(1);
   });
 
+  it('revives an ended link when the terminal comes back alive under the same id', async () => {
+    const h = harness(null);
+    const done = h.link.attach();
+    h.opens[0].resolve();
+    await done;
+    h.conns[0].close();
+    expect(h.ended).toBe(1);
+    h.link.revive();
+    expect(h.conns).toHaveLength(2);
+    h.opens[1].resolve();
+    await flush();
+    expect(h.ups).toEqual([h.conns[0].io, h.conns[1].io]);
+  });
+
+  it('does not revive a live, stalled or disposed link', async () => {
+    const h = harness(null);
+    const done = h.link.attach();
+    h.link.revive();
+    h.opens[0].resolve();
+    await done;
+    h.link.revive();
+    expect(h.conns).toHaveLength(1);
+    h.link.dispose();
+    h.link.revive();
+    expect(h.conns).toHaveLength(1);
+    const s = harness(null);
+    const failed = s.link.attach();
+    s.opens[0].reject('x');
+    await failed;
+    s.link.revive();
+    expect(s.conns).toHaveLength(1);
+  });
+
   it('does not resume after dispose', async () => {
     const h = harness(null);
     const done = h.link.attach();
