@@ -309,13 +309,15 @@ Inputs:
 
 - `tag`: the release to ship, default the latest `vX.Y.Z` tag on `main`. The run fails unless it
   was started from `main` and the tag is an ancestor of `main`.
+- `release_notes`: the App Store "What's New" text of the version, required for every update
+  (default "Bug fixes and improvements.").
 - `ios`, `android`: which stores to ship to (both by default).
-- `track`: the Play track, `internal`, `alpha`, `beta` or `production` (default `production`).
+- `track`: the Play track, `internal`, `alpha`, `beta` or `production` (default `alpha`).
 
 Both jobs check out the tag and stamp its version with `scripts/set-version.sh`. `ios` builds the
 IPA and submits it for App Store review with `automatic_release: false`: after approval, release it
 by hand in App Store Connect. The listing (description, screenshots, privacy) lives in App Store
-Connect and is not uploaded. The same build is available to the internal TestFlight testers.
+Connect and is not uploaded; only the version's "What's New" text is sent. The same build is available to the internal TestFlight testers.
 `android` builds the Play App Bundle with `OVERSEER_DISTRIBUTION=play` (no in-app updater), checks
 it with `scripts/android-aab.sh` and `scripts/android-16k.sh`, and uploads it with
 `r0adkll/upload-google-play` to the chosen track (`alpha` is closed testing), status `completed`. One-time setup for both is
