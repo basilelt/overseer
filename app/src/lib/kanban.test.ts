@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { autoSummary, blockers, byId, chainOf, depCandidates, startable, flagPatch, isOrganizer, matrix, mergeMessage, organizing, quadrant, quadrantFlags, canDrop, cardMeta, modelLabel, moveAction, cardStatus, columns, dropTarget, edgeSpeed, insertIndex, isSession, movableStatuses, moveTask, taskForItem, nextUp, rankAt, relTime, revertTask, shiftStatus, sortColumn, shownCount, grown, insertBefore, CARD_PAGE } from './kanban';
+import { autoSummary, blockers, byId, chainOf, depCandidates, startable, flagPatch, isOrganizer, matrix, mergeMessage, organizing, quadrant, quadrantFlags, canDrop, cardMeta, modelLabel, moveAction, cardStatus, columns, dropTarget, edgeSpeed, insertIndex, isSession, movableStatuses, moveTask, taskForItem, nextUp, rankAt, relTime, revertTask, shiftStatus, sortColumn, shownCount, grown, insertBefore, CARD_PAGE, newTaskId } from './kanban';
 import type { Task, TaskMessage } from './types';
 
 let n = 0;
@@ -417,6 +417,33 @@ describe('card windowing', () => {
     expect(grown(undefined, 300)).toBe(CARD_PAGE * 3);
     expect(grown(CARD_PAGE * 3, 300)).toBe(CARD_PAGE * 5);
     expect(grown(290, 300)).toBe(300);
+  });
+});
+
+describe('newTaskId', () => {
+  const list = ['a', 'b', 'c'].map((id) => task({ id }));
+
+  it('ignores the first load', () => {
+    expect(newTaskId(null, list)).toBeNull();
+  });
+
+  it('returns nothing when no task appeared', () => {
+    expect(newTaskId(new Set(['a', 'b', 'c']), list)).toBeNull();
+  });
+
+  it('returns the task that appeared', () => {
+    expect(newTaskId(new Set(['a', 'b']), list)).toBe('c');
+  });
+
+  it('returns the last one when several appeared', () => {
+    expect(newTaskId(new Set(['a']), list)).toBe('c');
+  });
+
+  it('puts a task created behind a full page inside the window', () => {
+    const many = Array.from({ length: CARD_PAGE + 3 }, (_, i) => task({ id: `n${i}` }));
+    const added = newTaskId(new Set(many.slice(0, -1).map((x) => x.id)), many)!;
+    const at = many.findIndex((x) => x.id === added);
+    expect(shownCount(undefined, many.length, at)).toBe(many.length);
   });
 });
 

@@ -265,6 +265,13 @@ export function grown(limit: number | undefined, total: number): number {
   return Math.min(total, (limit ?? CARD_PAGE) + CARD_PAGE * 2);
 }
 
+export function newTaskId(prev: ReadonlySet<string> | null, tasks: readonly { id: string }[]): string | null {
+  if (!prev) return null;
+  let found: string | null = null;
+  for (const t of tasks) if (!prev.has(t.id)) found = t.id;
+  return found;
+}
+
 export function insertBefore(column: Task[], movingId: string | null, index: number): string | null {
   let i = 0;
   for (const t of column) {
