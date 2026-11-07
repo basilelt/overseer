@@ -1631,7 +1631,7 @@ export const en = {
   'tour.switchboard.phone': 'Coming from Switchboard? Open More, then Settings, Help, to import its sessions, tasks, workspaces and settings.',
   'tour.clickCursor.title': 'Click to move the cursor',
   'tour.clickCursor.body': 'Click in the line you are typing, in a shell or in Claude Code, Codex and other agents, and the cursor jumps there, like in a text editor. Drag still selects text; full-screen programs that use the mouse keep it.',
-  'tour.clickCursor.phone': 'On a computer, clicking in the line you are typing in a terminal moves the cursor there.',
+  'tour.clickCursor.phone': 'A desktop tip: with a mouse, clicking in the line you are typing in a terminal moves the cursor there.',
   'tour.settings.title': 'Settings, searchable',
   'tour.settings.body': 'Settings are grouped in a sidebar: General, Terminal, Agents, Notifications, Connection, Updates and Help. Type in the search box to find any setting by name.',
   'tour.settings.phone': 'Open More, then Settings. The categories are a list, with a search box on top to find any setting by name.',
