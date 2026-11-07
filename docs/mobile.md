@@ -143,8 +143,10 @@ version reaches them after Beta App Review; later builds of the same version usu
     it: no Rust module, no Kotlin plugin, no web view code, no `REQUEST_INSTALL_PACKAGES`). It
     checks the bundle's signature, manifest, dex and alignment (`scripts/android-aab.sh`,
     `scripts/android-16k.sh`), then uploads it with `r0adkll/upload-google-play` to the chosen
-    track (`production`, `beta`, `alpha` for closed testing, or `internal`), status `completed`,
-    with the `PLAY_SERVICE_ACCOUNT_JSON` service account.
+    track (`alpha`, closed testing, by default; or `production`, `beta`, `internal`), status
+    `draft` until the app has passed its first review (the API refuses other statuses for an app
+    that was never published; the draft is then sent for review from the Console), with the
+    `PLAY_SERVICE_ACCOUNT_JSON` service account.
   - Both fail when their secrets are missing: they only run when asked.
 - Versions: Android `versionName` is the release version and `versionCode` is
   `major * 1000000 + minor * 1000 + patch` (Tauri's default), so every release upgrades the
@@ -204,8 +206,8 @@ Needs a Google Play developer account and the Android release key above.
    back to the release key. The release key is the upload key: `ANDROID_KEYSTORE_*` sign the AAB
    and Play re-signs it.
 3. First upload by hand: the Play Developer API refuses uploads for an app that has none. Done
-   for Overseer (0.27.1, `versionCode` 27001, on the closed testing track `alpha`); a new app
-   needs it again. Build the AAB locally with `OVERSEER_DISTRIBUTION=play pnpm --dir app tauri
+   for the former free app `io.github.basilelt.overseer` (0.27.1, `versionCode` 27001); the
+   `.pro` app needs it again. Build the AAB locally with `OVERSEER_DISTRIBUTION=play pnpm --dir app tauri
    android build --aab --target aarch64 --target armv7` and the release keystore
    (`ANDROID_KEYSTORE_PATH`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`,
    `ANDROID_KEY_PASSWORD`), and upload it to a testing track in the Console.

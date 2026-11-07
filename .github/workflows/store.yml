@@ -11,7 +11,7 @@ on:
         description: Play Store track
         type: choice
         options: [production, beta, alpha, internal]
-        default: production
+        default: alpha
       ios:
         description: Submit iOS to App Store review
         type: boolean
@@ -245,7 +245,8 @@ jobs:
           packageName: io.github.basilelt.overseer.pro
           releaseFiles: play/*.aab
           track: ${{ inputs.track }}
-          status: completed
+          # TODO: switch to completed once io.github.basilelt.overseer.pro has passed its first Play review; the API only accepts draft releases before that
+          status: draft
 
       - if: always()
         run: rm -f "$RUNNER_TEMP/release.jks"
