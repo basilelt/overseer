@@ -58,7 +58,7 @@
     text = drafts.get(id) ?? '';
     back = { index: -1, draft: '' };
     custom = null;
-    sender.reset();
+    sender.reset(id);
   });
 
   $effect(() => {

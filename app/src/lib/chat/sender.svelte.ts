@@ -9,16 +9,19 @@ export class ChatSender {
   sending = $state(false);
   asking = $state(false);
   queued = $state(false);
+  private line = '';
 
   constructor(private broadcast: (req: BroadcastRequest) => Promise<BroadcastResponse>) {}
 
-  reset() {
+  reset(lineId: string) {
+    this.line = lineId;
     this.asking = false;
     this.queued = false;
   }
 
   async send(text: string, lineId: string, local: LineLocal | undefined, mode: SendMode): Promise<SendOutcome> {
     if (this.sending) return { kind: 'none' };
+    this.line = lineId;
     if (mode === 'idle' && startMode(local) === 'ask' && !this.asking) {
       if (!text.trim()) return { kind: 'none' };
       this.asking = true;
@@ -29,13 +32,16 @@ export class ChatSender {
     this.sending = true;
     try {
       const out = sendResult((await this.broadcast(req)).results);
+      const here = this.line === lineId;
       if (out.kind === 'busy') {
-        this.asking = true;
+        if (here) this.asking = true;
         return { kind: 'busy' };
       }
       if (out.kind === 'failed') return out;
-      this.queued = out.kind === 'queued';
-      this.asking = false;
+      if (here) {
+        this.queued = out.kind === 'queued';
+        this.asking = false;
+      }
       return { kind: out.kind, text };
     } catch (e) {
       return { kind: 'failed', reason: message(e) };

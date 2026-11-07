@@ -92,8 +92,45 @@ describe('chat sender', () => {
     expect(await send('later', 'queue')).toEqual({ kind: 'queued', text: 'later' });
     expect(sender.queued).toBe(true);
     await send('again');
-    sender.reset();
+    sender.reset('other');
     expect(sender.asking).toBe(false);
     expect(sender.queued).toBe(false);
+  });
+  const held = () => {
+    let release!: (r: BroadcastResponse) => void;
+    const s = new ChatSender(() => new Promise<BroadcastResponse>((r) => (release = r)));
+    return { s, reply: (result: 'sent' | 'queued' | 'skipped') => release({ id: 'b', results: [{ target: 'line:a', result }] }) };
+  };
+
+  it('does not show the queued note on the line the user switched to while queueing', async () => {
+    const { s, reply } = held();
+    s.reset('a');
+    const out = s.send('later', 'a', undefined, 'queue');
+    s.reset('b');
+    reply('queued');
+    expect(await out).toEqual({ kind: 'queued', text: 'later' });
+    expect(s.queued).toBe(false);
+    expect(s.asking).toBe(false);
+  });
+
+  it('does not raise the busy prompt on the line the user switched to', async () => {
+    const { s, reply } = held();
+    s.reset('a');
+    const out = s.send('hi', 'a', undefined, 'idle');
+    s.reset('b');
+    reply('skipped');
+    expect(await out).toEqual({ kind: 'busy' });
+    expect(s.asking).toBe(false);
+  });
+
+  it('keeps the prompt of the line it now shows when an earlier send lands', async () => {
+    const { s, reply } = held();
+    s.reset('a');
+    const out = s.send('hi', 'a', undefined, 'now');
+    s.reset('b');
+    s.asking = true;
+    reply('sent');
+    expect(await out).toEqual({ kind: 'sent', text: 'hi' });
+    expect(s.asking).toBe(true);
   });
 });
