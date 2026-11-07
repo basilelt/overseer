@@ -191,6 +191,7 @@ export const en = {
   'chat.held': 'Session stopped',
   'chat.paused': 'Session paused',
   'chat.pauseCancelled': 'Pause cancelled',
+  'chat.pauseRefused': 'Pause cancelled: {reason}',
   'session.state.running': 'Running',
   'session.state.attention': 'Requires attention',
   'session.state.open': 'Open',

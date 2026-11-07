@@ -669,6 +669,12 @@ pub fn quit_signal() -> std::io::Result<impl std::future::Future<Output = &'stat
 }
 
 #[cfg(all(unix, desktop))]
+fn end_on_signal(name: &str) {
+    info("session", format!("received {name}, quitting"));
+    session_end();
+}
+
+#[cfg(all(unix, desktop))]
 pub fn quit_on_signals(app: AppHandle) {
     tauri::async_runtime::spawn(async move {
         let quit = match quit_signal() {
@@ -676,7 +682,7 @@ pub fn quit_on_signals(app: AppHandle) {
             Err(e) => return warn("session", format!("signal handlers not installed: {e}")),
         };
         let name = quit.await;
-        info("session", format!("received {name}, quitting"));
+        end_on_signal(name);
         app.exit(0);
         tokio::time::sleep(Duration::from_secs(5)).await;
         warn(
@@ -1182,6 +1188,24 @@ mod tests {
         assert!(sent.success());
         let got = tokio::time::timeout(Duration::from_secs(5), quit).await;
         assert_eq!(got.ok(), Some("SIGTERM"));
+    }
+
+    #[cfg(all(unix, desktop))]
+    #[test]
+    fn a_graceful_signal_records_a_clean_exit() {
+        let d = tmp("sigterm-clean");
+        let path = d.join(SENTINEL);
+        let sentinel = Sentinel {
+            pid: std::process::id(),
+            state: "active".into(),
+            ..Default::default()
+        };
+        write_atomic(&path, sentinel.render().as_bytes()).unwrap();
+        *lock(&SESSION) = Some((path.clone(), sentinel));
+        end_on_signal("SIGTERM");
+        assert!(!path.exists());
+        assert!(lock(&SESSION).is_none());
+        let _ = fs::remove_dir_all(&d);
     }
 
     #[test]

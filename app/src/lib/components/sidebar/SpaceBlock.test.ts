@@ -137,3 +137,13 @@ describe('SpaceBlock', () => {
     expect(html([item('1', 'open')], { open: true })).toContain('aria-label="Collapse webshop"');
   });
 });
+
+describe('SpaceBlock multi-select', () => {
+  it('hands the multi selection to every session row, live and closed', async () => {
+    // Given the component source
+    // When the rows are read
+    // Then both SessionRow uses get multi from the set
+    const src = (await import('./SpaceBlock.svelte?raw')).default;
+    expect(src.match(/multi=\{multi\?\.has\(it\.key\)\}/g)).toHaveLength(2);
+  });
+});

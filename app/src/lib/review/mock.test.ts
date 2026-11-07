@@ -62,6 +62,19 @@ describe('mock review daemon', () => {
     await expect(reviewApi(d).related({ lineId: 'ln_03' })).resolves.toBeTruthy();
   });
 
+  it('gives every demo review task a non-empty diff', async () => {
+    const d = new MockDaemon({ live: false });
+    const api = reviewApi(d);
+    const tasks = await d.request<{ id: string; number: number; status: string; lineId?: string | null; worktreePath?: string; branch?: string | null }[]>('GET', '/v1/tasks');
+    const reviewable = tasks.filter((t) => (t.status === 'in_testing' || t.status === 'in_progress') && (t.lineId || t.worktreePath) && t.branch !== 'main');
+    expect(reviewable.length).toBeGreaterThanOrEqual(4);
+    for (const t of reviewable) {
+      const diff = await api.diff({ taskId: t.id });
+      expect(diff.files.length, `#${t.number}`).toBeGreaterThan(0);
+      expect(diff.commits?.length, `#${t.number}`).toBeGreaterThan(0);
+    }
+  });
+
   it('serves the diff, threads in every status and a submit that gets delivered', async () => {
     const d = new MockDaemon({ live: false });
     const events: DaemonEvent[] = [];
