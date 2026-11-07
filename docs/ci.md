@@ -157,9 +157,9 @@ its `changes` job runs, a few seconds on `ubuntu-slim`. Pushes by `github-action
 | release | `servers` | `ubuntu-24.04` | `make dist-cross`: daemon for Linux musl x86_64/aarch64 and Windows x86_64 (MSVC), `overseer-api` Linux musl x86_64 |
 | release | `servers-macos` | `macos-26` | `make dist-darwin`: daemon for macOS x86_64/aarch64, built natively so it links FSEvents (CoreServices needs the Apple SDK) |
 | release | `app-linux` | `ubuntu-22.04`, `ubuntu-22.04-arm` | `.deb`, `.AppImage`, `.rpm` for x86_64 and aarch64, each built natively on the oldest supported Ubuntu so they run on glibc 2.35; `scripts/ci-glibc.sh` fails the job if any bundled ELF needs a newer glibc. GitHub retires these runners on 2027-04-17 (actions/runner-images#14254): move the build into a `ubuntu:22.04` container on `ubuntu-24.04` before then |
-| release | `app-windows` | `ubuntu-24.04` | NSIS installer `*_x64-setup.exe`, cross-built with `cargo-xwin` |
+| release | `app-windows` | `ubuntu-24.04` | NSIS installer `*_x64-setup.exe` with the x64 `overseer.exe` daemon, cross-built with `cargo-xwin` |
 | release | `app-windows-msix` | `windows-latest` | `Overseer_<v>_x64.msix` from the `app-windows` executable (`scripts/msix.sh`); skipped without the MSIX secrets |
-| release | `app-windows-arm` | `windows-11-arm` | NSIS installer `*_arm64-setup.exe` and `Overseer_<v>_arm64.msix`, built natively |
+| release | `app-windows-arm` | `windows-11-arm` | arm64 daemon `overseer-<v>-aarch64-pc-windows-msvc.exe` (artifact `servers-windows-arm`), NSIS installer `*_arm64-setup.exe` and `Overseer_<v>_arm64.msix` bundling it, built natively |
 | release | `app-macos` | `macos-26` | `.dmg` for Apple Silicon (`aarch64-apple-darwin`) and Intel (`x86_64-apple-darwin`, cross-built) |
 | release | `app-android` | `ubuntu-24.04` | signed universal APK (arm64-v8a, armeabi-v7a) `Overseer_<v>_android.apk` + `.sha256`, for Obtainium and the GitHub Release (the publish job adds a copy named `Overseer_android.apk` for the README's fixed `releases/latest/download/` link); skipped without the keystore secrets |
 | release | `publish` | `ubuntu-slim` | GitHub Release with generated release notes, every artifact and `SHA256SUMS`, then the updater manifest `latest.json` when the updater key is set |
@@ -169,7 +169,12 @@ its `changes` job runs, a few seconds on `ubuntu-slim`. Pushes by `github-action
 
 The app jobs get the server binaries from the `servers*` artifacts and copy them into
 `app/src-tauri/resources/server/<os>-<arch>/overseer` (`scripts/app-resources.sh`, also `make app-resources`), so every app
-bundle can install the daemon on Linux and macOS hosts in remote mode.
+bundle can install the daemon on Linux and macOS hosts in remote mode. The Windows jobs pass their
+target triple too (`scripts/app-resources.sh <v> x86_64-pc-windows-msvc`), which adds
+`server/windows-<arch>/overseer.exe` and fails when that daemon is missing, so a Windows install
+runs standalone in local mode. A running daemon locks its `.exe`, so the NSIS installer renames it
+to `overseer.exe.old` before copying the new one (`app/src-tauri/windows-hooks.nsh`); the app then
+offers the daemon upgrade as on the other platforms.
 
 The x64 Windows installer stays cross-built on Linux: `servers` needs `cargo-xwin` on Linux anyway
 for `overseer.exe` (`make dist-cross`). The arm64 installer builds natively on `windows-11-arm`
@@ -552,8 +557,8 @@ of this.
 - **Windows app**: NSIS only. MSI needs WiX, which runs on Windows only. WebView2 is installed by
   the default bootstrapper when missing (built into Windows 11). The NSIS installer is unsigned
   (SmartScreen warning).
-- **Windows daemon**: `overseer.exe` is attached to the release; the app does not bundle it, so
-  local mode on Windows needs `overseer.exe` on the `PATH` or in the app folder.
+- **Windows daemon**: the NSIS installers and the MSIX packages bundle the `overseer.exe` of their
+  arch under `server/windows-<arch>/`; both daemons are also attached to the release.
 - No Windows tests run, only the native clippy check; macOS runs the `procs`, `ports` and
   `review::watch` tests. Linux runs the full suite.
 - Fallback if `cargo-xwin` breaks: build `overseer.exe` natively on `windows-latest`, or
