@@ -20,7 +20,7 @@
 <style>
   .toast {
     position: fixed;
-    bottom: 16px;
+    bottom: calc(16px + var(--composer-h, 0px));
     left: 50%;
     transform: translateX(-50%);
     background: var(--surface);
