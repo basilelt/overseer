@@ -19,7 +19,8 @@
   import type { CustomCommand, LineLocal, UploadResult } from '../../types';
   import { basename, insertText, planDrop, planPaste, PROGRESS_FROM, uploadedPath, type Refusal } from '../../uploads';
   import { requirePath, savePasted } from '../../task-attachments';
-  import { applySlash, commandsFor, enterAction, lineCount, sendRequest, sendResult, slashMatches, slashQuery, startMode, type SendMode, type SlashCommand } from '../../chat/composer';
+  import { applySlash, commandsFor, enterAction, lineCount, slashMatches, slashQuery, type SendMode, type SlashCommand } from '../../chat/composer';
+  import { ChatSender } from '../../chat/sender.svelte';
 
   let { lineId, agent, local, phone, history = [], onsent }: { lineId: string; agent: string; local: LineLocal | undefined; phone: boolean; history?: string[]; onsent?: (text: string) => void } = $props();
   let back: Recall = { index: -1, draft: '' };
@@ -28,9 +29,7 @@
   let root = $state<HTMLDivElement>();
   let picker = $state<HTMLInputElement>();
   let text = $state('');
-  let sending = $state(false);
-  let asking = $state<string | null>(null);
-  let queued = $state(false);
+  const sender = new ChatSender((req) => app.api.broadcast(req));
   let dropping = $state(false);
   let caret = $state(0);
   let custom = $state<CustomCommand[] | null>(null);
@@ -59,8 +58,7 @@
     text = drafts.get(id) ?? '';
     back = { index: -1, draft: '' };
     custom = null;
-    asking = null;
-    queued = false;
+    sender.reset();
   });
 
   $effect(() => {
@@ -120,33 +118,16 @@
   }
 
   async function send(mode: SendMode) {
-    if (sending) return;
-    const body = asking ?? text;
-    if (mode === 'idle' && startMode(local) === 'ask' && !asking) {
-      if (body.trim()) asking = body;
-      return;
-    }
-    const req = sendRequest(body, lineId, mode);
-    if (!req) return;
-    sending = true;
-    try {
-      const out = sendResult((await app.api.broadcast(req)).results);
-      if (out.kind === 'busy') {
-        asking = body;
-        return;
-      }
-      if (out.kind === 'failed') return app.notify(t('mobile.compose.failed', { reason: out.reason }), 'error');
-      queued = out.kind === 'queued';
-      if (!queued) onsent?.(body);
-      asking = null;
-      text = '';
-      back = { index: -1, draft: '' };
-      drafts.delete(lineId);
-    } catch (e) {
-      app.notify(t('mobile.compose.failed', { reason: message(e) }), 'error');
-    } finally {
-      sending = false;
-    }
+    const id = lineId;
+    const out = await sender.send(text, id, local, mode);
+    if (out.kind === 'failed') return app.notify(t('mobile.compose.failed', { reason: out.reason }), 'error');
+    if (out.kind !== 'sent' && out.kind !== 'queued') return;
+    if (out.kind === 'sent') onsent?.(out.text);
+    if (id !== lineId) return drafts.delete(id);
+    if (text !== out.text) return;
+    text = '';
+    back = { index: -1, draft: '' };
+    drafts.delete(id);
   }
 
   function choose(c: SlashCommand) {
@@ -260,7 +241,7 @@
   onMount(() => {
     const offQueue = app.onBroadcast((d) => {
       if (d.target !== `line:${lineId}`) return;
-      queued = false;
+      sender.queued = false;
       if (d.result !== 'sent') app.notify(t('mobile.compose.failed', { reason: d.reason ?? d.result }), 'error');
     });
     const offDrop = dropZone({
@@ -293,16 +274,16 @@
       {/each}
     </div>
   {/if}
-  {#if asking !== null}
+  {#if sender.asking}
     <div class="ask">
       <span class="faint">{t(local?.needsInput ? 'chat.waitingChoice' : 'chat.busyChoice')}</span>
       <div class="ab">
-        <button class="btn primary" disabled={sending} onclick={() => send('queue')}>{t('chat.queue')}</button>
-        <button class="btn" disabled={sending} onclick={() => send('now')}>{t('mobile.compose.now')}</button>
-        <button class="icon-btn" aria-label={t('common.cancel')} onclick={() => (asking = null)}><X size={14} /></button>
+        <button class="btn primary" disabled={sender.sending} onclick={() => send('queue')}>{t('chat.queue')}</button>
+        <button class="btn" disabled={sender.sending} onclick={() => send('now')}>{t('mobile.compose.now')}</button>
+        <button class="icon-btn" aria-label={t('common.cancel')} onclick={() => (sender.asking = false)}><X size={14} /></button>
       </div>
     </div>
-  {:else if queued}
+  {:else if sender.queued}
     <div class="ask"><span class="faint">{t('mobile.compose.queued')}</span></div>
   {/if}
   <div class="row" class:shell={text.startsWith('!')}>
@@ -316,13 +297,13 @@
       {oninput}
       onclick={oninput}
       {onpaste}
-      disabled={sending}
+      disabled={sender.sending}
       spellcheck="true"
     ></textarea>
     {#if dictation}
-      <button class="icon-btn mic" title={t('dictation.start')} aria-label={t('dictation.start')} disabled={sending} onpointerdown={(e) => e.preventDefault()} onclick={dictate}><Mic size={16} /></button>
+      <button class="icon-btn mic" title={t('dictation.start')} aria-label={t('dictation.start')} disabled={sender.sending} onpointerdown={(e) => e.preventDefault()} onclick={dictate}><Mic size={16} /></button>
     {/if}
-    <button class="send" title={t('chat.send')} aria-label={t('chat.send')} disabled={sending || !text.trim()} onclick={() => send('idle')}><SendHorizontal size={16} /></button>
+    <button class="send" title={t('chat.send')} aria-label={t('chat.send')} disabled={sender.sending || !text.trim()} onclick={() => send('idle')}><SendHorizontal size={16} /></button>
   </div>
   <input class="picker" type="file" multiple bind:this={picker} onchange={picked} />
 </div>
