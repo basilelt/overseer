@@ -8,7 +8,7 @@ const view = (state: LocalLine['line']['state'], local: LocalLine['local']) =>
   sessionState({ line: { id: 'l1', agent: 'claude', state, lastActivityAt: '' }, local } as LocalLine);
 
 const html = (v: ReturnType<typeof view>, extra: Record<string, unknown> = {}) =>
-  render(SessionBar, { props: { view: v, acting: null, confirmClose: false, onact: () => {}, ...extra } }).body.replace(/<!--[\s\S]*?-->/g, '');
+  render(SessionBar, { props: { view: v, acting: null, confirmClose: false, onact: () => {}, ...extra } }).body.replace(/<!--[\s\S]*?--!?>/g, '');
 
 const button = (h: string, action: string) => h.match(new RegExp(`<button[^>]*data-action="${action}"[^>]*>`))?.[0];
 
