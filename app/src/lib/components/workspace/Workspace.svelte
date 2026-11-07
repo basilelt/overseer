@@ -10,7 +10,7 @@
   import type { Workspace } from '../../types';
   import { aggregate, resolveTab, workspaceTabs } from '../../workspaces';
   import { rememberTerms } from '../../tabs';
-  import { reconcileLayout, restoreLayout, savedActive } from '../../layout-sync';
+  import { arrangePanes, layoutShape, reconcileLayout, restoreLayout, savedActive } from '../../layout-sync';
   import PaneView from './PaneView.svelte';
 
   let root: HTMLDivElement;
@@ -33,13 +33,14 @@
   const localOnly = (key: string) => key === '#status' || key === '#other' || key.startsWith('group:');
   const savedTabs = (key: string, ws: Workspace | null) => (localOnly(key) ? (loadKnown(host(), key)?.tabs ?? []) : (ws?.tabs ?? []));
 
-  const signature = (key: string, tabs: string[], active: string | null | undefined) => `${localOnly(key) ? tabs.join('\n') : ''}\0${active ?? ''}`;
+  const signature = (key: string, tabs: string[], active: string | null | undefined, shape = '') => `${localOnly(key) ? tabs.join('\n') : ''}\0${active ?? ''}\0${shape}`;
 
   function store(key: string, known: Set<string>) {
     const tabs = localOnly(key) ? allTabs(workspace.layout) : undefined;
     const active = activeKey(workspace.layout);
-    localTabs.set(`${host()}|${key}`, signature(key, tabs ?? [], active));
-    saveKnown(host(), key, { known: [...known], tabs, active });
+    const shape = layoutShape(workspace.layout);
+    localTabs.set(`${host()}|${key}`, signature(key, tabs ?? [], active, JSON.stringify(shape ?? null)));
+    saveKnown(host(), key, { known: [...known], tabs, active, shape });
   }
 
   function build(key: string, ws: Workspace | null, mem: SidebarItem[], items: SidebarItem[], ready: boolean): Layout {
@@ -52,7 +53,7 @@
     const tabs = workspaceTabs(saved, mem, items, knownBy.get(id));
     const rec = loadKnown(host(), key);
     const want = rec?.active ? resolveTab(rec.active, items) : null;
-    return layoutFromTabs(tabs, want && tabs.includes(want) ? want : (aggregate(mem).statusKey ?? null));
+    return arrangePanes(layoutFromTabs(tabs, want && tabs.includes(want) ? want : (aggregate(mem).statusKey ?? null)), rec, items);
   }
 
   $effect(() => {
@@ -111,6 +112,7 @@
   $effect(() => {
     const tabs = allTabs(workspace.layout);
     const active = activeKey(workspace.layout);
+    const shape = JSON.stringify(layoutShape(workspace.layout) ?? null);
     const key = layoutKey;
     if (current !== key || stale.has(key)) return;
     untrack(() => {
@@ -118,9 +120,9 @@
       const known = knownBy.get(id) ?? (key === '#status' ? new Set<string>() : undefined);
       if (!localTabs.has(id)) {
         const rec = loadKnown(host(), key);
-        localTabs.set(id, signature(key, rec?.tabs ?? [], rec?.active));
+        localTabs.set(id, signature(key, rec?.tabs ?? [], rec?.active, JSON.stringify(rec?.shape ?? null)));
       }
-      if (known && localTabs.get(id) !== signature(key, tabs, active)) store(key, known);
+      if (known && localTabs.get(id) !== signature(key, tabs, active, shape)) store(key, known);
     });
   });
 
