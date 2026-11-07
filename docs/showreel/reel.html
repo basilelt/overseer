@@ -22,10 +22,11 @@ body.render .bar{display:none}
 </head>
 <body>
 <canvas id="c" width="1920" height="1080" role="img" aria-label="Overseer showreel, rendered live"></canvas>
-<div class="bar"><button id="pp" type="button">Pause</button><input id="sk" type="range" min="0" max="899" value="0" aria-label="Seek"><span id="tc">0.00 s</span><a href="./">Video</a></div>
+<div class="bar"><button id="pp" type="button">Pause</button><input id="sk" type="range" min="0" max="899" value="0" aria-label="Seek"><span id="tc">0.00 s</span><a id="alt" href="reel.html?d=30">30 s cut</a><a href="./">Video</a></div>
 <script>
 'use strict';
-const W = 1920, H = 1080, FPS = 60, DUR = 15, BEAT = 60 / 128, SHUTTER = 0.85, TAU = Math.PI * 2;
+const Q = new URLSearchParams(location.search), RENDER = Q.has('render');
+const W = 1920, H = 1080, FPS = 60, DUR = Q.get('d') === '30' ? 30 : 15, K = 15 / DUR, BEAT = 60 / 128, SHUTTER = 0.85, TAU = Math.PI * 2;
 const ENTER = 2 * BEAT, DROP = 4 * BEAT, IRIS = DROP - 0.1, RIP = 15 * BEAT, FIN = 27 * BEAT;
 const C = { bg: '#0b0b0c', bg2: '#111113', surf: '#141416', surf2: '#1b1b1e', line: '#232327', line2: '#2f2f34', ink: '#ededef', ink2: '#a1a1aa', ink3: '#63636b', white: '#fafafa', amber: '#e8a33a', blue: '#3b82f6', green: '#22c55e', purple: '#a855f7', red: '#ef4444', orange: '#f59e0b', gray: '#71717a', add: '#4ade80', del: '#f87171', hunk: '#818cf8' };
 const FF = { d: '"Inter Display"', u: 'Inter', m: '"JetBrains Mono"' };
@@ -136,14 +137,14 @@ const IMP = [[ENTER, 1], [7 * BEAT, 0.35], [19 * BEAT, 0.3], [FIN, 1.3]];
 function shake(t) {
   let x = 0, y = 0, r = 0, z = 0;
   for (const [a, k] of IMP) {
-    const d = t - a;
+    const d = (t - a) / K;
     if (d < 0 || d > 0.6) continue;
     const e = k * Math.exp(-d * 10);
     x += e * 15 * Math.sin(d * 90 + a * 13); y += e * 11 * Math.sin(d * 77 + a * 5 + 1.1); r += e * 0.004 * Math.sin(d * 61 + 2.3); z += e * 0.026;
   }
   return { x, y, r, z: 1 + z };
 }
-function aberrAmt(t) { let a = 0; for (const [b, k] of IMP) { const d = t - b; if (d >= 0 && d < 0.3) a += k * 10 * Math.exp(-d * 16); } return a; }
+function aberrAmt(t) { let a = 0; for (const [b, k] of IMP) { const d = (t - b) / K; if (d >= 0 && d < 0.3) a += k * 10 * Math.exp(-d * 16); } return a; }
 
 let BGG, GRID, VIG, GR;
 function fxInit() {
@@ -967,14 +968,14 @@ function logo(t) {
 
 const LBL = [[DROP, '01  AGENTS'], [3.75, '02  ORBIT'], [5.625, '03  SESSIONS'], [7.5, '04  TASKS + REVIEW'], [9.375, '05  ANYWHERE'], [11.25, '06  FEATURES']];
 const tcode = t => { const f = Math.round(t * FPS), s = Math.floor(f / FPS), ff = f % FPS; return `00:00:${String(s).padStart(2, '0')}:${String(ff).padStart(2, '0')}`; };
-function hud(c, t) {
+function hud(c, t, tt) {
   const a = 0.62 * E.o2(P(t, DROP, DROP + 0.3)) * (1 - P(t, 12.5, FIN));
   if (a <= 0) return;
   c.save(); c.globalAlpha = a; c.strokeStyle = C.ink3; c.lineWidth = 1.5;
   for (const [x, y, sx, sy] of [[36, 36, 1, 1], [1884, 36, -1, 1], [36, 1044, 1, -1], [1884, 1044, -1, -1]]) { c.beginPath(); c.moveTo(x, y + sy * 18); c.lineTo(x, y); c.lineTo(x + sx * 18, y); c.stroke(); }
   sf(c, 15, 500, 'm', 3); c.textBaseline = 'middle'; c.fillStyle = C.ink2;
   c.textAlign = 'left'; c.fillText('OVERSEER / SHOWREEL', 66, 60);
-  c.textAlign = 'right'; c.fillText(tcode(t), 1854, 60);
+  c.textAlign = 'right'; c.fillText(tcode(tt), 1854, 60);
   let k = 0; for (let j = 0; j < LBL.length; j++) if (t >= LBL[j][0]) k = j;
   c.textAlign = 'left'; c.fillText(scramble(LBL[k][1], t, LBL[k][0], 0.22), 66, 1020);
   c.textAlign = 'right'; c.fillText('1920×1080 · 60 FPS · 128 BPM', 1854, 1020);
@@ -1002,26 +1003,25 @@ function renderFrame(i, samples = 1) {
   O.setTransform(1, 0, 0, 1, 0, 0); O.globalAlpha = 1; O.globalCompositeOperation = 'source-over';
   O.fillStyle = C.bg; O.fillRect(0, 0, W, H);
   for (let s = 0; s < samples; s++) {
-    const t = clamp(samples > 1 ? t0 + ((s + 0.5) / samples - 0.5) * SHUTTER / FPS : t0, 0, DUR - 1e-4);
+    const t = clamp(samples > 1 ? t0 + ((s + 0.5) / samples - 0.5) * SHUTTER / FPS : t0, 0, DUR - 1e-4) * K;
     drawAll(t);
     const k = shake(t);
     O.save(); O.globalAlpha = 1 / (s + 1);
     O.translate(960 + k.x, 540 + k.y); O.rotate(k.r); O.scale(k.z, k.z); O.translate(-960, -540);
     O.drawImage(SC, 0, 0); O.restore();
   }
-  hud(O, t0);
+  hud(O, t0 * K, t0);
   O.save();
   O.fillStyle = VIG; O.fillRect(0, 0, W, H);
-  const ab = aberrAmt(t0);
+  const ab = aberrAmt(t0 * K);
   if (ab > 0.4) aberr(ab);
   O.globalCompositeOperation = 'overlay'; O.globalAlpha = 0.07; O.fillStyle = GR[i % GR.length]; O.fillRect(0, 0, W, H);
   O.globalCompositeOperation = 'source-over';
-  const f = P(t0, 14.8, 14.97);
+  const f = P(t0 * K, 14.8, 14.97);
   if (f > 0) { O.globalAlpha = E.io2(f); O.fillStyle = C.bg; O.fillRect(0, 0, W, H); }
   O.restore();
 }
 
-const Q = new URLSearchParams(location.search), RENDER = Q.has('render');
 if (RENDER) document.body.classList.add('render');
 const ready = (async () => {
   await Promise.all(FONTS.map(async ([fam, file, w]) => { const f = new FontFace(fam, `url(fonts/${file}.woff2)`, { weight: String(w) }); await f.load(); document.fonts.add(f); }));
@@ -1030,7 +1030,9 @@ const ready = (async () => {
 })();
 window.reel = { ready, fps: FPS, duration: DUR, width: W, height: H, frame(i, samples = 1, type = 'image/png', q) { renderFrame(i, samples); return cv.toDataURL(type, q); }, draw: renderFrame };
 
-const pp = document.getElementById('pp'), sk = document.getElementById('sk'), tcl = document.getElementById('tc');
+const pp = document.getElementById('pp'), sk = document.getElementById('sk'), tcl = document.getElementById('tc'), alt = document.getElementById('alt');
+sk.max = DUR * FPS - 1;
+if (DUR === 30) { alt.href = 'reel.html'; alt.textContent = '15 s cut'; }
 let playing = false, start = 0, cur = clamp(parseFloat(Q.get('t')) || 0, 0, DUR - 1 / FPS);
 function show() { const i = Math.min(DUR * FPS - 1, Math.floor(cur * FPS)); renderFrame(i, 1); sk.value = i; tcl.textContent = `${cur.toFixed(2)} s`; }
 function tick(now) { if (!playing) return; cur = ((now - start) / 1000) % DUR; show(); requestAnimationFrame(tick); }

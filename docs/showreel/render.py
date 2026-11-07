@@ -253,7 +253,7 @@ def main():
     try:
         with sync_playwright() as pw:
             browser = launch(pw)
-            url = f"http://127.0.0.1:{httpd.server_address[1]}/{args.page}?render"
+            url = f"http://127.0.0.1:{httpd.server_address[1]}/{args.page}{'&' if '?' in args.page else '?'}render"
             page, info = open_page(browser, url)
             if args.out or args.webm:
                 render_video(page, info, args, url)

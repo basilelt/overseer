@@ -2,8 +2,14 @@ import { writeFileSync, mkdirSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+const MODE = process.argv[3] ?? '15';
+if (MODE !== '15' && MODE !== '30') {
+  console.error('usage: node audio.mjs [out.wav] [15|30]');
+  process.exit(1);
+}
+const S = MODE === '30' ? 2 : 1;
 const SR = 48000;
-const N = 720000;
+const N = 720000 * S;
 const B = 0.46875;
 const OUT = resolve(process.argv[2] ?? resolve(dirname(fileURLToPath(import.meta.url)), '../build/reel.wav'));
 const TARGET_LUFS = -16;
@@ -497,6 +503,36 @@ function swell(t0, t1, g) {
   }
 }
 
+function perc(t0, f, g, pan) {
+  let ph = 0;
+  voice(
+    t0,
+    0.2,
+    (t) => {
+      ph += (TAU * f * (1 + 0.5 * Math.exp(-t / 0.012))) / SR;
+      return Math.sin(ph) * Math.exp(-t / 0.05);
+    },
+    { dest: drums, gain: g, pan, room: 0.25, fadeIn: 0.0005, fadeOut: 0.02 },
+  );
+  click(t0, g * 0.3, 2500, pan);
+}
+
+function pluck(t0, f, g, pan) {
+  let p = 0;
+  const lp = svf();
+  voice(
+    t0,
+    0.34,
+    (t) => {
+      const dt = f / SR;
+      p += dt;
+      if (p >= 1) p -= 1;
+      return lp(2 * p - 1 - blep(p, dt), 500 + 3200 * Math.exp(-t / 0.035), 0.9) * Math.exp(-t / 0.11);
+    },
+    { dest: music, gain: g, pan, hall: 0.2, echo: 0.3, fadeIn: 0.001, fadeOut: 0.03 },
+  );
+}
+
 function freeverb(inp, { size = 0.84, damp = 0.25, width = 1, gain = 0.015, pre = 0 } = {}) {
   const sc = SR / 44100;
   const combT = [1116, 1188, 1277, 1356, 1422, 1491, 1557, 1617];
@@ -682,20 +718,21 @@ function limit(L, R, ceil) {
   return [outL, outR];
 }
 
-const beat = (k) => k * B;
+const pos = (k) => k * B;
+const beat = (k) => k * B * S;
 const sleepA = beat(22);
 const wakeT = beat(24);
 const finalT = beat(27);
 const groove = [];
-for (let k = 4; k < 27; k++) if (k < 22 || k >= 24) groove.push(k);
+for (let k = 4 * S; k < 27 * S; k++) if (k < 22 * S || k >= 24 * S) groove.push(k);
 
-[0.2, 0.26, 0.32, 0.38, 0.44, 0.5, 0.56, 0.62].forEach((t, i) => keyClick(t, i));
+[0.2, 0.26, 0.32, 0.38, 0.44, 0.5, 0.56, 0.62].forEach((t, i) => keyClick(t * S, i));
 
-chord(0, 0.94, [hz(45), hz(52), hz(57)], {
+chord(0, 0.94 * S, [hz(45), hz(52), hz(57)], {
   g: 0.05,
-  att: 0.9,
-  rel: 0.8,
-  cut: (t) => 260 + 700 * smooth(t / 0.94),
+  att: 0.9 * S,
+  rel: 0.8 * S,
+  cut: (t) => 260 + 700 * smooth(t / (0.94 * S)),
   res: 0.9,
   h: 0.3,
   voices: 4,
@@ -703,42 +740,46 @@ chord(0, 0.94, [hz(45), hz(52), hz(57)], {
   seed: 3,
   dest: fx,
 });
-riser(0.45, beat(2), { g: 0.16, f0: 500, f1: 6500, tone: 0.15, p0: 330, p1: 660, seed: 11 });
+riser(0.45 * S, beat(2), { g: 0.16, f0: 500, f1: 6500, tone: 0.15, p0: 330, p1: 660, seed: 11 });
 
 click(beat(2), 0.35, 3800);
 click(beat(2) + 0.018, 0.18, 2600);
 voice(beat(2), 0.08, (t) => (Math.sin(TAU * 190 * t) * 0.7 + Math.sin(TAU * 340 * t) * 0.4) * Math.exp(-t / 0.022), { dest: fx, gain: 0.35, room: 0.2 });
 boom(beat(2), 0.55, { f0: 140, f1: 42, tp: 0.05, ta: 0.22, noise: 0.45, nd: 0.12, nf: 3200, h: 0.3 });
-whoosh(beat(2) + 0.01, 0.55, { f0: 4000, f1: 500, g: 0.2, p0: 0.3, p1: -0.3, peak: 0.12, seed: 21 });
+whoosh(beat(2) + 0.01 * S, 0.55 * S, { f0: 4000, f1: 500, g: 0.2, p0: 0.3, p1: -0.3, peak: 0.12, seed: 21 });
 
 stab(beat(2.5), [hz(57), hz(60), hz(64)], 0.3);
 stab(beat(3), [hz(60), hz(64), hz(69)], 0.32);
 stab(beat(3.5), [hz(64), hz(69), hz(72)], 0.34);
-[beat(3), beat(3.25), beat(3.5), beat(3.625), beat(3.75), beat(3.875)].forEach((t, i) => snare(t, 0.09 + i * 0.045, 900 + i * 550));
+if (S === 1) [beat(3), beat(3.25), beat(3.5), beat(3.625), beat(3.75), beat(3.875)].forEach((t, i) => snare(t, 0.09 + i * 0.045, 900 + i * 550));
+else [0, 0.25, 0.5, 0.75, 1, 1.125, 1.25, 1.375, 1.5, 1.625, 1.75, 1.875].forEach((x, i) => snare(pos(6 + x), 0.07 + i * 0.024, 800 + i * 330));
 riser(beat(3), beat(4), { g: 0.2, f0: 600, f1: 9000, tone: 0.2, p0: 440, p1: 1760, seed: 12 });
 
 crash(beat(4), 0.12);
 crash(wakeT, 0.14);
 
-for (const k of groove) kick(beat(k), 0.5);
-for (const k of groove) if (k % 4 === 1 || k % 4 === 3) clap(beat(k), 0.5);
+for (const k of groove) kick(pos(k), 0.5);
+for (const k of groove) if (k % 4 === 1 || k % 4 === 3) clap(pos(k), 0.5);
 for (const k of groove) {
-  const open = k >= 24;
-  hat(beat(k + 0.5), open ? 0.15 : 0.2, open ? 0.11 : 0.026, 0.22, 500 + k);
-  if (k >= 12) {
+  const open = k >= 24 * S;
+  const hv = S === 1 ? 1 : k < 12 ? 0 : k < 16 ? 0.55 : k < 24 ? 0.8 : 1;
+  if (hv) hat(pos(k + 0.5), (open ? 0.15 : 0.2) * hv, open ? 0.11 : 0.026, 0.22, 500 + k);
+  if (k >= 12 * S) {
     const r = rng(800 + k);
-    hat(beat(k + 0.25), 0.05 + r() * 0.03, 0.016, -0.3, 900 + k);
-    hat(beat(k + 0.75), 0.07 + r() * 0.035, 0.018, -0.25, 1300 + k);
+    hat(pos(k + 0.25), 0.05 + r() * 0.03, 0.016, -0.3, 900 + k);
+    hat(pos(k + 0.75), 0.07 + r() * 0.035, 0.018, -0.25, 1300 + k);
   }
 }
 
 const roots = { 1: hz(33), 2: hz(29), 3: hz(36), 4: hz(31), 5: hz(33), 6: hz(29) };
 for (const k of groove) {
-  const f = roots[Math.floor(k / 4)];
+  const f = roots[Math.floor(k / (4 * S))];
   const last = k % 4 === 3;
-  bassNote(beat(k + 0.5), f, last ? 0.1 : 0.17, 0.62);
-  if (last) bassNote(beat(k + 0.75), f, 0.09, 0.5, 0.8);
-  if (k >= 24) bassNote(beat(k + 0.5), f * 2, last ? 0.1 : 0.15, 0.22, 1.4);
+  const roll = S === 2 && k >= 24 && k < 40 && k % 2 === 1;
+  bassNote(pos(k + 0.5), f, last || roll ? 0.1 : 0.17, 0.62);
+  if (last) bassNote(pos(k + 0.75), f, 0.09, 0.5, 0.8);
+  else if (roll) bassNote(pos(k + 0.75), f, 0.08, 0.4, 0.9);
+  if (k >= 24 * S) bassNote(pos(k + 0.5), f * 2, last ? 0.1 : 0.15, 0.22, 1.4);
 }
 
 const chords = [
@@ -750,17 +791,17 @@ const chords = [
   [hz(53), hz(57), hz(60), hz(64), hz(65), hz(69)],
 ];
 const baseCut = [1800, 2100, 2400, 2700, 2700, 3600];
-const sleepFall = (t) => smooth((t - sleepA) / 0.42);
+const sleepFall = (t) => smooth((t - sleepA) / (0.42 * S));
 chords.forEach((notes, i) => {
   const t0 = beat(4 + i * 4);
-  const t1 = i === 5 ? finalT : t0 + 4 * B;
+  const t1 = i === 5 ? finalT : t0 + 4 * B * S;
   const sleepy = i === 4;
   chord(t0 - 0.004, t1, notes, {
     g: i === 5 ? 0.04 : 0.05,
     att: 0.02,
     rel: 0.12,
     cut: (t) => {
-      const lfo = 1 + 0.12 * Math.sin(TAU * 0.5 * t);
+      const lfo = 1 + 0.12 * Math.sin(TAU * (0.5 / S) * t);
       const c = baseCut[i] * lfo;
       return sleepy ? c + (230 - c) * sleepFall(t) : c;
     },
@@ -772,50 +813,52 @@ chords.forEach((notes, i) => {
 });
 
 [2.109375, 2.34375, 2.578125, 2.6953125, 2.8125, 2.9296875, 3.046875].forEach((t, i) =>
-  glass(t, hz(81 + [0, 2, 3, 5, 7, 8, 10][i]), 0.09, { pan: i % 2 ? 0.25 : -0.25 }),
+  glass(t * S, hz(81 + [0, 2, 3, 5, 7, 8, 10][i]), 0.09, { pan: i % 2 ? 0.25 : -0.25 }),
 );
 glass(beat(7), hz(93), 0.12, { d: 0.08 });
 voice(beat(7), 0.12, (t) => Math.sin(TAU * (120 + 60 * Math.exp(-t / 0.01)) * t) * Math.exp(-t / 0.03), { dest: fx, gain: 0.32, hall: 0.15 });
 click(beat(7), 0.3, 4200);
 
-whoosh(beat(8), 0.6, { f0: 500, f1: 7000, g: 0.16, p0: -0.5, p1: 0.5, peak: 0.25, seed: 31 });
+whoosh(beat(8), 0.6 * S, { f0: 500, f1: 7000, g: 0.16, p0: -0.5, p1: 0.5, peak: 0.25, seed: 31 });
 {
   const r = rng(77);
   const pent = [81, 84, 86, 88, 91, 93, 96];
-  for (let i = 0; i < 8; i++) ping(beat(8) + 0.02 + r() * 0.38, hz(pent[Math.floor(r() * pent.length)]), 0.05 + r() * 0.03, { pan: (r() - 0.5) * 1.4 });
+  for (let i = 0; i < 8; i++) ping(beat(8) + 0.02 * S + r() * 0.38 * S, hz(pent[Math.floor(r() * pent.length)]), 0.05 + r() * 0.03, { pan: (r() - 0.5) * 1.4 });
 }
 
-for (let i = 0; i < 9; i++) blip(beat(12) + i * 0.03, hz([76, 79, 81, 84, 79, 81, 84, 86, 88][i]), 0.045, { pan: ((i % 3) - 1) * 0.5 });
-[81, 84, 88, 91, 93].forEach((m, i) => bell(beat(15) + i * 0.05, hz(m), 0.06, { pan: -0.4 + i * 0.2, decay: 0.35 }));
+for (let i = 0; i < 9; i++) blip(beat(12) + i * 0.03 * S, hz([76, 79, 81, 84, 79, 81, 84, 86, 88][i]), 0.045, { pan: ((i % 3) - 1) * 0.5 });
+[81, 84, 88, 91, 93].forEach((m, i) => bell(beat(15) + i * 0.05 * S, hz(m), 0.06, { pan: -0.4 + i * 0.2, decay: 0.35 }));
 
-whoosh(beat(16), 0.5, { f0: 400, f1: 3500, g: 0.15, p0: 0.5, p1: -0.5, peak: 0.45, seed: 41 });
-whoosh(beat(17), 0.28, { f0: 2500, f1: 700, g: 0.13, p0: -0.6, p1: 0.6, peak: 0.3, seed: 42 });
-whoosh(beat(17.5), 0.28, { f0: 2500, f1: 700, g: 0.13, p0: 0.6, p1: -0.6, peak: 0.3, seed: 43 });
-whoosh(beat(18) - 0.12, 0.5, { f0: 300, f1: 5000, g: 0.17, p0: 0, p1: 0, peak: 0.3, seed: 44 });
-[8.5, 8.57, 8.64, 8.71, 8.78, 8.85].forEach((t, i) => glass(t, hz(86 + (i % 2) * 3), 0.035, { pan: -0.2 + i * 0.08, d: 0.025, e: 0.05 }));
+whoosh(beat(16), 0.5 * S, { f0: 400, f1: 3500, g: 0.15, p0: 0.5, p1: -0.5, peak: 0.45, seed: 41 });
+whoosh(beat(17), 0.28 * S, { f0: 2500, f1: 700, g: 0.13, p0: -0.6, p1: 0.6, peak: 0.3, seed: 42 });
+whoosh(beat(17.5), 0.28 * S, { f0: 2500, f1: 700, g: 0.13, p0: 0.6, p1: -0.6, peak: 0.3, seed: 43 });
+whoosh(beat(18) - 0.12 * S, 0.5 * S, { f0: 300, f1: 5000, g: 0.17, p0: 0, p1: 0, peak: 0.3, seed: 44 });
+[8.5, 8.57, 8.64, 8.71, 8.78, 8.85].forEach((t, i) => glass(t * S, hz(86 + (i % 2) * 3), 0.035, { pan: -0.2 + i * 0.08, d: 0.025, e: 0.05 }));
 click(beat(19), 0.3, 3400);
 click(beat(19) + 0.012, 0.12, 2400);
-bell(8.95, hz(84), 0.085, { decay: 0.6, ratio: 2.0, index: 1.2, pan: -0.15, h: 0.4, e: 0.25 });
-bell(9.02, hz(88), 0.08, { decay: 0.7, ratio: 2.0, index: 1.2, pan: 0.15, h: 0.4, e: 0.25 });
+bell(8.95 * S, hz(84), 0.085, { decay: 0.6, ratio: 2.0, index: 1.2, pan: -0.15, h: 0.4, e: 0.25 });
+bell(9.02 * S, hz(88), 0.08, { decay: 0.7, ratio: 2.0, index: 1.2, pan: 0.15, h: 0.4, e: 0.25 });
 
-whoosh(beat(20) - 0.05, 0.55, { f0: 350, f1: 4200, g: 0.15, p0: -0.4, p1: 0.4, peak: 0.4, seed: 51 });
-[9.7, 9.85, 10.0, 10.15].forEach((t, i) => blip(t, hz(88 + (i % 2) * 5), 0.04, { up: 2, d: 0.03, pan: i % 2 ? 0.45 : -0.45, e: 0.25 }));
+whoosh(beat(20) - 0.05 * S, 0.55 * S, { f0: 350, f1: 4200, g: 0.15, p0: -0.4, p1: 0.4, peak: 0.4, seed: 51 });
+[9.7, 9.85, 10.0, 10.15].forEach((t, i) => blip(t * S, hz(88 + (i % 2) * 5), 0.04, { up: 2, d: 0.03, pan: i % 2 ? 0.45 : -0.45, e: 0.25 }));
 
-heartbeat(beat(22), 0.36);
-heartbeat(beat(23), 0.32);
+if (S === 1) {
+  heartbeat(beat(22), 0.36);
+  heartbeat(beat(23), 0.32);
+} else [0.36, 0.33, 0.3].forEach((g, i) => heartbeat(pos(44 + i), g));
 riser(beat(23), wakeT, { g: 0.2, f0: 300, f1: 8000, tone: 0.3, p0: 110, p1: 880, seed: 61 });
 
-[24, 25, 26].forEach((k, i) => whoosh(beat(k) - 0.03, 0.26, { f0: 3200, f1: 600, g: 0.12, p0: i % 2 ? 0.6 : -0.6, p1: i % 2 ? -0.6 : 0.6, peak: 0.18, seed: 70 + i }));
+[24, 25, 26].forEach((k, i) => whoosh(beat(k) - 0.03 * S, 0.26 * S, { f0: 3200, f1: 600, g: 0.12, p0: i % 2 ? 0.6 : -0.6, p1: i % 2 ? -0.6 : 0.6, peak: 0.18, seed: 70 + i }));
 swell(beat(26), finalT, 0.16);
 riser(beat(26), finalT, { g: 0.14, f0: 800, f1: 9000, tone: 0.25, p0: 440, p1: 1760, seed: 71 });
 
 boom(finalT, 0.75, { f0: 120, f1: 38, tp: 0.08, ta: 0.5, noise: 0.5, nd: 0.28, nf: 2600, h: 0.45 });
 crash(finalT, 0.1);
-chord(finalT, 13.95, [hz(48), hz(55), hz(60), hz(62), hz(64), hz(67)], {
+chord(finalT, 13.95 * S, [hz(48), hz(55), hz(60), hz(62), hz(64), hz(67)], {
   g: 0.03,
   att: 0.012,
-  rel: 0.9,
-  cut: (t) => 1600 + 3400 * Math.exp(-(t - finalT) / 0.35),
+  rel: 0.9 * S,
+  cut: (t) => 1600 + 3400 * Math.exp(-(t - finalT) / (0.35 * S)),
   res: 0.8,
   h: 0.5,
   voices: 6,
@@ -826,20 +869,43 @@ chord(finalT, 13.95, [hz(48), hz(55), hz(60), hz(62), hz(64), hz(67)], {
 [hz(72), hz(76), hz(79), hz(86)].forEach((f, i) => bell(finalT + 0.01 + i * 0.012, f, 0.05, { decay: 0.9, ratio: 2.0, index: 1.0, pan: -0.45 + i * 0.3, h: 0.5, e: 0.2 }));
 voice(
   finalT,
-  1.8,
+  1.8 * S,
   (t) => {
     let y = 0;
     [hz(84), hz(88), hz(91)].forEach((f, i) => {
       y += Math.sin(TAU * f * t + 0.4 * Math.sin(TAU * (5 + i) * t)) * (0.5 + 0.5 * Math.sin(TAU * (3.1 + i * 0.7) * t + i));
     });
-    return (y / 3) * Math.exp(-t / 0.7) * smooth(t / 0.06);
+    return (y / 3) * Math.exp(-t / (0.7 * S)) * smooth(t / 0.06);
   },
-  { dest: fx, gain: 0.05, hall: 0.6, echo: 0.2, fadeOut: 0.3 },
+  { dest: fx, gain: 0.05, hall: 0.6, echo: 0.2, fadeOut: 0.3 * S },
 );
-[12.876, 12.976, 13.076].forEach((t, i) => ping(t, hz([91, 96, 100][i]), 0.05, { pan: [0, 0.5, -0.5][i], decay: 0.09 }));
-for (let i = 0; i < 8; i++) glass(13 + i * 0.04, hz(96 + (i % 3) * 2), 0.022, { pan: -0.5 + i / 7, d: 0.02, e: 0.05 });
+[12.876, 12.976, 13.076].forEach((t, i) => ping(t * S, hz([91, 96, 100][i]), 0.05, { pan: [0, 0.5, -0.5][i], decay: 0.09 }));
+for (let i = 0; i < 8; i++) glass(13 * S + i * 0.04 * S, hz(96 + (i % 3) * 2), 0.022, { pan: -0.5 + i / 7, d: 0.02, e: 0.05 });
 
-const kicks = groove.map(beat);
+if (S === 2) {
+  crash(pos(24), 0.07);
+  crash(pos(40), 0.08);
+  for (let k = 16; k < 24; k++) {
+    const r = rng(2000 + k);
+    for (let j = 0; j < 4; j++) hat(pos(k + j * 0.25), (j % 2 ? 0.05 : 0.032) * (0.5 + (0.5 * (k - 16)) / 7) * (0.85 + r() * 0.3), 0.011, 0.38, 2100 + k * 4 + j);
+  }
+  for (let bar = 8; bar < 14; bar++) {
+    if (bar === 11) continue;
+    [0.75, 1.5, 2.75, 3.5].forEach((x, i) => perc(pos(bar * 4 + x), i % 2 ? 290 : 385, bar >= 12 ? 0.17 : 0.13, i % 2 ? 0.4 : -0.4));
+  }
+  const steps = [0, 2, 1, 3, 2, 0, 3, 1];
+  for (let k = 28; k < 54; k++) {
+    if (k >= 44 && k < 48) continue;
+    const notes = chords[Math.floor(k / 8) - 1];
+    for (let h = 0; h < 2; h++) {
+      const n = (k % 4) * 2 + h;
+      pluck(pos(k + h * 0.5), notes[steps[n] % notes.length], (k >= 48 ? 0.085 : k >= 32 ? 0.07 : 0.055) * (h ? 0.8 : 1), ((n % 4) - 1.5) * 0.3);
+    }
+  }
+  for (let j = 0; j < 8; j++) snare(pos(47 + j * 0.125), 0.06 + j * 0.035, 1500 + j * 480);
+}
+
+const kicks = groove.map(pos);
 const duck = new Float64Array(N).fill(1);
 for (const tk of kicks) {
   const n0 = ns(tk);
@@ -859,8 +925,8 @@ const wetEcho = pingpong(echo, { time: 0.75 * B, fb: 0.4, tone: 0.28 });
 
 let L = new Float64Array(N);
 let R = new Float64Array(N);
-const fadeA = 14.2;
-const fadeB = 14.95;
+const fadeA = 14.2 * S;
+const fadeB = 14.95 * S;
 for (let n = 0; n < N; n++) {
   const dl = drums.L[n];
   const dr = drums.R[n];
