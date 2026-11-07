@@ -1,6 +1,6 @@
 # CI and releases
 
-Four workflows in `.github/workflows/` (ADR 0027; mobile builds ADR 0032 and
+Six workflows in `.github/workflows/` (ADR 0027; mobile builds ADR 0032 and
 [docs/mobile.md](mobile.md)). Every job runs on a GitHub-hosted runner; the repository needs no
 self-hosted runner.
 
@@ -11,10 +11,11 @@ self-hosted runner.
 | `store.yml` | manual, from `main` only | App Store submission (iOS) and Play Store upload (Android) of a release tag |
 | `release-pr.yml` | manual | opens the draft release PR from `next` to `main` (skips when one is open or `next` is not ahead) |
 | `mobile-init.yml` | manual | generates `app/src-tauri/gen/{android,apple}` and commits them to the branch |
+| `pages.yml` | push to `next` that changes `docs/showreel/` or this workflow, manual | deploys `docs/showreel/` (the showreel page, the repository's website) to GitHub Pages |
 
 Concurrency: `ci-pr-<PR number or ref>` cancels the previous run of the same PR;
 `release-refs/heads/main` never cancels a running release (a newer push waits); `store` never
-cancels a running store upload.
+cancels a running store upload; `pages` never cancels a running deployment.
 
 Runner budget: CI runs nothing on draft PRs, only the jobs the change needs on ready PRs
 ([Path filtering](#path-filtering)), and is not repeated on `main` when the merged PR already passed

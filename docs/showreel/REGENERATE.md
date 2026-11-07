@@ -36,4 +36,4 @@ Do not start a render, or any other part of the work, while you wait for the ans
 1. Update the scenes in `reel.html` to show the app as it now is. Keep every frame a pure function of time on the 128 BPM grid, and both cuts in sync (`reel.html?d=30` plays every event at twice its time). If a view changed, copy the new screenshot from `app/docs/screenshots/` into `shots/`.
 2. If cue times moved, move the matching events in `audio.mjs` and rebuild both soundtracks.
 3. Check stills or a contact sheet at every scene change of both cuts, then render both cuts and the poster (commands in [README.md](README.md)).
-4. Commit this directory, videos included, on the branch, so the change lands on `next` with the PR. After the merge, publish it to `gh-pages` (README.md, "Publish").
+4. Commit this directory, videos included, on the branch. When the PR merges into `next`, the Pages workflow deploys it.

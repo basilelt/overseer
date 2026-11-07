@@ -1,6 +1,6 @@
 # Overseer showreel
 
-Source of the showreel and of its page, https://basilelt.github.io/overseer/ (the repository's website), which GitHub Pages serves from the `gh-pages` branch. The reel comes in two cuts: 30 s, the default on the page, and a faster 15 s.
+The showreel and its page, https://basilelt.github.io/overseer/ (the repository's website). `.github/workflows/pages.yml` deploys this directory to GitHub Pages on every push to `next` that changes it. The reel comes in two cuts: 30 s, the default on the page, and a faster 15 s.
 
 - `reel.html` is the reel itself, drawn on a canvas from code. Every frame is a pure function of time on a 128 BPM grid (15 s = 8 bars). `reel.html?d=30` plays the 30 s cut, where every event happens at twice its time. Open it in a browser to play it live: space pauses, the arrow keys step one frame.
 - `audio.mjs` synthesizes the soundtrack from code, with no samples.
@@ -16,7 +16,7 @@ Rebuild from this directory (Node, Python with Playwright, ffmpeg; about 25 minu
 
 Preview while editing: `python3 render.py --sheet sheet.jpg --every 0.25` for a contact sheet, or `--stills 1.5,7.25 --dir stills`; add `--page "reel.html?d=30"` for the 30 s cut.
 
-Publish: copy this directory, without `reel.wav`, `reel30.wav`, `sheet.jpg` and `stills/`, to the root of `gh-pages`, then commit and push. Pages redeploys on push.
+Publish: merge the change into `next`, and the Pages workflow deploys this directory as committed. Actions > Pages > Run workflow redeploys it by hand.
 
 When to remake it: [REGENERATE.md](REGENERATE.md). Agents ask the user first, and it is never redone without a yes.
 
