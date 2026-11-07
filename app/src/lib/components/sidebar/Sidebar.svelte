@@ -25,6 +25,7 @@
     { id: 'workspaces', label: () => t('ws.title') },
     { id: 'status', label: () => t('ws.byStatus') },
   ];
+  const listed = $derived(app.items.filter((i) => i.kind !== 'shell').length);
   const selection = $derived([...app.multi]);
   const addMenu = () => [
     { label: t('ws.new'), icon: Plus, run: () => app.open('workspaceNew') },
@@ -55,7 +56,7 @@
         onclick={() => (showArchived = !showArchived)}><Archive size={14} /></button
       >
     {:else}
-      <span class="count faint">{app.items.length}</span>
+      <span class="count faint">{listed}</span>
     {/if}
   </header>
   <label class="filter">

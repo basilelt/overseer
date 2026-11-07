@@ -23,7 +23,6 @@
   let closedOpen = $state(new Set<string>());
   const drag = new WsDrag();
 
-  // One clock for the whole view, paused while the window is hidden.
   onMount(() => visibleClock((n) => (now = n)));
 
   const nodes = $derived(folderSpaces(spaces(app.ws.workspaces, app.items, app.itemWs, filter, showArchived), app.ws.folders, filter));
@@ -54,6 +53,7 @@
   // The daemon keeps the folded state per host. Flipped locally first so the click feels instant.
   async function toggleFolder(id: string) {
     if (drag.suppressed) return;
+    if (q) return;
     const f = app.ws.folders.find((x) => x.id === id);
     if (!f) return;
     app.ws = { ...app.ws, folders: app.ws.folders.map((x) => (x.id === id ? { ...x, collapsed: !x.collapsed } : x)) };

@@ -200,6 +200,20 @@ describe('MockDaemon', () => {
     await expect(m.request('POST', '/v1/lines/ln_06/close')).rejects.toMatchObject({ status: 409 });
   });
 
+  it('cancels a pending hold, and answers 409 once the hold is being applied, like the daemon', async () => {
+    // Given a pending hold applied by the next tick
+    // When it is cancelled before the tick, then again right after it
+    // Then the first cancel succeeds and the second gets the daemon's 409
+    const { m, a } = setup();
+    (m.lines.find((l) => l.line.id === 'ln_09')!.local as { busy: boolean }).busy = true;
+    expect((await a.holdAfterTurn('ln_09')).action).toBe('hold-pending');
+    await expect(m.request('DELETE', '/v1/lines/ln_09/hold')).resolves.toMatchObject({ holdPending: false });
+    expect((await a.holdAfterTurn('ln_09')).action).toBe('hold-pending');
+    m.tick();
+    m.tick();
+    await expect(m.request('DELETE', '/v1/lines/ln_09/hold')).rejects.toMatchObject({ status: 409, message: expect.stringContaining('the hold is already being applied') });
+  });
+
   it('exposes the running subagents on the line and keeps a pending hold while they run', async () => {
     // Given an idle line, and the same line with a subagent still running
     // When it is held after the turn, then the subagent stops
