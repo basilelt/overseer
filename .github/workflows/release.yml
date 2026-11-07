@@ -671,7 +671,10 @@ jobs:
           merge-multiple: true
 
       - working-directory: assets
-        run: sha256sum -- * > SHA256SUMS
+        run: |
+          shopt -s nullglob
+          for apk in Overseer_*_android.apk; do cp -- "$apk" Overseer_android.apk; done
+          sha256sum -- * > SHA256SUMS
 
       - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:

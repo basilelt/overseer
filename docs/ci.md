@@ -160,7 +160,7 @@ its `changes` job runs, a few seconds on `ubuntu-slim`. Pushes by `github-action
 | release | `app-windows-msix` | `windows-latest` | `Overseer_<v>_x64.msix` from the `app-windows` executable (`scripts/msix.sh`); skipped without the MSIX secrets |
 | release | `app-windows-arm` | `windows-11-arm` | NSIS installer `*_arm64-setup.exe` and `Overseer_<v>_arm64.msix`, built natively |
 | release | `app-macos` | `macos-26` | `.dmg` for Apple Silicon (`aarch64-apple-darwin`) and Intel (`x86_64-apple-darwin`, cross-built) |
-| release | `app-android` | `ubuntu-24.04` | signed universal APK (arm64-v8a, armeabi-v7a) `Overseer_<v>_android.apk` + `.sha256`, for Obtainium and the GitHub Release; skipped without the keystore secrets |
+| release | `app-android` | `ubuntu-24.04` | signed universal APK (arm64-v8a, armeabi-v7a) `Overseer_<v>_android.apk` + `.sha256`, for Obtainium and the GitHub Release (the publish job adds a copy named `Overseer_android.apk` for the README's fixed `releases/latest/download/` link); skipped without the keystore secrets |
 | release | `publish` | `ubuntu-slim` | GitHub Release with generated release notes, every artifact and `SHA256SUMS`, then the updater manifest `latest.json` when the updater key is set |
 | release | `tap` | `ubuntu-24.04` | `scripts/update-tap.sh` writes the cask and formula of `basilelt/homebrew-tap` and pushes `overseer <version>` to `bump/overseer-<version>`; the tap's own CI audits it and fast-forwards `main`; skipped without `HOMEBREW_TAP_DEPLOY_KEY` |
 | store | `ios` | `macos-26` | fastlane `app_store` lane: `tauri ios build` signed from `IOS_CERTIFICATE` and `IOS_MOBILE_PROVISION`, `upload_to_app_store` with `submit_for_review` (manual release after approval) |

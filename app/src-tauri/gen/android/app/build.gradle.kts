@@ -27,6 +27,7 @@ android {
     }
     val releaseKeystore = System.getenv("ANDROID_KEYSTORE_PATH")?.takeIf { it.isNotBlank() }
     if (System.getenv("OVERSEER_DISTRIBUTION") == "play") {
+        defaultConfig.applicationId = "io.github.basilelt.overseer.pro"
         sourceSets.getByName("release").manifest.srcFile("src/play/AndroidManifest.xml")
     } else {
         sourceSets.getByName("main").java.srcDir("src/selfupdate/java")
