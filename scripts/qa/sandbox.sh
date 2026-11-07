@@ -6,8 +6,10 @@ D=${QA_DIR:-/tmp/sbqa}
 PORT=${QA_PORT:-47811}
 WEB=${QA_WEB:-4918}
 DISPLAY_NUM=${QA_DISPLAY:-93}
+DISPLAY_NUM=${DISPLAY_NUM#:}
 MESA_EGL=/usr/share/glvnd/egl_vendor.d/50_mesa.json
 BIN=${CARGO_TARGET_DIR:-$R/target}/debug/overseer
+APP_BIN=${CARGO_TARGET_DIR:-$R/app/src-tauri/target}/debug/overseer-app
 
 # Daemon PATH: the stubs first, then Homebrew when present (tmux, git live there on macOS).
 daemon_path=$R/tests/stubs
@@ -45,6 +47,12 @@ launcher)
   ;;
 bin)
   echo "$BIN"
+  ;;
+app-bin)
+  echo "$APP_BIN"
+  ;;
+display)
+  echo "$DISPLAY_NUM"
   ;;
 daemon-path)
   echo "$daemon_path"
@@ -110,7 +118,7 @@ desktop)
     unshare -rn true 2>/dev/null || { echo "port 1420 is taken by another dev server" >&2; exit 1; }
     ns="unshare -rn"
   fi
-  export R D DISPLAY_NUM MESA_EGL
+  export R D DISPLAY_NUM MESA_EGL APP_BIN
   setsid $ns sh -c '
     ip link set lo up 2>/dev/null || true
     cd "$R/app" && nice -n 10 pnpm exec vite --port 1420 --strictPort >> "$D/vite.log" 2>&1 &
@@ -124,7 +132,7 @@ desktop)
       XDG_DATA_HOME="$D/apphome/.local/share" XDG_CACHE_HOME="$D/apphome/.cache" XDG_RUNTIME_DIR="$D/run" \
       OVERSEER_STATE_DIR="$D/state" LANG=C.UTF-8 WEBKIT_DISABLE_DMABUF_RENDERER=1 GDK_BACKEND=x11 NO_AT_BRIDGE=1 \
       ${MESA_EGL:+__EGL_VENDOR_LIBRARY_FILENAMES="$MESA_EGL"} \
-      "$R/app/src-tauri/target/debug/overseer-app"
+      "$APP_BIN"
   ' >> "$D/app.log" 2>&1 &
   echo $! > "$D/app.pid"
   echo "desktop app on DISPLAY=:$DISPLAY_NUM, log $D/app.log; screenshot with: $0 shot <name>"
@@ -135,8 +143,17 @@ shot)
   echo "$D/${2:-shot}.png"
   ;;
 desktop-stop)
+  if [ -f "$D/app.pid" ]; then
+    app=$(cat "$D/app.pid")
+    kill "$app" 2>/dev/null || true
+    i=0
+    while kill -0 "$app" 2>/dev/null && [ $i -lt 100 ]; do
+      i=$((i+1))
+      sleep 0.1
+    done
+    kill -9 "$app" 2>/dev/null || true
+  fi
   stop_group "$D/app.pid"
-  stop_group "$D/vite.pid"
   stop_group "$D/xvfb.pid"
   ;;
 crash)

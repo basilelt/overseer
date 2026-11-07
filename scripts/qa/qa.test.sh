@@ -24,6 +24,10 @@ check "launcher falls back to python3 without setsid" python3 \
 
 check "binary honours CARGO_TARGET_DIR" "$work/tgt/debug/overseer" \
   "$(CARGO_TARGET_DIR="$work/tgt" "$root/scripts/qa/sandbox.sh" bin)"
+check "desktop binary honours CARGO_TARGET_DIR" "$work/tgt/debug/overseer-app" \
+  "$(CARGO_TARGET_DIR="$work/tgt" "$root/scripts/qa/sandbox.sh" app-bin)"
+check "QA_DISPLAY accepts a bare number" 97 "$(QA_DISPLAY=97 "$root/scripts/qa/sandbox.sh" display)"
+check "QA_DISPLAY accepts a leading colon" 97 "$(QA_DISPLAY=:97 "$root/scripts/qa/sandbox.sh" display)"
 check "daemon PATH has the stubs first and Homebrew when present" "$root/tests/stubs" \
   "$("$root/scripts/qa/sandbox.sh" daemon-path | cut -d: -f1)"
 
