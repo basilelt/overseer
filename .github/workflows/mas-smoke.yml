@@ -1,0 +1,77 @@
+name: mas-smoke
+
+on:
+  push:
+    branches: [feat/mac-app-store]
+    paths:
+      - .github/workflows/mas-smoke.yml
+      - scripts/mas/**
+      - app/src-tauri/tauri.mas.conf.json
+      - app/src-tauri/entitlements.mas*.plist
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mas-smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  sandbox:
+    runs-on: macos-26
+    timeout-minutes: 60
+    env:
+      MAS_OUT: ${{ github.workspace }}/mas-out
+      OVERSEER_DISTRIBUTION: play
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - uses: ./.github/actions/setup
+        with:
+          rust: "true"
+          rust-targets: aarch64-apple-darwin
+          rust-workspaces: |
+            . -> target
+            app/src-tauri -> target
+          rust-cache-key: mas
+          node: "true"
+
+      - name: Build the server binary
+        run: |
+          cargo build --locked --release --target aarch64-apple-darwin
+          mkdir -p app/src-tauri/resources/server/darwin-aarch64
+          cp target/aarch64-apple-darwin/release/overseer app/src-tauri/resources/server/darwin-aarch64/overseer
+          chmod 755 app/src-tauri/resources/server/darwin-aarch64/overseer
+
+      - name: Build the sandboxed app
+        run: pnpm --dir app tauri build --debug --target aarch64-apple-darwin --bundles app --config "$GITHUB_WORKSPACE/app/src-tauri/tauri.mas.conf.json"
+
+      - name: Sign with the sandbox entitlements
+        run: scripts/mas/smoke.sh sign
+
+      - name: Sandbox probes
+        if: always()
+        run: scripts/mas/smoke.sh probes
+
+      - name: Run the sandboxed app
+        if: always()
+        run: scripts/mas/smoke.sh app
+
+      - name: Collect sandbox denials
+        if: always()
+        run: scripts/mas/smoke.sh denials
+
+      - name: Summary
+        if: always()
+        run: scripts/mas/smoke.sh report
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        if: always()
+        with:
+          name: mas-smoke
+          path: mas-out/
+          if-no-files-found: warn
+          retention-days: 7

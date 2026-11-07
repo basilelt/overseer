@@ -1,0 +1,11 @@
+{
+  "identifier": "io.github.basilelt.overseer.mac",
+  "bundle": {
+    "createUpdaterArtifacts": false,
+    "targets": ["app"],
+    "macOS": {
+      "entitlements": "entitlements.mas.plist",
+      "signingIdentity": "-"
+    }
+  }
+}
