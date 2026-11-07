@@ -126,3 +126,21 @@ describe('saveFile', () => {
     expect(c.saveDownload).not.toHaveBeenCalled();
   });
 });
+
+describe('findPaths on paths with spaces in prose', () => {
+  it('does not link the tail of a spaced path', () => {
+    expect(findPaths('Also docs/J3 modifications.pdf in prose.')).toEqual([]);
+  });
+
+  it('does not link the tail after a home directory fragment', () => {
+    expect(findPaths('see ~/My Docs/J3 modifications.pdf')).toEqual([]);
+  });
+
+  it('still links consecutive complete paths', () => {
+    expect(findPaths('src/a.json b.json').map((m) => m.path)).toEqual(['src/a.json', 'b.json']);
+  });
+
+  it('still links a spaceless path after plain words', () => {
+    expect(findPaths('open docs/spec.pdf now').map((m) => m.path)).toEqual(['docs/spec.pdf']);
+  });
+});

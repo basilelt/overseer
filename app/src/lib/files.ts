@@ -46,6 +46,16 @@ export interface PathMatch {
   end: number;
 }
 
+const DIR_FRAGMENT = /^[\w.@+()~-]*\/[\w.@+()/-]*$/;
+const FILE_TAIL = /\.[A-Za-z]\w*(?::\d+){0,2}$/;
+
+function afterDirFragment(text: string, start: number): boolean {
+  if (start < 2 || text[start - 1] !== ' ') return false;
+  const from = text.lastIndexOf(' ', start - 2) + 1;
+  const prev = text.slice(from, start - 1);
+  return prev.length <= MAX_TOKEN && DIR_FRAGMENT.test(prev) && !FILE_TAIL.test(prev);
+}
+
 export function findPaths(text: string): PathMatch[] {
   const out: PathMatch[] = [];
   for (const t of text.matchAll(TOKEN_RE)) {
@@ -55,6 +65,7 @@ export function findPaths(text: string): PathMatch[] {
     for (const m of token.matchAll(PATH_RE)) {
       const start = base + (m.index ?? 0);
       if (start > 0 && /[\w:/]/.test(text[start - 1])) continue;
+      if (m.index === 0 && afterDirFragment(text, start)) continue;
       out.push({ path: m[0].replace(/(?::\d+){1,2}$/, ''), start, end: start + m[0].length });
     }
   }
