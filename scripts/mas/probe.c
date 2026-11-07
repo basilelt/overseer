@@ -17,6 +17,10 @@
 #include <sys/wait.h>
 #include <time.h>
 #include <unistd.h>
+#include <libproc.h>
+#include <sys/sysctl.h>
+#include <sys/ioctl.h>
+#include <termios.h>
 #include <util.h>
 
 extern char *sandbox_extension_issue_file(const char *ext_class, const char *path, uint32_t flags);
@@ -68,7 +72,11 @@ static int run(char *const argv[], int tmo, char *out, size_t n) {
       char b[512];
       ssize_t k = read(p[0], b, sizeof b);
       if (k > 0) {
-        if (out && len + k < n) memcpy(out + len, b, k), len += k;
+        if (out && len < n) {
+          size_t c = (size_t)k < n - len ? (size_t)k : n - len;
+          memcpy(out + len, b, c);
+          len += c;
+        }
       } else {
         break;
       }
@@ -145,6 +153,8 @@ static char *read_token(const char *path) {
   return t;
 }
 
+static const char *GITBIN = "/usr/bin/git";
+
 static int cmd_suite(const char *dir, const char *stub, const char *tokfile, const char *helper, const char *home_probe) {
   char p[1024], q[1024];
   snprintf(p, sizeof p, "%s/before.txt", dir);
@@ -187,7 +197,7 @@ static int cmd_suite(const char *dir, const char *stub, const char *tokfile, con
   char *a1[] = {"/bin/sh", "-c", sh, NULL};
   spawn_check("ext_child_sh_write_after_consume", 1, a1, p);
 
-  char *a2[] = {"/usr/bin/git", "-C", (char *)dir, "status", "--porcelain", NULL};
+  char *a2[] = {(char *)GITBIN, "-C", (char *)dir, "status", "--porcelain", NULL};
   spawn_check("ext_child_git_status_after_consume", 1, a2, NULL);
 
   snprintf(p, sizeof p, "%s/stub.txt", dir);
@@ -251,10 +261,19 @@ static void exec_probe(const char *name, const char *path, char *const argv[]) {
   check(name, 1, rc == 0, d);
 }
 
-static int cmd_execs(const char *realhome) {
+static int cmd_execs(const char *realhome, const char *gitbin, const char *tmpdir) {
   char p[600];
   char *git[] = {"/usr/bin/git", "--version", NULL};
   exec_probe("exec_usr_bin_git", "/usr/bin/git", git);
+  if (gitbin && *gitbin) {
+    char *rg[] = {(char *)gitbin, "--version", NULL};
+    exec_probe("exec_xcode_real_git", gitbin, rg);
+  }
+  snprintf(p, sizeof p, "%s/ovs-script.sh", tmpdir);
+  write_file(p, "#!/bin/sh\necho script-ok\n");
+  chmod(p, 0755);
+  char *sc[] = {p, NULL};
+  exec_probe("exec_script_in_container", p, sc);
   char *zsh[] = {"/bin/zsh", "-c", "echo zsh-ok", NULL};
   exec_probe("exec_bin_zsh", "/bin/zsh", zsh);
   char *bash[] = {"/bin/bash", "-c", "echo bash-ok", NULL};
@@ -292,7 +311,7 @@ static int cmd_execs(const char *realhome) {
 }
 
 static int cmd_pty(void) {
-  const char *shells[][4] = {{"/bin/zsh", "-f", "-i", NULL}, {"/bin/bash", "--noprofile", "--norc", "-i"}, {"/bin/zsh", "-l", "-i", NULL}};
+  const char *shells[][5] = {{"/bin/zsh", "-f", "-i", NULL, NULL}, {"/bin/bash", "--noprofile", "--norc", "-i", NULL}, {"/bin/zsh", "-l", "-i", NULL, NULL}};
   const char *names[] = {"pty_zsh_interactive", "pty_bash_interactive", "pty_zsh_login_interactive"};
   for (int i = 0; i < 3; i++) {
     int m;
@@ -328,14 +347,19 @@ static int cmd_pty(void) {
     kill(pid, SIGKILL);
     waitpid(pid, NULL, 0);
     close(m);
-    int bad = strstr(buf, "tty pgrp") || strstr(buf, "no job control") || strstr(buf, "Operation not permitted");
+    const char *badpat[] = {"tty pgrp", "no job control", "Operation not permitted", "not permitted", NULL};
+    const char *badhit = NULL;
+    for (int b = 0; badpat[b]; b++)
+      if (strstr(buf, badpat[b])) badhit = badpat[b];
+    int bad = badhit != NULL;
     int good = strstr(buf, "JC42") && strstr(buf, "DONE2") && strstr(buf, "[1]");
     for (char *c = buf; *c; c++)
       if (*c == '\n' || *c == '\r' || *c == '\t') *c = ' ';
     char tail[300];
     size_t off = len > 280 ? len - 280 : 0;
     snprintf(tail, sizeof tail, "%s", buf + off);
-    result(names[i], good && !bad ? "PASS" : "FAIL", "job_control_error=%d echo_and_jobs=%d tail=%s", bad, good, tail);
+    (void)0;
+    result(names[i], good && !bad ? "PASS" : "FAIL", "job_control_error=%s echo_and_jobs=%d tail=%s", badhit ? badhit : "none", good, tail);
   }
   return 0;
 }
@@ -398,6 +422,116 @@ static int cmd_misc(const char *tmpdir, const char *realhome) {
   return 0;
 }
 
+
+static void ioctl_res(const char *name, int rc) {
+  int e = errno;
+  result(name, rc == 0 ? "PASS" : "FAIL", "rc=%d errno=%s", rc, rc ? strerror(e) : "-");
+}
+
+static int cmd_ptyioctl(void) {
+  int m, s;
+  char tty[128];
+  struct winsize ws = {24, 80, 0, 0};
+  int rc = openpty(&m, &s, tty, NULL, &ws);
+  ioctl_res("ptyioctl_openpty", rc);
+  if (rc) return 0;
+  struct termios t;
+  ioctl_res("ptyioctl_slave_tcgetattr", tcgetattr(s, &t));
+  ioctl_res("ptyioctl_slave_tcsetattr_now", tcsetattr(s, TCSANOW, &t));
+  ioctl_res("ptyioctl_slave_tcsetattr_drain_TIOCSETAW", tcsetattr(s, TCSADRAIN, &t));
+  struct winsize w2 = {30, 100, 0, 0};
+  ioctl_res("ptyioctl_master_TIOCSWINSZ", ioctl(m, TIOCSWINSZ, &w2));
+  ioctl_res("ptyioctl_slave_TIOCSWINSZ", ioctl(s, TIOCSWINSZ, &w2));
+  ioctl_res("ptyioctl_slave_TIOCGWINSZ", ioctl(s, TIOCGWINSZ, &w2));
+  for (int variant = 0; variant < 2; variant++) {
+    pid_t pid = fork();
+    if (pid == 0) {
+      setsid();
+      int fd = s;
+      if (variant == 1) {
+        fd = open(tty, O_RDWR);
+        result("ptyioctl_child_open_slave_without_NOCTTY", fd >= 0 ? "PASS" : "FAIL", "%s", fd >= 0 ? "ok" : strerror(errno));
+      } else {
+        ioctl_res("ptyioctl_child_setsid_TIOCSCTTY", ioctl(fd, TIOCSCTTY, 0));
+      }
+      int t2 = open("/dev/tty", O_RDWR);
+      result(variant ? "ptyioctl_ctty_acquired_by_open" : "ptyioctl_ctty_after_TIOCSCTTY", t2 >= 0 ? "PASS" : "FAIL", "open(/dev/tty)=%s", t2 >= 0 ? "ok" : strerror(errno));
+      pid_t pg = tcgetpgrp(fd);
+      result(variant ? "ptyioctl_child_tcgetpgrp_v2" : "ptyioctl_child_tcgetpgrp", pg > 0 ? "PASS" : "FAIL", "pg=%d errno=%s", (int)pg, pg > 0 ? "-" : strerror(errno));
+      int sp = tcsetpgrp(fd, getpgrp());
+      result(variant ? "ptyioctl_child_tcsetpgrp_v2" : "ptyioctl_child_tcsetpgrp", sp == 0 ? "PASS" : "FAIL", "rc=%d errno=%s", sp, sp ? strerror(errno) : "-");
+      _exit(0);
+    }
+    waitpid(pid, NULL, 0);
+    if (variant == 0) {
+      close(m);
+      close(s);
+      openpty(&m, &s, tty, NULL, &ws);
+    }
+  }
+  int p2[2];
+  pipe(p2);
+  char out[200] = "";
+  char *a[] = {"/bin/sh", "-c", "echo pipe-ok", NULL};
+  rc = run(a, 10, out, sizeof out - 1);
+  result("pipe_child_without_pty", rc == 0 ? "PASS" : "FAIL", "rc=%d out=%s", rc, out);
+  return 0;
+}
+
+static int cmd_libproc(void) {
+  int bytes = proc_listpids(PROC_ALL_PIDS, 0, NULL, 0);
+  result("libproc_listpids", bytes > 0 ? "PASS" : "FAIL", "bytes=%d", bytes);
+  if (bytes <= 0) return 0;
+  pid_t *pids = malloc(bytes + 4096);
+  int n = proc_listpids(PROC_ALL_PIDS, 0, pids, bytes + 4096) / sizeof(pid_t);
+  int path_ok = 0, bsd_ok = 0, fds_ok = 0, other = 0;
+  for (int i = 0; i < n; i++) {
+    pid_t pid = pids[i];
+    if (pid <= 0 || pid == getpid()) continue;
+    other++;
+    char path[4096];
+    if (proc_pidpath(pid, path, sizeof path) > 0) path_ok++;
+    struct proc_bsdinfo bi;
+    if (proc_pidinfo(pid, PROC_PIDTBSDINFO, 0, &bi, sizeof bi) == sizeof bi) bsd_ok++;
+    int fb = proc_pidinfo(pid, PROC_PIDLISTFDS, 0, NULL, 0);
+    if (fb > 0) fds_ok++;
+  }
+  result("libproc_pidpath_of_other_processes", path_ok ? "PASS" : "FAIL", "%d of %d", path_ok, other);
+  result("libproc_bsdinfo_of_other_processes", bsd_ok ? "PASS" : "FAIL", "%d of %d", bsd_ok, other);
+  result("libproc_listfds_of_other_processes", fds_ok ? "PASS" : "FAIL", "%d of %d", fds_ok, other);
+  int mib[3] = {CTL_KERN, KERN_PROC, KERN_PROC_ALL};
+  size_t len = 0;
+  int sr = sysctl(mib, 3, NULL, &len, NULL, 0);
+  result("sysctl_kern_proc_all", sr == 0 && len > 0 ? "PASS" : "FAIL", "rc=%d len=%zu errno=%s", sr, len, sr ? strerror(errno) : "-");
+  free(pids);
+  return 0;
+}
+
+static int cmd_orphan(const char *dir, const char *tokfile) {
+  char flag[1100], target[1100];
+  snprintf(flag, sizeof flag, "%s.orphan", tokfile);
+  snprintf(target, sizeof target, "%s/orphan-early.txt", dir);
+  unlink(flag);
+  unlink(target);
+  pid_t pid = fork();
+  if (pid == 0) {
+    setsid();
+    if (fork() != 0) _exit(0);
+    sleep(6);
+    write_file(flag, try_write(target) ? "allowed" : "denied");
+    _exit(0);
+  }
+  waitpid(pid, NULL, 0);
+  sleep(1);
+  char *tok = read_token(tokfile);
+  int64_t h = tok ? sandbox_extension_consume(tok) : -1;
+  check("orphan_consume", 1, h > 0, h > 0 ? "ok" : strerror(errno));
+  sleep(8);
+  char *r = read_token(flag);
+  result("info_orphaned_setsid_process_started_before_consume_gained_access", "INFO", "%s", r ? r : "no result");
+  return 0;
+}
+
 static int cmd_write(const char *path) { return try_write(path) ? 0 : 1; }
 
 static int cmd_daemon(const char *bin, const char *sock) {
@@ -415,7 +549,11 @@ int main(int argc, char **argv) {
   if (!strcmp(m, "issue") && argc > 2) return cmd_issue(argv[2]);
   if (!strcmp(m, "suite") && argc > 5) return cmd_suite(argv[2], argv[3], argv[4], argv[5], argc > 6 ? argv[6] : NULL);
   if (!strcmp(m, "peer") && argc > 3) return cmd_peer(argv[2], argv[3]);
-  if (!strcmp(m, "execs") && argc > 2) return cmd_execs(argv[2]);
+  if (getenv("PROBE_GIT")) GITBIN = getenv("PROBE_GIT");
+  if (!strcmp(m, "execs") && argc > 4) return cmd_execs(argv[2], argv[3], argv[4]);
+  if (!strcmp(m, "ptyioctl")) return cmd_ptyioctl();
+  if (!strcmp(m, "libproc")) return cmd_libproc();
+  if (!strcmp(m, "orphan") && argc > 3) return cmd_orphan(argv[2], argv[3]);
   if (!strcmp(m, "pty")) return cmd_pty();
   if (!strcmp(m, "misc") && argc > 3) return cmd_misc(argv[2], argv[3]);
   if (!strcmp(m, "write") && argc > 2) return cmd_write(argv[2]);

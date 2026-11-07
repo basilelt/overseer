@@ -4,14 +4,15 @@ SOCK, BASE, OUT = sys.argv[1], sys.argv[2], sys.argv[3]
 REPO = f"{BASE}/proj"
 OUTSIDE = sys.argv[4] if len(sys.argv) > 4 else "/tmp/sbx-grant"
 rows = []
+PREFIX = os.environ.get("PREFIX", "")
 
 
 def rec(name, verdict, detail=""):
     detail = " ".join(str(detail).split())[:500]
     rows.append((name, verdict, detail))
-    print(f"RESULT\t{name}\t{verdict}\t{detail}", flush=True)
+    print(f"RESULT\t{PREFIX}{name}\t{verdict}\t{detail}", flush=True)
     with open(OUT, "a") as f:
-        f.write(f"{name}\t{verdict}\t{detail}\n")
+        f.write(f"{PREFIX}{name}\t{verdict}\t{detail}\n")
 
 
 def conn():
