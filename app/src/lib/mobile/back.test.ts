@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { backAction, backHandlers, closeTop, onBack, pushTab, runBack, setBackRunner, type BackState } from './back';
+import { backAction, backHandlers, closeTop, escapeCloses, onBack, pushTab, runBack, setBackRunner, type BackState } from './back';
 
 const root: BackState = { handlers: 0, tour: false, menu: false, diag: false, overlay: false, entry: false, panel: false, drawer: false, subscreen: false, previousTab: null };
 
@@ -66,5 +66,22 @@ describe('tab history', () => {
     expect(h).toEqual(['tasks', 'review']);
     expect(pushTab(h, 'agents', 'agents')).toBe(h);
     expect(pushTab(['agents', 'tasks', 'review'], 'more', 'agents', 2)).toEqual(['review', 'more']);
+  });
+});
+
+describe('Escape on a phone sheet', () => {
+  it('closes an open sheet', () => {
+    expect(escapeCloses({ key: 'Escape', defaultPrevented: false }, true)).toBe(true);
+  });
+
+  it('does nothing when the sheet is closed, for other keys, or when a field already used the key', () => {
+    expect(escapeCloses({ key: 'Escape', defaultPrevented: false }, false)).toBe(false);
+    expect(escapeCloses({ key: 'Enter', defaultPrevented: false }, true)).toBe(false);
+    expect(escapeCloses({ key: 'Escape', defaultPrevented: true }, true)).toBe(false);
+  });
+
+  it('is wired to the Activity sheet of the phone shell', async () => {
+    const src = (await import('../components/mobile/MobileShell.svelte?raw')).default;
+    expect(src).toMatch(/<svelte:window onkeydown=\{[^}]*escapeCloses\(e, ui\.panel\)[^}]*ui\.panel = false/);
   });
 });
