@@ -12,6 +12,10 @@ on:
         type: choice
         options: [production, beta, alpha, internal]
         default: alpha
+      release_notes:
+        description: App Store "What's New" text (empty = "Bug fixes and improvements.")
+        type: string
+        default: ""
       ios:
         description: Submit iOS to App Store review
         type: boolean
@@ -150,6 +154,7 @@ jobs:
           IOS_MOBILE_PROVISION: ${{ secrets.IOS_MOBILE_PROVISION }}
           FASTLANE_SKIP_UPDATE_CHECK: "1"
           FASTLANE_HIDE_CHANGELOG: "1"
+          RELEASE_NOTES: ${{ inputs.release_notes }}
         run: fastlane ios app_store
 
   android:

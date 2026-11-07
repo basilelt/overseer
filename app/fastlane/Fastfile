@@ -42,11 +42,14 @@ platform :ios do
 
   lane :app_store do
     built = build_ipa
+    notes = ENV.fetch("RELEASE_NOTES", "").strip
+    notes = "Bug fixes and improvements." if notes.empty?
     upload_to_app_store(
       api_key: built[:api_key],
       ipa: built[:ipa],
       platform: "ios",
-      skip_metadata: true,
+      metadata_path: Dir.mktmpdir,
+      release_notes: { "en-US" => notes },
       skip_screenshots: true,
       submit_for_review: true,
       automatic_release: false,
