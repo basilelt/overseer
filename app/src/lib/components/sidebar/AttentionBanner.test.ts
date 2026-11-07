@@ -12,7 +12,7 @@ describe('AttentionBanner', () => {
     // Given no entries
     // When the banner renders
     // Then nothing but the Svelte anchor is output
-    expect(html([]).replace(/<!--[\s\S]*?--!?>/g, '')).toBe('');
+    expect(html([]).split(/<!--[\s\S]*?--!?>/).join('')).toBe('');
   });
 
   it('lists each session as its own button under an attention heading', () => {
