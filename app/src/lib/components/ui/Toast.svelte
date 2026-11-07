@@ -61,7 +61,7 @@
     white-space: nowrap;
   }
   :global(:root.phone) .toast {
-    bottom: calc(72px + var(--safe-bottom) + var(--kb, 0px));
+    bottom: calc(72px + var(--safe-bottom) + var(--kb, 0px) + var(--composer-h, 0px) + 8px);
   }
   :global(:root.phone:has([role='menu'])) .toast {
     bottom: auto;

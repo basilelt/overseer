@@ -104,6 +104,18 @@
 
   onMount(() => () => cancelAnimationFrame(sizeFrame));
 
+  $effect(() => {
+    const el = root;
+    if (!phone || !el || typeof ResizeObserver === 'undefined') return;
+    const style = document.documentElement.style;
+    const ro = new ResizeObserver(() => style.setProperty('--composer-h', `${el.offsetHeight}px`));
+    ro.observe(el);
+    return () => {
+      ro.disconnect();
+      style.removeProperty('--composer-h');
+    };
+  });
+
   function insert(s: string) {
     const el = box;
     const at = el ? el.selectionStart : text.length;
