@@ -8,6 +8,7 @@
   import Users from '@lucide/svelte/icons/users';
   import X from '@lucide/svelte/icons/x';
   import { t } from '../../i18n.svelte';
+  import { touchContextMenu } from '../../mobile/touch-menu';
   import { app, type SidebarMode } from '../../state.svelte';
   import { broadcastTo, createFolder, groupPicker, rescanFolders } from '../../wsactions';
   import WandSparkles from '@lucide/svelte/icons/wand-sparkles';
@@ -33,7 +34,7 @@
   ];
 </script>
 
-<aside class="sidebar" data-tour="workspaces">
+<aside class="sidebar" data-tour="workspaces" use:touchContextMenu>
   <header>
     <div class="modes" role="tablist" aria-label={t('ws.mode')}>
       {#each modes as m (m.id)}
@@ -99,6 +100,7 @@
     border-right: 1px solid var(--border);
     background: var(--bg-subtle);
     min-height: 0;
+    -webkit-touch-callout: none;
   }
   header {
     display: flex;

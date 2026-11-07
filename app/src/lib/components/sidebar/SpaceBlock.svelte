@@ -13,6 +13,7 @@
     open,
     closedOpen,
     selectedKey,
+    multi,
     host,
     selected = false,
     tabDrop = false,
@@ -30,6 +31,7 @@
     open: boolean;
     closedOpen: boolean;
     selectedKey: string | null;
+    multi?: ReadonlySet<string>;
     host?: { name: string } & Pick<ConnState, 'phase' | 'attempt' | 'version'>;
     /** This workspace is the active one. */
     selected?: boolean;
@@ -82,7 +84,7 @@
 {#if sessions}
   <WorkspaceFrame header={line}>
     {#each sessions.live as it (it.key)}
-      <SessionRow item={it} {now} {host} selected={selectedKey === it.key} onselect={(e) => onselect(it.key, e)} onmenu={onitemmenu && ((e) => onitemmenu(it.key, it.title, e))} />
+      <SessionRow item={it} {now} {host} selected={selectedKey === it.key} multi={multi?.has(it.key)} onselect={(e) => onselect(it.key, e)} onmenu={onitemmenu && ((e) => onitemmenu(it.key, it.title, e))} />
     {/each}
     {#if sessions.closed.count}
       <button class="more" type="button" aria-expanded={closedOpen} onclick={onclosed}>{sessions.closed.count === 1 ? t('ws.closedOne') : t('ws.closedMore', { n: sessions.closed.count })}</button>
@@ -90,7 +92,7 @@
         {#each sessions.closed.buckets as b (b.bucket)}
           <div class="bucket">{t(`ws.bucket.${b.bucket}`)}</div>
           {#each b.items as it (it.key)}
-            <SessionRow item={it} {now} {host} selected={selectedKey === it.key} onselect={(e) => onselect(it.key, e)} onmenu={onitemmenu && ((e) => onitemmenu(it.key, it.title, e))} />
+            <SessionRow item={it} {now} {host} selected={selectedKey === it.key} multi={multi?.has(it.key)} onselect={(e) => onselect(it.key, e)} onmenu={onitemmenu && ((e) => onitemmenu(it.key, it.title, e))} />
           {/each}
         {/each}
       {/if}

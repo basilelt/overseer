@@ -187,3 +187,22 @@ describe('Sidebar workspaces layout', () => {
     expect(sidebarSrc).not.toContain('{app.items.length}');
   });
 });
+
+describe('SpacesView multi-select', () => {
+  it('passes the multi selection down to the blocks', () => {
+    // Given the component source
+    // When the block is read
+    // Then it receives app.multi
+    expect(src).toContain('multi={app.multi}');
+  });
+});
+
+describe('Sidebar touch menus', () => {
+  it('turns a touch long press anywhere in the sidebar into the contextmenu its rows already handle', () => {
+    // Given the sidebar source
+    // When the root is read
+    // Then one touchContextMenu action sits on the aside and iOS callouts are off
+    expect(sidebarSrc).toMatch(/<aside class="sidebar"[^>]*use:touchContextMenu>/);
+    expect(sidebarSrc).toMatch(/\.sidebar \{[^}]*-webkit-touch-callout: none/s);
+  });
+});

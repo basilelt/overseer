@@ -149,3 +149,23 @@ describe('SessionRow', () => {
     expect(rule('.chev')).toContain('flex: none');
   });
 });
+
+describe('SessionRow multi-select', () => {
+  it('marks a multi-selected row with the multi class, and only then', () => {
+    // Given a row in the multi selection and one outside it
+    // When they render
+    // Then only the first carries the multi class
+    expect(html({}, { multi: true })).toMatch(/class="[^"]*\bmulti\b/);
+    expect(html({}, { multi: false })).not.toMatch(/class="[^"]*\bmulti\b/);
+  });
+
+  it('styles the multi row from the accent token so it reads in every theme', () => {
+    // Given the component source
+    // When the multi rule is read
+    // Then it mixes the accent into the row background and rings it with the accent, no hard-coded colour
+    const rule = componentSrc.match(/\.row\.multi \{([^}]*)\}/)![1]!;
+    expect(rule).toContain('var(--accent)');
+    expect(rule).toContain('var(--session-row-bg)');
+    expect(rule).not.toMatch(/#[0-9a-f]{3,6}/i);
+  });
+});
