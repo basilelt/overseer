@@ -556,6 +556,17 @@ describe('itemMenu', () => {
     expect(app.notify).toHaveBeenCalledWith(t('chat.pauseCancelled'));
   });
 
+  it('resumes a paused session that still has its terminal, with the chat header action', async () => {
+    const item = { key: 'line:a', lineId: 'a', termId: 't' };
+    app.items = [item];
+    app.data.lines = [liveLine('a', { line: { id: 'a', state: 'held' } })];
+    const items = itemMenu('line:a');
+    expect(labels(items).slice(0, 3)).toEqual([t('line.open'), t('action.resume'), t('line.close')]);
+    await pick(items, t('action.resume')).run!();
+    expect(app.resumeLine).toHaveBeenCalledWith(item);
+    expect(app.select).toHaveBeenCalledWith('line:a');
+  });
+
   it('reports a refused pause', async () => {
     app.items = [{ key: 'line:a', lineId: 'a' }];
     app.data.lines = [liveLine('a')];

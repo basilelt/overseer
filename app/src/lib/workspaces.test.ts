@@ -392,6 +392,13 @@ describe('Other sessions actions', () => {
     expect(acts('dead')).toEqual(['resume', 'close']);
   });
 
+  it('offers resume next to open for a held session whose terminal is still attached', () => {
+    const held = live('held', { pid: 8, busy: false, needsInput: false }, 'held');
+    const term = { id: 't9', lineId: 'held', cwd: '/srv', exited: false, cmd: ['claude'], title: 'claude', createdAt: at } as Term;
+    const items = sidebarItems([held], [term], []);
+    expect(lineActions(items.find((i) => i.lineId === 'held')!, held)).toEqual(['open', 'resume', 'close']);
+  });
+
   it('offers no line actions for plain terminals', () => {
     expect(lineActions(item('term:x', 'running', { termId: 'x' }), undefined)).toEqual([]);
   });

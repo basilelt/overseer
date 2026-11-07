@@ -371,8 +371,10 @@ export function lineActions(item: SidebarItem, line: LocalLine | undefined): Lin
   if (!item.lineId || !line) return [];
   const alive = lineAlive(line);
   const out: LineAction[] = [];
-  if (item.termId) out.push('open');
-  else if (alive && line.local?.tmuxPane) out.push('attach');
+  if (item.termId) {
+    out.push('open');
+    if (!alive) out.push('resume');
+  } else if (alive && line.local?.tmuxPane) out.push('attach');
   else if (!alive) out.push('resume');
   if (alive && (line.local?.tmuxPane || item.termId) && !line.local?.pinned) out.push('hold');
   out.push('close');
