@@ -110,7 +110,7 @@ export function wheelAction(steps: number, w: WheelInput, m: TermModes, opts: { 
   if (steps === 0) return { kind: 'none' };
   const up = steps < 0;
   const n = Math.abs(steps);
-  if (w.shift || opts.preferLocal) return { kind: 'local', lines: steps };
+  if (w.shift || (opts.preferLocal && !m.alt)) return { kind: 'local', lines: steps };
   if (m.tracking) return { kind: 'send', data: wheelReport(up, w.col, w.row, m, w).repeat(n) };
   if (m.alt && m.alternateScroll) {
     const key = `\x1b${m.appCursor ? 'O' : '['}${up ? 'A' : 'B'}`;

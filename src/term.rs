@@ -597,6 +597,14 @@ fn strip_cursor_query(chunk: &[u8]) -> Option<Vec<u8>> {
     Some([&chunk[..at], &chunk[at + Q.len()..]].concat())
 }
 
+fn partial_query_len(data: &[u8]) -> usize {
+    const Q: &[u8] = b"\x1b[6n";
+    (1..Q.len())
+        .rev()
+        .find(|&k| data.len() >= k && data[data.len() - k..] == Q[..k])
+        .unwrap_or(0)
+}
+
 fn pump(t: &Term, reader: Reader, gen: u64, mut handshake: bool) {
     let Reader { mut r, fd } = reader;
     #[cfg(unix)]
@@ -604,6 +612,7 @@ fn pump(t: &Term, reader: Reader, gen: u64, mut handshake: bool) {
     #[cfg(not(unix))]
     let _ = fd;
     let mut buf = vec![0u8; 16 << 10];
+    let mut held: Vec<u8> = Vec::new();
     loop {
         #[cfg(unix)]
         if let Some(fd) = fd.filter(|_| pump.gated()) {
@@ -619,14 +628,26 @@ fn pump(t: &Term, reader: Reader, gen: u64, mut handshake: bool) {
             Ok(0) => break,
             Ok(n) => {
                 let mut chunk = &buf[..n];
+                let joined;
                 let stripped;
                 if handshake {
+                    if !held.is_empty() {
+                        held.extend_from_slice(chunk);
+                        joined = std::mem::take(&mut held);
+                        chunk = &joined;
+                    }
                     if let Some(rest) = strip_cursor_query(chunk) {
                         handshake = false;
                         let mut w = lock(&t.writer);
                         let _ = w.write_all(b"\x1b[1;1R").and_then(|_| w.flush());
                         stripped = rest;
                         chunk = &stripped;
+                    } else {
+                        let k = partial_query_len(chunk);
+                        if k > 0 {
+                            held.extend_from_slice(&chunk[chunk.len() - k..]);
+                            chunk = &chunk[..chunk.len() - k];
+                        }
                     }
                 }
                 if let Err(p) =
@@ -1410,6 +1431,18 @@ mod tests {
             Some(&b"\x1b[?9001h\x1b[?1004h"[..])
         );
         assert_eq!(strip_cursor_query(b"hello\x1b[6"), None);
+    }
+
+    #[test]
+    fn a_split_cursor_query_leaves_a_trailing_prefix_to_carry() {
+        assert_eq!(partial_query_len(b"hi\x1b"), 1);
+        assert_eq!(partial_query_len(b"hi\x1b["), 2);
+        assert_eq!(partial_query_len(b"hi\x1b[6"), 3);
+        assert_eq!(partial_query_len(b"hi"), 0);
+        assert_eq!(partial_query_len(b"\x1b[6n"), 0);
+        let mut joined = b"\x1b[".to_vec();
+        joined.extend_from_slice(b"6n rest");
+        assert_eq!(strip_cursor_query(&joined).as_deref(), Some(&b" rest"[..]));
     }
 
     #[test]
