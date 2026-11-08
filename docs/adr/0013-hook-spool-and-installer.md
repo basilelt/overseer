@@ -22,7 +22,7 @@ event is only known from documentation, and Codex re-trusts hooks by hash.
   state therefore works with or without the daemon.
 - **Events** (Claude): SessionStart, UserPromptSubmit, Stop, StopFailure, Notification,
   PermissionRequest, Elicitation, SubagentStart/Stop, TaskCreated/Completed, SessionEnd.
-  (Codex): SessionStart, UserPromptSubmit, Stop, PermissionRequest, SubagentStart/Stop, SessionEnd.
+  (Codex): SessionStart, UserPromptSubmit, Stop, PermissionRequest, PostToolUse, SubagentStart/Stop, SessionEnd.
   `Notification` sets needs-input unless `notification_type` is `idle_prompt` or `auth_success`
   (missing type = needs input: a false refusal is safer than a false hold).
 - **Busy**: for Claude the newer of the hook state and `sessions/<pid>.json` `status` wins
