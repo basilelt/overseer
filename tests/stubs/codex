@@ -28,7 +28,11 @@ tool=
 cleanup() { [ -n "$tool" ] && kill "$tool" 2>/dev/null; exit 0; }
 trap cleanup TERM HUP
 trap 'exit 0' INT
-printf 'codex ready\r\n› '
+prompt() {
+  printf '\033[38;5;244m  ? for shortcuts\033[0m\r\n\033[38;5;244m›\033[0m \033[2mAsk Codex to do anything\033[0m'
+}
+printf 'codex ready\r\n'
+prompt
 while IFS= read -r l; do
   case $l in
     exit) cleanup ;;
@@ -39,6 +43,6 @@ while IFS= read -r l; do
     tool) sh -c 'sleep 8' bwrap --argv0 codex-linux-sandbox -- /x/bin/codex --sandbox-policy-cwd "$PWD" & tool=$! ;;
     *) printf 'got: %s\r\n' "$l" ;;
   esac
-  printf '› '
+  prompt
 done
 cleanup

@@ -220,9 +220,16 @@ pub fn input_empty(screen: Option<&str>) -> Check {
     let from = last.saturating_sub(15);
     let prompt = (from..=last).rev().find(|&i| {
         let t = trim_box(&lines[i]);
+        let dim_codex_composer = t.first().is_some_and(|c| c.c == '›')
+            && t.iter()
+                .map(|c| c.c)
+                .collect::<String>()
+                .contains("Ask Codex to do anything");
         !t.is_empty()
-            && !t[0].dim
             && MARKERS.contains(&t[0].c)
+            // Codex renders its idle composer marker in dim gray. Accept that style
+            // only with Codex's empty-composer placeholder; typed text remains guarded below.
+            && (!t[0].dim || dim_codex_composer)
             && t.get(1)
                 .is_none_or(|c| c.c.is_whitespace() || c.c == '\u{a0}')
     });
@@ -331,6 +338,26 @@ mod tests {
         assert!(!input_empty(Some("› \n\n  ⏎ send")).ok);
         assert!(input_empty(Some("output\n› ")).ok);
         assert!(!input_empty(Some("output\n› typed")).ok);
+        let footer = "\x1b[38;5;244m  ? for shortcuts\x1b[0m";
+        assert!(!input_empty(Some(&format!("output\n\x1b[38;5;244m›\x1b[0m\n{footer}"))).ok);
+        assert!(
+            input_empty(Some(&format!(
+                "output\n\x1b[38;5;244m›\x1b[0m \x1b[2mAsk Codex to do anything\x1b[0m\n{footer}"
+            )))
+            .ok
+        );
+        assert!(
+            !input_empty(Some(&format!(
+                "output\n\x1b[38;5;244m›\x1b[0m typed\n{footer}"
+            )))
+            .ok
+        );
+        assert!(
+            !input_empty(Some(&format!(
+                "output\n{footer}\n\x1b[38;5;244m›\x1b[0m \x1b[2mAsk Codex to do anything\x1b[0m typed"
+            )))
+            .ok
+        );
     }
 
     #[test]
