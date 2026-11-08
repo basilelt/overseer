@@ -126,15 +126,18 @@ pub fn status_for(
     review: bool,
 ) -> (&'static str, Option<&'static str>) {
     match state {
-        "closed" | "merged" => ("completed", None),
+        "merged" => ("merged", None),
+        "closed" => ("completed", None),
         "lost" | "done" => match current {
             "in_testing" => ("in_testing", None),
+            "merged" => ("merged", None),
             "in_progress" if review => ("in_testing", None),
             _ => ("completed", None),
         },
         "held" => (
             match current {
                 "in_testing" => "in_testing",
+                "merged" => "merged",
                 "completed" => "completed",
                 _ => "in_progress",
             },
@@ -146,10 +149,17 @@ pub fn status_for(
 }
 
 fn order(status: &str) -> usize {
-    ["pending", "auto", "in_progress", "in_testing", "completed"]
-        .iter()
-        .position(|s| *s == status)
-        .unwrap_or(0)
+    [
+        "pending",
+        "auto",
+        "in_progress",
+        "in_testing",
+        "merged",
+        "completed",
+    ]
+    .iter()
+    .position(|s| *s == status)
+    .unwrap_or(0)
 }
 
 pub fn follow(t: &mut Task, state: &str, review: impl FnOnce() -> bool) -> bool {
@@ -383,7 +393,9 @@ fn absorb(t: &mut Task, l: &Line, a: &Value) -> bool {
 pub fn refresh(t: &mut Task, line: Option<&Line>, env: &Env) -> bool {
     let Some(l) = line else {
         let changed = t.title_source.is_none() && retitle(t, None, &Value::Null);
-        return (t.status != "completed" && (env.merged)(t) && follow(t, "merged", || true))
+        return (!crate::tasks::is_done(&t.status)
+            && (env.merged)(t)
+            && follow(t, "merged", || true))
             || changed;
     };
     let mut changed = false;
@@ -405,7 +417,7 @@ pub fn refresh(t: &mut Task, line: Option<&Line>, env: &Env) -> bool {
             crate::worktrees::forget_landed(b);
         }
     }
-    if matches!(state, "lost" | "done") && t.status != "completed" && (env.merged)(t) {
+    if matches!(state, "lost" | "done") && !crate::tasks::is_done(&t.status) && (env.merged)(t) {
         state = "merged";
     }
     let branched = t.worktree_path.as_deref().is_some_and(|w| w != t.project);
@@ -637,13 +649,18 @@ mod tests {
     fn status_mapping_table() {
         let cases: &[(&str, &str, &str, Option<&str>)] = &[
             ("closed", "in_progress", "completed", None),
-            ("merged", "in_testing", "completed", None),
+            ("merged", "in_testing", "merged", None),
+            ("merged", "in_progress", "merged", None),
+            ("held", "merged", "merged", Some("paused")),
             ("lost", "in_progress", "in_testing", None),
             ("done", "in_progress", "in_testing", None),
             ("done", "in_testing", "in_testing", None),
             ("done", "pending", "completed", None),
             ("lost", "pending", "completed", None),
             ("done", "completed", "completed", None),
+            ("done", "merged", "merged", None),
+            ("lost", "merged", "merged", None),
+            ("busy", "merged", "in_progress", None),
             ("busy", "in_testing", "in_progress", None),
             ("input", "in_progress", "in_progress", Some("needs_input")),
             ("fresh", "pending", "in_progress", Some("needs_input")),
@@ -751,7 +768,7 @@ mod tests {
     }
 
     #[test]
-    fn idle_session_on_a_landed_branch_moves_to_done_once() {
+    fn idle_session_on_a_landed_branch_moves_to_merged_once() {
         let mut l = line("a", "idle");
         l.busy_known = true;
         let a = json!({"goal": "ship it", "editedFiles": ["/repo/a.rs"]});
@@ -773,7 +790,7 @@ mod tests {
         assert_eq!(t.status, "in_testing");
         landed.set(true);
         assert!(refresh(&mut t, Some(&l), &env));
-        assert_eq!(t.status, "completed");
+        assert_eq!(t.status, "merged");
         t.status = "in_testing".into();
         t.manual_status = Some("in_testing".into());
         refresh(&mut t, Some(&l), &env);

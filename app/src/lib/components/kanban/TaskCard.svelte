@@ -9,7 +9,7 @@
   import FolderGit from '@lucide/svelte/icons/folder-git';
   import LoaderCircle from '@lucide/svelte/icons/loader-circle';
   import { t, type Key } from '../../i18n.svelte';
-  import { cardMeta, isSession, modelLabel, quadrant, relTime, type CardStatus } from '../../kanban';
+  import { cardMeta, isDone, isSession, modelLabel, quadrant, relTime, type CardStatus } from '../../kanban';
   import type { Task } from '../../types';
   import { app, projectName } from '../../state.svelte';
   import { agentName, findAgent } from '../../agents';
@@ -243,7 +243,7 @@
                 ]);
               }}><svg class="i" width="13" height="13" aria-hidden="true"><use href="#sbi-play" /></svg></button>
           {/if}
-          {#if !session && onchain && task.status !== 'completed'}
+          {#if !session && onchain && !isDone(task.status)}
             <button class="act" title={t('kanban.chain')} aria-label={t('kanban.chain')} onclick={act(onchain)}><svg class="i" width="13" height="13" aria-hidden="true"><use href="#sbi-corner-down-right" /></svg></button>
           {/if}
           {#if !session && ondetails}

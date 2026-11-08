@@ -887,7 +887,7 @@ On first launch, once the app is connected (immediately in local mode, after the
 connection on a phone), a welcome card offers **Take the tour** or **Skip**. The tour dims the
 window and highlights the real controls one at a time: host chip, workspaces sidebar, tabs and the
 new-session menu, the Terminal/Chat toggle, the side panel, Tasks, Review, the usage, system and ports
-chips, notifications and hooks, the command palette and Feedback, in 0.25 the Cmd/Ctrl+P palette shortcut, and in 0.27 the demo mode (on the **Demo mode** pill while in the demo, else on the host chip), and in 0.28 the GPU rendering option for terminals, and in 0.29 the clean up of unused worktrees and the import from Switchboard (on its button in Settings, Help, or on the Settings button), and in 0.30 click to move the cursor in a terminal (on the tabs), and in 0.31 the Light and Dark palettes (on Settings, or More on a phone), and in 0.33 the one-click install of skills and plugins (on Settings). Steps whose control is not on
+chips, notifications and hooks, the command palette and Feedback, in 0.25 the Cmd/Ctrl+P palette shortcut, and in 0.27 the demo mode (on the **Demo mode** pill while in the demo, else on the host chip), and in 0.28 the GPU rendering option for terminals, and in 0.29 the clean up of unused worktrees and the import from Switchboard (on its button in Settings, Help, or on the Settings button), and in 0.30 click to move the cursor in a terminal (on the tabs), and in 0.31 the Light and Dark palettes (on Settings, or More on a phone), and in 0.33 the one-click install of skills and plugins (on Settings), and in 0.34 the Review, Merged and Closed columns (on the Merged column when the board is open, else on the Tasks tab). Steps whose control is not on
 screen (no session selected, a feature the server lacks, phone layout) are skipped. On a phone the
 card is a sheet at the bottom (or top, when the control sits low) and points at the bottom
 navigation, the session strip and the menu.
@@ -1162,8 +1162,9 @@ the session's directory at resume time.
 ### 14.2 Tasks (Kanban)
 
 Tasks are local to the station, stored in the registry, numbered per project (`#1`, `#2`, … never
-reused), optionally linked to an `AS-` ticket. Statuses: `pending`, `auto`, `in_progress`,
-`in_testing`, `completed`.
+reused), optionally linked to an `AS-` ticket. Statuses, one board column each: `pending`
+(Pending), `auto` (Auto), `in_progress` (In progress), `in_testing` (Review), `merged` (Merged)
+and `completed` (Closed). Merged and Closed are both done; they start collapsed on the board.
 
 - `POST /v1/tasks/<id>/start` creates the worktree `<worktreeDir>/<repo>-<hash>/task-<n>-<slug>` on
   a new branch `task/<n>-<slug>` from the project's base branch (14.9; a restart reuses it; with
@@ -1176,13 +1177,16 @@ reused), optionally linked to an `AS-` ticket. Statuses: `pending`, `auto`, `in_
 - Tasks in `auto` start by themselves in column order (`rank`), while fewer than `autoConcurrency` tasks run
   (`config.json`, default 2).
 - A running task moves to `in_testing` when the agent finishes a turn (`Stop` hook) or exits.
-- An `in_testing` task moves to `completed` once its branch has landed in the project's default
+- An `in_testing` task, or a `completed` one whose worktree is still on disk, moves to `merged` once its branch has landed in the project's default
   branch (`origin/HEAD`, else `main`/`master`; `origin/<default>` when it is ahead of the local
   one): merged with a merge commit, fast-forwarded, rebased (same patches) or squashed (one
   commit with the branch's whole diff). A branch deleted after the merge is checked through
   `origin/<branch>`. While such tasks exist, the daemon fetches the default branch at most every
   5 minutes per repository, in the background (skipped when `worktreeFetch` is off, backed off
   for 10 minutes when offline). A task moved back by hand after that is left alone.
+- Agents move their own task through MCP `set_task_status`: `in_testing` when the work is ready
+  for review, `merged` once they merged it themselves, and `in_progress` when work resumes on a
+  task in Review, Merged or Closed (its agent must be running). Other statuses are refused.
 - `POST /v1/tasks/<id>/review` with `approve` (→ `completed`), `reject` (→ `in_progress`, an
   optional `message` is typed into the agent) or `commit` (`add -A` and `commit` in the worktree
   with `message` or `task #<n>: <title>`, → `completed`).
@@ -1193,7 +1197,7 @@ reused), optionally linked to an `AS-` ticket. Statuses: `pending`, `auto`, `in_
 - Dependencies: a task can depend on other tasks (`dependsOn`, a list of task ids). Set them in
   the "Depends on" picker of the new task dialog or the task details (search by number or title,
   same project unless "All projects" is ticked). A task stays blocked until every dependency is
-  `completed` (`in_testing` still blocks): the card shows a "Blocked" chip and "Waiting on #12,
+  `merged` or `completed` (`in_testing` still blocks): the card shows a "Blocked" chip and "Waiting on #12,
   #14", the auto runner and the title bar RUN button skip it, and it starts in queue order once
   unblocked. Starting a blocked task by hand asks for confirmation. A dependency that is deleted is
   dropped from its dependents; self-dependencies and cycles are refused (400). The link chip on a
@@ -1220,12 +1224,12 @@ curl --unix-socket "$S" 'http://unix/v1/tasks?status=in_progress,in_testing'
   agent of a task too: the message button on a card (or **Details and messages** in the phone
   menu) opens the task detail with its message thread and a send box (Ctrl/Cmd+Enter sends).
   A message to a task whose agent is not running is kept and added to its prompt when it starts.
-  When a task moves to In testing and other running tasks of the project changed some of the
+  When a task moves to Review and other running tasks of the project changed some of the
   same files, Overseer messages both agents by itself (`[Overseer] Overlap: task #A ... and
   task #B ... both change: ...`) so they agree who changes what. The same pair is not alerted
   again unless the set of shared files changes.
 - **Matrix**: the **Board | Matrix** switch in the Tasks header shows the open tasks (not
-  completed, not session tasks) on an Eisenhower matrix: Do first (urgent and important),
+  merged or closed, not session tasks) on an Eisenhower matrix: Do first (urgent and important),
   Schedule (important), Delegate (urgent) and Eliminate (neither), plus an Unsorted strip for
   tasks without a classification. Drag a card to another quadrant to change its `urgent` and
   `important` flags; on a phone the quadrants stack and the long-press menu of a card sets the
@@ -1257,19 +1261,20 @@ started from a task keeps that task and gets no second one.
   |---|---|---|
   | working | In progress | |
   | waiting for you (permission, question, first prompt) | In progress | needs input |
-  | turn finished, idle, or its process ended, after Overseer saw it working, with changes | In testing (ready for review) | |
-  | same, but it edited no file and has no worktree of its own (questions, searches, reports) | Completed | |
-  | already finished or ended when Overseer first finds it (sessions from before Overseer) | Completed | |
-  | held by you | stays in In testing / Completed, else In progress | paused |
-  | closed (hung up), or finished, idle or gone with its branch landed in the default branch (see 14.2) | Completed | |
+  | turn finished, idle, or its process ended, after Overseer saw it working, with changes | Review (ready for review) | |
+  | same, but it edited no file and has no worktree of its own (questions, searches, reports) | Closed | |
+  | already finished or ended when Overseer first finds it (sessions from before Overseer) | Closed | |
+  | held by you | stays in Review / Merged / Closed, else In progress | paused |
+  | finished, idle or gone with its branch landed in the default branch (see 14.2) | Merged | |
+  | closed (hung up) | Closed | |
 
 - **Moving a card by hand** wins: the task stays where you put it while the session stays in the
   same state, and never goes back to an earlier column on its own unless the session starts
-  working again. Session tasks only move between In progress, In testing and Completed; they
+  working again. Session tasks only move between In progress, Review, Merged and Closed; they
   cannot be started or deleted (close the session instead).
 - **Clicking a card** opens the session's tab (it attaches when the agent runs, otherwise the tab
-  shows **Resume**; nothing starts on its own); an In
-  testing card opens the review. Dropping a card on Completed offers to hold its session, with
+  shows **Resume**; nothing starts on its own); a Review
+  card opens the review. Dropping a card on Closed offers to hold its session, with
   the usual safety checks shown first.
 - **Hide session tasks** in the board's toolbar (the glyph button on phones) hides them; the
   choice is remembered.
@@ -1527,7 +1532,7 @@ while the window is hidden or unfocused and catches up when you come back.
 through the daemon: `list_tasks`, `get_task`, `create_task` (always `pending`; optional
 `dependsOn` ids or task numbers), `set_task_dependencies {taskId, dependsOn}` (refuses cycles),
 `update_task_progress {done,total,note}` and `set_task_status` (only its own task, only to
-`in_testing`). The daemon sets `OVERSEER_TASK_ID` in agents it starts for a task. Codex tasks get
+`in_testing`, `merged` or `in_progress`; `in_progress` only while its agent runs). The daemon sets `OVERSEER_TASK_ID` in agents it starts for a task. Codex tasks get
 the server on their command line (`-c mcp_servers.overseer.*`, with the task id and state dir in
 its env, since Codex clears the environment of MCP servers), so Codex agents can message other
 agents without any setup. Overseer never edits agent configuration; to enable it yourself

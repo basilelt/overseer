@@ -19,9 +19,30 @@ describe('MockDaemon', () => {
     const [lines, tasks, terms, projects] = await Promise.all([a.lines(), a.tasks(), a.terms(), a.projects()]);
     expect(lines.length).toBe(12);
     expect(tasks.length).toBeGreaterThanOrEqual(12);
-    expect(new Set(tasks.map((t) => t.status)).size).toBe(5);
+    expect(new Set(tasks.map((t) => t.status)).size).toBe(6);
     expect(terms.some((t) => !t.lineId)).toBe(true);
     expect(projects.length).toBeGreaterThan(2);
+  });
+
+  it('accepts merged on a task and rejects a status the daemon does not know', async () => {
+    const { a } = setup();
+    const tasks = await a.tasks();
+    const plain = tasks.find((t) => t.origin !== 'session' && t.status === 'in_testing')!;
+    expect((await a.patchTask(plain.id, { status: 'merged' })).status).toBe('merged');
+    await expect(a.patchTask(plain.id, { status: 'done' as never })).rejects.toMatchObject({ status: 400, message: 'status must be one of pending, auto, in_testing, merged, completed' });
+    const session = tasks.find((t) => t.origin === 'session')!;
+    expect((await a.patchTask(session.id, { status: 'merged' })).status).toBe('merged');
+    await expect(a.patchTask(session.id, { status: 'pending' })).rejects.toMatchObject({ status: 400, message: 'a session task follows its session: status must be one of in_progress, in_testing, merged, completed' });
+  });
+
+  it('moves a task back to in_progress only while its agent runs, as the daemon does', async () => {
+    const { a } = setup();
+    const tasks = await a.tasks();
+    const idle = tasks.find((t) => t.origin !== 'session' && t.status === 'pending')!;
+    await expect(a.patchTask(idle.id, { status: 'in_progress' })).rejects.toMatchObject({ status: 400, message: 'use POST /v1/tasks/{id}/start to start a task' });
+    const live = tasks.find((t) => t.origin !== 'session' && t.status === 'in_progress' && t.termId)!;
+    await a.patchTask(live.id, { status: 'merged' });
+    expect((await a.patchTask(live.id, { status: 'in_progress' })).status).toBe('in_progress');
   });
 
   it('reports the device it was given, for the demo on a real phone', async () => {

@@ -34,7 +34,7 @@
   const label = $derived(t(`kanban.col.${status}` as Key));
 </script>
 
-<section class="col {status}" class:collapsed class:target bind:this={el} aria-label={label}>
+<section class="col {status}" class:collapsed class:target bind:this={el} aria-label={label} data-tour={status === 'merged' ? 'merged' : undefined}>
   {#if collapsed}
     <button class="rail" onclick={ontoggle} title={t('kanban.expand')} aria-label="{t('kanban.expand')}: {label}" aria-expanded="false">
       <ChevronsRight size={14} />
@@ -85,6 +85,9 @@
   }
   .col.in_testing {
     --c: var(--st-testing);
+  }
+  .col.merged {
+    --c: var(--st-input);
   }
   .col.completed {
     --c: var(--st-done);

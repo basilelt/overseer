@@ -10,6 +10,7 @@ import { mockSystem } from './system/mock';
 import { resolveProfile } from './profiles';
 import { fileKind } from './files';
 import { cleanTitle } from './titles';
+import { isDone } from './kanban-core';
 import { attachProblem, IMAGE_EXTS, VIDEO_EXTS } from './feedback';
 import { AUTO_APPROVE_ARGS } from './agents';
 import type { DirListing } from './dirs';
@@ -272,9 +273,9 @@ const TASK_SEEDS: [string, string, string, TaskStatus, Agent, string, string?, s
   ['Scheduler lab report', 'Compare round-robin and CFS on the lab traces.', 'os-labs', 'in_progress', 'gemini', '', undefined, 'ln_06'],
   ['PTY resize debounce', 'Debounce terminal resize events to 50 ms.', 'overseer', 'in_testing', 'claude', 'sonnet', undefined, 'ln_03'],
   ['VAT rounding', 'Round VAT per line, not per order.', 'webshop', 'in_testing', 'codex', 'gpt-5-codex', 'PROJ-10819', 'ln_08'],
-  ['Talos OS installation on node2', 'Install Talos on the node2 node and join the cluster.', 'infra-lab', 'completed', 'claude', '', undefined, 'ln_07'],
+  ['Talos OS installation on node2', 'Install Talos on the node2 node and join the cluster.', 'infra-lab', 'merged', 'claude', '', undefined, 'ln_07'],
   ['User guide pass', 'Proofread the remote mode chapter.', 'overseer', 'completed', 'claude', 'haiku', undefined, 'ln_09'],
-  ['Sentry release tagging', 'Tag releases with the git sha in CI.', 'webshop', 'completed', 'codex', 'o4-mini'],
+  ['Sentry release tagging', 'Tag releases with the git sha in CI.', 'webshop', 'merged', 'codex', 'o4-mini'],
 ];
 
 function seedTasks(now: number): Task[] {
@@ -294,7 +295,7 @@ function seedTasks(now: number): Task[] {
     lineId: lineId ?? null,
     termId: lineId ? `tm_${lineId}` : null,
     branch: lineId ? SEEDS.find((s) => s.id === lineId)?.branch : null,
-    progress: status === 'in_progress' ? { done: 1 + (i % 3), total: 5, note: 'Implementing' } : status === 'in_testing' || status === 'completed' ? { done: 5, total: 5 } : null,
+    progress: status === 'in_progress' ? { done: 1 + (i % 3), total: 5, note: 'Implementing' } : status === 'in_testing' || status === 'merged' || status === 'completed' ? { done: 5, total: 5 } : null,
     createdAt: iso(60 * 24 * (TASK_SEEDS.length - i) / 3, now),
     updatedAt: iso(30 - i, now),
   }));
@@ -555,7 +556,7 @@ function scaledLines(n: number, now: number): LocalLine[] {
 }
 
 function scaledTasks(n: number, now: number): Task[] {
-  const statuses: TaskStatus[] = ['pending', 'auto', 'in_progress', 'in_testing', 'completed'];
+  const statuses: TaskStatus[] = ['pending', 'auto', 'in_progress', 'in_testing', 'merged', 'completed'];
   const repos = Object.keys(REPOS);
   return Array.from({ length: n }, (_, i) => ({
     id: `tk_x${i}`,
@@ -1502,7 +1503,7 @@ export class MockDaemon implements DaemonClient {
   }
 
   private organize(body: any): unknown {
-    const projects = body?.project ? [body.project] : [...new Set(this.tasks.filter((t) => t.status !== 'completed' && !t.origin?.match(/organizer|session/)).map((t) => t.project))];
+    const projects = body?.project ? [body.project] : [...new Set(this.tasks.filter((t) => !isDone(t.status) && !t.origin?.match(/organizer|session/)).map((t) => t.project))];
     if (!projects.length) throw new DaemonError(409, 'nothing to organize');
     const started: Task[] = [];
     for (const project of projects) {
@@ -1513,7 +1514,7 @@ export class MockDaemon implements DaemonClient {
       task.progress = { done: 1, total: 3, note: 'Classifying tasks' };
       started.push(this.touch(task));
       setTimeout(() => {
-        for (const t of this.tasks) if (t.project === project && t.origin !== 'organizer' && t.origin !== 'session' && t.status !== 'completed' && typeof t.urgent !== 'boolean') {
+        for (const t of this.tasks) if (t.project === project && t.origin !== 'organizer' && t.origin !== 'session' && !isDone(t.status) && typeof t.urgent !== 'boolean') {
           t.urgent = t.important = false;
           this.touch(t);
         }
@@ -1548,7 +1549,7 @@ export class MockDaemon implements DaemonClient {
     push({ kind: 'hold', lineId: 'ln_10' }, 'Idle for 34 days, holding frees its memory; resume brings it back');
     push({ kind: 'hold', lineId: 'ln_09' }, 'Idle for 31 days');
     push({ kind: 'close', lineId: 'ln_12' }, 'Its worktree folder was deleted');
-    push({ kind: 'set_task_status', taskId: 'tk_09', status: 'completed' }, 'Its branch landed in main');
+    push({ kind: 'set_task_status', taskId: 'tk_09', status: 'merged' }, 'Its branch landed in main');
     push({ kind: 'track', lineId: 'ln_07' }, 'Older than the session task window, still has open work');
     const p: Proposal = {
       id: `pr_${now.toString(36)}`,
@@ -1674,9 +1675,17 @@ export class MockDaemon implements DaemonClient {
     if (!action && method === 'PATCH') {
       const { id: _id, number: _n, ...patch } = body ?? {};
       if (Array.isArray(patch.dependsOn) && patch.dependsOn.includes(id)) throw new DaemonError(400, 'a task cannot depend on itself');
+      if (typeof patch.status === 'string') {
+        if (t.origin === 'session') {
+          if (!['in_progress', 'in_testing', 'merged', 'completed'].includes(patch.status)) throw new DaemonError(400, 'a session task follows its session: status must be one of in_progress, in_testing, merged, completed');
+        } else if (patch.status === 'in_progress') {
+          if (t.status !== 'in_progress' && !t.termId) throw new DaemonError(400, 'use POST /v1/tasks/{id}/start to start a task');
+        } else if (!['pending', 'auto', 'in_testing', 'merged', 'completed'].includes(patch.status)) {
+          throw new DaemonError(400, 'status must be one of pending, auto, in_testing, merged, completed');
+        }
+      }
       Object.assign(t, patch);
       if (t.origin === 'session' && patch.status) t.manualStatus = patch.status;
-      else if (t.status === 'in_progress' && !t.termId) this.startTask(t);
       return this.touch(t);
     }
     if (action === 'start') {

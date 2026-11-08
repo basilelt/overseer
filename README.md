@@ -74,7 +74,9 @@ Write a task, pick the agent, its model and reasoning effort, and start it: Over
 worktree on a new branch and types the task into the agent. Tasks in the **Auto** column start on
 their own, in order, within your concurrency limit. A new task can be filled from the project's
 GitHub or GitLab issues or Jira tickets, and agents can read and update tasks through the
-built-in MCP server.
+built-in MCP server. Finished work waits in **Review**; a task moves to **Merged** by itself once
+its branch lands in the default branch, **Closed** keeps the rest, and an agent moves its task
+back to In progress when work resumes.
 
 ![Tasks](app/docs/screenshots/kanban-dark.png)
 
@@ -89,7 +91,7 @@ built-in MCP server.
 
 A GitHub-style review of an agent's changes while it works. Comment on lines, suggest edits, and
 send the comments back to the agent; threads follow the code as it changes. Approve, reject or
-commit from the Kanban card when the task is in testing.
+commit from the Kanban card when the task is in Review.
 
 ![Live review](app/docs/screenshots/review-light.png)
 

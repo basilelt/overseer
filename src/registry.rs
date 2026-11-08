@@ -249,6 +249,18 @@ impl Registry {
             "CREATE UNIQUE INDEX IF NOT EXISTS tasks_session_line ON tasks (line_id) WHERE origin = 'session'",
         )
         .map_err(|e| e.to_string())?;
+        static MIGRATED: std::sync::Mutex<Vec<std::path::PathBuf>> =
+            std::sync::Mutex::new(Vec::new());
+        let mut done = MIGRATED.lock().unwrap_or_else(|e| e.into_inner());
+        if !done.contains(&path) {
+            conn.execute(
+                "UPDATE tasks SET status = 'merged' WHERE status = 'completed' AND session_state = 'merged'",
+                [],
+            )
+            .map_err(|e| e.to_string())?;
+            done.push(path.clone());
+        }
+        drop(done);
         Ok(Registry { conn })
     }
 
@@ -533,6 +545,40 @@ impl Registry {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn tasks_closed_on_a_merged_branch_upgrade_to_merged() {
+        let dir = std::env::temp_dir().join(format!("sb-reg-merged-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let old = Connection::open(dir.join("overseer.db")).unwrap();
+        old.execute_batch(SCHEMA).unwrap();
+        old.execute_batch("ALTER TABLE tasks ADD COLUMN session_state TEXT")
+            .unwrap();
+        for (id, n, status, state) in [
+            ("a", 1, "completed", Some("merged")),
+            ("b", 2, "completed", None),
+            ("c", 3, "in_testing", Some("merged")),
+        ] {
+            old.execute(
+                "INSERT INTO tasks (id, number, title, description, project, status, agent, model, effort, created_ms, updated_ms, session_state)
+                 VALUES (?1, ?2, 't', '', '/p', ?3, 'claude', '', 'high', 0, 0, ?4)",
+                params![id, n, status, state],
+            )
+            .unwrap();
+        }
+        drop(old);
+        let reg = Registry::open(&dir).unwrap();
+        let status = |id: &str| -> String {
+            reg.conn
+                .query_row("SELECT status FROM tasks WHERE id = ?1", [id], |r| r.get(0))
+                .unwrap()
+        };
+        assert_eq!(status("a"), "merged");
+        assert_eq!(status("b"), "completed");
+        assert_eq!(status("c"), "in_testing");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 
     #[test]
     fn phase1_database_upgrades_in_place() {

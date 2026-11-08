@@ -1,7 +1,7 @@
 import { TASK_STATUSES, type Task, type TaskMessage, type TaskStatus } from './types';
 
 export * from './kanban-core';
-import { isSession, rankOf, sortColumn, byId, blockers, startable } from './kanban-core';
+import { isSession, isDone, rankOf, sortColumn, byId, blockers, startable } from './kanban-core';
 
 export interface Filter {
   search?: string;
@@ -52,7 +52,7 @@ export function columns(tasks: Task[], f: Filter = {}): Column[] {
 export function matrix(tasks: Task[], f: Filter = {}): Record<Quadrant, Task[]> {
   const out: Record<Quadrant, Task[]> = { do: [], plan: [], delegate: [], drop: [], none: [] };
   for (const t of tasks) {
-    if (t.status === 'completed' || isOrganizer(t) || isSession(t) || !matches(t, f)) continue;
+    if (isDone(t.status) || isOrganizer(t) || isSession(t) || !matches(t, f)) continue;
     out[quadrant(t)].push(t);
   }
   for (const q of Object.keys(out) as Quadrant[]) out[q] = sortColumn(out[q]);
@@ -111,7 +111,7 @@ export function depCandidates(tasks: Task[], query: string, opts: { project?: st
   return tasks
     .filter((t) => !skip.has(t.id) && !isSession(t) && !isOrganizer(t) && (!opts.project || t.project === opts.project))
     .filter((t) => (/^\d+$/.test(q) ? String(t.number).startsWith(q) : words.every((w) => `${t.number} ${t.title}`.toLowerCase().includes(w))))
-    .sort((a, b) => Number(a.status === 'completed') - Number(b.status === 'completed') || b.number - a.number)
+    .sort((a, b) => Number(isDone(a.status)) - Number(isDone(b.status)) || b.number - a.number)
     .slice(0, opts.limit ?? 8);
 }
 
@@ -122,7 +122,7 @@ const pctOf = (p: { done: number; total: number }) => Math.round((Math.min(p.don
 export function cardStatus(task: Task, next: Set<string>, tasks: Map<string, Task> = new Map()): CardStatus {
   const p = task.progress;
   if (isSession(task)) {
-    if (task.status === 'completed') return { kind: 'none' };
+    if (isDone(task.status)) return { kind: 'none' };
     const badges = task.badges ?? [];
     if (badges.includes('needs_input')) return { kind: 'input' };
     if (badges.includes('paused')) return { kind: 'paused' };
@@ -170,7 +170,7 @@ export function dropTarget(x: number, rects: ColRect[]): TaskStatus | null {
 
 export type MoveAction = 'start' | 'reject' | 'patch' | 'complete';
 
-export const SESSION_STATUSES: TaskStatus[] = ['in_progress', 'in_testing', 'completed'];
+export const SESSION_STATUSES: TaskStatus[] = ['in_progress', 'in_testing', 'merged', 'completed'];
 
 export function canDrop(task: Task, to: TaskStatus): boolean {
   return !isSession(task) || SESSION_STATUSES.includes(to);
@@ -180,7 +180,7 @@ export function moveAction(from: TaskStatus, to: TaskStatus, session = false): M
   if (from === to) return null;
   if (session) return to === 'completed' ? 'complete' : SESSION_STATUSES.includes(to) ? 'patch' : null;
   if (to !== 'in_progress') return 'patch';
-  return from === 'in_testing' ? 'reject' : 'start';
+  return from === 'in_testing' || from === 'merged' ? 'reject' : 'start';
 }
 
 export function moveTask(tasks: Task[], id: string, status: TaskStatus, now = new Date().toISOString(), rank?: number): { next: Task[]; prev: Task | null } {

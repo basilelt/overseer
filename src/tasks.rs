@@ -275,11 +275,15 @@ fn deps_json(d: &[String]) -> Option<String> {
     (!d.is_empty()).then(|| json!(d).to_string())
 }
 
+pub fn is_done(status: &str) -> bool {
+    matches!(status, "merged" | "completed")
+}
+
 pub fn blockers<'a>(t: &Task, tasks: &'a [Task]) -> Vec<&'a Task> {
     t.depends_on
         .iter()
         .filter_map(|d| tasks.iter().find(|x| &x.id == d))
-        .filter(|x| x.status != "completed")
+        .filter(|x| !is_done(&x.status))
         .collect()
 }
 
@@ -578,16 +582,28 @@ pub fn patch(ctx: &Ctx, id: &str, b: &Value) -> Res<Task> {
             "description" => t.description = s()?.to_string(),
             "model" => t.model = s()?.trim().to_string(),
             "status" if t.from_session() => {
-                let s = pick(b, k, &["in_progress", "in_testing", "completed"], "")
-                    .map_err(|_| bad("a session task follows its session: status must be one of in_progress, in_testing, completed"))?;
+                let s = pick(b, k, &["in_progress", "in_testing", "merged", "completed"], "")
+                    .map_err(|_| bad("a session task follows its session: status must be one of in_progress, in_testing, merged, completed"))?;
                 t.status = s.into();
                 t.manual_status = Some(s.into());
             }
-            "status" if v == "in_progress" => {
-                return Err(bad("use POST /v1/tasks/{id}/start to start a task"))
+            "status" if v == "in_progress" && t.status != "in_progress" => {
+                if t.live_term().is_none() {
+                    return Err(bad("use POST /v1/tasks/{id}/start to start a task"));
+                }
+                t.status = "in_progress".into();
+                t.started_ms = Some(crate::procs::now_ms());
+                seen_busy(|s| s.remove(&t.id));
             }
+            "status" if v == "in_progress" => {}
             "status" => {
-                t.status = pick(b, k, &["pending", "auto", "in_testing", "completed"], "")?.into()
+                t.status = pick(
+                    b,
+                    k,
+                    &["pending", "auto", "in_testing", "merged", "completed"],
+                    "",
+                )?
+                .into()
             }
             "agent" => {
                 t.agent = agent_of(b, k)?
@@ -609,6 +625,14 @@ pub fn patch(ctx: &Ctx, id: &str, b: &Value) -> Res<Task> {
             "ticketKey" => t.ticket_key = ticket_of(v)?,
             "progress" => t.progress = progress(v)?,
             _ => {}
+        }
+    }
+    if was == "merged" && t.status != "merged" {
+        if let Some(b) = &t.branch {
+            crate::worktrees::forget_landed(b);
+        }
+        if !t.from_session() && !is_done(&t.status) {
+            t.session_state = None;
         }
     }
     save(ctx, &reg, &mut t)?;
@@ -1034,7 +1058,17 @@ fn pr_followup(merge: bool, approve: bool) -> Option<String> {
 }
 
 fn merge_candidate(t: &Task) -> bool {
-    !t.from_session() && t.status == "in_testing" && t.session_state.as_deref() != Some("merged")
+    !t.from_session()
+        && match t.status.as_str() {
+            "in_testing" => true,
+            "completed" => {
+                t.session_state.as_deref() != Some("merged")
+                    && t.worktree_path
+                        .as_deref()
+                        .is_some_and(|p| Path::new(p).is_dir())
+            }
+            _ => false,
+        }
 }
 
 pub fn tick(ctx: &Ctx, lines: &[Line]) {
@@ -1114,7 +1148,7 @@ pub fn tick(ctx: &Ctx, lines: &[Line]) {
                     crate::worktrees::landed(&t.project, b, ctx.config.worktree_fetch)
                 })
             {
-                t.status = "completed".into();
+                t.status = "merged".into();
                 t.session_state = Some("merged".into());
                 let _ = save(ctx, &reg, &mut t);
             }
@@ -1387,22 +1421,42 @@ mod tests {
         assert_eq!(ids(&tasks), ["a"]);
         tasks[0].status = "completed".into();
         assert!(ids(&tasks).is_empty());
+        tasks[0].status = "merged".into();
+        tasks[1].status = "merged".into();
+        assert!(ids(&tasks).is_empty());
     }
 
     #[test]
-    fn only_review_tasks_not_yet_auto_completed_are_merge_candidates() {
+    fn merged_and_completed_are_the_done_statuses() {
+        for s in ["merged", "completed"] {
+            assert!(is_done(s), "{s}");
+        }
+        for s in ["pending", "auto", "in_progress", "in_testing", ""] {
+            assert!(!is_done(s), "{s}");
+        }
+    }
+
+    #[test]
+    fn review_and_closed_tasks_with_a_worktree_are_merge_candidates() {
+        let wt = std::env::temp_dir();
         let mut t = Task {
             status: "in_testing".into(),
             ..Default::default()
         };
         assert!(merge_candidate(&t));
-        t.session_state = Some("merged".into());
-        assert!(!merge_candidate(&t));
-        t.session_state = None;
         t.origin = Some(crate::session_tasks::ORIGIN.into());
         assert!(!merge_candidate(&t));
         t.origin = None;
-        for s in ["pending", "auto", "in_progress", "completed"] {
+        t.status = "completed".into();
+        assert!(!merge_candidate(&t), "closed without a worktree");
+        t.worktree_path = Some(wt.join("sb-no-such-worktree").display().to_string());
+        assert!(!merge_candidate(&t), "closed with a removed worktree");
+        t.worktree_path = Some(wt.display().to_string());
+        assert!(merge_candidate(&t));
+        t.session_state = Some("merged".into());
+        assert!(!merge_candidate(&t), "closed by hand after it merged");
+        t.session_state = None;
+        for s in ["pending", "auto", "in_progress", "merged"] {
             t.status = s.into();
             assert!(!merge_candidate(&t), "{s}");
         }

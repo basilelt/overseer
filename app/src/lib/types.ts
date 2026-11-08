@@ -168,9 +168,9 @@ export interface NewTerm {
   worktree?: boolean | { branch?: string; base?: string; slug?: string };
 }
 
-export type TaskStatus = 'pending' | 'auto' | 'in_progress' | 'in_testing' | 'completed';
+export type TaskStatus = 'pending' | 'auto' | 'in_progress' | 'in_testing' | 'merged' | 'completed';
 export type Effort = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
-export const TASK_STATUSES: TaskStatus[] = ['pending', 'auto', 'in_progress', 'in_testing', 'completed'];
+export const TASK_STATUSES: TaskStatus[] = ['pending', 'auto', 'in_progress', 'in_testing', 'merged', 'completed'];
 
 export type TaskOrigin = 'user' | 'session' | 'agent' | 'organizer' | 'configurator';
 export type TaskBadge = 'needs_input' | 'paused';
