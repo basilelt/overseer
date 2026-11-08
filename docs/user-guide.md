@@ -1471,9 +1471,10 @@ curl -N --unix-socket "$S" http://unix/v1/system/stream
 
 ### 14.4c Agent usage
 
-The title bar shows a usage chip next to the other chips: one segment per agent active today,
-with the plan windows when known ("Claude 5h 83% · wk 47%", "Codex 5h 29% · wk 38%") and the
-tokens of the day otherwise ("Claude 12.3M"). A segment turns amber at 80 % and red at 95 % of a
+The title bar shows a usage chip next to the other chips: one segment per agent active today.
+When plan windows are known, it shows them, for example, "Claude 5h 83% · wk 47%", "Codex 5h
+29% · wk 38%", or Codex Go's monthly `mo` allowance. Otherwise it shows the tokens of the day
+("Claude 12.3M"). A segment turns amber at 80 % and red at 95 % of a
 window, or when the agent's last request hit a usage limit; the tooltip lists reset times. The
 chip is hidden when no agent ran today.
 
