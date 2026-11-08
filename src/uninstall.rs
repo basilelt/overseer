@@ -180,6 +180,27 @@ fn service(rep: &mut Report, state_dir: &Path, apply: bool) {
     }
 }
 
+fn keep_copy(rep: &mut Report, kind: &str, path: &Path) -> bool {
+    let bak = PathBuf::from(format!("{}.overseer-uninstall.bak", path.display()));
+    if rep.kept.iter().any(|(_, p, _)| Path::new(p) == bak) {
+        return true;
+    }
+    match std::fs::copy(path, &bak) {
+        Ok(_) => {
+            rep.kept(
+                kind,
+                &bak,
+                "copy of the file before Overseer's entries were removed",
+            );
+            true
+        }
+        Err(e) => {
+            rep.error(kind, &bak, e);
+            false
+        }
+    }
+}
+
 fn hollow(v: &Value) -> bool {
     v.as_object()
         .is_some_and(|m| m.iter().all(|(k, v)| k == "hooks" && v == &json!({})))
@@ -205,6 +226,9 @@ fn hooks(rep: &mut Report, state_dir: &Path, apply: bool) {
             continue;
         }
         if apply {
+            if !planned.owned && !keep_copy(rep, "hook", &t.path) {
+                continue;
+            }
             let emptied = !planned.owned && hollow(&planned.after);
             let done = if emptied {
                 std::fs::remove_file(&t.path).map_err(|e| format!("{}: {e}", t.path.display()))
@@ -234,6 +258,9 @@ fn statusline_hook(rep: &mut Report, state_dir: &Path, apply: bool) {
         Ok(p) if !p.changed => {}
         Ok(p) => {
             if apply {
+                if !keep_copy(rep, "statusline", &settings) {
+                    return;
+                }
                 if let Err(e) = install::atomic_write(&settings, &p.after_text) {
                     return rep.error("statusline", &settings, e);
                 }
@@ -436,7 +463,26 @@ fn state_dir_safe(state_dir: &Path) -> Result<(), String> {
             state_dir.display()
         ));
     }
+    if !looks_like_state_dir(state_dir) {
+        return Err(format!(
+            "{} does not look like an Overseer state directory",
+            state_dir.display()
+        ));
+    }
     Ok(())
+}
+
+fn looks_like_state_dir(dir: &Path) -> bool {
+    let Ok(mut entries) = std::fs::read_dir(dir) else {
+        return true;
+    };
+    let Some(first) = entries.next() else {
+        return true;
+    };
+    first.is_ok()
+        && ["overseer.db", "sync.db", "usage.db"]
+            .iter()
+            .any(|n| dir.join(n).exists())
 }
 
 pub fn run(ctx: &Ctx, apply: bool) -> Report {
@@ -604,6 +650,25 @@ mod tests {
         assert!(state_dir_safe(&crate::home()).is_err());
         assert!(state_dir_safe(Path::new("/")).is_err());
         assert!(state_dir_safe(&crate::home().join(".local/state/overseer")).is_ok());
+    }
+
+    #[test]
+    fn the_state_dir_guard_refuses_a_directory_that_is_not_overseers() {
+        let d = tmp("foreign-state");
+        std::fs::write(d.join("notes.txt"), "mine").unwrap();
+        assert!(state_dir_safe(&d).is_err());
+        assert!(finish(&d).is_err());
+        assert!(d.join("notes.txt").exists());
+        std::fs::write(d.join("overseer.db"), "").unwrap();
+        assert!(state_dir_safe(&d).is_ok());
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn the_state_dir_guard_accepts_an_empty_directory() {
+        let d = tmp("empty-state");
+        assert!(state_dir_safe(&d).is_ok());
+        let _ = std::fs::remove_dir_all(&d);
     }
 
     #[test]

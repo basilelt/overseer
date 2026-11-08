@@ -212,6 +212,10 @@ fn apply_removes_what_overseer_added_and_keeps_the_users_work() {
         assert!(h.join(kept).exists(), "{kept} was deleted");
     }
     assert!(!fx.state.exists());
+    let bak = std::fs::read_to_string(h.join(".claude/settings.json.overseer-uninstall.bak"))
+        .expect("uninstall keeps a copy of the config it edited");
+    assert!(bak.contains("#overseer-hook") && bak.contains("#overseer-statusline"));
+    assert!(text.contains("overseer-uninstall.bak"), "{text}");
 
     assert!(!clean.exists());
     assert!(dirty.join("wip.txt").exists() && ahead.join("new.txt").exists());
@@ -317,4 +321,20 @@ fn the_cli_goes_through_a_running_daemon() {
     common::wait(|| daemon.0.try_wait().unwrap().is_some());
     assert!(daemon.0.try_wait().unwrap().unwrap().success());
     assert!(!fx.state.exists());
+}
+
+#[test]
+fn a_foreign_state_dir_is_refused_and_left_alone() {
+    let fx = Fx::new("un-foreign", 0);
+    let foreign = fx.base.join("Documents");
+    put(&foreign.join("thesis.txt"), "mine");
+    let mut c = std::process::Command::new(env!("CARGO_BIN_EXE_overseer"));
+    fx.env(&mut c);
+    let out = c
+        .args(["uninstall", "--apply"])
+        .env("OVERSEER_STATE_DIR", &foreign)
+        .output()
+        .unwrap();
+    assert!(!out.status.success());
+    assert!(foreign.join("thesis.txt").exists());
 }
