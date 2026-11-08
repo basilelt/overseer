@@ -1780,6 +1780,7 @@ fn agents_are_detected_and_launched_from_the_table() {
             "gpt-5.2".into(),
             "--effort".into(),
             "xhigh".into(),
+            "--allow-all".into(),
             format!("--resume={sid}")
         ]
     );
@@ -1988,7 +1989,12 @@ fn tasks_take_any_agent_and_deliver_the_prompt_by_flag() {
     let tid = o["termId"].as_str().unwrap().to_string();
     let mut ws = app.ws(&tid);
     read_until(&mut ws, "got: Paste");
-    assert!(stub_log(&app).contains("codex -c model_reasoning_effort=low"));
+    let task_log = stub_log(&app);
+    assert!(task_log.contains("--ask-for-approval never"), "{task_log}");
+    assert!(
+        task_log.contains("-c model_reasoning_effort=low"),
+        "{task_log}"
+    );
     for t in [s["termId"].as_str().unwrap(), &tid] {
         app.ok(
             "POST",
@@ -2400,7 +2406,11 @@ fn profiles_apply_at_launch_with_workspace_and_task_precedence() {
     assert_eq!(p["support"]["codex"]["subagentModel"], "flag");
 
     let plain = app.ok("POST", "/v1/terms", json!({"cwd": wt, "agent": "claude"}));
-    assert_eq!(strs(&plain["cmd"]).len(), 3);
+    let plain_cmd = strs(&plain["cmd"]);
+    assert_eq!(plain_cmd.len(), 5);
+    assert!(plain_cmd
+        .windows(2)
+        .any(|w| w == ["--permission-mode", "auto"]));
     assert!(plain.get("profile").is_none());
 
     for bad in [
@@ -2423,31 +2433,34 @@ fn profiles_apply_at_launch_with_workspace_and_task_precedence() {
 
     let scoped = app.ok("POST", "/v1/terms", json!({"cwd": wt, "agent": "claude"}));
     let cmd = strs(&scoped["cmd"]);
-    assert_eq!(cmd[3..], ["--model", "sonnet", "--effort", "low"]);
+    assert!(cmd.windows(2).any(|w| w == ["--model", "sonnet"]));
+    assert!(cmd.windows(2).any(|w| w == ["--effort", "low"]));
     assert_eq!(scoped["profile"]["name"], "Economy");
     assert_eq!(scoped["profile"]["effort"], "low");
 
     let home = app.ok("POST", "/v1/terms", json!({"cwd": "/", "agent": "claude"}));
-    assert_eq!(
-        strs(&home["cmd"])[3..],
-        ["--model", "sonnet", "--effort", "medium"]
-    );
+    let home_cmd = strs(&home["cmd"]);
+    assert!(home_cmd.windows(2).any(|w| w == ["--model", "sonnet"]));
+    assert!(home_cmd.windows(2).any(|w| w == ["--effort", "medium"]));
 
     let explicit = app.ok(
         "POST",
         "/v1/terms",
         json!({"cwd": wt, "agent": "claude", "profile": "lean", "effort": "high"}),
     );
-    assert_eq!(
-        strs(&explicit["cmd"])[3..],
-        ["--model", "haiku", "--effort", "high"]
-    );
+    let explicit_cmd = strs(&explicit["cmd"]);
+    assert!(explicit_cmd.windows(2).any(|w| w == ["--model", "haiku"]));
+    assert!(explicit_cmd.windows(2).any(|w| w == ["--effort", "high"]));
     let none = app.ok(
         "POST",
         "/v1/terms",
         json!({"cwd": wt, "agent": "claude", "profile": "none"}),
     );
-    assert_eq!(strs(&none["cmd"]).len(), 3);
+    let none_cmd = strs(&none["cmd"]);
+    assert_eq!(none_cmd.len(), 5);
+    assert!(none_cmd
+        .windows(2)
+        .any(|w| w == ["--permission-mode", "auto"]));
     let inherit = app.ok(
         "POST",
         "/v1/terms",
