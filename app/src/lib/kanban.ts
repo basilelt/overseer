@@ -180,7 +180,7 @@ export function moveAction(from: TaskStatus, to: TaskStatus, session = false): M
   if (from === to) return null;
   if (session) return to === 'completed' ? 'complete' : SESSION_STATUSES.includes(to) ? 'patch' : null;
   if (to !== 'in_progress') return 'patch';
-  return from === 'in_testing' ? 'reject' : 'start';
+  return from === 'in_testing' || from === 'merged' ? 'reject' : 'start';
 }
 
 export function moveTask(tasks: Task[], id: string, status: TaskStatus, now = new Date().toISOString(), rank?: number): { next: Task[]; prev: Task | null } {

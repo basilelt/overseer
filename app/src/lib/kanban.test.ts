@@ -156,7 +156,8 @@ describe('merged and closed are both done', () => {
     expect(moveAction('in_testing', 'merged', true)).toBe('patch');
     expect(moveAction('in_testing', 'completed', true)).toBe('complete');
     expect(moveAction('in_testing', 'merged')).toBe('patch');
-    expect(moveAction('merged', 'in_progress')).toBe('start');
+    expect(moveAction('merged', 'in_progress')).toBe('reject');
+    expect(moveAction('completed', 'in_progress')).toBe('start');
     expect(canDrop(task({ origin: 'session' }), 'merged')).toBe(true);
   });
 });
