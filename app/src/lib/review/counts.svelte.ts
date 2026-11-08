@@ -1,7 +1,7 @@
 import { app } from '../state.svelte';
 import { reviewApi } from './api';
 import { itemWorktree, reviewKey } from './keys';
-import { unresolvedByWorktree } from './threads';
+import { unresolvedByWorktree } from './unresolved';
 import type { ReviewTarget, Thread } from './types';
 
 class ReviewCounts {

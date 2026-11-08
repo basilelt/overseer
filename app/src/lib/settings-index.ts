@@ -1,7 +1,7 @@
 import type { Key } from './i18n.svelte';
 
 export type CategoryId = 'general' | 'terminal' | 'agents' | 'notifications' | 'connection' | 'updates' | 'help';
-export type SectionId = 'appearance' | 'links' | 'terminal' | 'keyboard' | 'defaults' | 'profiles' | 'hooks' | 'usage' | 'notifications' | 'hosts' | 'server' | 'updater' | 'apk' | 'tour' | 'diag' | 'feedback' | 'switchboard';
+export type SectionId = 'appearance' | 'links' | 'terminal' | 'keyboard' | 'defaults' | 'profiles' | 'hooks' | 'skills' | 'usage' | 'notifications' | 'hosts' | 'server' | 'updater' | 'apk' | 'tour' | 'diag' | 'feedback' | 'switchboard';
 export type Gate = 'desktop' | 'nonMac' | 'connected' | 'profiles' | 'hooks' | 'updater' | 'apk' | 'switchboard';
 export type Gates = Record<Gate, boolean>;
 
@@ -42,6 +42,7 @@ export const SECTIONS: Section[] = [
   { id: 'defaults', category: 'agents', title: 'settings.defaults' },
   { id: 'profiles', category: 'agents', title: 'profile.title', gate: 'profiles' },
   { id: 'hooks', category: 'agents', title: 'hooks.title', gate: 'hooks' },
+  { id: 'skills', category: 'agents', title: 'skills.title', gate: 'connected' },
   { id: 'usage', category: 'agents', title: 'settings.usage' },
   { id: 'notifications', category: 'notifications', title: 'settings.notifications' },
   { id: 'hosts', category: 'connection', title: 'settings.hosts' },
@@ -77,6 +78,7 @@ export const ENTRIES: Entry[] = [
   { id: 'profileDefault', section: 'profiles', keys: ['profile.globalDefault', 'profile.globalHint'] },
   { id: 'profileEdit', section: 'profiles', keys: ['profile.editTitle', 'profile.editHint'] },
   { id: 'hooks', section: 'hooks', keys: ['hooks.hint'] },
+  { id: 'skills', section: 'skills', keys: ['skills.hint', 'skills.rtk', 'skills.caveman', 'skills.ponytail', 'palette.skills'] },
   { id: 'claudeLimits', section: 'usage', keys: ['settings.fetchClaudeLimits', 'settings.fetchClaudeLimitsHint'] },
   { id: 'statusline', section: 'usage', keys: ['settings.statusline', 'settings.statuslineHint'] },
   { id: 'notifyPermission', section: 'notifications', keys: ['nb.permission', 'nb.request', 'nb.test'] },
@@ -178,7 +180,7 @@ export function pickCategory(current: CategoryId | null, gates: Gates): Category
 }
 
 export function initialCategory(arg: string | null): CategoryId {
-  return arg === 'notifications' ? 'notifications' : 'general';
+  return arg === 'notifications' ? 'notifications' : arg === 'skills' ? 'agents' : 'general';
 }
 
 export type PhonePage = 'list' | 'results' | 'section';

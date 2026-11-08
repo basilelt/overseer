@@ -887,7 +887,7 @@ On first launch, once the app is connected (immediately in local mode, after the
 connection on a phone), a welcome card offers **Take the tour** or **Skip**. The tour dims the
 window and highlights the real controls one at a time: host chip, workspaces sidebar, tabs and the
 new-session menu, the Terminal/Chat toggle, the side panel, Tasks, Review, the usage, system and ports
-chips, notifications and hooks, the command palette and Feedback, in 0.25 the Cmd/Ctrl+P palette shortcut, and in 0.27 the demo mode (on the **Demo mode** pill while in the demo, else on the host chip), and in 0.28 the GPU rendering option for terminals, and in 0.29 the clean up of unused worktrees and the import from Switchboard (on its button in Settings, Help, or on the Settings button), and in 0.30 click to move the cursor in a terminal (on the tabs), and in 0.31 the Light and Dark palettes (on Settings, or More on a phone). Steps whose control is not on
+chips, notifications and hooks, the command palette and Feedback, in 0.25 the Cmd/Ctrl+P palette shortcut, and in 0.27 the demo mode (on the **Demo mode** pill while in the demo, else on the host chip), and in 0.28 the GPU rendering option for terminals, and in 0.29 the clean up of unused worktrees and the import from Switchboard (on its button in Settings, Help, or on the Settings button), and in 0.30 click to move the cursor in a terminal (on the tabs), and in 0.31 the Light and Dark palettes (on Settings, or More on a phone), and in 0.33 the one-click install of skills and plugins (on Settings). Steps whose control is not on
 screen (no session selected, a feature the server lacks, phone layout) are skipped. On a phone the
 card is a sheet at the bottom (or top, when the control sits low) and points at the bottom
 navigation, the session strip and the menu.
@@ -1069,6 +1069,21 @@ shell does not answer, the usual user directories that exist are added to `PATH`
 daemon keeps its environment: the new one applies from its next start (the next server update),
 it is never restarted for this since that would end its terms. **Rescan** in the agent picker
 runs the detection again (`POST /v1/agents/rescan`), for instance after installing an agent.
+
+**Skills and plugins** (Settings > Agents, or **Install skills and plugins** in the command
+palette) installs a tool for one agent in one click, on the host the app is connected to. Each
+install runs in a new terminal titled `<tool> · <agent>` that stays open on `Done. Press Enter to
+close.`, so the output and any prompt are visible. The picker lists only installed agents the tool
+supports.
+
+| Tool | What it is | Claude Code | Gemini CLI | Codex, opencode, Copilot, Cursor, Amp, Antigravity |
+|---|---|---|---|---|
+| RTK | a CLI proxy (binary + hook), not a skill | `rtk init -g --auto-patch` | `rtk init -g --gemini --auto-patch` | `rtk init -g` with `--codex`, `--opencode --auto-patch`, `--copilot`, `--agent cursor`, `--agent antigravity`; no Amp |
+| Caveman | a plugin with skills | `claude plugin marketplace add JuliusBrussee/caveman && claude plugin install caveman@caveman` | `gemini extensions install https://github.com/JuliusBrussee/caveman` | `npx -y skills add JuliusBrussee/caveman --skill '*' -g -a <agent> -y` |
+| Ponytail | a plugin with skills | same with `DietrichGebert/ponytail`, `ponytail@ponytail` | same with `DietrichGebert/ponytail` | same with `DietrichGebert/ponytail` |
+
+RTK first runs its installer (`install.sh` from `rtk-ai/rtk`, into `~/.local/bin`) when `rtk` is not
+on `PATH`. The skills CLI names Copilot `github-copilot` and Antigravity `antigravity`.
 
 ### 14.1c File preview
 

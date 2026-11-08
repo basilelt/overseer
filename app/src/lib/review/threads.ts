@@ -1,4 +1,7 @@
 import type { ReviewComment, Thread, ThreadStatus } from './types';
+import { OPEN } from './unresolved';
+
+export { OPEN, unresolvedByWorktree } from './unresolved';
 
 export type Chip = 'pending' | 'queued' | 'delivered' | 'sent' | 'addressed' | 'resolved' | 'changed' | 'outdated';
 export type Tone = 'neutral' | 'accent' | 'warn' | 'ok' | 'muted';
@@ -24,7 +27,6 @@ export function chips(t: Thread): Chip[] {
   return out;
 }
 
-export const OPEN: ThreadStatus[] = ['pending', 'sent', 'addressed'];
 export const isOpen = (t: Thread) => OPEN.includes(t.status);
 
 export function everSent(t: Thread): boolean {
@@ -79,12 +81,6 @@ export function upsert(threads: Thread[], t: Thread): Thread[] {
   const next = threads.slice();
   next[i] = t;
   return next;
-}
-
-export function unresolvedByWorktree(threads: Iterable<Pick<Thread, 'worktree' | 'status'>>): Record<string, number> {
-  const out: Record<string, number> = {};
-  for (const t of threads) if (OPEN.includes(t.status)) out[t.worktree] = (out[t.worktree] ?? 0) + 1;
-  return out;
 }
 
 export function countByFile(threads: Thread[]): Record<string, number> {

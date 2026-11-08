@@ -24,10 +24,11 @@
   import { openExternal } from '../../ports.svelte';
   import { organizer } from '../../organize.svelte';
   import { BUNDLED_FONT, clampLineHeight, FONT_SUGGESTIONS } from '../../fonts';
-  import type { Effort, HookAgentStatus } from '../../types';
+  import type { AgentInfo, Effort, HookAgentStatus } from '../../types';
   import type { StatuslineStatus } from '../../usage/types';
   import { hookable } from '../../hooks';
   import { hooks, loadHooks, setHooks } from '../../hooks.svelte';
+  import { installTargets, SKILLS, startInstall, type SkillId } from '../../skills';
   import { loadSwitchboard, switchboard } from '../../switchboard.svelte';
   import { canImport } from '../../switchboard';
   import { tt } from '../../tour/strings';
@@ -102,6 +103,20 @@
   }
 
   const hookRows = $derived(hookable(hooks.status));
+  let skillAgent = $state<Partial<Record<SkillId, string>>>({});
+  let skillBusy = $state(false);
+  async function installSkill(skill: SkillId, agent: AgentInfo) {
+    if (skillBusy) return;
+    skillBusy = true;
+    try {
+      app.followSession(await startInstall(app.api.createTerm, skill, agent, t('skills.done')));
+      onclose();
+    } catch (e) {
+      app.notify(String((e as Error)?.message ?? e), 'error');
+    } finally {
+      skillBusy = false;
+    }
+  }
   function hookDetail(h: HookAgentStatus): string {
     const state = h.installed && !h.current ? t('hooks.outdated') : !h.configured && !h.installed ? t('hooks.unavailable') : '';
     return [t(`hooks.mech.${h.mechanism}`), state, h.note].filter(Boolean).join(' · ');
@@ -508,6 +523,30 @@
         </section>
       {/if}
 
+      {#if vis('skills')}
+        <section>
+          <h3>{t('skills.title')}</h3>
+          <p class="faint hint">{t('skills.hint')}</p>
+          {#each SKILLS as sk (sk.id)}
+            {@const targets = installTargets(sk.id, app.agents)}
+            {@const picked = targets.find((a) => a.id === skillAgent[sk.id]) ?? targets[0]}
+            <div class="row skill">
+              <span>{sk.name}<small>{t(`skills.${sk.id}`)}</small></span>
+              {#if picked}
+                <span class="skill-actions">
+                  <select aria-label={`${sk.name} ${t('task.agent')}`} value={picked.id} onchange={(e) => (skillAgent[sk.id] = e.currentTarget.value)}>
+                    {#each targets as a (a.id)}<option value={a.id}>{a.name}</option>{/each}
+                  </select>
+                  <button class="btn" disabled={skillBusy} onclick={() => installSkill(sk.id, picked)}>{t('hooks.install')}</button>
+                </span>
+              {:else}
+                <small class="faint">{t('skills.none')}</small>
+              {/if}
+            </div>
+          {/each}
+        </section>
+      {/if}
+
       {#if vis('usage')}
         <section>
           <h3>{t('settings.usage')}</h3>
@@ -826,6 +865,17 @@
   .row > span {
     display: flex;
     flex-direction: column;
+  }
+  .row > span.skill-actions {
+    flex-direction: row;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 6px;
+    flex-shrink: 0;
+  }
+  .row.skill > small {
+    flex-shrink: 0;
+    text-align: right;
   }
   small {
     color: var(--text-3);

@@ -92,6 +92,7 @@ describe('categories and sections', () => {
 
   it('opens notifications for the notifications argument', () => {
     expect(initialCategory('notifications')).toBe('notifications');
+    expect(initialCategory('skills')).toBe('agents');
     expect(initialCategory(null)).toBe('general');
     expect(initialCategory('other')).toBe('general');
   });
