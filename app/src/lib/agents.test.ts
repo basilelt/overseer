@@ -22,6 +22,7 @@ describe('agents', () => {
     expect(hasModel(by('amp'))).toBe(false);
     expect(hasModel(undefined)).toBe(true);
     expect(efforts(by('gemini'))).toEqual([]);
+    expect(efforts(by('agy'))).toEqual(['low', 'medium', 'high', 'xhigh', 'max']);
   });
 
   it('picks the preferred agent when installed, else the first installed one', () => {

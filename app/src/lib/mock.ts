@@ -67,12 +67,13 @@ const REPOS: Record<string, { path: string; repo: string }> = {
 const repoPath = (name: string) => REPOS[name].path;
 
 const ALL_EFFORTS = ['low', 'medium', 'high', 'max'] as const;
+const AGY_EFFORTS: Effort[] = ['low', 'medium', 'high', 'xhigh', 'max'];
 
 export const MOCK_AGENTS: AgentInfo[] = [
   { id: 'claude', name: 'Claude Code', installed: true, version: '2.1.4', models: ['opus', 'sonnet', 'haiku', 'fable'], efforts: [...ALL_EFFORTS], resume: true, verified: true, sessions: true, turns: true },
   { id: 'codex', name: 'Codex', installed: true, version: '0.58.0', efforts: [...ALL_EFFORTS], resume: true, verified: true, sessions: true, turns: true },
   { id: 'gemini', name: 'Gemini CLI', installed: true, version: '0.21.0', efforts: [], resume: true, verified: true, sessions: true, turns: false },
-  { id: 'agy', name: 'Antigravity', installed: true, version: '1.4.2', efforts: [], resume: false, verified: true, sessions: false, turns: false },
+  { id: 'agy', name: 'Antigravity', installed: true, version: '1.4.2', efforts: AGY_EFFORTS, resume: false, verified: true, sessions: false, turns: false },
   { id: 'opencode', name: 'opencode', installed: false, efforts: [], resume: true, verified: true, install: 'npm install -g --allow-scripts=opencode-ai opencode-ai', sessions: false, turns: false },
   { id: 'amp', name: 'Amp', installed: false, models: [], efforts: [...ALL_EFFORTS], resume: true, verified: true, install: 'npm install -g --allow-scripts=@ampcode/cli @sourcegraph/amp', sessions: false, turns: false },
   { id: 'copilot', name: 'Copilot CLI', installed: true, version: '0.0.354', efforts: [...ALL_EFFORTS], resume: true, verified: true, sessions: false, turns: false },
@@ -93,6 +94,7 @@ export const MOCK_PROFILES: ProfilesStore = {
         codex: { model: 'gpt-5.4-mini', effort: 'low', subagentModel: 'gpt-5.4-mini', subagentEffort: 'low' },
         copilot: { model: 'gpt-5-mini', effort: 'low' },
         gemini: { model: 'gemini-2.5-flash' },
+        agy: { effort: 'low' },
         amp: { effort: 'low' },
       },
     },
@@ -104,6 +106,7 @@ export const MOCK_PROFILES: ProfilesStore = {
         claude: { model: 'sonnet', effort: 'medium', subagentModel: 'sonnet' },
         codex: { model: 'gpt-5.4', effort: 'medium', subagentModel: 'gpt-5.4-mini', subagentEffort: 'medium' },
         copilot: { effort: 'medium' },
+        agy: { effort: 'medium' },
         amp: { effort: 'medium' },
       },
     },
@@ -111,14 +114,14 @@ export const MOCK_PROFILES: ProfilesStore = {
       id: 'max',
       name: 'Max',
       builtin: true,
-      agents: { claude: { model: 'opus', effort: 'max' }, codex: { model: 'gpt-5.5', effort: 'max' }, copilot: { effort: 'max' }, amp: { effort: 'max' } },
+      agents: { claude: { model: 'opus', effort: 'max' }, codex: { model: 'gpt-5.5', effort: 'max' }, copilot: { effort: 'max' }, agy: { effort: 'max' }, amp: { effort: 'max' } },
     },
   ],
   support: {
     claude: { model: 'flag', effort: 'flag', subagentModel: 'env', smallModel: 'env', subagents: 'file', subagentEfforts: true, subagentForce: true },
     codex: { model: 'flag', effort: 'flag', subagentModel: 'flag', subagentEffort: 'flag' },
-    gemini: { model: 'flag' },
-    agy: { model: 'flag' },
+    gemini: { model: 'flag', subagents: 'file' },
+    agy: { model: 'flag', effort: 'flag', subagents: 'file' },
     opencode: { model: 'flag', smallModel: 'env', subagents: 'env' },
     amp: { effort: 'flag' },
     copilot: { model: 'flag', effort: 'flag' },
@@ -130,6 +133,8 @@ export const MOCK_SUBAGENTS: SubagentDef[] = [
   { agent: 'claude', name: 'code-reviewer', scope: 'project', path: `${HOME}/Documents/Github/work/overseer/.claude/agents/code-reviewer.md`, model: 'opus', effort: '' },
   { agent: 'claude', name: 'debug-specialist', scope: 'user', path: `${HOME}/.claude/agents/debug-specialist.md`, model: 'opus', effort: '' },
   { agent: 'claude', name: 'test-writer', scope: 'user', path: `${HOME}/.claude/agents/test-writer.md`, model: 'sonnet', effort: 'high' },
+  { agent: 'gemini', name: 'researcher', scope: 'project', path: `${HOME}/Documents/Github/work/overseer/.gemini/agents/researcher.md`, model: 'gemini-2.5-flash', effort: '' },
+  { agent: 'agy', name: 'security-reviewer', scope: 'user', path: `${HOME}/.gemini/config/agents/security-reviewer.md`, model: 'pro', effort: '' },
 ];
 
 const agentInfo = (id: string) => MOCK_AGENTS.find((a) => a.id === id);
@@ -1417,15 +1422,16 @@ export class MockDaemon implements DaemonClient {
   private applyFiles(body: { profile: string; dryRun?: boolean; files?: string[] }) {
     const p = this.profileStore.profiles.find((x) => x.id === body?.profile);
     if (!p) throw new DaemonError(400, `unknown profile ${body?.profile}`);
-    const subs = p.agents.claude?.subagents ?? {};
-    const files = MOCK_SUBAGENTS.filter((d) => subs[d.name])
-      .map((d) => ({
-        path: d.path,
-        name: d.name,
-        scope: d.scope,
-        changes: (['model', 'effort'] as const).filter((k) => subs[d.name][k] && subs[d.name][k] !== d[k]).map((k) => ({ key: k, from: d[k], to: subs[d.name][k]! })),
-      }))
-      .filter((f) => f.changes.length);
+    const files = Object.entries(p.agents).sort(([a], [b]) => a.localeCompare(b)).flatMap(([agent, c]) => {
+      const subs = c.subagents ?? {};
+      return MOCK_SUBAGENTS.filter((d) => d.agent === agent).flatMap((d) => {
+        const sub = subs[d.name];
+        if (!sub) return [];
+        const keys = d.agent === 'claude' ? ['model', 'effort'] as const : ['model'] as const;
+        const changes = keys.filter((k) => sub[k] && sub[k] !== d[k]).map((k) => ({ key: k, from: d[k], to: sub[k]! }));
+        return changes.length ? [{ path: d.path, name: d.name, scope: d.scope, changes }] : [];
+      });
+    });
     if (body.dryRun !== false) return { dryRun: true, files };
     if (!Array.isArray(body.files)) throw new DaemonError(400, 'files must list the confirmed paths');
     return { dryRun: false, files: files.filter((f) => body.files!.includes(f.path)).map((f) => ({ ...f, written: true, backup: `${f.path}.bak-202610291200` })) };

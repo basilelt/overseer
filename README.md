@@ -136,6 +136,9 @@ on a TCP port on the server.
   mode** pill stays in the title bar; **Exit demo** returns to your own hosts and settings, untouched.
 - **Notifications** when an agent needs input or finishes, from agent hooks Overseer can
   install for you.
+- **Agent profiles**: save each CLI's supported model and effort choices, plus named subagent models
+  for Gemini CLI and Antigravity. Apply a profile to new work, scope it to a workspace, and choose
+  when to update the agent files.
 - **Skills and plugins in one click**: install RTK (trims shell output before the agent reads it),
   Caveman (terse replies) or Ponytail (simplest code that works) for Claude Code, Codex, Gemini CLI,
   opencode, Copilot CLI, Cursor Agent, Amp or Antigravity, from Settings → Agents or the command

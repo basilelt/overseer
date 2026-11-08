@@ -1,4 +1,4 @@
-use crate::agents::{Agent, EFFORTS};
+use crate::agents::Agent;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::BTreeMap;
@@ -133,6 +133,10 @@ pub fn support(a: &Agent) -> Support {
             subagent_effort: Some(Via::Flag),
             ..base
         },
+        "gemini" | "agy" => Support {
+            subagents: Some(Via::File),
+            ..base
+        },
         "opencode" => Support {
             small_model: Some(Via::Env),
             subagents: Some(Via::Env),
@@ -211,6 +215,7 @@ pub fn builtins() -> Vec<Profile> {
                 ),
                 Row("copilot", "gpt-5-mini", "low", "", "", "", false),
                 Row("gemini", "gemini-2.5-flash", "", "", "", "", false),
+                Row("agy", "", "low", "", "", "", false),
                 Row("amp", "", "low", "", "", "", false),
             ]),
         ),
@@ -229,6 +234,7 @@ pub fn builtins() -> Vec<Profile> {
                     false,
                 ),
                 Row("copilot", "", "medium", "", "", "", false),
+                Row("agy", "", "medium", "", "", "", false),
                 Row("amp", "", "medium", "", "", "", false),
             ]),
         ),
@@ -239,6 +245,7 @@ pub fn builtins() -> Vec<Profile> {
                 Row("claude", "opus", "max", "", "", "", false),
                 Row("codex", "gpt-5.5", "max", "", "", "", false),
                 Row("copilot", "", "max", "", "", "", false),
+                Row("agy", "", "max", "", "", "", false),
                 Row("amp", "", "max", "", "", "", false),
             ]),
         ),
@@ -403,13 +410,19 @@ fn valid_name(v: &str) -> bool {
             .all(|c| c.is_ascii_alphanumeric() || "._-".contains(c))
 }
 
-fn check_effort(e: &str, what: &str) -> Res<()> {
-    if e.is_empty() || EFFORTS.contains(&e) {
+fn check_effort(e: &str, what: &str, levels: &[&str]) -> Res<()> {
+    if e.is_empty() {
+        return Ok(());
+    }
+    if levels.is_empty() {
+        return Err((400, format!("{what}: effort is not supported")));
+    }
+    if levels.contains(&e) {
         Ok(())
     } else {
         Err((
             400,
-            format!("{what}: effort must be one of {}", EFFORTS.join(", ")),
+            format!("{what}: effort must be one of {}", levels.join(", ")),
         ))
     }
 }
@@ -477,14 +490,25 @@ pub fn validate(s: &Store) -> Res<()> {
             check_model(&c.model, &what)?;
             check_model(&c.subagent_model, &what)?;
             check_model(&c.small_model, &what)?;
-            check_effort(&c.effort, &what)?;
-            check_effort(&c.subagent_effort, &what)?;
+            check_effort(&c.effort, &what, a.efforts())?;
+            check_effort(&c.subagent_effort, &what, a.efforts())?;
             for (name, sub) in &c.subagents {
                 if !valid_name(name) {
                     return Err((400, format!("{what}: invalid subagent name {name:?}")));
                 }
                 check_model(&sub.model, &what)?;
-                check_effort(&sub.effort, &what)?;
+                if agent == "agy"
+                    && !sub.model.is_empty()
+                    && !["inherit", "flash", "pro"].contains(&sub.model.as_str())
+                {
+                    return Err((
+                        400,
+                        format!(
+                            "{what}: Antigravity subagent model must be inherit, flash, or pro"
+                        ),
+                    ));
+                }
+                check_effort(&sub.effort, &what, a.efforts())?;
                 if !sub.effort.is_empty() && !sp.subagent_efforts {
                     return Err((400, format!("{what}: subagent effort is not supported")));
                 }
@@ -616,11 +640,25 @@ fn md_defs(dir: &Path, agent: &'static str, scope: &'static str) -> Vec<Subagent
     let Ok(rd) = std::fs::read_dir(dir) else {
         return vec![];
     };
-    let mut v: Vec<SubagentDef> = rd
+    let paths: Vec<PathBuf> = rd
         .flatten()
-        .map(|e| e.path())
-        .filter(|p| p.extension().is_some_and(|x| x == "md"))
+        .flat_map(|e| {
+            let path = e.path();
+            if path.extension().is_some_and(|x| x == "md") {
+                vec![path]
+            } else if path.is_dir() {
+                vec![path.join("agent.md")]
+            } else {
+                vec![]
+            }
+        })
+        .collect();
+    let mut v: Vec<SubagentDef> = paths
+        .into_iter()
         .filter_map(|p| {
+            if p.extension().is_none_or(|x| x != "md") {
+                return None;
+            }
             let meta = std::fs::metadata(&p).ok()?;
             if !meta.is_file() || meta.len() > 512 * 1024 {
                 return None;
@@ -668,13 +706,15 @@ fn opencode_json_defs(file: &Path, scope: &'static str) -> Vec<SubagentDef> {
 
 pub struct Dirs {
     pub claude: PathBuf,
+    pub gemini: PathBuf,
     pub opencode: PathBuf,
 }
 
 impl Dirs {
-    pub fn from_env(claude_dir: &Path) -> Self {
+    pub fn from_env(claude_dir: &Path, gemini_dir: &Path) -> Self {
         Dirs {
             claude: claude_dir.to_path_buf(),
+            gemini: gemini_dir.to_path_buf(),
             opencode: std::env::var_os("XDG_CONFIG_HOME")
                 .filter(|v| !v.is_empty())
                 .map(PathBuf::from)
@@ -697,8 +737,12 @@ fn merge(mut project: Vec<SubagentDef>, user: Vec<SubagentDef>) -> Vec<SubagentD
 pub fn subagents(d: &Dirs, project: Option<&Path>) -> Vec<SubagentDef> {
     let mut claude_project = vec![];
     let mut oc_project = vec![];
+    let mut gemini_project = vec![];
+    let mut agy_project = vec![];
     if let Some(p) = project {
         claude_project = md_defs(&p.join(".claude/agents"), "claude", "project");
+        gemini_project = md_defs(&p.join(".gemini/agents"), "gemini", "project");
+        agy_project = md_defs(&p.join(".agents/agents"), "agy", "project");
         for sub in ["agent", "agents"] {
             oc_project.extend(md_defs(
                 &p.join(".opencode").join(sub),
@@ -709,6 +753,8 @@ pub fn subagents(d: &Dirs, project: Option<&Path>) -> Vec<SubagentDef> {
         oc_project.extend(opencode_json_defs(&p.join("opencode.json"), "project"));
     }
     let claude_user = md_defs(&d.claude.join("agents"), "claude", "user");
+    let gemini_user = md_defs(&d.gemini.join("agents"), "gemini", "user");
+    let agy_user = md_defs(&d.gemini.join("config/agents"), "agy", "user");
     let mut oc_user = vec![];
     for sub in ["agent", "agents"] {
         oc_user.extend(md_defs(&d.opencode.join(sub), "opencode", "user"));
@@ -718,6 +764,8 @@ pub fn subagents(d: &Dirs, project: Option<&Path>) -> Vec<SubagentDef> {
         "user",
     ));
     let mut v = merge(claude_project, claude_user);
+    v.extend(merge(gemini_project, gemini_user));
+    v.extend(merge(agy_project, agy_user));
     v.extend(merge(oc_project, oc_user));
     v
 }
@@ -742,7 +790,10 @@ impl FileEdit {
 
 pub fn plan_files(defs: &[SubagentDef], c: &AgentCfg) -> Vec<FileEdit> {
     let mut out = vec![];
-    for d in defs.iter().filter(|d| d.agent == "claude") {
+    for d in defs
+        .iter()
+        .filter(|d| matches!(d.agent, "claude" | "gemini" | "agy"))
+    {
         let Some(sub) = c.subagents.get(&d.name) else {
             continue;
         };
@@ -751,10 +802,11 @@ pub fn plan_files(defs: &[SubagentDef], c: &AgentCfg) -> Vec<FileEdit> {
         };
         let mut after = text.clone();
         let mut changes = vec![];
-        for (key, want, have) in [
-            ("model", &sub.model, &d.model),
-            ("effort", &sub.effort, &d.effort),
-        ] {
+        let mut fields = vec![("model", &sub.model, &d.model)];
+        if d.agent == "claude" {
+            fields.push(("effort", &sub.effort, &d.effort));
+        }
+        for (key, want, have) in fields {
             if want.is_empty() || want == have {
                 continue;
             }
@@ -880,7 +932,10 @@ pub fn routes(
         }
         ("GET", ["v1", "profiles", "subagents"]) => {
             let project = project_of(q("cwd").as_deref());
-            let defs = subagents(&Dirs::from_env(&ctx.claude_dir), project.as_deref());
+            let defs = subagents(
+                &Dirs::from_env(&ctx.claude_dir, &ctx.gemini_dir),
+                project.as_deref(),
+            );
             (
                 200,
                 json!({ "subagents": defs.iter().map(SubagentDef::to_json).collect::<Vec<_>>() }),
@@ -897,10 +952,19 @@ fn apply_files(ctx: &crate::Ctx, body: &Value) -> Res<Value> {
         .as_str()
         .ok_or((400, "profile required".to_string()))?;
     let p = find(&s, id).ok_or_else(|| (400, format!("unknown profile {id}")))?;
-    let c = p.agents.get("claude").cloned().unwrap_or_default();
     let project = project_of(body["cwd"].as_str());
-    let defs = subagents(&Dirs::from_env(&ctx.claude_dir), project.as_deref());
-    let plan = plan_files(&defs, &c);
+    let defs = subagents(
+        &Dirs::from_env(&ctx.claude_dir, &ctx.gemini_dir),
+        project.as_deref(),
+    );
+    let plan: Vec<FileEdit> = p
+        .agents
+        .iter()
+        .flat_map(|(agent, c)| {
+            let mine: Vec<_> = defs.iter().filter(|d| d.agent == agent).cloned().collect();
+            plan_files(&mine, c)
+        })
+        .collect();
     let dry = body["dryRun"].as_bool() != Some(false);
     if dry {
         return Ok(json!({
@@ -1066,6 +1130,33 @@ mod tests {
     }
 
     #[test]
+    fn antigravity_effort_is_exposed_and_passed_to_the_cli() {
+        let p = Profile {
+            id: "agy-effort".into(),
+            name: "Agy effort".into(),
+            agents: BTreeMap::from([(
+                "agy".into(),
+                AgentCfg {
+                    effort: "xhigh".into(),
+                    ..Default::default()
+                },
+            )]),
+            ..Default::default()
+        };
+        let a = apply(get("agy").unwrap(), Some(&p), "", "");
+        assert_eq!(a.effort, "xhigh");
+        assert_eq!(support(get("agy").unwrap()).effort, Some(Via::Flag));
+        let argv = get("agy").unwrap().launch(&Launch {
+            model: &a.model,
+            effort: &a.effort,
+            session: None,
+            prompt: Some("do it"),
+            extra: &a.extra,
+        });
+        assert_eq!(argv, ["agy", "--effort", "xhigh", "-i", "do it"]);
+    }
+
+    #[test]
     fn a_task_with_a_deleted_profile_falls_back_to_its_scope() {
         let d = tmp("stale");
         let mut s = store();
@@ -1180,6 +1271,39 @@ mod tests {
     }
 
     #[test]
+    fn antigravity_named_subagents_use_supported_model_tiers() {
+        let mut s = store();
+        s.scopes.remove("/w/gone");
+        s.profiles[0].agents.insert(
+            "agy".into(),
+            AgentCfg {
+                effort: "xhigh".into(),
+                subagents: BTreeMap::from([(
+                    "reviewer".into(),
+                    Sub {
+                        model: "flash".into(),
+                        ..Default::default()
+                    },
+                )]),
+                ..Default::default()
+            },
+        );
+        validate(&s).unwrap();
+        s.profiles[0]
+            .agents
+            .get_mut("agy")
+            .unwrap()
+            .subagents
+            .get_mut("reviewer")
+            .unwrap()
+            .model = "flash_lite".into();
+        assert!(validate(&s)
+            .unwrap_err()
+            .1
+            .contains("Antigravity subagent model must be"));
+    }
+
+    #[test]
     fn validation() {
         assert!(validate(&store()).is_err());
         let mut s = store();
@@ -1235,6 +1359,9 @@ mod tests {
         assert!(!text.contains("Economy") && !text.contains("builtin"));
         assert_eq!(to_json(&back)["profiles"].as_array().unwrap().len(), 4);
         assert!(to_json(&back)["support"]["claude"]["subagents"] == "file");
+        assert_eq!(to_json(&back)["support"]["gemini"]["subagents"], "file");
+        assert_eq!(to_json(&back)["support"]["agy"]["subagents"], "file");
+        assert_eq!(to_json(&back)["support"]["agy"]["effort"], "flag");
         assert!(to_json(&back)["support"].get("shell").is_none());
     }
 
@@ -1265,6 +1392,7 @@ mod tests {
     fn dirs(root: &Path) -> Dirs {
         Dirs {
             claude: root.join("home/.claude"),
+            gemini: root.join("home/.gemini"),
             opencode: root.join("home/.config/opencode"),
         }
     }
@@ -1292,6 +1420,22 @@ mod tests {
             r#"{"agent":{"build":{"model":"anthropic/x"},"plan":{}}}"#,
         );
         write(ds.claude.join("agents/notes.txt"), "ignored");
+        write(
+            ds.gemini.join("agents/reviewer.md"),
+            "---\nname: reviewer\nmodel: gemini-3-flash-preview\n---\nreview\n",
+        );
+        write(
+            ds.gemini.join("config/agents/security/agent.md"),
+            "---\nname: security\nmodel: pro\n---\nsecurity review\n",
+        );
+        write(
+            d.join("proj/.gemini/agents/planner.md"),
+            "---\nname: planner\nmodel: gemini-3-pro-preview\n---\nplan\n",
+        );
+        write(
+            d.join("proj/.agents/agents/implementer/agent.md"),
+            "---\nname: implementer\nmodel: flash\n---\nimplement\n",
+        );
         let all = subagents(&ds, Some(&d.join("proj")));
         let names: Vec<(&str, &str, &str, &str)> = all
             .iter()
@@ -1302,12 +1446,78 @@ mod tests {
             [
                 ("claude", "planner", "user", "sonnet"),
                 ("claude", "reviewer", "project", "haiku"),
+                ("gemini", "planner", "project", "gemini-3-pro-preview"),
+                ("gemini", "reviewer", "user", "gemini-3-flash-preview"),
+                ("agy", "implementer", "project", "flash"),
+                ("agy", "security", "user", "pro"),
                 ("opencode", "build", "user", "anthropic/x"),
                 ("opencode", "plan", "user", ""),
             ]
         );
         assert_eq!(all[0].effort, "high");
         assert_eq!(subagents(&ds, None)[1].scope, "user");
+    }
+
+    #[test]
+    fn subagent_profiles_update_gemini_and_antigravity_model_frontmatter() {
+        let d = tmp("provider-subs");
+        let ds = dirs(&d);
+        let gemini = ds.gemini.join("agents/researcher.md");
+        let agy = ds.gemini.join("config/agents/reviewer/agent.md");
+        write(
+            gemini.clone(),
+            "---\nname: researcher\nmodel: gemini-2.5-flash\n---\nresearch\n",
+        );
+        write(
+            agy.clone(),
+            "---\nname: reviewer\nmodel: flash\n---\nreview\n",
+        );
+        let defs = subagents(&ds, None);
+        let gemini_plan = plan_files(
+            &defs,
+            &AgentCfg {
+                subagents: BTreeMap::from([(
+                    "researcher".into(),
+                    Sub {
+                        model: "gemini-2.5-pro".into(),
+                        effort: String::new(),
+                    },
+                )]),
+                ..Default::default()
+            },
+        );
+        assert_eq!(gemini_plan.len(), 1);
+        assert_eq!(
+            gemini_plan[0].changes,
+            [(
+                "model".into(),
+                "gemini-2.5-flash".into(),
+                "gemini-2.5-pro".into()
+            )]
+        );
+
+        let agy_plan = plan_files(
+            &defs,
+            &AgentCfg {
+                subagents: BTreeMap::from([(
+                    "reviewer".into(),
+                    Sub {
+                        model: "pro".into(),
+                        effort: String::new(),
+                    },
+                )]),
+                ..Default::default()
+            },
+        );
+        assert_eq!(agy_plan.len(), 1);
+        assert_eq!(agy_plan[0].path, agy);
+        assert_eq!(
+            agy_plan[0].changes,
+            [("model".into(), "flash".into(), "pro".into())]
+        );
+        assert!(std::fs::read_to_string(&gemini)
+            .unwrap()
+            .contains("model: gemini-2.5-flash"));
     }
 
     #[test]

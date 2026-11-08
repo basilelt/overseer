@@ -4,6 +4,7 @@ use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 pub const EFFORTS: &[&str] = &["low", "medium", "high", "max"];
+pub const AGY_EFFORTS: &[&str] = &["low", "medium", "high", "xhigh", "max"];
 
 type Argv = &'static [&'static str];
 type Renames = &'static [(&'static str, &'static str)];
@@ -94,6 +95,7 @@ pub static AGENTS: &[Agent] = &[
         bin: "agy",
         install: "see https://antigravity.google/download",
         model_flag: Some("--model"),
+        effort: Some((&["--effort", "{}"], &[])),
         prompt: Some("-i"),
         resume: Some(&["{flags}", "--conversation", "{id}"]),
         cont: Some(&["--continue"]),
@@ -210,9 +212,21 @@ impl Agent {
 
     pub fn efforts(&self) -> &'static [&'static str] {
         if self.effort.is_some() {
-            EFFORTS
+            if self.id == "agy" {
+                AGY_EFFORTS
+            } else {
+                EFFORTS
+            }
         } else {
             &[]
+        }
+    }
+
+    pub fn valid_efforts(&self) -> &'static [&'static str] {
+        if self.effort.is_some() {
+            self.efforts()
+        } else {
+            EFFORTS
         }
     }
 
@@ -487,7 +501,10 @@ mod tests {
             launch("opencode", "anthropic/x", "low", None),
             s(&["opencode", "-m", "anthropic/x", "--prompt", "do it"])
         );
-        assert_eq!(launch("agy", "", "high", None), s(&["agy", "-i", "do it"]));
+        assert_eq!(
+            launch("agy", "", "high", None),
+            s(&["agy", "--effort", "high", "-i", "do it"])
+        );
         assert_eq!(launch("cursor", "", "high", None), s(&["cursor-agent"]));
     }
 

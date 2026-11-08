@@ -83,6 +83,7 @@ describe('profile editor validation', () => {
 
   it('accepts what each CLI supports', () => {
     expect(validateProfile(ok, s.support, MOCK_AGENTS, [])).toEqual([]);
+    expect(validateProfile({ ...ok, agents: { agy: { effort: 'xhigh', subagents: { 'security-reviewer': { model: 'pro' } } }, gemini: { subagents: { researcher: { model: 'gemini-2.5-pro' } } } } }, s.support, MOCK_AGENTS, [])).toEqual([]);
   });
 
   it('rejects unsupported fields, bad values and reserved ids', () => {
@@ -95,6 +96,8 @@ describe('profile editor validation', () => {
     expect(bad({ agents: { claude: { model: 'opus\nx: y' } } })[0]).toMatch(/invalid model/);
     expect(bad({ agents: { codex: { subagents: { x: { model: 'a' } } } } })).toContain('Codex: subagent overrides not supported');
     expect(bad({ agents: { opencode: { subagents: { x: { effort: 'low' } } } } })).toContain('opencode: invalid effort for x');
+    expect(bad({ agents: { agy: { subagents: { reviewer: { model: 'gemini-3-pro' } } } } })).toContain('Antigravity: invalid Antigravity subagent model gemini-3-pro');
+    expect(bad({ agents: { agy: { subagents: { reviewer: { model: 'flash_lite' } } } } })).toContain('Antigravity: invalid Antigravity subagent model flash_lite');
     expect(bad({ agents: { nope: {} } })).toContain('nope: unknown agent');
   });
 
@@ -132,5 +135,25 @@ describe('mock daemon applies profiles like the daemon', () => {
     const yes = await d.request<{ files: { written: boolean; backup: string }[] }>('POST', '/v1/profiles/apply-files', { profile: 'mine', dryRun: false, files: [dry.files[0].path] });
     expect(yes.files[0].written).toBe(true);
     expect(yes.files[0].backup).toMatch(/\.bak-\d+$/);
+  });
+
+  it('previews Gemini and Antigravity named subagent model edits', async () => {
+    const d = new MockDaemon();
+    const mine: Profile = {
+      id: 'google-agents',
+      name: 'Google agents',
+      agents: {
+        gemini: { subagents: { researcher: { model: 'gemini-2.5-pro' } } },
+        agy: { subagents: { 'security-reviewer': { model: 'flash' } } },
+      },
+    };
+    await d.request('PUT', '/v1/profiles', { profiles: [mine] });
+    const dry = await d.request<{ files: { path: string; changes: { key: string; to: string }[] }[] }>('POST', '/v1/profiles/apply-files', { profile: mine.id, dryRun: true });
+    expect(dry.files.map((f) => f.changes)).toEqual([
+      [{ key: 'model', from: 'pro', to: 'flash' }],
+      [{ key: 'model', from: 'gemini-2.5-flash', to: 'gemini-2.5-pro' }],
+    ]);
+    const yes = await d.request<{ files: { path: string; written: boolean }[] }>('POST', '/v1/profiles/apply-files', { profile: mine.id, dryRun: false, files: dry.files.map((f) => f.path) });
+    expect(yes.files.map((f) => f.written)).toEqual([true, true]);
   });
 });

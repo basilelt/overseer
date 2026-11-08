@@ -253,10 +253,10 @@ fn term_spec(b: &Value, state_dir: &std::path::Path) -> Result<crate::term::Spec
             s("model")?.unwrap_or_default(),
             s("effort")?.unwrap_or_default(),
         );
-        if !effort.is_empty() && !crate::agents::EFFORTS.contains(&effort.as_str()) {
+        if !effort.is_empty() && !a.valid_efforts().contains(&effort.as_str()) {
             return Err(format!(
                 "effort must be one of {}",
-                crate::agents::EFFORTS.join(", ")
+                a.valid_efforts().join(", ")
             ));
         }
         let applied = crate::profiles::for_launch(

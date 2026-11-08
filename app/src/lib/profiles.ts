@@ -183,6 +183,7 @@ export function validateProfile(p: Profile, support: Record<string, ProfileSuppo
     for (const [n, sub] of subs) {
       if (!NAME_RE.test(n)) errs.push(`${label}: invalid subagent ${n}`);
       if (sub.model && !MODEL_RE.test(sub.model)) errs.push(`${label}: invalid model ${sub.model}`);
+      if (agent === 'agy' && sub.model && !['inherit', 'flash', 'pro'].includes(sub.model)) errs.push(`${label}: invalid Antigravity subagent model ${sub.model}`);
       if (sub.effort && (!s.subagentEfforts || !efforts.includes(sub.effort))) errs.push(`${label}: invalid effort for ${n}`);
     }
   }
