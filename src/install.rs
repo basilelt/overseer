@@ -88,7 +88,8 @@ fn merge_with(
     existing: &Value,
     events: &[&str],
     command: impl Fn(&str) -> String,
-    entry: impl Fn(String) -> Value,
+    entry: impl Fn(&str, String) -> Value,
+    update: impl Fn(&str, &mut Value),
 ) -> Value {
     let mut root = match existing {
         Value::Object(_) => existing.clone(),
@@ -106,10 +107,13 @@ fn merge_with(
         }
         let arr = groups.as_array_mut().expect("array");
         if arr.iter().any(|g| has(g, &cmd)) {
+            for group in arr.iter_mut().filter(|g| has(g, &cmd)) {
+                update(ev, group);
+            }
             continue;
         }
         strip(arr, MARKER);
-        arr.push(entry(cmd));
+        arr.push(entry(ev, cmd));
     }
     root
 }
@@ -124,16 +128,38 @@ pub fn merge_groups(
     command: impl Fn(&str) -> String,
     timeout: u64,
 ) -> Value {
+    merge_groups_with_timeout(existing, events, command, |_| timeout)
+}
+
+fn merge_groups_with_timeout(
+    existing: &Value,
+    events: &[&str],
+    command: impl Fn(&str) -> String,
+    timeout: impl Fn(&str) -> u64,
+) -> Value {
     merge_with(
         existing,
         events,
         command,
-        |cmd| json!({ "hooks": [{ "type": "command", "command": cmd, "timeout": timeout }] }),
+        |event, cmd| json!({ "hooks": [{ "type": "command", "command": cmd, "timeout": timeout(event) }] }),
+        |event, group| {
+            if let Some(hooks) = group.get_mut("hooks").and_then(Value::as_array_mut) {
+                for hook in hooks.iter_mut().filter(|hook| ours(hook, MARKER)) {
+                    hook["timeout"] = json!(timeout(event));
+                }
+            }
+        },
     )
 }
 
 pub fn merge_flat(existing: &Value, events: &[&str], command: impl Fn(&str) -> String) -> Value {
-    let mut root = merge_with(existing, events, command, |cmd| json!({ "command": cmd }));
+    let mut root = merge_with(
+        existing,
+        events,
+        command,
+        |_event, cmd| json!({ "command": cmd }),
+        |_event, _group| {},
+    );
     if root.get("version").is_none() {
         root["version"] = json!(1);
     }
@@ -247,6 +273,10 @@ pub fn diff(path: &Path, before: &str, after: &str, tmp: &Path) -> String {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Format {
     Groups(u64),
+    GroupsWithOverrides {
+        default: u64,
+        overrides: &'static [(&'static str, u64)],
+    },
     Flat,
     File,
 }
@@ -283,7 +313,10 @@ pub fn targets() -> Vec<Target> {
             env_dir("CODEX_HOME", ".codex"),
             "hooks.json",
             hooks::CODEX_EVENTS,
-            Format::Groups(5),
+            Format::GroupsWithOverrides {
+                default: 5,
+                overrides: &[("SessionEnd", 3)],
+            },
         ),
         t(
             "gemini",
@@ -515,6 +548,14 @@ pub fn plan(t: &Target, uninstall: bool, bin: &Path, state_dir: &Path) -> Result
         (true, _) => unmerge(&base),
         (false, Format::Flat) => merge_flat(&base, t.events, cmd),
         (false, Format::Groups(timeout)) => merge_groups(&base, t.events, cmd, timeout),
+        (false, Format::GroupsWithOverrides { default, overrides }) => {
+            merge_groups_with_timeout(&base, t.events, cmd, |event| {
+                overrides
+                    .iter()
+                    .find(|(override_event, _)| *override_event == event)
+                    .map_or(default, |(_, timeout)| *timeout)
+            })
+        }
         (false, Format::File) => unreachable!(),
     };
     let ours = if uninstall {
@@ -974,6 +1015,28 @@ mod tests {
 
     fn read(p: &Path) -> Value {
         serde_json::from_str(&std::fs::read_to_string(p).unwrap()).unwrap()
+    }
+
+    #[test]
+    fn codex_session_end_uses_supported_timeout() {
+        let d = dir("codex-timeout");
+        let mut codex = targets().into_iter().find(|t| t.agent == "codex").unwrap();
+        codex.path = d.join("hooks.json");
+        let codex_command = |event: &str| hook_command(Path::new("/sb"), &d, "codex", event);
+        let old_config = merge_groups(&json!({}), hooks::CODEX_EVENTS, codex_command, 5);
+        std::fs::write(&codex.path, pretty(&old_config)).unwrap();
+
+        let planned = plan(&codex, false, Path::new("/sb"), &d).unwrap();
+        assert_eq!(
+            planned.after["hooks"]["SessionEnd"][0]["hooks"][0]["timeout"],
+            3
+        );
+        for event in hooks::CODEX_EVENTS
+            .iter()
+            .filter(|event| **event != "SessionEnd")
+        {
+            assert_eq!(planned.after["hooks"][*event][0]["hooks"][0]["timeout"], 5);
+        }
     }
 
     #[test]
