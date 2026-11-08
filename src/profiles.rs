@@ -1096,8 +1096,20 @@ mod tests {
     }
 
     #[test]
-    fn codex_subagent_overrides_are_config_flags() {
-        let a = applied("codex", "balanced", "", "");
+    fn codex_subagent_overrides_select_embedded_mode() {
+        let p = Profile {
+            id: "codex".into(),
+            name: "Codex".into(),
+            builtin: false,
+            agents: BTreeMap::from([(
+                "codex".to_string(),
+                AgentCfg {
+                    subagent_model: "gpt-5.4-mini".into(),
+                    ..Default::default()
+                },
+            )]),
+        };
+        let a = apply(get("codex").unwrap(), Some(&p), "", "");
         assert!(a.env.is_empty());
         let argv = get("codex").unwrap().launch(&Launch {
             model: &a.model,
@@ -1110,20 +1122,82 @@ mod tests {
             argv,
             [
                 "codex",
+                "--no-daemon",
                 "-c",
                 "agents.default_subagent_model=\"gpt-5.4-mini\"",
-                "-c",
-                "agents.default_subagent_reasoning_effort=\"medium\"",
-                "-m",
-                "gpt-5.4",
-                "-c",
-                "model_reasoning_effort=medium",
             ]
         );
-        let econ = applied("codex", "economy", "", "max");
-        assert!(econ
-            .extra
-            .contains(&"agents.default_subagent_reasoning_effort=\"low\"".to_string()));
+    }
+
+    #[test]
+    fn codex_subagent_effort_override_selects_embedded_mode() {
+        let p = Profile {
+            id: "codex".into(),
+            name: "Codex".into(),
+            builtin: false,
+            agents: BTreeMap::from([(
+                "codex".to_string(),
+                AgentCfg {
+                    subagent_effort: "medium".into(),
+                    ..Default::default()
+                },
+            )]),
+        };
+        let a = apply(get("codex").unwrap(), Some(&p), "", "");
+        let argv = get("codex").unwrap().launch(&Launch {
+            model: &a.model,
+            effort: &a.effort,
+            session: None,
+            prompt: None,
+            extra: &a.extra,
+        });
+        assert_eq!(
+            argv,
+            [
+                "codex",
+                "--no-daemon",
+                "-c",
+                "agents.default_subagent_reasoning_effort=\"medium\"",
+            ]
+        );
+    }
+
+    #[test]
+    fn codex_reasoning_effort_selects_embedded_mode() {
+        let a = applied("codex", "max", "", "");
+        assert!(a.extra.is_empty());
+        let argv = get("codex").unwrap().launch(&Launch {
+            model: &a.model,
+            effort: &a.effort,
+            session: None,
+            prompt: None,
+            extra: &a.extra,
+        });
+        assert_eq!(
+            argv,
+            [
+                "codex",
+                "--no-daemon",
+                "-m",
+                "gpt-5.5",
+                "-c",
+                "model_reasoning_effort=xhigh",
+            ]
+        );
+    }
+
+    #[test]
+    fn codex_model_only_profile_keeps_shared_server_mode() {
+        let a = apply(get("codex").unwrap(), None, "gpt-5.4", "");
+        assert!(a.extra.is_empty());
+        let argv = get("codex").unwrap().launch(&Launch {
+            model: &a.model,
+            effort: &a.effort,
+            session: None,
+            prompt: None,
+            extra: &a.extra,
+        });
+        assert_eq!(argv, ["codex", "-m", "gpt-5.4"]);
     }
 
     #[test]
