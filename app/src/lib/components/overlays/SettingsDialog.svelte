@@ -943,7 +943,8 @@
     width: 72px;
   }
   .ctl {
-    width: 220px;
+    flex: 0 1 280px;
+    min-width: 0;
   }
   .seg {
     display: inline-flex;
