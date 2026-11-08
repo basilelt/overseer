@@ -1521,7 +1521,7 @@ while the window is hidden or unfocused and catches up when you come back.
 through the daemon: `list_tasks`, `get_task`, `create_task` (always `pending`; optional
 `dependsOn` ids or task numbers), `set_task_dependencies {taskId, dependsOn}` (refuses cycles),
 `update_task_progress {done,total,note}` and `set_task_status` (only its own task, only to
-`in_testing`). The daemon sets `OVERSEER_TASK_ID` in agents it starts for a task. Overseer
+`in_testing`, `merged` or `in_progress`; `in_progress` only while its agent runs). The daemon sets `OVERSEER_TASK_ID` in agents it starts for a task. Overseer
 never edits agent configuration; to enable it yourself:
 
 - Claude Code (user scope): `claude mcp add --scope user overseer -- /path/to/overseer mcp`,
