@@ -3,7 +3,7 @@
   import { t } from '../../i18n.svelte';
   import { parseReviewKey } from '../../review/keys';
   import { openReview, openReviewTabs } from '../../review/open';
-  import { changedWorktrees, counts, folder, includeCurrent, scopeOptions, type ScopeOption } from '../../review/scope';
+  import { changedLabel, changedWorktrees, counts, folder, includeCurrent, scopeOptions, type ScopeOption } from '../../review/scope';
   import type { ReviewStore } from '../../review/store.svelte';
   import { age } from '../../time';
 
@@ -17,7 +17,7 @@
       store.worktree ?? '',
     ),
   );
-  const changed = $derived(changedWorktrees(store.related).length);
+  const changedList = $derived(changedWorktrees(store.related));
 
   function label(o: ScopeOption): string {
     const parts = [o.name];
@@ -40,7 +40,7 @@
 {#if opts.length > 1}
   <div class="scope">
     <FolderGit size={14} class="faint" />
-    <span class="count">{t('review.worktreesChanged', { n: changed })}</span>
+    <span class="count">{changedLabel(changedList)}</span>
     <select aria-label={t('review.scope')} value={selfKey} onchange={(e) => pick(e.currentTarget.value)}>
       <optgroup label={t('review.scopeWorktrees')}>
         {#each opts as o (o.key)}<option value={o.key}>{label(o)}</option>{/each}
