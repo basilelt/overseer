@@ -352,6 +352,12 @@ mod tests {
             )))
             .ok
         );
+        assert!(
+            !input_empty(Some(&format!(
+                "output\n{footer}\n\x1b[38;5;244m›\x1b[0m \x1b[2mAsk Codex to do anything\x1b[0m typed"
+            )))
+            .ok
+        );
     }
 
     #[test]

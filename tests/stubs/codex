@@ -29,7 +29,7 @@ cleanup() { [ -n "$tool" ] && kill "$tool" 2>/dev/null; exit 0; }
 trap cleanup TERM HUP
 trap 'exit 0' INT
 prompt() {
-  printf '\033[38;5;244m›\033[0m \033[2mAsk Codex to do anything\033[0m\r\n\033[38;5;244m  ? for shortcuts\033[0m'
+  printf '\033[38;5;244m  ? for shortcuts\033[0m\r\n\033[38;5;244m›\033[0m \033[2mAsk Codex to do anything\033[0m'
 }
 printf 'codex ready\r\n'
 prompt
