@@ -33,7 +33,7 @@ describe('tour steps', () => {
     expect(STEPS.some((s) => s.since === TOUR_VERSION)).toBe(true);
   });
 
-  it('shows auto-approval settings as new in 0.34', () => {
+  it('shows the three 0.34 steps to users who saw 0.33', () => {
     expect(stepsFor('whatsNew', '0.33').map((s) => s.id)).toEqual(['autoApprove', 'merged', 'uninstall']);
     const step = STEPS.find((s) => s.id === 'autoApprove')!;
     expect(targetOf(step, (n) => n === 'auto-approve' || n === 'settings')).toBe('auto-approve');
