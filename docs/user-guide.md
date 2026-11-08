@@ -900,8 +900,8 @@ minor and major releases add steps. To see it again: Settings > Help > **Take th
 tour**, the palette command **Start the tour**, or **Show the tour again** in More on a phone.
 
 Settings (gear in the title bar, or More on a phone) has a sidebar of categories: **General**
-(appearance, links), **Terminal** (font, scrollback, GPU rendering, keyboard), **Agents** (task defaults, profiles,
-hooks, usage), **Notifications**, **Connection** (hosts, server), **Updates** and **Help** (tour,
+(appearance, links), **Terminal** (font, scrollback, GPU rendering, keyboard), **Agents** (task defaults,
+auto-approval, profiles, hooks, usage), **Notifications**, **Connection** (hosts, server), **Updates** and **Help** (tour,
 logs, feedback). The search box at the top of the sidebar has focus when Settings opens: type part of a
 setting's name or description, in the app language or in English, and only the matching settings stay,
 highlighted, with a count per category; Esc clears the search. On a phone the categories are a list
@@ -1069,6 +1069,13 @@ shell does not answer, the usual user directories that exist are added to `PATH`
 daemon keeps its environment: the new one applies from its next start (the next server update),
 it is never restarted for this since that would end its terms. **Rescan** in the agent picker
 runs the detection again (`POST /v1/agents/rescan`), for instance after installing an agent.
+
+**Auto-approve** in Settings → Agents chooses which supported CLIs Overseer starts with their
+native automatic permission mode. It is on by default for Claude Code, Codex, Gemini CLI,
+Antigravity, opencode, Copilot CLI and Cursor Agent. The settings are stored on the connected
+daemon host and apply to new sessions, task agents and feedback agents; changing a setting does
+not change sessions that are already running. Amp currently auto-approves by default unless its
+own permission configuration enables a policy, so it has no Overseer toggle.
 
 **Skills and plugins** (Settings > Agents, or **Install skills and plugins** in the command
 palette) installs a tool for one agent in one click, on the host the app is connected to. Each

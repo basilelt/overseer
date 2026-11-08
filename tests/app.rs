@@ -1740,15 +1740,18 @@ fn agents_are_detected_and_launched_from_the_table() {
     assert_eq!(g["agent"], "gemini");
     assert_eq!(g["title"], "Gemini CLI");
     let cmd = strs(&g["cmd"]);
-    assert_eq!(cmd[..2], ["gemini", "--session-id"]);
-    assert_eq!(cmd[3..], ["-m", "gemini-2.5-pro"]);
+    assert_eq!(cmd[..3], ["gemini", "--approval-mode=yolo", "--session-id"]);
+    assert_eq!(cmd[4..], ["-m", "gemini-2.5-pro"]);
 
     let agy = app.ok(
         "POST",
         "/v1/terms",
         json!({"cwd": wt, "agent": "agy", "effort": "xhigh"}),
     );
-    assert_eq!(strs(&agy["cmd"]), ["agy", "--effort", "xhigh"]);
+    assert_eq!(
+        strs(&agy["cmd"]),
+        ["agy", "--mode=auto", "--effort", "xhigh"]
+    );
 
     let c = app.ok(
         "POST",
@@ -1757,11 +1760,12 @@ fn agents_are_detected_and_launched_from_the_table() {
     );
     let ctid = c["id"].as_str().unwrap().to_string();
     let cmd = strs(&c["cmd"]);
-    let sid = cmd[1].strip_prefix("--session-id=").unwrap().to_string();
-    assert_eq!(cmd[2..], ["--model", "gpt-5.2", "--effort", "xhigh"]);
+    assert_eq!(cmd[1], "--allow-all");
+    let sid = cmd[2].strip_prefix("--session-id=").unwrap().to_string();
+    assert_eq!(cmd[3..], ["--model", "gpt-5.2", "--effort", "xhigh"]);
     wait(|| {
         stub_log(&app).contains(&format!(
-            "copilot --session-id={sid} --model gpt-5.2 --effort xhigh"
+            "copilot --allow-all --session-id={sid} --model gpt-5.2 --effort xhigh"
         ))
     });
 
@@ -1802,6 +1806,7 @@ fn agents_are_detected_and_launched_from_the_table() {
             "gpt-5.2".into(),
             "--effort".into(),
             "xhigh".into(),
+            "--allow-all".into(),
             format!("--resume={sid}")
         ]
     );
@@ -1861,6 +1866,102 @@ fn agents_are_detected_and_launched_from_the_table() {
 }
 
 #[test]
+fn agent_auto_approval_settings_persist_and_control_new_term_argv() {
+    let mut app = App::new("agent-auto-approval", json!({"autoConcurrency": 0}));
+    let default = app.ok("GET", "/v1/agents/settings", Value::Null);
+    assert_eq!(default["autoApprove"]["claude"], true);
+    assert_eq!(default["autoApprove"]["codex"], true);
+    assert_eq!(default["autoApprove"].as_object().unwrap().len(), 7);
+
+    let disabled = app.ok(
+        "PUT",
+        "/v1/agents/settings",
+        json!({"agent": "codex", "autoApprove": false}),
+    );
+    assert_eq!(disabled["autoApprove"]["codex"], false);
+    assert_eq!(disabled["autoApprove"]["claude"], true);
+    app.crash_and_restart();
+    assert_eq!(
+        app.ok("GET", "/v1/agents/settings", Value::Null)["autoApprove"]["codex"],
+        false
+    );
+
+    let cwd = app.fx.wt.to_string_lossy().into_owned();
+    let codex = app.ok(
+        "POST",
+        "/v1/terms",
+        json!({"cwd": cwd, "agent": "codex", "cols": 120, "rows": 32}),
+    );
+    let disabled_id = codex["id"].as_str().unwrap().to_string();
+    let disabled_cmd = strs(&codex["cmd"]);
+    assert!(!disabled_cmd.contains(&"--sandbox".to_string()));
+    assert!(!disabled_cmd.contains(&"--ask-for-approval".to_string()));
+
+    app.ok(
+        "PUT",
+        "/v1/agents/settings",
+        json!({"agent": "codex", "autoApprove": true}),
+    );
+    let codex = app.ok(
+        "POST",
+        "/v1/terms",
+        json!({"cwd": cwd, "agent": "codex", "cols": 120, "rows": 32}),
+    );
+    let cmd = strs(&codex["cmd"]);
+    assert!(cmd.windows(2).any(|w| w == ["--ask-for-approval", "never"]));
+    let enabled_id = codex["id"].as_str().unwrap().to_string();
+
+    let task = app.ok(
+        "POST",
+        "/v1/tasks",
+        json!({"title": "Auto approve", "project": cwd, "agent": "codex"}),
+    );
+    let task = app.ok(
+        "POST",
+        &format!("/v1/tasks/{}/start", task["id"].as_str().unwrap()),
+        json!({}),
+    );
+    let task_term = app.ok(
+        "GET",
+        &format!("/v1/terms/{}", task["termId"].as_str().unwrap()),
+        Value::Null,
+    );
+    assert!(strs(&task_term["cmd"])
+        .windows(2)
+        .any(|w| w == ["--ask-for-approval", "never"]));
+
+    assert_eq!(
+        app.req("PUT", "/v1/agents/settings", json!({"agent": "claude"}))
+            .0,
+        400
+    );
+    assert_eq!(
+        app.req(
+            "PUT",
+            "/v1/agents/settings",
+            json!({"agent": "amp", "autoApprove": false})
+        )
+        .0,
+        400
+    );
+    app.ok(
+        "POST",
+        &format!("/v1/terms/{disabled_id}/kill"),
+        json!({"confirm": true}),
+    );
+    app.ok(
+        "POST",
+        &format!("/v1/terms/{enabled_id}/kill"),
+        json!({"confirm": true}),
+    );
+    app.ok(
+        "POST",
+        &format!("/v1/terms/{}/kill", task["termId"].as_str().unwrap()),
+        json!({"confirm": true}),
+    );
+}
+
+#[test]
 fn tasks_take_any_agent_and_deliver_the_prompt_by_flag() {
     let app = App::new("taskagents", json!({"autoConcurrency": 0}));
     let wt = app.fx.wt.to_string_lossy().into_owned();
@@ -1915,10 +2016,7 @@ fn tasks_take_any_agent_and_deliver_the_prompt_by_flag() {
     let mut ws = app.ws(&tid);
     read_until(&mut ws, "got: Paste");
     let log = stub_log(&app);
-    assert!(
-        log.contains("codex --no-daemon -c model_reasoning_effort=low"),
-        "{log}"
-    );
+    assert!(log.contains("codex --no-daemon -c "), "{log}");
     assert!(
         log.contains("-c mcp_servers.overseer.args=[\"mcp\"]"),
         "{log}"
@@ -1929,6 +2027,8 @@ fn tasks_take_any_agent_and_deliver_the_prompt_by_flag() {
         )),
         "{log}"
     );
+    assert!(log.contains("--ask-for-approval never"), "{log}");
+    assert!(log.contains("-c model_reasoning_effort=low"), "{log}");
     for t in [s["termId"].as_str().unwrap(), &tid] {
         app.ok(
             "POST",
@@ -2343,7 +2443,11 @@ fn profiles_apply_at_launch_with_workspace_and_task_precedence() {
     assert_eq!(p["support"]["codex"]["subagentModel"], "flag");
 
     let plain = app.ok("POST", "/v1/terms", json!({"cwd": wt, "agent": "claude"}));
-    assert_eq!(strs(&plain["cmd"]).len(), 3);
+    let plain_cmd = strs(&plain["cmd"]);
+    assert_eq!(plain_cmd.len(), 5);
+    assert!(plain_cmd
+        .windows(2)
+        .any(|w| w == ["--permission-mode", "auto"]));
     assert!(plain.get("profile").is_none());
 
     for bad in [
@@ -2369,7 +2473,8 @@ fn profiles_apply_at_launch_with_workspace_and_task_precedence() {
 
     let scoped = app.ok("POST", "/v1/terms", json!({"cwd": wt, "agent": "claude"}));
     let cmd = strs(&scoped["cmd"]);
-    assert_eq!(cmd[3..], ["--model", "sonnet", "--effort", "low"]);
+    assert!(cmd.windows(2).any(|w| w == ["--model", "sonnet"]));
+    assert!(cmd.windows(2).any(|w| w == ["--effort", "low"]));
     assert_eq!(scoped["profile"]["name"], "Economy");
     assert_eq!(scoped["profile"]["effort"], "low");
 
@@ -2387,30 +2492,34 @@ fn profiles_apply_at_launch_with_workspace_and_task_precedence() {
             "agents.default_subagent_model=\"gpt-5.4-mini\"",
             "-c",
             "agents.default_subagent_reasoning_effort=\"medium\"",
+            "--ask-for-approval",
+            "never",
         ]
     );
 
     let home = app.ok("POST", "/v1/terms", json!({"cwd": "/", "agent": "claude"}));
-    assert_eq!(
-        strs(&home["cmd"])[3..],
-        ["--model", "sonnet", "--effort", "medium"]
-    );
+    let home_cmd = strs(&home["cmd"]);
+    assert!(home_cmd.windows(2).any(|w| w == ["--model", "sonnet"]));
+    assert!(home_cmd.windows(2).any(|w| w == ["--effort", "medium"]));
 
     let explicit = app.ok(
         "POST",
         "/v1/terms",
         json!({"cwd": wt, "agent": "claude", "profile": "lean", "effort": "high"}),
     );
-    assert_eq!(
-        strs(&explicit["cmd"])[3..],
-        ["--model", "haiku", "--effort", "high"]
-    );
+    let explicit_cmd = strs(&explicit["cmd"]);
+    assert!(explicit_cmd.windows(2).any(|w| w == ["--model", "haiku"]));
+    assert!(explicit_cmd.windows(2).any(|w| w == ["--effort", "high"]));
     let none = app.ok(
         "POST",
         "/v1/terms",
         json!({"cwd": wt, "agent": "claude", "profile": "none"}),
     );
-    assert_eq!(strs(&none["cmd"]).len(), 3);
+    let none_cmd = strs(&none["cmd"]);
+    assert_eq!(none_cmd.len(), 5);
+    assert!(none_cmd
+        .windows(2)
+        .any(|w| w == ["--permission-mode", "auto"]));
     let inherit = app.ok(
         "POST",
         "/v1/terms",
@@ -3239,6 +3348,7 @@ fn a_restored_feedback_session_resumes_without_its_initial_prompt() {
         .unwrap()
         .to_string();
     wait(|| stub().contains("File this issue from"));
+    assert!(stub().contains("--permission-mode auto"), "{}", stub());
     assert_eq!(stub().lines().count(), 1, "{}", stub());
     wait(|| {
         let (_, v) = fx.req("GET", "/v1/lines?all=true", "");

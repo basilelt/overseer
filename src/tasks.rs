@@ -754,6 +754,7 @@ pub fn argv(
     p: &crate::profiles::Applied,
     session: &str,
     prompt: Option<&str>,
+    auto_approve: bool,
 ) -> Vec<String> {
     let a = crate::agents::get(&t.agent).unwrap_or(&crate::agents::AGENTS[0]);
     let mut extra: Vec<String> = if a.id == "claude" {
@@ -768,6 +769,7 @@ pub fn argv(
         session: Some(session),
         prompt,
         extra: &extra,
+        auto_approve,
     })
 }
 
@@ -845,6 +847,7 @@ pub(crate) fn start_with_args(
             format!("{} is not installed ({})", agent.name, agent.bin),
         ));
     }
+    let auto_approve = crate::agents::auto_approve_enabled(&reg, agent.id).map_err(|e| (500, e))?;
     let wt = if here {
         in_place(&mut t)
     } else {
@@ -882,11 +885,17 @@ pub(crate) fn start_with_args(
         &launch,
         &session,
         by_flag.then_some(prompt.as_str()),
+        auto_approve,
     );
     let mut env = vec![("OVERSEER_TASK_ID".into(), t.id.clone())];
     env.extend(p.env.iter().cloned());
     let mut flags = agent.flags(&p.model, &p.effort);
     flags.extend(p.extra.iter().cloned());
+    if auto_approve {
+        if let Some(auto_approve_flags) = crate::agents::auto_approve_args(agent.id) {
+            flags.extend(auto_approve_flags.iter().map(|flag| (*flag).to_string()));
+        }
+    }
     flags.extend(mcp);
     let (cols, rows) = size.unwrap_or((120, 32));
     let term = term::spawn(Spec {

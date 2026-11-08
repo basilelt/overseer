@@ -1109,6 +1109,7 @@ mod tests {
             session: Some("u1"),
             prompt: None,
             extra: &a.extra,
+            auto_approve: false,
         });
         assert_eq!(
             argv,
@@ -1152,6 +1153,7 @@ mod tests {
             session: None,
             prompt: Some("do it"),
             extra: &a.extra,
+            auto_approve: false,
         });
         assert_eq!(argv, ["agy", "--effort", "xhigh", "-i", "do it"]);
     }
@@ -1208,6 +1210,7 @@ mod tests {
             session: None,
             prompt: None,
             extra: &a.extra,
+            auto_approve: false,
         });
         assert_eq!(
             argv,
@@ -1241,6 +1244,7 @@ mod tests {
             session: None,
             prompt: None,
             extra: &a.extra,
+            auto_approve: false,
         });
         assert_eq!(
             argv,
@@ -1263,6 +1267,7 @@ mod tests {
             session: None,
             prompt: None,
             extra: &a.extra,
+            auto_approve: false,
         });
         assert_eq!(
             argv,
@@ -1287,6 +1292,7 @@ mod tests {
             session: None,
             prompt: None,
             extra: &a.extra,
+            auto_approve: false,
         });
         assert_eq!(argv, ["codex", "-m", "gpt-5.4"]);
     }

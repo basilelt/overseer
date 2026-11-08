@@ -1,7 +1,7 @@
 # App ⇄ daemon contract (protocol 1)
 
 What the desktop app (`app/`) talks to. Everything here is served by `overseer daemon`; the
-machine-readable form is in `daemon.openapi.yaml` (paths `/version`, `/agents`, `/terms*`,
+machine-readable form is in `daemon.openapi.yaml` (paths `/version`, `/agents`, `/agents/settings`, `/terms*`,
 `/tasks*`, `/projects`, `/workspaces*`, `/folders*`, `/groups*`, `/broadcast`,
 `/lines/{id}/activity`, `/lines/{id}/resume` with `target: term`, `/lines/{id}/workspace`, `/review*`).
 Existing routes (`/lines`, `/lines/{id}/diff`, `/events`, hold/close/…) are unchanged.
@@ -16,7 +16,7 @@ live review (§11: `/v1/review*`, `review.*` events, two MCP tools; ADR 0030), t
 `git.changed` / `worktree.*` events (ADR 0031). Uploads (§3a), repository discovery and
 `missing` on projects and workspaces (§5, §6a), `GET /v1/env` and `POST /v1/agents/rescan` (§2a)
 are additions too, and so are session tasks (§5: `Task.origin`, `Task.manualStatus`,
-`Task.badges`, `config.json` `sessionTasksDays`).
+`Task.badges`, `config.json` `sessionTasksDays`), and host-wide agent auto-approval settings (§2a).
 
 ## 1. Transport
 
@@ -93,6 +93,17 @@ that predate it answer `404`.
 
 `POST /v1/agents/rescan` → 200, same body as `GET /v1/agents`, after dropping the 60 s cache and
 running the detection again.
+
+`GET /v1/agents/settings` → 200 `{"autoApprove":{"claude":true,"codex":true,...}}`. The map
+includes CLIs with launch-time auto-approval controls; unset values default to `true`.
+`PUT /v1/agents/settings` with `{"agent":"codex","autoApprove":false}` persists one host-wide
+setting in the daemon registry and returns the full map. New sessions started by Overseer use
+these defaults, including task and feedback launches. Existing sessions keep their launch mode.
+Supported flags are Claude Code `--permission-mode auto`, Codex `--sandbox danger-full-access
+--ask-for-approval never`, Gemini CLI `--approval-mode=yolo`, Antigravity `--mode=auto`, opencode
+`--auto`, Copilot CLI `--allow-all`, and Cursor Agent `--force`. Amp currently auto-approves by
+default unless its own permission configuration enables a policy, so Amp is not in the map.
+400 when either required field is missing or the agent has no launch-time control.
 
 `GET /v1/env` → 200 `{"path":"/home/u/.local/bin:/usr/bin:…","source":"login-shell"}`: the `PATH`
 the daemon uses for detection and for every term it spawns. Only `PATH` is exposed, never other

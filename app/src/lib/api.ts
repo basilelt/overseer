@@ -55,6 +55,9 @@ export function api(c: DaemonClient) {
     discoverProjects: () => c.request<DiscoverResult>('POST', '/v1/projects/discover'),
     agents: () => c.request<AgentInfo[]>('GET', '/v1/agents'),
     rescanAgents: () => c.request<AgentInfo[]>('POST', '/v1/agents/rescan'),
+    agentSettings: () => c.request<{ autoApprove: Record<string, boolean> }>('GET', '/v1/agents/settings'),
+    setAgentAutoApprove: (agent: string, autoApprove: boolean) =>
+      c.request<{ autoApprove: Record<string, boolean> }>('PUT', '/v1/agents/settings', { agent, autoApprove }),
     env: () => c.request<DaemonEnv>('GET', '/v1/env'),
     hooksStatus: () => c.request<HooksStatus>('GET', '/v1/hooks/status'),
     switchboardStatus: () => c.request<SwitchboardStatus>('GET', '/v1/import/switchboard'),

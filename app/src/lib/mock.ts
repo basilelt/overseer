@@ -11,6 +11,7 @@ import { resolveProfile } from './profiles';
 import { fileKind } from './files';
 import { cleanTitle } from './titles';
 import { attachProblem, IMAGE_EXTS, VIDEO_EXTS } from './feedback';
+import { AUTO_APPROVE_ARGS } from './agents';
 import type { DirListing } from './dirs';
 import type { Action, Proposal, Result } from './organize';
 import type {
@@ -606,6 +607,7 @@ export class MockDaemon implements DaemonClient {
   terms: Term[];
   tasks: Task[];
   autoOrganize = false;
+  autoApprove: Record<string, boolean> = Object.fromEntries(Object.keys(AUTO_APPROVE_ARGS).map((id) => [id, true]));
   messages: TaskMessage[];
   activity: Record<string, Activity>;
   projects: Project[] = structuredClone(MOCK_PROJECTS);
@@ -709,6 +711,13 @@ export class MockDaemon implements DaemonClient {
     if (method === 'GET' && path === '/v1/projects/items') return this.sourceItems(new URLSearchParams(qs).get('project') ?? '');
     if (method === 'GET' && path === '/v1/agents') return structuredClone(this.agents);
     if (method === 'POST' && path === '/v1/agents/rescan') return structuredClone(this.agents);
+    if (method === 'GET' && path === '/v1/agents/settings') return { autoApprove: structuredClone(this.autoApprove) };
+    if (method === 'PUT' && path === '/v1/agents/settings') {
+      if (typeof body?.agent !== 'string' || typeof body?.autoApprove !== 'boolean') throw new DaemonError(400, 'agent and autoApprove are required');
+      if (!(body.agent in this.autoApprove)) throw new DaemonError(400, `auto approval is not configurable for agent ${body.agent}`);
+      this.autoApprove[body.agent] = body.autoApprove;
+      return { autoApprove: structuredClone(this.autoApprove) };
+    }
     if (method === 'GET' && path === '/v1/hooks/status') return structuredClone(this.hooks);
     if (path === '/v1/import/switchboard') return this.switchboardRoute(method);
     if (path === '/v1/lifecycle' && (method === 'GET' || method === 'PATCH')) return this.lifecycleRoute(method, body);
@@ -1190,7 +1199,7 @@ export class MockDaemon implements DaemonClient {
     const c = p?.agents[a.id] ?? {};
     const model = body.model || c.model || '';
     const effort = body.effort || c.effort;
-    const cmd = a.id === 'shell' ? ['zsh'] : [a.id, ...(model ? ['--model', model] : []), ...(effort && a.efforts.includes(effort) ? ['--effort', effort] : [])];
+    const cmd = a.id === 'shell' ? ['zsh'] : [a.id, ...(this.autoApprove[a.id] ? AUTO_APPROVE_ARGS[a.id] ?? [] : []), ...(model ? ['--model', model] : []), ...(effort && a.efforts.includes(effort) ? ['--effort', effort] : [])];
     const profile = p || model || effort ? { ...(p ? { id: p.id, name: p.name } : {}), ...(model ? { model } : {}), ...(effort ? { effort } : {}) } : undefined;
     return this.spawn({ ...body, cmd, title: body.title ?? (a.id === 'shell' ? 'zsh' : a.name) }, a.id, profile);
   }
@@ -1693,7 +1702,7 @@ export class MockDaemon implements DaemonClient {
   private startTask(t: Task) {
     t.status = 'in_progress';
     t.progress = { done: 0, total: 5, note: 'Starting' };
-    const term = this.spawn({ cwd: t.worktreePath ?? t.project, cmd: [t.agent, ...(t.model ? ['--model', t.model] : [])], cols: 120, rows: 32, title: t.title, taskId: t.id }, t.agent);
+    const term = this.spawn({ cwd: t.worktreePath ?? t.project, cmd: [t.agent, ...(this.autoApprove[t.agent] ? AUTO_APPROVE_ARGS[t.agent] ?? [] : []), ...(t.model ? ['--model', t.model] : [])], cols: 120, rows: 32, title: t.title, taskId: t.id }, t.agent);
     t.termId = term.id;
   }
 

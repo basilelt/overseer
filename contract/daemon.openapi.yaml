@@ -531,6 +531,39 @@ paths:
           content:
             application/json:
               schema: { type: array, items: { $ref: "#/components/schemas/Agent" } }
+  /agents/settings:
+    get:
+      summary: Read the host-wide auto-approval defaults for supported agent CLIs
+      operationId: agentSettings
+      responses:
+        "200":
+          description: Per-agent settings; unset values default to auto approval
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [autoApprove]
+                properties:
+                  autoApprove:
+                    type: object
+                    additionalProperties: { type: boolean }
+    put:
+      summary: Set whether Overseer auto-approves a supported agent CLI's requests on new sessions
+      operationId: setAgentAutoApproval
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [agent, autoApprove]
+              properties:
+                agent: { type: string, enum: [claude, codex, gemini, agy, opencode, copilot, cursor] }
+                autoApprove: { type: boolean }
+      responses:
+        "200": { description: Updated setting and full per-agent settings map }
+        "400": { description: Missing or invalid fields, or the agent has no launch-time auto-approval control }
+        "500": { description: Could not read or write the daemon registry }
   /env:
     get:
       summary: The PATH the daemon uses for agent detection and spawned terms (contract/app-daemon.md §2a); no other variable is exposed

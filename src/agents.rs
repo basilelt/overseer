@@ -199,6 +199,61 @@ pub struct Launch<'a> {
     pub session: Option<&'a str>,
     pub prompt: Option<&'a str>,
     pub extra: &'a [String],
+    pub auto_approve: bool,
+}
+
+const AUTO_APPROVE_KEY: &str = "agent.autoApprove.";
+
+/// CLI-native auto-approval flags for agents that expose a launch-time mode.
+/// Amp currently auto-approves by default unless the user's Amp permission
+/// configuration opts into a policy, so it needs no launch flag.
+pub fn auto_approve_args(id: &str) -> Option<&'static [&'static str]> {
+    match id {
+        "claude" => Some(&["--permission-mode", "auto"]),
+        "codex" => Some(&["--ask-for-approval", "never"]),
+        "gemini" => Some(&["--approval-mode=yolo"]),
+        "agy" => Some(&["--mode=auto"]),
+        "opencode" => Some(&["--auto"]),
+        "copilot" => Some(&["--allow-all"]),
+        "cursor" => Some(&["--force"]),
+        _ => None,
+    }
+}
+
+pub fn auto_approve_enabled(reg: &crate::registry::Registry, id: &str) -> Result<bool, String> {
+    if auto_approve_args(id).is_none() {
+        return Ok(false);
+    }
+    Ok(reg
+        .get(&format!("{AUTO_APPROVE_KEY}{id}"))?
+        .is_none_or(|value| value == "true"))
+}
+
+pub fn auto_approve_settings(reg: &crate::registry::Registry) -> Result<Value, String> {
+    let mut settings = serde_json::Map::new();
+    for agent in AGENTS {
+        if auto_approve_args(agent.id).is_some() {
+            settings.insert(
+                agent.id.to_string(),
+                json!(auto_approve_enabled(reg, agent.id)?),
+            );
+        }
+    }
+    Ok(json!({"autoApprove": settings}))
+}
+
+pub fn set_auto_approve(
+    reg: &crate::registry::Registry,
+    id: &str,
+    enabled: bool,
+) -> Result<(), String> {
+    if auto_approve_args(id).is_none() {
+        return Err(format!("auto approval is not configurable for agent {id}"));
+    }
+    reg.put(
+        &format!("{AUTO_APPROVE_KEY}{id}"),
+        if enabled { "true" } else { "false" },
+    )
 }
 
 impl Agent {
@@ -265,6 +320,11 @@ impl Agent {
         }
         a.extend(self.mode_flags(l.effort, l.extra));
         a.extend(l.extra.iter().cloned());
+        if l.auto_approve {
+            if let Some(flags) = auto_approve_args(self.id) {
+                a.extend(flags.iter().map(|f| (*f).to_string()));
+            }
+        }
         if let (Some(parts), Some(s)) = (self.session, l.session) {
             a.extend(fill(parts, s));
         }
@@ -461,6 +521,7 @@ mod tests {
             session,
             prompt: Some("do it"),
             extra: &[],
+            auto_approve: false,
         })
     }
 
@@ -531,6 +592,7 @@ mod tests {
             session: None,
             prompt: None,
             extra: &extra,
+            auto_approve: false,
         });
         assert_eq!(
             argv,
@@ -541,6 +603,36 @@ mod tests {
                 "mcp_servers.overseer.args=[\"mcp\"]",
             ])
         );
+    }
+
+    #[test]
+    fn auto_approval_uses_each_cli_native_mode() {
+        let expected = [
+            ("claude", &["--permission-mode", "auto"][..]),
+            ("codex", &["--ask-for-approval", "never"][..]),
+            ("gemini", &["--approval-mode=yolo"][..]),
+            ("agy", &["--mode=auto"][..]),
+            ("opencode", &["--auto"][..]),
+            ("copilot", &["--allow-all"][..]),
+            ("cursor", &["--force"][..]),
+        ];
+        for (id, flags) in expected {
+            assert_eq!(auto_approve_args(id), Some(flags), "{id}");
+            let argv = get(id).unwrap().launch(&Launch {
+                model: "",
+                effort: "",
+                session: None,
+                prompt: None,
+                extra: &[],
+                auto_approve: true,
+            });
+            assert!(
+                argv.windows(flags.len()).any(|w| w == flags),
+                "{id}: {argv:?}"
+            );
+        }
+        assert_eq!(auto_approve_args("amp"), None);
+        assert_eq!(auto_approve_args("shell"), None);
     }
 
     #[test]
