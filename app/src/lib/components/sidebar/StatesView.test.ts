@@ -45,4 +45,12 @@ describe('StatesView wiring', () => {
     expect(sidebarSrc).toContain('<StatesView');
     expect(sidebarSrc).not.toContain('<StatusList');
   });
+
+  it('loads the by-status view lazily and only imports it from the sidebar on demand', () => {
+    // Given the sidebar source
+    // When read
+    // Then StatesView is behind a dynamic import, never a static one
+    expect(sidebarSrc).toContain("import('./StatesView.svelte')");
+    expect(sidebarSrc).not.toMatch(/import StatesView from/);
+  });
 });

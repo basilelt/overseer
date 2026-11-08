@@ -8,7 +8,7 @@
   import Overlays from './lib/components/overlays/Overlays.svelte';
   import Toast from './lib/components/ui/Toast.svelte';
   import { offerSwitchboard, switchboard } from './lib/switchboard.svelte';
-  import ConnBanner from './lib/components/ui/ConnBanner.svelte';
+  import { preload } from './lib/idle';
   import { startNotifications } from './lib/notify';
   import { startPorts } from './lib/ports.svelte';
   import { startCenter } from './lib/notifications.svelte';
@@ -145,6 +145,7 @@
       app.open(null);
     }
   }
+  const connBanner = preload(() => import('./lib/components/ui/ConnBanner.svelte'), 1000);
 </script>
 
 <svelte:window onkeydown={onKey} oncontextmenu={onLinkMenu} />
@@ -154,7 +155,7 @@
 {:else}
 <div class="shell">
   <TitleBar />
-  <ConnBanner />
+  {#await connBanner() then { default: ConnBanner }}<ConnBanner />{/await}
   <div class="body" style:--sidebar-w="min({sidebarW}px, 35vw)" style:--panel-w="min({panelW}px, 45vw)">
     {#if app.view === 'kanban'}
       <Boundary name="kanban">{#await kanban() then { default: KanbanView }}<KanbanView />{/await}</Boundary>
