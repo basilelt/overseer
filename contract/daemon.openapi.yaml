@@ -370,6 +370,53 @@ paths:
                 properties:
                   dryRun: { type: boolean }
                   results: { type: array, items: { $ref: "#/components/schemas/HookResult" } }
+  /uninstall:
+    post:
+      summary: Remove everything Overseer added to the machine (dry run unless dryRun is false); on apply the daemon answers, deletes its state directory and exits 0
+      operationId: uninstall
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                dryRun: { type: boolean, default: true }
+      responses:
+        "200":
+          description: What was (or would be) removed, kept and what failed
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [dryRun, removed, kept, errors]
+                properties:
+                  dryRun: { type: boolean }
+                  removed:
+                    type: array
+                    items:
+                      type: object
+                      required: [kind, path]
+                      properties:
+                        kind: { type: string, enum: [service, linger, hook, statusline, backup, dir, worktree, branch, appData, stateDir] }
+                        path: { type: string }
+                  kept:
+                    type: array
+                    items:
+                      type: object
+                      required: [kind, path, reason]
+                      properties:
+                        kind: { type: string }
+                        path: { type: string }
+                        reason: { type: string }
+                  errors:
+                    type: array
+                    items:
+                      type: object
+                      required: [kind, path, error]
+                      properties:
+                        kind: { type: string }
+                        path: { type: string }
+                        error: { type: string }
   /events:
     get:
       summary: Local SSE stream (Board live updates); replays after Last-Event-ID (last 256 events)

@@ -414,13 +414,17 @@ fn hooks_installer_dry_run_apply_idempotent_uninstall() {
     );
     assert_eq!(v["hooks"]["SessionStart"].as_array().unwrap().len(), 2);
     assert_eq!(v["hooks"].as_object().unwrap().len(), 14);
-    let backups = std::fs::read_dir(t.base.join("home/.claude"))
+    assert!(!std::fs::read_dir(t.base.join("home/.claude"))
+        .unwrap()
+        .flatten()
+        .any(|e| e.file_name().to_string_lossy().contains(".bak-")));
+    let backups = std::fs::read_dir(t.base.join("state/backups"))
         .unwrap()
         .flatten()
         .filter(|e| {
             e.file_name()
                 .to_string_lossy()
-                .starts_with("settings.json.bak-")
+                .contains("settings.json.bak-")
         })
         .count();
     assert_eq!(backups, 1);

@@ -856,6 +856,7 @@ pub fn handle(ctx: &Ctx, r: &Request) -> (u16, Value) {
         .or_else(|| crate::worktrees::routes(ctx, &r.method, &segs, &body))
         .or_else(|| crate::install::routes(&r.method, &segs, &body, &ctx.state_dir))
         .or_else(|| crate::statusline::routes(&r.method, &segs, &body, &ctx.state_dir))
+        .or_else(|| crate::uninstall::routes(ctx, &r.method, &segs, &body))
         .or_else(|| crate::import::routes(&r.method, &segs, &body, &ctx.state_dir))
         .or_else(|| crate::lifecycle::routes(&r.method, &segs, &body, &ctx.state_dir))
         .or_else(|| crate::termtheme::routes(&r.method, &segs, &body))
@@ -1145,6 +1146,14 @@ pub fn conn(mut s: impl Stream, token: Option<&str>) {
         extra,
         &serde_json::to_vec(&v).unwrap_or_default(),
     );
+    if let Some(state_dir) = crate::uninstall::take_pending() {
+        let _ = s.flush();
+        std::thread::sleep(Duration::from_secs(1));
+        if let Err(e) = crate::uninstall::finish(&state_dir) {
+            eprintln!("overseer: uninstall: {e}");
+        }
+        std::process::exit(0);
+    }
 }
 
 fn settles_lines(method: &str, path: &str) -> bool {

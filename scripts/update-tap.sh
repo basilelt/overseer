@@ -123,6 +123,8 @@ done
 if [ ${#dmgs[@]} -gt 0 ]; then
   cat >"$tap/Casks/overseer.rb" <<RUBY
 cask "overseer" do
+  arch arm: "aarch64", intel: "x86_64"
+
   version "$version"
 $(cask_arch "$dmg_arm" "$dmg_intel")
 
@@ -130,13 +132,23 @@ $(cask_depends "$dmg_arm" "$dmg_intel")
 
   app "Overseer.app"
 
-  zap trash: [
-    "~/Library/Application Support/io.github.basilelt.overseer",
-    "~/Library/Caches/io.github.basilelt.overseer",
-    "~/Library/Preferences/io.github.basilelt.overseer.plist",
-    "~/Library/Saved Application State/io.github.basilelt.overseer.savedState",
-    "~/Library/WebKit/io.github.basilelt.overseer",
-  ]
+  zap launchctl: "dev.overseer.daemon",
+      script:    {
+        executable:   "#{appdir}/Overseer.app/Contents/Resources/server/darwin-#{arch}/overseer",
+        args:         ["uninstall", "--apply"],
+        must_succeed: false,
+      },
+      trash:     [
+        "~/.overseer",
+        "~/Library/Application Support/io.github.basilelt.overseer",
+        "~/Library/Application Support/overseer",
+        "~/Library/Caches/io.github.basilelt.overseer",
+        "~/Library/LaunchAgents/dev.overseer.daemon.plist",
+        "~/Library/Logs/io.github.basilelt.overseer",
+        "~/Library/Preferences/io.github.basilelt.overseer.plist",
+        "~/Library/Saved Application State/io.github.basilelt.overseer.savedState",
+        "~/Library/WebKit/io.github.basilelt.overseer",
+      ]
 end
 RUBY
 else

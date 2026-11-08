@@ -53,6 +53,7 @@ import type {
   UploadResult,
   Lifecycle,
   LifecyclePatch,
+  UninstallReport,
 } from './types';
 
 const MIN = 60_000;
@@ -721,6 +722,7 @@ export class MockDaemon implements DaemonClient {
     }
     if (method === 'GET' && path === '/v1/hooks/status') return structuredClone(this.hooks);
     if (path === '/v1/import/switchboard') return this.switchboardRoute(method);
+    if (method === 'POST' && path === '/v1/uninstall') return this.uninstallRoute(body);
     if (path === '/v1/lifecycle' && (method === 'GET' || method === 'PATCH')) return this.lifecycleRoute(method, body);
     if (method === 'POST' && (path === '/v1/hooks/install' || path === '/v1/hooks/uninstall')) {
       const on = path.endsWith('/install');
@@ -1222,6 +1224,22 @@ export class MockDaemon implements DaemonClient {
     afterReboot: 'agents',
     autostart: { platform: 'systemd', supported: true, installed: false, enabled: false, current: false, supervised: false, path: null, linger: false, lingerCommand: 'loginctl enable-linger alice' },
   };
+
+  private uninstallRoute(body: { dryRun?: unknown } | undefined): UninstallReport {
+    return {
+      dryRun: body?.dryRun !== false,
+      removed: [
+        { kind: 'service', path: `${HOME}/.config/systemd/user/overseer-daemon.service` },
+        { kind: 'hook', path: `${HOME}/.claude/settings.json` },
+        { kind: 'statusline', path: `${HOME}/.claude/settings.json` },
+        { kind: 'backup', path: `${HOME}/.claude/settings.json.bak-202611081200` },
+        { kind: 'dir', path: `${HOME}/.overseer` },
+        { kind: 'stateDir', path: `${HOME}/.local/state/overseer` },
+      ],
+      kept: [{ kind: 'worktree', path: `${HOME}/.overseer/worktrees/api/fix-login`, reason: 'uncommitted changes' }],
+      errors: [],
+    };
+  }
 
   private lifecycleRoute(method: string, body: LifecyclePatch | undefined): Lifecycle {
     if (method === 'PATCH' && body) {

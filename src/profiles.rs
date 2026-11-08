@@ -828,9 +828,8 @@ pub fn plan_files(defs: &[SubagentDef], c: &AgentCfg) -> Vec<FileEdit> {
     out
 }
 
-pub fn write_file(e: &FileEdit, stamp: &str) -> Result<PathBuf, String> {
-    let b = PathBuf::from(format!("{}.bak-{stamp}", e.path.display()));
-    std::fs::copy(&e.path, &b).map_err(|err| format!("backup {}: {err}", b.display()))?;
+pub fn write_file(e: &FileEdit, state_dir: &Path, stamp: &str) -> Result<PathBuf, String> {
+    let b = crate::install::backup(&e.path, state_dir, stamp)?;
     crate::install::atomic_write(&e.path, &e.after)?;
     Ok(b)
 }
@@ -984,7 +983,7 @@ fn apply_files(ctx: &crate::Ctx, body: &Value) -> Res<Value> {
         .filter(|e| wanted.contains(&e.path.to_string_lossy().as_ref()))
         .map(|e| {
             let mut v = e.to_json();
-            match write_file(e, &stamp) {
+            match write_file(e, &ctx.state_dir, &stamp) {
                 Ok(b) => {
                     v["written"] = json!(true);
                     v["backup"] = json!(b.to_string_lossy());
@@ -1646,7 +1645,12 @@ mod tests {
             ]
         );
         assert_eq!(std::fs::read_to_string(&user).unwrap(), AGENT);
-        let bak = write_file(&plan[0], "202610291200").unwrap();
+        let bak = write_file(
+            &plan[0],
+            &std::env::temp_dir().join("sb-profiles-bak"),
+            "202610291200",
+        )
+        .unwrap();
         assert_eq!(std::fs::read_to_string(&bak).unwrap(), AGENT);
         assert!(bak
             .to_string_lossy()

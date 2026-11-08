@@ -13,7 +13,18 @@
   !insertmacro OVERSEER_MOVE_DAEMON windows-aarch64
 !macroend
 
+!macro OVERSEER_REMOVE_DATA ARCH
+  ${If} ${FileExists} "$INSTDIR\server\${ARCH}\overseer.exe"
+    nsExec::ExecToLog '"$INSTDIR\server\${ARCH}\overseer.exe" uninstall --apply'
+    Pop $0
+  ${EndIf}
+!macroend
+
 !macro NSIS_HOOK_PREUNINSTALL
+  ${If} $UpdateMode <> 1
+    !insertmacro OVERSEER_REMOVE_DATA windows-x86_64
+    !insertmacro OVERSEER_REMOVE_DATA windows-aarch64
+  ${EndIf}
   Delete /REBOOTOK "$INSTDIR\server\windows-x86_64\overseer.exe"
   Delete /REBOOTOK "$INSTDIR\server\windows-x86_64\overseer.exe.old"
   Delete /REBOOTOK "$INSTDIR\server\windows-aarch64\overseer.exe"
