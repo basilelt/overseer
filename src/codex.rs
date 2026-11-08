@@ -181,6 +181,24 @@ fn collect(dir: &Path, depth: u32, out: &mut Vec<PathBuf>) {
     }
 }
 
+// Codex starts MCP servers with a cleared environment, so the task id and state dir must be
+// passed in the server's own env or `send_message` and friends lose track of the sender.
+pub fn overseer_mcp(exe: &str, state_dir: &str, task_id: &str) -> Vec<String> {
+    let q = |v: &str| serde_json::Value::from(v).to_string();
+    [
+        format!("mcp_servers.overseer.command={}", q(exe)),
+        "mcp_servers.overseer.args=[\"mcp\"]".to_string(),
+        format!(
+            "mcp_servers.overseer.env.OVERSEER_STATE_DIR={}",
+            q(state_dir)
+        ),
+        format!("mcp_servers.overseer.env.OVERSEER_TASK_ID={}", q(task_id)),
+    ]
+    .into_iter()
+    .flat_map(|v| ["-c".to_string(), v])
+    .collect()
+}
+
 pub fn is_codex(arg: &str) -> bool {
     let base = arg.rsplit('/').next().unwrap_or(arg);
     base == "codex" || base == "codex.js"
@@ -326,6 +344,25 @@ pub fn reopens(argv: &[String]) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn overseer_mcp_passes_task_and_state_dir_as_toml() {
+        let a = overseer_mcp("/opt/my overseer", "/home/u/.overseer", "01ABC");
+        assert_eq!(
+            a,
+            [
+                "-c",
+                "mcp_servers.overseer.command=\"/opt/my overseer\"",
+                "-c",
+                "mcp_servers.overseer.args=[\"mcp\"]",
+                "-c",
+                "mcp_servers.overseer.env.OVERSEER_STATE_DIR=\"/home/u/.overseer\"",
+                "-c",
+                "mcp_servers.overseer.env.OVERSEER_TASK_ID=\"01ABC\"",
+            ]
+        );
+        assert_eq!(launch_flags(&a), a);
+    }
 
     fn session(cmd: &str) -> bool {
         is_session(&cmd.split(' ').map(str::to_string).collect::<Vec<_>>())

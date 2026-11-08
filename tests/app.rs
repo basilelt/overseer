@@ -1891,7 +1891,18 @@ fn tasks_take_any_agent_and_deliver_the_prompt_by_flag() {
     let tid = o["termId"].as_str().unwrap().to_string();
     let mut ws = app.ws(&tid);
     read_until(&mut ws, "got: Paste");
-    assert!(stub_log(&app).contains("codex -c model_reasoning_effort=low"));
+    let log = stub_log(&app);
+    assert!(log.contains("-c model_reasoning_effort=low"), "{log}");
+    assert!(
+        log.contains("-c mcp_servers.overseer.args=[\"mcp\"]"),
+        "{log}"
+    );
+    assert!(
+        log.contains(&format!(
+            "-c mcp_servers.overseer.env.OVERSEER_TASK_ID=\"{pid}\""
+        )),
+        "{log}"
+    );
     for t in [s["termId"].as_str().unwrap(), &tid] {
         app.ok(
             "POST",
