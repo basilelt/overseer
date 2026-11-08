@@ -43,6 +43,12 @@ describe('tab strip', () => {
     expect(rule('.actions')).toMatch(/flex:\s*none/);
   });
 
+  it('keeps the toolbar off the tab strip with a separator instead of letting a clipped tab touch the toggle', () => {
+    expect(rule('.actions')).toMatch(/margin-left:\s*6px/);
+    expect(rule('.actions')).toMatch(/border-left:\s*1px solid var\(--border\)/);
+    expect(bar.slice(bar.indexOf('@container'))).toMatch(/\.actions\s*\{[^}]*border-left:\s*0/);
+  });
+
   it('wraps the toolbar buttons in a very narrow pane so none is clipped', () => {
     expect(bar.slice(bar.indexOf('@container'))).toMatch(/\.actions\s*\{[^}]*flex-wrap:\s*wrap[^}]*min-height:\s*34px/);
   });

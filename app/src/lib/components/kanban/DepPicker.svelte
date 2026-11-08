@@ -3,7 +3,7 @@
   import Search from '@lucide/svelte/icons/search';
   import { app, projectName } from '../../state.svelte';
   import { t, type Key } from '../../i18n.svelte';
-  import { depCandidates } from '../../kanban';
+  import { depCandidates, isDone } from '../../kanban';
   import type { Task } from '../../types';
 
   let {
@@ -51,7 +51,7 @@
   {#if chosen.length}
     <div class="chips">
       {#each chosen as d (d.id)}
-        <span class="chip" class:done={d.status === 'completed'} title={t(`kanban.col.${d.status}` as Key)}>
+        <span class="chip" class:done={isDone(d.status)} title={t(`kanban.col.${d.status}` as Key)}>
           <span class="dot {d.status}"></span>
           <span class="mono">#{d.number}</span>
           <span class="name">{d.title}</span>
@@ -215,6 +215,9 @@
   }
   .dot.in_testing {
     background: var(--st-testing);
+  }
+  .dot.merged {
+    background: var(--st-input);
   }
   .dot.completed {
     background: var(--st-done);

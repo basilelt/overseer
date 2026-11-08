@@ -10,7 +10,9 @@ import { mockSystem } from './system/mock';
 import { resolveProfile } from './profiles';
 import { fileKind } from './files';
 import { cleanTitle } from './titles';
+import { isDone } from './kanban-core';
 import { attachProblem, IMAGE_EXTS, VIDEO_EXTS } from './feedback';
+import { AUTO_APPROVE_ARGS } from './agents';
 import type { DirListing } from './dirs';
 import type { Action, Proposal, Result } from './organize';
 import type {
@@ -51,6 +53,7 @@ import type {
   UploadResult,
   Lifecycle,
   LifecyclePatch,
+  UninstallReport,
 } from './types';
 
 const MIN = 60_000;
@@ -67,12 +70,13 @@ const REPOS: Record<string, { path: string; repo: string }> = {
 const repoPath = (name: string) => REPOS[name].path;
 
 const ALL_EFFORTS = ['low', 'medium', 'high', 'max'] as const;
+const AGY_EFFORTS: Effort[] = ['low', 'medium', 'high', 'xhigh', 'max'];
 
 export const MOCK_AGENTS: AgentInfo[] = [
   { id: 'claude', name: 'Claude Code', installed: true, version: '2.1.4', models: ['opus', 'sonnet', 'haiku', 'fable'], efforts: [...ALL_EFFORTS], resume: true, verified: true, sessions: true, turns: true },
   { id: 'codex', name: 'Codex', installed: true, version: '0.58.0', efforts: [...ALL_EFFORTS], resume: true, verified: true, sessions: true, turns: true },
   { id: 'gemini', name: 'Gemini CLI', installed: true, version: '0.21.0', efforts: [], resume: true, verified: true, sessions: true, turns: false },
-  { id: 'agy', name: 'Antigravity', installed: true, version: '1.4.2', efforts: [], resume: false, verified: true, sessions: false, turns: false },
+  { id: 'agy', name: 'Antigravity', installed: true, version: '1.4.2', efforts: AGY_EFFORTS, resume: false, verified: true, sessions: false, turns: false },
   { id: 'opencode', name: 'opencode', installed: false, efforts: [], resume: true, verified: true, install: 'npm install -g --allow-scripts=opencode-ai opencode-ai', sessions: false, turns: false },
   { id: 'amp', name: 'Amp', installed: false, models: [], efforts: [...ALL_EFFORTS], resume: true, verified: true, install: 'npm install -g --allow-scripts=@ampcode/cli @sourcegraph/amp', sessions: false, turns: false },
   { id: 'copilot', name: 'Copilot CLI', installed: true, version: '0.0.354', efforts: [...ALL_EFFORTS], resume: true, verified: true, sessions: false, turns: false },
@@ -93,6 +97,7 @@ export const MOCK_PROFILES: ProfilesStore = {
         codex: { model: 'gpt-5.4-mini', effort: 'low', subagentModel: 'gpt-5.4-mini', subagentEffort: 'low' },
         copilot: { model: 'gpt-5-mini', effort: 'low' },
         gemini: { model: 'gemini-2.5-flash' },
+        agy: { effort: 'low' },
         amp: { effort: 'low' },
       },
     },
@@ -104,6 +109,7 @@ export const MOCK_PROFILES: ProfilesStore = {
         claude: { model: 'sonnet', effort: 'medium', subagentModel: 'sonnet' },
         codex: { model: 'gpt-5.4', effort: 'medium', subagentModel: 'gpt-5.4-mini', subagentEffort: 'medium' },
         copilot: { effort: 'medium' },
+        agy: { effort: 'medium' },
         amp: { effort: 'medium' },
       },
     },
@@ -111,14 +117,14 @@ export const MOCK_PROFILES: ProfilesStore = {
       id: 'max',
       name: 'Max',
       builtin: true,
-      agents: { claude: { model: 'opus', effort: 'max' }, codex: { model: 'gpt-5.5', effort: 'max' }, copilot: { effort: 'max' }, amp: { effort: 'max' } },
+      agents: { claude: { model: 'opus', effort: 'max' }, codex: { model: 'gpt-5.5', effort: 'max' }, copilot: { effort: 'max' }, agy: { effort: 'max' }, amp: { effort: 'max' } },
     },
   ],
   support: {
     claude: { model: 'flag', effort: 'flag', subagentModel: 'env', smallModel: 'env', subagents: 'file', subagentEfforts: true, subagentForce: true },
     codex: { model: 'flag', effort: 'flag', subagentModel: 'flag', subagentEffort: 'flag' },
-    gemini: { model: 'flag' },
-    agy: { model: 'flag' },
+    gemini: { model: 'flag', subagents: 'file' },
+    agy: { model: 'flag', effort: 'flag', subagents: 'file' },
     opencode: { model: 'flag', smallModel: 'env', subagents: 'env' },
     amp: { effort: 'flag' },
     copilot: { model: 'flag', effort: 'flag' },
@@ -130,6 +136,8 @@ export const MOCK_SUBAGENTS: SubagentDef[] = [
   { agent: 'claude', name: 'code-reviewer', scope: 'project', path: `${HOME}/Documents/Github/work/overseer/.claude/agents/code-reviewer.md`, model: 'opus', effort: '' },
   { agent: 'claude', name: 'debug-specialist', scope: 'user', path: `${HOME}/.claude/agents/debug-specialist.md`, model: 'opus', effort: '' },
   { agent: 'claude', name: 'test-writer', scope: 'user', path: `${HOME}/.claude/agents/test-writer.md`, model: 'sonnet', effort: 'high' },
+  { agent: 'gemini', name: 'researcher', scope: 'project', path: `${HOME}/Documents/Github/work/overseer/.gemini/agents/researcher.md`, model: 'gemini-2.5-flash', effort: '' },
+  { agent: 'agy', name: 'security-reviewer', scope: 'user', path: `${HOME}/.gemini/config/agents/security-reviewer.md`, model: 'pro', effort: '' },
 ];
 
 const agentInfo = (id: string) => MOCK_AGENTS.find((a) => a.id === id);
@@ -266,9 +274,9 @@ const TASK_SEEDS: [string, string, string, TaskStatus, Agent, string, string?, s
   ['Scheduler lab report', 'Compare round-robin and CFS on the lab traces.', 'os-labs', 'in_progress', 'gemini', '', undefined, 'ln_06'],
   ['PTY resize debounce', 'Debounce terminal resize events to 50 ms.', 'overseer', 'in_testing', 'claude', 'sonnet', undefined, 'ln_03'],
   ['VAT rounding', 'Round VAT per line, not per order.', 'webshop', 'in_testing', 'codex', 'gpt-5-codex', 'PROJ-10819', 'ln_08'],
-  ['Talos OS installation on node2', 'Install Talos on the node2 node and join the cluster.', 'infra-lab', 'completed', 'claude', '', undefined, 'ln_07'],
+  ['Talos OS installation on node2', 'Install Talos on the node2 node and join the cluster.', 'infra-lab', 'merged', 'claude', '', undefined, 'ln_07'],
   ['User guide pass', 'Proofread the remote mode chapter.', 'overseer', 'completed', 'claude', 'haiku', undefined, 'ln_09'],
-  ['Sentry release tagging', 'Tag releases with the git sha in CI.', 'webshop', 'completed', 'codex', 'o4-mini'],
+  ['Sentry release tagging', 'Tag releases with the git sha in CI.', 'webshop', 'merged', 'codex', 'o4-mini'],
 ];
 
 function seedTasks(now: number): Task[] {
@@ -288,7 +296,7 @@ function seedTasks(now: number): Task[] {
     lineId: lineId ?? null,
     termId: lineId ? `tm_${lineId}` : null,
     branch: lineId ? SEEDS.find((s) => s.id === lineId)?.branch : null,
-    progress: status === 'in_progress' ? { done: 1 + (i % 3), total: 5, note: 'Implementing' } : status === 'in_testing' || status === 'completed' ? { done: 5, total: 5 } : null,
+    progress: status === 'in_progress' ? { done: 1 + (i % 3), total: 5, note: 'Implementing' } : status === 'in_testing' || status === 'merged' || status === 'completed' ? { done: 5, total: 5 } : null,
     createdAt: iso(60 * 24 * (TASK_SEEDS.length - i) / 3, now),
     updatedAt: iso(30 - i, now),
   }));
@@ -549,7 +557,7 @@ function scaledLines(n: number, now: number): LocalLine[] {
 }
 
 function scaledTasks(n: number, now: number): Task[] {
-  const statuses: TaskStatus[] = ['pending', 'auto', 'in_progress', 'in_testing', 'completed'];
+  const statuses: TaskStatus[] = ['pending', 'auto', 'in_progress', 'in_testing', 'merged', 'completed'];
   const repos = Object.keys(REPOS);
   return Array.from({ length: n }, (_, i) => ({
     id: `tk_x${i}`,
@@ -601,6 +609,7 @@ export class MockDaemon implements DaemonClient {
   terms: Term[];
   tasks: Task[];
   autoOrganize = false;
+  autoApprove: Record<string, boolean> = Object.fromEntries(Object.keys(AUTO_APPROVE_ARGS).map((id) => [id, true]));
   messages: TaskMessage[];
   activity: Record<string, Activity>;
   projects: Project[] = structuredClone(MOCK_PROJECTS);
@@ -704,8 +713,16 @@ export class MockDaemon implements DaemonClient {
     if (method === 'GET' && path === '/v1/projects/items') return this.sourceItems(new URLSearchParams(qs).get('project') ?? '');
     if (method === 'GET' && path === '/v1/agents') return structuredClone(this.agents);
     if (method === 'POST' && path === '/v1/agents/rescan') return structuredClone(this.agents);
+    if (method === 'GET' && path === '/v1/agents/settings') return { autoApprove: structuredClone(this.autoApprove) };
+    if (method === 'PUT' && path === '/v1/agents/settings') {
+      if (typeof body?.agent !== 'string' || typeof body?.autoApprove !== 'boolean') throw new DaemonError(400, 'agent and autoApprove are required');
+      if (!(body.agent in this.autoApprove)) throw new DaemonError(400, `auto approval is not configurable for agent ${body.agent}`);
+      this.autoApprove[body.agent] = body.autoApprove;
+      return { autoApprove: structuredClone(this.autoApprove) };
+    }
     if (method === 'GET' && path === '/v1/hooks/status') return structuredClone(this.hooks);
     if (path === '/v1/import/switchboard') return this.switchboardRoute(method);
+    if (method === 'POST' && path === '/v1/uninstall') return this.uninstallRoute(body);
     if (path === '/v1/lifecycle' && (method === 'GET' || method === 'PATCH')) return this.lifecycleRoute(method, body);
     if (method === 'POST' && (path === '/v1/hooks/install' || path === '/v1/hooks/uninstall')) {
       const on = path.endsWith('/install');
@@ -1185,7 +1202,7 @@ export class MockDaemon implements DaemonClient {
     const c = p?.agents[a.id] ?? {};
     const model = body.model || c.model || '';
     const effort = body.effort || c.effort;
-    const cmd = a.id === 'shell' ? ['zsh'] : [a.id, ...(model ? ['--model', model] : []), ...(effort && a.efforts.includes(effort) ? ['--effort', effort] : [])];
+    const cmd = a.id === 'shell' ? ['zsh'] : [a.id, ...(this.autoApprove[a.id] ? AUTO_APPROVE_ARGS[a.id] ?? [] : []), ...(model ? ['--model', model] : []), ...(effort && a.efforts.includes(effort) ? ['--effort', effort] : [])];
     const profile = p || model || effort ? { ...(p ? { id: p.id, name: p.name } : {}), ...(model ? { model } : {}), ...(effort ? { effort } : {}) } : undefined;
     return this.spawn({ ...body, cmd, title: body.title ?? (a.id === 'shell' ? 'zsh' : a.name) }, a.id, profile);
   }
@@ -1207,6 +1224,22 @@ export class MockDaemon implements DaemonClient {
     afterReboot: 'agents',
     autostart: { platform: 'systemd', supported: true, installed: false, enabled: false, current: false, supervised: false, path: null, linger: false, lingerCommand: 'loginctl enable-linger alice' },
   };
+
+  private uninstallRoute(body: { dryRun?: unknown } | undefined): UninstallReport {
+    return {
+      dryRun: body?.dryRun !== false,
+      removed: [
+        { kind: 'service', path: `${HOME}/.config/systemd/user/overseer-daemon.service` },
+        { kind: 'hook', path: `${HOME}/.claude/settings.json` },
+        { kind: 'statusline', path: `${HOME}/.claude/settings.json` },
+        { kind: 'backup', path: `${HOME}/.claude/settings.json.bak-202611081200` },
+        { kind: 'dir', path: `${HOME}/.overseer` },
+        { kind: 'stateDir', path: `${HOME}/.local/state/overseer` },
+      ],
+      kept: [{ kind: 'worktree', path: `${HOME}/.overseer/worktrees/api/fix-login`, reason: 'uncommitted changes' }],
+      errors: [],
+    };
+  }
 
   private lifecycleRoute(method: string, body: LifecyclePatch | undefined): Lifecycle {
     if (method === 'PATCH' && body) {
@@ -1417,15 +1450,16 @@ export class MockDaemon implements DaemonClient {
   private applyFiles(body: { profile: string; dryRun?: boolean; files?: string[] }) {
     const p = this.profileStore.profiles.find((x) => x.id === body?.profile);
     if (!p) throw new DaemonError(400, `unknown profile ${body?.profile}`);
-    const subs = p.agents.claude?.subagents ?? {};
-    const files = MOCK_SUBAGENTS.filter((d) => subs[d.name])
-      .map((d) => ({
-        path: d.path,
-        name: d.name,
-        scope: d.scope,
-        changes: (['model', 'effort'] as const).filter((k) => subs[d.name][k] && subs[d.name][k] !== d[k]).map((k) => ({ key: k, from: d[k], to: subs[d.name][k]! })),
-      }))
-      .filter((f) => f.changes.length);
+    const files = Object.entries(p.agents).sort(([a], [b]) => a.localeCompare(b)).flatMap(([agent, c]) => {
+      const subs = c.subagents ?? {};
+      return MOCK_SUBAGENTS.filter((d) => d.agent === agent).flatMap((d) => {
+        const sub = subs[d.name];
+        if (!sub) return [];
+        const keys = d.agent === 'claude' ? ['model', 'effort'] as const : ['model'] as const;
+        const changes = keys.filter((k) => sub[k] && sub[k] !== d[k]).map((k) => ({ key: k, from: d[k], to: sub[k]! }));
+        return changes.length ? [{ path: d.path, name: d.name, scope: d.scope, changes }] : [];
+      });
+    });
     if (body.dryRun !== false) return { dryRun: true, files };
     if (!Array.isArray(body.files)) throw new DaemonError(400, 'files must list the confirmed paths');
     return { dryRun: false, files: files.filter((f) => body.files!.includes(f.path)).map((f) => ({ ...f, written: true, backup: `${f.path}.bak-202610291200` })) };
@@ -1487,7 +1521,7 @@ export class MockDaemon implements DaemonClient {
   }
 
   private organize(body: any): unknown {
-    const projects = body?.project ? [body.project] : [...new Set(this.tasks.filter((t) => t.status !== 'completed' && !t.origin?.match(/organizer|session/)).map((t) => t.project))];
+    const projects = body?.project ? [body.project] : [...new Set(this.tasks.filter((t) => !isDone(t.status) && !t.origin?.match(/organizer|session/)).map((t) => t.project))];
     if (!projects.length) throw new DaemonError(409, 'nothing to organize');
     const started: Task[] = [];
     for (const project of projects) {
@@ -1498,7 +1532,7 @@ export class MockDaemon implements DaemonClient {
       task.progress = { done: 1, total: 3, note: 'Classifying tasks' };
       started.push(this.touch(task));
       setTimeout(() => {
-        for (const t of this.tasks) if (t.project === project && t.origin !== 'organizer' && t.origin !== 'session' && t.status !== 'completed' && typeof t.urgent !== 'boolean') {
+        for (const t of this.tasks) if (t.project === project && t.origin !== 'organizer' && t.origin !== 'session' && !isDone(t.status) && typeof t.urgent !== 'boolean') {
           t.urgent = t.important = false;
           this.touch(t);
         }
@@ -1533,7 +1567,7 @@ export class MockDaemon implements DaemonClient {
     push({ kind: 'hold', lineId: 'ln_10' }, 'Idle for 34 days, holding frees its memory; resume brings it back');
     push({ kind: 'hold', lineId: 'ln_09' }, 'Idle for 31 days');
     push({ kind: 'close', lineId: 'ln_12' }, 'Its worktree folder was deleted');
-    push({ kind: 'set_task_status', taskId: 'tk_09', status: 'completed' }, 'Its branch landed in main');
+    push({ kind: 'set_task_status', taskId: 'tk_09', status: 'merged' }, 'Its branch landed in main');
     push({ kind: 'track', lineId: 'ln_07' }, 'Older than the session task window, still has open work');
     const p: Proposal = {
       id: `pr_${now.toString(36)}`,
@@ -1659,9 +1693,17 @@ export class MockDaemon implements DaemonClient {
     if (!action && method === 'PATCH') {
       const { id: _id, number: _n, ...patch } = body ?? {};
       if (Array.isArray(patch.dependsOn) && patch.dependsOn.includes(id)) throw new DaemonError(400, 'a task cannot depend on itself');
+      if (typeof patch.status === 'string') {
+        if (t.origin === 'session') {
+          if (!['in_progress', 'in_testing', 'merged', 'completed'].includes(patch.status)) throw new DaemonError(400, 'a session task follows its session: status must be one of in_progress, in_testing, merged, completed');
+        } else if (patch.status === 'in_progress') {
+          if (t.status !== 'in_progress' && !t.termId) throw new DaemonError(400, 'use POST /v1/tasks/{id}/start to start a task');
+        } else if (!['pending', 'auto', 'in_testing', 'merged', 'completed'].includes(patch.status)) {
+          throw new DaemonError(400, 'status must be one of pending, auto, in_testing, merged, completed');
+        }
+      }
       Object.assign(t, patch);
       if (t.origin === 'session' && patch.status) t.manualStatus = patch.status;
-      else if (t.status === 'in_progress' && !t.termId) this.startTask(t);
       return this.touch(t);
     }
     if (action === 'start') {
@@ -1687,7 +1729,7 @@ export class MockDaemon implements DaemonClient {
   private startTask(t: Task) {
     t.status = 'in_progress';
     t.progress = { done: 0, total: 5, note: 'Starting' };
-    const term = this.spawn({ cwd: t.worktreePath ?? t.project, cmd: [t.agent, ...(t.model ? ['--model', t.model] : [])], cols: 120, rows: 32, title: t.title, taskId: t.id }, t.agent);
+    const term = this.spawn({ cwd: t.worktreePath ?? t.project, cmd: [t.agent, ...(this.autoApprove[t.agent] ? AUTO_APPROVE_ARGS[t.agent] ?? [] : []), ...(t.model ? ['--model', t.model] : [])], cols: 120, rows: 32, title: t.title, taskId: t.id }, t.agent);
     t.termId = term.id;
   }
 

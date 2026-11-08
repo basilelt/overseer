@@ -35,7 +35,7 @@
   import { loadGhostty, termTheme } from '../../terminal';
   import { pathRanges } from '../../termlinks';
   import { scheduler, type PaintTarget } from '../../termrender';
-  import { routeCopies } from '../../selection-copy';
+  import { finishSelectionOnInterruption, routeCopies } from '../../selection-copy';
   import { guardAutoScroll } from '../../selection-scroll';
   import { settle } from '../../settle';
   import { openFile } from '../../preview';
@@ -149,6 +149,7 @@
   }
 
   onMount(() => {
+    const stopInterruptedSelection = finishSelectionOnInterruption(window, el, document);
     let ro: ResizeObserver | null = null;
     const resized = settle(() => refit?.(), 100);
     let stopIme: (() => void) | null = null;
@@ -378,7 +379,7 @@
           const rect = (canvas ?? el).getBoundingClientRect();
           const steps = wheel.steps(e.deltaY, e.deltaMode as 0 | 1 | 2, { cellHeight: rect.height / Math.max(1, tm.rows), rows: tm.rows });
           const cell = cellAt(e.clientX, e.clientY, rect, tm.cols, tm.rows);
-          const action = wheelAction(steps, { deltaY: e.deltaY, deltaMode: e.deltaMode as 0 | 1 | 2, ...cell, shift: e.shiftKey, alt: e.altKey, ctrl: e.ctrlKey }, m);
+          const action = wheelAction(steps, { deltaY: e.deltaY, deltaMode: e.deltaMode as 0 | 1 | 2, ...cell, shift: e.shiftKey, alt: e.altKey, ctrl: e.ctrlKey }, m, { preferLocal: info?.agent === 'codex' });
           if (action.kind === 'send') io?.write(action.data);
           else if (action.kind === 'local') tm.scrollLines(action.lines);
           return true;
@@ -405,6 +406,7 @@
     document.fonts?.addEventListener('loadingdone', onFontsLoaded);
 
     return () => {
+      stopInterruptedSelection();
       disposed = true;
       cancelAnimationFrame(focusFrame);
       window.removeEventListener('focus', maybeReassert);

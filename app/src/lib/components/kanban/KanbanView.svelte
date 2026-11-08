@@ -13,7 +13,7 @@
   import { saveSettings, settings } from '../../settings.svelte';
   import { holdAll } from '../../wsactions';
   import { t, type Key } from '../../i18n.svelte';
-  import { autoSummary, blockers, byId, canDrop, cardStatus, chainOf, columns, dropTarget, edgeSpeed, insertIndex, isSession, matrix, moveTask, nextUp, organizing, QUADRANTS, quadrantFlags, rankAt, revertTask, shiftStatus, moveAction, shownCount, grown, newTaskId, CARD_EST, frameLoop, insertBefore, type Quadrant } from '../../kanban';
+  import { autoSummary, blockers, byId, canDrop, cardStatus, chainOf, columns, dropTarget, edgeSpeed, insertIndex, isDone, isSession, matrix, moveTask, nextUp, organizing, QUADRANTS, quadrantFlags, rankAt, revertTask, shiftStatus, moveAction, shownCount, grown, newTaskId, CARD_EST, frameLoop, insertBefore, type Quadrant } from '../../kanban';
   import { reveal } from '../../reveal';
   import { inFlight, single } from '../../inflight';
   import { agentName } from '../../agents';
@@ -35,7 +35,7 @@
 
   let search = $state('');
   let project = $state(app.sidebarMode === 'workspaces' && app.currentWorkspace ? (app.currentWorkspace.path ?? '') : '');
-  let collapsed = $state<Record<string, boolean>>({ completed: true });
+  let collapsed = $state<Record<string, boolean>>({ merged: true, completed: true });
   let refreshing = $state(false);
   let live = $state('');
   let colEls = $state<Record<string, HTMLElement | undefined>>({});
@@ -674,7 +674,7 @@
       <KanbanColumn
         status={col.status}
         count={col.tasks.length}
-        collapsible={col.status === 'completed'}
+        collapsible={isDone(col.status)}
         collapsed={!!collapsed[col.status] && dropOn !== col.status}
         target={dropOn === col.status && origin !== col.status}
         empty={!rest(col.status).length}
@@ -938,6 +938,10 @@
   .chipbtn.in_testing,
   .sdot.in_testing {
     --c: var(--st-testing);
+  }
+  .chipbtn.merged,
+  .sdot.merged {
+    --c: var(--st-input);
   }
   .chipbtn.completed,
   .sdot.completed {

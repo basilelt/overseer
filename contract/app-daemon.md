@@ -1,7 +1,7 @@
 # App ⇄ daemon contract (protocol 1)
 
 What the desktop app (`app/`) talks to. Everything here is served by `overseer daemon`; the
-machine-readable form is in `daemon.openapi.yaml` (paths `/version`, `/agents`, `/terms*`,
+machine-readable form is in `daemon.openapi.yaml` (paths `/version`, `/agents`, `/agents/settings`, `/terms*`,
 `/tasks*`, `/projects`, `/workspaces*`, `/folders*`, `/groups*`, `/broadcast`,
 `/lines/{id}/activity`, `/lines/{id}/resume` with `target: term`, `/lines/{id}/workspace`, `/review*`).
 Existing routes (`/lines`, `/lines/{id}/diff`, `/events`, hold/close/…) are unchanged.
@@ -16,7 +16,7 @@ live review (§11: `/v1/review*`, `review.*` events, two MCP tools; ADR 0030), t
 `git.changed` / `worktree.*` events (ADR 0031). Uploads (§3a), repository discovery and
 `missing` on projects and workspaces (§5, §6a), `GET /v1/env` and `POST /v1/agents/rescan` (§2a)
 are additions too, and so are session tasks (§5: `Task.origin`, `Task.manualStatus`,
-`Task.badges`, `config.json` `sessionTasksDays`).
+`Task.badges`, `config.json` `sessionTasksDays`), and host-wide agent auto-approval settings (§2a).
 
 ## 1. Transport
 
@@ -93,6 +93,17 @@ that predate it answer `404`.
 
 `POST /v1/agents/rescan` → 200, same body as `GET /v1/agents`, after dropping the 60 s cache and
 running the detection again.
+
+`GET /v1/agents/settings` → 200 `{"autoApprove":{"claude":true,"codex":true,...}}`. The map
+includes CLIs with launch-time auto-approval controls; unset values default to `true`.
+`PUT /v1/agents/settings` with `{"agent":"codex","autoApprove":false}` persists one host-wide
+setting in the daemon registry and returns the full map. New sessions started by Overseer use
+these defaults, including task and feedback launches. Existing sessions keep their launch mode.
+Supported flags are Claude Code `--permission-mode auto`, Codex `--sandbox danger-full-access
+--ask-for-approval never`, Gemini CLI `--approval-mode=yolo`, Antigravity `--mode=auto`, opencode
+`--auto`, Copilot CLI `--allow-all`, and Cursor Agent `--force`. Amp currently auto-approves by
+default unless its own permission configuration enables a policy, so Amp is not in the map.
+400 when either required field is missing or the agent has no launch-time control.
 
 `GET /v1/env` → 200 `{"path":"/home/u/.local/bin:/usr/bin:…","source":"login-shell"}`: the `PATH`
 the daemon uses for detection and for every term it spawns. Only `PATH` is exposed, never other
@@ -365,7 +376,12 @@ in protocol 1.
 
 - `number` increments per `project` and is never reused (deleted numbers stay burnt).
 - `project` is the absolute path of a git repository's main worktree root.
-- `status` ∈ `pending | auto | in_progress | in_testing | completed`.
+- `status` ∈ `pending | auto | in_progress | in_testing | merged | completed`. `merged`: the
+  task's branch landed in the base (set by the daemon, which checks it; an agent can only set it
+  through `set_task_status` once the branch has landed, else the tool errors). `merged` counts as
+  done like `completed` for `dependsOn`. A task already `completed` is only moved to `merged` when it
+  was closed by `approve` or `commit` review, within 6 hours of it; a task closed by hand stays
+  `completed`. Apps older than this change do not know `merged` and show such tasks as open.
 - `agent` ∈ the ids of §2a except `shell` (default `claude`); `model` is a free string, `""` =
   the agent's default (default `""`); `effort` ∈ `low | medium | high | max` (default `high`;
   ignored by agents without efforts).
@@ -416,7 +432,7 @@ project when its newest open `user`/`agent` task is newer than the last organize
 | `GET /v1/tasks?project=&status=` | | 200 `[Task]` ordered by `project`, then `number`. `status` may be a comma list. |
 | `POST /v1/tasks` | `{title, project, description?, status?: pending\|auto, agent?, model?, effort?, ticketKey?, rank?, urgent?, important?, origin?: user\|agent, parentId?, dependsOn?: [taskId], inheritBranch?, attachments?: [{path, name?}]}` | **201** Task · 400 (missing title, project not a git repo, bad enum, `parentId` or a `dependsOn` id not a task, an attachment not a file from `POST /v1/uploads`, more than 20 attachments). Attachments move to `~/.overseer/tasks/{id}/` and their paths are appended to the description under `Attachments:`. |
 | `GET /v1/tasks/{id}` | | 200 Task · 404 |
-| `PATCH /v1/tasks/{id}` | any of `{title, description, status, agent, model, effort, rank, urgent (bool \| null), important (bool \| null), ticketKey (null clears), progress: {done,total,note?} \| null, dependsOn: [taskId], inheritBranch (bool \| null)}` | 200 Task · 400 · 404. `dependsOn` replaces the list: 400 when an id is unknown, is the task itself, or closes a cycle. `status` may be set to `pending`, `auto`, `in_testing`, `completed`; `in_progress` only through `/start` (400). Session tasks: `in_progress`, `in_testing`, `completed` (sets `manualStatus`). |
+| `PATCH /v1/tasks/{id}` | any of `{title, description, status, agent, model, effort, rank, urgent (bool \| null), important (bool \| null), ticketKey (null clears), progress: {done,total,note?} \| null, dependsOn: [taskId], inheritBranch (bool \| null)}` | 200 Task · 400 · 404. `dependsOn` replaces the list: 400 when an id is unknown, is the task itself, or closes a cycle. `status` may be set to `pending`, `auto`, `in_testing`, `merged`, `completed`; `in_progress` only through `/start` (400). Session tasks: `in_progress`, `in_testing`, `merged`, `completed` (sets `manualStatus`). |
 | `DELETE /v1/tasks/{id}` | | 200 `{"deleted":"<id>"}` · 404 · 409 while its term runs. The worktree and branch are kept; its attachment folder is removed. |
 | `POST /v1/tasks/{id}/start` | `{cols?, rows?, inPlace?}` | 200 Task (`in_progress`, `termId`, `branch`, `worktreePath`; `lineId` at once for agents that take a session id up front, after the next scan otherwise) · 404 · 409 its term is still running, the agent is not installed, or git failed. |
 | `GET /v1/tasks/{id}/messages` | | 200 `[Message]`, oldest first: every message sent to or from the task · 404 |
@@ -480,7 +496,7 @@ The status follows the session:
 | Session | Status | Badge |
 |---|---|---|
 | `hung-up` (closed) | `completed` | |
-| gone or `held` (lost) and its branch merged into the base (or deleted) | `completed` | |
+| gone or `held` (lost) and its branch merged into the base (or deleted) | `merged` | |
 | `held` (lost: the process ended) | `in_testing` | |
 | `held` by the user | unchanged if `in_testing`/`completed`, else `in_progress` | `paused` |
 | needs input (permission prompt, question) | `in_progress` | `needs_input` |
@@ -794,7 +810,7 @@ is applied until the user checks actions and calls `apply`. Stored in the regist
 - Kinds (closed set): `create_folder {name, ref}`, `create_workspace {path, folder?, pinned?}`,
   `move_workspace {workspaceId, folder}`, `create_group {name, lines: [lineId]}`, `hold {lineId}`,
   `close {lineId}`, `pin {lineId}`, `archive_workspace {workspaceId}`,
-  `set_task_status {taskId, status ∈ pending | in_testing | completed}`, `track {lineId}` (creates
+  `set_task_status {taskId, status ∈ pending | in_testing | merged | completed}`, `track {lineId}` (creates
   the session task of a line older than `sessionTasksDays`). `folder` is the `ref` of an earlier
   `create_folder` or an existing folder id. `label` is filled by the daemon for display.
 - `pickUp.why` ∈ `dirty` (the agent edited files) `| todos` (open todo items) `| recent`.
@@ -1040,10 +1056,22 @@ The usage worker emits `usage.updated` when the file changes.
 | Method | Path | Result |
 |---|---|---|
 | GET | `/v1/usage/statusline` | `{path, installed, command}`: the Claude settings file, whether the tap wraps its `statusLine`, and the user's own command (unwrapped) or `null` |
-| POST | `/v1/usage/statusline/install` | body `{dryRun?}`; wraps `statusLine.command` (or adds a tap-only status line) as `[ -x <bin> ] && exec <bin> statusline-tap --state <dir> -- '<original>' \|\| exec sh -c '<original>' #overseer-statusline`; answers the status plus `changed`, `diff`, `backup` (settings copied to `settings.json.bak-<stamp>` before writing). 409 with `error` when the file is not a JSON object or the status line is not a command |
+| POST | `/v1/usage/statusline/install` | body `{dryRun?}`; wraps `statusLine.command` (or adds a tap-only status line) as `[ -x <bin> ] && exec <bin> statusline-tap --state <dir> -- '<original>' \|\| exec sh -c '<original>' #overseer-statusline`; answers the status plus `changed`, `diff`, `backup` (settings copied to `<state>/backups/<flattened path>.bak-<stamp>` before writing, never beside the user's file). 409 with `error` when the file is not a JSON object or the status line is not a command |
 | POST | `/v1/usage/statusline/uninstall` | same shape; restores the original command (or removes a tap-only status line) and deletes `<state>/claude-statusline.json` |
 
 Additive: protocol stays 1. Older daemons answer 404; the app then hides usage.
+
+## 7d. Uninstall
+
+`overseer uninstall [--apply]` and `POST /v1/uninstall` undo everything Overseer put on the machine. A dry run (the default) changes nothing and is the "what does Overseer leave on my system" report.
+
+| Method | Path | Body | Answer |
+|---|---|---|---|
+| POST | `/v1/uninstall` | `{dryRun?}`; applies only when `dryRun === false` | `{dryRun, removed: [{kind, path}], kept: [{kind, path, reason}], errors: [{kind, path, error}]}` |
+
+`kind` is one of `service` (systemd unit or launch agent), `linger` (only when Overseer turned it on, recorded in `<state>/linger-enabled-by-overseer`), `hook` (hook entries and plugin files; a user's own entries and keys stay), `statusline` (the original status line command restored), `backup` (`<file>.bak-<12 digits>` left beside the agents' config files by earlier versions), `dir` (empty directories Overseer created, `~/.overseer/{bin,server,u,tasks,reviews,worktrees}` and `~/.overseer` itself when nothing else is in it), `worktree` and `branch` (clean Overseer worktrees and their `sb/*`, `task/*` or `review/pr-*` branches; dirty, unpushed, locked or in-use worktrees are in `kept` with the reason, as are branches with unmerged commits), `appData` (the desktop app's data, cache, config and log folders for `io.github.basilelt.overseer`) and `stateDir` (the daemon state directory, last).
+
+On apply the answer is sent first; the daemon then deletes its state directory, boots out its launch agent on macOS and exits with status 0 (so `Restart=on-failure` and `KeepAlive.SuccessfulExit=false` do not restart it). `overseer uninstall` posts to the running daemon and, when none answers, runs the same steps in-process; it prints one line per row and exits 1 when `errors` is not empty. Backups taken from now on (hooks, status line, subagent profiles) live in `<state>/backups/`.
 
 ## 8. Server mode (remote)
 

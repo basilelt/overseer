@@ -5,7 +5,9 @@
   import { app } from '../../state.svelte';
   import type { AgentInfo } from '../../types';
   import AgentGlyph from '../ui/AgentGlyph.svelte';
-  import ProfileSelect from '../ui/ProfileSelect.svelte';
+  import { preload } from '../../idle';
+
+  const profileSelect = preload(() => import('../ui/ProfileSelect.svelte'));
 
   let open = $state(false);
   let root: HTMLDivElement;
@@ -76,7 +78,9 @@
         <hr />
         <div class="profile">
           <span class="faint">{t('profile.next')}</span>
-          <ProfileSelect value={app.nextProfile ?? ''} cwd={app.currentWorkspace?.path ?? app.currentWorkspace?.cwd ?? undefined} onchange={(id) => (app.nextProfile = id || null)} />
+          {#await profileSelect() then { default: ProfileSelect }}
+            <ProfileSelect value={app.nextProfile ?? ''} cwd={app.currentWorkspace?.path ?? app.currentWorkspace?.cwd ?? undefined} onchange={(id) => (app.nextProfile = id || null)} />
+          {/await}
         </div>
       {/if}
     </div>

@@ -1,6 +1,6 @@
 import type { Ghostty, ITheme } from 'ghostty-web';
 import wasmUrl from 'ghostty-web/ghostty-vt.wasm?url';
-import { installBlankResize, installOnDemandRendering } from './termrender';
+import { installBlankResize, installOnDemandRendering, installWholeLineViewport } from './termrender';
 import { GRAPHITE_COLORS, SOLARIZED_COLORS, settings, type ColorPalette } from './settings.svelte';
 
 export const TERM_THEMES: Record<'light' | 'dark', ITheme> = {
@@ -111,6 +111,7 @@ export function loadGhostty(): Promise<GhosttyRuntime> {
   loading ??= Promise.all([import('ghostty-web'), import('./termgl')]).then(async ([mod, { attachOverlay, installWebglRenderer, webglMode }]) => {
     installOnDemandRendering(mod);
     installBlankResize(mod);
+    installWholeLineViewport(mod);
     const gl = webglMode();
     installWebglRenderer(mod, (r) => attachOverlay(r, gl === 'force'), () => gl !== 'off' || settings.gpuTerminal);
     return { mod, ghostty: await mod.Ghostty.load(wasmUrl) };

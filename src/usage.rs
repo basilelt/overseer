@@ -334,9 +334,11 @@ fn codex_tokens(v: &Value) -> Tokens {
 }
 
 fn window_key(minutes: i64) -> String {
+    const MONTH_MINUTES: i64 = 30 * 24 * 60;
     match minutes {
         300 => "5h".into(),
         10_080 => "wk".into(),
+        m if m > 0 && (m - MONTH_MINUTES).abs() <= MONTH_MINUTES / 20 => "mo".into(),
         m if m > 0 && m % 1440 == 0 => format!("{}d", m / 1440),
         m if m > 0 && m % 60 == 0 => format!("{}h", m / 60),
         m => format!("{m}m"),
@@ -1792,6 +1794,58 @@ mod tests {
             (w[1]["key"].as_str(), w[1]["usedPercent"].as_f64()),
             (Some("wk"), Some(38.0))
         );
+        std::fs::remove_dir_all(&d).unwrap();
+    }
+
+    #[test]
+    fn codex_go_monthly_window_preserves_its_usage_and_billing_reset() {
+        let (d, mut idx) = home("codexgo");
+        let r = d.join("codex/sessions/2026/10/29/rollout-2026-10-29T18-00-00-019f3d2a-f525-7523-9503-b51b6d205741.jsonl");
+        let line = json!({
+            "timestamp": "2026-10-29T18:00:00Z",
+            "type": "event_msg",
+            "payload": {
+                "type": "token_count",
+                "info": {
+                    "total_token_usage": {
+                        "input_tokens": 1000,
+                        "cached_input_tokens": 200,
+                        "output_tokens": 40,
+                        "total_tokens": 1040
+                    }
+                },
+                "rate_limits": {
+                    "limit_id": "codex",
+                    "plan_type": "go",
+                    "primary": {
+                        "used_percent": 34.0,
+                        "window_minutes": 43_200,
+                        "resets_at": 1_795_982_400_i64
+                    },
+                    "secondary": null
+                }
+            }
+        })
+        .to_string();
+        std::fs::write(&r, format!("{line}\n")).unwrap();
+        touch_now(&r);
+        idx.sweep(now(), true, None).unwrap();
+
+        let v = get(&idx, Range::Today, "agent", 0);
+        let codex = v["agents"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|a| a["agent"] == "codex")
+            .unwrap();
+        let limits = &codex["limits"];
+        assert_eq!(limits["plan"], "go");
+        assert_eq!(limits["windows"].as_array().unwrap().len(), 1);
+        assert_eq!(limits["windows"][0]["key"], "mo");
+        assert_eq!(limits["windows"][0]["usedPercent"], 34.0);
+        assert_eq!(limits["windows"][0]["resetsAt"], "2026-11-29T20:00:00Z");
+        assert_eq!(limits["windows"][0]["stale"], false);
+
         std::fs::remove_dir_all(&d).unwrap();
     }
 

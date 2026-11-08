@@ -121,7 +121,7 @@ desktop)
   export R D DISPLAY_NUM MESA_EGL APP_BIN
   setsid $ns sh -c '
     ip link set lo up 2>/dev/null || true
-    cd "$R/app" && nice -n 10 pnpm exec vite --port 1420 --strictPort >> "$D/vite.log" 2>&1 &
+    cd "$R/app" && nice -n 10 ./node_modules/.bin/vite --port 1420 --strictPort >> "$D/vite.log" 2>&1 &
     i=0
     until python3 -c "import socket; socket.create_connection((\"localhost\", 1420))" 2>/dev/null; do
       i=$((i+1))

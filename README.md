@@ -74,7 +74,9 @@ Write a task, pick the agent, its model and reasoning effort, and start it: Over
 worktree on a new branch and types the task into the agent. Tasks in the **Auto** column start on
 their own, in order, within your concurrency limit. A new task can be filled from the project's
 GitHub or GitLab issues or Jira tickets, and agents can read and update tasks through the
-built-in MCP server.
+built-in MCP server. Finished work waits in **Review**; a task moves to **Merged** by itself once
+its branch lands in the default branch, **Closed** keeps the rest, and an agent moves its task
+back to In progress when work resumes.
 
 ![Tasks](app/docs/screenshots/kanban-dark.png)
 
@@ -89,7 +91,7 @@ built-in MCP server.
 
 A GitHub-style review of an agent's changes while it works. Comment on lines, suggest edits, and
 send the comments back to the agent; threads follow the code as it changes. Approve, reject or
-commit from the Kanban card when the task is in testing.
+commit from the Kanban card when the task is in Review.
 
 ![Live review](app/docs/screenshots/review-light.png)
 
@@ -136,6 +138,11 @@ on a TCP port on the server.
   mode** pill stays in the title bar; **Exit demo** returns to your own hosts and settings, untouched.
 - **Notifications** when an agent needs input or finishes, from agent hooks Overseer can
   install for you.
+- **Agent profiles**: save each CLI's supported model and effort choices, plus named subagent models
+  for Gemini CLI and Antigravity. Apply a profile to new work, scope it to a workspace, and choose
+  when to update the agent files.
+- **Auto-approve defaults per agent**: choose which CLIs Overseer starts in their native
+  auto-approval mode. The defaults are stored on each connected host and apply to new sessions.
 - **Skills and plugins in one click**: install RTK (trims shell output before the agent reads it),
   Caveman (terse replies) or Ponytail (simplest code that works) for Claude Code, Codex, Gemini CLI,
   opencode, Copilot CLI, Cursor Agent, Amp or Antigravity, from Settings → Agents or the command
@@ -231,6 +238,14 @@ Overseer for iPhone and iPad is in public beta on TestFlight before its App Stor
 3. New builds arrive through TestFlight; each build expires after 90 days, so keep TestFlight
    updates on. Send feedback from the app (More > Send feedback) or with **Send Beta Feedback**
    in TestFlight.
+
+### Uninstall
+
+Before deleting the app, use **Settings, Connection, Remove Overseer from this computer**: it lists
+and removes the agent hooks, statusline, boot service and folders Overseer added (worktrees with
+uncommitted changes are kept). The Windows uninstaller and `brew uninstall --zap --cask overseer`
+do it for you; on a server run `overseer uninstall --apply`. See the
+[user guide](docs/user-guide.md#uninstall).
 
 ### Updates
 

@@ -162,6 +162,11 @@ static LANDING: Mutex<Vec<(String, String)>> = Mutex::new(vec![]);
 static LANDING_ONE: Mutex<()> = Mutex::new(());
 static FETCHED: Mutex<Option<HashMap<String, Instant>>> = Mutex::new(None);
 const LANDED_FOR: Duration = Duration::from_secs(300);
+const NOT_LANDED_FOR: Duration = Duration::from_secs(45);
+
+fn landed_fresh(at: Instant, v: bool) -> bool {
+    at.elapsed() < if v { LANDED_FOR } else { NOT_LANDED_FOR }
+}
 
 pub fn landed(root: &str, branch: &str, fetch: bool) -> bool {
     let key = (root.to_string(), branch.to_string());
@@ -171,7 +176,7 @@ pub fn landed(root: &str, branch: &str, fetch: bool) -> bool {
         .get_or_insert_with(HashMap::new)
         .get(&key)
         .copied();
-    if let Some((_, v)) = hit.filter(|(at, _)| at.elapsed() < LANDED_FOR) {
+    if let Some((_, v)) = hit.filter(|&(at, v)| landed_fresh(at, v)) {
         return v;
     }
     {
@@ -219,7 +224,7 @@ pub fn forget_landed(branch: &str) {
 fn fetch_due(root: &str) -> bool {
     let mut g = FETCHED.lock().unwrap_or_else(|e| e.into_inner());
     let m = g.get_or_insert_with(HashMap::new);
-    if m.get(root).is_some_and(|at| at.elapsed() < LANDED_FOR) {
+    if m.get(root).is_some_and(|at| at.elapsed() < NOT_LANDED_FOR) {
         return false;
     }
     m.insert(root.to_string(), Instant::now());
@@ -991,8 +996,30 @@ fn prune_one(root: &str, path: &str) -> Result<(), String> {
 }
 
 pub fn cleanup(ctx: &Ctx, id: &str, dry: bool, hint: Option<&str>) -> Res<Value> {
+    cleanup_where(ctx, id, dry, hint, &|_| true)
+}
+
+pub fn cleanup_where(
+    ctx: &Ctx,
+    id: &str,
+    dry: bool,
+    hint: Option<&str>,
+    deletable: &dyn Fn(&str) -> bool,
+) -> Res<Value> {
     let (root, w) = locate(ctx, id, hint)?;
     let mut p = plan(&w);
+    let mut keep: Vec<Value> = p["keep"].as_array().cloned().unwrap_or_default();
+    let mut remove = vec![];
+    for item in p["remove"].as_array().cloned().unwrap_or_default() {
+        match item["name"].as_str() {
+            Some(b) if item["kind"] == "branch" && !deletable(b) => {
+                keep.push(json!({"kind": "branch", "name": b, "reason": "not created by Overseer"}))
+            }
+            _ => remove.push(item),
+        }
+    }
+    p["remove"] = json!(remove);
+    p["keep"] = json!(keep);
     p["dryRun"] = json!(dry);
     if dry {
         return Ok(p);
@@ -1341,6 +1368,15 @@ mod tests {
             assert_eq!(got, want, "{tag}");
             let _ = std::fs::remove_dir_all(d);
         }
+    }
+
+    #[test]
+    fn negative_landed_results_expire_before_positive_ones() {
+        let old = |s| Instant::now().checked_sub(Duration::from_secs(s)).unwrap();
+        assert!(landed_fresh(old(10), false));
+        assert!(!landed_fresh(old(60), false));
+        assert!(landed_fresh(old(60), true));
+        assert!(!landed_fresh(old(400), true));
     }
 
     #[test]

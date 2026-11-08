@@ -66,6 +66,14 @@ describe('wheel', () => {
     expect(wheelAction(0, at, { ...base, tracking: true })).toEqual({ kind: 'none' });
   });
 
+  it('scrolls Codex history locally even when the terminal enables mouse tracking', () => {
+    expect(wheelAction(-2, at, { ...base, tracking: true, sgr: true }, { preferLocal: true })).toEqual({ kind: 'local', lines: -2 });
+  });
+
+  it('does not force local scrolling for Codex on the alternate screen', () => {
+    expect(wheelAction(-2, at, { ...base, tracking: true, sgr: true, alt: true }, { preferLocal: true })).toEqual({ kind: 'send', data: '\x1b[<64;3;7M'.repeat(2) });
+  });
+
   it('Shift+wheel always scrolls locally', () => {
     expect(wheelAction(-1, { ...at, shift: true }, { ...base, tracking: true, sgr: true })).toEqual({ kind: 'local', lines: -1 });
   });

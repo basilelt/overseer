@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import * as mod from 'ghostty-web';
 import { Ghostty, Terminal } from 'ghostty-web';
-import { installBlankResize } from './termrender';
+import { installBlankResize, installWholeLineViewport } from './termrender';
 
 let wasm: WebAssembly.Module;
 
@@ -143,5 +143,46 @@ describe('blank resize', () => {
     expect(installBlankResize(mod)).toBe(true);
     expect(installBlankResize(mod)).toBe(true);
     expect(installBlankResize({ Terminal: class {} })).toBe(false);
+  });
+});
+
+describe('fractional viewport', () => {
+  async function painted(viewportY: number): Promise<string[]> {
+    const t = (await load()).createTerminal(40, 8, { scrollbackLimit: 1_000_000 });
+    for (let i = 1; i <= 30; i++) t.write(`line${i}\r\n`);
+    t.update();
+    const rows: string[] = Array(8).fill('stale');
+    const r = Object.create(mod.CanvasRenderer.prototype) as { render(...a: unknown[]): void };
+    Object.assign(r, {
+      canvas: { width: 320, height: 128 },
+      metrics: { width: 8, height: 16, baseline: 12 },
+      devicePixelRatio: 1,
+      lastViewportY: 0,
+      lastCursorPosition: { x: 0, y: 0 },
+      cursorBlink: false,
+      cursorVisible: true,
+      renderLine: (cells: { codepoint: number }[], y: number) => {
+        rows[y] = cells.map((c) => (c.codepoint ? String.fromCodePoint(c.codepoint) : ' ')).join('').trimEnd();
+      },
+      renderCursor: () => {},
+      renderScrollbar: () => {},
+      resize: () => {},
+    });
+    const scrollback = { getScrollbackLength: () => t.getScrollbackLength(), getScrollbackLine: (n: number) => t.getScrollbackLine(n) };
+    r.render(t, false, viewportY, scrollback, 1);
+    return rows;
+  }
+
+  it('paints every row of a viewport scrolled by a fractional number of lines', async () => {
+    expect(installWholeLineViewport(mod)).toBe(true);
+    expect(await painted(3.6)).toEqual(await painted(3));
+  });
+
+  it('patches the renderer prototype once', () => {
+    expect(installWholeLineViewport(mod)).toBe(true);
+    const render = mod.CanvasRenderer.prototype.render;
+    expect(installWholeLineViewport(mod)).toBe(true);
+    expect(mod.CanvasRenderer.prototype.render).toBe(render);
+    expect(installWholeLineViewport({ CanvasRenderer: class {} })).toBe(false);
   });
 });

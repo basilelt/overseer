@@ -25,6 +25,7 @@ const USAGE: &str = "usage:
   overseer version [--json]
   overseer mcp                                          (stdio MCP server for agents)
   overseer proxy                                        (stdio multiplexer for the remote app)
+  overseer uninstall [--apply]                          (remove everything Overseer added; dry run by default)
   overseer hooks install|uninstall [AGENT...] [--apply]
   overseer hook <agent> <Event> [agent-pid]            (called by the agents' hooks)
   overseer statusline-tap install|uninstall [--apply]   (Claude plan limits from its status line)
@@ -313,6 +314,43 @@ fn hooks_cmd(args: &[String]) -> ExitCode {
     code
 }
 
+fn uninstall_cmd(ctx: &Ctx, apply: bool, had_state: bool) -> ExitCode {
+    let sock = daemon::socket_path(&ctx.state_dir);
+    let body = serde_json::json!({ "dryRun": !apply });
+    let v = match daemon::request(&sock, "POST", "/v1/uninstall", Some(&body)) {
+        Ok((200, v)) => v,
+        Ok((code, v)) => return fail(format!("the daemon answered {code}: {v}")),
+        Err(_) => {
+            let mut rep = overseer::uninstall::run(ctx, apply);
+            if !had_state {
+                rep.removed.retain(|(k, _)| k != "stateDir");
+            }
+            let v = rep.to_json();
+            let finished = if apply {
+                overseer::uninstall::finish(&ctx.state_dir)
+            } else {
+                Ok(())
+            };
+            if let Err(e) = finished {
+                eprintln!("overseer: {e}");
+                return ExitCode::FAILURE;
+            }
+            v
+        }
+    };
+    for l in overseer::uninstall::lines(&v) {
+        println!("{l}");
+    }
+    if v["dryRun"] == true {
+        println!("dry run: nothing was changed; add --apply to remove everything listed above");
+    }
+    if v["errors"].as_array().is_some_and(|e| !e.is_empty()) {
+        ExitCode::FAILURE
+    } else {
+        ExitCode::SUCCESS
+    }
+}
+
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let Some(cmd) = args.first().map(String::as_str) else {
@@ -391,6 +429,7 @@ fn main() -> ExitCode {
         }
         return ExitCode::SUCCESS;
     }
+    let had_state = overseer::default_state_dir().exists();
     let probe = System;
     let ctx = Ctx::from_env(&probe);
     let flag = |f: &str| rest.iter().any(|a| a == f);
@@ -567,6 +606,7 @@ fn main() -> ExitCode {
             Err(e) => fail(e),
         },
         "hooks" => hooks_cmd(rest),
+        "uninstall" => uninstall_cmd(&ctx, flag("--apply"), had_state),
         _ => usage(),
     }
 }

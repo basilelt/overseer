@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import source from './SidePanel.svelte?raw';
 
 async function rendered(lastAssistantText: string) {
   vi.resetModules();
@@ -19,6 +20,15 @@ async function rendered(lastAssistantText: string) {
 }
 
 afterEach(() => vi.restoreAllMocks());
+
+describe('SidePanel section drag', () => {
+  it('clears temporary drag state when the pointer is canceled or the panel unmounts', () => {
+    expect(source).toMatch(/window\.addEventListener\('pointercancel', dragCancel\)/);
+    expect(source).toMatch(/window\.addEventListener\('blur', dragCancel\)/);
+    expect(source).toMatch(/function dragCancel\(\) \{\s*cancelDrag\(\);\s*\}/);
+    expect(source).toMatch(/return \(\) => \{[\s\S]*cancelDrag\(\)/);
+  });
+});
 
 describe('SidePanel last message', () => {
   it('shows the last message without markdown code backticks', async () => {

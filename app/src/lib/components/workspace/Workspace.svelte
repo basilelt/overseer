@@ -10,11 +10,13 @@
   import type { Workspace } from '../../types';
   import { aggregate, resolveTab, workspaceTabs } from '../../workspaces';
   import { rememberTerms } from '../../tabs';
+  import { releaseCapturedPointer } from '../../pointer-drag';
   import { arrangePanes, layoutShape, reconcileLayout, restoreLayout, savedActive } from '../../layout-sync';
   import PaneView from './PaneView.svelte';
 
   let root: HTMLDivElement;
   let dragging = $state(false);
+  let capture: { target: HTMLElement; pointerId: number } | null = null;
 
   const layoutKey = $derived(app.sidebarMode === 'status' ? '#status' : app.workspaceId === NO_WORKSPACE ? '#other' : app.workspaceId);
   const members = $derived(
@@ -165,8 +167,16 @@
   const row = $derived(layout.split !== 'vertical');
 
   function startDrag(e: PointerEvent) {
+    const target = e.currentTarget as HTMLElement;
     dragging = true;
-    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    target.setPointerCapture(e.pointerId);
+    capture = { target, pointerId: e.pointerId };
+  }
+
+  function endDrag() {
+    dragging = false;
+    releaseCapturedPointer(capture?.target, capture?.pointerId ?? null);
+    capture = null;
   }
 
   function drag(e: PointerEvent) {
@@ -191,6 +201,8 @@
   });
 </script>
 
+<svelte:window onblur={endDrag} />
+
 <div class="ws" class:col={!row} class:dragging bind:this={root}>
   {#each layout.panes as pane, i (i)}
     <div class="slot" style:flex-basis={layout.panes.length > 1 ? `${(i === 0 ? layout.ratio : 1 - layout.ratio) * 100}%` : '100%'}>
@@ -202,7 +214,8 @@
         aria-label={t('title.layout')}
         onpointerdown={startDrag}
         onpointermove={drag}
-        onpointerup={() => (dragging = false)}
+        onpointerup={endDrag}
+        onpointercancel={endDrag}
         onkeydown={onKey}
       ></button>
     {/if}

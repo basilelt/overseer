@@ -2,6 +2,16 @@ import type { AgentInfo, Effort } from './types';
 
 const ALL_EFFORTS: Effort[] = ['low', 'medium', 'high', 'max'];
 
+export const AUTO_APPROVE_ARGS: Record<string, string[]> = {
+  claude: ['--permission-mode', 'auto'],
+  codex: ['--ask-for-approval', 'never'],
+  gemini: ['--approval-mode=yolo'],
+  agy: ['--mode=auto'],
+  opencode: ['--auto'],
+  copilot: ['--allow-all'],
+  cursor: ['--force'],
+};
+
 const NAMES: Record<string, string> = {
   claude: 'Claude Code',
   codex: 'Codex',

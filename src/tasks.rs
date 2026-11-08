@@ -275,11 +275,15 @@ fn deps_json(d: &[String]) -> Option<String> {
     (!d.is_empty()).then(|| json!(d).to_string())
 }
 
+pub fn is_done(status: &str) -> bool {
+    matches!(status, "merged" | "completed")
+}
+
 pub fn blockers<'a>(t: &Task, tasks: &'a [Task]) -> Vec<&'a Task> {
     t.depends_on
         .iter()
         .filter_map(|d| tasks.iter().find(|x| &x.id == d))
-        .filter(|x| x.status != "completed")
+        .filter(|x| !is_done(&x.status))
         .collect()
 }
 
@@ -419,7 +423,10 @@ pub fn create(ctx: &Ctx, b: &Value) -> Res<Task> {
             .map_err(|(_, e)| bad(e))?
             .is_some_and(|p| p.agents.get(agent).is_some_and(|c| !c.effort.is_empty()))
     };
-    let effort = pick(b, "effort", EFFORTS, if profiled { "" } else { "high" })?;
+    let levels = crate::agents::get(agent)
+        .map(|a| a.valid_efforts())
+        .unwrap_or(EFFORTS);
+    let effort = pick(b, "effort", levels, if profiled { "" } else { "high" })?;
     let model = match &b["model"] {
         Value::Null => "",
         Value::String(s) => s.trim(),
@@ -554,6 +561,7 @@ pub fn patch(ctx: &Ctx, id: &str, b: &Value) -> Res<Task> {
     let obj = b.as_object().ok_or_else(|| bad("JSON object expected"))?;
     let reg = db(ctx)?;
     let mut t = get(&reg, id)?;
+    let effort_agent = b["agent"].as_str().unwrap_or(&t.agent).to_owned();
     let was = t.status.clone();
     for (k, v) in obj {
         let s = || {
@@ -574,16 +582,28 @@ pub fn patch(ctx: &Ctx, id: &str, b: &Value) -> Res<Task> {
             "description" => t.description = s()?.to_string(),
             "model" => t.model = s()?.trim().to_string(),
             "status" if t.from_session() => {
-                let s = pick(b, k, &["in_progress", "in_testing", "completed"], "")
-                    .map_err(|_| bad("a session task follows its session: status must be one of in_progress, in_testing, completed"))?;
+                let s = pick(b, k, &["in_progress", "in_testing", "merged", "completed"], "")
+                    .map_err(|_| bad("a session task follows its session: status must be one of in_progress, in_testing, merged, completed"))?;
                 t.status = s.into();
                 t.manual_status = Some(s.into());
             }
-            "status" if v == "in_progress" => {
-                return Err(bad("use POST /v1/tasks/{id}/start to start a task"))
+            "status" if v == "in_progress" && t.status != "in_progress" => {
+                if t.live_term().is_none() {
+                    return Err(bad("use POST /v1/tasks/{id}/start to start a task"));
+                }
+                t.status = "in_progress".into();
+                t.started_ms = Some(crate::procs::now_ms());
+                seen_busy(|s| s.remove(&t.id));
             }
+            "status" if v == "in_progress" => {}
             "status" => {
-                t.status = pick(b, k, &["pending", "auto", "in_testing", "completed"], "")?.into()
+                t.status = pick(
+                    b,
+                    k,
+                    &["pending", "auto", "in_testing", "merged", "completed"],
+                    "",
+                )?
+                .into()
             }
             "agent" => {
                 t.agent = agent_of(b, k)?
@@ -595,18 +615,38 @@ pub fn patch(ctx: &Ctx, id: &str, b: &Value) -> Res<Task> {
             "important" => t.important = flag_of(k, v)?,
             "inheritBranch" => t.inherit_branch = flag_of(k, v)?,
             "dependsOn" => t.depends_on = deps_of(&reg, id, &t.project, v)?,
-            "effort" => t.effort = pick(b, k, EFFORTS, "")?.into(),
+            "effort" => {
+                let levels = crate::agents::get(&effort_agent)
+                    .map(|a| a.valid_efforts())
+                    .unwrap_or(EFFORTS);
+                t.effort = pick(b, k, levels, "")?.into();
+            }
             "profile" => t.profile = profile_of(ctx, v)?,
             "ticketKey" => t.ticket_key = ticket_of(v)?,
             "progress" => t.progress = progress(v)?,
             _ => {}
         }
     }
+    leave_merged(&mut t, &was);
+    if t.status == "completed" && was != "completed" {
+        t.session_state = None;
+    }
     save(ctx, &reg, &mut t)?;
     if t.status == "in_testing" && was != "in_testing" {
         crate::task_agents::spawn_overlap_alert(ctx, &t);
     }
     Ok(t)
+}
+
+fn leave_merged(t: &mut Task, was: &str) {
+    if was == "merged" && t.status != "merged" {
+        if let Some(b) = &t.branch {
+            crate::worktrees::forget_landed(b);
+        }
+        if !t.from_session() && !is_done(&t.status) {
+            t.session_state = None;
+        }
+    }
 }
 
 pub fn delete(ctx: &Ctx, id: &str) -> Res<Value> {
@@ -745,6 +785,7 @@ pub fn argv(
     p: &crate::profiles::Applied,
     session: &str,
     prompt: Option<&str>,
+    auto_approve: bool,
 ) -> Vec<String> {
     let a = crate::agents::get(&t.agent).unwrap_or(&crate::agents::AGENTS[0]);
     let mut extra: Vec<String> = if a.id == "claude" {
@@ -759,6 +800,7 @@ pub fn argv(
         session: Some(session),
         prompt,
         extra: &extra,
+        auto_approve,
     })
 }
 
@@ -836,6 +878,7 @@ pub(crate) fn start_with_args(
             format!("{} is not installed ({})", agent.name, agent.bin),
         ));
     }
+    let auto_approve = crate::agents::auto_approve_enabled(&reg, agent.id).map_err(|e| (500, e))?;
     let wt = if here {
         in_place(&mut t)
     } else {
@@ -856,7 +899,16 @@ pub(crate) fn start_with_args(
     }
     let by_flag = agent.prompt.is_some();
     let p = applied(ctx, &t);
+    let mcp = match agent.id {
+        "codex" => crate::codex::overseer_mcp(
+            &crate::actions::self_exe(),
+            &ctx.state_dir.to_string_lossy(),
+            &t.id,
+        ),
+        _ => vec![],
+    };
     let mut launch = p.clone();
+    launch.extra.extend(mcp.iter().cloned());
     launch.extra.extend(extra.iter().cloned());
     let cmd = argv(
         ctx,
@@ -864,11 +916,20 @@ pub(crate) fn start_with_args(
         &launch,
         &session,
         by_flag.then_some(prompt.as_str()),
+        auto_approve,
     );
     let mut env = vec![("OVERSEER_TASK_ID".into(), t.id.clone())];
     env.extend(p.env.iter().cloned());
     let mut flags = agent.flags(&p.model, &p.effort);
     flags.extend(p.extra.iter().cloned());
+    if auto_approve {
+        let mut set = launch.extra.clone();
+        if agent.id == "claude" {
+            set.extend(ctx.config.start_args.iter().cloned());
+        }
+        flags.extend(crate::agents::auto_approve_flags(agent.id, &set));
+    }
+    flags.extend(mcp);
     let (cols, rows) = size.unwrap_or((120, 32));
     let term = term::spawn(Spec {
         cwd: wt,
@@ -925,6 +986,7 @@ pub fn review(ctx: &Ctx, id: &str, b: &Value) -> Res<Value> {
         .filter(|m| !m.is_empty());
     let reg = db(ctx)?;
     let mut t = get(&reg, id)?;
+    let was = t.status.clone();
     let mut out = json!({});
     match action {
         "reject" if t.from_session() => {
@@ -948,6 +1010,7 @@ pub fn review(ctx: &Ctx, id: &str, b: &Value) -> Res<Value> {
                     .map_err(|e| (500, e))?;
             }
             t.status = "completed".into();
+            t.session_state = Some(REVIEWED.into());
         }
         "reject" => match (t.live_term(), message) {
             (Some(term), m) => {
@@ -983,10 +1046,15 @@ pub fn review(ctx: &Ctx, id: &str, b: &Value) -> Res<Value> {
                 .map_err(|e| (409, e))?;
             out["commit"] = json!(sha.trim());
             t.status = "completed".into();
+            t.session_state = Some(REVIEWED.into());
         }
     }
+    leave_merged(&mut t, &was);
     if t.from_session() {
         t.manual_status = Some(t.status.clone());
+        if t.status == "completed" {
+            t.session_state = None;
+        }
     }
     save(ctx, &reg, &mut t)?;
     out["task"] = t.to_json(&ctx.config.station_id);
@@ -1005,8 +1073,22 @@ fn pr_followup(merge: bool, approve: bool) -> Option<String> {
     ))
 }
 
-fn merge_candidate(t: &Task) -> bool {
-    !t.from_session() && t.status == "in_testing" && t.session_state.as_deref() != Some("merged")
+const REVIEWED: &str = "reviewed";
+const REVIEW_MERGE_WINDOW_MS: i64 = 6 * 3_600_000;
+
+fn merge_candidate(t: &Task, now: i64) -> bool {
+    !t.from_session()
+        && match t.status.as_str() {
+            "in_testing" => true,
+            "completed" => {
+                t.session_state.as_deref() == Some(REVIEWED)
+                    && now - t.updated_ms < REVIEW_MERGE_WINDOW_MS
+                    && t.worktree_path
+                        .as_deref()
+                        .is_some_and(|p| Path::new(p).is_dir())
+            }
+            _ => false,
+        }
 }
 
 pub fn tick(ctx: &Ctx, lines: &[Line]) {
@@ -1076,7 +1158,8 @@ pub fn tick(ctx: &Ctx, lines: &[Line]) {
         }
     }
     if let Ok(tasks) = all(&reg) {
-        for mut t in tasks.into_iter().filter(merge_candidate) {
+        let now = crate::procs::now_ms();
+        for mut t in tasks.into_iter().filter(|t| merge_candidate(t, now)) {
             let busy = t
                 .line_id
                 .as_deref()
@@ -1086,7 +1169,7 @@ pub fn tick(ctx: &Ctx, lines: &[Line]) {
                     crate::worktrees::landed(&t.project, b, ctx.config.worktree_fetch)
                 })
             {
-                t.status = "completed".into();
+                t.status = "merged".into();
                 t.session_state = Some("merged".into());
                 let _ = save(ctx, &reg, &mut t);
             }
@@ -1359,24 +1442,80 @@ mod tests {
         assert_eq!(ids(&tasks), ["a"]);
         tasks[0].status = "completed".into();
         assert!(ids(&tasks).is_empty());
+        tasks[0].status = "merged".into();
+        tasks[1].status = "merged".into();
+        assert!(ids(&tasks).is_empty());
     }
 
     #[test]
-    fn only_review_tasks_not_yet_auto_completed_are_merge_candidates() {
+    fn merged_and_completed_are_the_done_statuses() {
+        for s in ["merged", "completed"] {
+            assert!(is_done(s), "{s}");
+        }
+        for s in ["pending", "auto", "in_progress", "in_testing", ""] {
+            assert!(!is_done(s), "{s}");
+        }
+    }
+
+    #[test]
+    fn review_and_closed_tasks_with_a_worktree_are_merge_candidates() {
+        let wt = std::env::temp_dir();
+        let now = 10 * REVIEW_MERGE_WINDOW_MS;
         let mut t = Task {
             status: "in_testing".into(),
+            updated_ms: now,
             ..Default::default()
         };
-        assert!(merge_candidate(&t));
-        t.session_state = Some("merged".into());
-        assert!(!merge_candidate(&t));
-        t.session_state = None;
+        assert!(merge_candidate(&t, now));
         t.origin = Some(crate::session_tasks::ORIGIN.into());
-        assert!(!merge_candidate(&t));
+        assert!(!merge_candidate(&t, now));
         t.origin = None;
-        for s in ["pending", "auto", "in_progress", "completed"] {
-            t.status = s.into();
-            assert!(!merge_candidate(&t), "{s}");
+        t.status = "completed".into();
+        t.session_state = Some(REVIEWED.into());
+        assert!(!merge_candidate(&t, now), "closed without a worktree");
+        t.worktree_path = Some(wt.join("sb-no-such-worktree").display().to_string());
+        assert!(!merge_candidate(&t, now), "closed with a removed worktree");
+        t.worktree_path = Some(wt.display().to_string());
+        assert!(merge_candidate(&t, now));
+        assert!(
+            !merge_candidate(&t, now + REVIEW_MERGE_WINDOW_MS),
+            "checked only for a bounded time after the review"
+        );
+        for s in [None, Some("merged")] {
+            t.session_state = s.map(str::to_string);
+            assert!(!merge_candidate(&t, now), "closed by hand: {s:?}");
         }
+        t.session_state = Some(REVIEWED.into());
+        for s in ["pending", "auto", "in_progress", "merged"] {
+            t.status = s.into();
+            assert!(!merge_candidate(&t, now), "{s}");
+        }
+    }
+
+    #[test]
+    fn leaving_merged_clears_the_marker_for_every_exit() {
+        for to in ["in_progress", "pending", "in_testing"] {
+            let mut t = Task {
+                status: to.into(),
+                session_state: Some("merged".into()),
+                ..Default::default()
+            };
+            leave_merged(&mut t, "merged");
+            assert_eq!(t.session_state, None, "{to}");
+        }
+        let mut t = Task {
+            status: "completed".into(),
+            session_state: Some("merged".into()),
+            ..Default::default()
+        };
+        leave_merged(&mut t, "merged");
+        assert_eq!(t.session_state.as_deref(), Some("merged"));
+        let mut t = Task {
+            status: "in_progress".into(),
+            session_state: Some("x".into()),
+            ..Default::default()
+        };
+        leave_merged(&mut t, "in_testing");
+        assert_eq!(t.session_state.as_deref(), Some("x"));
     }
 }

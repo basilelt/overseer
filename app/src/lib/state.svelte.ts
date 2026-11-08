@@ -28,7 +28,7 @@ import { ui } from './mobile/ui.svelte';
 import { feedback } from './feedback.svelte';
 
 export type View = 'agents' | 'kanban' | 'browser';
-export type Overlay = null | 'taskDetail' | 'palette' | 'connect' | 'settings' | 'task' | 'project' | 'review' | 'ports' | 'system' | 'usage' | 'broadcast' | 'holdAll' | 'name' | 'workspaceNew' | 'profiles' | 'shortcuts' | 'file' | 'notifications' | 'closeTab' | 'switchboardImport';
+export type Overlay = null | 'taskDetail' | 'palette' | 'connect' | 'settings' | 'task' | 'project' | 'review' | 'ports' | 'system' | 'usage' | 'broadcast' | 'holdAll' | 'name' | 'workspaceNew' | 'profiles' | 'shortcuts' | 'file' | 'notifications' | 'closeTab' | 'switchboardImport' | 'uninstall';
 
 export interface FileArg {
   path: string;
@@ -651,6 +651,10 @@ class AppState {
     this.overlay = overlay;
     this.overlayArg = typeof arg === 'string' ? arg : null;
     this.fileArg = arg && typeof arg === 'object' ? arg : null;
+  }
+
+  closeOverlay() {
+    this.open(this.overlay === 'uninstall' ? 'settings' : null);
   }
 
   openPage(url: string, from: { key?: string | null; termId?: string }): boolean {

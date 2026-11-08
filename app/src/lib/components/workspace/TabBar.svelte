@@ -537,6 +537,9 @@
     flex: none;
     align-items: center;
     gap: 2px;
+    margin-left: 6px;
+    padding-left: 6px;
+    border-left: 1px solid var(--border);
   }
   @container (max-width: 520px) {
     .tabbar {
@@ -548,6 +551,9 @@
       flex: 1 0 100%;
     }
     .actions {
+      margin-left: 0;
+      padding-left: 0;
+      border-left: 0;
       flex: 1 0 100%;
       flex-wrap: wrap;
       justify-content: flex-end;
