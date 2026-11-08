@@ -2892,6 +2892,41 @@ fn an_agent_that_quits_right_after_starting_a_turn_still_leaves_its_session() {
 }
 
 #[test]
+fn closing_an_idle_codex_session_accepts_its_dim_composer_prompt() {
+    // Given a Codex session at its idle composer, whose prompt marker is dim gray
+    // When the app checks and closes the selected agent through the real daemon
+    // Then the prompt passes the safety check and the line is closed
+    let app = App::new("closecodex", json!({}));
+    let wt = app.fx.wt.to_string_lossy().into_owned();
+    let t = app.ok(
+        "POST",
+        "/v1/terms",
+        json!({"cwd": wt, "agent": "codex", "cols": 120, "rows": 24}),
+    );
+    let id = t["id"].as_str().unwrap().to_string();
+    let mut ws = app.ws(&id);
+    read_until(&mut ws, "codex ready");
+    send(&mut ws, "busy\r");
+    let line = wait_for(|| line_of(&app, &id));
+    let lid = line["line"]["id"].as_str().unwrap().to_string();
+    send(&mut ws, "done\r");
+    wait(|| line_json(&app, &lid)["local"]["busy"] == false);
+
+    let (code, plan) = app.req("POST", &format!("/v1/lines/{lid}/close"), Value::Null);
+    assert_eq!(code, 200, "{plan}");
+    assert_eq!(plan["action"], "would-close", "{plan}");
+    assert_eq!(plan["predicates"]["inputEmpty"]["ok"], true, "{plan}");
+
+    let closed = app.ok(
+        "POST",
+        &format!("/v1/lines/{lid}/close?dryRun=false"),
+        Value::Null,
+    );
+    assert_eq!(closed["action"], "closed", "{closed}");
+    wait(|| line_json(&app, &lid)["line"]["state"] == "hung-up");
+}
+
+#[test]
 fn ending_a_busy_agent_session_needs_force_and_then_ends_its_term() {
     // Given a codex session in a term that is busy with a turn
     // When the session is closed as ending its tab does, first without and then with force=true
