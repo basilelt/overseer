@@ -410,7 +410,7 @@ export const en = {
   'profile.previewFiles': 'Apply to agent files…',
   'profile.saveFirst': 'Save the profile first',
   'profile.nothingToApply': 'The subagent files already match this profile.',
-  'profile.confirmHint': 'Tick each file to change. A .bak copy is kept next to it.',
+  'profile.confirmHint': 'Tick each file to change. A backup of each file is kept in the backups folder.',
   'profile.applyN': 'Apply to {n} file(s)',
   'profile.backup': 'backup',
   'profile.via.flag': 'launch flag',
