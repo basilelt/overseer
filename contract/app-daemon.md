@@ -376,7 +376,12 @@ in protocol 1.
 
 - `number` increments per `project` and is never reused (deleted numbers stay burnt).
 - `project` is the absolute path of a git repository's main worktree root.
-- `status` ∈ `pending | auto | in_progress | in_testing | completed`.
+- `status` ∈ `pending | auto | in_progress | in_testing | merged | completed`. `merged`: the
+  task's branch landed in the base (set by the daemon, which checks it; an agent can only set it
+  through `set_task_status` once the branch has landed, else the tool errors). `merged` counts as
+  done like `completed` for `dependsOn`. A task already `completed` is only moved to `merged` when it
+  was closed by `approve` or `commit` review, within 6 hours of it; a task closed by hand stays
+  `completed`. Apps older than this change do not know `merged` and show such tasks as open.
 - `agent` ∈ the ids of §2a except `shell` (default `claude`); `model` is a free string, `""` =
   the agent's default (default `""`); `effort` ∈ `low | medium | high | max` (default `high`;
   ignored by agents without efforts).
@@ -427,7 +432,7 @@ project when its newest open `user`/`agent` task is newer than the last organize
 | `GET /v1/tasks?project=&status=` | | 200 `[Task]` ordered by `project`, then `number`. `status` may be a comma list. |
 | `POST /v1/tasks` | `{title, project, description?, status?: pending\|auto, agent?, model?, effort?, ticketKey?, rank?, urgent?, important?, origin?: user\|agent, parentId?, dependsOn?: [taskId], inheritBranch?, attachments?: [{path, name?}]}` | **201** Task · 400 (missing title, project not a git repo, bad enum, `parentId` or a `dependsOn` id not a task, an attachment not a file from `POST /v1/uploads`, more than 20 attachments). Attachments move to `~/.overseer/tasks/{id}/` and their paths are appended to the description under `Attachments:`. |
 | `GET /v1/tasks/{id}` | | 200 Task · 404 |
-| `PATCH /v1/tasks/{id}` | any of `{title, description, status, agent, model, effort, rank, urgent (bool \| null), important (bool \| null), ticketKey (null clears), progress: {done,total,note?} \| null, dependsOn: [taskId], inheritBranch (bool \| null)}` | 200 Task · 400 · 404. `dependsOn` replaces the list: 400 when an id is unknown, is the task itself, or closes a cycle. `status` may be set to `pending`, `auto`, `in_testing`, `completed`; `in_progress` only through `/start` (400). Session tasks: `in_progress`, `in_testing`, `completed` (sets `manualStatus`). |
+| `PATCH /v1/tasks/{id}` | any of `{title, description, status, agent, model, effort, rank, urgent (bool \| null), important (bool \| null), ticketKey (null clears), progress: {done,total,note?} \| null, dependsOn: [taskId], inheritBranch (bool \| null)}` | 200 Task · 400 · 404. `dependsOn` replaces the list: 400 when an id is unknown, is the task itself, or closes a cycle. `status` may be set to `pending`, `auto`, `in_testing`, `merged`, `completed`; `in_progress` only through `/start` (400). Session tasks: `in_progress`, `in_testing`, `merged`, `completed` (sets `manualStatus`). |
 | `DELETE /v1/tasks/{id}` | | 200 `{"deleted":"<id>"}` · 404 · 409 while its term runs. The worktree and branch are kept; its attachment folder is removed. |
 | `POST /v1/tasks/{id}/start` | `{cols?, rows?, inPlace?}` | 200 Task (`in_progress`, `termId`, `branch`, `worktreePath`; `lineId` at once for agents that take a session id up front, after the next scan otherwise) · 404 · 409 its term is still running, the agent is not installed, or git failed. |
 | `GET /v1/tasks/{id}/messages` | | 200 `[Message]`, oldest first: every message sent to or from the task · 404 |
@@ -491,7 +496,7 @@ The status follows the session:
 | Session | Status | Badge |
 |---|---|---|
 | `hung-up` (closed) | `completed` | |
-| gone or `held` (lost) and its branch merged into the base (or deleted) | `completed` | |
+| gone or `held` (lost) and its branch merged into the base (or deleted) | `merged` | |
 | `held` (lost: the process ended) | `in_testing` | |
 | `held` by the user | unchanged if `in_testing`/`completed`, else `in_progress` | `paused` |
 | needs input (permission prompt, question) | `in_progress` | `needs_input` |
@@ -805,7 +810,7 @@ is applied until the user checks actions and calls `apply`. Stored in the regist
 - Kinds (closed set): `create_folder {name, ref}`, `create_workspace {path, folder?, pinned?}`,
   `move_workspace {workspaceId, folder}`, `create_group {name, lines: [lineId]}`, `hold {lineId}`,
   `close {lineId}`, `pin {lineId}`, `archive_workspace {workspaceId}`,
-  `set_task_status {taskId, status ∈ pending | in_testing | completed}`, `track {lineId}` (creates
+  `set_task_status {taskId, status ∈ pending | in_testing | merged | completed}`, `track {lineId}` (creates
   the session task of a line older than `sessionTasksDays`). `folder` is the `ref` of an earlier
   `create_folder` or an existing folder id. `label` is filled by the daemon for display.
 - `pickUp.why` ∈ `dirty` (the agent edited files) `| todos` (open todo items) `| recent`.

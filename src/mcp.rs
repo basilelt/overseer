@@ -106,6 +106,32 @@ fn refuse_configurator(call: &mut Call, own: Option<&str>, what: &str) -> Result
     }
 }
 
+fn ensure_landed(call: &mut Call, own: &str) -> Result<(), String> {
+    let t = daemon(call, "GET", &format!("/v1/tasks/{}", encode(own)), None)?;
+    let (project, branch) = (t["project"].as_str(), t["branch"].as_str());
+    let (Some(project), Some(branch)) = (project, branch) else {
+        return Err("the task has no branch: nothing to mark as merged".into());
+    };
+    let v = daemon(
+        call,
+        "GET",
+        &format!("/v1/projects/{}/worktrees", encode(project)),
+        None,
+    )?;
+    let landed = v["worktrees"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .any(|w| w["branch"].as_str() == Some(branch) && w["merged"] == true);
+    if landed {
+        Ok(())
+    } else {
+        Err(format!(
+            "branch {branch} is not merged into the base branch yet: merge it first, then set merged"
+        ))
+    }
+}
+
 fn pick(v: &Value, keys: &[&str]) -> Value {
     let mut o = json!({});
     for k in keys {
@@ -293,6 +319,9 @@ fn run_tool(name: &str, a: &Value, own: Option<&str>, call: &mut Call) -> Result
                     )
                 })?;
             refuse_configurator(call, Some(own), "change task status")?;
+            if status == "merged" {
+                ensure_landed(call, own)?;
+            }
             daemon(
                 call,
                 "PATCH",
@@ -887,7 +916,7 @@ mod tests {
             assert!(log.is_empty());
             assert_eq!(out.unwrap()["result"]["isError"], true);
         }
-        for status in AGENT_STATUSES {
+        for status in ["in_testing", "in_progress"] {
             let (out, log) = with_fake(
                 tool("set_task_status", json!({"id": "OWN", "status": status})),
                 Some("OWN"),
@@ -900,6 +929,46 @@ mod tests {
             );
             assert_eq!(log[1].2, Some(json!({"status": status})));
         }
+    }
+
+    fn landed_answer(merged: bool, branch: Option<&str>) -> impl Fn(&str, &str) -> (u16, Value) {
+        let branch = branch.map(str::to_string);
+        move |_, t| {
+            if t.contains("/worktrees") {
+                (
+                    200,
+                    json!({"worktrees": [{"branch": "sb/x", "merged": merged}, {"branch": "sb/y", "merged": true}]}),
+                )
+            } else {
+                (200, json!({"id": "OWN", "project": "/p", "branch": branch}))
+            }
+        }
+    }
+
+    #[test]
+    fn set_status_merged_needs_the_branch_to_have_landed() {
+        let call = |a: &dyn Fn(&str, &str) -> (u16, Value)| {
+            with_fake(
+                tool("set_task_status", json!({"id": "OWN", "status": "merged"})),
+                Some("OWN"),
+                a,
+            )
+        };
+        for answer in [
+            landed_answer(false, Some("sb/x")),
+            landed_answer(true, None),
+        ] {
+            let (out, log) = call(&answer);
+            assert_eq!(out.unwrap()["result"]["isError"], true);
+            assert!(log.iter().all(|l| l.0 == "GET"), "no PATCH was sent");
+        }
+        let (out, log) = call(&landed_answer(true, Some("sb/x")));
+        assert_eq!(out.unwrap()["result"]["isError"], false);
+        let last = log.last().unwrap();
+        assert_eq!(
+            (last.0.as_str(), last.1.as_str(), last.2.clone()),
+            ("PATCH", "/v1/tasks/OWN", Some(json!({"status": "merged"})))
+        );
     }
 
     fn configurator(m: &str, t: &str) -> (u16, Value) {

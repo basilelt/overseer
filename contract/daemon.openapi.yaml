@@ -2494,7 +2494,7 @@ components:
       properties:
         title: { type: string, minLength: 1 }
         description: { type: string }
-        status: { type: string, enum: [pending, auto, in_testing, completed] }
+        status: { type: string, enum: [pending, auto, in_testing, merged, completed] }
         agent: { type: string, enum: [claude, codex, gemini, agy, opencode, amp, copilot, cursor] }
         model: { type: string }
         effort: { type: string, enum: [low, medium, high, max] }
@@ -2522,7 +2522,7 @@ components:
         title: { type: string }
         description: { type: string }
         project: { type: string }
-        status: { type: string, enum: [pending, auto, in_progress, in_testing, completed] }
+        status: { type: string, enum: [pending, auto, in_progress, in_testing, merged, completed] }
         agent: { type: string, enum: [claude, codex, gemini, agy, opencode, amp, copilot, cursor] }
         model: { type: string }
         effort: { type: string, enum: [low, medium, high, max] }
@@ -2541,7 +2541,7 @@ components:
         parentId: { type: string, description: Id of the task whose agent created this one }
         dependsOn: { type: array, items: { type: string }, description: "Ids of the tasks this one waits on (always present, empty when none)" }
         inheritBranch: { type: boolean, description: "Omitted when unset (= true): with exactly one dependency the worktree starts from its branch" }
-        manualStatus: { type: string, enum: [in_progress, in_testing, completed], description: Status set by hand on a session task, kept while the session state is unchanged }
+        manualStatus: { type: string, enum: [in_progress, in_testing, merged, completed], description: Status set by hand on a session task, kept while the session state is unchanged }
         badges: { type: array, items: { type: string, enum: [needs_input, paused] } }
         profile: { type: string, description: Agent profile id chosen for this task }
         createdAt: { type: string, format: date-time }
@@ -2675,7 +2675,7 @@ components:
         lines: { type: array, items: { type: string } }
         lineId: { type: string }
         taskId: { type: string }
-        status: { type: string, enum: [pending, in_testing, completed] }
+        status: { type: string, enum: [pending, in_testing, merged, completed] }
     PickUp:
       type: object
       required: [lineId, summary, why]

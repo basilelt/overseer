@@ -627,6 +627,18 @@ pub fn patch(ctx: &Ctx, id: &str, b: &Value) -> Res<Task> {
             _ => {}
         }
     }
+    leave_merged(&mut t, &was);
+    if t.status == "completed" && was != "completed" {
+        t.session_state = None;
+    }
+    save(ctx, &reg, &mut t)?;
+    if t.status == "in_testing" && was != "in_testing" {
+        crate::task_agents::spawn_overlap_alert(ctx, &t);
+    }
+    Ok(t)
+}
+
+fn leave_merged(t: &mut Task, was: &str) {
     if was == "merged" && t.status != "merged" {
         if let Some(b) = &t.branch {
             crate::worktrees::forget_landed(b);
@@ -635,11 +647,6 @@ pub fn patch(ctx: &Ctx, id: &str, b: &Value) -> Res<Task> {
             t.session_state = None;
         }
     }
-    save(ctx, &reg, &mut t)?;
-    if t.status == "in_testing" && was != "in_testing" {
-        crate::task_agents::spawn_overlap_alert(ctx, &t);
-    }
-    Ok(t)
 }
 
 pub fn delete(ctx: &Ctx, id: &str) -> Res<Value> {
@@ -977,6 +984,7 @@ pub fn review(ctx: &Ctx, id: &str, b: &Value) -> Res<Value> {
         .filter(|m| !m.is_empty());
     let reg = db(ctx)?;
     let mut t = get(&reg, id)?;
+    let was = t.status.clone();
     let mut out = json!({});
     match action {
         "reject" if t.from_session() => {
@@ -1000,6 +1008,7 @@ pub fn review(ctx: &Ctx, id: &str, b: &Value) -> Res<Value> {
                     .map_err(|e| (500, e))?;
             }
             t.status = "completed".into();
+            t.session_state = Some(REVIEWED.into());
         }
         "reject" => match (t.live_term(), message) {
             (Some(term), m) => {
@@ -1035,10 +1044,15 @@ pub fn review(ctx: &Ctx, id: &str, b: &Value) -> Res<Value> {
                 .map_err(|e| (409, e))?;
             out["commit"] = json!(sha.trim());
             t.status = "completed".into();
+            t.session_state = Some(REVIEWED.into());
         }
     }
+    leave_merged(&mut t, &was);
     if t.from_session() {
         t.manual_status = Some(t.status.clone());
+        if t.status == "completed" {
+            t.session_state = None;
+        }
     }
     save(ctx, &reg, &mut t)?;
     out["task"] = t.to_json(&ctx.config.station_id);
@@ -1057,12 +1071,16 @@ fn pr_followup(merge: bool, approve: bool) -> Option<String> {
     ))
 }
 
-fn merge_candidate(t: &Task) -> bool {
+const REVIEWED: &str = "reviewed";
+const REVIEW_MERGE_WINDOW_MS: i64 = 6 * 3_600_000;
+
+fn merge_candidate(t: &Task, now: i64) -> bool {
     !t.from_session()
         && match t.status.as_str() {
             "in_testing" => true,
             "completed" => {
-                t.session_state.as_deref() != Some("merged")
+                t.session_state.as_deref() == Some(REVIEWED)
+                    && now - t.updated_ms < REVIEW_MERGE_WINDOW_MS
                     && t.worktree_path
                         .as_deref()
                         .is_some_and(|p| Path::new(p).is_dir())
@@ -1138,7 +1156,8 @@ pub fn tick(ctx: &Ctx, lines: &[Line]) {
         }
     }
     if let Ok(tasks) = all(&reg) {
-        for mut t in tasks.into_iter().filter(merge_candidate) {
+        let now = crate::procs::now_ms();
+        for mut t in tasks.into_iter().filter(|t| merge_candidate(t, now)) {
             let busy = t
                 .line_id
                 .as_deref()
@@ -1439,26 +1458,62 @@ mod tests {
     #[test]
     fn review_and_closed_tasks_with_a_worktree_are_merge_candidates() {
         let wt = std::env::temp_dir();
+        let now = 10 * REVIEW_MERGE_WINDOW_MS;
         let mut t = Task {
             status: "in_testing".into(),
+            updated_ms: now,
             ..Default::default()
         };
-        assert!(merge_candidate(&t));
+        assert!(merge_candidate(&t, now));
         t.origin = Some(crate::session_tasks::ORIGIN.into());
-        assert!(!merge_candidate(&t));
+        assert!(!merge_candidate(&t, now));
         t.origin = None;
         t.status = "completed".into();
-        assert!(!merge_candidate(&t), "closed without a worktree");
+        t.session_state = Some(REVIEWED.into());
+        assert!(!merge_candidate(&t, now), "closed without a worktree");
         t.worktree_path = Some(wt.join("sb-no-such-worktree").display().to_string());
-        assert!(!merge_candidate(&t), "closed with a removed worktree");
+        assert!(!merge_candidate(&t, now), "closed with a removed worktree");
         t.worktree_path = Some(wt.display().to_string());
-        assert!(merge_candidate(&t));
-        t.session_state = Some("merged".into());
-        assert!(!merge_candidate(&t), "closed by hand after it merged");
-        t.session_state = None;
+        assert!(merge_candidate(&t, now));
+        assert!(
+            !merge_candidate(&t, now + REVIEW_MERGE_WINDOW_MS),
+            "checked only for a bounded time after the review"
+        );
+        for s in [None, Some("merged")] {
+            t.session_state = s.map(str::to_string);
+            assert!(!merge_candidate(&t, now), "closed by hand: {s:?}");
+        }
+        t.session_state = Some(REVIEWED.into());
         for s in ["pending", "auto", "in_progress", "merged"] {
             t.status = s.into();
-            assert!(!merge_candidate(&t), "{s}");
+            assert!(!merge_candidate(&t, now), "{s}");
         }
+    }
+
+    #[test]
+    fn leaving_merged_clears_the_marker_for_every_exit() {
+        for to in ["in_progress", "pending", "in_testing"] {
+            let mut t = Task {
+                status: to.into(),
+                session_state: Some("merged".into()),
+                ..Default::default()
+            };
+            leave_merged(&mut t, "merged");
+            assert_eq!(t.session_state, None, "{to}");
+        }
+        let mut t = Task {
+            status: "completed".into(),
+            session_state: Some("merged".into()),
+            ..Default::default()
+        };
+        leave_merged(&mut t, "merged");
+        assert_eq!(t.session_state.as_deref(), Some("merged"));
+        let mut t = Task {
+            status: "in_progress".into(),
+            session_state: Some("x".into()),
+            ..Default::default()
+        };
+        leave_merged(&mut t, "in_testing");
+        assert_eq!(t.session_state.as_deref(), Some("x"));
     }
 }
