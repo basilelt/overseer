@@ -115,6 +115,11 @@ describe('search', () => {
     expect(search('webgl', all, en2).hits.terminal).toEqual(['gpuTerminal']);
   });
 
+  it('finds the auto-approval defaults by their label and hint', () => {
+    expect(search('auto approve', all, both).hits.defaults).toEqual(['autoApprove']);
+    expect(search('auto-approval', all, both).hits.defaults).toEqual(['autoApprove']);
+  });
+
   it('finds the privacy policy link under help, even without a connection', () => {
     const r = search('privacy', none, en2);
     expect(r.hits.feedback).toEqual(['privacy']);

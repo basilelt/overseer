@@ -4,6 +4,7 @@ use std::io::{BufRead, Write};
 pub type Call<'a> = dyn FnMut(&str, &str, Option<&Value>) -> Result<(u16, Value), String> + 'a;
 
 const PROTOCOL: &str = "2025-06-18";
+const AGENT_STATUSES: [&str; 3] = ["in_testing", "merged", "in_progress"];
 
 fn reply(id: &Value, result: Value) -> Value {
     json!({"jsonrpc": "2.0", "id": id, "result": result})
@@ -28,7 +29,7 @@ fn tools() -> Value {
     json!([
         tool("list_tasks", "List Kanban tasks, optionally filtered by project and status.",
             json!({"project": s("Absolute path of the project's main worktree root"),
-                   "status": s("Status or comma list: pending, auto, in_progress, in_testing, completed")}),
+                   "status": s("Status or comma list: pending, auto, in_progress, in_testing, merged, completed")}),
             json!([])),
         tool("get_task", "Get one task by id.", json!({"id": s("Task id")}), json!(["id"])),
         tool("create_task", "Create a pending task. The project defaults to your own task's project, else the current git repository.",
@@ -60,9 +61,9 @@ fn tools() -> Value {
             json!({"id": s("Task id, defaults to your own task"), "done": n("Steps done"),
                    "total": n("Total steps"), "note": s("Short note")}),
             json!(["done", "total"])),
-        tool("set_task_status", "Move your own task to in_testing when your work is ready for review.",
+        tool("set_task_status", "Move your own task: in_testing when your work is ready for review, merged once you merged its changes, in_progress when you resume work on it (from review, merged or closed).",
             json!({"id": s("Task id, defaults to your own task"),
-                   "status": {"type": "string", "enum": ["in_testing"]}}),
+                   "status": {"type": "string", "enum": AGENT_STATUSES}}),
             json!(["status"])),
         tool("list_review_comments", "List the code review comment threads on your worktree (Overseer live review). Each thread has an id, path, line range, the commented code and the comments.",
             json!({"status": s("Status or comma list: pending, sent, addressed, resolved (default sent: waiting for you)"),
@@ -102,6 +103,32 @@ fn refuse_configurator(call: &mut Call, own: Option<&str>, what: &str) -> Result
             Err(format!("the session configurator may not {what}"))
         }
         _ => Ok(()),
+    }
+}
+
+fn ensure_landed(call: &mut Call, own: &str) -> Result<(), String> {
+    let t = daemon(call, "GET", &format!("/v1/tasks/{}", encode(own)), None)?;
+    let (project, branch) = (t["project"].as_str(), t["branch"].as_str());
+    let (Some(project), Some(branch)) = (project, branch) else {
+        return Err("the task has no branch: nothing to mark as merged".into());
+    };
+    let v = daemon(
+        call,
+        "GET",
+        &format!("/v1/projects/{}/worktrees", encode(project)),
+        None,
+    )?;
+    let landed = v["worktrees"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .any(|w| w["branch"].as_str() == Some(branch) && w["merged"] == true);
+    if landed {
+        Ok(())
+    } else {
+        Err(format!(
+            "branch {branch} is not merged into the base branch yet: merge it first, then set merged"
+        ))
     }
 }
 
@@ -283,15 +310,23 @@ fn run_tool(name: &str, a: &Value, own: Option<&str>, call: &mut Call) -> Result
             if s("id").is_some_and(|i| i != own) {
                 return Err("an agent may only change the status of its own task".into());
             }
-            if s("status") != Some("in_testing") {
-                return Err("an agent may only move its task to in_testing".into());
-            }
+            let status = s("status")
+                .filter(|x| AGENT_STATUSES.contains(x))
+                .ok_or_else(|| {
+                    format!(
+                        "an agent may only move its task to {}",
+                        AGENT_STATUSES.join(", ")
+                    )
+                })?;
             refuse_configurator(call, Some(own), "change task status")?;
+            if status == "merged" {
+                ensure_landed(call, own)?;
+            }
             daemon(
                 call,
                 "PATCH",
                 &format!("/v1/tasks/{}", encode(own)),
-                Some(&json!({"status": "in_testing"})),
+                Some(&json!({"status": status})),
             )
         }
         "list_review_comments" => {
@@ -464,7 +499,7 @@ pub fn handle(msg: &Value, own_task: Option<&str>, call: &mut Call) -> Option<Va
                 "protocolVersion": PROTOCOL,
                 "capabilities": {"tools": {"listChanged": false}},
                 "serverInfo": {"name": "overseer", "version": env!("CARGO_PKG_VERSION")},
-                "instructions": "Overseer Kanban tasks and code review. Read and create tasks (always pending), report progress on your task with update_task_progress, and call set_task_status with in_testing when your work is ready for review. When the reviewer sends comments, list_review_comments shows them and resolve_review_comment answers each one once addressed. When you find a bug or improvement unrelated to your task, create_task it (with urgent and important) instead of fixing it off-scope. Call find_overlaps before large edits and before moving your task to in_testing; if another task touches the same files, send_message its agent to agree who changes what. Overseer also warns you by message when your task moves to in_testing and overlaps another. Messages from other agents arrive in your input prefixed [Overseer]; reply with send_message. The session configurator reads sessions with list_sessions, get_session_brief, list_projects, list_worktrees and list_layout, and records one plan with propose_organization.",
+                "instructions": "Overseer Kanban tasks and code review. Read and create tasks (always pending), report progress on your task with update_task_progress, and call set_task_status with in_testing when your work is ready for review, with merged once you merged its changes, and with in_progress when you resume work on it after review, merge or close. When the reviewer sends comments, list_review_comments shows them and resolve_review_comment answers each one once addressed. When you find a bug or improvement unrelated to your task, create_task it (with urgent and important) instead of fixing it off-scope. Call find_overlaps before large edits and before moving your task to in_testing; if another task touches the same files, send_message its agent to agree who changes what. Overseer also warns you by message when your task moves to in_testing and overlaps another. Messages from other agents arrive in your input prefixed [Overseer]; reply with send_message. The session configurator reads sessions with list_sessions, get_session_brief, list_projects, list_worktrees and list_layout, and records one plan with propose_organization.",
             }),
         ),
         "ping" => reply(id, json!({})),
@@ -873,6 +908,7 @@ mod tests {
         let refused = [
             (json!({"id": "OTHER", "status": "in_testing"}), Some("OWN")),
             (json!({"status": "completed"}), Some("OWN")),
+            (json!({"status": "pending"}), Some("OWN")),
             (json!({"status": "in_testing"}), None),
         ];
         for (args, own) in refused {
@@ -880,20 +916,59 @@ mod tests {
             assert!(log.is_empty());
             assert_eq!(out.unwrap()["result"]["isError"], true);
         }
-        let (out, log) = with_fake(
-            tool(
-                "set_task_status",
-                json!({"id": "OWN", "status": "in_testing"}),
-            ),
-            Some("OWN"),
-            ok,
-        );
+        for status in ["in_testing", "in_progress"] {
+            let (out, log) = with_fake(
+                tool("set_task_status", json!({"id": "OWN", "status": status})),
+                Some("OWN"),
+                ok,
+            );
+            assert_eq!(out.unwrap()["result"]["isError"], false, "{status}");
+            assert_eq!(
+                (log[1].0.as_str(), log[1].1.as_str()),
+                ("PATCH", "/v1/tasks/OWN")
+            );
+            assert_eq!(log[1].2, Some(json!({"status": status})));
+        }
+    }
+
+    fn landed_answer(merged: bool, branch: Option<&str>) -> impl Fn(&str, &str) -> (u16, Value) {
+        let branch = branch.map(str::to_string);
+        move |_, t| {
+            if t.contains("/worktrees") {
+                (
+                    200,
+                    json!({"worktrees": [{"branch": "sb/x", "merged": merged}, {"branch": "sb/y", "merged": true}]}),
+                )
+            } else {
+                (200, json!({"id": "OWN", "project": "/p", "branch": branch}))
+            }
+        }
+    }
+
+    #[test]
+    fn set_status_merged_needs_the_branch_to_have_landed() {
+        let call = |a: &dyn Fn(&str, &str) -> (u16, Value)| {
+            with_fake(
+                tool("set_task_status", json!({"id": "OWN", "status": "merged"})),
+                Some("OWN"),
+                a,
+            )
+        };
+        for answer in [
+            landed_answer(false, Some("sb/x")),
+            landed_answer(true, None),
+        ] {
+            let (out, log) = call(&answer);
+            assert_eq!(out.unwrap()["result"]["isError"], true);
+            assert!(log.iter().all(|l| l.0 == "GET"), "no PATCH was sent");
+        }
+        let (out, log) = call(&landed_answer(true, Some("sb/x")));
         assert_eq!(out.unwrap()["result"]["isError"], false);
+        let last = log.last().unwrap();
         assert_eq!(
-            (log[1].0.as_str(), log[1].1.as_str()),
-            ("PATCH", "/v1/tasks/OWN")
+            (last.0.as_str(), last.1.as_str(), last.2.clone()),
+            ("PATCH", "/v1/tasks/OWN", Some(json!({"status": "merged"})))
         );
-        assert_eq!(log[1].2, Some(json!({"status": "in_testing"})));
     }
 
     fn configurator(m: &str, t: &str) -> (u16, Value) {

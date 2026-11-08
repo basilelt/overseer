@@ -355,6 +355,18 @@ fn tasks_crud_numbers_and_projects() {
         projects,
         json!([{"path": wt, "name": "repo", "repo": "github.com/Acme/board", "missing": false, "defaultBranch": "feature/AS-42-board"}])
     );
+    let agy = app.ok(
+        "POST",
+        "/v1/tasks",
+        json!({"title": "Antigravity", "project": wt, "agent": "agy", "effort": "high"}),
+    );
+    let agy_id = agy["id"].as_str().unwrap();
+    let agy = app.ok(
+        "PATCH",
+        &format!("/v1/tasks/{agy_id}"),
+        json!({"effort": "xhigh"}),
+    );
+    assert_eq!(agy["effort"], "xhigh");
 }
 
 #[test]
@@ -473,6 +485,105 @@ fn task_start_runs_the_agent_in_a_term_and_goes_in_testing() {
     );
     wait_for(|| (app.task(&id)["status"] == "in_testing").then_some(()));
     assert!(app.task(&id).get("error").is_none());
+}
+
+fn mcp_status(app: &App, own: &str, status: &str) -> Value {
+    let msgs = [
+        json!({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": {"name": "t", "version": "0"}}}),
+        json!({"jsonrpc": "2.0", "method": "notifications/initialized"}),
+        json!({"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": "set_task_status", "arguments": {"status": status}}}),
+    ];
+    let input: String = msgs.iter().map(|m| format!("{m}\n")).collect();
+    let mut c = Command::new(bin());
+    app.fx.env(&mut c);
+    c.env("OVERSEER_TASK_ID", own).arg("mcp");
+    let out = output(&mut c, Some(&input));
+    let last = String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .last()
+        .unwrap()
+        .to_string();
+    serde_json::from_str::<Value>(&last).unwrap()["result"].clone()
+}
+
+#[test]
+fn a_landed_task_moves_to_merged_and_its_agent_can_resume_it() {
+    let app = App::new("merged", json!({"autoConcurrency": 0}));
+    let wt = app.fx.wt.to_string_lossy().into_owned();
+    let t = app.ok(
+        "POST",
+        "/v1/tasks",
+        json!({"title": "land", "description": "", "project": wt}),
+    );
+    let id = t["id"].as_str().unwrap().to_string();
+    let s = app.ok("POST", &format!("/v1/tasks/{id}/start"), json!({}));
+    let wtp = s["worktreePath"].as_str().unwrap().to_string();
+    let term = s["termId"].as_str().unwrap().to_string();
+    let mut ws = app.ws(&term);
+    read_until(&mut ws, "❯");
+
+    let r = app.req(
+        "PATCH",
+        &format!("/v1/tasks/{id}"),
+        json!({"status": "in_progress"}),
+    );
+    assert_eq!(r.0, 200, "a running task stays in progress: {r:?}");
+
+    std::fs::write(Path::new(&wtp).join("land.txt"), "landed\n").unwrap();
+    common::git(Path::new(&wtp), &["add", "-A"]);
+    common::git(Path::new(&wtp), &["commit", "-q", "-m", "land"]);
+    common::git(&app.fx.wt, &["merge", "-q", "--ff-only", "task/1-land"]);
+    send(&mut ws, "done\r");
+    wait_for(|| (app.task(&id)["status"] == "merged").then_some(()));
+    let l = app.ok("GET", "/v1/tasks?status=merged", Value::Null);
+    assert_eq!(l.as_array().unwrap().len(), 1, "{l}");
+
+    let r = mcp_status(&app, &id, "in_progress");
+    assert_eq!(r["isError"], false, "{r}");
+    assert_eq!(app.task(&id)["status"], "in_progress");
+    std::thread::sleep(std::time::Duration::from_millis(1500));
+    assert_eq!(
+        app.task(&id)["status"],
+        "in_progress",
+        "the last turn's Stop must not bounce a resumed task back to review"
+    );
+
+    let r = mcp_status(&app, &id, "in_testing");
+    assert_eq!(r["isError"], false, "{r}");
+    let r = mcp_status(&app, &id, "merged");
+    assert_eq!(r["isError"], false, "{r}");
+    assert_eq!(app.task(&id)["status"], "merged");
+    let r = mcp_status(&app, &id, "completed");
+    assert_eq!(r["isError"], true, "{r}");
+
+    app.ok(
+        "POST",
+        &format!("/v1/terms/{term}/kill"),
+        json!({"confirm": true}),
+    );
+    wait(|| app.ok("GET", &format!("/v1/terms/{term}"), Value::Null)["exited"] == true);
+    let (code, body) = app.req(
+        "PATCH",
+        &format!("/v1/tasks/{id}"),
+        json!({"status": "in_progress"}),
+    );
+    assert_eq!(code, 400, "{body}");
+    assert!(
+        body.to_string().contains("use POST /v1/tasks/{id}/start"),
+        "{body}"
+    );
+    let p = app.ok(
+        "PATCH",
+        &format!("/v1/tasks/{id}"),
+        json!({"status": "completed"}),
+    );
+    assert_eq!(p["status"], "completed");
+    std::thread::sleep(std::time::Duration::from_millis(1500));
+    assert_eq!(
+        app.task(&id)["status"],
+        "completed",
+        "a task closed by hand after it merged stays closed"
+    );
 }
 
 #[test]
@@ -1696,6 +1807,10 @@ fn agents_are_detected_and_launched_from_the_table() {
     assert_eq!(get("gemini")["version"], "gemini 0.0.0 (stub)");
     assert_eq!(get("gemini")["efforts"], json!([]));
     assert_eq!(get("gemini")["sessions"], true);
+    assert_eq!(
+        get("agy")["efforts"],
+        json!(["low", "medium", "high", "xhigh", "max"])
+    );
     assert_eq!(get("amp")["installed"], false);
     assert!(get("amp").get("version").is_none());
     assert_eq!(get("amp")["models"], json!([]));
@@ -1724,8 +1839,18 @@ fn agents_are_detected_and_launched_from_the_table() {
     assert_eq!(g["agent"], "gemini");
     assert_eq!(g["title"], "Gemini CLI");
     let cmd = strs(&g["cmd"]);
-    assert_eq!(cmd[..2], ["gemini", "--session-id"]);
-    assert_eq!(cmd[3..], ["-m", "gemini-2.5-pro"]);
+    assert_eq!(cmd[..3], ["gemini", "--approval-mode=yolo", "--session-id"]);
+    assert_eq!(cmd[4..], ["-m", "gemini-2.5-pro"]);
+
+    let agy = app.ok(
+        "POST",
+        "/v1/terms",
+        json!({"cwd": wt, "agent": "agy", "effort": "xhigh"}),
+    );
+    assert_eq!(
+        strs(&agy["cmd"]),
+        ["agy", "--mode=auto", "--effort", "xhigh"]
+    );
 
     let c = app.ok(
         "POST",
@@ -1734,11 +1859,12 @@ fn agents_are_detected_and_launched_from_the_table() {
     );
     let ctid = c["id"].as_str().unwrap().to_string();
     let cmd = strs(&c["cmd"]);
-    let sid = cmd[1].strip_prefix("--session-id=").unwrap().to_string();
-    assert_eq!(cmd[2..], ["--model", "gpt-5.2", "--effort", "xhigh"]);
+    assert_eq!(cmd[1], "--allow-all");
+    let sid = cmd[2].strip_prefix("--session-id=").unwrap().to_string();
+    assert_eq!(cmd[3..], ["--model", "gpt-5.2", "--effort", "xhigh"]);
     wait(|| {
         stub_log(&app).contains(&format!(
-            "copilot --session-id={sid} --model gpt-5.2 --effort xhigh"
+            "copilot --allow-all --session-id={sid} --model gpt-5.2 --effort xhigh"
         ))
     });
 
@@ -1779,6 +1905,7 @@ fn agents_are_detected_and_launched_from_the_table() {
             "gpt-5.2".into(),
             "--effort".into(),
             "xhigh".into(),
+            "--allow-all".into(),
             format!("--resume={sid}")
         ]
     );
@@ -1838,6 +1965,141 @@ fn agents_are_detected_and_launched_from_the_table() {
 }
 
 #[test]
+fn agent_auto_approval_settings_persist_and_control_new_term_argv() {
+    let mut app = App::new("agent-auto-approval", json!({"autoConcurrency": 0}));
+    let default = app.ok("GET", "/v1/agents/settings", Value::Null);
+    assert_eq!(default["autoApprove"]["claude"], true);
+    assert_eq!(default["autoApprove"]["codex"], true);
+    assert_eq!(default["autoApprove"].as_object().unwrap().len(), 7);
+
+    let disabled = app.ok(
+        "PUT",
+        "/v1/agents/settings",
+        json!({"agent": "codex", "autoApprove": false}),
+    );
+    assert_eq!(disabled["autoApprove"]["codex"], false);
+    assert_eq!(disabled["autoApprove"]["claude"], true);
+    app.crash_and_restart();
+    assert_eq!(
+        app.ok("GET", "/v1/agents/settings", Value::Null)["autoApprove"]["codex"],
+        false
+    );
+
+    let cwd = app.fx.wt.to_string_lossy().into_owned();
+    let codex = app.ok(
+        "POST",
+        "/v1/terms",
+        json!({"cwd": cwd, "agent": "codex", "cols": 120, "rows": 32}),
+    );
+    let disabled_id = codex["id"].as_str().unwrap().to_string();
+    let disabled_cmd = strs(&codex["cmd"]);
+    assert!(!disabled_cmd.contains(&"--sandbox".to_string()));
+    assert!(!disabled_cmd.contains(&"--ask-for-approval".to_string()));
+
+    app.ok(
+        "PUT",
+        "/v1/agents/settings",
+        json!({"agent": "codex", "autoApprove": true}),
+    );
+    let codex = app.ok(
+        "POST",
+        "/v1/terms",
+        json!({"cwd": cwd, "agent": "codex", "cols": 120, "rows": 32}),
+    );
+    let cmd = strs(&codex["cmd"]);
+    assert!(cmd.windows(2).any(|w| w == ["--ask-for-approval", "never"]));
+    let enabled_id = codex["id"].as_str().unwrap().to_string();
+
+    let task = app.ok(
+        "POST",
+        "/v1/tasks",
+        json!({"title": "Auto approve", "project": cwd, "agent": "codex"}),
+    );
+    let task = app.ok(
+        "POST",
+        &format!("/v1/tasks/{}/start", task["id"].as_str().unwrap()),
+        json!({}),
+    );
+    let task_term = app.ok(
+        "GET",
+        &format!("/v1/terms/{}", task["termId"].as_str().unwrap()),
+        Value::Null,
+    );
+    assert!(strs(&task_term["cmd"])
+        .windows(2)
+        .any(|w| w == ["--ask-for-approval", "never"]));
+
+    assert_eq!(
+        app.req("PUT", "/v1/agents/settings", json!({"agent": "claude"}))
+            .0,
+        400
+    );
+    assert_eq!(
+        app.req(
+            "PUT",
+            "/v1/agents/settings",
+            json!({"agent": "amp", "autoApprove": false})
+        )
+        .0,
+        400
+    );
+    app.ok(
+        "POST",
+        &format!("/v1/terms/{disabled_id}/kill"),
+        json!({"confirm": true}),
+    );
+    app.ok(
+        "POST",
+        &format!("/v1/terms/{enabled_id}/kill"),
+        json!({"confirm": true}),
+    );
+    app.ok(
+        "POST",
+        &format!("/v1/terms/{}/kill", task["termId"].as_str().unwrap()),
+        json!({"confirm": true}),
+    );
+}
+
+#[test]
+fn explicit_start_args_win_over_auto_approve_in_task_argv() {
+    let app = App::new(
+        "explicit-approval",
+        json!({"autoConcurrency": 0, "startArgs": ["--permission-mode", "acceptEdits"]}),
+    );
+    let cwd = app.fx.wt.to_string_lossy().into_owned();
+    let task = app.ok(
+        "POST",
+        "/v1/tasks",
+        json!({"title": "Explicit", "project": cwd, "agent": "claude"}),
+    );
+    let task = app.ok(
+        "POST",
+        &format!("/v1/tasks/{}/start", task["id"].as_str().unwrap()),
+        json!({}),
+    );
+    let term = app.ok(
+        "GET",
+        &format!("/v1/terms/{}", task["termId"].as_str().unwrap()),
+        Value::Null,
+    );
+    let cmd = strs(&term["cmd"]);
+    assert_eq!(
+        cmd.iter().filter(|a| *a == "--permission-mode").count(),
+        1,
+        "{cmd:?}"
+    );
+    assert!(cmd
+        .windows(2)
+        .any(|w| w == ["--permission-mode", "acceptEdits"]));
+    assert!(!cmd.contains(&"auto".to_string()));
+    app.ok(
+        "POST",
+        &format!("/v1/terms/{}/kill", task["termId"].as_str().unwrap()),
+        json!({"confirm": true}),
+    );
+}
+
+#[test]
 fn tasks_take_any_agent_and_deliver_the_prompt_by_flag() {
     let app = App::new("taskagents", json!({"autoConcurrency": 0}));
     let wt = app.fx.wt.to_string_lossy().into_owned();
@@ -1891,7 +2153,20 @@ fn tasks_take_any_agent_and_deliver_the_prompt_by_flag() {
     let tid = o["termId"].as_str().unwrap().to_string();
     let mut ws = app.ws(&tid);
     read_until(&mut ws, "got: Paste");
-    assert!(stub_log(&app).contains("codex -c model_reasoning_effort=low"));
+    let log = stub_log(&app);
+    assert!(log.contains("codex --no-daemon -c "), "{log}");
+    assert!(
+        log.contains("-c mcp_servers.overseer.args=[\"mcp\"]"),
+        "{log}"
+    );
+    assert!(
+        log.contains(&format!(
+            "-c mcp_servers.overseer.env.OVERSEER_TASK_ID=\"{pid}\""
+        )),
+        "{log}"
+    );
+    assert!(log.contains("--ask-for-approval never"), "{log}");
+    assert!(log.contains("-c model_reasoning_effort=low"), "{log}");
     for t in [s["termId"].as_str().unwrap(), &tid] {
         app.ok(
             "POST",
@@ -2292,6 +2567,9 @@ fn profiles_apply_at_launch_with_workspace_and_task_precedence() {
     let wt = app.fx.wt.to_string_lossy().into_owned();
     let p = app.ok("GET", "/v1/profiles", Value::Null);
     assert_eq!(p["default"], "");
+    assert_eq!(p["support"]["agy"]["effort"], "flag");
+    assert_eq!(p["support"]["gemini"]["subagents"], "file");
+    assert_eq!(p["support"]["agy"]["subagents"], "file");
     let ids: Vec<&str> = p["profiles"]
         .as_array()
         .unwrap()
@@ -2303,7 +2581,11 @@ fn profiles_apply_at_launch_with_workspace_and_task_precedence() {
     assert_eq!(p["support"]["codex"]["subagentModel"], "flag");
 
     let plain = app.ok("POST", "/v1/terms", json!({"cwd": wt, "agent": "claude"}));
-    assert_eq!(strs(&plain["cmd"]).len(), 3);
+    let plain_cmd = strs(&plain["cmd"]);
+    assert_eq!(plain_cmd.len(), 5);
+    assert!(plain_cmd
+        .windows(2)
+        .any(|w| w == ["--permission-mode", "auto"]));
     assert!(plain.get("profile").is_none());
 
     for bad in [
@@ -2320,37 +2602,62 @@ fn profiles_apply_at_launch_with_workspace_and_task_precedence() {
         json!({
             "default": "balanced",
             "scopes": {wt.clone(): "economy"},
-            "profiles": [{"id": "lean", "name": "Lean", "agents": {"claude": {"model": "haiku", "effort": "low"}}}],
+            "profiles": [
+                {"id": "lean", "name": "Lean", "agents": {"claude": {"model": "haiku", "effort": "low"}}},
+                {"id": "codex-overrides", "name": "Codex overrides", "agents": {"codex": {"subagentModel": "gpt-5.4-mini", "subagentEffort": "medium"}}}
+            ],
         }),
     );
 
     let scoped = app.ok("POST", "/v1/terms", json!({"cwd": wt, "agent": "claude"}));
     let cmd = strs(&scoped["cmd"]);
-    assert_eq!(cmd[3..], ["--model", "sonnet", "--effort", "low"]);
+    assert!(cmd.windows(2).any(|w| w == ["--model", "sonnet"]));
+    assert!(cmd.windows(2).any(|w| w == ["--effort", "low"]));
     assert_eq!(scoped["profile"]["name"], "Economy");
     assert_eq!(scoped["profile"]["effort"], "low");
 
-    let home = app.ok("POST", "/v1/terms", json!({"cwd": "/", "agent": "claude"}));
-    assert_eq!(
-        strs(&home["cmd"])[3..],
-        ["--model", "sonnet", "--effort", "medium"]
+    let codex = app.ok(
+        "POST",
+        "/v1/terms",
+        json!({"cwd": wt, "agent": "codex", "profile": "codex-overrides"}),
     );
+    assert_eq!(
+        strs(&codex["cmd"]),
+        [
+            "codex",
+            "--no-daemon",
+            "-c",
+            "agents.default_subagent_model=\"gpt-5.4-mini\"",
+            "-c",
+            "agents.default_subagent_reasoning_effort=\"medium\"",
+            "--ask-for-approval",
+            "never",
+        ]
+    );
+
+    let home = app.ok("POST", "/v1/terms", json!({"cwd": "/", "agent": "claude"}));
+    let home_cmd = strs(&home["cmd"]);
+    assert!(home_cmd.windows(2).any(|w| w == ["--model", "sonnet"]));
+    assert!(home_cmd.windows(2).any(|w| w == ["--effort", "medium"]));
 
     let explicit = app.ok(
         "POST",
         "/v1/terms",
         json!({"cwd": wt, "agent": "claude", "profile": "lean", "effort": "high"}),
     );
-    assert_eq!(
-        strs(&explicit["cmd"])[3..],
-        ["--model", "haiku", "--effort", "high"]
-    );
+    let explicit_cmd = strs(&explicit["cmd"]);
+    assert!(explicit_cmd.windows(2).any(|w| w == ["--model", "haiku"]));
+    assert!(explicit_cmd.windows(2).any(|w| w == ["--effort", "high"]));
     let none = app.ok(
         "POST",
         "/v1/terms",
         json!({"cwd": wt, "agent": "claude", "profile": "none"}),
     );
-    assert_eq!(strs(&none["cmd"]).len(), 3);
+    let none_cmd = strs(&none["cmd"]);
+    assert_eq!(none_cmd.len(), 5);
+    assert!(none_cmd
+        .windows(2)
+        .any(|w| w == ["--permission-mode", "auto"]));
     let inherit = app.ok(
         "POST",
         "/v1/terms",
@@ -2423,6 +2730,115 @@ fn profiles_apply_at_launch_with_workspace_and_task_precedence() {
         .0,
         400
     );
+}
+
+#[test]
+fn profiles_list_and_apply_gemini_and_antigravity_subagent_models_over_http() {
+    let app = App::new("gsubs", json!({"autoConcurrency": 0}));
+    let wt = app.fx.wt.to_string_lossy().into_owned();
+    let home = app.fx.base.join("home/.gemini");
+    let gemini_project = app.fx.wt.join(".gemini/agents/researcher.md");
+    let gemini_user = home.join("agents/researcher.md");
+    let agy_project = app.fx.wt.join(".agents/agents/security/agent.md");
+    let agy_user = home.join("config/agents/security/agent.md");
+    for path in [&gemini_project, &gemini_user, &agy_project, &agy_user] {
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    }
+    std::fs::write(
+        &gemini_project,
+        "---\nname: researcher\nmodel: gemini-2.5-flash\n---\nproject agent\n",
+    )
+    .unwrap();
+    std::fs::write(
+        &gemini_user,
+        "---\nname: researcher\nmodel: gemini-2.5-pro\n---\nuser agent\n",
+    )
+    .unwrap();
+    std::fs::write(
+        &agy_project,
+        "---\nname: security\nmodel: flash\n---\nproject agent\n",
+    )
+    .unwrap();
+    std::fs::write(
+        &agy_user,
+        "---\nname: security\nmodel: pro\n---\nuser agent\n",
+    )
+    .unwrap();
+
+    let query = format!("/v1/profiles/subagents?cwd={}", wt.replace('/', "%2F"));
+    let listed = app.ok("GET", &query, Value::Null);
+    let defs = listed["subagents"].as_array().unwrap();
+    let gemini = defs
+        .iter()
+        .find(|d| d["agent"] == "gemini" && d["name"] == "researcher")
+        .unwrap();
+    let agy = defs
+        .iter()
+        .find(|d| d["agent"] == "agy" && d["name"] == "security")
+        .unwrap();
+    assert_eq!(gemini["scope"], "project");
+    assert_eq!(gemini["model"], "gemini-2.5-flash");
+    assert_eq!(agy["scope"], "project");
+    assert_eq!(agy["model"], "flash");
+
+    app.ok(
+        "PUT",
+        "/v1/profiles",
+        json!({"profiles": [{"id": "google-agents", "name": "Google agents", "agents": {
+            "gemini": {"subagents": {"researcher": {"model": "gemini-3.1-pro"}}},
+            "agy": {"subagents": {"security": {"model": "pro"}}}
+        }}]}),
+    );
+    let dry = app.ok(
+        "POST",
+        "/v1/profiles/apply-files",
+        json!({"profile": "google-agents", "cwd": wt, "dryRun": true}),
+    );
+    let files: Vec<String> = dry["files"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|f| f["path"].as_str().unwrap().to_string())
+        .collect();
+    assert_eq!(
+        files,
+        [
+            agy_project.to_string_lossy().into_owned(),
+            gemini_project.to_string_lossy().into_owned(),
+        ]
+    );
+    let applied = app.ok(
+        "POST",
+        "/v1/profiles/apply-files",
+        json!({"profile": "google-agents", "cwd": wt, "dryRun": false, "files": files}),
+    );
+    assert!(applied["files"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .all(|f| f["written"] == true));
+    for file in applied["files"].as_array().unwrap() {
+        let backup = file["backup"].as_str().unwrap();
+        let previous = std::fs::read_to_string(backup).unwrap();
+        if file["path"] == gemini_project.to_string_lossy().as_ref() {
+            assert!(previous.contains("model: gemini-2.5-flash"));
+        } else {
+            assert_eq!(file["path"], agy_project.to_string_lossy().as_ref());
+            assert!(previous.contains("model: flash"));
+        }
+    }
+    assert!(std::fs::read_to_string(gemini_project)
+        .unwrap()
+        .contains("model: gemini-3.1-pro"));
+    assert!(std::fs::read_to_string(agy_project)
+        .unwrap()
+        .contains("model: pro"));
+    assert!(std::fs::read_to_string(gemini_user)
+        .unwrap()
+        .contains("model: gemini-2.5-pro"));
+    assert!(std::fs::read_to_string(agy_user)
+        .unwrap()
+        .contains("model: pro"));
 }
 
 #[test]
@@ -2892,6 +3308,41 @@ fn an_agent_that_quits_right_after_starting_a_turn_still_leaves_its_session() {
 }
 
 #[test]
+fn closing_an_idle_codex_session_accepts_its_dim_composer_prompt() {
+    // Given a Codex session at its idle composer, whose prompt marker is dim gray
+    // When the app checks and closes the selected agent through the real daemon
+    // Then the prompt passes the safety check and the line is closed
+    let app = App::new("closecodex", json!({}));
+    let wt = app.fx.wt.to_string_lossy().into_owned();
+    let t = app.ok(
+        "POST",
+        "/v1/terms",
+        json!({"cwd": wt, "agent": "codex", "cols": 120, "rows": 24}),
+    );
+    let id = t["id"].as_str().unwrap().to_string();
+    let mut ws = app.ws(&id);
+    read_until(&mut ws, "codex ready");
+    send(&mut ws, "busy\r");
+    let line = wait_for(|| line_of(&app, &id));
+    let lid = line["line"]["id"].as_str().unwrap().to_string();
+    send(&mut ws, "done\r");
+    wait(|| line_json(&app, &lid)["local"]["busy"] == false);
+
+    let (code, plan) = app.req("POST", &format!("/v1/lines/{lid}/close"), Value::Null);
+    assert_eq!(code, 200, "{plan}");
+    assert_eq!(plan["action"], "would-close", "{plan}");
+    assert_eq!(plan["predicates"]["inputEmpty"]["ok"], true, "{plan}");
+
+    let closed = app.ok(
+        "POST",
+        &format!("/v1/lines/{lid}/close?dryRun=false"),
+        Value::Null,
+    );
+    assert_eq!(closed["action"], "closed", "{closed}");
+    wait(|| line_json(&app, &lid)["line"]["state"] == "hung-up");
+}
+
+#[test]
 fn ending_a_busy_agent_session_needs_force_and_then_ends_its_term() {
     // Given a codex session in a term that is busy with a turn
     // When the session is closed as ending its tab does, first without and then with force=true
@@ -3035,6 +3486,7 @@ fn a_restored_feedback_session_resumes_without_its_initial_prompt() {
         .unwrap()
         .to_string();
     wait(|| stub().contains("File this issue from"));
+    assert!(stub().contains("--permission-mode auto"), "{}", stub());
     assert_eq!(stub().lines().count(), 1, "{}", stub());
     wait(|| {
         let (_, v) = fx.req("GET", "/v1/lines?all=true", "");

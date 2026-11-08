@@ -168,9 +168,9 @@ export interface NewTerm {
   worktree?: boolean | { branch?: string; base?: string; slug?: string };
 }
 
-export type TaskStatus = 'pending' | 'auto' | 'in_progress' | 'in_testing' | 'completed';
-export type Effort = 'low' | 'medium' | 'high' | 'max';
-export const TASK_STATUSES: TaskStatus[] = ['pending', 'auto', 'in_progress', 'in_testing', 'completed'];
+export type TaskStatus = 'pending' | 'auto' | 'in_progress' | 'in_testing' | 'merged' | 'completed';
+export type Effort = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+export const TASK_STATUSES: TaskStatus[] = ['pending', 'auto', 'in_progress', 'in_testing', 'merged', 'completed'];
 
 export type TaskOrigin = 'user' | 'session' | 'agent' | 'organizer' | 'configurator';
 export type TaskBadge = 'needs_input' | 'paused';
@@ -497,6 +497,28 @@ export interface HookResult {
 export interface HooksRun {
   dryRun: boolean;
   results: HookResult[];
+}
+
+export type UninstallKind = 'service' | 'linger' | 'hook' | 'statusline' | 'backup' | 'dir' | 'worktree' | 'branch' | 'appData' | 'stateDir';
+
+export interface UninstallItem {
+  kind: UninstallKind;
+  path: string;
+}
+
+export interface UninstallKept extends UninstallItem {
+  reason: string;
+}
+
+export interface UninstallFailure extends UninstallItem {
+  error: string;
+}
+
+export interface UninstallReport {
+  dryRun: boolean;
+  removed: UninstallItem[];
+  kept: UninstallKept[];
+  errors: UninstallFailure[];
 }
 
 export interface HostTarget {

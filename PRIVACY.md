@@ -39,8 +39,15 @@ Overseer is a developer tool and is not directed at children under 13.
 
 ## Deleting your data
 
-All app data is on your device and your servers. Uninstall the app or clear its storage to delete
-it from the device; remove the `~/.overseer` folder to delete it from a server.
+All app data is on your device and your servers. Overseer also writes outside its own folders
+(agent hook entries, a statusline wrapper, a boot service), so removing a folder or dragging the app
+to the trash is not enough. Use **Settings, Connection, Remove Overseer from this computer** (or
+`overseer uninstall --apply` on a server) before deleting the app: it lists everything, then removes
+the hooks, the statusline, the boot service, `~/.overseer`, the state directory
+(`~/.local/state/overseer` on Linux, `~/Library/Application Support/overseer` on macOS,
+`%LOCALAPPDATA%\overseer` on Windows, or `$OVERSEER_STATE_DIR`) and the app's own data. The
+Windows uninstaller does this by itself, and `brew uninstall --zap --cask overseer` does too.
+See the Uninstall section of the [user guide](docs/user-guide.md).
 
 ## Changes
 

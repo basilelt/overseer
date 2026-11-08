@@ -4,6 +4,7 @@ use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 pub const EFFORTS: &[&str] = &["low", "medium", "high", "max"];
+pub const AGY_EFFORTS: &[&str] = &["low", "medium", "high", "xhigh", "max"];
 
 type Argv = &'static [&'static str];
 type Renames = &'static [(&'static str, &'static str)];
@@ -94,6 +95,7 @@ pub static AGENTS: &[Agent] = &[
         bin: "agy",
         install: "see https://antigravity.google/download",
         model_flag: Some("--model"),
+        effort: Some((&["--effort", "{}"], &[])),
         prompt: Some("-i"),
         resume: Some(&["{flags}", "--conversation", "{id}"]),
         cont: Some(&["--continue"]),
@@ -197,6 +199,100 @@ pub struct Launch<'a> {
     pub session: Option<&'a str>,
     pub prompt: Option<&'a str>,
     pub extra: &'a [String],
+    pub auto_approve: bool,
+}
+
+const AUTO_APPROVE_KEY: &str = "agent.autoApprove.";
+
+/// CLI-native auto-approval flags for agents that expose a launch-time mode.
+/// Amp currently auto-approves by default unless the user's Amp permission
+/// configuration opts into a policy, so it needs no launch flag.
+pub fn auto_approve_args(id: &str) -> Option<&'static [&'static str]> {
+    match id {
+        "claude" => Some(&["--permission-mode", "auto"]),
+        "codex" => Some(&["--ask-for-approval", "never"]),
+        "gemini" => Some(&["--approval-mode=yolo"]),
+        "agy" => Some(&["--mode=auto"]),
+        "opencode" => Some(&["--auto"]),
+        "copilot" => Some(&["--allow-all"]),
+        "cursor" => Some(&["--force"]),
+        _ => None,
+    }
+}
+
+fn approval_overrides(id: &str) -> &'static [&'static str] {
+    match id {
+        "claude" => &[
+            "--permission-mode",
+            "--dangerously-skip-permissions",
+            "--allow-dangerously-skip-permissions",
+        ],
+        "codex" => &[
+            "--ask-for-approval",
+            "-a",
+            "--full-auto",
+            "--yolo",
+            "--dangerously-bypass-approvals-and-sandbox",
+        ],
+        "gemini" => &["--approval-mode", "--yolo", "-y"],
+        "agy" => &["--mode"],
+        "opencode" => &["--auto"],
+        "copilot" => &["--allow-all", "--allow-all-tools", "--yolo"],
+        "cursor" => &["--force", "-f", "--yolo"],
+        _ => &[],
+    }
+}
+
+pub fn auto_approve_flags(id: &str, extra: &[String]) -> Vec<String> {
+    let Some(flags) = auto_approve_args(id) else {
+        return vec![];
+    };
+    let overrides = approval_overrides(id);
+    let set = extra.iter().any(|arg| {
+        let name = arg.split_once('=').map_or(arg.as_str(), |(n, _)| n);
+        overrides.contains(&name)
+    });
+    if set {
+        vec![]
+    } else {
+        flags.iter().map(|f| (*f).to_string()).collect()
+    }
+}
+
+pub fn auto_approve_enabled(reg: &crate::registry::Registry, id: &str) -> Result<bool, String> {
+    if auto_approve_args(id).is_none() {
+        return Ok(false);
+    }
+    Ok(reg
+        .get(&format!("{AUTO_APPROVE_KEY}{id}"))?
+        .is_none_or(|value| value == "true"))
+}
+
+pub fn auto_approve_settings(reg: &crate::registry::Registry) -> Result<Value, String> {
+    let mut settings = serde_json::Map::new();
+    for agent in AGENTS {
+        if auto_approve_args(agent.id).is_some() {
+            settings.insert(
+                agent.id.to_string(),
+                json!(auto_approve_enabled(reg, agent.id)?),
+            );
+        }
+    }
+    Ok(json!({"autoApprove": settings}))
+}
+
+pub fn set_auto_approve(
+    reg: &crate::registry::Registry,
+    id: &str,
+    enabled: bool,
+) -> Result<(), String> {
+    if auto_approve_args(id).is_none() {
+        return Err(format!("auto approval is not configurable for agent {id}"));
+    }
+    reg.put(
+        &format!("{AUTO_APPROVE_KEY}{id}"),
+        if enabled { "true" } else { "false" },
+    )
 }
 
 impl Agent {
@@ -210,9 +306,21 @@ impl Agent {
 
     pub fn efforts(&self) -> &'static [&'static str] {
         if self.effort.is_some() {
-            EFFORTS
+            if self.id == "agy" {
+                AGY_EFFORTS
+            } else {
+                EFFORTS
+            }
         } else {
             &[]
+        }
+    }
+
+    pub fn valid_efforts(&self) -> &'static [&'static str] {
+        if self.effort.is_some() {
+            self.efforts()
+        } else {
+            EFFORTS
         }
     }
 
@@ -231,12 +339,29 @@ impl Agent {
         a
     }
 
+    pub fn mode_flags(&self, effort: &str, extra: &[String]) -> Vec<String> {
+        let needs_embedded = self.id == "codex"
+            && (!effort.is_empty()
+                || extra
+                    .iter()
+                    .any(|arg| matches!(arg.as_str(), "-c" | "--config")));
+        if needs_embedded && !extra.iter().any(|arg| arg == "--no-daemon") {
+            vec!["--no-daemon".to_string()]
+        } else {
+            vec![]
+        }
+    }
+
     pub fn launch(&self, l: &Launch) -> Vec<String> {
         let mut a = vec![self.program()];
         if self.bin.is_empty() {
             return a;
         }
+        a.extend(self.mode_flags(l.effort, l.extra));
         a.extend(l.extra.iter().cloned());
+        if l.auto_approve {
+            a.extend(auto_approve_flags(self.id, l.extra));
+        }
         if let (Some(parts), Some(s)) = (self.session, l.session) {
             a.extend(fill(parts, s));
         }
@@ -297,9 +422,34 @@ pub fn redact(argv: &[String], agent: &Agent, prompt: Option<&str>) -> Vec<Strin
     out
 }
 
+// Windows: std::process::Command only finds `<bin>.exe` on PATH, so an npm install (`claude.cmd`)
+// went undetected while the terminal (portable-pty searches PATHEXT) still launched it.
+pub fn on_path(bin: &str, path: &std::ffi::OsStr, exts: &str) -> Option<std::path::PathBuf> {
+    std::env::split_paths(path).find_map(|dir| {
+        exts.split(';')
+            .filter(|e| !e.is_empty())
+            .map(|e| dir.join(format!("{bin}{e}")))
+            .find(|p| p.is_file())
+    })
+}
+
+fn program(bin: &str) -> std::path::PathBuf {
+    if cfg!(windows) {
+        let path = std::env::var_os("PATH").unwrap_or_default();
+        let exts = std::env::var("PATHEXT").unwrap_or_else(|_| ".COM;.EXE;.BAT;.CMD".into());
+        if let Some(p) = on_path(bin, &path, &exts) {
+            return p;
+        }
+    }
+    bin.into()
+}
+
 pub fn version(bin: &str) -> Option<String> {
-    let o = crate::git::output_within(Command::new(bin).arg("--version"), Duration::from_secs(5))
-        .ok()?;
+    let o = crate::git::output_within(
+        Command::new(program(bin)).arg("--version"),
+        Duration::from_secs(5),
+    )
+    .ok()?;
     let out = String::from_utf8_lossy(&o.stdout);
     o.status.success().then(|| {
         out.lines()
@@ -374,6 +524,29 @@ pub fn rescan() -> Value {
 mod tests {
     use super::*;
 
+    #[test]
+    fn on_path_finds_a_cmd_shim_by_pathext() {
+        let root = std::env::temp_dir().join(format!("ov-onpath-{}", std::process::id()));
+        let (a, b) = (root.join("a"), root.join("b"));
+        std::fs::create_dir_all(&a).unwrap();
+        std::fs::create_dir_all(&b).unwrap();
+        std::fs::write(a.join("claude"), "").unwrap();
+        std::fs::write(b.join("claude.cmd"), "").unwrap();
+        let path = std::env::join_paths([&a, &b]).unwrap();
+        assert_eq!(
+            on_path("claude", &path, ".COM;.EXE;.BAT;.cmd"),
+            Some(b.join("claude.cmd"))
+        );
+        std::fs::write(a.join("claude.exe"), "").unwrap();
+        assert_eq!(
+            on_path("claude", &path, ".exe;.cmd"),
+            Some(a.join("claude.exe"))
+        );
+        assert_eq!(on_path("codex", &path, ".exe;.cmd"), None);
+        assert_eq!(on_path("claude", &path, ""), None);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
     fn s(v: &[&str]) -> Vec<String> {
         v.iter().map(|x| x.to_string()).collect()
     }
@@ -385,6 +558,7 @@ mod tests {
             session,
             prompt: Some("do it"),
             extra: &[],
+            auto_approve: false,
         })
     }
 
@@ -404,7 +578,7 @@ mod tests {
         );
         assert_eq!(
             launch("codex", "", "max", None),
-            s(&["codex", "-c", "model_reasoning_effort=xhigh"])
+            s(&["codex", "--no-daemon", "-c", "model_reasoning_effort=xhigh"])
         );
         assert_eq!(
             launch("gemini", "gemini-2.5-pro", "high", Some("u2")),
@@ -439,8 +613,102 @@ mod tests {
             launch("opencode", "anthropic/x", "low", None),
             s(&["opencode", "-m", "anthropic/x", "--prompt", "do it"])
         );
-        assert_eq!(launch("agy", "", "high", None), s(&["agy", "-i", "do it"]));
+        assert_eq!(
+            launch("agy", "", "high", None),
+            s(&["agy", "--effort", "high", "-i", "do it"])
+        );
         assert_eq!(launch("cursor", "", "high", None), s(&["cursor-agent"]));
+    }
+
+    #[test]
+    fn codex_config_override_selects_embedded_mode() {
+        let extra = s(&["-c", "mcp_servers.overseer.args=[\"mcp\"]"]);
+        let argv = get("codex").unwrap().launch(&Launch {
+            model: "",
+            effort: "",
+            session: None,
+            prompt: None,
+            extra: &extra,
+            auto_approve: false,
+        });
+        assert_eq!(
+            argv,
+            s(&[
+                "codex",
+                "--no-daemon",
+                "-c",
+                "mcp_servers.overseer.args=[\"mcp\"]",
+            ])
+        );
+    }
+
+    #[test]
+    fn auto_approval_uses_each_cli_native_mode() {
+        let expected = [
+            ("claude", &["--permission-mode", "auto"][..]),
+            ("codex", &["--ask-for-approval", "never"][..]),
+            ("gemini", &["--approval-mode=yolo"][..]),
+            ("agy", &["--mode=auto"][..]),
+            ("opencode", &["--auto"][..]),
+            ("copilot", &["--allow-all"][..]),
+            ("cursor", &["--force"][..]),
+        ];
+        for (id, flags) in expected {
+            assert_eq!(auto_approve_args(id), Some(flags), "{id}");
+            let argv = get(id).unwrap().launch(&Launch {
+                model: "",
+                effort: "",
+                session: None,
+                prompt: None,
+                extra: &[],
+                auto_approve: true,
+            });
+            assert!(
+                argv.windows(flags.len()).any(|w| w == flags),
+                "{id}: {argv:?}"
+            );
+        }
+        assert_eq!(auto_approve_args("amp"), None);
+        assert_eq!(auto_approve_args("shell"), None);
+    }
+
+    #[test]
+    fn explicit_approval_flags_in_extra_suppress_auto_approve() {
+        let cases: [(&str, &[&str]); 9] = [
+            ("claude", &["--permission-mode", "acceptEdits"]),
+            ("claude", &["--permission-mode=plan"]),
+            ("claude", &["--dangerously-skip-permissions"]),
+            ("codex", &["-a", "on-request"]),
+            ("codex", &["--ask-for-approval=untrusted"]),
+            ("gemini", &["--approval-mode", "default"]),
+            ("gemini", &["--yolo"]),
+            ("agy", &["--mode", "ask"]),
+            ("cursor", &["--force"]),
+        ];
+        for (id, extra) in cases {
+            let extra: Vec<String> = extra.iter().map(|a| (*a).to_string()).collect();
+            assert!(auto_approve_flags(id, &extra).is_empty(), "{id} {extra:?}");
+            let argv = get(id).unwrap().launch(&Launch {
+                model: "",
+                effort: "",
+                session: None,
+                prompt: None,
+                extra: &extra,
+                auto_approve: true,
+            });
+            let n = auto_approve_args(id).unwrap()[0].split('=').next().unwrap();
+            let count = argv
+                .iter()
+                .filter(|a| a.split('=').next() == Some(n))
+                .count();
+            assert!(count <= 1, "{id}: {argv:?}");
+        }
+        let unrelated = vec!["--verbose".to_string()];
+        assert_eq!(
+            auto_approve_flags("claude", &unrelated),
+            vec!["--permission-mode".to_string(), "auto".to_string()]
+        );
+        assert!(auto_approve_flags("amp", &[]).is_empty());
     }
 
     #[test]

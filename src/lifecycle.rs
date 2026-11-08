@@ -294,7 +294,7 @@ pub fn routes(method: &str, segs: &[&str], body: &Value, state_dir: &Path) -> Op
                 None => {}
             }
             if body.get("linger").and_then(Value::as_bool) == Some(true) {
-                errors.extend(autostart::enable_linger(&env, &autostart::run_cmd).err());
+                errors.extend(autostart::enable_linger(&env, &autostart::run_cmd, state_dir).err());
             }
             let mut out = payload(state_dir, &reg);
             if !errors.is_empty() {

@@ -249,14 +249,16 @@ fn term_spec(b: &Value, state_dir: &std::path::Path) -> Result<crate::term::Spec
         if !crate::agents::is_installed(a) {
             return Err(format!("{} is not installed ({})", a.name, a.bin));
         }
+        let reg = crate::registry::Registry::open(state_dir)?;
+        let auto_approve = crate::agents::auto_approve_enabled(&reg, a.id)?;
         let (model, effort) = (
             s("model")?.unwrap_or_default(),
             s("effort")?.unwrap_or_default(),
         );
-        if !effort.is_empty() && !crate::agents::EFFORTS.contains(&effort.as_str()) {
+        if !effort.is_empty() && !a.valid_efforts().contains(&effort.as_str()) {
             return Err(format!(
                 "effort must be one of {}",
-                crate::agents::EFFORTS.join(", ")
+                a.valid_efforts().join(", ")
             ));
         }
         let applied = crate::profiles::for_launch(
@@ -270,6 +272,10 @@ fn term_spec(b: &Value, state_dir: &std::path::Path) -> Result<crate::term::Spec
         .map_err(|(_, e)| e)?;
         let session = a.session.and_then(|_| crate::runner::uuid().ok());
         spec.flags = a.flags(&applied.model, &applied.effort);
+        if auto_approve {
+            spec.flags
+                .extend(crate::agents::auto_approve_flags(a.id, &applied.extra));
+        }
         spec.flags.extend(applied.extra.iter().cloned());
         spec.cmd = a.launch(&crate::agents::Launch {
             model: &applied.model,
@@ -277,6 +283,7 @@ fn term_spec(b: &Value, state_dir: &std::path::Path) -> Result<crate::term::Spec
             session: session.as_deref(),
             prompt: None,
             extra: &applied.extra,
+            auto_approve,
         });
         spec.env.extend(applied.env);
         spec.profile = applied.chip;
@@ -493,6 +500,29 @@ fn tasks(r: &Request, segs: &[&str], body: &Value, ctx: &Ctx) -> Option<(u16, Va
         ("POST", ["v1", "projects", "discover"]) => res(200, crate::discover::run(ctx)),
         ("GET", ["v1", "agents"]) => (200, crate::agents::list()),
         ("POST", ["v1", "agents", "rescan"]) => (200, crate::agents::rescan()),
+        ("GET", ["v1", "agents", "settings"]) => res(
+            200,
+            crate::registry::Registry::open(&ctx.state_dir)
+                .map_err(|e| (500, e))
+                .and_then(|reg| crate::agents::auto_approve_settings(&reg).map_err(|e| (500, e))),
+        ),
+        ("PUT", ["v1", "agents", "settings"]) => {
+            let (Some(agent), Some(enabled)) =
+                (body["agent"].as_str(), body["autoApprove"].as_bool())
+            else {
+                return Some(err(400, "agent and autoApprove are required"));
+            };
+            res(
+                200,
+                crate::registry::Registry::open(&ctx.state_dir)
+                    .map_err(|e| (500, e))
+                    .and_then(|reg| {
+                        crate::agents::set_auto_approve(&reg, agent, enabled)
+                            .map_err(|e| (400, e))?;
+                        crate::agents::auto_approve_settings(&reg).map_err(|e| (500, e))
+                    }),
+            )
+        }
         ("GET", ["v1", "env"]) => (200, crate::shellenv::to_json()),
         _ => return None,
     })
@@ -825,6 +855,7 @@ pub fn handle(ctx: &Ctx, r: &Request) -> (u16, Value) {
         .or_else(|| crate::worktrees::routes(ctx, &r.method, &segs, &body))
         .or_else(|| crate::install::routes(&r.method, &segs, &body, &ctx.state_dir))
         .or_else(|| crate::statusline::routes(&r.method, &segs, &body, &ctx.state_dir))
+        .or_else(|| crate::uninstall::routes(ctx, &r.method, &segs, &body))
         .or_else(|| crate::import::routes(&r.method, &segs, &body, &ctx.state_dir))
         .or_else(|| crate::lifecycle::routes(&r.method, &segs, &body, &ctx.state_dir))
         .or_else(|| crate::termtheme::routes(&r.method, &segs, &body))
@@ -1114,6 +1145,14 @@ pub fn conn(mut s: impl Stream, token: Option<&str>) {
         extra,
         &serde_json::to_vec(&v).unwrap_or_default(),
     );
+    if let Some(state_dir) = crate::uninstall::take_pending() {
+        let _ = s.flush();
+        std::thread::sleep(Duration::from_secs(1));
+        if let Err(e) = crate::uninstall::finish(&state_dir) {
+            eprintln!("overseer: uninstall: {e}");
+        }
+        std::process::exit(0);
+    }
 }
 
 fn settles_lines(method: &str, path: &str) -> bool {

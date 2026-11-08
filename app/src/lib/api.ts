@@ -1,7 +1,7 @@
 import { DaemonError, type DaemonClient } from './client';
 import type { StatuslineStatus } from './usage/types';
 import type { DirListing } from './dirs';
-import type { Activity, AgentInfo, BroadcastRequest, ChatPage, CustomCommand, ScreenText, BroadcastResponse, DaemonEnv, Diff, DiscoverResult, FileEdit, Folder, Group, HooksRun, HooksStatus, SwitchboardResult, SwitchboardStatus, LocalLine, NewTask, NewTerm, Profile, ProfilesStore, Project, Status, SubagentDef, Task, TaskMessage, Term, Version, Workspace, Lifecycle, LifecyclePatch } from './types';
+import type { Activity, AgentInfo, BroadcastRequest, ChatPage, CustomCommand, ScreenText, BroadcastResponse, DaemonEnv, Diff, DiscoverResult, FileEdit, Folder, Group, HooksRun, HooksStatus, SwitchboardResult, SwitchboardStatus, LocalLine, NewTask, NewTerm, Profile, ProfilesStore, Project, Status, SubagentDef, Task, TaskMessage, Term, Version, Workspace, Lifecycle, LifecyclePatch, UninstallReport } from './types';
 
 const enc = encodeURIComponent;
 
@@ -55,12 +55,16 @@ export function api(c: DaemonClient) {
     discoverProjects: () => c.request<DiscoverResult>('POST', '/v1/projects/discover'),
     agents: () => c.request<AgentInfo[]>('GET', '/v1/agents'),
     rescanAgents: () => c.request<AgentInfo[]>('POST', '/v1/agents/rescan'),
+    agentSettings: () => c.request<{ autoApprove: Record<string, boolean> }>('GET', '/v1/agents/settings'),
+    setAgentAutoApprove: (agent: string, autoApprove: boolean) =>
+      c.request<{ autoApprove: Record<string, boolean> }>('PUT', '/v1/agents/settings', { agent, autoApprove }),
     env: () => c.request<DaemonEnv>('GET', '/v1/env'),
     hooksStatus: () => c.request<HooksStatus>('GET', '/v1/hooks/status'),
     switchboardStatus: () => c.request<SwitchboardStatus>('GET', '/v1/import/switchboard'),
     importSwitchboard: () => c.request<SwitchboardResult>('POST', '/v1/import/switchboard', {}),
     lifecycle: () => c.request<Lifecycle>('GET', '/v1/lifecycle'),
     patchLifecycle: (patch: LifecyclePatch) => c.request<Lifecycle>('PATCH', '/v1/lifecycle', patch),
+    uninstall: (dryRun = true) => c.request<UninstallReport>('POST', '/v1/uninstall', { dryRun }),
     installHooks: (agents: string[], dryRun = false) => c.request<HooksRun>('POST', '/v1/hooks/install', { agents, dryRun }),
     uninstallHooks: (agents: string[], dryRun = false) => c.request<HooksRun>('POST', '/v1/hooks/uninstall', { agents, dryRun }),
     statusline: () => c.request<StatuslineStatus>('GET', '/v1/usage/statusline'),

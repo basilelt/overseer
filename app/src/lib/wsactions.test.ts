@@ -619,10 +619,12 @@ describe('itemMenu', () => {
     app.data.tasks = [{ id: 't1', lineId: 'a', status: 'in_testing', origin: 'manual' }];
     const items = itemMenu('line:a');
     const moves = items.filter((i) => i.label.startsWith(t('tasks.moveTo', { status: '' })));
-    expect(moves.map((m) => m.label)).toEqual([t('tasks.moveTo', { status: t('kanban.col.in_testing') }), t('tasks.moveTo', { status: t('kanban.col.completed') })]);
+    expect(moves.map((m) => m.label)).toEqual([t('tasks.moveTo', { status: t('kanban.col.in_testing') }), t('tasks.moveTo', { status: t('kanban.col.merged') }), t('tasks.moveTo', { status: t('kanban.col.completed') })]);
     expect(moves[0]).toMatchObject({ checked: true, disabled: true });
     expect(moves[1]).toMatchObject({ checked: false, disabled: false });
     moves[1].run!();
+    expect(app.api.patchTask).toHaveBeenCalledWith('t1', { status: 'merged' });
+    moves[2].run!();
     expect(app.api.patchTask).toHaveBeenCalledWith('t1', { status: 'completed' });
   });
 

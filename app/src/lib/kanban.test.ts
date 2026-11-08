@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { isDone } from './kanban-core';
 import { autoSummary, blockers, byId, chainOf, depCandidates, startable, flagPatch, isOrganizer, matrix, mergeMessage, organizing, quadrant, quadrantFlags, canDrop, cardMeta, modelLabel, moveAction, cardStatus, columns, dropTarget, edgeSpeed, insertIndex, isSession, movableStatuses, moveTask, taskForItem, nextUp, rankAt, relTime, revertTask, shiftStatus, sortColumn, shownCount, grown, insertBefore, CARD_PAGE, newTaskId } from './kanban';
 import type { Task, TaskMessage } from './types';
 
@@ -28,11 +29,17 @@ describe('columns', () => {
     task({ id: 'd', number: 8, rank: 5, status: 'completed' }),
   ];
 
-  it('returns the five columns in order, each sorted by rank then number', () => {
+  it('returns the six columns in order, each sorted by rank then number', () => {
     const cols = columns(tasks);
-    expect(cols.map((c) => c.status)).toEqual(['pending', 'auto', 'in_progress', 'in_testing', 'completed']);
+    expect(cols.map((c) => c.status)).toEqual(['pending', 'auto', 'in_progress', 'in_testing', 'merged', 'completed']);
     expect(cols[0].tasks.map((t) => t.id)).toEqual(['b', 'a']);
-    expect(cols[4].tasks.map((t) => t.id)).toEqual(['d', 'c']);
+    expect(cols[5].tasks.map((t) => t.id)).toEqual(['d', 'c']);
+  });
+
+  it('puts merged tasks in their own column, apart from closed ones', () => {
+    const cols = columns([task({ id: 'm', status: 'merged' }), task({ id: 'x', status: 'completed' })]);
+    expect(cols.find((c) => c.status === 'merged')!.tasks.map((t) => t.id)).toEqual(['m']);
+    expect(cols.find((c) => c.status === 'completed')!.tasks.map((t) => t.id)).toEqual(['x']);
   });
 
   it('filters by project and search words', () => {
@@ -111,8 +118,47 @@ describe('status from an open tab', () => {
     expect(taskForItem([a, b], { termId: 't2' })?.id).toBe('b');
     expect(taskForItem([a, b], { lineId: 'zz' })).toBeUndefined();
     expect(taskForItem([a, b], undefined)).toBeUndefined();
-    expect(movableStatuses(a)).toEqual(['in_testing', 'completed']);
-    expect(movableStatuses(b)).toEqual(['in_progress', 'in_testing', 'completed']);
+    expect(movableStatuses(a)).toEqual(['in_testing', 'merged', 'completed']);
+    expect(movableStatuses(b)).toEqual(['in_progress', 'in_testing', 'merged', 'completed']);
+  });
+});
+
+describe('merged and closed are both done', () => {
+  it('treats merged and completed as done and every other status as open', () => {
+    expect(isDone('merged')).toBe(true);
+    expect(isDone('completed')).toBe(true);
+    for (const s of ['pending', 'auto', 'in_progress', 'in_testing'] as const) expect(isDone(s)).toBe(false);
+  });
+
+  it('no longer blocks a dependent once its dependency is merged', () => {
+    const dep = task({ id: 'dep', status: 'merged' });
+    const open = task({ id: 'open', status: 'in_testing' });
+    const waiting = task({ id: 'w', status: 'auto', dependsOn: ['dep', 'open'] });
+    const ids = byId([dep, open, waiting]);
+    expect(blockers(waiting, ids).map((t) => t.id)).toEqual(['open']);
+    open.status = 'merged';
+    expect(blockers(waiting, byId([dep, open, waiting]))).toEqual([]);
+    expect(startable([dep, open, waiting]).map((t) => t.id)).toEqual(['w']);
+  });
+
+  it('leaves merged tasks out of the matrix and sorts them after open ones as dependencies', () => {
+    const m = task({ id: 'm', number: 900, title: 'Merged dep', status: 'merged', urgent: true, important: true });
+    const o = task({ id: 'o', number: 1, title: 'Open dep', status: 'pending', urgent: true, important: true });
+    expect(matrix([m, o]).do.map((t) => t.id)).toEqual(['o']);
+    expect(depCandidates([m, o], 'dep').map((t) => t.id)).toEqual(['o', 'm']);
+  });
+
+  it('shows no card status on a merged session task', () => {
+    expect(cardStatus(task({ status: 'merged', origin: 'session', badges: ['needs_input'] }), new Set())).toEqual({ kind: 'none' });
+  });
+
+  it('moves a session task to merged with a patch and to closed with complete', () => {
+    expect(moveAction('in_testing', 'merged', true)).toBe('patch');
+    expect(moveAction('in_testing', 'completed', true)).toBe('complete');
+    expect(moveAction('in_testing', 'merged')).toBe('patch');
+    expect(moveAction('merged', 'in_progress')).toBe('reject');
+    expect(moveAction('completed', 'in_progress')).toBe('start');
+    expect(canDrop(task({ origin: 'session' }), 'merged')).toBe(true);
   });
 });
 

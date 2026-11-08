@@ -9,7 +9,7 @@ prompt, needs-input, orphan, pinned) is local registry data, not contract.
 |---|---|---|
 | process alive (`alive`) | pid from `~/.claude/sessions/<pid>.json`, `kill -0`, `procStart` = `/proc/<pid>/stat` starttime | process scan for `codex` with the session id / cwd |
 | turn running (`busy`) | `UserPromptSubmit` → `Stop`/`StopFailure`; `status: busy` in `sessions/<pid>.json` | `UserPromptSubmit` → `Stop`; `event_msg` turn start/complete |
-| waiting for user (`needsInput`) | `Notification`, `PermissionRequest`, `Elicitation`; cleared by `PostToolUse`/`PostToolUseFailure` (prompt answered) | `PermissionRequest` |
+| waiting for user (`needsInput`) | `Notification`, `PermissionRequest`, `Elicitation`; cleared by `PostToolUse`/`PostToolUseFailure` (prompt answered) | `PermissionRequest`; cleared by `PostToolUse` after the approved tool runs |
 | activity time (`lastActivityAt`) | max(hook event time, transcript mtime) | max(hook event time, rollout mtime, `threads.updated_at`) |
 | held marker | registry `held=true` + tmux pane `@sb_held=<lineId>` | same |
 | closed | `overseer close`, PR merged/closed (relayed by API) | same |

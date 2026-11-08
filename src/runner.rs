@@ -269,9 +269,7 @@ fn launch(ctx: &Ctx, reg: &Registry, line_id: &str, args: &Value, p: &Plan) -> R
         args["origin"].as_str().unwrap_or("feedback"),
         ctx.now_ms,
     )?;
-    let mut argv = vec!["claude".to_string()];
-    argv.extend(ctx.config.start_args.iter().cloned());
-    argv.extend(["--session-id".into(), sid]);
+    let argv = claude_argv(reg, &ctx.config.start_args, sid)?;
     let cmd = format!(
         "{}; exec \"${{SHELL:-/bin/sh}}\"",
         argv.iter()
@@ -289,6 +287,16 @@ fn launch(ctx: &Ctx, reg: &Registry, line_id: &str, args: &Value, p: &Plan) -> R
         &cmd,
     ])?;
     deliver(ctx, &tmux, &p.session, line_id, &s("prompt"))
+}
+
+fn claude_argv(reg: &Registry, start_args: &[String], sid: String) -> Result<Vec<String>, String> {
+    let mut argv = vec!["claude".to_string()];
+    argv.extend(start_args.iter().cloned());
+    if crate::agents::auto_approve_enabled(reg, "claude")? {
+        argv.extend(crate::agents::auto_approve_flags("claude", start_args));
+    }
+    argv.extend(["--session-id".into(), sid]);
+    Ok(argv)
 }
 
 pub fn relaunch(ctx: &Ctx, line_id: &str, message: &str, dry: bool) -> Outcome {
@@ -524,4 +532,59 @@ pub fn patch_dir(ctx: &Ctx, l: &Line) -> PathBuf {
         .worktree_dir
         .join(slug(&name))
         .join(format!("{}-patch", slug(&l.branch)))
+}
+
+#[cfg(test)]
+mod claude_argv_tests {
+    use super::*;
+
+    fn reg(name: &str) -> (Registry, std::path::PathBuf) {
+        let dir = std::env::temp_dir().join(format!("sb-runner-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        (Registry::open(&dir).unwrap(), dir)
+    }
+
+    fn v(a: &[&str]) -> Vec<String> {
+        a.iter().map(|s| (*s).to_string()).collect()
+    }
+
+    #[test]
+    fn runner_claude_line_honours_auto_approve_setting() {
+        let (reg, dir) = reg("setting");
+        let on = claude_argv(&reg, &v(&["--verbose"]), "sid".into()).unwrap();
+        assert_eq!(
+            on,
+            v(&[
+                "claude",
+                "--verbose",
+                "--permission-mode",
+                "auto",
+                "--session-id",
+                "sid"
+            ])
+        );
+        crate::agents::set_auto_approve(&reg, "claude", false).unwrap();
+        let off = claude_argv(&reg, &v(&["--verbose"]), "sid".into()).unwrap();
+        assert_eq!(off, v(&["claude", "--verbose", "--session-id", "sid"]));
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn runner_claude_line_keeps_explicit_permission_mode() {
+        let (reg, dir) = reg("explicit");
+        let args = v(&["--permission-mode", "acceptEdits"]);
+        let argv = claude_argv(&reg, &args, "sid".into()).unwrap();
+        assert_eq!(
+            argv,
+            v(&[
+                "claude",
+                "--permission-mode",
+                "acceptEdits",
+                "--session-id",
+                "sid"
+            ])
+        );
+        let _ = std::fs::remove_dir_all(dir);
+    }
 }

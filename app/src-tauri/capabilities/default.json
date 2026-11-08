@@ -9,6 +9,7 @@
     "core:window:allow-set-badge-count",
     "notification:default",
     "process:allow-restart",
+    "process:allow-exit",
     "clipboard-manager:allow-write-text",
     "clipboard-manager:allow-read-text"
   ]

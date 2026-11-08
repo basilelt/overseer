@@ -154,10 +154,10 @@ pub fn agent_for(b: &Value) -> Res<&'static crate::agents::Agent> {
         ));
     }
     let effort = text(b, "effort");
-    if !effort.is_empty() && !crate::agents::EFFORTS.contains(&effort) {
+    if !effort.is_empty() && !agent.valid_efforts().contains(&effort) {
         return Err(bad(format!(
             "effort must be one of {}",
-            crate::agents::EFFORTS.join(", ")
+            agent.valid_efforts().join(", ")
         )));
     }
     Ok(agent)
@@ -181,12 +181,15 @@ pub fn launch(
     } else {
         &[]
     };
+    let reg = crate::registry::Registry::open(&ctx.state_dir).map_err(|e| (500, e))?;
+    let auto_approve = crate::agents::auto_approve_enabled(&reg, agent.id).map_err(|e| (500, e))?;
     let mut cmd = agent.launch(&crate::agents::Launch {
         model,
         effort,
         session: session.as_deref(),
         prompt: by_flag.then_some(prompt.as_str()),
         extra,
+        auto_approve,
     });
     let shown = if by_arg {
         let shown = with_prompt(&cmd, "<prompt>");
@@ -195,6 +198,10 @@ pub fn launch(
     } else {
         by_flag.then(|| crate::agents::redact(&cmd, agent, Some(&prompt)))
     };
+    let mut flags = agent.flags(model, effort);
+    if auto_approve {
+        flags.extend(crate::agents::auto_approve_flags(agent.id, extra));
+    }
     let term = crate::term::spawn(crate::term::Spec {
         cwd,
         shown,
@@ -203,7 +210,7 @@ pub fn launch(
         rows,
         title: Some(title.into()),
         session,
-        flags: agent.flags(model, effort),
+        flags,
         ..Default::default()
     })
     .map_err(|e| (409, e))?;

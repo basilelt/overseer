@@ -34,6 +34,7 @@
   const nameDialog = () => import('./NameDialog.svelte');
   const closeTabDialog = () => import('./CloseTabDialog.svelte');
   const switchboardDialog = () => import('./SwitchboardImportDialog.svelte');
+  const uninstallDialog = () => import('./UninstallDialog.svelte');
 </script>
 
 {#if app.overlay === 'palette'}
@@ -74,6 +75,8 @@
   {#await fileViewer() then { default: FileViewer }}<FileViewer onclose={close} file={app.fileArg} />{/await}
 {:else if app.overlay === 'switchboardImport'}
   {#await switchboardDialog() then { default: SwitchboardImportDialog }}<SwitchboardImportDialog onclose={close} from={app.overlayArg} />{/await}
+{:else if app.overlay === 'uninstall'}
+  {#await uninstallDialog() then { default: UninstallDialog }}<UninstallDialog onclose={() => app.closeOverlay()} />{/await}
 {:else if app.overlay === 'closeTab' && app.overlayArg}
   {#await closeTabDialog() then { default: CloseTabDialog }}<CloseTabDialog onclose={close} tabKey={app.overlayArg} />{/await}
 {:else if app.overlay === 'shortcuts' && !app.mobile && ui.layout !== 'phone'}

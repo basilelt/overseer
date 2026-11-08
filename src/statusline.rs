@@ -245,9 +245,7 @@ pub fn apply(
     let mut backup = None;
     if p.changed && !dry_run {
         if settings.exists() {
-            let b = PathBuf::from(format!("{}.bak-{}", settings.display(), stamp(now)));
-            std::fs::copy(settings, &b).map_err(|e| format!("backup {}: {e}", b.display()))?;
-            backup = Some(b);
+            backup = Some(crate::install::backup(settings, state_dir, &stamp(now))?);
         }
         let reread: Value = serde_json::from_str(&p.after_text).map_err(|e| e.to_string())?;
         if reread != p.after {
@@ -524,11 +522,12 @@ mod tests {
         assert_eq!(v["installed"], false);
         assert_eq!(v["command"], "echo hi");
         assert!(read(&d).is_none());
-        assert!(std::fs::read_dir(&d).unwrap().any(|e| e
+        assert!(std::fs::read_dir(d.join("backups")).unwrap().any(|e| e
             .unwrap()
             .file_name()
             .to_string_lossy()
-            .starts_with("settings.json.bak-")));
+            .ends_with("settings.json.bak-197001010000")));
+        assert!(!d.join("settings.json.bak-197001010000").exists());
         let _ = std::fs::remove_dir_all(&d);
     }
 

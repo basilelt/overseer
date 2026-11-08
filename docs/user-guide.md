@@ -81,7 +81,7 @@ Paths may start with `~/`. A missing or unreadable `config.json` means all defau
 
 ```
 overseer hooks install                 # dry run: diff of every agent's hook file
-overseer hooks install --apply         # backup <file>.bak-YYYYMMDDHHMM, merge, validate, atomic replace
+overseer hooks install --apply         # backup to <state>/backups/, merge, validate, atomic replace
 overseer hooks install gemini --apply  # only the named agents
 overseer hooks uninstall --apply       # removes only Overseer's entries and files
 ```
@@ -95,7 +95,7 @@ per file with its diff and backup.
 | Agent | Mechanism | File | Events used |
 |---|---|---|---|
 | Claude Code | hooks | `$CLAUDE_CONFIG_DIR/settings.json` (`~/.claude`) | SessionStart, UserPromptSubmit, Stop, Notification, PermissionRequest, PostToolUse*, Subagent*, Task*, SessionEnd |
-| Codex | hooks | `$CODEX_HOME/hooks.json` (`~/.codex`) | SessionStart, UserPromptSubmit, Stop, PermissionRequest, Subagent*, SessionEnd |
+| Codex | hooks | `$CODEX_HOME/hooks.json` (`~/.codex`) | SessionStart, UserPromptSubmit, Stop, PermissionRequest, PostToolUse, Subagent*, SessionEnd |
 | Gemini CLI (0.26+) | hooks | `~/.gemini/settings.json` | SessionStart, BeforeAgent, AfterAgent, Notification (ToolPermission), SessionEnd |
 | Copilot CLI | hooks | `$COPILOT_HOME/hooks/overseer.json` (`~/.copilot`) | sessionStart, userPromptSubmitted, agentStop, notification, sessionEnd |
 | Cursor Agent | hooks | `~/.cursor/hooks.json` | sessionStart, beforeSubmitPrompt, stop, sessionEnd |
@@ -887,7 +887,7 @@ On first launch, once the app is connected (immediately in local mode, after the
 connection on a phone), a welcome card offers **Take the tour** or **Skip**. The tour dims the
 window and highlights the real controls one at a time: host chip, workspaces sidebar, tabs and the
 new-session menu, the Terminal/Chat toggle, the side panel, Tasks, Review, the usage, system and ports
-chips, notifications and hooks, the command palette and Feedback, in 0.25 the Cmd/Ctrl+P palette shortcut, and in 0.27 the demo mode (on the **Demo mode** pill while in the demo, else on the host chip), and in 0.28 the GPU rendering option for terminals, and in 0.29 the clean up of unused worktrees and the import from Switchboard (on its button in Settings, Help, or on the Settings button), and in 0.30 click to move the cursor in a terminal (on the tabs), and in 0.31 the Light and Dark palettes (on Settings, or More on a phone), and in 0.33 the one-click install of skills and plugins (on Settings). Steps whose control is not on
+chips, notifications and hooks, the command palette and Feedback, in 0.25 the Cmd/Ctrl+P palette shortcut, and in 0.27 the demo mode (on the **Demo mode** pill while in the demo, else on the host chip), and in 0.28 the GPU rendering option for terminals, and in 0.29 the clean up of unused worktrees and the import from Switchboard (on its button in Settings, Help, or on the Settings button), and in 0.30 click to move the cursor in a terminal (on the tabs), and in 0.31 the Light and Dark palettes (on Settings, or More on a phone), and in 0.33 the one-click install of skills and plugins (on Settings), and in 0.34 the auto-approval defaults (on Settings, Agents), the Review, Merged and Closed columns (on the Merged column when the board is open, else on the Tasks tab) and the clean removal of everything Overseer added (on Settings, Connection, **Remove**). Steps whose control is not on
 screen (no session selected, a feature the server lacks, phone layout) are skipped. On a phone the
 card is a sheet at the bottom (or top, when the control sits low) and points at the bottom
 navigation, the session strip and the menu.
@@ -900,8 +900,8 @@ minor and major releases add steps. To see it again: Settings > Help > **Take th
 tour**, the palette command **Start the tour**, or **Show the tour again** in More on a phone.
 
 Settings (gear in the title bar, or More on a phone) has a sidebar of categories: **General**
-(appearance, links), **Terminal** (font, scrollback, GPU rendering, keyboard), **Agents** (task defaults, profiles,
-hooks, usage), **Notifications**, **Connection** (hosts, server), **Updates** and **Help** (tour,
+(appearance, links), **Terminal** (font, scrollback, GPU rendering, keyboard), **Agents** (task defaults,
+auto-approval, profiles, hooks, usage), **Notifications**, **Connection** (hosts, server), **Updates** and **Help** (tour,
 logs, feedback). The search box at the top of the sidebar has focus when Settings opens: type part of a
 setting's name or description, in the app language or in English, and only the matching settings stay,
 highlighted, with a count per category; Esc clears the search. On a phone the categories are a list
@@ -1070,6 +1070,13 @@ daemon keeps its environment: the new one applies from its next start (the next 
 it is never restarted for this since that would end its terms. **Rescan** in the agent picker
 runs the detection again (`POST /v1/agents/rescan`), for instance after installing an agent.
 
+**Auto-approve** in Settings → Agents chooses which supported CLIs Overseer starts with their
+native automatic permission mode. It is on by default for Claude Code, Codex, Gemini CLI,
+Antigravity, opencode, Copilot CLI and Cursor Agent. The settings are stored on the connected
+daemon host and apply to new sessions, task agents and feedback agents; changing a setting does
+not change sessions that are already running. Amp currently auto-approves by default unless its
+own permission configuration enables a policy, so it has no Overseer toggle.
+
 **Skills and plugins** (Settings > Agents, or **Install skills and plugins** in the command
 palette) installs a tool for one agent in one click, on the host the app is connected to. Each
 install runs in a new terminal titled `<tool> · <agent>` that stays open on `Done. Press Enter to
@@ -1123,7 +1130,7 @@ Which profile applies, most specific first:
 A model or effort typed explicitly (task form, API) wins over the profile. The session tab shows
 the profile name, and the activity panel shows it in full (`Balanced · sonnet · effort medium`).
 
-How each CLI gets the values (nothing in your global config is rewritten):
+How each CLI gets the values (agent files change only when you explicitly apply them):
 
 | CLI | Model | Effort | Default subagent model / effort | Per named subagent | Background model |
 |---|---|---|---|---|---|
@@ -1131,15 +1138,18 @@ How each CLI gets the values (nothing in your global config is rewritten):
 | Codex | `-m` | `-c model_reasoning_effort=` | `-c agents.default_subagent_model=` / `-c agents.default_subagent_reasoning_effort=` | not offered (role files) | — |
 | opencode | `-m` | — | — | `OPENCODE_CONFIG_CONTENT` (env, `agent.<name>.model`) | `small_model` in the same env |
 | Copilot CLI | `--model` | `--effort` (max → `xhigh`) | — | — | — |
-| Gemini CLI, Antigravity, Cursor | `-m` / `--model` | — | — | — | — |
+| Gemini CLI | `-m` | — (the CLI has no launch effort flag) | — | `model:` in `.gemini/agents/*.md`, via **Apply to agent files** | — |
+| Antigravity | `--model` | `--effort` | — | `model:` tier in `.agents/agents` or `~/.gemini/config/agents`, via **Apply to agent files** | — |
+| Cursor Agent | `--model` | — | — | — | — |
 | Amp | — | `--mode` (max → `ultra`) | — | — | — |
 
-Claude subagents that set `model:` in their file ignore `CLAUDE_CODE_SUBAGENT_MODEL` unless
-"Override every subagent" is on. To change one subagent only, set it under **Named subagents**
-(the list comes from `~/.claude/agents` and `<project>/.claude/agents`, project first), save, then
-**Apply to agent files…**: Overseer shows the frontmatter lines it would change per file, you
-tick each file, and it writes them with a `.bak-<stamp>` copy next to each. Nothing is written
-without that confirmation.
+To change a named subagent, set it under **Named subagents**, save, then choose **Apply to agent
+files…**. Gemini CLI definitions come from `~/.gemini/agents` and `<project>/.gemini/agents`;
+Antigravity definitions come from `~/.gemini/config/agents` and `<project>/.agents/agents`;
+Claude uses `~/.claude/agents` and `<project>/.claude/agents`. Project files take precedence over
+user files. Overseer previews the frontmatter lines it would change, and writes only the files
+you tick, keeping a `.bak-<stamp>` copy of each in `<state>/backups/`. Gemini CLI does not expose a native launch
+effort flag, so profiles cannot set Gemini effort.
 
 Profiles live in the daemon's state dir (`profiles.json`), so the desktop and phone apps share
 them. API: `GET/PUT /v1/profiles`, `GET /v1/profiles/subagents?cwd=`, `POST
@@ -1152,8 +1162,9 @@ the session's directory at resume time.
 ### 14.2 Tasks (Kanban)
 
 Tasks are local to the station, stored in the registry, numbered per project (`#1`, `#2`, … never
-reused), optionally linked to an `AS-` ticket. Statuses: `pending`, `auto`, `in_progress`,
-`in_testing`, `completed`.
+reused), optionally linked to an `AS-` ticket. Statuses, one board column each: `pending`
+(Pending), `auto` (Auto), `in_progress` (In progress), `in_testing` (Review), `merged` (Merged)
+and `completed` (Closed). Merged and Closed are both done; they start collapsed on the board.
 
 - `POST /v1/tasks/<id>/start` creates the worktree `<worktreeDir>/<repo>-<hash>/task-<n>-<slug>` on
   a new branch `task/<n>-<slug>` from the project's base branch (14.9; a restart reuses it; with
@@ -1166,13 +1177,16 @@ reused), optionally linked to an `AS-` ticket. Statuses: `pending`, `auto`, `in_
 - Tasks in `auto` start by themselves in column order (`rank`), while fewer than `autoConcurrency` tasks run
   (`config.json`, default 2).
 - A running task moves to `in_testing` when the agent finishes a turn (`Stop` hook) or exits.
-- An `in_testing` task moves to `completed` once its branch has landed in the project's default
+- An `in_testing` task, or a `completed` one whose worktree is still on disk, moves to `merged` once its branch has landed in the project's default
   branch (`origin/HEAD`, else `main`/`master`; `origin/<default>` when it is ahead of the local
   one): merged with a merge commit, fast-forwarded, rebased (same patches) or squashed (one
   commit with the branch's whole diff). A branch deleted after the merge is checked through
   `origin/<branch>`. While such tasks exist, the daemon fetches the default branch at most every
   5 minutes per repository, in the background (skipped when `worktreeFetch` is off, backed off
   for 10 minutes when offline). A task moved back by hand after that is left alone.
+- Agents move their own task through MCP `set_task_status`: `in_testing` when the work is ready
+  for review, `merged` once they merged it themselves, and `in_progress` when work resumes on a
+  task in Review, Merged or Closed (its agent must be running). Other statuses are refused.
 - `POST /v1/tasks/<id>/review` with `approve` (→ `completed`), `reject` (→ `in_progress`, an
   optional `message` is typed into the agent) or `commit` (`add -A` and `commit` in the worktree
   with `message` or `task #<n>: <title>`, → `completed`).
@@ -1183,7 +1197,7 @@ reused), optionally linked to an `AS-` ticket. Statuses: `pending`, `auto`, `in_
 - Dependencies: a task can depend on other tasks (`dependsOn`, a list of task ids). Set them in
   the "Depends on" picker of the new task dialog or the task details (search by number or title,
   same project unless "All projects" is ticked). A task stays blocked until every dependency is
-  `completed` (`in_testing` still blocks): the card shows a "Blocked" chip and "Waiting on #12,
+  `merged` or `completed` (`in_testing` still blocks): the card shows a "Blocked" chip and "Waiting on #12,
   #14", the auto runner and the title bar RUN button skip it, and it starts in queue order once
   unblocked. Starting a blocked task by hand asks for confirmation. A dependency that is deleted is
   dropped from its dependents; self-dependencies and cycles are refused (400). The link chip on a
@@ -1210,12 +1224,12 @@ curl --unix-socket "$S" 'http://unix/v1/tasks?status=in_progress,in_testing'
   agent of a task too: the message button on a card (or **Details and messages** in the phone
   menu) opens the task detail with its message thread and a send box (Ctrl/Cmd+Enter sends).
   A message to a task whose agent is not running is kept and added to its prompt when it starts.
-  When a task moves to In testing and other running tasks of the project changed some of the
+  When a task moves to Review and other running tasks of the project changed some of the
   same files, Overseer messages both agents by itself (`[Overseer] Overlap: task #A ... and
   task #B ... both change: ...`) so they agree who changes what. The same pair is not alerted
   again unless the set of shared files changes.
 - **Matrix**: the **Board | Matrix** switch in the Tasks header shows the open tasks (not
-  completed, not session tasks) on an Eisenhower matrix: Do first (urgent and important),
+  merged or closed, not session tasks) on an Eisenhower matrix: Do first (urgent and important),
   Schedule (important), Delegate (urgent) and Eliminate (neither), plus an Unsorted strip for
   tasks without a classification. Drag a card to another quadrant to change its `urgent` and
   `important` flags; on a phone the quadrants stack and the long-press menu of a card sets the
@@ -1247,19 +1261,20 @@ started from a task keeps that task and gets no second one.
   |---|---|---|
   | working | In progress | |
   | waiting for you (permission, question, first prompt) | In progress | needs input |
-  | turn finished, idle, or its process ended, after Overseer saw it working, with changes | In testing (ready for review) | |
-  | same, but it edited no file and has no worktree of its own (questions, searches, reports) | Completed | |
-  | already finished or ended when Overseer first finds it (sessions from before Overseer) | Completed | |
-  | held by you | stays in In testing / Completed, else In progress | paused |
-  | closed (hung up), or finished, idle or gone with its branch landed in the default branch (see 14.2) | Completed | |
+  | turn finished, idle, or its process ended, after Overseer saw it working, with changes | Review (ready for review) | |
+  | same, but it edited no file and has no worktree of its own (questions, searches, reports) | Closed | |
+  | already finished or ended when Overseer first finds it (sessions from before Overseer) | Closed | |
+  | held by you | stays in Review / Merged / Closed, else In progress | paused |
+  | finished, idle or gone with its branch landed in the default branch (see 14.2) | Merged | |
+  | closed (hung up) | Closed | |
 
 - **Moving a card by hand** wins: the task stays where you put it while the session stays in the
   same state, and never goes back to an earlier column on its own unless the session starts
-  working again. Session tasks only move between In progress, In testing and Completed; they
+  working again. Session tasks only move between In progress, Review, Merged and Closed; they
   cannot be started or deleted (close the session instead).
 - **Clicking a card** opens the session's tab (it attaches when the agent runs, otherwise the tab
-  shows **Resume**; nothing starts on its own); an In
-  testing card opens the review. Dropping a card on Completed offers to hold its session, with
+  shows **Resume**; nothing starts on its own); a Review
+  card opens the review. Dropping a card on Closed offers to hold its session, with
   the usual safety checks shown first.
 - **Hide session tasks** in the board's toolbar (the glyph button on phones) hides them; the
   choice is remembered.
@@ -1471,9 +1486,10 @@ curl -N --unix-socket "$S" http://unix/v1/system/stream
 
 ### 14.4c Agent usage
 
-The title bar shows a usage chip next to the other chips: one segment per agent active today,
-with the plan windows when known ("Claude 5h 83% · wk 47%", "Codex 5h 29% · wk 38%") and the
-tokens of the day otherwise ("Claude 12.3M"). A segment turns amber at 80 % and red at 95 % of a
+The title bar shows a usage chip next to the other chips: one segment per agent active today.
+When plan windows are known, it shows them, for example, "Claude 5h 83% · wk 47%", "Codex 5h
+29% · wk 38%", or Codex Go's monthly `mo` allowance. Otherwise it shows the tokens of the day
+("Claude 12.3M"). A segment turns amber at 80 % and red at 95 % of a
 window, or when the agent's last request hit a usage limit; the tooltip lists reset times. The
 chip is hidden when no agent ran today.
 
@@ -1516,8 +1532,11 @@ while the window is hidden or unfocused and catches up when you come back.
 through the daemon: `list_tasks`, `get_task`, `create_task` (always `pending`; optional
 `dependsOn` ids or task numbers), `set_task_dependencies {taskId, dependsOn}` (refuses cycles),
 `update_task_progress {done,total,note}` and `set_task_status` (only its own task, only to
-`in_testing`). The daemon sets `OVERSEER_TASK_ID` in agents it starts for a task. Overseer
-never edits agent configuration; to enable it yourself:
+`in_testing`, `merged` or `in_progress`; `in_progress` only while its agent runs). The daemon sets `OVERSEER_TASK_ID` in agents it starts for a task. Codex tasks get
+the server on their command line (`-c mcp_servers.overseer.*`, with the task id and state dir in
+its env, since Codex clears the environment of MCP servers), so Codex agents can message other
+agents without any setup. Overseer never edits agent configuration; to enable it yourself
+elsewhere:
 
 - Claude Code (user scope): `claude mcp add --scope user overseer -- /path/to/overseer mcp`,
   or in a project's `.mcp.json`:
@@ -1931,6 +1950,38 @@ exits: Resume then reopens the session it was last in (`lines.session_now`). Two
   `GET /v1/lines/<id>/screen`, `POST /v1/lines/<id>/keys`, `GET /v1/lines/<id>/commands`
   (contract §6b). The daemon parses a chat only after someone opened it, incrementally, and
   forgets it after 15 minutes without readers.
+
+## Uninstall
+
+Overseer writes outside its own folders, so deleting the app alone leaves things behind: hook
+entries in the agents' config files (for example `~/.claude/settings.json`), the statusline
+wrapper, the boot service (a systemd user unit, or `~/Library/LaunchAgents/dev.overseer.daemon.plist`)
+and its linger setting, `~/.overseer` (the `bin/` shim, `server/`, `u/`, `tasks/`, `reviews/`), the
+config backups it made, worktrees and `task/*` branches it created, the state dir
+(`~/.local/state/overseer` on Linux, `~/Library/Application Support/overseer` on macOS,
+`%LOCALAPPDATA%\overseer` on Windows, or `$OVERSEER_STATE_DIR`) and the app's own data.
+
+Removing it takes one step, in two equivalent forms:
+
+- In the app: **Settings, Connection, Remove Overseer from this computer**. For a remote server
+  the row reads **Remove Overseer from {host}** and acts on that server. The app first runs a dry
+  run and lists what will be removed and what is kept with the reason (a worktree with uncommitted
+  changes is always kept). **Remove Overseer** applies it; **Cancel** does nothing. When it is done
+  the app says you can delete it, and on the desktop offers **Quit Overseer**.
+- On the command line: `overseer uninstall` prints the same list (a dry run), `overseer uninstall
+  --apply` does it. It works with the daemon stopped; when a daemon is running it asks the daemon
+  (`POST /v1/uninstall`), which answers, deletes its state dir and exits. The state dir is only deleted when it holds Overseer's databases (or is empty). Before editing an agent config, uninstall saves a copy next to it as `<file>.overseer-uninstall.bak` and lists it under kept.
+
+Per platform:
+
+| Platform | How |
+| --- | --- |
+| Windows | Uninstalling from Apps and features runs `overseer uninstall --apply` first only when you tick the uninstaller's **Delete the application data** box; a plain uninstall or reinstall keeps your tasks and state. An update never does: the updater's installer runs the old uninstaller in update mode, which skips it. |
+| macOS, Homebrew | `brew uninstall --cask overseer` removes the app; add `--zap` (`brew uninstall --zap --cask overseer`) to also run `overseer uninstall --apply` and delete the app's data. Plain `brew uninstall` and `brew upgrade` leave hooks and data alone on purpose. |
+| macOS, dragged to the Trash | Click the in-app button first (or run `/Applications/Overseer.app/Contents/Resources/server/darwin-<arch>/overseer uninstall --apply`), then delete the app. |
+| Linux `.deb`, `.rpm`, AppImage | The packages ship no removal script (it would also run on upgrades, as root, without your home). Click the in-app button or run `~/.overseer/bin/overseer uninstall --apply` first, then remove the package or the AppImage. |
+| Remote server | Connect to it and use the button, or run `~/.overseer/bin/overseer uninstall --apply` on the server. |
+| Android, iOS | Remove the host from the app (or use the button while connected to it to clean the server), then delete the app. |
 
 ## What Overseer reads and writes
 

@@ -398,3 +398,21 @@ function attach(t: PaintTarget, sched: FrameScheduler) {
     sched.onCleanup(t, () => io.disconnect());
   }
 }
+
+const WHOLE_LINE_VIEWPORT = Symbol.for('overseer.wholeLineViewport');
+
+// ghostty-web scrolls by fractions of a line (pixel wheel deltas, smooth scrolling), but its canvas
+// renderer picks scrollback rows with `row < viewportY` and indexes them with `Math.floor(viewportY)`:
+// the boundary row asks for the scrollback line one past the end, gets null and keeps the pixels of
+// the previous frame. Render whole lines, as the WebGL renderer does.
+export function installWholeLineViewport(mod: GhosttyClasses): boolean {
+  const ren = mod.CanvasRenderer?.prototype as (Proto & { [WHOLE_LINE_VIEWPORT]?: boolean }) | undefined;
+  if (!ren || typeof ren.render !== 'function') return false;
+  if (ren[WHOLE_LINE_VIEWPORT]) return true;
+  ren[WHOLE_LINE_VIEWPORT] = true;
+  const render = ren.render as (...a: unknown[]) => unknown;
+  ren.render = function (this: unknown, buf: unknown, force: unknown, viewportY: unknown, ...rest: unknown[]) {
+    return render.call(this, buf, force, typeof viewportY === 'number' ? Math.floor(viewportY) : viewportY, ...rest);
+  };
+  return true;
+}

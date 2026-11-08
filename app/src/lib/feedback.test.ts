@@ -259,3 +259,12 @@ describe('attachProblem', () => {
     expect(ATTACH_ACCEPT).toBe('.png,.jpg,.jpeg,.gif,.webp,.svg,.mp4,.mov,.webm');
   });
 });
+
+describe('attachment note', () => {
+  it('says Open on GitHub cannot attach files, not Send directly', async () => {
+    const { en } = await import('./i18n/en');
+    const note = (en as Record<string, string>)['feedback.attachNote'];
+    expect(note).toContain('Open on GitHub');
+    expect(note).not.toContain('GitHub CLI');
+  });
+});

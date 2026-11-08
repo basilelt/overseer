@@ -21,6 +21,11 @@ export function changedWorktrees(r: Related | null): RelatedWorktree[] {
   return r ? r.worktrees.filter(changed) : [];
 }
 
+export function changedLabel(list: RelatedWorktree[]): string {
+  if (!list.some((w) => w.current)) return t('review.otherWorktrees');
+  return t(list.length === 1 ? 'review.worktreesChangedOne' : 'review.worktreesChanged', { n: list.length });
+}
+
 export function scopeOptions(related: Related | null, selfKey?: string, open: ScopeOption[] = []): ScopeOption[] {
   const self = selfKey && !selfKey.startsWith('review:br:') ? selfKey : null;
   const out: ScopeOption[] = (related?.worktrees ?? []).map((w) => ({ key: w.current && self ? self : reviewKey({ worktree: w.path }), name: w.branch || folder(w.path), path: w.path, worktree: w }));

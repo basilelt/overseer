@@ -24,6 +24,10 @@ fn spec(cmd: &str) -> Option<Spec> {
             ..NONE
         },
         "board" | "doctor" | "socket-path" => NONE,
+        "uninstall" => Spec {
+            flags: &["--apply"],
+            ..NONE
+        },
         "resume" => Spec {
             flags: &["--print", "--attach"],
             min: 1,

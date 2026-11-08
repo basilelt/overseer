@@ -21,3 +21,19 @@ describe('api.close', () => {
     expect(sent).toEqual(['POST /v1/lines/ln%201/close?dryRun=false&shell=true']);
   });
 });
+
+describe('api.uninstall', () => {
+  it('asks for a dry run by default', async () => {
+    const calls: unknown[][] = [];
+    const c = { request: async (...a: unknown[]) => void calls.push(a) } as unknown as DaemonClient;
+    await api(c).uninstall();
+    expect(calls).toEqual([['POST', '/v1/uninstall', { dryRun: true }]]);
+  });
+
+  it('sends dryRun false only when applying', async () => {
+    const calls: unknown[][] = [];
+    const c = { request: async (...a: unknown[]) => void calls.push(a) } as unknown as DaemonClient;
+    await api(c).uninstall(false);
+    expect(calls).toEqual([['POST', '/v1/uninstall', { dryRun: false }]]);
+  });
+});

@@ -33,7 +33,7 @@ const KINDS: &[&str] = &[
     "set_task_status",
     "track",
 ];
-const TASK_STATUSES: &[&str] = &["pending", "in_testing", "completed"];
+const TASK_STATUSES: &[&str] = &["pending", "in_testing", "merged", "completed"];
 const WHY: &[&str] = &["dirty", "todos", "recent"];
 
 fn sql<T>(r: rusqlite::Result<T>) -> Res<T> {
@@ -487,12 +487,12 @@ pub fn deterministic(i: &Input) -> Value {
             );
         }
     }
-    let open = |t: &Task| t.status != "completed" && !crate::task_agents::is_organizer(t);
+    let open = |t: &Task| !crate::tasks::is_done(&t.status) && !crate::task_agents::is_organizer(t);
     for t in i.tasks.iter().filter(|t| open(t)) {
         let running = t.status == "in_progress" && !t.from_session();
         if !running && t.branch.is_some() && (i.landed)(t) == Some(true) {
             p.add(
-                json!({"kind": "set_task_status", "taskId": t.id, "status": "completed"}),
+                json!({"kind": "set_task_status", "taskId": t.id, "status": "merged"}),
                 format!(
                     "branch {} is merged into the default branch",
                     t.branch.as_deref().unwrap_or("")
@@ -557,7 +557,7 @@ fn pick_up(i: &Input) -> Vec<Value> {
     let done = |l: &Line| {
         i.tasks.iter().any(|t| {
             t.line_id.as_deref() == Some(l.id.as_str())
-                && (t.status == "completed" || (i.landed)(t) == Some(true))
+                && (crate::tasks::is_done(&t.status) || (i.landed)(t) == Some(true))
         })
     };
     let mut out: Vec<(usize, i64, Value)> = cands
@@ -1096,7 +1096,7 @@ pub fn configurator_prompt() -> String {
     format!(
         "You are the Overseer session configurator. Propose how to organize the user's coding agent sessions; the user reviews your proposal and applies what they accept.\n\n\
 Use the overseer MCP tools: list_layout (workspaces, folders, groups), list_projects, list_sessions (sinceDays 90), get_session_brief for sessions whose purpose is unclear (at most 40), list_worktrees for projects with many sessions.\n\n\
-Heuristics: one workspace per project for sessions that have none, folders per owner or client when there are several, a group per ticket key or feature shared by several sessions, hold sessions idle for more than {STALE_DAYS} days (reversible), close only sessions whose folder is gone, set_task_status completed for tasks whose branch is merged, archive_workspace for projects without activity, track old sessions worth keeping, pin the few the user returns to daily, and up to {MAX_PICKUP} pickUp items (why dirty, todos or recent) for unfinished work. Give every action a short reason in reasons.\n\n\
+Heuristics: one workspace per project for sessions that have none, folders per owner or client when there are several, a group per ticket key or feature shared by several sessions, hold sessions idle for more than {STALE_DAYS} days (reversible), close only sessions whose folder is gone, set_task_status merged for tasks whose branch is merged, archive_workspace for projects without activity, track old sessions worth keeping, pin the few the user returns to daily, and up to {MAX_PICKUP} pickUp items (why dirty, todos or recent) for unfinished work. Give every action a short reason in reasons.\n\n\
 Plan format (version 1): {{\"version\":1, \"summary\":\"…\", \"actions\":[{{\"id\":\"a1\", \"kind\":\"create_folder\", \"name\":\"…\", \"ref\":\"f1\"}}, {{\"id\":\"a2\", \"kind\":\"create_workspace\", \"path\":\"/abs/path\", \"folder\":\"f1\"}}, …], \"pickUp\":[{{\"lineId\":\"…\", \"summary\":\"…\", \"why\":\"dirty\"}}], \"reasons\":{{\"a1\":\"…\"}}}}. \
 Kinds: create_folder{{name,ref}}, create_workspace{{path,folder?,pinned?}}, move_workspace{{workspaceId,folder}}, create_group{{name,lines}}, hold{{lineId}}, close{{lineId}}, pin{{lineId}}, archive_workspace{{workspaceId}}, set_task_status{{taskId,status}}, track{{lineId}}. folder is an earlier create_folder ref or an existing folder id; ids come from the tools. At most {MAX_ACTIONS} actions.\n\n\
 Call propose_organization exactly once with the whole plan, then reply with a one-line summary and stop and wait. Never act yourself: never edit files, never run git write commands (commit, push, merge, rebase, reset, checkout, branch, worktree), never hold, close, resume or start anything, and never create or move tasks."
@@ -1436,7 +1436,7 @@ mod tests {
         let st = kinds(&p, "set_task_status");
         assert_eq!(st.len(), 1);
         assert_eq!(st[0]["taskId"], "done");
-        assert_eq!(st[0]["status"], "completed");
+        assert_eq!(st[0]["status"], "merged");
         let created: Vec<Value> = kinds(&p, "create_workspace")
             .iter()
             .map(|a| a["path"].clone())

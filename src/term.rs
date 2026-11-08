@@ -190,6 +190,11 @@ pub struct Spec {
     pub workspace_id: Option<String>,
 }
 
+#[cfg(test)]
+thread_local! {
+    static ANSWER_CURSOR_QUERY: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
 static TERMS: Mutex<BTreeMap<String, Arc<Term>>> = Mutex::new(BTreeMap::new());
 
 fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -477,12 +482,17 @@ fn launch(
     Ok((child, reader, writer, pair.master))
 }
 
-fn watch(term: &Arc<Term>, mut child: Box<dyn portable_pty::Child + Send + Sync>, reader: Reader) {
+fn watch(
+    term: &Arc<Term>,
+    mut child: Box<dyn portable_pty::Child + Send + Sync>,
+    reader: Reader,
+    handshake: bool,
+) {
     let gen = term.gen.load(Ordering::SeqCst);
     let (done_tx, done_rx) = channel::<()>();
     let t = term.clone();
     std::thread::spawn(move || {
-        pump(&t, reader, gen);
+        pump(&t, reader, gen, handshake);
         let _ = done_tx.send(());
     });
     let t = term.clone();
@@ -570,17 +580,39 @@ pub fn spawn(s: Spec) -> Result<Arc<Term>, String> {
     });
     lock(&TERMS).insert(id, term.clone());
     publish("term.created", json!({"term": term.to_json()}));
-    watch(&term, child, reader);
+    #[cfg(test)]
+    let handshake = ANSWER_CURSOR_QUERY.get();
+    #[cfg(not(test))]
+    let handshake = cfg!(windows);
+    watch(&term, child, reader, handshake);
     Ok(term)
 }
 
-fn pump(t: &Term, reader: Reader, gen: u64) {
+// ConPTY is created with PSEUDOCONSOLE_INHERIT_CURSOR, so conhost sends one
+// ESC[6n and holds all output until it reads a cursor report. The app drops
+// reports while replaying, so the daemon answers this one itself.
+fn strip_cursor_query(chunk: &[u8]) -> Option<Vec<u8>> {
+    const Q: &[u8] = b"\x1b[6n";
+    let at = chunk.windows(Q.len()).position(|w| w == Q)?;
+    Some([&chunk[..at], &chunk[at + Q.len()..]].concat())
+}
+
+fn partial_query_len(data: &[u8]) -> usize {
+    const Q: &[u8] = b"\x1b[6n";
+    (1..Q.len())
+        .rev()
+        .find(|&k| data.len() >= k && data[data.len() - k..] == Q[..k])
+        .unwrap_or(0)
+}
+
+fn pump(t: &Term, reader: Reader, gen: u64, mut handshake: bool) {
     let Reader { mut r, fd } = reader;
     #[cfg(unix)]
     let pump = gate::Pump::enter(fd.is_some());
     #[cfg(not(unix))]
     let _ = fd;
     let mut buf = vec![0u8; 16 << 10];
+    let mut held: Vec<u8> = Vec::new();
     loop {
         #[cfg(unix)]
         if let Some(fd) = fd.filter(|_| pump.gated()) {
@@ -595,7 +627,29 @@ fn pump(t: &Term, reader: Reader, gen: u64) {
         match r.read(&mut buf) {
             Ok(0) => break,
             Ok(n) => {
-                let chunk = &buf[..n];
+                let mut chunk = &buf[..n];
+                let joined;
+                let stripped;
+                if handshake {
+                    if !held.is_empty() {
+                        held.extend_from_slice(chunk);
+                        joined = std::mem::take(&mut held);
+                        chunk = &joined;
+                    }
+                    if let Some(rest) = strip_cursor_query(chunk) {
+                        handshake = false;
+                        let mut w = lock(&t.writer);
+                        let _ = w.write_all(b"\x1b[1;1R").and_then(|_| w.flush());
+                        stripped = rest;
+                        chunk = &stripped;
+                    } else {
+                        let k = partial_query_len(chunk);
+                        if k > 0 {
+                            held.extend_from_slice(&chunk[chunk.len() - k..]);
+                            chunk = &chunk[..chunk.len() - k];
+                        }
+                    }
+                }
                 if let Err(p) =
                     std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| t.push(chunk)))
                 {
@@ -715,7 +769,7 @@ impl Term {
             o.scan = Default::default();
         }
         self.hold(false);
-        watch(self, child, reader);
+        watch(self, child, reader, cfg!(windows));
         publish("term.updated", json!({"term": self.to_json()}));
         Ok(())
     }
@@ -1109,7 +1163,7 @@ pub fn adopt(s: crate::upgrade::SavedTerm) -> Result<Arc<Term>, String> {
         if let Some(r) = reader {
             let t = term.clone();
             std::thread::spawn(move || {
-                pump(&t, r.into(), 0);
+                pump(&t, r.into(), 0, false);
                 let _ = done_tx.send(());
             });
         } else {
@@ -1371,6 +1425,27 @@ mod tests {
     use super::*;
 
     #[test]
+    fn conpty_startup_cursor_query_is_stripped_from_the_stream() {
+        assert_eq!(
+            strip_cursor_query(b"\x1b[?9001h\x1b[6n\x1b[?1004h").as_deref(),
+            Some(&b"\x1b[?9001h\x1b[?1004h"[..])
+        );
+        assert_eq!(strip_cursor_query(b"hello\x1b[6"), None);
+    }
+
+    #[test]
+    fn a_split_cursor_query_leaves_a_trailing_prefix_to_carry() {
+        assert_eq!(partial_query_len(b"hi\x1b"), 1);
+        assert_eq!(partial_query_len(b"hi\x1b["), 2);
+        assert_eq!(partial_query_len(b"hi\x1b[6"), 3);
+        assert_eq!(partial_query_len(b"hi"), 0);
+        assert_eq!(partial_query_len(b"\x1b[6n"), 0);
+        let mut joined = b"\x1b[".to_vec();
+        joined.extend_from_slice(b"6n rest");
+        assert_eq!(strip_cursor_query(&joined).as_deref(), Some(&b" rest"[..]));
+    }
+
+    #[test]
     fn a_lagging_socket_is_dropped_instead_of_buffering_forever() {
         let backlog = Arc::new(AtomicUsize::new(0));
         let (tx, rx) = channel();
@@ -1507,6 +1582,37 @@ mod tests {
         assert_eq!(set(true, "#0b0b0c").0, 200);
         let out = wait_for("notified");
         assert!(out.contains("033[?997;1n"), "{out}");
+        t.kill().unwrap();
+        remove(&t.info().id);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn the_first_cursor_query_is_answered_by_the_daemon_and_hidden() {
+        let script = r#"stty -echo -icanon min 1; printf 'a\033[6nb'; head -c 6 | od -An -c | tr -d ' \n'; echo; printf 'c\033[6nd'; echo done; sleep 30"#;
+        ANSWER_CURSOR_QUERY.set(true);
+        let t = spawn(Spec {
+            cwd: std::env::temp_dir().to_string_lossy().into_owned(),
+            cmd: vec!["/bin/sh".into(), "-c".into(), script.into()],
+            cols: 80,
+            rows: 24,
+            ..Default::default()
+        });
+        ANSWER_CURSOR_QUERY.set(false);
+        let t = t.unwrap();
+        let (mut seen, rx) = t.subscribe();
+        let rx = rx.unwrap();
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        while !String::from_utf8_lossy(&seen).contains("done") {
+            assert!(std::time::Instant::now() < deadline, "no reply");
+            if let Ok(c) = rx.recv_timeout(Duration::from_millis(100)) {
+                seen.extend_from_slice(&c);
+            }
+        }
+        let out = String::from_utf8_lossy(&seen).into_owned();
+        assert!(out.contains("ab"), "{out}");
+        assert!(out.contains("033[1;1R"), "{out}");
+        assert!(out.contains("c\x1b[6nd"), "{out}");
         t.kill().unwrap();
         remove(&t.info().id);
     }

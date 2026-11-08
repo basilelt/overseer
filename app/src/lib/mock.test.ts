@@ -19,9 +19,30 @@ describe('MockDaemon', () => {
     const [lines, tasks, terms, projects] = await Promise.all([a.lines(), a.tasks(), a.terms(), a.projects()]);
     expect(lines.length).toBe(12);
     expect(tasks.length).toBeGreaterThanOrEqual(12);
-    expect(new Set(tasks.map((t) => t.status)).size).toBe(5);
+    expect(new Set(tasks.map((t) => t.status)).size).toBe(6);
     expect(terms.some((t) => !t.lineId)).toBe(true);
     expect(projects.length).toBeGreaterThan(2);
+  });
+
+  it('accepts merged on a task and rejects a status the daemon does not know', async () => {
+    const { a } = setup();
+    const tasks = await a.tasks();
+    const plain = tasks.find((t) => t.origin !== 'session' && t.status === 'in_testing')!;
+    expect((await a.patchTask(plain.id, { status: 'merged' })).status).toBe('merged');
+    await expect(a.patchTask(plain.id, { status: 'done' as never })).rejects.toMatchObject({ status: 400, message: 'status must be one of pending, auto, in_testing, merged, completed' });
+    const session = tasks.find((t) => t.origin === 'session')!;
+    expect((await a.patchTask(session.id, { status: 'merged' })).status).toBe('merged');
+    await expect(a.patchTask(session.id, { status: 'pending' })).rejects.toMatchObject({ status: 400, message: 'a session task follows its session: status must be one of in_progress, in_testing, merged, completed' });
+  });
+
+  it('moves a task back to in_progress only while its agent runs, as the daemon does', async () => {
+    const { a } = setup();
+    const tasks = await a.tasks();
+    const idle = tasks.find((t) => t.origin !== 'session' && t.status === 'pending')!;
+    await expect(a.patchTask(idle.id, { status: 'in_progress' })).rejects.toMatchObject({ status: 400, message: 'use POST /v1/tasks/{id}/start to start a task' });
+    const live = tasks.find((t) => t.origin !== 'session' && t.status === 'in_progress' && t.termId)!;
+    await a.patchTask(live.id, { status: 'merged' });
+    expect((await a.patchTask(live.id, { status: 'in_progress' })).status).toBe('in_progress');
   });
 
   it('reports the device it was given, for the demo on a real phone', async () => {
@@ -386,19 +407,31 @@ describe('MockDaemon', () => {
     expect(agents.filter((x) => !x.installed).map((x) => x.id)).toEqual(['opencode', 'amp', 'cursor']);
     expect(agents.find((x) => x.id === 'amp')!.install).toContain('npm');
     expect(agents.find((x) => x.id === 'gemini')!.efforts).toEqual([]);
+    expect(agents.find((x) => x.id === 'agy')!.efforts).toEqual(['low', 'medium', 'high', 'xhigh', 'max']);
     expect(agents.filter((x) => x.sessions).map((x) => x.id)).toEqual(['claude', 'codex', 'gemini']);
+  });
+
+  it('persists per-agent auto-approval defaults and applies them to newly started terms', async () => {
+    const { m, a } = setup();
+    expect((await a.agentSettings()).autoApprove).toEqual({ claude: true, codex: true, gemini: true, agy: true, opencode: true, copilot: true, cursor: true });
+    expect((await a.createTerm({ agent: 'codex' })).cmd).toContain('--ask-for-approval');
+    expect((await a.setAgentAutoApprove('codex', false)).autoApprove.codex).toBe(false);
+    expect((await a.createTerm({ agent: 'codex' })).cmd).not.toContain('--ask-for-approval');
+    await expect(m.request('PUT', '/v1/agents/settings', { agent: 'amp', autoApprove: false })).rejects.toMatchObject({ status: 400 });
+    await expect(m.request('PUT', '/v1/agents/settings', { agent: 'claude', autoApprove: 'false' })).rejects.toMatchObject({ status: 400 });
   });
 
   it('starts terms for an agent and validates the request', async () => {
     const { a, events } = setup();
     const term = await a.createTerm({ agent: 'claude', model: 'sonnet', effort: 'max', cwd: '/w' });
-    expect(term).toMatchObject({ agent: 'claude', cmd: ['claude', '--model', 'sonnet', '--effort', 'max'], cwd: '/w', cols: 80, rows: 24 });
+    expect(term).toMatchObject({ agent: 'claude', cmd: ['claude', '--permission-mode', 'auto', '--model', 'sonnet', '--effort', 'max'], cwd: '/w', cols: 80, rows: 24 });
+    expect(await a.createTerm({ agent: 'agy', effort: 'xhigh', cwd: '/w' })).toMatchObject({ cmd: ['agy', '--mode=auto', '--effort', 'xhigh'] });
     expect((await a.createTerm({ agent: 'shell' })).agent).toBe('shell');
     expect((await a.createTerm({ cmd: ['htop'] })).agent).toBe('shell');
     await expect(a.createTerm({ agent: 'claude', cmd: ['x'] })).rejects.toMatchObject({ status: 400 });
     await expect(a.createTerm({ agent: 'nope' })).rejects.toMatchObject({ status: 400 });
     await expect(a.createTerm({ agent: 'amp' })).rejects.toThrow('not installed');
-    expect(events.filter((e) => e.type === 'term.created')).toHaveLength(3);
+    expect(events.filter((e) => e.type === 'term.created')).toHaveLength(4);
   });
 
   it('kills a running term once, with confirmation', async () => {

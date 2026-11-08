@@ -88,7 +88,8 @@ fn merge_with(
     existing: &Value,
     events: &[&str],
     command: impl Fn(&str) -> String,
-    entry: impl Fn(String) -> Value,
+    entry: impl Fn(&str, String) -> Value,
+    update: impl Fn(&str, &mut Value),
 ) -> Value {
     let mut root = match existing {
         Value::Object(_) => existing.clone(),
@@ -106,10 +107,13 @@ fn merge_with(
         }
         let arr = groups.as_array_mut().expect("array");
         if arr.iter().any(|g| has(g, &cmd)) {
+            for group in arr.iter_mut().filter(|g| has(g, &cmd)) {
+                update(ev, group);
+            }
             continue;
         }
         strip(arr, MARKER);
-        arr.push(entry(cmd));
+        arr.push(entry(ev, cmd));
     }
     root
 }
@@ -124,16 +128,38 @@ pub fn merge_groups(
     command: impl Fn(&str) -> String,
     timeout: u64,
 ) -> Value {
+    merge_groups_with_timeout(existing, events, command, |_| timeout)
+}
+
+fn merge_groups_with_timeout(
+    existing: &Value,
+    events: &[&str],
+    command: impl Fn(&str) -> String,
+    timeout: impl Fn(&str) -> u64,
+) -> Value {
     merge_with(
         existing,
         events,
         command,
-        |cmd| json!({ "hooks": [{ "type": "command", "command": cmd, "timeout": timeout }] }),
+        |event, cmd| json!({ "hooks": [{ "type": "command", "command": cmd, "timeout": timeout(event) }] }),
+        |event, group| {
+            if let Some(hooks) = group.get_mut("hooks").and_then(Value::as_array_mut) {
+                for hook in hooks.iter_mut().filter(|hook| ours(hook, MARKER)) {
+                    hook["timeout"] = json!(timeout(event));
+                }
+            }
+        },
     )
 }
 
 pub fn merge_flat(existing: &Value, events: &[&str], command: impl Fn(&str) -> String) -> Value {
-    let mut root = merge_with(existing, events, command, |cmd| json!({ "command": cmd }));
+    let mut root = merge_with(
+        existing,
+        events,
+        command,
+        |_event, cmd| json!({ "command": cmd }),
+        |_event, _group| {},
+    );
     if root.get("version").is_none() {
         root["version"] = json!(1);
     }
@@ -247,6 +273,10 @@ pub fn diff(path: &Path, before: &str, after: &str, tmp: &Path) -> String {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Format {
     Groups(u64),
+    GroupsWithOverrides {
+        default: u64,
+        overrides: &'static [(&'static str, u64)],
+    },
     Flat,
     File,
 }
@@ -283,7 +313,10 @@ pub fn targets() -> Vec<Target> {
             env_dir("CODEX_HOME", ".codex"),
             "hooks.json",
             hooks::CODEX_EVENTS,
-            Format::Groups(5),
+            Format::GroupsWithOverrides {
+                default: 5,
+                overrides: &[("SessionEnd", 3)],
+            },
         ),
         t(
             "gemini",
@@ -515,6 +548,14 @@ pub fn plan(t: &Target, uninstall: bool, bin: &Path, state_dir: &Path) -> Result
         (true, _) => unmerge(&base),
         (false, Format::Flat) => merge_flat(&base, t.events, cmd),
         (false, Format::Groups(timeout)) => merge_groups(&base, t.events, cmd, timeout),
+        (false, Format::GroupsWithOverrides { default, overrides }) => {
+            merge_groups_with_timeout(&base, t.events, cmd, |event| {
+                overrides
+                    .iter()
+                    .find(|(override_event, _)| *override_event == event)
+                    .map_or(default, |(_, timeout)| *timeout)
+            })
+        }
         (false, Format::File) => unreachable!(),
     };
     let ours = if uninstall {
@@ -533,7 +574,13 @@ pub fn plan(t: &Target, uninstall: bool, bin: &Path, state_dir: &Path) -> Result
     })
 }
 
+fn resolved(path: &Path) -> PathBuf {
+    path.canonicalize().unwrap_or_else(|_| path.to_path_buf())
+}
+
 pub(crate) fn atomic_write(path: &Path, text: &str) -> Result<(), String> {
+    let path = resolved(path);
+    let path = path.as_path();
     if let Some(parent) = path.parent() {
         crate::mkdir_private(parent).map_err(|e| format!("{}: {e}", parent.display()))?;
     }
@@ -545,7 +592,31 @@ pub(crate) fn atomic_write(path: &Path, text: &str) -> Result<(), String> {
     std::fs::rename(&tmp, path).map_err(|e| format!("{}: {e}", path.display()))
 }
 
-pub fn write(t: &Target, p: &Planned, stamp: &str) -> Result<Option<PathBuf>, String> {
+pub fn backup(src: &Path, state_dir: &Path, stamp: &str) -> Result<PathBuf, String> {
+    let dir = state_dir.join("backups");
+    crate::mkdir_private(&dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+    let flat: String = src
+        .to_string_lossy()
+        .chars()
+        .map(|c| {
+            if c.is_alphanumeric() || matches!(c, '.' | '-') {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    let b = dir.join(format!("{flat}.bak-{stamp}"));
+    std::fs::copy(src, &b).map_err(|e| format!("backup {}: {e}", b.display()))?;
+    Ok(b)
+}
+
+pub fn write(
+    t: &Target,
+    p: &Planned,
+    state_dir: &Path,
+    stamp: &str,
+) -> Result<Option<PathBuf>, String> {
     if p.owned {
         if p.after_text.is_empty() {
             if p.existed {
@@ -558,19 +629,18 @@ pub fn write(t: &Target, p: &Planned, stamp: &str) -> Result<Option<PathBuf>, St
     }
     let original = p.before.clone().unwrap_or_else(|| json!({}));
     validate(&original, p.after_text.as_bytes(), &p.ours)?;
-    let backup = if t.path.exists() {
-        let b = PathBuf::from(format!("{}.bak-{stamp}", t.path.display()));
-        std::fs::copy(&t.path, &b).map_err(|e| format!("backup {}: {e}", b.display()))?;
-        Some(b)
+    let target = resolved(&t.path);
+    let backup = if t.path.exists() && !stamp.is_empty() {
+        Some(backup(&t.path, state_dir, stamp)?)
     } else {
         None
     };
-    if let Some(parent) = t.path.parent() {
+    if let Some(parent) = target.parent() {
         crate::mkdir_private(parent).map_err(|e| e.to_string())?;
     }
-    let tmp = PathBuf::from(format!("{}.sb-tmp", t.path.display()));
+    let tmp = PathBuf::from(format!("{}.sb-tmp", target.display()));
     std::fs::write(&tmp, &p.after_text).map_err(|e| format!("{}: {e}", tmp.display()))?;
-    if let Ok(m) = std::fs::metadata(&t.path) {
+    if let Ok(m) = std::fs::metadata(&target) {
         let _ = std::fs::set_permissions(&tmp, m.permissions());
     }
     let reread = std::fs::read(&tmp).map_err(|e| e.to_string())?;
@@ -578,7 +648,7 @@ pub fn write(t: &Target, p: &Planned, stamp: &str) -> Result<Option<PathBuf>, St
         let _ = std::fs::remove_file(&tmp);
         return Err(e);
     }
-    std::fs::rename(&tmp, &t.path).map_err(|e| format!("{}: {e}", t.path.display()))?;
+    std::fs::rename(&tmp, &target).map_err(|e| format!("{}: {e}", target.display()))?;
     Ok(backup)
 }
 
@@ -677,7 +747,7 @@ pub fn run(
             o.diff = diff(&t.path, &planned.before_text, &planned.after_text, &tmp);
         }
         if o.changed && r.apply {
-            match write(t, &planned, r.stamp) {
+            match write(t, &planned, r.state_dir, r.stamp) {
                 Ok(b) => {
                     o.written = true;
                     o.backup = b;
@@ -871,7 +941,42 @@ pub fn on_daemon_start(state_dir: &Path) {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(unix)]
+    #[test]
+    fn atomic_write_follows_a_symlinked_config() {
+        let d = std::env::temp_dir().join(format!("sb-symlink-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(d.join("dotfiles")).unwrap();
+        let real = d.join("dotfiles/settings.json");
+        let link = d.join("settings.json");
+        std::fs::write(&real, "{}").unwrap();
+        std::os::unix::fs::symlink(&real, &link).unwrap();
+        atomic_write(&link, "{\"a\":1}").unwrap();
+        assert!(std::fs::symlink_metadata(&link).unwrap().is_symlink());
+        assert_eq!(std::fs::read_to_string(&real).unwrap(), "{\"a\":1}");
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
     use super::*;
+
+    #[test]
+    fn backups_live_in_the_state_dir_with_the_full_path_in_the_name() {
+        let d = std::env::temp_dir().join(format!("sb-backup-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(d.join("a")).unwrap();
+        std::fs::create_dir_all(d.join("b")).unwrap();
+        std::fs::write(d.join("a/settings.json"), "one").unwrap();
+        std::fs::write(d.join("b/settings.json"), "two").unwrap();
+        let state = d.join("state");
+        let a = backup(&d.join("a/settings.json"), &state, "202601010000").unwrap();
+        let b = backup(&d.join("b/settings.json"), &state, "202601010000").unwrap();
+        assert_ne!(a, b);
+        assert!(a.starts_with(state.join("backups")));
+        assert_eq!(std::fs::read_to_string(&a).unwrap(), "one");
+        assert_eq!(std::fs::read_to_string(&b).unwrap(), "two");
+        assert!(!d.join("a/settings.json.bak-202601010000").exists());
+        let _ = std::fs::remove_dir_all(&d);
+    }
 
     fn cmd(ev: &str) -> String {
         format!("/sb hook claude {ev} {MARKER}")
@@ -974,6 +1079,28 @@ mod tests {
 
     fn read(p: &Path) -> Value {
         serde_json::from_str(&std::fs::read_to_string(p).unwrap()).unwrap()
+    }
+
+    #[test]
+    fn codex_session_end_uses_supported_timeout() {
+        let d = dir("codex-timeout");
+        let mut codex = targets().into_iter().find(|t| t.agent == "codex").unwrap();
+        codex.path = d.join("hooks.json");
+        let codex_command = |event: &str| hook_command(Path::new("/sb"), &d, "codex", event);
+        let old_config = merge_groups(&json!({}), hooks::CODEX_EVENTS, codex_command, 5);
+        std::fs::write(&codex.path, pretty(&old_config)).unwrap();
+
+        let planned = plan(&codex, false, Path::new("/sb"), &d).unwrap();
+        assert_eq!(
+            planned.after["hooks"]["SessionEnd"][0]["hooks"][0]["timeout"],
+            3
+        );
+        for event in hooks::CODEX_EVENTS
+            .iter()
+            .filter(|event| **event != "SessionEnd")
+        {
+            assert_eq!(planned.after["hooks"][*event][0]["hooks"][0]["timeout"], 5);
+        }
     }
 
     #[test]

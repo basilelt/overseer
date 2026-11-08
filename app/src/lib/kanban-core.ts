@@ -2,13 +2,15 @@ import type { Task, TaskStatus } from './types';
 
 export const isSession = (t: Task): boolean => t.origin === 'session';
 
+export const isDone = (status: TaskStatus): boolean => status === 'merged' || status === 'completed';
+
 export function taskForItem(tasks: Task[], item: { lineId?: string | null; termId?: string | null } | undefined): Task | undefined {
   if (!item) return undefined;
   return tasks.find((t) => (item.lineId && t.lineId === item.lineId) || (item.termId && t.termId === item.termId));
 }
 
 export function movableStatuses(task: Task): TaskStatus[] {
-  return isSession(task) ? ['in_progress', 'in_testing', 'completed'] : ['in_testing', 'completed'];
+  return isSession(task) ? ['in_progress', 'in_testing', 'merged', 'completed'] : ['in_testing', 'merged', 'completed'];
 }
 
 export const rankOf = (t: Task): number => (Number.isFinite(t.rank) ? t.rank : t.number);
@@ -24,7 +26,7 @@ export function blockers(task: Task, tasks: Map<string, Task>): Task[] {
   const out: Task[] = [];
   for (const id of task.dependsOn) {
     const d = tasks.get(id);
-    if (d && d.status !== 'completed') out.push(d);
+    if (d && !isDone(d.status)) out.push(d);
   }
   return out;
 }
