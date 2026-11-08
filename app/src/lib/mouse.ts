@@ -106,11 +106,11 @@ export function wheelReport(up: boolean, col: number, row: number, m: TermModes,
   return `\x1b[M${String.fromCharCode(32 + b, 32 + Math.min(x, 223), 32 + Math.min(y, 223))}`;
 }
 
-export function wheelAction(steps: number, w: WheelInput, m: TermModes): WheelAction {
+export function wheelAction(steps: number, w: WheelInput, m: TermModes, opts: { preferLocal?: boolean } = {}): WheelAction {
   if (steps === 0) return { kind: 'none' };
   const up = steps < 0;
   const n = Math.abs(steps);
-  if (w.shift) return { kind: 'local', lines: steps };
+  if (w.shift || opts.preferLocal) return { kind: 'local', lines: steps };
   if (m.tracking) return { kind: 'send', data: wheelReport(up, w.col, w.row, m, w).repeat(n) };
   if (m.alt && m.alternateScroll) {
     const key = `\x1b${m.appCursor ? 'O' : '['}${up ? 'A' : 'B'}`;

@@ -378,7 +378,7 @@
           const rect = (canvas ?? el).getBoundingClientRect();
           const steps = wheel.steps(e.deltaY, e.deltaMode as 0 | 1 | 2, { cellHeight: rect.height / Math.max(1, tm.rows), rows: tm.rows });
           const cell = cellAt(e.clientX, e.clientY, rect, tm.cols, tm.rows);
-          const action = wheelAction(steps, { deltaY: e.deltaY, deltaMode: e.deltaMode as 0 | 1 | 2, ...cell, shift: e.shiftKey, alt: e.altKey, ctrl: e.ctrlKey }, m);
+          const action = wheelAction(steps, { deltaY: e.deltaY, deltaMode: e.deltaMode as 0 | 1 | 2, ...cell, shift: e.shiftKey, alt: e.altKey, ctrl: e.ctrlKey }, m, { preferLocal: info?.agent === 'codex' });
           if (action.kind === 'send') io?.write(action.data);
           else if (action.kind === 'local') tm.scrollLines(action.lines);
           return true;
