@@ -1094,7 +1094,7 @@ fn codex_resume_drops_the_resume_subcommand_of_the_process_it_came_from() {
 fn codex_resume_repairs_flags_stored_with_a_resume_or_fork_subcommand() {
     // Given codex launch flags stored with `resume <id>`, `fork --last` or `resume --last`
     // When the resume command is built for thread CX
-    // Then only the genuine flags are kept before CX
+    // Then only genuine flags are kept before CX and config overrides select embedded mode
     let s = |v: &[&str]| v.iter().map(|a| a.to_string()).collect::<Vec<_>>();
     for (stored, want) in [
         (
@@ -1107,7 +1107,7 @@ fn codex_resume_repairs_flags_stored_with_a_resume_or_fork_subcommand() {
         ),
         (
             s(&["resume", "--last", "-c", "model=o3"]),
-            s(&["codex", "resume", "-c", "model=o3", CX]),
+            s(&["codex", "resume", "--no-daemon", "-c", "model=o3", CX]),
         ),
     ] {
         assert_eq!(

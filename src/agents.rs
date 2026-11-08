@@ -245,11 +245,25 @@ impl Agent {
         a
     }
 
+    pub fn mode_flags(&self, effort: &str, extra: &[String]) -> Vec<String> {
+        let needs_embedded = self.id == "codex"
+            && (!effort.is_empty()
+                || extra
+                    .iter()
+                    .any(|arg| matches!(arg.as_str(), "-c" | "--config")));
+        if needs_embedded && !extra.iter().any(|arg| arg == "--no-daemon") {
+            vec!["--no-daemon".to_string()]
+        } else {
+            vec![]
+        }
+    }
+
     pub fn launch(&self, l: &Launch) -> Vec<String> {
         let mut a = vec![self.program()];
         if self.bin.is_empty() {
             return a;
         }
+        a.extend(self.mode_flags(l.effort, l.extra));
         a.extend(l.extra.iter().cloned());
         if let (Some(parts), Some(s)) = (self.session, l.session) {
             a.extend(fill(parts, s));
@@ -466,7 +480,7 @@ mod tests {
         );
         assert_eq!(
             launch("codex", "", "max", None),
-            s(&["codex", "-c", "model_reasoning_effort=xhigh"])
+            s(&["codex", "--no-daemon", "-c", "model_reasoning_effort=xhigh"])
         );
         assert_eq!(
             launch("gemini", "gemini-2.5-pro", "high", Some("u2")),
@@ -506,6 +520,27 @@ mod tests {
             s(&["agy", "--effort", "high", "-i", "do it"])
         );
         assert_eq!(launch("cursor", "", "high", None), s(&["cursor-agent"]));
+    }
+
+    #[test]
+    fn codex_config_override_selects_embedded_mode() {
+        let extra = s(&["-c", "mcp_servers.overseer.args=[\"mcp\"]"]);
+        let argv = get("codex").unwrap().launch(&Launch {
+            model: "",
+            effort: "",
+            session: None,
+            prompt: None,
+            extra: &extra,
+        });
+        assert_eq!(
+            argv,
+            s(&[
+                "codex",
+                "--no-daemon",
+                "-c",
+                "mcp_servers.overseer.args=[\"mcp\"]",
+            ])
+        );
     }
 
     #[test]

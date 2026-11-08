@@ -1915,7 +1915,10 @@ fn tasks_take_any_agent_and_deliver_the_prompt_by_flag() {
     let mut ws = app.ws(&tid);
     read_until(&mut ws, "got: Paste");
     let log = stub_log(&app);
-    assert!(log.contains("-c model_reasoning_effort=low"), "{log}");
+    assert!(
+        log.contains("codex --no-daemon -c model_reasoning_effort=low"),
+        "{log}"
+    );
     assert!(
         log.contains("-c mcp_servers.overseer.args=[\"mcp\"]"),
         "{log}"
@@ -2357,7 +2360,10 @@ fn profiles_apply_at_launch_with_workspace_and_task_precedence() {
         json!({
             "default": "balanced",
             "scopes": {wt.clone(): "economy"},
-            "profiles": [{"id": "lean", "name": "Lean", "agents": {"claude": {"model": "haiku", "effort": "low"}}}],
+            "profiles": [
+                {"id": "lean", "name": "Lean", "agents": {"claude": {"model": "haiku", "effort": "low"}}},
+                {"id": "codex-overrides", "name": "Codex overrides", "agents": {"codex": {"subagentModel": "gpt-5.4-mini", "subagentEffort": "medium"}}}
+            ],
         }),
     );
 
@@ -2366,6 +2372,23 @@ fn profiles_apply_at_launch_with_workspace_and_task_precedence() {
     assert_eq!(cmd[3..], ["--model", "sonnet", "--effort", "low"]);
     assert_eq!(scoped["profile"]["name"], "Economy");
     assert_eq!(scoped["profile"]["effort"], "low");
+
+    let codex = app.ok(
+        "POST",
+        "/v1/terms",
+        json!({"cwd": wt, "agent": "codex", "profile": "codex-overrides"}),
+    );
+    assert_eq!(
+        strs(&codex["cmd"]),
+        [
+            "codex",
+            "--no-daemon",
+            "-c",
+            "agents.default_subagent_model=\"gpt-5.4-mini\"",
+            "-c",
+            "agents.default_subagent_reasoning_effort=\"medium\"",
+        ]
+    );
 
     let home = app.ok("POST", "/v1/terms", json!({"cwd": "/", "agent": "claude"}));
     assert_eq!(

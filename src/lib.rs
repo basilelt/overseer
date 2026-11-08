@@ -909,7 +909,14 @@ pub fn snapshot_args(path: &Path) -> HashMap<String, Vec<String>> {
 pub fn resume_flags(agent: &str, flags: &[String]) -> Vec<String> {
     let flags = procs::rejoin_split_json(flags);
     match agent {
-        "codex" => codex::launch_flags(&flags),
+        "codex" => {
+            let mut flags = codex::launch_flags(&flags);
+            if let Some(a) = agents::get("codex") {
+                let mode = a.mode_flags("", &flags);
+                flags.splice(0..0, mode);
+            }
+            flags
+        }
         "claude" => claude::launch_flags(&flags),
         _ => flags,
     }
@@ -1430,6 +1437,18 @@ impl Line {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn codex_resume_config_override_selects_embedded_mode() {
+        let flags = vec![
+            "-c".to_string(),
+            "mcp_servers.overseer.args=[\"mcp\"]".to_string(),
+        ];
+        assert_eq!(
+            resume_flags("codex", &flags),
+            ["--no-daemon", "-c", "mcp_servers.overseer.args=[\"mcp\"]",]
+        );
+    }
 
     #[test]
     fn unchanged_worktrees_are_not_rewritten_every_scan() {
