@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { SelectionManager } from 'ghostty-web';
-import { routeCopies } from './selection-copy';
+import { finishSelectionOnInterruption, routeCopies } from './selection-copy';
 
 function fakeManager() {
   const native = vi.fn();
@@ -46,5 +46,24 @@ describe('routeCopies', () => {
     routeCopies(sm as never, copy);
     expect(sm.copySelection()).toBe(true);
     expect(copy).toHaveBeenCalledWith('from ghostty');
+  });
+});
+
+describe('finishSelectionOnInterruption', () => {
+  it('finishes terminal selection when blur or pointer cancellation skips mouseup', () => {
+    const win = new EventTarget();
+    const terminal = new EventTarget();
+    const doc = new EventTarget();
+    const received: string[] = [];
+    doc.addEventListener('mouseup', () => received.push('mouseup'));
+    const stop = finishSelectionOnInterruption(win, terminal, doc);
+
+    win.dispatchEvent(new Event('blur'));
+    terminal.dispatchEvent(new Event('pointercancel'));
+
+    expect(received).toEqual(['mouseup', 'mouseup']);
+    stop();
+    win.dispatchEvent(new Event('blur'));
+    expect(received).toHaveLength(2);
   });
 });

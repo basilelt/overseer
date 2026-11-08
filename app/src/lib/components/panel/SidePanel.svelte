@@ -114,6 +114,7 @@
       off();
       clearTimeout(timer);
       clearTimeout(relTimer);
+      cancelDrag();
     };
   });
 
@@ -130,7 +131,25 @@
     if (!sec || e.button !== 0 || e.pointerType !== 'mouse') return;
     dragging = { id: sec.dataset.sec!, y: e.clientY, moved: false, el: sec };
     window.addEventListener('pointermove', dragMove);
-    window.addEventListener('pointerup', dragUp, { once: true });
+    window.addEventListener('pointerup', dragUp);
+    window.addEventListener('pointercancel', dragCancel);
+    window.addEventListener('blur', dragCancel);
+  }
+
+  function cancelDrag() {
+    window.removeEventListener('pointermove', dragMove);
+    window.removeEventListener('pointerup', dragUp);
+    window.removeEventListener('pointercancel', dragCancel);
+    window.removeEventListener('blur', dragCancel);
+    const d = dragging;
+    dragging = null;
+    if (!d) return;
+    d.el.classList.remove('dragging');
+    document.body.style.cursor = '';
+  }
+
+  function dragCancel() {
+    cancelDrag();
   }
 
   function dragMove(e: PointerEvent) {
@@ -142,12 +161,10 @@
   }
 
   function dragUp(e: PointerEvent) {
-    window.removeEventListener('pointermove', dragMove);
     const d = dragging;
-    dragging = null;
-    document.body.style.cursor = '';
-    if (!d?.moved) return;
-    d.el.classList.remove('dragging');
+    cancelDrag();
+    if (!d) return;
+    if (!d.moved) return;
     swallow = true;
     const target = [...(d.el.parentElement?.querySelectorAll<HTMLElement>('[data-sec]') ?? [])].find((el) => {
       const r = el.getBoundingClientRect();

@@ -35,7 +35,7 @@
   import { loadGhostty, termTheme } from '../../terminal';
   import { pathRanges } from '../../termlinks';
   import { scheduler, type PaintTarget } from '../../termrender';
-  import { routeCopies } from '../../selection-copy';
+  import { finishSelectionOnInterruption, routeCopies } from '../../selection-copy';
   import { guardAutoScroll } from '../../selection-scroll';
   import { settle } from '../../settle';
   import { openFile } from '../../preview';
@@ -149,6 +149,7 @@
   }
 
   onMount(() => {
+    const stopInterruptedSelection = finishSelectionOnInterruption(window, el, document);
     let ro: ResizeObserver | null = null;
     const resized = settle(() => refit?.(), 100);
     let stopIme: (() => void) | null = null;
@@ -405,6 +406,7 @@
     document.fonts?.addEventListener('loadingdone', onFontsLoaded);
 
     return () => {
+      stopInterruptedSelection();
       disposed = true;
       cancelAnimationFrame(focusFrame);
       window.removeEventListener('focus', maybeReassert);
