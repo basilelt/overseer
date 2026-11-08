@@ -220,6 +220,45 @@ pub fn auto_approve_args(id: &str) -> Option<&'static [&'static str]> {
     }
 }
 
+fn approval_overrides(id: &str) -> &'static [&'static str] {
+    match id {
+        "claude" => &[
+            "--permission-mode",
+            "--dangerously-skip-permissions",
+            "--allow-dangerously-skip-permissions",
+        ],
+        "codex" => &[
+            "--ask-for-approval",
+            "-a",
+            "--full-auto",
+            "--yolo",
+            "--dangerously-bypass-approvals-and-sandbox",
+        ],
+        "gemini" => &["--approval-mode", "--yolo", "-y"],
+        "agy" => &["--mode"],
+        "opencode" => &["--auto"],
+        "copilot" => &["--allow-all", "--allow-all-tools", "--yolo"],
+        "cursor" => &["--force", "-f", "--yolo"],
+        _ => &[],
+    }
+}
+
+pub fn auto_approve_flags(id: &str, extra: &[String]) -> Vec<String> {
+    let Some(flags) = auto_approve_args(id) else {
+        return vec![];
+    };
+    let overrides = approval_overrides(id);
+    let set = extra.iter().any(|arg| {
+        let name = arg.split_once('=').map_or(arg.as_str(), |(n, _)| n);
+        overrides.contains(&name)
+    });
+    if set {
+        vec![]
+    } else {
+        flags.iter().map(|f| (*f).to_string()).collect()
+    }
+}
+
 pub fn auto_approve_enabled(reg: &crate::registry::Registry, id: &str) -> Result<bool, String> {
     if auto_approve_args(id).is_none() {
         return Ok(false);
@@ -321,9 +360,7 @@ impl Agent {
         a.extend(self.mode_flags(l.effort, l.extra));
         a.extend(l.extra.iter().cloned());
         if l.auto_approve {
-            if let Some(flags) = auto_approve_args(self.id) {
-                a.extend(flags.iter().map(|f| (*f).to_string()));
-            }
+            a.extend(auto_approve_flags(self.id, l.extra));
         }
         if let (Some(parts), Some(s)) = (self.session, l.session) {
             a.extend(fill(parts, s));
@@ -633,6 +670,45 @@ mod tests {
         }
         assert_eq!(auto_approve_args("amp"), None);
         assert_eq!(auto_approve_args("shell"), None);
+    }
+
+    #[test]
+    fn explicit_approval_flags_in_extra_suppress_auto_approve() {
+        let cases: [(&str, &[&str]); 9] = [
+            ("claude", &["--permission-mode", "acceptEdits"]),
+            ("claude", &["--permission-mode=plan"]),
+            ("claude", &["--dangerously-skip-permissions"]),
+            ("codex", &["-a", "on-request"]),
+            ("codex", &["--ask-for-approval=untrusted"]),
+            ("gemini", &["--approval-mode", "default"]),
+            ("gemini", &["--yolo"]),
+            ("agy", &["--mode", "ask"]),
+            ("cursor", &["--force"]),
+        ];
+        for (id, extra) in cases {
+            let extra: Vec<String> = extra.iter().map(|a| (*a).to_string()).collect();
+            assert!(auto_approve_flags(id, &extra).is_empty(), "{id} {extra:?}");
+            let argv = get(id).unwrap().launch(&Launch {
+                model: "",
+                effort: "",
+                session: None,
+                prompt: None,
+                extra: &extra,
+                auto_approve: true,
+            });
+            let n = auto_approve_args(id).unwrap()[0].split('=').next().unwrap();
+            let count = argv
+                .iter()
+                .filter(|a| a.split('=').next() == Some(n))
+                .count();
+            assert!(count <= 1, "{id}: {argv:?}");
+        }
+        let unrelated = vec!["--verbose".to_string()];
+        assert_eq!(
+            auto_approve_flags("claude", &unrelated),
+            vec!["--permission-mode".to_string(), "auto".to_string()]
+        );
+        assert!(auto_approve_flags("amp", &[]).is_empty());
     }
 
     #[test]

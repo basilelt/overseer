@@ -916,9 +916,11 @@ pub(crate) fn start_with_args(
     let mut flags = agent.flags(&p.model, &p.effort);
     flags.extend(p.extra.iter().cloned());
     if auto_approve {
-        if let Some(auto_approve_flags) = crate::agents::auto_approve_args(agent.id) {
-            flags.extend(auto_approve_flags.iter().map(|flag| (*flag).to_string()));
+        let mut set = launch.extra.clone();
+        if agent.id == "claude" {
+            set.extend(ctx.config.start_args.iter().cloned());
         }
+        flags.extend(crate::agents::auto_approve_flags(agent.id, &set));
     }
     flags.extend(mcp);
     let (cols, rows) = size.unwrap_or((120, 32));

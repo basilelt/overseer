@@ -2061,6 +2061,45 @@ fn agent_auto_approval_settings_persist_and_control_new_term_argv() {
 }
 
 #[test]
+fn explicit_start_args_win_over_auto_approve_in_task_argv() {
+    let app = App::new(
+        "explicit-approval",
+        json!({"autoConcurrency": 0, "startArgs": ["--permission-mode", "acceptEdits"]}),
+    );
+    let cwd = app.fx.wt.to_string_lossy().into_owned();
+    let task = app.ok(
+        "POST",
+        "/v1/tasks",
+        json!({"title": "Explicit", "project": cwd, "agent": "claude"}),
+    );
+    let task = app.ok(
+        "POST",
+        &format!("/v1/tasks/{}/start", task["id"].as_str().unwrap()),
+        json!({}),
+    );
+    let term = app.ok(
+        "GET",
+        &format!("/v1/terms/{}", task["termId"].as_str().unwrap()),
+        Value::Null,
+    );
+    let cmd = strs(&term["cmd"]);
+    assert_eq!(
+        cmd.iter().filter(|a| *a == "--permission-mode").count(),
+        1,
+        "{cmd:?}"
+    );
+    assert!(cmd
+        .windows(2)
+        .any(|w| w == ["--permission-mode", "acceptEdits"]));
+    assert!(!cmd.contains(&"auto".to_string()));
+    app.ok(
+        "POST",
+        &format!("/v1/terms/{}/kill", task["termId"].as_str().unwrap()),
+        json!({"confirm": true}),
+    );
+}
+
+#[test]
 fn tasks_take_any_agent_and_deliver_the_prompt_by_flag() {
     let app = App::new("taskagents", json!({"autoConcurrency": 0}));
     let wt = app.fx.wt.to_string_lossy().into_owned();
