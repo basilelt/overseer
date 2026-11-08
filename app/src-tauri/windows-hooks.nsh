@@ -22,6 +22,7 @@
 
 !macro NSIS_HOOK_PREUNINSTALL
   ${If} $UpdateMode <> 1
+  ${AndIf} $DeleteAppDataCheckboxState = 1
     !insertmacro OVERSEER_REMOVE_DATA windows-x86_64
     !insertmacro OVERSEER_REMOVE_DATA windows-aarch64
   ${EndIf}

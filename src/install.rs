@@ -574,7 +574,13 @@ pub fn plan(t: &Target, uninstall: bool, bin: &Path, state_dir: &Path) -> Result
     })
 }
 
+fn resolved(path: &Path) -> PathBuf {
+    path.canonicalize().unwrap_or_else(|_| path.to_path_buf())
+}
+
 pub(crate) fn atomic_write(path: &Path, text: &str) -> Result<(), String> {
+    let path = resolved(path);
+    let path = path.as_path();
     if let Some(parent) = path.parent() {
         crate::mkdir_private(parent).map_err(|e| format!("{}: {e}", parent.display()))?;
     }
@@ -623,17 +629,18 @@ pub fn write(
     }
     let original = p.before.clone().unwrap_or_else(|| json!({}));
     validate(&original, p.after_text.as_bytes(), &p.ours)?;
+    let target = resolved(&t.path);
     let backup = if t.path.exists() && !stamp.is_empty() {
         Some(backup(&t.path, state_dir, stamp)?)
     } else {
         None
     };
-    if let Some(parent) = t.path.parent() {
+    if let Some(parent) = target.parent() {
         crate::mkdir_private(parent).map_err(|e| e.to_string())?;
     }
-    let tmp = PathBuf::from(format!("{}.sb-tmp", t.path.display()));
+    let tmp = PathBuf::from(format!("{}.sb-tmp", target.display()));
     std::fs::write(&tmp, &p.after_text).map_err(|e| format!("{}: {e}", tmp.display()))?;
-    if let Ok(m) = std::fs::metadata(&t.path) {
+    if let Ok(m) = std::fs::metadata(&target) {
         let _ = std::fs::set_permissions(&tmp, m.permissions());
     }
     let reread = std::fs::read(&tmp).map_err(|e| e.to_string())?;
@@ -641,7 +648,7 @@ pub fn write(
         let _ = std::fs::remove_file(&tmp);
         return Err(e);
     }
-    std::fs::rename(&tmp, &t.path).map_err(|e| format!("{}: {e}", t.path.display()))?;
+    std::fs::rename(&tmp, &target).map_err(|e| format!("{}: {e}", target.display()))?;
     Ok(backup)
 }
 
@@ -934,6 +941,22 @@ pub fn on_daemon_start(state_dir: &Path) {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(unix)]
+    #[test]
+    fn atomic_write_follows_a_symlinked_config() {
+        let d = std::env::temp_dir().join(format!("sb-symlink-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(d.join("dotfiles")).unwrap();
+        let real = d.join("dotfiles/settings.json");
+        let link = d.join("settings.json");
+        std::fs::write(&real, "{}").unwrap();
+        std::os::unix::fs::symlink(&real, &link).unwrap();
+        atomic_write(&link, "{\"a\":1}").unwrap();
+        assert!(std::fs::symlink_metadata(&link).unwrap().is_symlink());
+        assert_eq!(std::fs::read_to_string(&real).unwrap(), "{\"a\":1}");
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
     use super::*;
 
     #[test]

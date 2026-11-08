@@ -1970,13 +1970,13 @@ Removing it takes one step, in two equivalent forms:
   the app says you can delete it, and on the desktop offers **Quit Overseer**.
 - On the command line: `overseer uninstall` prints the same list (a dry run), `overseer uninstall
   --apply` does it. It works with the daemon stopped; when a daemon is running it asks the daemon
-  (`POST /v1/uninstall`), which answers, deletes its state dir and exits.
+  (`POST /v1/uninstall`), which answers, deletes its state dir and exits. The state dir is only deleted when it holds Overseer's databases (or is empty). Before editing an agent config, uninstall saves a copy next to it as `<file>.overseer-uninstall.bak` and lists it under kept.
 
 Per platform:
 
 | Platform | How |
 | --- | --- |
-| Windows | Uninstalling from Apps and features runs `overseer uninstall --apply` first. An update never does: the updater's installer runs the old uninstaller in update mode, which skips it. |
+| Windows | Uninstalling from Apps and features runs `overseer uninstall --apply` first only when you tick the uninstaller's **Delete the application data** box; a plain uninstall or reinstall keeps your tasks and state. An update never does: the updater's installer runs the old uninstaller in update mode, which skips it. |
 | macOS, Homebrew | `brew uninstall --cask overseer` removes the app; add `--zap` (`brew uninstall --zap --cask overseer`) to also run `overseer uninstall --apply` and delete the app's data. Plain `brew uninstall` and `brew upgrade` leave hooks and data alone on purpose. |
 | macOS, dragged to the Trash | Click the in-app button first (or run `/Applications/Overseer.app/Contents/Resources/server/darwin-<arch>/overseer uninstall --apply`), then delete the app. |
 | Linux `.deb`, `.rpm`, AppImage | The packages ship no removal script (it would also run on upgrades, as root, without your home). Click the in-app button or run `~/.overseer/bin/overseer uninstall --apply` first, then remove the package or the AppImage. |
