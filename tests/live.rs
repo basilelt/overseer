@@ -42,6 +42,39 @@ fn hooks_and_polling_drive_live_state() {
 }
 
 #[test]
+fn codex_tool_completion_clears_waiting_while_the_turn_continues() {
+    let t = T::new();
+    let pane = t
+        .tmux(&[
+            "new-window",
+            "-P",
+            "-F",
+            "#{pane_id}",
+            "-t",
+            "main",
+            "-n",
+            "c",
+            "-c",
+            &t.wt.to_string_lossy(),
+            "codex",
+            "resume",
+            SID,
+        ])
+        .trim()
+        .to_string();
+    t.wait(|| t.screen(&pane).contains('›') && t.line(SID)["local"]["pid"].is_u64());
+
+    t.keys(&pane, "busy", true);
+    t.wait(|| t.line(SID)["local"]["busy"] == true);
+    t.keys(&pane, "ask", true);
+    t.wait(|| t.line(SID)["local"]["needsInput"] == true);
+
+    t.keys(&pane, "approved", true);
+    t.wait(|| t.line(SID)["local"]["needsInput"] == false);
+    assert_eq!(t.line(SID)["local"]["busy"], true);
+}
+
+#[test]
 fn hold_refuses_each_unsafe_case() {
     let t = T::new();
     let pane = t.start_agent("a", SID, "claude --model opus");
@@ -395,7 +428,11 @@ fn hooks_installer_dry_run_apply_idempotent_uninstall() {
         &std::fs::read_to_string(t.base.join("home/.codex/hooks.json")).unwrap(),
     )
     .unwrap();
-    assert_eq!(codex["hooks"].as_object().unwrap().len(), 7);
+    assert_eq!(codex["hooks"].as_object().unwrap().len(), 8);
+    assert!(codex["hooks"]["PostToolUse"][0]["hooks"][0]["command"]
+        .as_str()
+        .unwrap()
+        .contains("hook codex PostToolUse"));
 
     let again =
         String::from_utf8_lossy(&t.sb(&["hooks", "install", "--apply"]).stdout).into_owned();

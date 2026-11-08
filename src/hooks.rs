@@ -27,6 +27,7 @@ pub const CODEX_EVENTS: &[&str] = &[
     "UserPromptSubmit",
     "Stop",
     "PermissionRequest",
+    "PostToolUse",
     "SubagentStart",
     "SubagentStop",
     "SessionEnd",
@@ -387,6 +388,19 @@ mod tests {
             apply(&mut h, &ev(after));
             assert!(h.busy && !h.needs_input, "{after}");
         }
+    }
+
+    #[test]
+    fn codex_installs_post_tool_use_to_clear_permission_waits() {
+        assert!(CODEX_EVENTS.contains(&"PostToolUse"));
+
+        let mut h = HookState::default();
+        apply(&mut h, &json!({"event": "UserPromptSubmit", "at": 1}));
+        apply(&mut h, &json!({"event": "PermissionRequest", "at": 2}));
+        assert!(h.needs_input);
+
+        apply(&mut h, &json!({"event": "PostToolUse", "at": 3}));
+        assert!(h.busy && !h.needs_input);
     }
 
     #[test]
