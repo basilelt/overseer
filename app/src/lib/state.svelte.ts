@@ -653,6 +653,10 @@ class AppState {
     this.fileArg = arg && typeof arg === 'object' ? arg : null;
   }
 
+  closeOverlay() {
+    this.open(this.overlay === 'uninstall' ? 'settings' : null);
+  }
+
   openPage(url: string, from: { key?: string | null; termId?: string }): boolean {
     const key = from.key ?? (from.termId ? this.items.find((i) => i.termId === from.termId)?.key : undefined);
     const web = normalizeUrl(url);

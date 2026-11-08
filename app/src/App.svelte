@@ -142,7 +142,7 @@
     } else if (e.key === 'Escape' && diag.mode) {
       diag.close();
     } else if (e.key === 'Escape' && app.overlay) {
-      app.open(null);
+      app.closeOverlay();
     }
   }
   const connBanner = preload(() => import('./lib/components/ui/ConnBanner.svelte'), 1000);

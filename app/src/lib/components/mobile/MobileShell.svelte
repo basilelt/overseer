@@ -115,7 +115,7 @@
     else if (action === 'menu') app.menu = null;
     else if (action === 'handler') closeTop();
     else if (action === 'diag') diag.close();
-    else if (action === 'overlay') app.open(null);
+    else if (action === 'overlay') app.closeOverlay();
     else if (action === 'panel') ui.panel = false;
     else if (action === 'drawer') ui.drawer = false;
     else if (action === 'subscreen') back();
