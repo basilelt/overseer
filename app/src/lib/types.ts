@@ -499,6 +499,28 @@ export interface HooksRun {
   results: HookResult[];
 }
 
+export type UninstallKind = 'service' | 'linger' | 'hook' | 'statusline' | 'backup' | 'dir' | 'worktree' | 'branch' | 'appData' | 'stateDir';
+
+export interface UninstallItem {
+  kind: UninstallKind;
+  path: string;
+}
+
+export interface UninstallKept extends UninstallItem {
+  reason: string;
+}
+
+export interface UninstallFailure extends UninstallItem {
+  error: string;
+}
+
+export interface UninstallReport {
+  dryRun: boolean;
+  removed: UninstallItem[];
+  kept: UninstallKept[];
+  errors: UninstallFailure[];
+}
+
 export interface HostTarget {
   kind: 'local' | 'ssh' | 'direct';
   host?: string;

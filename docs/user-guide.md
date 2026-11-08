@@ -81,7 +81,7 @@ Paths may start with `~/`. A missing or unreadable `config.json` means all defau
 
 ```
 overseer hooks install                 # dry run: diff of every agent's hook file
-overseer hooks install --apply         # backup <file>.bak-YYYYMMDDHHMM, merge, validate, atomic replace
+overseer hooks install --apply         # backup to <state>/backups/, merge, validate, atomic replace
 overseer hooks install gemini --apply  # only the named agents
 overseer hooks uninstall --apply       # removes only Overseer's entries and files
 ```
@@ -887,7 +887,7 @@ On first launch, once the app is connected (immediately in local mode, after the
 connection on a phone), a welcome card offers **Take the tour** or **Skip**. The tour dims the
 window and highlights the real controls one at a time: host chip, workspaces sidebar, tabs and the
 new-session menu, the Terminal/Chat toggle, the side panel, Tasks, Review, the usage, system and ports
-chips, notifications and hooks, the command palette and Feedback, in 0.25 the Cmd/Ctrl+P palette shortcut, and in 0.27 the demo mode (on the **Demo mode** pill while in the demo, else on the host chip), and in 0.28 the GPU rendering option for terminals, and in 0.29 the clean up of unused worktrees and the import from Switchboard (on its button in Settings, Help, or on the Settings button), and in 0.30 click to move the cursor in a terminal (on the tabs), and in 0.31 the Light and Dark palettes (on Settings, or More on a phone), and in 0.33 the one-click install of skills and plugins (on Settings). Steps whose control is not on
+chips, notifications and hooks, the command palette and Feedback, in 0.25 the Cmd/Ctrl+P palette shortcut, and in 0.27 the demo mode (on the **Demo mode** pill while in the demo, else on the host chip), and in 0.28 the GPU rendering option for terminals, and in 0.29 the clean up of unused worktrees and the import from Switchboard (on its button in Settings, Help, or on the Settings button), and in 0.30 click to move the cursor in a terminal (on the tabs), and in 0.31 the Light and Dark palettes (on Settings, or More on a phone), and in 0.33 the one-click install of skills and plugins (on Settings), and in 0.34 the clean removal of everything Overseer added (on Settings, Connection, **Remove**). Steps whose control is not on
 screen (no session selected, a feature the server lacks, phone layout) are skipped. On a phone the
 card is a sheet at the bottom (or top, when the control sits low) and points at the bottom
 navigation, the session strip and the menu.
@@ -1138,7 +1138,7 @@ Claude subagents that set `model:` in their file ignore `CLAUDE_CODE_SUBAGENT_MO
 "Override every subagent" is on. To change one subagent only, set it under **Named subagents**
 (the list comes from `~/.claude/agents` and `<project>/.claude/agents`, project first), save, then
 **Apply to agent files…**: Overseer shows the frontmatter lines it would change per file, you
-tick each file, and it writes them with a `.bak-<stamp>` copy next to each. Nothing is written
+tick each file, and it writes them with a `.bak-<stamp>` copy of each in `<state>/backups/`. Nothing is written
 without that confirmation.
 
 Profiles live in the daemon's state dir (`profiles.json`), so the desktop and phone apps share
@@ -1931,6 +1931,38 @@ exits: Resume then reopens the session it was last in (`lines.session_now`). Two
   `GET /v1/lines/<id>/screen`, `POST /v1/lines/<id>/keys`, `GET /v1/lines/<id>/commands`
   (contract §6b). The daemon parses a chat only after someone opened it, incrementally, and
   forgets it after 15 minutes without readers.
+
+## Uninstall
+
+Overseer writes outside its own folders, so deleting the app alone leaves things behind: hook
+entries in the agents' config files (for example `~/.claude/settings.json`), the statusline
+wrapper, the boot service (a systemd user unit, or `~/Library/LaunchAgents/dev.overseer.daemon.plist`)
+and its linger setting, `~/.overseer` (the `bin/` shim, `server/`, `u/`, `tasks/`, `reviews/`), the
+config backups it made, worktrees and `task/*` branches it created, the state dir
+(`~/.local/state/overseer` on Linux, `~/Library/Application Support/overseer` on macOS,
+`%LOCALAPPDATA%\overseer` on Windows, or `$OVERSEER_STATE_DIR`) and the app's own data.
+
+Removing it takes one step, in two equivalent forms:
+
+- In the app: **Settings, Connection, Remove Overseer from this computer**. For a remote server
+  the row reads **Remove Overseer from {host}** and acts on that server. The app first runs a dry
+  run and lists what will be removed and what is kept with the reason (a worktree with uncommitted
+  changes is always kept). **Remove Overseer** applies it; **Cancel** does nothing. When it is done
+  the app says you can delete it, and on the desktop offers **Quit Overseer**.
+- On the command line: `overseer uninstall` prints the same list (a dry run), `overseer uninstall
+  --apply` does it. It works with the daemon stopped; when a daemon is running it asks the daemon
+  (`POST /v1/uninstall`), which answers, deletes its state dir and exits.
+
+Per platform:
+
+| Platform | How |
+| --- | --- |
+| Windows | Uninstalling from Apps and features runs `overseer uninstall --apply` first. An update never does: the updater's installer runs the old uninstaller in update mode, which skips it. |
+| macOS, Homebrew | `brew uninstall --cask overseer` removes the app; add `--zap` (`brew uninstall --zap --cask overseer`) to also run `overseer uninstall --apply` and delete the app's data. Plain `brew uninstall` and `brew upgrade` leave hooks and data alone on purpose. |
+| macOS, dragged to the Trash | Click the in-app button first (or run `/Applications/Overseer.app/Contents/Resources/server/darwin-<arch>/overseer uninstall --apply`), then delete the app. |
+| Linux `.deb`, `.rpm`, AppImage | The packages ship no removal script (it would also run on upgrades, as root, without your home). Click the in-app button or run `~/.overseer/bin/overseer uninstall --apply` first, then remove the package or the AppImage. |
+| Remote server | Connect to it and use the button, or run `~/.overseer/bin/overseer uninstall --apply` on the server. |
+| Android, iOS | Remove the host from the app (or use the button while connected to it to clean the server), then delete the app. |
 
 ## What Overseer reads and writes
 

@@ -90,6 +90,7 @@ export const ENTRIES: Entry[] = [
   { id: 'serverBinDir', section: 'hosts', keys: ['settings.serverBinDir', 'settings.serverBinDirHint'] },
   { id: 'keepRunning', section: 'server', keys: ['settings.keepRunning', 'settings.keepRunningHint'] },
   { id: 'afterReboot', section: 'server', keys: ['settings.afterReboot', 'settings.afterRebootHint', 'settings.afterReboot.agents', 'settings.afterReboot.shells', 'settings.afterReboot.nothing'] },
+  { id: 'uninstall', section: 'server', keys: ['settings.uninstall', 'settings.uninstallRemote', 'settings.uninstallHint', 'settings.uninstallButton'] },
   { id: 'update', section: 'updater', keys: ['updater.version', 'updater.check'] },
   { id: 'apk', section: 'apk', keys: ['apk.version', 'apk.check'] },
   { id: 'tour', section: 'tour', keys: ['tour.again', 'tour.againHint', 'tour.take'] },

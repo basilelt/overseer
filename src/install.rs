@@ -545,7 +545,31 @@ pub(crate) fn atomic_write(path: &Path, text: &str) -> Result<(), String> {
     std::fs::rename(&tmp, path).map_err(|e| format!("{}: {e}", path.display()))
 }
 
-pub fn write(t: &Target, p: &Planned, stamp: &str) -> Result<Option<PathBuf>, String> {
+pub fn backup(src: &Path, state_dir: &Path, stamp: &str) -> Result<PathBuf, String> {
+    let dir = state_dir.join("backups");
+    crate::mkdir_private(&dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+    let flat: String = src
+        .to_string_lossy()
+        .chars()
+        .map(|c| {
+            if c.is_alphanumeric() || matches!(c, '.' | '-') {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    let b = dir.join(format!("{flat}.bak-{stamp}"));
+    std::fs::copy(src, &b).map_err(|e| format!("backup {}: {e}", b.display()))?;
+    Ok(b)
+}
+
+pub fn write(
+    t: &Target,
+    p: &Planned,
+    state_dir: &Path,
+    stamp: &str,
+) -> Result<Option<PathBuf>, String> {
     if p.owned {
         if p.after_text.is_empty() {
             if p.existed {
@@ -558,10 +582,8 @@ pub fn write(t: &Target, p: &Planned, stamp: &str) -> Result<Option<PathBuf>, St
     }
     let original = p.before.clone().unwrap_or_else(|| json!({}));
     validate(&original, p.after_text.as_bytes(), &p.ours)?;
-    let backup = if t.path.exists() {
-        let b = PathBuf::from(format!("{}.bak-{stamp}", t.path.display()));
-        std::fs::copy(&t.path, &b).map_err(|e| format!("backup {}: {e}", b.display()))?;
-        Some(b)
+    let backup = if t.path.exists() && !stamp.is_empty() {
+        Some(backup(&t.path, state_dir, stamp)?)
     } else {
         None
     };
@@ -677,7 +699,7 @@ pub fn run(
             o.diff = diff(&t.path, &planned.before_text, &planned.after_text, &tmp);
         }
         if o.changed && r.apply {
-            match write(t, &planned, r.stamp) {
+            match write(t, &planned, r.state_dir, r.stamp) {
                 Ok(b) => {
                     o.written = true;
                     o.backup = b;
@@ -872,6 +894,25 @@ pub fn on_daemon_start(state_dir: &Path) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn backups_live_in_the_state_dir_with_the_full_path_in_the_name() {
+        let d = std::env::temp_dir().join(format!("sb-backup-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(d.join("a")).unwrap();
+        std::fs::create_dir_all(d.join("b")).unwrap();
+        std::fs::write(d.join("a/settings.json"), "one").unwrap();
+        std::fs::write(d.join("b/settings.json"), "two").unwrap();
+        let state = d.join("state");
+        let a = backup(&d.join("a/settings.json"), &state, "202601010000").unwrap();
+        let b = backup(&d.join("b/settings.json"), &state, "202601010000").unwrap();
+        assert_ne!(a, b);
+        assert!(a.starts_with(state.join("backups")));
+        assert_eq!(std::fs::read_to_string(&a).unwrap(), "one");
+        assert_eq!(std::fs::read_to_string(&b).unwrap(), "two");
+        assert!(!d.join("a/settings.json.bak-202601010000").exists());
+        let _ = std::fs::remove_dir_all(&d);
+    }
 
     fn cmd(ev: &str) -> String {
         format!("/sb hook claude {ev} {MARKER}")

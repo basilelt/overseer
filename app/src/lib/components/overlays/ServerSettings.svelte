@@ -5,6 +5,7 @@
   import { lingerOff } from '../../lifecycle';
   import { lifecycle, loadLifecycle, patchLifecycle } from '../../lifecycle.svelte';
   import { toggleAutostart } from '../../lifecycle-switch';
+  import { app } from '../../state.svelte';
   import type { AfterReboot } from '../../types';
 
   let { row = () => true, hit = () => false }: { row?: (id: string) => boolean; hit?: (id: string) => boolean } = $props();
@@ -12,15 +13,17 @@
   const modes: AfterReboot[] = ['agents', 'shells', 'nothing'];
   const s = $derived(lifecycle.status);
   const auto = $derived(s?.autostart);
+  const target = $derived(app.conn.target);
+  const remote = $derived(target.kind !== 'local');
 
   $effect(() => {
     untrack(() => loadLifecycle(true));
   });
 </script>
 
-{#if s && auto}
-  <section>
-    <h3>{t('settings.server')}</h3>
+<section>
+  <h3>{t('settings.server')}</h3>
+  {#if s && auto}
     {#if row('keepRunning')}
       {#if auto.supported}
         <label class="row" class:hit={hit('keepRunning')}>
@@ -49,8 +52,15 @@
         </select>
       </label>
     {/if}
-  </section>
-{/if}
+  {/if}
+  {#if row('uninstall')}
+    <div class="row remove" class:hit={hit('uninstall')}>
+      <span>{remote ? t('settings.uninstallRemote', { host: target.label }) : t('settings.uninstall')}<small>{t('settings.uninstallHint')}</small></span>
+      <button class="btn danger" data-tour="uninstall" onclick={() => app.open('uninstall')}>{t('settings.uninstallButton')}</button>
+    </div>
+  {/if}
+</section>
+
 
 <style>
   section {
@@ -106,6 +116,12 @@
     align-self: flex-start;
     width: 260px;
     max-width: 100%;
+  }
+  .row.remove {
+    margin-top: 14px;
+  }
+  .row > .btn {
+    flex-shrink: 0;
   }
   .row.hit {
     margin: 0 -8px;

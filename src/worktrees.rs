@@ -991,8 +991,30 @@ fn prune_one(root: &str, path: &str) -> Result<(), String> {
 }
 
 pub fn cleanup(ctx: &Ctx, id: &str, dry: bool, hint: Option<&str>) -> Res<Value> {
+    cleanup_where(ctx, id, dry, hint, &|_| true)
+}
+
+pub fn cleanup_where(
+    ctx: &Ctx,
+    id: &str,
+    dry: bool,
+    hint: Option<&str>,
+    deletable: &dyn Fn(&str) -> bool,
+) -> Res<Value> {
     let (root, w) = locate(ctx, id, hint)?;
     let mut p = plan(&w);
+    let mut keep: Vec<Value> = p["keep"].as_array().cloned().unwrap_or_default();
+    let mut remove = vec![];
+    for item in p["remove"].as_array().cloned().unwrap_or_default() {
+        match item["name"].as_str() {
+            Some(b) if item["kind"] == "branch" && !deletable(b) => {
+                keep.push(json!({"kind": "branch", "name": b, "reason": "not created by Overseer"}))
+            }
+            _ => remove.push(item),
+        }
+    }
+    p["remove"] = json!(remove);
+    p["keep"] = json!(keep);
     p["dryRun"] = json!(dry);
     if dry {
         return Ok(p);

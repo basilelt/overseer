@@ -1040,10 +1040,22 @@ The usage worker emits `usage.updated` when the file changes.
 | Method | Path | Result |
 |---|---|---|
 | GET | `/v1/usage/statusline` | `{path, installed, command}`: the Claude settings file, whether the tap wraps its `statusLine`, and the user's own command (unwrapped) or `null` |
-| POST | `/v1/usage/statusline/install` | body `{dryRun?}`; wraps `statusLine.command` (or adds a tap-only status line) as `[ -x <bin> ] && exec <bin> statusline-tap --state <dir> -- '<original>' \|\| exec sh -c '<original>' #overseer-statusline`; answers the status plus `changed`, `diff`, `backup` (settings copied to `settings.json.bak-<stamp>` before writing). 409 with `error` when the file is not a JSON object or the status line is not a command |
+| POST | `/v1/usage/statusline/install` | body `{dryRun?}`; wraps `statusLine.command` (or adds a tap-only status line) as `[ -x <bin> ] && exec <bin> statusline-tap --state <dir> -- '<original>' \|\| exec sh -c '<original>' #overseer-statusline`; answers the status plus `changed`, `diff`, `backup` (settings copied to `<state>/backups/<flattened path>.bak-<stamp>` before writing, never beside the user's file). 409 with `error` when the file is not a JSON object or the status line is not a command |
 | POST | `/v1/usage/statusline/uninstall` | same shape; restores the original command (or removes a tap-only status line) and deletes `<state>/claude-statusline.json` |
 
 Additive: protocol stays 1. Older daemons answer 404; the app then hides usage.
+
+## 7d. Uninstall
+
+`overseer uninstall [--apply]` and `POST /v1/uninstall` undo everything Overseer put on the machine. A dry run (the default) changes nothing and is the "what does Overseer leave on my system" report.
+
+| Method | Path | Body | Answer |
+|---|---|---|---|
+| POST | `/v1/uninstall` | `{dryRun?}`; applies only when `dryRun === false` | `{dryRun, removed: [{kind, path}], kept: [{kind, path, reason}], errors: [{kind, path, error}]}` |
+
+`kind` is one of `service` (systemd unit or launch agent), `linger` (only when Overseer turned it on, recorded in `<state>/linger-enabled-by-overseer`), `hook` (hook entries and plugin files; a user's own entries and keys stay), `statusline` (the original status line command restored), `backup` (`<file>.bak-<12 digits>` left beside the agents' config files by earlier versions), `dir` (empty directories Overseer created, `~/.overseer/{bin,server,u,tasks,reviews,worktrees}` and `~/.overseer` itself when nothing else is in it), `worktree` and `branch` (clean Overseer worktrees and their `sb/*`, `task/*` or `review/pr-*` branches; dirty, unpushed, locked or in-use worktrees are in `kept` with the reason, as are branches with unmerged commits), `appData` (the desktop app's data, cache, config and log folders for `io.github.basilelt.overseer`) and `stateDir` (the daemon state directory, last).
+
+On apply the answer is sent first; the daemon then deletes its state directory, boots out its launch agent on macOS and exits with status 0 (so `Restart=on-failure` and `KeepAlive.SuccessfulExit=false` do not restart it). `overseer uninstall` posts to the running daemon and, when none answers, runs the same steps in-process; it prints one line per row and exits 1 when `errors` is not empty. Backups taken from now on (hooks, status line, subagent profiles) live in `<state>/backups/`.
 
 ## 8. Server mode (remote)
 

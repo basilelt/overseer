@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 pub const UNIT: &str = "overseer-daemon.service";
 pub const LABEL: &str = "dev.overseer.daemon";
 pub const SUPERVISED: &str = "OVERSEER_SUPERVISED";
+pub const LINGER_FLAG: &str = "linger-enabled-by-overseer";
 
 pub type Run<'a> = &'a dyn Fn(&str, &[&str]) -> Result<String, String>;
 
@@ -278,18 +279,66 @@ pub fn disable(env: &Env, run: Run) -> Result<(), String> {
     Ok(())
 }
 
-pub fn enable_linger(env: &Env, run: Run) -> Result<(), String> {
+pub fn linger_flag(state_dir: &Path) -> PathBuf {
+    state_dir.join(LINGER_FLAG)
+}
+
+pub fn enable_linger(env: &Env, run: Run, state_dir: &Path) -> Result<(), String> {
     if env.kind != Kind::Systemd {
         return Ok(());
     }
+    let was_off = linger(env, run) == Some(false);
     run("loginctl", &["enable-linger", "--no-ask-password"]).map(|_| ())?;
     match linger(env, run) {
-        Some(true) => Ok(()),
+        Some(true) => {
+            if was_off {
+                let _ = crate::mkdir_private(state_dir)
+                    .and_then(|_| std::fs::write(linger_flag(state_dir), ""));
+            }
+            Ok(())
+        }
         _ => Err(format!(
             "linger is still off; run {} on the server",
             linger_command(&env.user)
         )),
     }
+}
+
+pub fn disable_linger_if_ours(env: &Env, run: Run, state_dir: &Path) -> Result<bool, String> {
+    if env.kind != Kind::Systemd || !linger_flag(state_dir).exists() {
+        return Ok(false);
+    }
+    run("loginctl", &["disable-linger", "--no-ask-password"])?;
+    let _ = std::fs::remove_file(linger_flag(state_dir));
+    Ok(true)
+}
+
+pub fn unload(env: &Env, run: Run) -> Result<(), String> {
+    if env.kind != Kind::Launchd {
+        return Ok(());
+    }
+    #[cfg(unix)]
+    let uid = unsafe { libc::getuid() };
+    #[cfg(not(unix))]
+    let uid = 0;
+    match run("launchctl", &["bootout", &format!("gui/{uid}/{LABEL}")]) {
+        Err(e) if !not_loaded(&e) => Err(e),
+        _ => Ok(()),
+    }
+}
+
+fn not_loaded(e: &str) -> bool {
+    let e = e.to_lowercase();
+    [
+        "could not find",
+        "no such process",
+        "not found",
+        "not loaded",
+    ]
+    .iter()
+    .any(|m| e.contains(m))
+        || e.contains("failed: 3:")
+        || e.contains("failed: 113:")
 }
 
 pub fn run_cmd(cmd: &str, args: &[&str]) -> Result<String, String> {
@@ -441,11 +490,87 @@ mod tests {
                 Ok("no".into())
             }
         };
-        let err = enable_linger(&e, &run).unwrap_err();
+        let err = enable_linger(&e, &run, &e.home.join("state")).unwrap_err();
         assert!(err.contains("Interactive authentication required"), "{err}");
         let c = calls.borrow().clone();
         assert!(c.iter().all(|x| !x.contains("sudo")), "{c:?}");
-        assert!(c[0].contains("--no-ask-password"));
+        assert!(c
+            .iter()
+            .any(|x| x.contains("enable-linger") && x.contains("--no-ask-password")));
+    }
+
+    #[test]
+    fn linger_is_flagged_only_when_overseer_turned_it_on() {
+        let e = env(Kind::Systemd, "linger-flag");
+        let state = e.home.join("state");
+        let off = |on: bool| {
+            let calls = RefCell::new(vec![]);
+            let state_on = std::cell::Cell::new(on);
+            let run = move |c: &str, a: &[&str]| -> Result<String, String> {
+                calls.borrow_mut().push(format!("{c} {}", a.join(" ")));
+                if a.first() == Some(&"enable-linger") {
+                    state_on.set(true);
+                    return Ok(String::new());
+                }
+                Ok(if state_on.get() { "yes" } else { "no" }.into())
+            };
+            run
+        };
+        enable_linger(&e, &off(true), &state).unwrap();
+        assert!(!linger_flag(&state).exists());
+        enable_linger(&e, &off(false), &state).unwrap();
+        assert!(linger_flag(&state).exists());
+        let _ = std::fs::remove_dir_all(&e.home);
+    }
+
+    #[test]
+    fn disable_linger_runs_only_when_the_flag_exists() {
+        let e = env(Kind::Systemd, "linger-undo");
+        let state = e.home.join("state");
+        let calls = RefCell::new(vec![]);
+        let run = |c: &str, a: &[&str]| -> Result<String, String> {
+            calls.borrow_mut().push(format!("{c} {}", a.join(" ")));
+            Ok(String::new())
+        };
+        assert_eq!(disable_linger_if_ours(&e, &run, &state), Ok(false));
+        assert!(calls.borrow().is_empty());
+        std::fs::create_dir_all(&state).unwrap();
+        std::fs::write(linger_flag(&state), "").unwrap();
+        assert_eq!(disable_linger_if_ours(&e, &run, &state), Ok(true));
+        assert_eq!(
+            *calls.borrow(),
+            ["loginctl disable-linger --no-ask-password"]
+        );
+        assert!(!linger_flag(&state).exists());
+        let failing = |_: &str, _: &[&str]| -> Result<String, String> { Err("denied".into()) };
+        std::fs::write(linger_flag(&state), "").unwrap();
+        assert!(disable_linger_if_ours(&e, &failing, &state).is_err());
+        assert!(linger_flag(&state).exists());
+        let launchd = env(Kind::Launchd, "linger-launchd");
+        assert_eq!(disable_linger_if_ours(&launchd, &run, &state), Ok(false));
+        let _ = std::fs::remove_dir_all(&e.home);
+    }
+
+    #[test]
+    fn unload_boots_the_launch_agent_out_and_ignores_one_that_is_not_loaded() {
+        let e = env(Kind::Launchd, "unload");
+        let calls = RefCell::new(vec![]);
+        let run = |c: &str, a: &[&str]| -> Result<String, String> {
+            calls.borrow_mut().push(format!("{c} {}", a.join(" ")));
+            Ok(String::new())
+        };
+        unload(&e, &run).unwrap();
+        let c = calls.borrow()[0].clone();
+        assert!(c.starts_with("launchctl bootout gui/") && c.ends_with("/dev.overseer.daemon"));
+        let missing = |_: &str, _: &[&str]| -> Result<String, String> {
+            Err("Boot-out failed: 3: No such process".into())
+        };
+        assert!(unload(&e, &missing).is_ok());
+        let broken = |_: &str, _: &[&str]| -> Result<String, String> { Err("denied".into()) };
+        assert!(unload(&e, &broken).is_err());
+        let sd = env(Kind::Systemd, "unload-sd");
+        assert!(unload(&sd, &broken).is_ok());
+        let _ = std::fs::remove_dir_all(&e.home);
     }
 
     #[test]

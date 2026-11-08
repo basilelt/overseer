@@ -232,6 +232,14 @@ Overseer for iPhone and iPad is in public beta on TestFlight before its App Stor
    updates on. Send feedback from the app (More > Send feedback) or with **Send Beta Feedback**
    in TestFlight.
 
+### Uninstall
+
+Before deleting the app, use **Settings, Connection, Remove Overseer from this computer**: it lists
+and removes the agent hooks, statusline, boot service and folders Overseer added (worktrees with
+uncommitted changes are kept). The Windows uninstaller and `brew uninstall --zap --cask overseer`
+do it for you; on a server run `overseer uninstall --apply`. See the
+[user guide](docs/user-guide.md#uninstall).
+
 ### Updates
 
 From 0.4.0 the app updates itself (AppImage and Windows installer) from the public GitHub

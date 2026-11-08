@@ -53,6 +53,7 @@ pub mod tasks;
 pub mod term;
 pub mod termtheme;
 pub mod tmux;
+pub mod uninstall;
 pub mod upgrade;
 pub mod uploads;
 pub mod usage;
