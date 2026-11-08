@@ -20,7 +20,7 @@
   import { inRepo } from '../../review/repo';
   import Maximize2 from '@lucide/svelte/icons/maximize-2';
   import { reviewApi } from '../../review/api';
-  import { changed, changedWorktrees, counts, folder } from '../../review/scope';
+  import { changed, changedLabel, changedWorktrees, counts, folder } from '../../review/scope';
   import type { Related } from '../../review/types';
   import { DaemonError } from '../../client';
   import { age } from '../../time';
@@ -242,7 +242,7 @@
         {#if missing}<p class="small missing">{t('review.missing')}</p>{/if}
         {#if changedList.length && !(changedList.length === 1 && changedList[0].current)}
           <div class="wts">
-            <div class="sub faint">{t('review.worktreesChanged', { n: changedList.length })}</div>
+            <div class="sub faint">{changedLabel(changedList)}</div>
             {#each changedList as w (w.path)}
               <button class="wt" class:cur={w.current} onclick={() => (w.current && lineId ? openReview({ lineId }) : openReview({ worktree: w.path }))}>
                 <span class="mono name">{w.branch || folder(w.path)}</span>

@@ -5,7 +5,7 @@ import type { DaemonEvent, LocalLine, Task } from '../types';
 import { parseReviewKey, reviewKey, titleOf } from './keys';
 import { MOCK_MISSING, MOCK_ROOT, MOCK_WORKTREE } from './mock';
 import { testingReviews } from './open';
-import { changed, changedWorktrees, counts, folder, includeCurrent, scopeOptions } from './scope';
+import { changed, changedLabel, changedWorktrees, counts, folder, includeCurrent, scopeOptions } from './scope';
 import { ReviewStore } from './store.svelte';
 import { setPresence } from '../presence';
 import type { Related } from './types';
@@ -223,5 +223,23 @@ describe('review store states', () => {
       setPresence({ visible: true });
       s.stop();
     }
+  });
+});
+
+describe('changed worktrees label', () => {
+  const cur = wt('/r', { current: true, files: 1 });
+  const a = wt('/r/a', { files: 2 });
+  const b = wt('/r/b', { files: 3 });
+
+  it('uses the singular for a single changed worktree', () => {
+    expect(changedLabel([cur])).toBe('Changes in 1 worktree');
+  });
+
+  it('uses the plural for several changed worktrees', () => {
+    expect(changedLabel([cur, a, b])).toBe('Changes in 3 worktrees');
+  });
+
+  it('names them as other worktrees when the current one has no changes', () => {
+    expect(changedLabel([a])).toBe('Other worktrees with changes');
   });
 });
