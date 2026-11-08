@@ -1045,6 +1045,7 @@ mod tests {
             session: Some("u1"),
             prompt: None,
             extra: &a.extra,
+            auto_approve: false,
         });
         assert_eq!(
             argv,
@@ -1105,6 +1106,7 @@ mod tests {
             session: None,
             prompt: None,
             extra: &a.extra,
+            auto_approve: false,
         });
         assert_eq!(
             argv,

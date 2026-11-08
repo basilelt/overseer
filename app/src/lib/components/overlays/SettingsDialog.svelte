@@ -96,6 +96,10 @@
   const agents = $derived(taskAgents(app.agents));
   const info = $derived(findAgent(app.agents, settings.defaultAgent));
   const efforts = $derived<Effort[]>(info?.efforts ?? ['low', 'medium', 'high', 'max']);
+  let autoApprove = $state<Record<string, boolean>>({});
+  let autoApproveLoaded = $state(false);
+  let autoApproveBusy = $state<string | null>(null);
+  const autoApproveAgents = $derived(app.agents.filter((agent) => Object.hasOwn(autoApprove, agent.id)));
 
   function setAgent(id: string) {
     const next = adaptChoice(findAgent(app.agents, id), { model: settings.defaultModel, effort: settings.defaultEffort });
@@ -168,6 +172,44 @@
     } catch (e) {
       el.checked = !on;
       app.notify(String((e as Error)?.message ?? e), 'error');
+    }
+  }
+
+  $effect(() => {
+    if (!app.connected || app.conn.phase !== 'connected') {
+      autoApprove = {};
+      autoApproveLoaded = false;
+      return;
+    }
+    autoApprove = {};
+    autoApproveLoaded = false;
+    untrack(() =>
+      app.api
+        .agentSettings()
+        .then((r) => {
+          autoApprove = r.autoApprove;
+          autoApproveLoaded = true;
+        })
+        .catch((e) => {
+          autoApprove = {};
+          autoApproveLoaded = false;
+          app.notify(String((e as Error)?.message ?? e), 'error');
+        }),
+    );
+  });
+  async function setAgentAutoApprove(agent: string, el: HTMLInputElement) {
+    if (!autoApproveLoaded || autoApproveBusy) return;
+    const previous = autoApprove[agent] ?? true;
+    autoApprove[agent] = el.checked;
+    autoApproveBusy = agent;
+    try {
+      autoApprove = (await app.api.setAgentAutoApprove(agent, el.checked)).autoApprove;
+    } catch (e) {
+      autoApprove[agent] = previous;
+      el.checked = previous;
+      app.notify(String((e as Error)?.message ?? e), 'error');
+    } finally {
+      autoApproveBusy = null;
     }
   }
 
@@ -439,6 +481,18 @@
                 <AgentPicker {agents} value={settings.defaultAgent} label={t('settings.defaultAgent')} onchange={setAgent} />
               </div>
             </div>
+          {/if}
+          {#if row('defaults', 'autoApprove')}
+            <div class="row" class:hit={hit('defaults', 'autoApprove')} data-tour="auto-approve">
+              <span>{t('settings.autoApprove')}<small>{autoApproveLoaded ? t('settings.autoApproveHint') : t('settings.autoApproveConnect')}</small></span>
+              <span></span>
+            </div>
+            {#each autoApproveAgents as agent (agent.id)}
+              <label class="row" class:hit={hit('defaults', 'autoApprove')}>
+                <span>{agent.name}</span>
+                <input type="checkbox" class="switch" checked={autoApprove[agent.id]} disabled={!autoApproveLoaded || autoApproveBusy !== null} onchange={(e) => setAgentAutoApprove(agent.id, e.currentTarget)} />
+              </label>
+            {/each}
           {/if}
           {#if hasModel(info) && row('defaults', 'defaultModel')}
             <div class="row" class:hit={hit('defaults', 'defaultModel')}>

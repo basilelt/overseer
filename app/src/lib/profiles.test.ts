@@ -112,12 +112,12 @@ describe('mock daemon applies profiles like the daemon', () => {
     const d = new MockDaemon();
     await d.request('PUT', '/v1/profiles', { scopes: { '/w/app': 'economy' } });
     const t = await d.request<Term>('POST', '/v1/terms', { agent: 'claude', cwd: '/w/app' });
-    expect(t.cmd).toEqual(['claude', '--model', 'sonnet', '--effort', 'low']);
+    expect(t.cmd).toEqual(['claude', '--permission-mode', 'auto', '--model', 'sonnet', '--effort', 'low']);
     expect(t.profile?.name).toBe('Economy');
     const m = await d.request<Term>('POST', '/v1/terms', { agent: 'claude', cwd: '/w/app', profile: 'max' });
-    expect(m.cmd).toEqual(['claude', '--model', 'opus', '--effort', 'max']);
+    expect(m.cmd).toEqual(['claude', '--permission-mode', 'auto', '--model', 'opus', '--effort', 'max']);
     const plain = await d.request<Term>('POST', '/v1/terms', { agent: 'claude', cwd: '/elsewhere' });
-    expect(plain.cmd).toEqual(['claude']);
+    expect(plain.cmd).toEqual(['claude', '--permission-mode', 'auto']);
     await expect(d.request('POST', '/v1/terms', { agent: 'claude', profile: 'ghost' })).rejects.toThrow(/unknown profile/);
   });
 

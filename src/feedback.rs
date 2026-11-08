@@ -181,12 +181,15 @@ pub fn launch(
     } else {
         &[]
     };
+    let reg = crate::registry::Registry::open(&ctx.state_dir).map_err(|e| (500, e))?;
+    let auto_approve = crate::agents::auto_approve_enabled(&reg, agent.id).map_err(|e| (500, e))?;
     let mut cmd = agent.launch(&crate::agents::Launch {
         model,
         effort,
         session: session.as_deref(),
         prompt: by_flag.then_some(prompt.as_str()),
         extra,
+        auto_approve,
     });
     let shown = if by_arg {
         let shown = with_prompt(&cmd, "<prompt>");
@@ -195,6 +198,12 @@ pub fn launch(
     } else {
         by_flag.then(|| crate::agents::redact(&cmd, agent, Some(&prompt)))
     };
+    let mut flags = agent.flags(model, effort);
+    if auto_approve {
+        if let Some(auto_approve_flags) = crate::agents::auto_approve_args(agent.id) {
+            flags.extend(auto_approve_flags.iter().map(|flag| (*flag).to_string()));
+        }
+    }
     let term = crate::term::spawn(crate::term::Spec {
         cwd,
         shown,
@@ -203,7 +212,7 @@ pub fn launch(
         rows,
         title: Some(title.into()),
         session,
-        flags: agent.flags(model, effort),
+        flags,
         ..Default::default()
     })
     .map_err(|e| (409, e))?;

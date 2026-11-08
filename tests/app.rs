@@ -1724,8 +1724,8 @@ fn agents_are_detected_and_launched_from_the_table() {
     assert_eq!(g["agent"], "gemini");
     assert_eq!(g["title"], "Gemini CLI");
     let cmd = strs(&g["cmd"]);
-    assert_eq!(cmd[..2], ["gemini", "--session-id"]);
-    assert_eq!(cmd[3..], ["-m", "gemini-2.5-pro"]);
+    assert_eq!(cmd[..3], ["gemini", "--approval-mode=yolo", "--session-id"]);
+    assert_eq!(cmd[4..], ["-m", "gemini-2.5-pro"]);
 
     let c = app.ok(
         "POST",
@@ -1734,11 +1734,12 @@ fn agents_are_detected_and_launched_from_the_table() {
     );
     let ctid = c["id"].as_str().unwrap().to_string();
     let cmd = strs(&c["cmd"]);
-    let sid = cmd[1].strip_prefix("--session-id=").unwrap().to_string();
-    assert_eq!(cmd[2..], ["--model", "gpt-5.2", "--effort", "xhigh"]);
+    assert_eq!(cmd[1], "--allow-all");
+    let sid = cmd[2].strip_prefix("--session-id=").unwrap().to_string();
+    assert_eq!(cmd[3..], ["--model", "gpt-5.2", "--effort", "xhigh"]);
     wait(|| {
         stub_log(&app).contains(&format!(
-            "copilot --session-id={sid} --model gpt-5.2 --effort xhigh"
+            "copilot --allow-all --session-id={sid} --model gpt-5.2 --effort xhigh"
         ))
     });
 
@@ -1835,6 +1836,102 @@ fn agents_are_detected_and_launched_from_the_table() {
             json!({"confirm": true}),
         );
     }
+}
+
+#[test]
+fn agent_auto_approval_settings_persist_and_control_new_term_argv() {
+    let mut app = App::new("agent-auto-approval", json!({"autoConcurrency": 0}));
+    let default = app.ok("GET", "/v1/agents/settings", Value::Null);
+    assert_eq!(default["autoApprove"]["claude"], true);
+    assert_eq!(default["autoApprove"]["codex"], true);
+    assert_eq!(default["autoApprove"].as_object().unwrap().len(), 7);
+
+    let disabled = app.ok(
+        "PUT",
+        "/v1/agents/settings",
+        json!({"agent": "codex", "autoApprove": false}),
+    );
+    assert_eq!(disabled["autoApprove"]["codex"], false);
+    assert_eq!(disabled["autoApprove"]["claude"], true);
+    app.crash_and_restart();
+    assert_eq!(
+        app.ok("GET", "/v1/agents/settings", Value::Null)["autoApprove"]["codex"],
+        false
+    );
+
+    let cwd = app.fx.wt.to_string_lossy().into_owned();
+    let codex = app.ok(
+        "POST",
+        "/v1/terms",
+        json!({"cwd": cwd, "agent": "codex", "cols": 120, "rows": 32}),
+    );
+    let disabled_id = codex["id"].as_str().unwrap().to_string();
+    let disabled_cmd = strs(&codex["cmd"]);
+    assert!(!disabled_cmd.contains(&"--sandbox".to_string()));
+    assert!(!disabled_cmd.contains(&"--ask-for-approval".to_string()));
+
+    app.ok(
+        "PUT",
+        "/v1/agents/settings",
+        json!({"agent": "codex", "autoApprove": true}),
+    );
+    let codex = app.ok(
+        "POST",
+        "/v1/terms",
+        json!({"cwd": cwd, "agent": "codex", "cols": 120, "rows": 32}),
+    );
+    let cmd = strs(&codex["cmd"]);
+    assert!(cmd.windows(2).any(|w| w == ["--ask-for-approval", "never"]));
+    let enabled_id = codex["id"].as_str().unwrap().to_string();
+
+    let task = app.ok(
+        "POST",
+        "/v1/tasks",
+        json!({"title": "Auto approve", "project": cwd, "agent": "codex"}),
+    );
+    let task = app.ok(
+        "POST",
+        &format!("/v1/tasks/{}/start", task["id"].as_str().unwrap()),
+        json!({}),
+    );
+    let task_term = app.ok(
+        "GET",
+        &format!("/v1/terms/{}", task["termId"].as_str().unwrap()),
+        Value::Null,
+    );
+    assert!(strs(&task_term["cmd"])
+        .windows(2)
+        .any(|w| w == ["--ask-for-approval", "never"]));
+
+    assert_eq!(
+        app.req("PUT", "/v1/agents/settings", json!({"agent": "claude"}))
+            .0,
+        400
+    );
+    assert_eq!(
+        app.req(
+            "PUT",
+            "/v1/agents/settings",
+            json!({"agent": "amp", "autoApprove": false})
+        )
+        .0,
+        400
+    );
+    app.ok(
+        "POST",
+        &format!("/v1/terms/{disabled_id}/kill"),
+        json!({"confirm": true}),
+    );
+    app.ok(
+        "POST",
+        &format!("/v1/terms/{enabled_id}/kill"),
+        json!({"confirm": true}),
+    );
+    app.ok(
+        "POST",
+        &format!("/v1/terms/{}/kill", task["termId"].as_str().unwrap()),
+        json!({"confirm": true}),
+    );
 }
 
 #[test]
@@ -3035,6 +3132,7 @@ fn a_restored_feedback_session_resumes_without_its_initial_prompt() {
         .unwrap()
         .to_string();
     wait(|| stub().contains("File this issue from"));
+    assert!(stub().contains("--permission-mode auto"), "{}", stub());
     assert_eq!(stub().lines().count(), 1, "{}", stub());
     wait(|| {
         let (_, v) = fx.req("GET", "/v1/lines?all=true", "");

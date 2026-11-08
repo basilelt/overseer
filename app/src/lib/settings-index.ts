@@ -71,6 +71,7 @@ export const ENTRIES: Entry[] = [
   { id: 'newTabShell', section: 'keyboard', keys: ['settings.newTabShell', 'settings.newTabShellHint'] },
   { id: 'wrapTabs', section: 'keyboard', keys: ['settings.wrapTabs', 'settings.wrapTabsHint'] },
   { id: 'defaultAgent', section: 'defaults', keys: ['settings.defaultAgent'] },
+  { id: 'autoApprove', section: 'defaults', keys: ['settings.autoApprove', 'settings.autoApproveHint'] },
   { id: 'defaultModel', section: 'defaults', keys: ['settings.defaultModel'] },
   { id: 'defaultEffort', section: 'defaults', keys: ['settings.defaultEffort'] },
   { id: 'autoConcurrency', section: 'defaults', keys: ['settings.autoConcurrency', 'settings.autoConcurrencyHint'] },

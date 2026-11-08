@@ -389,10 +389,20 @@ describe('MockDaemon', () => {
     expect(agents.filter((x) => x.sessions).map((x) => x.id)).toEqual(['claude', 'codex', 'gemini']);
   });
 
+  it('persists per-agent auto-approval defaults and applies them to newly started terms', async () => {
+    const { m, a } = setup();
+    expect((await a.agentSettings()).autoApprove).toEqual({ claude: true, codex: true, gemini: true, agy: true, opencode: true, copilot: true, cursor: true });
+    expect((await a.createTerm({ agent: 'codex' })).cmd).toContain('--ask-for-approval');
+    expect((await a.setAgentAutoApprove('codex', false)).autoApprove.codex).toBe(false);
+    expect((await a.createTerm({ agent: 'codex' })).cmd).not.toContain('--ask-for-approval');
+    await expect(m.request('PUT', '/v1/agents/settings', { agent: 'amp', autoApprove: false })).rejects.toMatchObject({ status: 400 });
+    await expect(m.request('PUT', '/v1/agents/settings', { agent: 'claude', autoApprove: 'false' })).rejects.toMatchObject({ status: 400 });
+  });
+
   it('starts terms for an agent and validates the request', async () => {
     const { a, events } = setup();
     const term = await a.createTerm({ agent: 'claude', model: 'sonnet', effort: 'max', cwd: '/w' });
-    expect(term).toMatchObject({ agent: 'claude', cmd: ['claude', '--model', 'sonnet', '--effort', 'max'], cwd: '/w', cols: 80, rows: 24 });
+    expect(term).toMatchObject({ agent: 'claude', cmd: ['claude', '--permission-mode', 'auto', '--model', 'sonnet', '--effort', 'max'], cwd: '/w', cols: 80, rows: 24 });
     expect((await a.createTerm({ agent: 'shell' })).agent).toBe('shell');
     expect((await a.createTerm({ cmd: ['htop'] })).agent).toBe('shell');
     await expect(a.createTerm({ agent: 'claude', cmd: ['x'] })).rejects.toMatchObject({ status: 400 });
