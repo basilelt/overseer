@@ -236,12 +236,20 @@ pub fn enable(env: &Env, run: Run) -> Result<(), String> {
     let (Some(path), Some(text)) = (env.path(), env.text()) else {
         return Err("starting the server at boot is not supported on this system".into());
     };
-    if std::fs::read_to_string(&path).ok().as_deref() != Some(text.as_str()) {
+    let wrote = std::fs::read_to_string(&path).ok().as_deref() != Some(text.as_str());
+    if wrote {
         write_atomic(&path, &text)?;
     }
     if env.kind == Kind::Systemd {
-        run("systemctl", &["--user", "daemon-reload"])?;
-        run("systemctl", &["--user", "enable", UNIT])?;
+        let r = run("systemctl", &["--user", "daemon-reload"])
+            .and_then(|_| run("systemctl", &["--user", "enable", UNIT]));
+        if let Err(e) = r {
+            if wrote {
+                let _ = std::fs::remove_file(&path);
+                let _ = run("systemctl", &["--user", "daemon-reload"]);
+            }
+            return Err(e);
+        }
     }
     Ok(())
 }
@@ -451,6 +459,32 @@ mod tests {
         disable(&e, &run).unwrap();
         assert!(!path.exists());
         disable(&e, &run).unwrap();
+        let _ = std::fs::remove_dir_all(&e.home);
+    }
+
+    #[test]
+    fn enable_rolls_back_the_unit_when_systemctl_fails() {
+        let e = env(Kind::Systemd, "rollback");
+        let path = e.path().unwrap();
+        let run = |_: &str, a: &[&str]| -> Result<String, String> {
+            if a.contains(&"enable") {
+                Err("enable failed".into())
+            } else {
+                Ok(String::new())
+            }
+        };
+        assert_eq!(enable(&e, &run).unwrap_err(), "enable failed");
+        assert!(!path.exists());
+        let reload_fails = |_: &str, a: &[&str]| -> Result<String, String> {
+            if a.contains(&"daemon-reload") {
+                Err("reload failed".into())
+            } else {
+                Ok(String::new())
+            }
+        };
+        assert_eq!(enable(&e, &reload_fails).unwrap_err(), "reload failed");
+        assert!(!path.exists());
+        assert_eq!(status(&e, &run)["installed"], false);
         let _ = std::fs::remove_dir_all(&e.home);
     }
 
