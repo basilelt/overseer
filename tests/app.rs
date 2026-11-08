@@ -475,6 +475,105 @@ fn task_start_runs_the_agent_in_a_term_and_goes_in_testing() {
     assert!(app.task(&id).get("error").is_none());
 }
 
+fn mcp_status(app: &App, own: &str, status: &str) -> Value {
+    let msgs = [
+        json!({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": {"name": "t", "version": "0"}}}),
+        json!({"jsonrpc": "2.0", "method": "notifications/initialized"}),
+        json!({"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": "set_task_status", "arguments": {"status": status}}}),
+    ];
+    let input: String = msgs.iter().map(|m| format!("{m}\n")).collect();
+    let mut c = Command::new(bin());
+    app.fx.env(&mut c);
+    c.env("OVERSEER_TASK_ID", own).arg("mcp");
+    let out = output(&mut c, Some(&input));
+    let last = String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .last()
+        .unwrap()
+        .to_string();
+    serde_json::from_str::<Value>(&last).unwrap()["result"].clone()
+}
+
+#[test]
+fn a_landed_task_moves_to_merged_and_its_agent_can_resume_it() {
+    let app = App::new("merged", json!({"autoConcurrency": 0}));
+    let wt = app.fx.wt.to_string_lossy().into_owned();
+    let t = app.ok(
+        "POST",
+        "/v1/tasks",
+        json!({"title": "land", "description": "", "project": wt}),
+    );
+    let id = t["id"].as_str().unwrap().to_string();
+    let s = app.ok("POST", &format!("/v1/tasks/{id}/start"), json!({}));
+    let wtp = s["worktreePath"].as_str().unwrap().to_string();
+    let term = s["termId"].as_str().unwrap().to_string();
+    let mut ws = app.ws(&term);
+    read_until(&mut ws, "❯");
+
+    let r = app.req(
+        "PATCH",
+        &format!("/v1/tasks/{id}"),
+        json!({"status": "in_progress"}),
+    );
+    assert_eq!(r.0, 200, "a running task stays in progress: {r:?}");
+
+    std::fs::write(Path::new(&wtp).join("land.txt"), "landed\n").unwrap();
+    common::git(Path::new(&wtp), &["add", "-A"]);
+    common::git(Path::new(&wtp), &["commit", "-q", "-m", "land"]);
+    common::git(&app.fx.wt, &["merge", "-q", "--ff-only", "task/1-land"]);
+    send(&mut ws, "done\r");
+    wait_for(|| (app.task(&id)["status"] == "merged").then_some(()));
+    let l = app.ok("GET", "/v1/tasks?status=merged", Value::Null);
+    assert_eq!(l.as_array().unwrap().len(), 1, "{l}");
+
+    let r = mcp_status(&app, &id, "in_progress");
+    assert_eq!(r["isError"], false, "{r}");
+    assert_eq!(app.task(&id)["status"], "in_progress");
+    std::thread::sleep(std::time::Duration::from_millis(1500));
+    assert_eq!(
+        app.task(&id)["status"],
+        "in_progress",
+        "the last turn's Stop must not bounce a resumed task back to review"
+    );
+
+    let r = mcp_status(&app, &id, "in_testing");
+    assert_eq!(r["isError"], false, "{r}");
+    let r = mcp_status(&app, &id, "merged");
+    assert_eq!(r["isError"], false, "{r}");
+    assert_eq!(app.task(&id)["status"], "merged");
+    let r = mcp_status(&app, &id, "completed");
+    assert_eq!(r["isError"], true, "{r}");
+
+    app.ok(
+        "POST",
+        &format!("/v1/terms/{term}/kill"),
+        json!({"confirm": true}),
+    );
+    wait(|| app.ok("GET", &format!("/v1/terms/{term}"), Value::Null)["exited"] == true);
+    let (code, body) = app.req(
+        "PATCH",
+        &format!("/v1/tasks/{id}"),
+        json!({"status": "in_progress"}),
+    );
+    assert_eq!(code, 400, "{body}");
+    assert!(
+        body.to_string().contains("use POST /v1/tasks/{id}/start"),
+        "{body}"
+    );
+    let p = app.ok(
+        "PATCH",
+        &format!("/v1/tasks/{id}"),
+        json!({"status": "completed"}),
+    );
+    assert_eq!(p["status"], "completed");
+    std::thread::sleep(std::time::Duration::from_millis(1500));
+    assert_eq!(
+        app.task(&id)["status"],
+        "completed",
+        "a task closed by hand after it merged stays closed"
+    );
+}
+
 #[test]
 fn auto_runner_respects_concurrency_in_fifo_order() {
     let app = App::new("auto", json!({"autoConcurrency": 1}));

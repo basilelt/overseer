@@ -374,7 +374,7 @@ Never edit files, never create tasks, never start tasks. Finish with a one-line 
 pub fn organizable(tasks: &[Task], project: Option<&str>) -> Vec<String> {
     let mut out: Vec<String> = vec![];
     for t in tasks {
-        if t.status == "completed"
+        if crate::tasks::is_done(&t.status)
             || is_organizer(t)
             || t.from_session()
             || project.is_some_and(|p| p != t.project)
@@ -399,7 +399,8 @@ pub fn organize_due(tasks: &[Task], project: &str, live_organizer: bool, now_ms:
             .max()
     };
     let Some(work) = newest(&|t| {
-        t.status != "completed" && matches!(t.origin.as_deref(), None | Some("user" | "agent"))
+        !crate::tasks::is_done(&t.status)
+            && matches!(t.origin.as_deref(), None | Some("user" | "agent"))
     }) else {
         return false;
     };

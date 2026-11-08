@@ -10,12 +10,13 @@ describe('kanban on a phone', () => {
     expect(c).not.toContain('auto');
     expect(c).toContain('pending');
     expect(c).toContain('completed');
-    expect(c.length).toBe(4);
+    expect(c).toContain('merged');
+    expect(c.length).toBe(5);
   });
 
   it('offers only the session columns for a session task', () => {
-    expect(moveChoices('in_progress', true)).toEqual(['in_testing', 'completed']);
-    expect(moveChoices('completed', true)).toEqual(['in_progress', 'in_testing']);
+    expect(moveChoices('in_progress', true)).toEqual(['in_testing', 'merged', 'completed']);
+    expect(moveChoices('completed', true)).toEqual(['in_progress', 'in_testing', 'merged']);
   });
 
   it('ranks a card at the top or bottom of its column', () => {
