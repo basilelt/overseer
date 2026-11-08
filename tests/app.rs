@@ -355,6 +355,18 @@ fn tasks_crud_numbers_and_projects() {
         projects,
         json!([{"path": wt, "name": "repo", "repo": "github.com/Acme/board", "missing": false, "defaultBranch": "feature/AS-42-board"}])
     );
+    let agy = app.ok(
+        "POST",
+        "/v1/tasks",
+        json!({"title": "Antigravity", "project": wt, "agent": "agy", "effort": "high"}),
+    );
+    let agy_id = agy["id"].as_str().unwrap();
+    let agy = app.ok(
+        "PATCH",
+        &format!("/v1/tasks/{agy_id}"),
+        json!({"effort": "xhigh"}),
+    );
+    assert_eq!(agy["effort"], "xhigh");
 }
 
 #[test]
@@ -1696,6 +1708,10 @@ fn agents_are_detected_and_launched_from_the_table() {
     assert_eq!(get("gemini")["version"], "gemini 0.0.0 (stub)");
     assert_eq!(get("gemini")["efforts"], json!([]));
     assert_eq!(get("gemini")["sessions"], true);
+    assert_eq!(
+        get("agy")["efforts"],
+        json!(["low", "medium", "high", "xhigh", "max"])
+    );
     assert_eq!(get("amp")["installed"], false);
     assert!(get("amp").get("version").is_none());
     assert_eq!(get("amp")["models"], json!([]));
@@ -1726,6 +1742,13 @@ fn agents_are_detected_and_launched_from_the_table() {
     let cmd = strs(&g["cmd"]);
     assert_eq!(cmd[..2], ["gemini", "--session-id"]);
     assert_eq!(cmd[3..], ["-m", "gemini-2.5-pro"]);
+
+    let agy = app.ok(
+        "POST",
+        "/v1/terms",
+        json!({"cwd": wt, "agent": "agy", "effort": "xhigh"}),
+    );
+    assert_eq!(strs(&agy["cmd"]), ["agy", "--effort", "xhigh"]);
 
     let c = app.ok(
         "POST",
@@ -2292,6 +2315,9 @@ fn profiles_apply_at_launch_with_workspace_and_task_precedence() {
     let wt = app.fx.wt.to_string_lossy().into_owned();
     let p = app.ok("GET", "/v1/profiles", Value::Null);
     assert_eq!(p["default"], "");
+    assert_eq!(p["support"]["agy"]["effort"], "flag");
+    assert_eq!(p["support"]["gemini"]["subagents"], "file");
+    assert_eq!(p["support"]["agy"]["subagents"], "file");
     let ids: Vec<&str> = p["profiles"]
         .as_array()
         .unwrap()
@@ -2423,6 +2449,115 @@ fn profiles_apply_at_launch_with_workspace_and_task_precedence() {
         .0,
         400
     );
+}
+
+#[test]
+fn profiles_list_and_apply_gemini_and_antigravity_subagent_models_over_http() {
+    let app = App::new("gsubs", json!({"autoConcurrency": 0}));
+    let wt = app.fx.wt.to_string_lossy().into_owned();
+    let home = app.fx.base.join("home/.gemini");
+    let gemini_project = app.fx.wt.join(".gemini/agents/researcher.md");
+    let gemini_user = home.join("agents/researcher.md");
+    let agy_project = app.fx.wt.join(".agents/agents/security/agent.md");
+    let agy_user = home.join("config/agents/security/agent.md");
+    for path in [&gemini_project, &gemini_user, &agy_project, &agy_user] {
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    }
+    std::fs::write(
+        &gemini_project,
+        "---\nname: researcher\nmodel: gemini-2.5-flash\n---\nproject agent\n",
+    )
+    .unwrap();
+    std::fs::write(
+        &gemini_user,
+        "---\nname: researcher\nmodel: gemini-2.5-pro\n---\nuser agent\n",
+    )
+    .unwrap();
+    std::fs::write(
+        &agy_project,
+        "---\nname: security\nmodel: flash\n---\nproject agent\n",
+    )
+    .unwrap();
+    std::fs::write(
+        &agy_user,
+        "---\nname: security\nmodel: pro\n---\nuser agent\n",
+    )
+    .unwrap();
+
+    let query = format!("/v1/profiles/subagents?cwd={}", wt.replace('/', "%2F"));
+    let listed = app.ok("GET", &query, Value::Null);
+    let defs = listed["subagents"].as_array().unwrap();
+    let gemini = defs
+        .iter()
+        .find(|d| d["agent"] == "gemini" && d["name"] == "researcher")
+        .unwrap();
+    let agy = defs
+        .iter()
+        .find(|d| d["agent"] == "agy" && d["name"] == "security")
+        .unwrap();
+    assert_eq!(gemini["scope"], "project");
+    assert_eq!(gemini["model"], "gemini-2.5-flash");
+    assert_eq!(agy["scope"], "project");
+    assert_eq!(agy["model"], "flash");
+
+    app.ok(
+        "PUT",
+        "/v1/profiles",
+        json!({"profiles": [{"id": "google-agents", "name": "Google agents", "agents": {
+            "gemini": {"subagents": {"researcher": {"model": "gemini-3.1-pro"}}},
+            "agy": {"subagents": {"security": {"model": "pro"}}}
+        }}]}),
+    );
+    let dry = app.ok(
+        "POST",
+        "/v1/profiles/apply-files",
+        json!({"profile": "google-agents", "cwd": wt, "dryRun": true}),
+    );
+    let files: Vec<String> = dry["files"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|f| f["path"].as_str().unwrap().to_string())
+        .collect();
+    assert_eq!(
+        files,
+        [
+            agy_project.to_string_lossy().into_owned(),
+            gemini_project.to_string_lossy().into_owned(),
+        ]
+    );
+    let applied = app.ok(
+        "POST",
+        "/v1/profiles/apply-files",
+        json!({"profile": "google-agents", "cwd": wt, "dryRun": false, "files": files}),
+    );
+    assert!(applied["files"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .all(|f| f["written"] == true));
+    for file in applied["files"].as_array().unwrap() {
+        let backup = file["backup"].as_str().unwrap();
+        let previous = std::fs::read_to_string(backup).unwrap();
+        if file["path"] == gemini_project.to_string_lossy().as_ref() {
+            assert!(previous.contains("model: gemini-2.5-flash"));
+        } else {
+            assert_eq!(file["path"], agy_project.to_string_lossy().as_ref());
+            assert!(previous.contains("model: flash"));
+        }
+    }
+    assert!(std::fs::read_to_string(gemini_project)
+        .unwrap()
+        .contains("model: gemini-3.1-pro"));
+    assert!(std::fs::read_to_string(agy_project)
+        .unwrap()
+        .contains("model: pro"));
+    assert!(std::fs::read_to_string(gemini_user)
+        .unwrap()
+        .contains("model: gemini-2.5-pro"));
+    assert!(std::fs::read_to_string(agy_user)
+        .unwrap()
+        .contains("model: pro"));
 }
 
 #[test]

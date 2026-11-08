@@ -419,7 +419,10 @@ pub fn create(ctx: &Ctx, b: &Value) -> Res<Task> {
             .map_err(|(_, e)| bad(e))?
             .is_some_and(|p| p.agents.get(agent).is_some_and(|c| !c.effort.is_empty()))
     };
-    let effort = pick(b, "effort", EFFORTS, if profiled { "" } else { "high" })?;
+    let levels = crate::agents::get(agent)
+        .map(|a| a.valid_efforts())
+        .unwrap_or(EFFORTS);
+    let effort = pick(b, "effort", levels, if profiled { "" } else { "high" })?;
     let model = match &b["model"] {
         Value::Null => "",
         Value::String(s) => s.trim(),
@@ -554,6 +557,7 @@ pub fn patch(ctx: &Ctx, id: &str, b: &Value) -> Res<Task> {
     let obj = b.as_object().ok_or_else(|| bad("JSON object expected"))?;
     let reg = db(ctx)?;
     let mut t = get(&reg, id)?;
+    let effort_agent = b["agent"].as_str().unwrap_or(&t.agent).to_owned();
     let was = t.status.clone();
     for (k, v) in obj {
         let s = || {
@@ -595,7 +599,12 @@ pub fn patch(ctx: &Ctx, id: &str, b: &Value) -> Res<Task> {
             "important" => t.important = flag_of(k, v)?,
             "inheritBranch" => t.inherit_branch = flag_of(k, v)?,
             "dependsOn" => t.depends_on = deps_of(&reg, id, &t.project, v)?,
-            "effort" => t.effort = pick(b, k, EFFORTS, "")?.into(),
+            "effort" => {
+                let levels = crate::agents::get(&effort_agent)
+                    .map(|a| a.valid_efforts())
+                    .unwrap_or(EFFORTS);
+                t.effort = pick(b, k, levels, "")?.into();
+            }
             "profile" => t.profile = profile_of(ctx, v)?,
             "ticketKey" => t.ticket_key = ticket_of(v)?,
             "progress" => t.progress = progress(v)?,

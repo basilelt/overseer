@@ -1123,7 +1123,7 @@ Which profile applies, most specific first:
 A model or effort typed explicitly (task form, API) wins over the profile. The session tab shows
 the profile name, and the activity panel shows it in full (`Balanced · sonnet · effort medium`).
 
-How each CLI gets the values (nothing in your global config is rewritten):
+How each CLI gets the values (agent files change only when you explicitly apply them):
 
 | CLI | Model | Effort | Default subagent model / effort | Per named subagent | Background model |
 |---|---|---|---|---|---|
@@ -1131,15 +1131,18 @@ How each CLI gets the values (nothing in your global config is rewritten):
 | Codex | `-m` | `-c model_reasoning_effort=` | `-c agents.default_subagent_model=` / `-c agents.default_subagent_reasoning_effort=` | not offered (role files) | — |
 | opencode | `-m` | — | — | `OPENCODE_CONFIG_CONTENT` (env, `agent.<name>.model`) | `small_model` in the same env |
 | Copilot CLI | `--model` | `--effort` (max → `xhigh`) | — | — | — |
-| Gemini CLI, Antigravity, Cursor | `-m` / `--model` | — | — | — | — |
+| Gemini CLI | `-m` | — (the CLI has no launch effort flag) | — | `model:` in `.gemini/agents/*.md`, via **Apply to agent files** | — |
+| Antigravity | `--model` | `--effort` | — | `model:` tier in `.agents/agents` or `~/.gemini/config/agents`, via **Apply to agent files** | — |
+| Cursor Agent | `--model` | — | — | — | — |
 | Amp | — | `--mode` (max → `ultra`) | — | — | — |
 
-Claude subagents that set `model:` in their file ignore `CLAUDE_CODE_SUBAGENT_MODEL` unless
-"Override every subagent" is on. To change one subagent only, set it under **Named subagents**
-(the list comes from `~/.claude/agents` and `<project>/.claude/agents`, project first), save, then
-**Apply to agent files…**: Overseer shows the frontmatter lines it would change per file, you
-tick each file, and it writes them with a `.bak-<stamp>` copy next to each. Nothing is written
-without that confirmation.
+To change a named subagent, set it under **Named subagents**, save, then choose **Apply to agent
+files…**. Gemini CLI definitions come from `~/.gemini/agents` and `<project>/.gemini/agents`;
+Antigravity definitions come from `~/.gemini/config/agents` and `<project>/.agents/agents`;
+Claude uses `~/.claude/agents` and `<project>/.claude/agents`. Project files take precedence over
+user files. Overseer previews the frontmatter lines it would change, and writes only the files
+you tick, keeping a `.bak-<stamp>` copy next to each. Gemini CLI does not expose a native launch
+effort flag, so profiles cannot set Gemini effort.
 
 Profiles live in the daemon's state dir (`profiles.json`), so the desktop and phone apps share
 them. API: `GET/PUT /v1/profiles`, `GET /v1/profiles/subagents?cwd=`, `POST

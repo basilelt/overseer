@@ -154,10 +154,10 @@ pub fn agent_for(b: &Value) -> Res<&'static crate::agents::Agent> {
         ));
     }
     let effort = text(b, "effort");
-    if !effort.is_empty() && !crate::agents::EFFORTS.contains(&effort) {
+    if !effort.is_empty() && !agent.valid_efforts().contains(&effort) {
         return Err(bad(format!(
             "effort must be one of {}",
-            crate::agents::EFFORTS.join(", ")
+            agent.valid_efforts().join(", ")
         )));
     }
     Ok(agent)

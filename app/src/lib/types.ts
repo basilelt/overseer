@@ -169,7 +169,7 @@ export interface NewTerm {
 }
 
 export type TaskStatus = 'pending' | 'auto' | 'in_progress' | 'in_testing' | 'completed';
-export type Effort = 'low' | 'medium' | 'high' | 'max';
+export type Effort = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 export const TASK_STATUSES: TaskStatus[] = ['pending', 'auto', 'in_progress', 'in_testing', 'completed'];
 
 export type TaskOrigin = 'user' | 'session' | 'agent' | 'organizer' | 'configurator';

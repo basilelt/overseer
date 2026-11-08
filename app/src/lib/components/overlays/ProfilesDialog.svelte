@@ -265,7 +265,15 @@
                       <div class="sub">
                         <span class="sname" title={d.path}>{d.name}<small class="faint">{t(`profile.scope.${d.scope}` as Key)} · {d.model || t('profile.inherits')}{d.effort ? ` · ${effortName(d.effort)}` : ''}</small></span>
                         <div class="sctl">
-                          <ModelField agent={a} value={o.model ?? ''} label={d.name} onchange={(v) => editable && setSub(a.id, d.name, { model: v })} />
+                          {#if d.agent === 'agy'}
+                            <select value={o.model ?? 'inherit'} disabled={!editable} aria-label={d.name} onchange={(e) => setSub(a.id, d.name, { model: e.currentTarget.value })}>
+                              <option value="inherit">{t('profile.inherits')}</option>
+                              <option value="flash">{t('profile.subagentTier.flash')}</option>
+                              <option value="pro">{t('profile.subagentTier.pro')}</option>
+                            </select>
+                          {:else}
+                            <ModelField agent={a} value={o.model ?? ''} label={d.name} onchange={(v) => editable && setSub(a.id, d.name, { model: v })} />
+                          {/if}
                           {#if s.subagentEfforts && a.efforts.length}
                             <select value={o.effort ?? ''} disabled={!editable} aria-label={t('profile.effort')} onchange={(e) => setSub(a.id, d.name, { effort: e.currentTarget.value as Effort | '' })}>
                               <option value="">{t('profile.keep')}</option>
@@ -563,5 +571,15 @@
   :global(.phone) .ctl,
   :global(.phone) .sctl {
     width: 160px;
+  }
+  :global(.phone) .head {
+    flex-wrap: wrap;
+  }
+  :global(.phone) .head .name {
+    width: 100%;
+    min-width: 0;
+  }
+  :global(.phone) .head .spacer {
+    display: none;
   }
 </style>

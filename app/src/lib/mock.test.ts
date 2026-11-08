@@ -386,6 +386,7 @@ describe('MockDaemon', () => {
     expect(agents.filter((x) => !x.installed).map((x) => x.id)).toEqual(['opencode', 'amp', 'cursor']);
     expect(agents.find((x) => x.id === 'amp')!.install).toContain('npm');
     expect(agents.find((x) => x.id === 'gemini')!.efforts).toEqual([]);
+    expect(agents.find((x) => x.id === 'agy')!.efforts).toEqual(['low', 'medium', 'high', 'xhigh', 'max']);
     expect(agents.filter((x) => x.sessions).map((x) => x.id)).toEqual(['claude', 'codex', 'gemini']);
   });
 
@@ -393,12 +394,13 @@ describe('MockDaemon', () => {
     const { a, events } = setup();
     const term = await a.createTerm({ agent: 'claude', model: 'sonnet', effort: 'max', cwd: '/w' });
     expect(term).toMatchObject({ agent: 'claude', cmd: ['claude', '--model', 'sonnet', '--effort', 'max'], cwd: '/w', cols: 80, rows: 24 });
+    expect(await a.createTerm({ agent: 'agy', effort: 'xhigh', cwd: '/w' })).toMatchObject({ cmd: ['agy', '--effort', 'xhigh'] });
     expect((await a.createTerm({ agent: 'shell' })).agent).toBe('shell');
     expect((await a.createTerm({ cmd: ['htop'] })).agent).toBe('shell');
     await expect(a.createTerm({ agent: 'claude', cmd: ['x'] })).rejects.toMatchObject({ status: 400 });
     await expect(a.createTerm({ agent: 'nope' })).rejects.toMatchObject({ status: 400 });
     await expect(a.createTerm({ agent: 'amp' })).rejects.toThrow('not installed');
-    expect(events.filter((e) => e.type === 'term.created')).toHaveLength(3);
+    expect(events.filter((e) => e.type === 'term.created')).toHaveLength(4);
   });
 
   it('kills a running term once, with confirmation', async () => {
