@@ -42,6 +42,11 @@ while IFS= read -r line; do
     mcp) set -m; sh -c ': mcp-server; sleep 300; :' & echo $! > "$SB_STUB_LOG.mcp"; set +m ;;
     mcpstubborn) set -m; sh -c ': mcp-server; trap "" TERM; while :; do sleep 1; done' & echo $! > "$SB_STUB_LOG.mcpstubborn"; set +m ;;
     ask) hook PermissionRequest ;;
+    multiask)
+      printf '%s\n' '←  ☐ Fruits  ✔ Submit  →' '' 'Which fruits do you like?' '' '❯ 1. [ ] Apple' '         red' '  2. [ ] Banana' '         yellow' \
+        '  3. [ ] Type something' '     Submit' '────────────────────────' '  4. Chat about this' '' 'Enter to select · ↑/↓ to navigate · Esc to cancel'
+      hook PermissionRequest
+      continue ;;
     approved) hook PostToolUse ;;
     sub) hook SubagentStart ;;
     unsub) hook SubagentStop ;;

@@ -107,8 +107,9 @@ function numbered(lines: string[], agent: string): PromptCard | null {
   const last = group[group.length - 1];
   const chat = group.length > 2 && (/^Chat about this$/.test(last.text.replace(MARK, '')) || lines.slice(group[group.length - 2].i + 1, last.i).some((l) => l.trim() && RULE.test(l.trim()))) ? last : null;
   const multi = group.some((g) => CHECK.test(g.text));
+  const body = chat ? group[group.length - 2] : last;
   let submitAt = -1;
-  for (let i = last.i + 1; i < Math.min(lines.length, last.i + 8); i++) {
+  for (let i = body.i + 1; i < Math.min(chat ? chat.i : lines.length, body.i + 8); i++) {
     if (SUBMIT.test(lines[i].trim())) {
       submitAt = i;
       break;
@@ -119,8 +120,9 @@ function numbered(lines: string[], agent: string): PromptCard | null {
   const head = tabs(lines, group[0].i, review >= 0);
   const ask = !!(chat || field || head || submitAt >= 0);
   const at = group.find((g) => g.cursor);
-  const submitN = last.n + 1;
-  const cursor = at ? at.n : submitAt >= 0 && MARK.test(lines[submitAt].trim()) ? submitN : group[0].n;
+  const submitN = body.n + 1;
+  const pos = (g: (typeof group)[number]) => (g === chat && submitAt >= 0 ? g.n + 1 : g.n);
+  const cursor = at ? pos(at) : submitAt >= 0 && MARK.test(lines[submitAt].trim()) ? submitN : group[0].n;
   const cursorIdx = Math.max(0, group.findIndex((g) => g.cursor));
   const options = group.map((g, j) => {
     const box = g.text.match(CHECK);
@@ -129,7 +131,7 @@ function numbered(lines: string[], agent: string): PromptCard | null {
     const o: PromptOption = { label: `${g.n}. ${label(text)}`, keys: [] };
     const sc = shortcut(g.text);
     if (ask) {
-      o.keys = g === field ? moves(cursor, g.n) : multi ? [...moves(cursor, g.n), 'space'] : arrows(cursor, g.n);
+      o.keys = g === field ? moves(cursor, g.n) : g === chat ? arrows(cursor, pos(g)) : multi ? [...moves(cursor, g.n), 'space'] : arrows(cursor, g.n);
       const d = details(lines, g.i, next);
       if (d) o.description = d;
       if (g === field) o.input = true;
