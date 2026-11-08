@@ -509,21 +509,28 @@ pub fn run(ctx: &Ctx, apply: bool) -> Report {
     rep
 }
 
+// The daemon's workers keep running until exit and can write a file back after the removal.
+fn remove_until_gone(dir: &Path) -> Result<(), String> {
+    let mut last = Ok(());
+    for _ in 0..10 {
+        last = match std::fs::remove_dir_all(dir) {
+            Ok(()) => Ok(()),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(e) => Err(format!("{}: {e}", dir.display())),
+        };
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        if last.is_ok() && !exists(dir) {
+            break;
+        }
+    }
+    last
+}
+
 pub fn finish(state_dir: &Path) -> Result<(), String> {
     let mut last = Ok(());
     if exists(state_dir) {
         state_dir_safe(state_dir)?;
-        for _ in 0..5 {
-            last = match std::fs::remove_dir_all(state_dir) {
-                Ok(()) => Ok(()),
-                Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
-                Err(e) => Err(format!("{}: {e}", state_dir.display())),
-            };
-            if last.is_ok() {
-                break;
-            }
-            std::thread::sleep(std::time::Duration::from_millis(100));
-        }
+        last = remove_until_gone(state_dir);
     }
     let env = autostart::Env::current(state_dir);
     let unloaded = autostart::unload(&env, &autostart::run_cmd);
@@ -549,6 +556,24 @@ pub fn routes(ctx: &Ctx, method: &str, segs: &[&str], body: &Value) -> Option<(u
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_state_dir_written_back_during_removal_is_removed_again() {
+        let d = std::env::temp_dir().join(format!("sb-un-race-{}", std::process::id()));
+        std::fs::create_dir_all(&d).unwrap();
+        std::fs::write(d.join("overseer.db"), "").unwrap();
+        let w = d.clone();
+        let writer = std::thread::spawn(move || {
+            while w.exists() {
+                std::thread::sleep(std::time::Duration::from_millis(5));
+            }
+            std::fs::create_dir_all(&w).unwrap();
+            std::fs::write(w.join("late.log"), "x").unwrap();
+        });
+        assert_eq!(remove_until_gone(&d), Ok(()));
+        writer.join().unwrap();
+        assert!(!d.exists());
+    }
 
     fn tmp(tag: &str) -> PathBuf {
         let d = std::env::temp_dir().join(format!("sb-uninstall-{tag}-{}", std::process::id()));
