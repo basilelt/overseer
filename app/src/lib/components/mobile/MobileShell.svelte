@@ -18,7 +18,7 @@
   import Sidebar from '../sidebar/Sidebar.svelte';
   import Workspace from '../workspace/Workspace.svelte';
   import SidePanel from '../panel/SidePanel.svelte';
-  import ConnBanner from '../ui/ConnBanner.svelte';
+  import { preload } from '../../idle';
   import DemoPill from '../ui/DemoPill.svelte';
   import MobileChips from './MobileChips.svelte';
   import MobileReviews from './MobileReviews.svelte';
@@ -131,6 +131,7 @@
     tour.setReady(true);
     return () => tour.setReady(false);
   });
+  const connBanner = preload(() => import('../ui/ConnBanner.svelte'), 1000);
 </script>
 
 <div class="mshell">
@@ -153,7 +154,7 @@
       <span class="hl">{hostLabel}</span>
     </button>
   </header>
-  <ConnBanner />
+  {#await connBanner() then { default: ConnBanner }}<ConnBanner />{/await}
 
   <main class="content">
     <div class="stage" class:hidden={!stageVisible} aria-hidden={!stageVisible}>
