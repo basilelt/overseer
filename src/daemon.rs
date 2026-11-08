@@ -273,9 +273,8 @@ fn term_spec(b: &Value, state_dir: &std::path::Path) -> Result<crate::term::Spec
         let session = a.session.and_then(|_| crate::runner::uuid().ok());
         spec.flags = a.flags(&applied.model, &applied.effort);
         if auto_approve {
-            if let Some(flags) = crate::agents::auto_approve_args(a.id) {
-                spec.flags.extend(flags.iter().map(|f| (*f).to_string()));
-            }
+            spec.flags
+                .extend(crate::agents::auto_approve_flags(a.id, &applied.extra));
         }
         spec.flags.extend(applied.extra.iter().cloned());
         spec.cmd = a.launch(&crate::agents::Launch {

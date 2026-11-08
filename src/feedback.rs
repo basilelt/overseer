@@ -200,9 +200,7 @@ pub fn launch(
     };
     let mut flags = agent.flags(model, effort);
     if auto_approve {
-        if let Some(auto_approve_flags) = crate::agents::auto_approve_args(agent.id) {
-            flags.extend(auto_approve_flags.iter().map(|flag| (*flag).to_string()));
-        }
+        flags.extend(crate::agents::auto_approve_flags(agent.id, extra));
     }
     let term = crate::term::spawn(crate::term::Spec {
         cwd,
