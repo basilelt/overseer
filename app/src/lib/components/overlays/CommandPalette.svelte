@@ -16,6 +16,7 @@
   import Server from '@lucide/svelte/icons/server';
   import SunMoon from '@lucide/svelte/icons/sun-moon';
   import PanelRight from '@lucide/svelte/icons/panel-right';
+  import Puzzle from '@lucide/svelte/icons/puzzle';
   import Settings from '@lucide/svelte/icons/settings';
   import Columns2 from '@lucide/svelte/icons/columns-2';
   import Rows2 from '@lucide/svelte/icons/rows-2';
@@ -145,6 +146,7 @@
     action('split-right', 'palette.splitRight', Columns2, () => split('horizontal')),
     action('split-down', 'palette.splitDown', Rows2, () => split('vertical')),
     action('settings', 'palette.settings', Settings, () => app.open('settings')),
+    ...(connected ? [action('skills', 'palette.skills', Puzzle, () => app.open('settings', 'skills'))] : []),
     { id: 'logs', label: dt('show'), icon: ScrollText, section: 'actions', run: () => diag.open('live') },
     { id: 'feedback', label: ft('title'), icon: MessageSquarePlus, section: 'actions', run: () => feedback.show() },
     { id: 'tour', label: tt('palette'), icon: Compass, section: 'actions', run: () => replayTour() },

@@ -314,7 +314,7 @@ jobs:
 
       - env:
           VERSION: ${{ needs.tag.outputs.version }}
-        run: scripts/set-version.sh "$VERSION" && make app-resources
+        run: scripts/set-version.sh "$VERSION" && scripts/app-resources.sh "$VERSION" x86_64-pc-windows-msvc
 
       - env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
@@ -373,7 +373,7 @@ jobs:
           MSIX_PFX_BASE64: ${{ secrets.WINDOWS_SELF_SIGN_PFX_BASE64 }}
           MSIX_PFX_PASSWORD: ${{ secrets.WINDOWS_SELF_SIGN_PFX_PASSWORD }}
         run: |
-          scripts/app-resources.sh "$VERSION"
+          scripts/app-resources.sh "$VERSION" x86_64-pc-windows-msvc
           scripts/msix.sh "$VERSION" x64 msix-input/overseer-app.exe "out/Overseer_${VERSION}_x64.msix"
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
@@ -399,7 +399,9 @@ jobs:
         with:
           rust: "true"
           rust-targets: aarch64-pc-windows-msvc
-          rust-workspaces: app/src-tauri -> target
+          rust-workspaces: |
+            . -> target
+            app/src-tauri -> target
           node: "true"
           check: cargo pnpm jq clang target:aarch64-pc-windows-msvc
 
@@ -411,7 +413,18 @@ jobs:
 
       - env:
           VERSION: ${{ needs.tag.outputs.version }}
-        run: scripts/set-version.sh "$VERSION" && scripts/app-resources.sh "$VERSION"
+        run: |
+          scripts/set-version.sh "$VERSION"
+          cargo build --locked --release --target aarch64-pc-windows-msvc
+          cp target/aarch64-pc-windows-msvc/release/overseer.exe "dist/overseer-$VERSION-aarch64-pc-windows-msvc.exe"
+          scripts/app-resources.sh "$VERSION" aarch64-pc-windows-msvc
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: servers-windows-arm
+          path: dist/overseer-*-aarch64-pc-windows-msvc.exe
+          if-no-files-found: error
+          retention-days: 4
 
       - env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}

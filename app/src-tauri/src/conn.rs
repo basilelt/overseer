@@ -675,13 +675,19 @@ async fn wait_version(conn: &DaemonConn, tries: u32) -> Result<String, String> {
 }
 
 fn local_binary(ctx: &Ctx) -> Option<PathBuf> {
+    let name = if cfg!(windows) {
+        "overseer.exe"
+    } else {
+        "overseer"
+    };
     let mut c: Vec<PathBuf> = Vec::new();
     if let Some(e) = &ctx.exe_dir {
-        c.push(e.join(if cfg!(windows) {
-            "overseer.exe"
-        } else {
-            "overseer"
-        }));
+        c.push(e.join(name));
+    }
+    if cfg!(windows) {
+        if let Some(r) = &ctx.resource_dir {
+            c.push(install::windows_resource(r, std::env::consts::ARCH));
+        }
     }
     if let Some(p) = Platform::local() {
         c.extend(install::binary_candidates(
@@ -692,7 +698,7 @@ fn local_binary(ctx: &Ctx) -> Option<PathBuf> {
         ));
     }
     if let Some(path) = std::env::var_os("PATH") {
-        c.extend(std::env::split_paths(&path).map(|d| d.join("overseer")));
+        c.extend(std::env::split_paths(&path).map(|d| d.join(name)));
     }
     c.into_iter().find(|p| p.is_file())
 }

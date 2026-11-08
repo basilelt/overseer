@@ -81,6 +81,41 @@ describe('prompt card', () => {
     expect(p.submit).toEqual({ label: 'Submit', keys: ['down', 'down', 'enter'] });
   });
 
+  it('maps a real Claude Code multi-select with Submit above Chat about this', () => {
+    const screen = [
+      '←  ☐ Fruits  ✔ Submit  →',
+      '',
+      'Which fruits do you like?',
+      '',
+      '❯ 1. [ ] Apple',
+      '         red',
+      '  2. [ ] Banana',
+      '         yellow',
+      '  3. [ ] Type something',
+      '     Submit',
+      '────────────────────────',
+      '  4. Chat about this',
+      '',
+      'Enter to select · ↑/↓ to navigate · Esc to cancel',
+    ].join('\n');
+    const p = parsePrompt(screen, 'claude')!;
+    expect(p.submit).toEqual({ label: 'Submit', keys: ['down', 'down', 'down', 'enter'] });
+    expect(p.options.map((o) => [o.label, o.checked, o.keys])).toEqual([
+      ['1. Apple', false, ['space']],
+      ['2. Banana', false, ['down', 'space']],
+      ['3. Type something', false, ['down', 'down']],
+      ['4. Chat about this', undefined, ['down', 'down', 'down', 'down', 'enter']],
+    ]);
+    expect(p.options[1].description).toBe('yellow');
+    expect(p.options[2].input).toBe(true);
+    expect(p.options[3].chat).toBe(true);
+    const onSubmit = screen.replace('❯ 1. [ ] Apple', '  1. [✔] Apple').replace('     Submit', '❯    Submit');
+    const q = parsePrompt(onSubmit, 'claude')!;
+    expect(q.submit!.keys).toEqual(['enter']);
+    expect(q.options.map((o) => o.keys)).toEqual([['up', 'up', 'up', 'space'], ['up', 'up', 'space'], ['up'], ['down', 'enter']]);
+    expect(q.options[0].checked).toBe(true);
+  });
+
   it('counts the Submit row as the cursor when it is focused', () => {
     const screen = ['Pick', '', '  1. [ ] A', '  2. [✔] B', '  3. [ ] Type something', '', '❯    Next'].join('\n');
     const p = parsePrompt(screen, 'claude')!;

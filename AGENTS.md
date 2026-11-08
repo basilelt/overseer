@@ -110,6 +110,7 @@ Every command has one home. Before adding a button, menu entry or shortcut, chec
 - **Tour**: when a step of the guided tour (`app/src/lib/tour/steps.ts`) or the window it walks through changes, regenerate `docs/media/tour.gif` with `scripts/readme-tour.sh`.
 - **Install, upgrade or supported agents and platforms change**: update the matching README section.
 - Keep media small (GIF under ~1 MB, PNG screenshots from the mock, no real names, tokens or private data) and link to files in the repository with relative paths.
+- **Showreel**: a branch that adds a major feature, adds or removes a supported agent or platform, or fundamentally changes the design (logo, palette, typography, main window layout) leaves the showreel in `docs/showreel/` (the repository's website) out of date. Regenerating it is expensive, so never do it unasked: at the end of the branch, ask the user once, following [`docs/showreel/REGENERATE.md`](docs/showreel/REGENERATE.md). A no, or no answer, means it is not regenerated.
 
 ## Git
 

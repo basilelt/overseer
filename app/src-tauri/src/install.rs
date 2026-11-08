@@ -142,6 +142,13 @@ pub fn sha256_hex(bytes: &[u8]) -> String {
         .collect()
 }
 
+pub fn windows_resource(resource_dir: &Path, arch: &str) -> PathBuf {
+    resource_dir
+        .join("server")
+        .join(format!("windows-{arch}"))
+        .join("overseer.exe")
+}
+
 pub fn binary_candidates(
     platform: Platform,
     resource_dir: Option<&Path>,
@@ -280,5 +287,17 @@ mod tests {
             Some(Path::new("/exe")),
         );
         assert_eq!(same.len(), usize::from(Platform::local().is_some()));
+    }
+
+    #[test]
+    fn windows_daemon_ships_in_resources_per_arch() {
+        assert_eq!(
+            windows_resource(Path::new("/res"), "x86_64"),
+            Path::new("/res/server/windows-x86_64/overseer.exe")
+        );
+        assert_eq!(
+            windows_resource(Path::new("/res"), "aarch64"),
+            Path::new("/res/server/windows-aarch64/overseer.exe")
+        );
     }
 }

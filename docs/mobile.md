@@ -127,14 +127,16 @@ version reaches them after Beta App Review; later builds of the same version usu
     (`scripts/android-16k.sh`), and hands the APK to `publish`. The release does not wait for it
     to succeed. It is skipped, with a warning on the run, while its secrets are missing (the
     `tag` job checks them). No App Bundle, no iOS build and no store upload run on a release.
-- Store releases (`store.yml`, manual, from `main`, inputs `tag`, `ios`, `android`, `track`; see
+- Store releases (`store.yml`, manual, from `main`, inputs `tag`, `release_notes`, `ios`, `android`, `track`; see
   docs/ci.md, "Store releases"):
   - `ios` on `macos-26`: checks out the tag, stamps its version, writes `APPLE_TEAM_ID` into the
     Xcode project (`gen/apple/project.yml` and `project.pbxproj` are committed with an empty
     team), then `fastlane ios app_store` from `app/` (`app/fastlane/Fastfile`). Tauri signs with
     `IOS_CERTIFICATE` and `IOS_MOBILE_PROVISION`; the lane builds with `pnpm tauri ios build --export-method
     app-store-connect`, checks the IPA's versions, and submits it with `upload_to_app_store`
-    (`submit_for_review: true`, `automatic_release: false`, metadata and screenshots skipped).
+    (`submit_for_review: true`, `automatic_release: false`, screenshots skipped). The only
+    metadata it sends is the version's "What's New" (`en-US`), required for every update: the
+    `release_notes` input, or "Bug fixes and improvements." when empty.
     `CFBundleShortVersionString` is the release version; `CFBundleVersion` is the `store.yml` run
     number (`<run>.<attempt>` on a re-run, so a re-run never reuses a build number).
   - `android` on `ubuntu-24.04`: checks out the tag, stamps its version and builds the Google
@@ -240,8 +242,8 @@ team id comes from the `APPLE_TEAM_ID` secret at build time.
    match the app), primary language, bundle ID `io.github.basilelt.overseer`, SKU `overseer`.
 3. Fill the App Store listing by hand, once: description, keywords, support URL, screenshots
    (iPhone and iPad), App Privacy answers, age rating, content rights and the price. The store
-   workflow never uploads metadata or screenshots (`skip_metadata`, `skip_screenshots`), so the
-   listing stays as edited in App Store Connect; update it there before a submission when the app
+   workflow uploads no screenshots and no metadata except the version's "What's New" text
+   (`release_notes` input), so the listing stays as edited in App Store Connect; update it there before a submission when the app
    changed visibly.
 4. TestFlight > Internal Testing > + : a group, with automatic distribution on so every processed
    build reaches it. Add the testers (they must be App Store Connect users of the team).
