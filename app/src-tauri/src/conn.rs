@@ -704,16 +704,14 @@ fn local_binary(ctx: &Ctx) -> Option<PathBuf> {
 }
 
 async fn run(bin: &Path, args: &[&str]) -> Result<String, String> {
-    let out = tokio::time::timeout(
-        Duration::from_secs(20),
-        tokio::process::Command::new(bin)
-            .args(args)
-            .stdin(std::process::Stdio::null())
-            .output(),
-    )
-    .await
-    .map_err(|_| format!("{} {}: timed out", bin.display(), args.join(" ")))?
-    .map_err(|e| format!("{}: {e}", bin.display()))?;
+    let mut cmd = tokio::process::Command::new(bin);
+    cmd.args(args).stdin(std::process::Stdio::null());
+    #[cfg(windows)]
+    cmd.creation_flags(0x0800_0000);
+    let out = tokio::time::timeout(Duration::from_secs(20), cmd.output())
+        .await
+        .map_err(|_| format!("{} {}: timed out", bin.display(), args.join(" ")))?
+        .map_err(|e| format!("{}: {e}", bin.display()))?;
     if !out.status.success() {
         return Err(format!(
             "{} {} failed: {}",

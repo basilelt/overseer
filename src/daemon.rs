@@ -1597,6 +1597,12 @@ pub fn running(state_dir: &Path) -> bool {
     std::fs::create_dir_all(state_dir).is_ok() && lock(state_dir).is_err()
 }
 
+// DETACHED_PROCESS leaves the daemon without a console, so Windows opens a new
+// console window for every git/gh/shell child it spawns. CREATE_NO_WINDOW gives
+// it a hidden console that its children inherit instead.
+#[cfg(any(windows, test))]
+const WINDOWS_DETACH_FLAGS: u32 = 0x0800_0000 | 0x0000_0200;
+
 pub fn detach(args: &[String]) -> Result<PathBuf, String> {
     let state_dir = crate::default_state_dir();
     crate::mkdir_private(&state_dir).map_err(|e| e.to_string())?;
@@ -1632,7 +1638,7 @@ pub fn detach(args: &[String]) -> Result<PathBuf, String> {
             });
         }
         #[cfg(windows)]
-        std::os::windows::process::CommandExt::creation_flags(&mut c, 0x0000_0208);
+        std::os::windows::process::CommandExt::creation_flags(&mut c, WINDOWS_DETACH_FLAGS);
         let child = c.spawn().map_err(|e| format!("spawn daemon: {e}"))?;
         let _ = std::fs::write(state_dir.join("daemon.pid"), child.id().to_string());
     }
@@ -1718,6 +1724,12 @@ pub fn call(method: &str, target: &str, body: Option<&Value>) -> Result<(u16, Va
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn windows_daemon_gets_a_hidden_console_its_children_inherit() {
+        assert_ne!(WINDOWS_DETACH_FLAGS & 0x0800_0000, 0);
+        assert_eq!(WINDOWS_DETACH_FLAGS & 0x0000_0008, 0);
+    }
 
     struct Late(Vec<u8>, std::io::ErrorKind);
 
