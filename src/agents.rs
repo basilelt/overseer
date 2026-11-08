@@ -297,9 +297,34 @@ pub fn redact(argv: &[String], agent: &Agent, prompt: Option<&str>) -> Vec<Strin
     out
 }
 
+// Windows: std::process::Command only finds `<bin>.exe` on PATH, so an npm install (`claude.cmd`)
+// went undetected while the terminal (portable-pty searches PATHEXT) still launched it.
+pub fn on_path(bin: &str, path: &std::ffi::OsStr, exts: &str) -> Option<std::path::PathBuf> {
+    std::env::split_paths(path).find_map(|dir| {
+        exts.split(';')
+            .filter(|e| !e.is_empty())
+            .map(|e| dir.join(format!("{bin}{e}")))
+            .find(|p| p.is_file())
+    })
+}
+
+fn program(bin: &str) -> std::path::PathBuf {
+    if cfg!(windows) {
+        let path = std::env::var_os("PATH").unwrap_or_default();
+        let exts = std::env::var("PATHEXT").unwrap_or_else(|_| ".COM;.EXE;.BAT;.CMD".into());
+        if let Some(p) = on_path(bin, &path, &exts) {
+            return p;
+        }
+    }
+    bin.into()
+}
+
 pub fn version(bin: &str) -> Option<String> {
-    let o = crate::git::output_within(Command::new(bin).arg("--version"), Duration::from_secs(5))
-        .ok()?;
+    let o = crate::git::output_within(
+        Command::new(program(bin)).arg("--version"),
+        Duration::from_secs(5),
+    )
+    .ok()?;
     let out = String::from_utf8_lossy(&o.stdout);
     o.status.success().then(|| {
         out.lines()
@@ -373,6 +398,29 @@ pub fn rescan() -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn on_path_finds_a_cmd_shim_by_pathext() {
+        let root = std::env::temp_dir().join(format!("ov-onpath-{}", std::process::id()));
+        let (a, b) = (root.join("a"), root.join("b"));
+        std::fs::create_dir_all(&a).unwrap();
+        std::fs::create_dir_all(&b).unwrap();
+        std::fs::write(a.join("claude"), "").unwrap();
+        std::fs::write(b.join("claude.cmd"), "").unwrap();
+        let path = std::env::join_paths([&a, &b]).unwrap();
+        assert_eq!(
+            on_path("claude", &path, ".COM;.EXE;.BAT;.cmd"),
+            Some(b.join("claude.cmd"))
+        );
+        std::fs::write(a.join("claude.exe"), "").unwrap();
+        assert_eq!(
+            on_path("claude", &path, ".exe;.cmd"),
+            Some(a.join("claude.exe"))
+        );
+        assert_eq!(on_path("codex", &path, ".exe;.cmd"), None);
+        assert_eq!(on_path("claude", &path, ""), None);
+        let _ = std::fs::remove_dir_all(&root);
+    }
 
     fn s(v: &[&str]) -> Vec<String> {
         v.iter().map(|x| x.to_string()).collect()
