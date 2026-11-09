@@ -91,7 +91,11 @@ back to In progress when work resumes.
 
 A GitHub-style review of an agent's changes while it works. Comment on lines, suggest edits, and
 send the comments back to the agent; threads follow the code as it changes. Approve, reject or
-commit from the Kanban card when the task is in Review.
+commit from the Kanban card when the task is in Review. When an agent works across several
+repositories, one review covers them all: the Map view draws every worktree on one map with the
+links between files, colours each file by what makes it worth your attention (real logic, blast
+radius, contract changes, where the agent struggled, untested or not yet seen code), and J and K
+walk the files hottest first.
 
 ![Live review](app/docs/screenshots/review-light.png)
 

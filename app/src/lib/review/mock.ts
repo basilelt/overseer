@@ -2,6 +2,7 @@ import { DaemonError } from '../client';
 import type { EventType, LocalLine, Task } from '../types';
 import { lineDiff } from './linediff';
 import { annotate, mockGraph } from './mocktriage';
+import { mockMap } from './mockmap';
 import { threadSuggestion } from './threads';
 import type { Bases, Branches, Delivery, Related, ReviewCommit, ReviewComment, ReviewDiff, ReviewFile, Side, SubmitKind, Thread } from './types';
 
@@ -669,6 +670,22 @@ export class MockReview {
       return base && !d.readOnly ? { ...d, base: base.endsWith('~1') ? d.base : base, baseSource: base.endsWith('~1') ? d.baseSource : 'explicit' } : d;
     }
     if (method === 'GET' && path === '/v1/review/bases') return this.bases(this.worktreeOf(q));
+    if (method === 'GET' && path === '/v1/review/map') {
+      const plan: { wt: string; parent: number | null }[] = [];
+      const push = (wt: string, parent: number | null) => {
+        if (plan.some((x) => x.wt === wt)) return;
+        const at = plan.length;
+        plan.push({ wt, parent });
+        if (parent === null) for (const f of this.diff(wt).files) if (f.status === 'submodule' && `${wt}/${f.path}` === MOCK_SUBMODULE) plan.push({ wt: MOCK_SUBMODULE, parent: at });
+      };
+      push(this.worktreeOf(q), null);
+      for (const w of q.getAll('with')) {
+        if (!w.startsWith('/')) throw new DaemonError(400, `${w} is not an absolute path`);
+        if (w.startsWith(MOCK_MISSING)) throw new DaemonError(410, `the worktree folder ${w} no longer exists`);
+        push(w.replace(/\/+$/, ''), null);
+      }
+      return mockMap(plan.map((p) => ({ diff: this.diff(p.wt), name: p.wt.split('/').pop() ?? p.wt, parent: p.parent, threads: this.threads.filter((t) => t.worktree === p.wt) })));
+    }
     if (method === 'GET' && path === '/v1/review/graph') {
       const d = this.diff(this.worktreeOf(q), q.get('branch'));
       return mockGraph(d.files, d.revision);

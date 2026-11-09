@@ -193,6 +193,9 @@ fn region(
     .unwrap_or_default();
     let sizes: HashMap<&str, u64> = r.tree.0.iter().map(|(p, s)| (p.as_str(), *s)).collect();
     for (f, ft) in rv.files.iter().zip(&tr.files) {
+        if f.submodule.is_some() {
+            continue;
+        }
         let changed = f.additions + f.deletions;
         let abs = Path::new(wt).join(&f.path).to_string_lossy().into_owned();
         let (edits, fails) = stats.get(&abs).copied().unwrap_or_default();

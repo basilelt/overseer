@@ -14,7 +14,10 @@
   import { reviewCounts } from '../../review/counts.svelte';
   import { totals, type Mode } from '../../review/rows';
   import { ReviewStore } from '../../review/store.svelte';
-  import { LinkedReviews, fileLabel, graphOrder, nextStep, parsePick, pickerGroups, type Step } from '../../review/linked.svelte';
+  import { LinkedReviews, fileLabel, parsePick, pickerGroups } from '../../review/linked.svelte';
+  import { ReviewMapStore, band, fid, ranking, step, type Indicator } from '../../review/map.svelte';
+  import { reviewApi } from '../../review/api';
+  import { app } from '../../state.svelte';
   import { countByFile } from '../../review/threads';
   import { reviewKey } from '../../review/keys';
   import { openReview, openReviewNear } from '../../review/open';
@@ -25,8 +28,10 @@
   import PinOff from '@lucide/svelte/icons/pin-off';
   import { changedWorktrees, counts as countLabel, folder } from '../../review/scope';
   import { KINDS, TAG_COLOR, lowRiskKinds } from '../../review/triage';
-  import type { GraphNode, ReviewCommit, ReviewTarget, SubmitKind } from '../../review/types';
-  import GraphView from './GraphView.svelte';
+  import type { ReviewCommit, ReviewTarget, SubmitKind } from '../../review/types';
+  import MapView from './MapView.svelte';
+  import HeatBand from './HeatBand.svelte';
+  import Flame from '@lucide/svelte/icons/flame';
   import Commits from './Commits.svelte';
   import ReviewScope from './ReviewScope.svelte';
   import Segmented from '../kanban/Segmented.svelte';
@@ -54,6 +59,7 @@
     return () => {
       stop();
       linked.stop();
+      maps.stop();
     };
   });
 
@@ -88,53 +94,64 @@
   const lowKinds = $derived(lowRiskKinds(triage).slice(0, 3));
   const ranked = $derived(!!diff?.files.some((f) => f.risk !== undefined));
   let sortRisk = $state(false);
-  const all = $derived([store, ...shown]);
-  const graphStores = $derived(shown.filter((s) => s.diff!.files.length));
-  let gwt = $state<string | null>(null);
-  const gstore = $derived(graphStores.find((s) => s.worktree === gwt) ?? (diff?.files.length ? store : (graphStores[0] ?? store)));
-  const tail = $derived(all.slice(all.indexOf(gstore) + 1).some((s) => graphOrder(s).length > 0));
-  let active = $state.raw<ReviewStore>(untrack(() => store));
-  const upNext = $derived(store.view === 'list' && active.orderAt >= 0 ? nextStep(all, active) : undefined);
+  const maps = new ReviewMapStore(() => (app.client ? reviewApi(app.client) : null));
+  let ind = $state<Indicator>('priority');
+  let hot = $state<string | null>(null);
+  let root: HTMLDivElement | undefined = $state();
+  const mapKey = $derived(diff && anyFiles ? [diff.worktree, diff.revision, ...shown.map((s) => `${s.worktree}@${s.diff!.revision}`)].join('|') : '');
+  $effect(() => {
+    const k = mapKey;
+    if (!k || !diff) return;
+    const also = shown.map((s) => s.worktree ?? '').filter(Boolean);
+    const wt = diff.worktree;
+    untrack(() => maps.request(k, { worktree: wt }, also));
+  });
+  const rank = $derived(ranking(maps.scored, ind));
+  const regionOf = (wt: string | null | undefined) => maps.data?.regions.findIndex((r) => r.worktree === wt) ?? -1;
+  const bandOrder = $derived(
+    diff
+      ? [...diff.files.map((f) => fid(regionOf(diff.worktree), f.path)), ...shown.flatMap((s) => s.diff!.files.map((f) => fid(regionOf(s.worktree), f.path)))]
+      : [],
+  );
+  const bands = $derived(band(maps.scored, bandOrder, ind));
+  const upNext = $derived(rank.length ? (step(rank, hot, 1) ?? null) : null);
+  const nameOf = (id: string) => {
+    const s = maps.scored.find((x) => x.id === id);
+    return s ? `${s.region.name}/${s.file.path}` : id;
+  };
 
-  function setView(v: 'list' | 'graph') {
+  function setView(v: 'list' | 'map') {
     store.setView(v);
-    linked.setView(v);
   }
 
-  async function goto(s: ReviewStore, n: GraphNode) {
-    const h = n.hunks.find((x) => x.path === n.path) ?? n.hunks[0];
-    const path = h?.path ?? n.path;
-    const wt = s.worktree ?? '';
-    active = s;
+  async function openFile(w: number, path: string) {
+    const wt = maps.data?.regions[w]?.worktree;
+    if (!wt) return;
+    hot = fid(w, path);
+    const s = wt === diff?.worktree ? store : shown.find((x) => x.worktree === wt);
+    if (!s) {
+      openReviewNear({ worktree: wt }, selfKey);
+      return;
+    }
     setView('list');
-    s.selected = path;
-    s.collapsed[path] = false;
-    if (h) s.unfold(path, h.hunk);
-    if (s !== store) folded[wt] = false;
     await tick();
-    const sel = s === store ? `:scope > [data-path="${CSS.escape(path)}"]` : `[data-wt="${CSS.escape(wt)}"] [data-path="${CSS.escape(path)}"]`;
-    const jump = () => {
-      const file = scroller?.querySelector<HTMLElement>(sel);
-      const el = (h && file?.querySelector<HTMLElement>(`[data-hunk="${h.hunk}"]`)) || file;
-      if (el && scroller) scroller.scrollTop = el.getBoundingClientRect().top - scroller.getBoundingClientRect().top + scroller.scrollTop - 8;
-      return el !== file;
-    };
-    if (!jump()) setTimeout(jump, 150);
+    if (s === store) select(path);
+    else selectIn(s, path);
   }
 
-  function take(st: Step | undefined) {
-    if (!st) return;
-    st.store.orderAt = st.at;
-    goto(st.store, st.node);
+  function walk(dir: 1 | -1) {
+    const n = step(rank, hot, dir);
+    if (n) openFile(n.w, n.file.path);
   }
 
-  function nextInOrder() {
-    take(upNext);
-  }
-
-  function graphEnd(s: ReviewStore) {
-    const st = nextStep(all, s);
-    if (st && st.store !== s) take(st);
+  function onKey(e: KeyboardEvent) {
+    if (e.ctrlKey || e.metaKey || e.altKey || (e.key !== 'j' && e.key !== 'k')) return;
+    const el = e.target as HTMLElement | null;
+    if (!root || !el || !root.contains(el)) return;
+    if (el?.closest('input, textarea, select, [contenteditable="true"]')) return;
+    if (!rank.length) return;
+    e.preventDefault();
+    walk(e.key === 'j' ? 1 : -1);
   }
 
   function since(c: ReviewCommit) {
@@ -184,7 +201,8 @@
   }
 </script>
 
-<div class="review" class:embedded class:phone>
+<svelte:window onkeydown={onKey} />
+<div class="review" class:embedded class:phone bind:this={root}>
   {#if !embedded}<ReviewScope {store} {selfKey} />{/if}
   <header class="head" class:hide={store.missing || store.notRepo}>
     <div class="ref">
@@ -234,18 +252,18 @@
     <span class="spacer"></span>
     {#if store.live && !store.readOnly}<button class="live" class:paused={!store.autoRefresh} title={t(store.autoRefresh ? 'review.live' : 'review.livePaused')} aria-pressed={store.autoRefresh} onclick={() => { const on = !store.autoRefresh; store.setAutoRefresh(on); linked.setAutoRefresh(on); }}><span class="dot"></span>{store.autoRefresh ? 'Live' : t('review.liveOff')}</button>{/if}
     {#if upNext}
-      <button class="upnext" onclick={nextInOrder} title={`${t('review.next')}: ${upNext.node.path}:${upNext.node.line}`}><span class="mono">{upNext.node.name}</span><span class="faint">{upNext.store !== store ? `${folder(upNext.store.worktree ?? '')} · ` : ''}{upNext.at + 1}/{graphOrder(upNext.store).length}</span><ChevronRight size={12} /></button>
+      <button class="upnext" onclick={() => walk(1)} title={`${t('review.nextHot')}: ${upNext.region.name}/${upNext.file.path} · ${t('review.nextHotKeys')}`}><Flame size={12} /><span class="mono">{upNext.file.path.split('/').pop()}</span><span class="faint">{rank.indexOf(upNext) + 1}/{rank.length}</span><ChevronRight size={12} /></button>
     {/if}
     {#if anyFiles}
-      <Segmented
+      <span class="vseg" data-tour="review-map"><Segmented
         value={store.view}
         label={t('review.view')}
         options={[
           { value: 'list' as const, label: t('review.list') },
-          { value: 'graph' as const, label: t('review.graph') },
+          { value: 'map' as const, label: t('review.map') },
         ]}
         onchange={setView}
-      />
+      /></span>
     {/if}
     {#if !phone && store.view === 'list'}
     <Segmented
@@ -277,28 +295,8 @@
   {:else if store.error && !diff}
     <div class="state err" role="alert">{store.error}<button class="btn" onclick={() => store.load()}><RefreshCw size={13} />{t('common.retry')}</button></div>
   {:else if diff}
-    {#if store.view === 'graph' && anyFiles}
-      {#if graphStores.length}
-        <div class="gtabs" role="tablist" aria-label={t('review.graph')}>
-          {#each diff.files.length ? [store, ...graphStores] : graphStores as s (s.worktree)}
-            {@const sd = s.diff!}
-            {@const st = totals(sd.files)}
-            <button class="gtab" role="tab" aria-selected={s === gstore} class:on={s === gstore} title={sd.worktree} onclick={() => (gwt = s === store ? null : (s.worktree ?? null))}>
-              {#if s !== store}<Link2 size={12} />{/if}
-              <span class="mono lname">{folder(sd.worktree)}</span>
-              {#if sd.branch && !phone}<span class="mono faint lbranch">{sd.branch}</span>{/if}
-              <span class="muted">{sd.files.length}</span>
-              {#if !phone}
-                <span class="add">+{st.additions}</span>
-                <span class="del">−{st.deletions}</span>
-              {/if}
-            </button>
-          {/each}
-        </div>
-      {/if}
-      {#key gstore}
-        <GraphView store={gstore} {phone} onopen={(n) => goto(gstore, n)} onend={tail ? () => graphEnd(gstore) : undefined} />
-      {/key}
+    {#if store.view === 'map' && anyFiles}
+      <MapView map={maps} bind:ind {phone} current={hot} onopen={openFile} />
     {:else}
     {#if phone && anyFiles}
       <div class="picker">
@@ -328,6 +326,9 @@
             <FileTree files={s.diff!.files} counts={countByFile(s.threads)} selected={s.selected} flat={sortRisk} onselect={(p) => selectIn(s, p)} />
           {/each}
         </aside>
+      {/if}
+      {#if !phone && bands.length > 1}
+        <HeatBand {bands} current={hot} names={nameOf} onpick={(id) => { const x = maps.scored.find((y) => y.id === id); if (x) openFile(x.w, x.file.path); }} />
       {/if}
       <div class="files" bind:this={scroller} onscroll={onScroll}>
         {#if diff.truncated}<p class="note faint">{t('review.truncated')}</p>{/if}
@@ -846,48 +847,6 @@
   }
   .phone .linked {
     margin: 14px 0 0;
-  }
-  .gtabs {
-    display: flex;
-    gap: 6px;
-    padding: 8px 12px;
-    border-bottom: 1px solid var(--border);
-    overflow-x: auto;
-    flex: none;
-  }
-  .gtab {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    flex: none;
-    height: 28px;
-    padding: 0 10px;
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    background: var(--bg-subtle);
-    color: var(--text-2);
-    font-size: 12px;
-    white-space: nowrap;
-  }
-  .gtab:hover {
-    background: var(--surface-hover);
-  }
-  .gtab.on {
-    border-color: var(--accent);
-    color: var(--text);
-  }
-  .phone .gtabs {
-    scrollbar-width: none;
-  }
-  .phone .gtab {
-    height: 36px;
-    min-width: 0;
-    flex: 0 1 auto;
-  }
-  .phone .gtab .lname {
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
   }
   .phone .lhead {
     border-radius: 0;
