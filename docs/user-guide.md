@@ -1604,7 +1604,10 @@ submodule of a top-level workspace (the `path =` entries of its `.gitmodules` wh
 and on **Rescan folders**; one you delete stays deleted. Deleting a workspace deletes its nested ones
 (the answer lists them under `children`). A session goes to the innermost workspace whose path holds
 it, so a session in a sub-folder or a submodule joins the nested workspace, and a worktree of a
-submodule joins the submodule's.
+submodule kept outside the repository joins the submodule's when that submodule is checked out in
+one clone only; with several clones of the same repository (as for any repository cloned several
+times), such a worktree belongs to none of them unless it was started from the subject or moved
+there by hand.
 
 A **subject** is a workspace without a directory of its own, for work organised by topic rather than
 by folder. Create it with `POST /v1/workspaces` and `{"kind":"subject","name":"Acme deal","cwd":"~/code/app"}`
