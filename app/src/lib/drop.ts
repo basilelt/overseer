@@ -48,9 +48,9 @@ function setHover(z: DropZone | null) {
 function listen() {
   if (listening || !isTauri()) return;
   listening = true;
-  void import('@tauri-apps/api/window')
-    .then(({ getCurrentWindow }) =>
-      getCurrentWindow().onDragDropEvent(({ payload }) => {
+  void import('@tauri-apps/api/webviewWindow')
+    .then(({ getCurrentWebviewWindow }) =>
+      getCurrentWebviewWindow().onDragDropEvent(({ payload }) => {
         if (payload.type === 'leave') return setHover(null);
         const z = at(payload.position);
         if (payload.type !== 'drop') return setHover(z);
