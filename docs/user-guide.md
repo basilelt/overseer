@@ -1086,7 +1086,9 @@ native automatic permission mode. It is on by default for Claude Code, Codex, Ge
 Antigravity, opencode, Copilot CLI and Cursor Agent. The settings are stored on the connected
 daemon host and apply to new sessions, task agents and feedback agents; changing a setting does
 not change sessions that are already running. Amp currently auto-approves by default unless its
-own permission configuration enables a policy, so it has no Overseer toggle.
+own permission configuration enables a policy, so it has no Overseer toggle. The switch on the
+**Auto approve agent requests** row turns it on or off for every agent at once; it shows a mixed
+state when only some agents auto-approve.
 
 **Skills and plugins** (Settings > Agents, or **Install skills and plugins** in the command
 palette) installs a tool for one agent in one click, on the host the app is connected to. Each

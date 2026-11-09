@@ -142,7 +142,8 @@ on a TCP port on the server.
   for Gemini CLI and Antigravity. Apply a profile to new work, scope it to a workspace, and choose
   when to update the agent files.
 - **Auto-approve defaults per agent**: choose which CLIs Overseer starts in their native
-  auto-approval mode. The defaults are stored on each connected host and apply to new sessions.
+  auto-approval mode, one by one or all at once. The defaults are stored on each connected host and
+  apply to new sessions.
 - **Skills and plugins in one click**: install RTK (trims shell output before the agent reads it),
   Caveman (terse replies) or Ponytail (simplest code that works) for Claude Code, Codex, Gemini CLI,
   opencode, Copilot CLI, Cursor Agent, Amp or Antigravity, from Settings → Agents or the command
