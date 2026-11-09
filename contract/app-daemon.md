@@ -1590,7 +1590,7 @@ repository, which the daemon cannot find from a `missing` directory otherwise.
 - `PUT /v1/power/lid` with `{"enabled": true|false}` → the same object. 400 when `enabled` is not a
   boolean, 500 with `{"error"}` when the system refuses (the option stays as it was), 501 on a
   system other than Linux, macOS or Windows.
-- Linux: the daemon holds `systemd-inhibit --what=handle-lid-switch:idle --mode=block` while it
+- Linux: the daemon holds `systemd-inhibit --what=handle-lid-switch --no-ask-password --mode=block` while it
   runs, fed by a pipe so the lock goes away with the daemon (crash or upgrade) and is taken again
   at start. polkit may refuse it when the daemon has no active session.
 - macOS: `pmset -a disablesleep 1|0` through an administrator prompt (`osascript`); the setting

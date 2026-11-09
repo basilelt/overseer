@@ -51,7 +51,7 @@ fn enabling_holds_a_lid_inhibitor_that_disabling_releases() {
     assert_eq!(held.len(), 1);
     assert_eq!(
         held[0].1,
-        "--what=handle-lid-switch:idle --mode=block --who=Overseer --why=Keep agents running with the lid closed cat"
+        "--what=handle-lid-switch --no-ask-password --mode=block --who=Overseer --why=Keep agents running with the lid closed cat"
     );
     assert!(alive(held[0].0));
 

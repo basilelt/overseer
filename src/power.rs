@@ -1,8 +1,8 @@
 use crate::registry::Registry;
 use serde_json::{json, Value};
-use std::io::Read;
+use std::io::{Read, Write};
 use std::path::Path;
-use std::process::{Child, ChildStdin, Command, Stdio};
+use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 use std::sync::Mutex;
 use std::time::Duration;
 
@@ -38,6 +38,7 @@ impl Os {
 struct Inhibitor {
     child: Child,
     _stdin: ChildStdin,
+    _stdout: ChildStdout,
 }
 
 impl Drop for Inhibitor {
@@ -54,8 +55,9 @@ pub fn enabled(reg: &Registry) -> bool {
     matches!(reg.get(KEY), Ok(Some(v)) if v == "true")
 }
 
-pub const INHIBIT_ARGS: [&str; 4] = [
-    "--what=handle-lid-switch:idle",
+pub const INHIBIT_ARGS: [&str; 5] = [
+    "--what=handle-lid-switch",
+    "--no-ask-password",
     "--mode=block",
     "--who=Overseer",
     "--why=Keep agents running with the lid closed",
@@ -66,30 +68,33 @@ fn inhibit() -> Result<Inhibitor, String> {
         .args(INHIBIT_ARGS)
         .arg("cat")
         .stdin(Stdio::piped())
-        .stdout(Stdio::null())
+        .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
         .map_err(|e| format!("systemd-inhibit: {e}"))?;
-    let stdin = child.stdin.take().ok_or("systemd-inhibit: no stdin")?;
-    for _ in 0..20 {
-        if let Some(status) = child.try_wait().map_err(|e| e.to_string())? {
-            let mut err = String::new();
-            if let Some(mut s) = child.stderr.take() {
-                let _ = s.read_to_string(&mut err);
-            }
-            let err = err.trim();
-            return Err(if err.is_empty() {
-                format!("systemd-inhibit exited with {status}")
-            } else {
-                err.to_string()
-            });
-        }
-        std::thread::sleep(Duration::from_millis(50));
+    let mut stdin = child.stdin.take().ok_or("systemd-inhibit: no stdin")?;
+    let mut stdout = child.stdout.take().ok_or("systemd-inhibit: no stdout")?;
+    let mut echo = [0u8; 1];
+    let held = stdin.write_all(b"\n").and_then(|_| stdin.flush()).is_ok()
+        && matches!(stdout.read(&mut echo), Ok(1));
+    if held {
+        child.stderr.take();
+        return Ok(Inhibitor {
+            child,
+            _stdin: stdin,
+            _stdout: stdout,
+        });
     }
-    child.stderr.take();
-    Ok(Inhibitor {
-        child,
-        _stdin: stdin,
+    let mut err = String::new();
+    if let Some(mut s) = child.stderr.take() {
+        let _ = s.read_to_string(&mut err);
+    }
+    let status = child.wait().map_err(|e| e.to_string())?;
+    let err = err.trim();
+    Err(if err.is_empty() {
+        format!("systemd-inhibit exited with {status}")
+    } else {
+        err.to_string()
     })
 }
 

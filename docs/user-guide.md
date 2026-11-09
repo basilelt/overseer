@@ -1344,9 +1344,13 @@ request, the event stream, every terminal and every forwarded port over that one
   local server only, off by default): closing the laptop lid no longer puts the computer to sleep,
   so agents keep working with the network on. It drains the battery and the laptop can get hot:
   plug it in, and turn the option off before putting the laptop in a bag. On Linux the daemon holds
-  a `systemd-inhibit --what=handle-lid-switch:idle` lock while it runs (taken again when it
-  restarts, gone when it stops); some systems refuse it when the daemon was started outside your
-  desktop session, and Settings then shows the reason. On macOS it runs `pmset -a disablesleep 1`
+  a `systemd-inhibit --what=handle-lid-switch` lock while it runs (taken again when it restarts,
+  gone when it stops). polkit allows it from your desktop session but may refuse it when the
+  daemon runs as a boot service (**Keep server running after reboot**) with no active session;
+  Settings then shows the reason. Check with `systemd-run --user --wait systemd-inhibit
+  --what=handle-lid-switch --mode=block --who=t --why=t true`. A desktop that handles the lid
+  itself (KDE's power settings, for example) ignores this lock: set its lid action there;
+  `systemd-inhibit --list` shows who holds the lid switch. On macOS it runs `pmset -a disablesleep 1`
   after asking for an administrator password, and `0` when you turn it off. On Windows it sets the
   lid close action of the current power plan to **Do nothing** (plugged in and on battery) and puts
   the previous actions back when you turn it off. If the system refuses, the switch stays off and
