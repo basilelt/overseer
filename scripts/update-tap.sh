@@ -99,6 +99,7 @@ RUBY
 }
 
 cask_depends() {
+  echo "  auto_updates true"
   if [ -n "$1" ] && [ -n "$2" ]; then
     echo "  depends_on :macos"
   elif [ -n "$1" ]; then

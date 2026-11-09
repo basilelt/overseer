@@ -14,7 +14,7 @@
       case 'error':
         return updater.error;
       case 'updated':
-        return updater.info ? ut('updated', { version: updater.installedVersion }) : '';
+        return updater.info ? ut(updater.info.kind === 'msix' ? 'updatedMsix' : 'updated', { version: updater.installedVersion }) : '';
       default:
         return updater.info ? ut('available', { version: updater.info.version }) : '';
     }
@@ -29,7 +29,7 @@
 </script>
 
 {#if updater.enabled && !app.mobile}
-  <section>
+  <section data-tour="updates">
     <h3>{ut('section')}</h3>
     {#if row('update')}
     <div class="row" class:hit={hit('update')}>

@@ -74,3 +74,8 @@ host), previous session summary, crash report, app log tail, server log tail.
 - Copy-truncate can lose the lines written between the copy and the truncate of a rotation.
 - Redaction is pattern based and can over-mask; it is not a guarantee for arbitrary secrets in
   error strings, which is why terminal data and prompts are kept out of the log entirely.
+
+## Superseded in part
+
+The desktop updater was later reworked to be in-app only and never run Homebrew, so the
+"after Homebrew" relaunch path above no longer exists; the other relaunch paths are unchanged.

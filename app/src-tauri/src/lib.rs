@@ -125,8 +125,6 @@ pub fn run() {
             updater::update_install,
             localnet::local_network_status,
             localnet::open_local_network_settings,
-            updater::update_brew,
-            updater::update_brew_relaunch,
             updater::update_relaunch,
             direct::app_platform,
             direct::direct_device_key,
