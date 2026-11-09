@@ -2166,6 +2166,10 @@ fn tasks_take_any_agent_and_deliver_the_prompt_by_flag() {
         "{log}"
     );
     assert!(log.contains("--ask-for-approval never"), "{log}");
+    assert!(
+        log.contains("-c mcp_servers.overseer.default_tools_approval_mode=\"approve\""),
+        "{log}"
+    );
     assert!(log.contains("-c model_reasoning_effort=low"), "{log}");
     for t in [s["termId"].as_str().unwrap(), &tid] {
         app.ok(

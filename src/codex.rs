@@ -183,6 +183,8 @@ fn collect(dir: &Path, depth: u32, out: &mut Vec<PathBuf>) {
 
 // Codex starts MCP servers with a cleared environment, so the task id and state dir must be
 // passed in the server's own env or `send_message` and friends lose track of the sender.
+// Its tools are pre-approved: with `--ask-for-approval never` (auto-approve) Codex otherwise
+// refuses every MCP call, since it cannot ask.
 pub fn overseer_mcp(exe: &str, state_dir: &str, task_id: &str) -> Vec<String> {
     let q = |v: &str| serde_json::Value::from(v).to_string();
     [
@@ -193,6 +195,7 @@ pub fn overseer_mcp(exe: &str, state_dir: &str, task_id: &str) -> Vec<String> {
             q(state_dir)
         ),
         format!("mcp_servers.overseer.env.OVERSEER_TASK_ID={}", q(task_id)),
+        "mcp_servers.overseer.default_tools_approval_mode=\"approve\"".to_string(),
     ]
     .into_iter()
     .flat_map(|v| ["-c".to_string(), v])
@@ -359,6 +362,8 @@ mod tests {
                 "mcp_servers.overseer.env.OVERSEER_STATE_DIR=\"/home/u/.overseer\"",
                 "-c",
                 "mcp_servers.overseer.env.OVERSEER_TASK_ID=\"01ABC\"",
+                "-c",
+                "mcp_servers.overseer.default_tools_approval_mode=\"approve\"",
             ]
         );
         assert_eq!(launch_flags(&a), a);
