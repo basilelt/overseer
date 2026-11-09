@@ -25,7 +25,7 @@
     {#if supported}
       <label class="check">
         <input type="checkbox" class="switch" bind:checked={video} />
-        <span>{rt('video')}<small>{rt('videoHint', { min })}</small></span>
+        <span>{rt('video')}<small>{rt('videoHint')}</small></span>
       </label>
     {:else}
       <p class="faint small">{rt('noVideo')}</p>

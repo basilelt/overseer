@@ -850,8 +850,9 @@ the screen share ends.
 host as a `recording-<date>-<time>.webm` (or `.mp4`) attachment, and the log goes into the report
 as a "Recorded actions" block whose times match the video. **Replay** plays the video in the sheet
 with the action list beside it: the current action is highlighted as it plays and clicking one
-seeks the video there. The x on the Recording row removes both the video and the log. Offline,
-the video cannot be attached but the log and Replay still work.
+seeks the video there. The x on the Recording row removes both the video and the log. When the
+upload fails (offline, daemon restarting), the log and Replay still work and **Attach video** on
+the Recording row tries again.
 
 ### `doctor` items
 

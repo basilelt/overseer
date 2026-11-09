@@ -45,6 +45,7 @@
   let recording = $state.raw(prefill?.recording ?? null);
   let recordingPath = $state<string | null>(null);
   let replaying = $state(false);
+  let recUploading = $state(false);
 
   const actions = $derived(recording ? { log: formatLog(recording.events), duration: recording.duration } : null);
   const form = $derived({ kind, title, description, attachments: attachments.map((a) => a.path), diagnostics: includeDiag ? diagText : null, actions });
@@ -140,6 +141,7 @@
     const name = fileName(new Date(), r.mime);
     if (!admit(name, r.video.size)) return;
     uploading++;
+    recUploading = true;
     try {
       const local = await client.savePaste(name, new Uint8Array(await r.video.arrayBuffer()));
       const up = await client.uploadFile(local);
@@ -150,6 +152,7 @@
       app.notify(ft('failed', { error: `${name}: ${msg(e)}` }), 'error');
     } finally {
       uploading--;
+      recUploading = false;
     }
   }
 
@@ -339,6 +342,9 @@
             <span class="mono">{clock(recording.duration)}</span>
             <span class="faint">· {rt('actions', { n: recording.events.length })}</span>
             <button class="linkish" aria-expanded={replaying} onclick={() => (replaying = !replaying)}>{rt('replay')}</button>
+            {#if recording.video && !recordingPath && !recUploading}
+              <button class="linkish" onclick={() => recording && void attachRecording(recording)}>{rt('attachVideo')}</button>
+            {/if}
             <span class="spacer"></span>
             <button class="icon-btn" aria-label={rt('discard')} title={rt('discard')} onclick={removeRecording}><X size={12} /></button>
           </div>

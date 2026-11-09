@@ -66,7 +66,7 @@ describe('RecordSetup', () => {
     vi.stubGlobal('MediaRecorder', class {});
     const html = await render('RecordSetup');
     expect(html).toContain('Record the screen too');
-    expect(html).toContain('Up to 2 minutes');
+    expect(html).toContain('Recordings stop after 2 minutes');
     expect(html).toContain('Start recording');
     expect(html).not.toContain('Screen recording is not available');
   });
@@ -117,6 +117,26 @@ describe('feedback sheet with a recording', () => {
     expect(html).toContain('0:09');
     expect(html).toContain('3 actions');
     expect(html).toMatch(/aria-expanded="false"[^>]*>Replay</);
+  });
+
+  it('offers to attach the video again when it is not attached yet', async () => {
+    const { feedback } = await import('../../feedback.svelte');
+    feedback.show({ kind: 'bug', recording: rec({ video: new Blob(['v'], { type: 'video/webm' }), mime: 'video/webm' }) });
+    const { render } = await import('svelte/server');
+    const { default: Sheet } = await import('../overlays/FeedbackSheet.svelte');
+    const html = clean(render(Sheet).body);
+    feedback.close();
+    expect(html).toContain('>Attach video<');
+  });
+
+  it('has nothing to attach for a recording without video', async () => {
+    const { feedback } = await import('../../feedback.svelte');
+    feedback.show({ kind: 'bug', recording: rec() });
+    const { render } = await import('svelte/server');
+    const { default: Sheet } = await import('../overlays/FeedbackSheet.svelte');
+    const html = clean(render(Sheet).body);
+    feedback.close();
+    expect(html).not.toContain('Attach video');
   });
 
   it('shows no recording block for a plain report', async () => {

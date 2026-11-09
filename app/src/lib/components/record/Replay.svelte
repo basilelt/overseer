@@ -8,6 +8,7 @@
   let player = $state<HTMLVideoElement | null>(null);
   let list = $state<HTMLOListElement | null>(null);
   let now = $state(0);
+  let root = $state<HTMLElement | null>(null);
   const active = $derived(activeAt(recording.events, now));
 
   function seek(at: number) {
@@ -32,6 +33,10 @@
   });
 
   $effect(() => {
+    root?.scrollIntoView?.({ block: 'nearest' });
+  });
+
+  $effect(() => {
     const video = recording.video;
     if (!video) return void (url = null);
     const u = URL.createObjectURL(video);
@@ -40,7 +45,7 @@
   });
 </script>
 
-<div class="replay">
+<div class="replay" bind:this={root}>
   {#if url}
     <!-- svelte-ignore a11y_media_has_caption -->
     <video bind:this={player} src={url} controls preload="metadata" onloadedmetadata={probe} ontimeupdate={(e) => (now = e.currentTarget.currentTime * 1000)}></video>

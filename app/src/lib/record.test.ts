@@ -43,6 +43,16 @@ group('describe', () => {
     expect(d.endsWith('…"')).toBe(true);
   });
 
+  it('names anything inside a terminal just terminal', () => {
+    expect(describe(asEl(el('textarea', { 'aria-label': 'Terminal input' }).in(el('div', { 'data-terminal': '' }))))).toBe('terminal');
+    expect(describe(asEl(el('canvas').in(el('div', { 'data-terminal': '' }))))).toBe('terminal');
+  });
+
+  it('prefers the visible text over the tour id, and falls back to the tour id', () => {
+    expect(describe(asEl(el('button', { role: 'tab', 'data-tour': 'kanban' }, 'Tasks')))).toBe('tab "Tasks"');
+    expect(describe(asEl(el('button', { 'data-tour': 'palette' })))).toBe('button "palette"');
+  });
+
   it('returns null for an unnamed element and for no target', () => {
     expect(describe(asEl(el('div')))).toBeNull();
     expect(describe(null)).toBeNull();

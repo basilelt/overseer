@@ -38,11 +38,12 @@ export function isField(el: Element | null): boolean {
 const CONTROL = 'button, a, [role="button"], [role="tab"], [role="radio"], [role="menuitem"], [role="option"], [role="checkbox"], [role="switch"], input, select, textarea, summary, label, [data-tour]';
 
 export function describe(target: Element | null): string | null {
+  if (target?.closest('[data-terminal]')) return 'terminal';
   const el = target?.closest(CONTROL) ?? target;
   if (!el) return null;
-  const own = el.getAttribute('aria-label') || el.getAttribute('title') || el.getAttribute('placeholder') || el.getAttribute('data-tour');
+  const own = el.getAttribute('aria-label') || el.getAttribute('title') || el.getAttribute('placeholder');
   const field = isField(el);
-  const text = own || (field ? '' : (el.textContent ?? ''));
+  const text = own || (field ? '' : (el.textContent ?? '').trim()) || el.getAttribute('data-tour') || '';
   const role = el.getAttribute('role') || el.tagName.toLowerCase();
   const name = clip(redact(text));
   if (!name) return field ? `${role} field` : null;

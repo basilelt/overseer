@@ -8,7 +8,7 @@
   import { recorder, rt } from '../../record.svelte';
 
   $effect(() => {
-    const v = app.view;
+    const v = app.mobile || ui.layout === 'phone' ? ui.tab : app.view;
     untrack(() => recorder.note('view', rt('view', { view: v })));
   });
 
