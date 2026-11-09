@@ -41,7 +41,7 @@
   let list: HTMLDivElement | undefined = $state();
   let canvas: HTMLCanvasElement | undefined = $state();
   let loader: GraphLoader | null = null;
-  let showScm = $state(true);
+  let showScm = $state(false);
   let phoneView = $state<'changes' | 'graph'>('changes');
   let trees = $state.raw<Worktree[]>([]);
   let chosen = $state(untrack(() => projectPath));
@@ -372,7 +372,7 @@
       </CommitDetail>
     {/if}
     {#if phone ? phoneView === 'changes' : showScm && !detail}
-      <aside class="scm" class:full={phone} aria-label={gt('button')} data-tour="git-tab">
+      <aside class="scm" class:full={phone} aria-label={gt('scm')} data-tour="git-tab">
         <label class="tree">
           <span class="lbl">{gt('worktree')}</span>
           <select class="mono" bind:value={chosen}>

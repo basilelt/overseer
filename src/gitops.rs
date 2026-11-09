@@ -497,17 +497,41 @@ pub fn discard(wt: &str, f: &Files) -> Res<Value> {
     reply(wt, None)
 }
 
+fn unpushed_submodules(e: (u16, String)) -> (u16, String) {
+    if !e.1.contains("not be found on any remote") {
+        return e;
+    }
+    let paths: Vec<&str> = e
+        .1
+        .lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty() && !l.contains(' ') && !l.ends_with(':'))
+        .collect();
+    conflict(format!(
+        "{} has commits that are not pushed: push the submodule first",
+        if paths.is_empty() {
+            "a submodule".to_string()
+        } else {
+            paths.join(", ")
+        }
+    ))
+}
+
 fn push_now(wt: &str) -> Result<(), (u16, String)> {
     let b = branch(wt).ok_or_else(|| conflict("HEAD is detached"))?;
     if upstream(wt).is_some() {
-        run(wt, &["push", "-q"])?;
+        run(wt, &["push", "-q", "--recurse-submodules=check"]).map_err(unpushed_submodules)?;
         return Ok(());
     }
     let remotes = git(wt, &["remote"]).unwrap_or_default();
     if !remotes.lines().any(|r| r == "origin") {
         return Err(conflict("no remote configured"));
     }
-    run(wt, &["push", "-q", "-u", "origin", &b])?;
+    run(
+        wt,
+        &["push", "-q", "--recurse-submodules=check", "-u", "origin", &b],
+    )
+    .map_err(unpushed_submodules)?;
     Ok(())
 }
 

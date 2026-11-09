@@ -108,3 +108,17 @@ export class Scm {
   pop = () => this.run('pop', (a, t) => a.stash(t, true));
   revert = (sha: string) => this.run('revert', (a, t) => a.revert(t, sha));
 }
+
+export type Primary = 'commit' | 'merge' | 'publish' | 'pull' | 'push' | 'none';
+
+export function primaryAction(s: ScmStatus | null, message: string): { kind: Primary; n: number; enabled: boolean } {
+  if (!s) return { kind: 'none', n: 0, enabled: false };
+  const msg = !!message.trim();
+  if (s.operation || s.conflicts.length) return { kind: 'merge', n: s.conflicts.length, enabled: msg && !s.conflicts.length && s.staged.length > 0 };
+  if (s.staged.length) return { kind: 'commit', n: s.staged.length, enabled: msg };
+  if (s.changes.length) return { kind: 'commit', n: s.changes.length, enabled: msg };
+  if (s.branch && !s.upstream) return { kind: 'publish', n: 0, enabled: true };
+  if (s.behind) return { kind: 'pull', n: s.behind, enabled: true };
+  if (s.ahead) return { kind: 'push', n: s.ahead, enabled: true };
+  return { kind: 'none', n: 0, enabled: false };
+}

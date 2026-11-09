@@ -16,7 +16,7 @@
   import { gt } from './strings';
   import type { ScmFile } from './types';
 
-  let { scm }: { scm: Scm } = $props();
+  let { scm, filesOnly = false, onopen }: { scm: Scm; filesOnly?: boolean; onopen?: (worktree: string) => void } = $props();
 
   let message = $state('');
   let newBranch = $state<string | null>(null);
@@ -32,10 +32,11 @@
 
   $effect(() => {
     const phase = app.conn.phase;
-    untrack(() => scm.connection(phase));
+    if (!filesOnly) untrack(() => scm.connection(phase));
   });
 
   onMount(() => {
+    if (filesOnly) return;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const off = app.onChange((_p, _n, e) => {
       if (!touches(scm.status, e)) return;
@@ -110,6 +111,7 @@
     await scm.discard(files);
   }
 
+  const subOf = (f: ScmFile) => s?.submodules?.find((m) => m.path === f.path);
   const name = (f: ScmFile) => f.path.split('/').pop() ?? f.path;
   const dir = (f: ScmFile) => f.path.split('/').slice(0, -1).join('/');
   const stateClass = (st: string) => (st === '?' || st === 'A' ? 'add' : st === 'D' ? 'del' : st === 'U' ? 'conf' : 'mod');
@@ -122,6 +124,7 @@
   {:else if !s}
     <p class="faint pad">{gt('loading')}</p>
   {:else}
+    {#if !filesOnly}
     <div class="block">
       {#if newBranch !== null}
         <form class="newb" onsubmit={(e) => { e.preventDefault(); createBranch(); }}>
@@ -152,6 +155,7 @@
         <button class="btn primary more" aria-label={gt('sc.commitOptions')} title={gt('sc.commitOptions')} aria-haspopup="menu" onclick={commitMenu} disabled={busy}><ChevronDown size={12} /></button>
       </div>
     </div>
+    {/if}
 
     {#if confirming}
       <div class="confirm" role="alertdialog" aria-label={gt('sc.discardTitle')}>
@@ -185,29 +189,40 @@
           <button class="icon-btn sm" title={gt('sc.discardAll')} aria-label={gt('sc.discardAll')} onclick={() => (confirming = { files: 'all', label: gt('sc.discardAllQ', { n: total }) })} disabled={busy}><Undo2 size={13} /></button>
           <button class="icon-btn sm" title={gt('sc.stageAll')} aria-label={gt('sc.stageAll')} onclick={() => scm.stage('all')} disabled={busy}><Plus size={13} /></button></div>
         {#each s.changes as f (f.path)}
+          {#if f.submodule}
+            {@const sub = subOf(f)}
+            <div class="file"><span class="st mod">M</span><span class="fname">{name(f)}<span class="dir">{f.submodule.commit ? gt('sc.subCommit') : gt('sc.subInside')}</span></span>
+              <span class="acts show">
+                {#if f.submodule.commit}<button class="btn ghost sm" onclick={() => scm.stage([f.path])} disabled={busy}>{gt('sc.stagePointer')}</button>{/if}
+                {#if sub && onopen && (f.submodule.modified || f.submodule.untracked)}<button class="btn ghost sm" onclick={() => onopen(sub.worktree)}>{gt('sc.openSub', { name: name(f) })}</button>{/if}
+              </span></div>
+          {:else}
           <div class="file"><span class="st {stateClass(f.status)}">{f.status === '?' ? 'U' : f.status}</span><button class="fname" onclick={open}>{name(f)}<span class="dir">{dir(f)}</span></button>
             <span class="acts">
               <button class="icon-btn sm" title={gt('sc.discard')} aria-label={gt('sc.discardFile', { file: f.path })} onclick={() => (confirming = { files: [f.path], label: gt('sc.discardQ', { file: f.path }) })} disabled={busy}><Undo2 size={13} /></button>
               <button class="icon-btn sm" title={gt('sc.stage')} aria-label={gt('sc.stageFile', { file: f.path })} onclick={() => scm.stage([f.path])} disabled={busy}><Plus size={13} /></button>
             </span></div>
+          {/if}
         {/each}
       {/if}
-      {#if s.outgoing.length}
+      {#if s.outgoing.length && !filesOnly}
         <div class="sec"><span>{s.upstream ? gt('sc.outgoing') : gt('sc.outgoingBase', { base: s.base })}</span><span class="cnt">{s.outgoing.length}</span></div>
         {#each s.outgoing as c (c.sha)}<div class="commit"><span class="mono sha">{c.sha.slice(0, 7)}</span><span class="subj">{c.subject}</span></div>{/each}
       {/if}
-      {#if s.incoming.length}
+      {#if s.incoming.length && !filesOnly}
         <div class="sec"><span title={s.upstream ?? ''}>{gt('sc.incoming', { upstream: s.upstream ?? '' })}</span><span class="cnt">{s.incoming.length}</span></div>
         {#each s.incoming as c (c.sha)}<div class="commit"><span class="mono sha">{c.sha.slice(0, 7)}</span><span class="subj">{c.subject}</span></div>{/each}
       {/if}
     </div>
 
+    {#if !filesOnly}
     <div class="foot">
       {#if s.branch !== s.base}<button class="btn ghost" onclick={() => scm.merge(s.base)} disabled={busy}>{gt('mergeBase', { base: s.base })}</button>{/if}
       <button class="btn ghost" aria-haspopup="menu" onclick={mergeMenu} disabled={busy || s.branches.length < 2}>{gt('sc.merge')}</button>
       <button class="btn ghost" onclick={() => scm.stash()} disabled={busy || !total}>{gt('sc.stash')}</button>
       {#if s.stashes}<button class="btn ghost" onclick={() => scm.pop()} disabled={busy}>{gt('sc.pop', { n: s.stashes })}</button>{/if}
     </div>
+    {/if}
   {/if}
 </div>
 
@@ -436,8 +451,14 @@
     opacity: 0;
   }
   .file:hover .acts,
-  .file:focus-within .acts {
+  .file:focus-within .acts,
+  .acts.show {
     opacity: 1;
+  }
+  .btn.sm {
+    height: 22px;
+    padding: 0 7px;
+    font-size: 11.5px;
   }
   @media (hover: none) {
     .acts {
