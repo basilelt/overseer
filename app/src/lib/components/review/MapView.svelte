@@ -103,7 +103,7 @@
                 {@const v = s.score[ind]}
                 <button
                   class="cell hot"
-                  class:sel={selected === c.id && (pinned || current)}
+                  class:sel={c.id === focus || (selected === c.id && !!(pinned || current))}
                   class:near={near.has(c.id)}
                   style:left="{c.x}px"
                   style:top="{c.y}px"

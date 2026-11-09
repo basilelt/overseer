@@ -98,6 +98,7 @@ radius, contract changes, where the agent struggled, untested or not yet seen co
 walk the files hottest first.
 
 ![Live review](app/docs/screenshots/review-light.png)
+![Review map](app/docs/screenshots/review-map-dark.png)
 
 <details>
 <summary>A review thread with a suggestion</summary>

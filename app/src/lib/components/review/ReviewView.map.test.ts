@@ -4,6 +4,11 @@ import map from './MapView.svelte?raw';
 import band from './HeatBand.svelte?raw';
 
 describe('review map wiring', () => {
+  it('keeps the hovered or pinned file bright while the rest of the map fades', () => {
+    expect(map).toMatch(/class:sel=\{c\.id === focus \|\| \(selected === c\.id && !!\(pinned \|\| current\)\)\}/);
+    expect(map).toMatch(/\.canvas\.focus \.cell:not\(\.sel\):not\(\.near\) \{\s*opacity: 0\.32;/);
+  });
+
   it('offers List and Map, with the tour anchored on the switch, and no graph view left', () => {
     expect(view).toMatch(/\{ value: 'map' as const, label: t\('review\.map'\) \}/);
     expect(view).toMatch(/<span class="vseg" data-tour="review-map">/);
