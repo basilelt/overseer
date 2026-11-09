@@ -202,7 +202,7 @@
 </script>
 
 <svelte:window onkeydown={onKey} />
-<div class="review" class:embedded class:phone bind:this={root}>
+<div class="review" class:embedded class:phone bind:this={root} tabindex="-1">
   {#if !embedded}<ReviewScope {store} {selfKey} />{/if}
   <header class="head" class:hide={store.missing || store.notRepo}>
     <div class="ref">
@@ -388,6 +388,7 @@
 
 <style>
   .review {
+    outline: none;
     flex: 1;
     min-height: 0;
     min-width: 0;

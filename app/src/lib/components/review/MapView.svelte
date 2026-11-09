@@ -208,8 +208,7 @@
     gap: 4px;
     padding: 8px 12px;
     border-bottom: 1px solid var(--border);
-    overflow-x: auto;
-    scrollbar-width: none;
+    flex-wrap: wrap;
     flex: none;
   }
   .inds button {
@@ -372,7 +371,8 @@
     overflow: hidden;
   }
   .cell.block {
-    background: color-mix(in srgb, var(--surface) 60%, var(--bg-subtle));
+    background: var(--surface-active);
+    border-color: var(--bg-subtle);
   }
   .cell em {
     position: absolute;
