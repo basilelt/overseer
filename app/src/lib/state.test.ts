@@ -884,6 +884,20 @@ describe('sessions', () => {
     expect(app.view).toBe('agents');
   });
 
+  it('starts a session of a nested workspace in its start dir and assigns it there', async () => {
+    // Given a nested sub-folder that starts at the repo root, and a submodule that starts in its own folder
+    const webshop = app.ws.workspaces.find((w) => w.id === 'ws_webshop')!.path!;
+    // When a shell starts in each
+    app.selectWorkspace('ws_webshop_invoicing');
+    await app.newSession('shell');
+    app.selectWorkspace('ws_webshop_design');
+    await app.newSession('shell');
+    // Then the first runs at the root and the second in the submodule, each assigned to its nested workspace
+    const [a, b] = m.bodies['POST /v1/terms'].slice(-2) as { cwd: string; workspaceId: string }[];
+    expect(a).toMatchObject({ cwd: webshop, workspaceId: 'ws_webshop_invoicing' });
+    expect(b).toMatchObject({ cwd: `${webshop}/vendor/design-system`, workspaceId: 'ws_webshop_design' });
+  });
+
   describe('following a session just started', () => {
     const lineFor = async () => {
       const all = await m.request<{ line: { id: string } }[]>('GET', '/v1/lines');

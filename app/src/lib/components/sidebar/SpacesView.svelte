@@ -12,7 +12,8 @@
   import { aggregate, byRank } from '../../workspaces';
   import { WsDrag } from '../../ws-drag.svelte';
   import { WS_COLOR } from '../../ws-color';
-  import { createGroup, folderMenu, groupMenu, itemMenuAt, otherMenu, selectSession, workspaceMenu } from '../../wsactions';
+  import { createGroup, folderMenu, groupMenu, itemMenuAt, otherMenu, selectSession, startIn, workspaceMenu } from '../../wsactions';
+  import type { Workspace } from '../../types';
   import AttentionBanner from './AttentionBanner.svelte';
   import SpaceBlock from './SpaceBlock.svelte';
   import SpaceFolder from './SpaceFolder.svelte';
@@ -60,6 +61,25 @@
     await app.api.patchFolder(id, { collapsed: !f.collapsed }).catch(() => {});
   }
 
+  const kidsFor = (w: Workspace | null) =>
+    w && !w.parentId
+      ? {
+          isOpen: (id: string) => opened.has(id),
+          isClosedOpen: (id: string) => closedOpen.has(id),
+          selectedId: app.workspaceId,
+          tabDrop: app.tabDrop,
+          sessionDrop: drag.over?.type === 'workspace' && drag.over.pos === 'inside' ? drag.over.id : null,
+          ontoggle: toggle,
+          onpick: pick,
+          onclosed: toggleClosed,
+          onmenu: (e: MouseEvent, c: Workspace) => app.openMenu(e, c.name, workspaceMenu(c)),
+          onstart: (e: MouseEvent, c: Workspace) => !drag.suppressed && startIn(e, c),
+          onnew: w.path && w.kind !== 'subject' && app.wsPersistent ? () => app.open('workspaceNew', w.id) : undefined,
+        }
+      : undefined;
+
+  const select = (key: string, e?: MouseEvent) => !drag.suppressed && selectSession(key, e);
+
   function toggleClosed(id: string) {
     const next = new Set(closedOpen);
     if (!next.delete(id)) next.add(id);
@@ -96,10 +116,12 @@
           selected={app.workspaceId === r.id}
           tabDrop={!!r.workspace && app.tabDrop === r.id}
           dropPos={drag.posOf('workspace', r.id)}
+          kids={kidsFor(r.workspace)}
           ontoggle={() => toggle(r.id)}
           onpick={() => pick(r.id)}
           onclosed={() => toggleClosed(r.id)}
-          onselect={selectSession}
+          onselect={select}
+          onsessiondown={app.wsPersistent ? (e, key) => app.canMoveToWorkspace(key) && drag.start(e, 'session', key) : undefined}
           onitemmenu={itemMenuAt}
           onmenu={(e) => (r.workspace ? app.openMenu(e, r.workspace.name, workspaceMenu(r.workspace)) : app.openMenu(e, t('ws.other'), otherMenu()))}
           onpointerdown={r.workspace ? (e) => drag.start(e, 'workspace', r.id) : undefined}

@@ -12,7 +12,8 @@ describe('SpacesView wiring', () => {
     // When the handlers are read
     // Then each click reaches today's action
     expect(src).toMatch(/onselect=\{\(e\) => app\.select\(e\.key\)\}/);
-    expect(src).toMatch(/onselect=\{selectSession\}/);
+    expect(src).toMatch(/onselect=\{select\}/);
+    expect(src).toMatch(/const select = \(key: string, e\?: MouseEvent\) => !drag\.suppressed && selectSession\(key, e\)/);
     expect(src).toMatch(/onclick=\{\(\) => pick\(w\.id\)\}/);
   });
 

@@ -19,6 +19,7 @@ function setup(under: Element | null, over: Partial<DragDeps> = {}) {
     elementAt: () => under,
     patchWorkspace: vi.fn(async () => {}),
     patchFolder: vi.fn(async () => {}),
+    moveSession: vi.fn(async () => {}),
     refuse: vi.fn(),
     ...over,
   } satisfies DragDeps;
@@ -167,5 +168,41 @@ describe('WsDrag', () => {
     expect(a.deps.patchWorkspace).not.toHaveBeenCalled();
     expect(b.deps.patchFolder).not.toHaveBeenCalled();
     expect([a.drag.dragging, a.drag.over, a.drag.suppressed]).toEqual([false, null, false]);
+  });
+
+  it('moves a dragged session onto a nested workspace line', async () => {
+    // Given a session drag over a nested workspace line
+    const { deps, drag } = setup(at({ drop: 'child', id: 'sub' }));
+    // When it moves and is released
+    drag.start(ev(0, 0), 'session', 'line:l1');
+    drag.move(ev(0, 30));
+    expect(drag.posOf('workspace', 'sub')).toBe('inside');
+    await drag.end();
+    // Then the session moves there and no workspace is reordered
+    expect(deps.moveSession).toHaveBeenCalledWith('line:l1', 'sub');
+    expect(deps.patchWorkspace).not.toHaveBeenCalled();
+  });
+
+  it('moves a dragged session onto a top-level workspace but not onto a folder', async () => {
+    const onWs = setup(at({ drop: 'workspace', id: 'b' }));
+    onWs.drag.start(ev(0, 0), 'session', 'term:t1');
+    onWs.drag.move(ev(0, 30));
+    await onWs.drag.end();
+    expect(onWs.deps.moveSession).toHaveBeenCalledWith('term:t1', 'b');
+    const onFolder = setup(at({ drop: 'folder', id: 'x' }));
+    onFolder.drag.start(ev(0, 0), 'session', 'term:t1');
+    onFolder.drag.move(ev(0, 30));
+    await onFolder.drag.end();
+    expect(onFolder.deps.moveSession).not.toHaveBeenCalled();
+    expect(onFolder.deps.patchFolder).not.toHaveBeenCalled();
+  });
+
+  it('ignores a nested workspace line as a target for workspace drags', async () => {
+    const { deps, drag } = setup(at({ drop: 'child', id: 'sub' }));
+    drag.start(ev(0, 0), 'workspace', 'a');
+    drag.move(ev(0, 30));
+    expect(drag.over).toBeNull();
+    await drag.end();
+    expect(deps.patchWorkspace).not.toHaveBeenCalled();
   });
 });

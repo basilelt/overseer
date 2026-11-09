@@ -577,7 +577,7 @@ class AppState {
     // A subject has no directory: the daemon starts the term in its cwd and assigns it.
     // A repo workspace is assigned too: the term runs in a worktree outside its path until it reports a line.
     const subject = scoped && (!opts.cwd || (scoped.kind !== 'subject' && !!scoped.path && within(opts.cwd, scoped.path))) ? scoped.id : undefined;
-    const cwd = opts.cwd ?? scoped?.path ?? undefined;
+    const cwd = opts.cwd ?? (scoped?.kind === 'subject' ? undefined : (scoped?.cwd ?? scoped?.path)) ?? undefined;
     const worktree = (opts.worktree ?? (agent !== 'shell' && !settings.sessionsInCheckout)) && this.inProject(cwd ?? (subject ? (scoped?.cwd ?? undefined) : undefined));
     const size = { cols: 120, rows: 32, ...(worktree ? { worktree: true } : {}) };
     const profile = agent === 'shell' ? undefined : (opts.profile ?? this.nextProfile ?? undefined);

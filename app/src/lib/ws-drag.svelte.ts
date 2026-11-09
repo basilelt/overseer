@@ -9,6 +9,7 @@ export interface DragDeps {
   elementAt: (x: number, y: number) => Element | null;
   patchWorkspace: (id: string, patch: Partial<Workspace>) => Promise<unknown>;
   patchFolder: (id: string, patch: Partial<Folder>) => Promise<unknown>;
+  moveSession: (key: string, workspaceId: string) => Promise<unknown>;
   refuse: (reason: Key) => void;
 }
 
@@ -31,23 +32,25 @@ const appDeps = (): DragDeps => ({
   elementAt: (x, y) => document.elementFromPoint(x, y),
   patchWorkspace: (id, patch) => app.patchWorkspace(id, patch),
   patchFolder,
+  moveSession: (key, workspaceId) => app.moveToWorkspace(key, workspaceId),
   refuse: (reason) => app.notify(t(reason), 'error'),
 });
 
-// Pointer drag of workspaces and folders in the sidebar; drop zones carry data-drop="workspace|folder|pinned|root" and data-id.
+// Pointer drag of workspaces, folders and sessions in the sidebar; drop zones carry data-drop="workspace|child|folder|pinned|root"
+// and data-id. A nested workspace line ("child") only takes sessions.
 export class WsDrag {
   over = $state<DropTarget | null>(null);
   dragging = $state(false);
   /** True for the click that follows a drag, so releasing over a header does not select or fold it. */
   suppressed = false;
   #deps: DragDeps;
-  #drag: { kind: 'workspace' | 'folder'; id: string; x: number; y: number; active: boolean } | null = null;
+  #drag: { kind: 'workspace' | 'folder' | 'session'; id: string; x: number; y: number; active: boolean } | null = null;
 
   constructor(deps: DragDeps = appDeps()) {
     this.#deps = deps;
   }
 
-  start = (e: PointerEvent, kind: 'workspace' | 'folder', id: string) => {
+  start = (e: PointerEvent, kind: 'workspace' | 'folder' | 'session', id: string) => {
     if (e.button !== 0 || !this.#deps.persistent()) return;
     this.#drag = { kind, id, x: e.clientX, y: e.clientY, active: false };
   };
@@ -56,6 +59,8 @@ export class WsDrag {
     const el = this.#deps.elementAt(x, y)?.closest<HTMLElement>('[data-drop]');
     if (!el) return null;
     const type = el.dataset.drop;
+    if (this.#drag?.kind === 'session') return type === 'workspace' || type === 'child' ? { type: 'workspace', id: el.dataset.id!, pos: 'inside' } : null;
+    if (type === 'child') return null;
     if (type === 'pinned') return { type: 'pinned' };
     if (type === 'root') return { type: 'root' };
     const r = el.getBoundingClientRect();
@@ -87,7 +92,9 @@ export class WsDrag {
     this.suppressed = true;
     setTimeout(() => (this.suppressed = false), 0);
     if (!target) return;
-    if (d.kind === 'workspace') {
+    if (d.kind === 'session') {
+      if (target.type === 'workspace') await this.#deps.moveSession(d.id, target.id);
+    } else if (d.kind === 'workspace') {
       const patch = planWorkspaceDrop(this.#deps.data(), d.id, target);
       if (patch) await this.#deps.patchWorkspace(d.id, patch);
     } else {

@@ -10,7 +10,10 @@ export interface SpaceRow {
   name: string | null;
   workspace: Workspace | null;
   items: SidebarItem[];
+  /** Its own sessions plus those of its nested workspaces. */
   summary: WorkspaceSummary;
+  /** Nested workspaces (sub-folders, submodules, subjects), listed inside its block even without a session. */
+  children?: SpaceRow[];
 }
 
 export interface Spaces {
@@ -33,31 +36,47 @@ export function filterItems(items: SidebarItem[], wsName: (key: string) => strin
 
 // Mode "Espaces": one pass over the items, then the workspaces with sessions (pinned first) and the empty ones.
 // Sessions whose workspace is hidden (archived unless showArchived, ghost, unknown) fall to the "other" row.
+// A nested workspace is listed inside its parent's row, and hidden with it.
 export function spaces(workspaces: Workspace[], items: SidebarItem[], wsOf: ReadonlyMap<string, string>, filter: string, showArchived = false): Spaces {
   const q = filter.trim().toLowerCase();
-  const live = workspaces
-    .filter((w) => isVisible(w, showArchived))
-    .sort((a, b) => Number(b.pinned) - Number(a.pinned) || a.rank - b.rank || a.name.localeCompare(b.name));
-  const visible = new Set(live.map((w) => w.id));
+  const order = (a: Workspace, b: Workspace) => Number(b.pinned) - Number(a.pinned) || a.rank - b.rank || a.name.localeCompare(b.name);
+  const shown = workspaces.filter((w) => isVisible(w, showArchived));
+  const tops = new Set(shown.filter((w) => !w.parentId).map((w) => w.id));
+  const live = shown.filter((w) => !w.parentId).sort(order);
+  const kids = new Map<string, Workspace[]>();
+  for (const w of shown) if (w.parentId && tops.has(w.parentId)) push(kids, w.parentId, w);
+  for (const list of kids.values()) list.sort(order);
+  const visible = new Set([...tops, ...[...kids.values()].flat().map((w) => w.id)]);
   const by = new Map<string, SidebarItem[]>();
   for (const it of items) {
     if (it.kind === 'shell') continue;
     const w = wsOf.get(it.key);
-    const id = w !== undefined && visible.has(w) ? w : '';
-    const list = by.get(id);
-    if (list) list.push(it);
-    else by.set(id, [it]);
+    push(by, w !== undefined && visible.has(w) ? w : '', it);
   }
   // A name or path match keeps every session; a title match keeps only the sessions that match.
   const named = (w: Workspace | null) => !!w && [w.name, w.path, w.cwd].some((x) => x?.toLowerCase().includes(q));
-  const narrow = (w: Workspace | null, mine: SidebarItem[]) => (!q || named(w) ? mine : mine.filter((i) => i.title.toLowerCase().includes(q)));
+  const narrow = (w: Workspace | null, mine: SidebarItem[], parentNamed = false) => (!q || parentNamed || named(w) ? mine : mine.filter((i) => i.title.toLowerCase().includes(q)));
   const rows: SpaceRow[] = [];
   const empty: Workspace[] = [];
   for (const w of live) {
     const all = by.get(w.id) ?? [];
     const mine = narrow(w, all);
-    if (mine.length) rows.push({ id: w.id, name: w.name, workspace: w, items: mine, summary: workspaceSummary(mine) });
-    else if (!all.length && (!q || named(w))) empty.push(w);
+    const wNamed = !!q && named(w);
+    const children: SpaceRow[] = [];
+    let childAll = 0;
+    for (const c of kids.get(w.id) ?? []) {
+      const call = by.get(c.id) ?? [];
+      childAll += call.length;
+      const cmine = narrow(c, call, wNamed);
+      if (q && !cmine.length && !(wNamed || named(c))) continue;
+      children.push({ id: c.id, name: c.name, workspace: c, items: cmine, summary: workspaceSummary(cmine) });
+    }
+    const busy = mine.length || children.some((c) => c.items.length);
+    if (busy) {
+      const row: SpaceRow = { id: w.id, name: w.name, workspace: w, items: mine, summary: sum([workspaceSummary(mine), ...children.map((c) => c.summary)]) };
+      if (children.length) row.children = children;
+      rows.push(row);
+    } else if (!all.length && !childAll && (!q || wNamed || children.length)) empty.push(w);
   }
   const others = narrow(null, by.get('') ?? []);
   if (others.length) rows.push({ id: '', name: null, workspace: null, items: others, summary: workspaceSummary(others) });
@@ -156,14 +175,16 @@ export function folderSpaces(view: Spaces, folders: Folder[], filter: string): S
   return out;
 }
 
-// The attention banner's path to a workspace: its folder chain, then its name.
+// The attention banner's path to a workspace: its folder chain, its parent, then its name.
 export function spaceTrail(data: WsData): (workspaceId: string | null | undefined) => string | undefined {
   const ws = new Map(data.workspaces.map((w) => [w.id, w]));
   const fs = new Map(data.folders.map((f) => [f.id, f]));
   return (id) => {
-    const w = id ? ws.get(id) : undefined;
-    if (!w) return undefined;
-    const names = [w.name];
+    const own = id ? ws.get(id) : undefined;
+    if (!own) return undefined;
+    const parent = own.parentId ? ws.get(own.parentId) : undefined;
+    const w = parent ?? own;
+    const names = parent ? [parent.name, own.name] : [own.name];
     const seen = new Set<string>();
     for (let f = w.folderId ? fs.get(w.folderId) : undefined; f && !seen.has(f.id); f = f.parentId ? fs.get(f.parentId) : undefined) {
       seen.add(f.id);
