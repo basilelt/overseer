@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, untrack } from 'svelte';
   import ArrowDown from '@lucide/svelte/icons/arrow-down';
   import ArrowUp from '@lucide/svelte/icons/arrow-up';
   import Check from '@lucide/svelte/icons/check';
@@ -29,6 +29,11 @@
     !s ? gt('sc.commit') : s.staged.length ? gt('sc.commitN', { n: s.staged.length }) : s.changes.length ? gt('sc.commitAll', { n: s.changes.length }) : gt('sc.commit'),
   );
   const canCommit = $derived(!!s && !busy && !!message.trim() && (s.staged.length > 0 || s.changes.length > 0) && !s.conflicts.length);
+
+  $effect(() => {
+    const phase = app.conn.phase;
+    untrack(() => scm.connection(phase));
+  });
 
   onMount(() => {
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -192,7 +197,7 @@
         {#each s.outgoing as c (c.sha)}<div class="commit"><span class="mono sha">{c.sha.slice(0, 7)}</span><span class="subj">{c.subject}</span></div>{/each}
       {/if}
       {#if s.incoming.length}
-        <div class="sec"><span>{gt('sc.incoming', { upstream: s.upstream ?? '' })}</span><span class="cnt">{s.incoming.length}</span></div>
+        <div class="sec"><span title={s.upstream ?? ''}>{gt('sc.incoming', { upstream: s.upstream ?? '' })}</span><span class="cnt">{s.incoming.length}</span></div>
         {#each s.incoming as c (c.sha)}<div class="commit"><span class="mono sha">{c.sha.slice(0, 7)}</span><span class="subj">{c.subject}</span></div>{/each}
       {/if}
     </div>
@@ -274,41 +279,16 @@
     gap: 6px;
   }
   .btn {
-    display: inline-flex;
-    align-items: center;
     justify-content: center;
     gap: 5px;
-    height: 28px;
-    padding: 0 10px;
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    background: var(--surface);
-    color: var(--text);
     font-size: 12px;
-    white-space: nowrap;
-  }
-  .btn:hover:not(:disabled) {
-    background: var(--surface-hover);
-  }
-  .btn:disabled {
-    opacity: 0.5;
-  }
-  .btn.ghost {
-    background: transparent;
+    font-weight: 400;
   }
   .btn.primary {
-    background: var(--accent);
-    border-color: var(--accent);
-    color: var(--accent-fg);
     font-weight: 500;
   }
-  .btn.primary:hover:not(:disabled) {
-    background: var(--accent-hover);
-  }
-  .btn.danger {
-    background: var(--st-failed);
-    border-color: var(--st-failed);
-    color: #fff;
+  .foot .btn {
+    border-color: var(--border);
   }
   .n {
     font-variant-numeric: tabular-nums;
@@ -391,6 +371,10 @@
   }
   .sec span:first-child {
     flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   .cnt {
     font-weight: 400;

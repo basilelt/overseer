@@ -7,6 +7,8 @@
   import Search from '@lucide/svelte/icons/search';
   import Tag from '@lucide/svelte/icons/tag';
   import PanelRight from '@lucide/svelte/icons/panel-right';
+  import GitMerge from '@lucide/svelte/icons/git-merge';
+  import Undo2 from '@lucide/svelte/icons/undo-2';
   import { isPhone } from '../mobile/ui.svelte';
   import { Scm, fileCount } from './scm.svelte';
   import SourceControl from './SourceControl.svelte';
@@ -236,7 +238,7 @@
   const prClass = (s: string) => s.toLowerCase();
 </script>
 
-<section class="graph" aria-label={gt('graph')}>
+<section class="graph" class:phone aria-label={gt('graph')}>
   <div class="toolbar">
     <div class="refs">
       <Segmented
@@ -280,9 +282,9 @@
   <div class="body">
     <div class="table" class:hidden={phone && phoneView !== 'graph'}>
       {#if wip && scm.status}
-        <button class="wip" style:--gw="{gw}px" onclick={() => (phone ? (phoneView = 'changes') : (showScm = true))}>
+        <button class="wip" style:--gw="{gw}px" onclick={() => (phone ? (phoneView = 'changes') : ((showScm = true), (detail = null)))}>
           <span class="c-graph"><span class="dot"></span></span>
-          <span class="c-subject"><span class="subj">{gt('uncommitted')}</span><span class="faint">{gt('uncommittedHint', { n: wip, branch: scm.status.branch ?? 'HEAD' })}</span></span>
+          <span class="c-subject"><span class="subj">{gt('uncommitted')}</span><span class="faint">{gt(wip === 1 ? 'uncommittedHint1' : 'uncommittedHint', { n: wip, branch: scm.status.branch ?? 'HEAD' })}</span></span>
         </button>
       {/if}
       <div class="head" style:--gw="{gw}px">
@@ -360,9 +362,16 @@
       </div>
     </div>
     {#if detail && page && !phone}
-      <CommitDetail project={projectPath} repo={page.repo} sha={detail} onclose={() => (detail = null)} onselect={(s) => select(commits.findIndex((c) => c.sha === s), true)} />
+      <CommitDetail project={projectPath} repo={page.repo} sha={detail} onclose={() => (detail = null)} onselect={(s) => select(commits.findIndex((c) => c.sha === s), true)}>
+        {#snippet extra()}
+          {#if pick && scm.status}
+            <button class="btn" onclick={mergePick} disabled={!!scm.busy || pick.sha === scm.status.head}><GitMerge size={13} />{gt('mergeCommit', { branch: scm.status.branch ?? 'HEAD' })}</button>
+            <button class="btn" onclick={revertPick} disabled={!!scm.busy}><Undo2 size={13} />{gt('revertIn', { branch: scm.status.branch ?? 'HEAD' })}</button>
+          {/if}
+        {/snippet}
+      </CommitDetail>
     {/if}
-    {#if phone ? phoneView === 'changes' : showScm}
+    {#if phone ? phoneView === 'changes' : showScm && !detail}
       <aside class="scm" class:full={phone} aria-label={gt('button')} data-tour="git-tab">
         <label class="tree">
           <span class="lbl">{gt('worktree')}</span>
@@ -372,17 +381,6 @@
           </select>
         </label>
         <SourceControl {scm} />
-        {#if pick && scm.status && !phone}
-          <div class="picked">
-            <span class="lbl">{gt('selected')}</span>
-            <span class="psubj">{pick.subject}</span>
-            <span class="mono faint">{pick.sha.slice(0, 7)} · {pick.author}</span>
-            <span class="pacts">
-              <button class="btn" onclick={mergePick} disabled={!!scm.busy || pick.sha === scm.status.head}>{gt('mergeCommit', { branch: scm.status.branch ?? 'HEAD' })}</button>
-              <button class="btn" onclick={revertPick} disabled={!!scm.busy}>{gt('revert')}</button>
-            </span>
-          </div>
-        {/if}
       </aside>
     {/if}
   </div>
@@ -531,6 +529,30 @@
     width: auto;
     flex: 1;
     border-left: 0;
+    overflow-y: auto;
+  }
+  .scm.full :global(.scm),
+  .scm.full :global(.files) {
+    flex: none;
+    overflow: visible;
+  }
+  .graph.phone .toolbar {
+    flex-wrap: wrap;
+  }
+  .graph.phone .spacer,
+  .graph.phone .total {
+    display: none;
+  }
+  .graph.phone .search {
+    flex: 1 1 200px;
+  }
+  .graph.phone .head,
+  .graph.phone .row {
+    grid-template-columns: var(--gw) minmax(0, 1fr) 48px;
+  }
+  .graph.phone .c-author,
+  .graph.phone .c-sha {
+    display: none;
   }
   .tree {
     display: flex;
@@ -554,41 +576,6 @@
     letter-spacing: 0.04em;
     text-transform: uppercase;
     color: var(--text-2);
-  }
-  .picked {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    padding: 10px 12px;
-    border-top: 1px solid var(--border);
-    font-size: 12px;
-  }
-  .psubj {
-    font-size: 13px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  .pacts {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
-    margin-top: 4px;
-  }
-  .btn {
-    height: 28px;
-    padding: 0 10px;
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    background: transparent;
-    color: var(--text);
-    font-size: 12px;
-  }
-  .btn:hover:not(:disabled) {
-    background: var(--surface-hover);
-  }
-  .btn:disabled {
-    opacity: 0.5;
   }
   .table {
     flex: 1;

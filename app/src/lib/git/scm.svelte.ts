@@ -28,6 +28,7 @@ export class Scm {
   loading = $state(false);
   private key = '';
   private seq = 0;
+  private phase = '';
 
   constructor(
     private api: () => GitApi | null,
@@ -44,6 +45,12 @@ export class Scm {
     this.status = null;
     this.error = null;
     this.load();
+  }
+
+  connection(phase: string) {
+    const back = phase === 'connected' && !!this.phase && this.phase !== 'connected';
+    this.phase = phase;
+    if (back) this.load();
   }
 
   async load() {

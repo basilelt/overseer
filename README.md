@@ -102,10 +102,14 @@ commit from the Kanban card when the task is in Review.
 
 </details>
 
-### Git graph and worktrees
+### Source control, Git graph and worktrees
 
-A per-project git graph that stays fast on large histories, with agent branches, tasks and PRs
-on it. Worktrees live in one store outside your repositories, show whether they are in use, idle
+The git button above each session opens its source control beside the terminal, like VS Code:
+stage or discard files, write a message and commit (or commit and push), fetch, pull, push or
+publish the branch, switch or create a branch, merge, and stash. Expand it into the Git tab to see
+the same changes next to a per-project git graph that stays fast on large histories, with agent
+branches, tasks and PRs on it; from a commit you can merge it into the worktree or revert it.
+Worktrees live in one store outside your repositories, show whether they are in use, idle
 or stale, and are cleaned up safely: **Clean up merged** picks the merged ones with no agent left,
 and you untick the ones to keep.
 

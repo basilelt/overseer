@@ -6,6 +6,7 @@ import more from '../components/mobile/MobileMore.svelte?raw';
 import graph from './GitGraphTab.svelte?raw';
 import panel from './GitPanel.svelte?raw';
 import sc from './SourceControl.svelte?raw';
+import detail from './CommitDetail.svelte?raw';
 
 describe('git button', () => {
   it('toggles source control instead of opening the review menu', () => {
@@ -60,6 +61,10 @@ describe('source control', () => {
     expect(sc).toMatch(/return \(\) => \{\s*off\(\);\s*clearTimeout\(timer\);/);
   });
 
+  it('reloads its status when the connection comes back', () => {
+    expect(sc).toMatch(/const phase = app\.conn\.phase;\s*untrack\(\(\) => scm\.connection\(phase\)\);/);
+  });
+
   it('shows the file actions on touch screens, where there is no hover', () => {
     expect(sc).toMatch(/@media \(hover: none\) \{\s*\.acts \{\s*opacity: 1;/);
   });
@@ -77,9 +82,21 @@ describe('git tab', () => {
     expect(graph).toMatch(/if \(w\?\.project !== projectPath\) return;\s*chosen = w\.path;[\s\S]*?app\.gitWorktree = null;/);
   });
 
-  it('acts on the selected commit: merge into the worktree branch and revert', () => {
+  it('acts on the selected commit from its detail: merge into the worktree branch and revert', () => {
     expect(graph).toMatch(/const r = await scm\.merge\(pick\.sha\);/);
     expect(graph).toMatch(/const r = await scm\.revert\(pick\.sha\);/);
+    expect(graph).toMatch(/\{#snippet extra\(\)\}[\s\S]*?onclick=\{mergePick\}[\s\S]*?onclick=\{revertPick\}[\s\S]*?\{\/snippet\}/);
+    expect(detail).toMatch(/<Cherry size=\{13\} \/>\{gt\('cherryPick'\)\}<\/button>\s*\{@render extra\?\.\(\)\}/);
+  });
+
+  it('hides the source control column while a commit is open, so the graph keeps its width', () => {
+    expect(graph).toMatch(/\{#if phone \? phoneView === 'changes' : showScm && !detail\}/);
+  });
+
+  it('scrolls the changes as one page on phone and keeps descriptions readable in the graph', () => {
+    expect(graph).toMatch(/\.scm\.full \{[^}]*overflow-y: auto;/);
+    expect(graph).toMatch(/\.graph\.phone \.c-author,\s*\.graph\.phone \.c-sha \{\s*display: none;/);
+    expect(graph).toMatch(/\.graph\.phone \.toolbar \{\s*flex-wrap: wrap;/);
   });
 
   it('splits changes and graph into tabs on phone', () => {

@@ -630,6 +630,7 @@ class AppState {
     if (!p) return;
     const key = newTabKey(kind, p);
     this.view = 'agents';
+    if (ui.layout === 'phone') ui.tab = 'agents';
     update((l) => openInFocused(l, key));
     this.selectedKey = key;
   }

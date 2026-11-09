@@ -898,7 +898,7 @@ On first launch, once the app is connected (immediately in local mode, after the
 connection on a phone), a welcome card offers **Take the tour** or **Skip**. The tour dims the
 window and highlights the real controls one at a time: host chip, workspaces sidebar, tabs and the
 new-session menu, the Terminal/Chat toggle, the side panel, Tasks, Review, the usage, system and ports
-chips, notifications and hooks, the command palette and Feedback, in 0.25 the Cmd/Ctrl+P palette shortcut, and in 0.27 the demo mode (on the **Demo mode** pill while in the demo, else on the host chip), and in 0.28 the GPU rendering option for terminals, and in 0.29 the clean up of unused worktrees and the import from Switchboard (on its button in Settings, Help, or on the Settings button), and in 0.30 click to move the cursor in a terminal (on the tabs), and in 0.31 the Light and Dark palettes (on Settings, or More on a phone), and in 0.33 the one-click install of skills and plugins (on Settings), and in 0.34 the auto-approval defaults (on Settings, Agents), the Review, Merged and Closed columns (on the Merged column when the board is open, else on the Tasks tab) and the clean removal of everything Overseer added (on Settings, Connection, **Remove**), and in 0.35 one-click in-app updates for every install (on Settings, Updates, else on the Settings button). Steps whose control is not on
+chips, notifications and hooks, the command palette and Feedback, in 0.25 the Cmd/Ctrl+P palette shortcut, and in 0.27 the demo mode (on the **Demo mode** pill while in the demo, else on the host chip), and in 0.28 the GPU rendering option for terminals, and in 0.29 the clean up of unused worktrees and the import from Switchboard (on its button in Settings, Help, or on the Settings button), and in 0.30 click to move the cursor in a terminal (on the tabs), and in 0.31 the Light and Dark palettes (on Settings, or More on a phone), and in 0.33 the one-click install of skills and plugins (on Settings), and in 0.34 the auto-approval defaults (on Settings, Agents), the Review, Merged and Closed columns (on the Merged column when the board is open, else on the Tasks tab) and the clean removal of everything Overseer added (on Settings, Connection, **Remove**), and in 0.35 one-click in-app updates for every install (on Settings, Updates, else on the Settings button), and in 0.36 source control behind the git button (on the git button of a session's tab bar, else on the command palette). Steps whose control is not on
 screen (no session selected, a feature the server lacks, phone layout) are skipped. On a phone the
 card is a sheet at the bottom (or top, when the control sits low) and points at the bottom
 navigation, the session strip and the menu.
@@ -1890,9 +1890,41 @@ curl --unix-socket "$S" -X POST -d '{"dryRun":false}' "http://unix/v1/worktrees/
 `POST /v1/worktrees/<id>/cherry-pick {"sha"}` picks a commit into it; both refuse uncommitted
 changes and abort on conflicts (the error names the files).
 
-### 14.10 Git graph
+### 14.10 Source control and the Git tab
 
-The app's Git graph tab (command palette, "Open the Git graph") draws a project's history with lanes (branches, remote branches, tags, HEAD,
+The git button in a session's tab bar (or the palette's "Show or hide source control") puts
+**Source control** in the side panel for that session's worktree. It shows the branch (click to
+switch or create one), **Fetch**, **Pull** (with the commits behind), **Push** (with the commits
+ahead, or **Publish** for a branch with no upstream), a commit message with **Commit** (the staged
+files, or every change when nothing is staged; Ctrl/Cmd+Enter) and its options (**Commit and
+push**, **Commit all changes**, **Amend the last commit**), the merge conflicts, staged files and
+changes with stage, unstage and discard (discard asks first and cannot be undone), the outgoing and
+incoming commits, and **Merge main into it**, **Merge…** (another branch), **Stash** and **Pop
+stash**. A file opens its diff in the review beside the session. A pull or merge that conflicts is
+aborted and names the files; a merge in progress started elsewhere is shown. The panel follows the
+selected session and refreshes on file and ref changes, never by polling.
+
+The expand button opens the **Git tab** of the project (command palette, "Open Git (graph and
+source control)"; on a phone **More**, **Git**): the graph below, with an **Uncommitted changes**
+row on top when the chosen worktree has changes, and the same source control in a column you can
+hide, for the worktree picked at the top (it starts on the session you expanded from). A commit's
+detail adds **Merge into <branch>** and **Revert in <branch>** for that worktree. On a phone the tab
+has **Changes** and **Graph** sub-tabs.
+
+```
+curl --unix-socket "$S" "http://unix/v1/git/status?worktree=$W"
+curl --unix-socket "$S" -X POST http://unix/v1/git/commit -d '{"worktree":"'$W'","message":"fix: x","all":true,"push":true}'
+```
+
+Routes (`worktree` or `lineId` in the body, `worktree=` or `line=` in the query; every reply holds
+the new `status`): `GET /v1/git/status`, `POST /v1/git/stage|unstage|discard` (`files`: paths or
+`"all"`), `commit` (`message`, `amend`, `all`, `push`), `fetch`, `pull`, `push`, `switch`
+(`branch`, `create`), `merge` (`rev`), `stash` (`pop`), `revert` (`sha`). Each change sends
+`git.changed` and `worktree.updated`.
+
+### 14.10a Git graph
+
+The Git tab draws a project's history with lanes (branches, remote branches, tags, HEAD,
 merges), with Overseer's knowledge on top: the agent and its state on the tip of its branch,
 the task number, the ticket and the PR state. Filters: all branches, current, agents only (the
 branches of lines, tasks and worktrees), author; search by sha or subject. A commit shows its

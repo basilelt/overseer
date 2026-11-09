@@ -145,6 +145,21 @@ describe('Scm store', () => {
     expect(scm.status).toEqual(before);
   });
 
+  it('reloads once the daemon is back, so its worktree watch is registered again', async () => {
+    const api = { status: vi.fn(() => Promise.resolve({ worktree: '/w' } as ScmStatus)) } as unknown as GitApi;
+    const scm = new Scm(() => api);
+    scm.setTarget({ worktree: '/w' });
+    scm.connection('connected');
+    await vi.waitFor(() => expect(scm.status).not.toBeNull());
+    expect(api.status).toHaveBeenCalledTimes(1);
+    scm.connection('reconnecting');
+    expect(api.status).toHaveBeenCalledTimes(1);
+    scm.connection('connected');
+    expect(api.status).toHaveBeenCalledTimes(2);
+    scm.connection('connected');
+    expect(api.status).toHaveBeenCalledTimes(2);
+  });
+
   it('runs one action at a time', async () => {
     let release!: () => void;
     const api = {
