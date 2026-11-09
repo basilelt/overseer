@@ -1,7 +1,7 @@
 import { app } from '../state.svelte';
 import { beside } from '../review/beside.svelte';
 import { parseReviewKey } from '../review/keys';
-import { closeSideReview, itemTarget, openReviewBeside } from '../review/open';
+import { closeSideReview, itemTarget, setReviewMode } from '../review/open';
 import type { ScmTarget } from './types';
 
 export const live = $state<{ worktree: string | null }>({ worktree: null });
@@ -35,7 +35,7 @@ export function toggleLiveReview(fromKey: string | null = app.selectedKey): bool
   const target = itemTarget(fromKey);
   if (!target) return false;
   live.worktree = null;
-  openReviewBeside(target);
+  setReviewMode(target, 'side');
   app.liveReview = true;
   return true;
 }

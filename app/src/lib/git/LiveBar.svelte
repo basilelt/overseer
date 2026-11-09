@@ -216,7 +216,7 @@
     <button class="wt" title={s.worktree} aria-haspopup="menu" onclick={worktreeMenu} disabled={busy}>
       <GitBranch size={13} />
       <span class="nm">{name}</span>
-      <span class="br mono">{s.branch ?? gt('sc.detached')}</span>
+      {#if !s.branch || s.branch.replaceAll('/', '-') !== name}<span class="br mono">{s.branch ?? gt('sc.detached')}</span>{/if}
       <ChevronDown size={12} />
     </button>
     <button class="files-btn" class:on={filesOpen} aria-expanded={filesOpen} onclick={() => (filesOpen = !filesOpen)} disabled={!total}>

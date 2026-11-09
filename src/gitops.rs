@@ -501,12 +501,11 @@ fn unpushed_submodules(e: (u16, String)) -> (u16, String) {
     if !e.1.contains("not be found on any remote") {
         return e;
     }
-    let paths: Vec<&str> = e
-        .1
-        .lines()
-        .map(str::trim)
-        .filter(|l| !l.is_empty() && !l.contains(' ') && !l.ends_with(':'))
-        .collect();
+    let paths: Vec<&str> =
+        e.1.lines()
+            .map(str::trim)
+            .filter(|l| !l.is_empty() && !l.contains(' ') && !l.ends_with(':'))
+            .collect();
     conflict(format!(
         "{} has commits that are not pushed: push the submodule first",
         if paths.is_empty() {
@@ -529,7 +528,14 @@ fn push_now(wt: &str) -> Result<(), (u16, String)> {
     }
     run(
         wt,
-        &["push", "-q", "--recurse-submodules=check", "-u", "origin", &b],
+        &[
+            "push",
+            "-q",
+            "--recurse-submodules=check",
+            "-u",
+            "origin",
+            &b,
+        ],
     )
     .map_err(unpushed_submodules)?;
     Ok(())

@@ -46,6 +46,14 @@ describe('live review', () => {
     expect(allTabs(workspace.layout)).toEqual(['line:ln_03']);
   });
 
+  it('moves an already open review tab beside the agent instead of duplicating it, and leaves no tab behind', () => {
+    workspace.layout = { ...EMPTY_LAYOUT, panes: [{ tabs: ['line:ln_03', 'review:line:ln_03'], active: 'line:ln_03' }] };
+    toggleLiveReview();
+    expect(allTabs(workspace.layout).filter((k) => k === 'review:line:ln_03')).toHaveLength(1);
+    toggleLiveReview();
+    expect(allTabs(workspace.layout)).toEqual(['line:ln_03']);
+  });
+
   it('does nothing for a tab that is not a session', () => {
     expect(toggleLiveReview('graph:/p')).toBe(false);
     expect(app.liveReview).toBe(false);

@@ -54,6 +54,10 @@ describe('git bar', () => {
     expect(liveBar).toMatch(/<span class="nm">\{name\}<\/span>/);
   });
 
+  it('shows the branch only when the worktree folder does not already say it', () => {
+    expect(liveBar).toMatch(/\{#if !s\.branch \|\| s\.branch\.replaceAll\('\/', '-'\) !== name\}<span class="br mono">/);
+  });
+
   it('forgets the picked worktree when the session changes', () => {
     expect(liveBar).toMatch(/if \(k === lastKey\) return;\s*lastKey = k;\s*untrack\(\(\) => \{\s*live\.worktree = null;/);
   });
