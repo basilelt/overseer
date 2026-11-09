@@ -7,3 +7,11 @@ describe('new session menu', () => {
     expect(menu).toContain('a.installed ? app.newSession(a.id) : app.installAgent(a.id)');
   });
 });
+
+describe('install tour target', () => {
+  it('marks the + that starts sessions on desktop and on the phone', async () => {
+    const chips = (await import('../mobile/MobileChips.svelte?raw')).default;
+    expect(menu).toContain('<div class="wrap" data-tour="new-session"');
+    expect(chips).toMatch(/data-tour="new-session"[^>]*onclick=\{\(\) => app\.open\('palette'\)\}/);
+  });
+});

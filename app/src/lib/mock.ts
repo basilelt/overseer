@@ -1223,7 +1223,18 @@ export class MockDaemon implements DaemonClient {
     if (!a.installable || !a.install) throw new DaemonError(400, `${a.name} has no install command`);
     this.installed.add(a.id);
     const { install: _i, ...rest } = body;
-    return this.spawn({ ...rest, cmd: [a.install], title: body.title ?? `Install ${a.name}` }, 'shell');
+    const term = this.spawn({ ...rest, cmd: [a.install], title: body.title ?? `Install ${a.name}` }, 'shell');
+    if (this.live) this.installTimers.push(setTimeout(() => this.finishInstall(term.id), 1500));
+    return term;
+  }
+
+  private installTimers: ReturnType<typeof setTimeout>[] = [];
+
+  private finishInstall(id: string) {
+    const t = this.terms.find((x) => x.id === id);
+    if (!t || t.exited) return;
+    Object.assign(t, { exited: true, exitCode: 0 });
+    this.emit('term.exited', { term: structuredClone(t) });
   }
 
   private discover(): { added: number; projects: Project[] } {
@@ -2172,6 +2183,8 @@ export class MockDaemon implements DaemonClient {
     this.stop();
     for (const x of this.portTimers) clearTimeout(x);
     this.portTimers = [];
+    for (const x of this.installTimers) clearTimeout(x);
+    this.installTimers = [];
   }
 
   async sshHosts(): Promise<SshHost[]> {

@@ -81,7 +81,8 @@ that predate it answer `404`.
   (results cached 60 s); `version` is the first line it printed. A broken wrapper reports
   `installed: false`.
 - `install`: how to install the agent, a command or a hint (`see https://…`); `installable: true`
-  (absent otherwise) when it is a command `POST /v1/terms` with `install` can run.
+  (absent otherwise) when it is a command `POST /v1/terms` with `install` can run (never on a
+  Windows daemon).
 - `models`: absent → free text; `[]` → the agent takes no model (the field is ignored);
   otherwise suggestions (free text still allowed). `efforts` is the subset of
   `low|medium|high|max` the agent maps (empty → effort ignored).

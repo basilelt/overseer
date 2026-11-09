@@ -626,6 +626,22 @@ describe('agent install terms', () => {
     expect((await a.rescanAgents()).find((x) => x.id === 'amp')?.installed).toBe(true);
   });
 
+  it('finishes the install term in the live demo, like a clean install', async () => {
+    vi.useFakeTimers();
+    try {
+      const m = new MockDaemon({ live: true, delayMs: 0 });
+      const exited: unknown[] = [];
+      m.subscribe((e) => e.type === 'term.exited' && exited.push(e.data));
+      const t = await api(m).createTerm({ install: 'amp' });
+      expect(exited).toEqual([]);
+      await vi.advanceTimersByTimeAsync(1500);
+      expect(exited).toEqual([{ term: expect.objectContaining({ id: t.id, exited: true, exitCode: 0 }) }]);
+      await m.disconnect();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('rejects what the daemon rejects, with its messages', async () => {
     const { a } = setup();
     await expect(a.createTerm({ install: 'nope' })).rejects.toMatchObject({ status: 400, message: 'unknown agent nope' });

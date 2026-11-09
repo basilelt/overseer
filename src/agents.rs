@@ -407,7 +407,7 @@ impl Agent {
         if !self.install.is_empty() {
             v["install"] = json!(self.install);
         }
-        if self.install_cmd().is_some() {
+        if cfg!(unix) && self.install_cmd().is_some() {
             v["installable"] = json!(true);
         }
         v
@@ -564,7 +564,7 @@ mod tests {
                 .cloned()
                 .unwrap()
         };
-        assert_eq!(j("codex")["installable"], true);
+        assert_eq!(j("codex")["installable"], cfg!(unix));
         assert!(j("agy")["installable"].is_null());
         assert_eq!(
             j("agy")["install"],
