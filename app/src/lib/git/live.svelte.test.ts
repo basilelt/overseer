@@ -1,10 +1,10 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MockDaemon } from '../mock';
 import { ui } from '../mobile/ui.svelte';
 import { beside } from '../review/beside.svelte';
 import { app } from '../state.svelte';
 import { EMPTY_LAYOUT, allTabs, workspace } from '../workspace.svelte';
-import { live, liveOn, liveTarget, sessionTarget, toggleLiveReview } from './live.svelte';
+import { live, liveOn, liveTarget, restoreLiveReview, sessionTarget, toggleLiveReview } from './live.svelte';
 import { primaryAction } from './scm.svelte';
 import type { ScmStatus } from './types';
 
@@ -12,6 +12,8 @@ const snapshot = app.data;
 let d: MockDaemon;
 
 beforeEach(() => {
+  const mem = new Map<string, string>();
+  vi.stubGlobal('localStorage', { getItem: (k: string) => mem.get(k) ?? null, setItem: (k: string, v: string) => void mem.set(k, v), removeItem: (k: string) => void mem.delete(k) });
   d = new MockDaemon({ live: false });
   app.data = { lines: d.lines, terms: d.terms, tasks: d.tasks, activity: {} } as typeof app.data;
   workspace.layout = { ...EMPTY_LAYOUT, panes: [{ tabs: ['line:ln_03'], active: 'line:ln_03' }] };
@@ -26,6 +28,7 @@ beforeEach(() => {
 
 afterEach(() => {
   d.stop();
+  vi.unstubAllGlobals();
   app.data = snapshot;
   app.liveReview = false;
   app.selectedKey = null;
@@ -52,6 +55,22 @@ describe('live review', () => {
     expect(allTabs(workspace.layout).filter((k) => k === 'review:line:ln_03')).toHaveLength(1);
     toggleLiveReview();
     expect(allTabs(workspace.layout)).toEqual(['line:ln_03']);
+  });
+
+  it('comes back after a reload when its review is still open, and not otherwise', () => {
+    toggleLiveReview();
+    app.liveReview = false;
+    beside.key = null;
+    expect(restoreLiveReview()).toBe(true);
+    expect(liveOn()).toBe(true);
+    toggleLiveReview();
+    expect(restoreLiveReview()).toBe(false);
+    toggleLiveReview();
+    app.liveReview = false;
+    beside.key = null;
+    workspace.layout = { ...EMPTY_LAYOUT, panes: [{ tabs: ['line:ln_03'], active: 'line:ln_03' }] };
+    expect(restoreLiveReview()).toBe(false);
+    expect(liveOn()).toBe(false);
   });
 
   it('does nothing for a tab that is not a session', () => {

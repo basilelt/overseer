@@ -13,7 +13,7 @@
   import { startPorts } from './lib/ports.svelte';
   import { startCenter } from './lib/notifications.svelte';
   import { followReview, openReviewFromHash } from './lib/review/open';
-  import { liveOn } from './lib/git/live.svelte';
+  import { liveOn, restoreLiveReview } from './lib/git/live.svelte';
   import { isTauri } from './lib/client';
   import { themeReport } from './lib/terminal';
   import { colorPalette, customColors, resolvedTheme, saveSettings, setSystemDark, settings } from './lib/settings.svelte';
@@ -89,6 +89,7 @@
         stopLayout = startLayout(true);
       }
       openReviewFromHash();
+      if (!ui.mobileOs) restoreLiveReview();
       if (app.mobile && __SELF_UPDATE__) void import('./lib/mobile/apk-update.svelte').then((m) => stops.push(m.startApkUpdater(app.os, onResume)));
     });
     const stops = [startPresence(), startTextDefaults(), stopDiag, startCenter(app), startNotifications(app), startPorts(app), onResume(() => app.wake()), () => stopLayout()];
