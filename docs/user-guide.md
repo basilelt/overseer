@@ -833,6 +833,26 @@ them too. With an older `gh`, or when GitHub refuses a file, the issue is still 
 that file as not uploaded with the reason, and the app shows GitHub's message. GitHub may require
 write access to the repository to attach files.
 
+### Recording a bug
+
+Palette > **Record a bug** (phone: More > Record a bug) records what you do while you show a
+problem. The setup dialog offers **Record the screen too** where the webview can capture the
+screen (`getDisplayMedia` and `MediaRecorder`; a browser asks which screen or window to share);
+elsewhere, such as iOS and Android, only the action log is recorded. While it runs, a red pill at
+the bottom shows the time and the number of actions, with **Stop** and a discard button. The log
+has the start, clicks (the control's label, never a field's content), shortcuts (Ctrl/Cmd/Alt
+combinations, Escape, function keys, arrows), "typed in <field>" once per field without the text,
+view and dialog changes, uncaught errors and error toasts, each with its time since the start.
+Recordings stop on their own after 2 minutes (about 10 MB of video, the free GitHub limit) or when
+the screen share ends.
+
+**Stop** opens the feedback sheet on Bug with the recording: the video is uploaded to the active
+host as a `recording-<date>-<time>.webm` (or `.mp4`) attachment, and the log goes into the report
+as a "Recorded actions" block whose times match the video. **Replay** plays the video in the sheet
+with the action list beside it: the current action is highlighted as it plays and clicking one
+seeks the video there. The x on the Recording row removes both the video and the log. Offline,
+the video cannot be attached but the log and Replay still work.
+
 ### `doctor` items
 
 Levels: `ok` (fine), `warn` (works, but something is missing or suspicious), `fail` (broken;
@@ -898,7 +918,7 @@ On first launch, once the app is connected (immediately in local mode, after the
 connection on a phone), a welcome card offers **Take the tour** or **Skip**. The tour dims the
 window and highlights the real controls one at a time: host chip, workspaces sidebar, tabs and the
 new-session menu, the Terminal/Chat toggle, the side panel, Tasks, Review, the usage, system and ports
-chips, notifications and hooks, the command palette and Feedback, in 0.25 the Cmd/Ctrl+P palette shortcut, and in 0.27 the demo mode (on the **Demo mode** pill while in the demo, else on the host chip), and in 0.28 the GPU rendering option for terminals, and in 0.29 the clean up of unused worktrees and the import from Switchboard (on its button in Settings, Help, or on the Settings button), and in 0.30 click to move the cursor in a terminal (on the tabs), and in 0.31 the Light and Dark palettes (on Settings, or More on a phone), and in 0.33 the one-click install of skills and plugins (on Settings), and in 0.34 the auto-approval defaults (on Settings, Agents), the Review, Merged and Closed columns (on the Merged column when the board is open, else on the Tasks tab) and the clean removal of everything Overseer added (on Settings, Connection, **Remove**), and in 0.35 one-click in-app updates for every install (on Settings, Updates, else on the Settings button). Steps whose control is not on
+chips, notifications and hooks, the command palette and Feedback, in 0.25 the Cmd/Ctrl+P palette shortcut, and in 0.27 the demo mode (on the **Demo mode** pill while in the demo, else on the host chip), and in 0.28 the GPU rendering option for terminals, and in 0.29 the clean up of unused worktrees and the import from Switchboard (on its button in Settings, Help, or on the Settings button), and in 0.30 click to move the cursor in a terminal (on the tabs), and in 0.31 the Light and Dark palettes (on Settings, or More on a phone), and in 0.33 the one-click install of skills and plugins (on Settings), and in 0.34 the auto-approval defaults (on Settings, Agents), the Review, Merged and Closed columns (on the Merged column when the board is open, else on the Tasks tab) and the clean removal of everything Overseer added (on Settings, Connection, **Remove**), and in 0.35 one-click in-app updates for every install (on Settings, Updates, else on the Settings button), and in 0.36 Record a bug (centred, on the command palette). Steps whose control is not on
 screen (no session selected, a feature the server lacks, phone layout) are skipped. On a phone the
 card is a sheet at the bottom (or top, when the control sits low) and points at the bottom
 navigation, the session strip and the menu.

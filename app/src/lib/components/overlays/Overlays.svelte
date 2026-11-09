@@ -6,6 +6,7 @@
   import { diag } from '../../diag.svelte';
   import { feedback } from '../../feedback.svelte';
   import { organizer } from '../../organize.svelte';
+  import { rec } from '../../record-state.svelte';
 
   const close = () => app.open(null);
   const commandPalette = preload(() => import('./CommandPalette.svelte'));
@@ -35,6 +36,8 @@
   const closeTabDialog = () => import('./CloseTabDialog.svelte');
   const switchboardDialog = () => import('./SwitchboardImportDialog.svelte');
   const uninstallDialog = () => import('./UninstallDialog.svelte');
+  const recordSetup = () => import('../record/RecordSetup.svelte');
+  const recordPill = () => import('../record/RecordPill.svelte');
 </script>
 
 {#if app.overlay === 'palette'}
@@ -84,6 +87,11 @@
 {/if}
 {#if diag.mode}
   {#await logsDialog() then { default: LogsDialog }}<LogsDialog />{/await}
+{/if}
+{#if rec.phase === 'setup'}
+  {#await recordSetup() then { default: RecordSetup }}<RecordSetup />{/await}
+{:else if rec.phase === 'recording'}
+  {#await recordPill() then { default: RecordPill }}<RecordPill />{/await}
 {/if}
 {#if feedback.open}
   {#await feedbackSheet() then { default: FeedbackSheet }}<FeedbackSheet />{/await}
