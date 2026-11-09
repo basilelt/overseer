@@ -24,7 +24,6 @@ export const dict: Partial<Dict> = {
   'time.d': '{n} j',
   'title.layout': 'Changer la disposition',
   'title.new': 'Nouvelle session',
-  'title.history': 'Historique',
   'title.run': 'LANCER',
   'title.runHint': 'Démarrer la prochaine tâche en file',
   'title.settings': 'Réglages',
