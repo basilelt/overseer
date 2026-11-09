@@ -1137,11 +1137,7 @@ fn start(ctx: &Ctx, b: &Value) -> Res<Value> {
     };
     tasks::insert(&reg, &mut t, &ctx.config.station_id)?;
     let claude = agent.id == "claude";
-    let extra = match claude {
-        true => vec!["--mcp-config".to_string(), mcp_config(ctx).to_string()],
-        false => vec![],
-    };
-    match tasks::start_with_args(ctx, &t.id, None, true, &extra) {
+    match tasks::start_with(ctx, &t.id, None, true) {
         Ok(started) => Ok(json!({
             "task": started.to_json(&ctx.config.station_id),
             "mcp": if claude { "configured" } else { "manual" },
@@ -1152,14 +1148,6 @@ fn start(ctx: &Ctx, b: &Value) -> Res<Value> {
             Err(e)
         }
     }
-}
-
-pub fn mcp_config(ctx: &Ctx) -> Value {
-    let socket = crate::daemon::socket_path(&ctx.state_dir);
-    json!({"mcpServers": {"overseer": {
-        "command": crate::actions::self_exe(), "args": ["mcp"],
-        "env": {"OVERSEER_SOCKET": socket.to_string_lossy()},
-    }}})
 }
 
 pub fn trim_session(l: &Line, ix: &workspaces::Index) -> Value {

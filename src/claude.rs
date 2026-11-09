@@ -90,6 +90,20 @@ pub fn launch_flags(flags: &[String]) -> Vec<String> {
     out
 }
 
+pub fn overseer_mcp(exe: &str, state_dir: &str, task_id: &str) -> Vec<String> {
+    let config = serde_json::json!({"mcpServers": {"overseer": {
+        "command": exe,
+        "args": ["mcp"],
+        "env": {"OVERSEER_STATE_DIR": state_dir, "OVERSEER_TASK_ID": task_id},
+    }}});
+    vec![
+        "--mcp-config".to_string(),
+        config.to_string(),
+        "--allowedTools".to_string(),
+        "mcp__overseer".to_string(),
+    ]
+}
+
 pub struct Live {
     pub pid: u32,
     pub status_ms: i64,
@@ -402,6 +416,28 @@ mod tests {
             launch_flags(&v(&["--settings={\"a\": 1}", "x"])),
             v(&["--settings={\"a\": 1}"])
         );
+    }
+
+    #[test]
+    fn overseer_mcp_passes_task_and_state_dir_and_pre_approves_the_tools() {
+        let a = overseer_mcp("/opt/my overseer", "/home/u/.overseer", "01ABC");
+        assert_eq!(a[0], "--mcp-config");
+        let v: serde_json::Value = serde_json::from_str(&a[1]).unwrap();
+        let s = &v["mcpServers"]["overseer"];
+        assert_eq!(s["command"], "/opt/my overseer");
+        assert_eq!(s["args"], serde_json::json!(["mcp"]));
+        assert_eq!(s["env"]["OVERSEER_TASK_ID"], "01ABC");
+        assert_eq!(s["env"]["OVERSEER_STATE_DIR"], "/home/u/.overseer");
+        assert_eq!(a[2..], ["--allowedTools", "mcp__overseer"]);
+    }
+
+    #[test]
+    fn overseer_mcp_survives_a_relaunch() {
+        let a = overseer_mcp("/x", "/s", "T");
+        let mut flags = vec!["--model".to_string(), "opus".to_string()];
+        flags.extend(a.iter().cloned());
+        let kept = launch_flags(&flags);
+        assert_eq!(kept[2..], a[..]);
     }
 
     #[test]

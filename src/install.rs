@@ -16,6 +16,21 @@ pub fn shim_path() -> PathBuf {
     crate::home().join(".overseer/bin").join(name)
 }
 
+pub fn path_with_shim(path: &str, shim: &Path) -> String {
+    let Some(dir) = shim.parent() else {
+        return path.to_string();
+    };
+    let mut dirs: Vec<PathBuf> = std::env::split_paths(path)
+        .filter(|d| !d.as_os_str().is_empty())
+        .collect();
+    if dirs.iter().any(|d| d == dir) {
+        return path.to_string();
+    }
+    dirs.insert(0, dir.to_path_buf());
+    std::env::join_paths(dirs)
+        .map_or_else(|_| path.to_string(), |p| p.to_string_lossy().into_owned())
+}
+
 pub fn ensure_shim(shim: &Path, real: &Path, replace: bool) -> std::io::Result<bool> {
     if real == shim || real.to_string_lossy().ends_with(" (deleted)") {
         return Ok(false);
@@ -941,6 +956,20 @@ pub fn on_daemon_start(state_dir: &Path) {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn path_with_shim_prepends_the_shim_dir_once() {
+        let shim = Path::new("/h/.overseer/bin/overseer");
+        assert_eq!(
+            path_with_shim("/usr/bin:/bin", shim),
+            "/h/.overseer/bin:/usr/bin:/bin"
+        );
+        assert_eq!(
+            path_with_shim("/usr/bin:/h/.overseer/bin", shim),
+            "/usr/bin:/h/.overseer/bin"
+        );
+        assert_eq!(path_with_shim("", shim), "/h/.overseer/bin");
+    }
+
     #[cfg(unix)]
     #[test]
     fn atomic_write_follows_a_symlinked_config() {
