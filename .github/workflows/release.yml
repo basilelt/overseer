@@ -264,7 +264,7 @@ jobs:
         run: |
           shopt -s nullglob
           mkdir -p "$GITHUB_WORKSPACE/out"
-          cp deb/*.deb appimage/*.AppImage appimage/*.AppImage.sig rpm/*.rpm "$GITHUB_WORKSPACE/out/"
+          cp deb/*.deb deb/*.deb.sig appimage/*.AppImage appimage/*.AppImage.sig rpm/*.rpm rpm/*.rpm.sig "$GITHUB_WORKSPACE/out/"
 
       - name: The AppImage and the deb run on Ubuntu 22.04 (glibc 2.35)
         working-directory: app/src-tauri/target/release/bundle

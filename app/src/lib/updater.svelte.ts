@@ -2,7 +2,7 @@ import { isTauri } from './client';
 import { isDemo } from './demo';
 import { type Sub, t } from './i18n.svelte';
 
-export type InstallKind = 'bundle' | 'homebrew' | 'package';
+export type InstallKind = 'bundle' | 'msix';
 
 export interface UpdateInfo {
   current: string;
@@ -15,19 +15,9 @@ export interface UpdateInfo {
 
 export type CheckResult = { status: 'none'; current: string } | ({ status: 'available' } & UpdateInfo);
 
-export type BrewStep = 'trust' | 'update' | 'upgrade' | 'formula';
-
 export type ProgressEvent =
   | { event: 'progress'; downloaded: number; total: number | null }
-  | { event: 'installing' }
-  | { event: 'step'; name: BrewStep }
-  | { event: 'line'; text: string };
-
-export type BrewError =
-  | { kind: 'missing' }
-  | { kind: 'untrusted'; tap: string }
-  | { kind: 'stale' }
-  | { kind: 'failed'; message: string };
+  | { event: 'installing' };
 
 export interface UpdateStatus {
   current: string;
@@ -40,16 +30,13 @@ export interface UpdaterBackend {
   check(): Promise<CheckResult>;
   install(onProgress: (e: ProgressEvent) => void): Promise<void>;
   relaunch(): Promise<void>;
-  brew(trust: string | null, onProgress: (e: ProgressEvent) => void): Promise<string | null>;
-  brewRelaunch(): Promise<void>;
   openUrl(url: string): Promise<void>;
 }
 
-export type Phase = 'idle' | 'checking' | 'current' | 'available' | 'downloading' | 'installing' | 'updating' | 'updated' | 'restarting' | 'error';
+export type Phase = 'idle' | 'checking' | 'current' | 'available' | 'downloading' | 'installing' | 'updated' | 'restarting' | 'error';
 
 export const CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
-export const LOG_LINES = 1000;
-const BUSY: Phase[] = ['checking', 'downloading', 'installing', 'updating', 'restarting'];
+const BUSY: Phase[] = ['checking', 'downloading', 'installing', 'restarting'];
 
 export class Updater {
   phase = $state<Phase>('idle');
@@ -60,9 +47,6 @@ export class Updater {
   total = $state<number | null>(null);
   dialog = $state(false);
   status = $state<UpdateStatus | null>(null);
-  log = $state<string[]>([]);
-  step = $state<BrewStep | null>(null);
-  brewError = $state<BrewError | null>(null);
   installed = $state<string | null>(null);
 
   constructor(readonly backend: UpdaterBackend | null) {}
@@ -81,10 +65,6 @@ export class Updater {
 
   get installedVersion(): string {
     return this.installed ?? this.info?.version ?? '';
-  }
-
-  get lastLine(): string {
-    return this.log.at(-1) ?? '';
   }
 
   async refreshStatus() {
@@ -123,7 +103,7 @@ export class Updater {
   }
 
   async install() {
-    if (!this.backend || !this.info || this.info.kind !== 'bundle' || this.busy) return;
+    if (!this.backend || !this.info || this.busy) return;
     this.phase = 'downloading';
     this.error = '';
     this.downloaded = 0;
@@ -146,48 +126,19 @@ export class Updater {
   private updated(version: string | null) {
     this.installed = version || null;
     this.error = '';
-    this.brewError = null;
     this.phase = 'updated';
   }
 
-  async brewUpgrade(trust: string | null = null) {
-    if (!this.backend || this.info?.kind !== 'homebrew' || this.busy) return;
-    this.phase = 'updating';
-    this.error = '';
-    this.brewError = null;
-    this.step = null;
-    this.log = [];
-    try {
-      const version = await this.backend.brew(trust, (e) => {
-        if (e.event === 'step') this.step = e.name;
-        else if (e.event === 'line') {
-          this.log.push(e.text);
-          if (this.log.length > LOG_LINES) this.log.splice(0, this.log.length - LOG_LINES);
-        }
-      });
-      this.updated(version ?? null);
-    } catch (e) {
-      this.fail(brewError(e));
-    }
-  }
-
   async restart() {
-    if (!this.backend || this.phase !== 'updated') return;
+    if (!this.backend || this.phase !== 'updated' || this.info?.kind === 'msix') return;
     this.phase = 'restarting';
     this.error = '';
     try {
-      if (this.info?.kind === 'homebrew') await this.backend.brewRelaunch();
-      else await this.backend.relaunch();
+      await this.backend.relaunch();
     } catch (e) {
       this.error = message(e);
       this.phase = 'updated';
     }
-  }
-
-  private fail(err: BrewError) {
-    this.brewError = err;
-    this.error = brewMessage(err);
-    this.phase = 'error';
   }
 
   start(intervalMs = CHECK_INTERVAL_MS): () => void {
@@ -203,34 +154,6 @@ function message(e: unknown): string {
   return String((e as Error)?.message ?? e);
 }
 
-export function brewError(e: unknown): BrewError {
-  const o = (e && typeof e === 'object' ? e : {}) as Record<string, unknown>;
-  switch (o.kind) {
-    case 'missing':
-    case 'stale':
-      return { kind: o.kind as 'missing' | 'stale' };
-    case 'untrusted':
-      return { kind: 'untrusted', tap: typeof o.tap === 'string' ? o.tap : BREW_TAP };
-    case 'failed':
-      return { kind: 'failed', message: String(o.message ?? '') };
-    default:
-      return { kind: 'failed', message: message(e) };
-  }
-}
-
-export function brewMessage(err: BrewError): string {
-  switch (err.kind) {
-    case 'missing':
-      return ut('err.missing');
-    case 'untrusted':
-      return ut('err.untrusted', { tap: err.tap });
-    case 'stale':
-      return ut('err.notInTap');
-    case 'failed':
-      return err.message;
-  }
-}
-
 export function pillLabel(u: Pick<Updater, 'phase' | 'info' | 'progress'>): string | null {
   switch (u.phase) {
     case 'available':
@@ -240,10 +163,8 @@ export function pillLabel(u: Pick<Updater, 'phase' | 'info' | 'progress'>): stri
       return u.progress === null ? ut('pill.downloading') : ut('pill.progress', { pct: Math.round(u.progress * 100) });
     case 'installing':
       return ut('pill.installing');
-    case 'updating':
-      return ut('pill.updating');
     case 'updated':
-      return ut('pill.updated');
+      return u.info?.kind === 'msix' ? ut('pill.msix') : ut('pill.updated');
     case 'restarting':
       return ut('pill.restarting');
     default:
@@ -251,33 +172,13 @@ export function pillLabel(u: Pick<Updater, 'phase' | 'info' | 'progress'>): stri
   }
 }
 
-export function brewStepLabel(step: BrewStep | null): string {
-  switch (step) {
-    case 'trust':
-      return ut('step.trust');
-    case 'update':
-      return ut('step.update');
-    case 'upgrade':
-      return ut('step.upgrade');
-    case 'formula':
-      return ut('step.formula');
-    default:
-      return ut('pill.updating');
-  }
-}
-
-export type DialogAction = 'install' | 'brew' | 'release' | 'restart' | 'retry' | null;
+export type DialogAction = 'install' | 'restart' | 'retry' | null;
 
 export function dialogAction(u: Pick<Updater, 'phase' | 'info'>): DialogAction {
-  if (u.phase === 'updated') return 'restart';
+  if (u.phase === 'updated') return u.info?.kind === 'msix' ? null : 'restart';
   if (!u.info) return u.phase === 'error' ? 'retry' : null;
-  if (u.info.kind === 'homebrew') return 'brew';
-  if (u.info.kind === 'package') return 'release';
   return u.phase === 'available' || u.phase === 'error' ? 'install' : null;
 }
-
-export const BREW_TAP = 'basilelt/tap';
-export const BREW_UPGRADE = `brew update && brew upgrade --cask ${BREW_TAP}/overseer`;
 
 type UKey = Sub<'updater'>;
 
@@ -296,12 +197,6 @@ async function tauriBackend(): Promise<UpdaterBackend> {
       return invoke<void>('update_install', { onProgress: channel });
     },
     relaunch: () => invoke<void>('update_relaunch'),
-    brew: (trust, onProgress) => {
-      const channel = new Channel<ProgressEvent>();
-      channel.onmessage = onProgress;
-      return invoke<string | null>('update_brew', { trust, onProgress: channel });
-    },
-    brewRelaunch: () => invoke<void>('update_brew_relaunch'),
     openUrl: (url) => invoke<void>('open_external', { url }),
   };
 }
@@ -311,8 +206,6 @@ const lazy: UpdaterBackend = {
   check: async () => (await tauriBackend()).check(),
   install: async (p) => (await tauriBackend()).install(p),
   relaunch: async () => (await tauriBackend()).relaunch(),
-  brew: async (t, p) => (await tauriBackend()).brew(t, p),
-  brewRelaunch: async () => (await tauriBackend()).brewRelaunch(),
   openUrl: async (u) => (await tauriBackend()).openUrl(u),
 };
 

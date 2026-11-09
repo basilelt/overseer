@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { loadLocale, setLocale } from './i18n.svelte';
-import { BREW_UPGRADE, LOG_LINES, Updater, brewError, brewMessage, brewStepLabel, dialogAction, pillLabel, type CheckResult, type InstallKind, type ProgressEvent, type UpdaterBackend } from './updater.svelte';
+import { Updater, dialogAction, pillLabel, type CheckResult, type InstallKind, type ProgressEvent, type UpdaterBackend } from './updater.svelte';
 
 const available = (kind: InstallKind = 'bundle'): CheckResult => ({
   status: 'available',
@@ -18,8 +18,6 @@ function backend(over: Partial<UpdaterBackend> = {}): UpdaterBackend {
     check: vi.fn(async () => available()),
     install: vi.fn(async () => {}),
     relaunch: vi.fn(async () => {}),
-    brew: vi.fn(async () => null),
-    brewRelaunch: vi.fn(async () => {}),
     openUrl: vi.fn(async () => {}),
     ...over,
   };
@@ -170,7 +168,6 @@ describe('updater install', () => {
     await u.restart();
     expect(u.phase).toBe('restarting');
     expect(b.relaunch).toHaveBeenCalledOnce();
-    expect(b.brewRelaunch).not.toHaveBeenCalled();
   });
 
   it('keeps the restart prompt when the relaunch fails', async () => {
@@ -193,197 +190,44 @@ describe('updater install', () => {
     expect(dialogAction(u)).toBe('install');
   });
 
-  it('never installs Homebrew or package installs', async () => {
-    for (const [kind, action] of [
-      ['homebrew', 'brew'],
-      ['package', 'release'],
-    ] as const) {
-      const b = backend({ check: async () => available(kind) });
-      const u = new Updater(b);
-      await u.check();
-      expect(dialogAction(u)).toBe(action);
-      await u.install();
-      expect(b.install).not.toHaveBeenCalled();
-      expect(u.phase).toBe('available');
-    }
-  });
-});
-
-describe('homebrew update', () => {
-  it('copyable upgrade names the tap so Homebrew trusts the cask', () => {
-    expect(BREW_UPGRADE).toBe('brew update && brew upgrade --cask basilelt/tap/overseer');
-  });
-
-  function controlled() {
-    let emit: (e: ProgressEvent) => void = () => {};
-    let finish: (v: string | null) => void = () => {};
-    let reject: (e: unknown) => void = () => {};
-    const b = backend({
-      check: async () => available('homebrew'),
-      brew: vi.fn((_trust: string | null, p: (e: ProgressEvent) => void) => {
-        emit = p;
-        return new Promise<string | null>((res, rej) => {
-          finish = res;
-          reject = rej;
-        });
-      }),
-    });
-    return { b, emit: (e: ProgressEvent) => emit(e), finish: (v: string | null = '0.3.0') => finish(v), reject: (e: unknown) => reject(e) };
-  }
-
-  it('streams progress, then asks to restart', async () => {
-    const c = controlled();
-    const u = new Updater(c.b);
-    await u.check();
-    expect(dialogAction(u)).toBe('brew');
-    const done = u.brewUpgrade();
-    expect(u.phase).toBe('updating');
-    expect(u.busy).toBe(true);
-    expect(pillLabel(u)).toBe('Updating…');
-    expect(brewStepLabel(u.step)).toBe('Updating…');
-    c.emit({ event: 'step', name: 'update' });
-    expect(brewStepLabel(u.step)).toBe('Refreshing Homebrew…');
-    c.emit({ event: 'step', name: 'upgrade' });
-    c.emit({ event: 'line', text: '==> Upgrading overseer' });
-    c.emit({ event: 'line', text: 'overseer 0.2.0 -> 0.3.0' });
-    expect(u.lastLine).toBe('overseer 0.2.0 -> 0.3.0');
-    expect(u.log).toHaveLength(2);
-    c.finish();
-    await done;
-    expect(u.phase).toBe('updated');
-    expect(u.busy).toBe(false);
-    expect(dialogAction(u)).toBe('restart');
-    expect(u.installedVersion).toBe('0.3.0');
-    expect(pillLabel(u)).toBe('Restart to finish');
-    expect(c.b.brew).toHaveBeenCalledWith(null, expect.any(Function));
-    await u.check();
-    expect(u.phase).toBe('updated');
-    await u.restart();
-    expect(u.phase).toBe('restarting');
-    expect(c.b.brewRelaunch).toHaveBeenCalledOnce();
-    expect(c.b.relaunch).not.toHaveBeenCalled();
-  });
-
-  it('reports the version Homebrew actually installed', async () => {
-    const c = controlled();
-    const u = new Updater(c.b);
-    await u.check();
-    const done = u.brewUpgrade();
-    c.emit({ event: 'line', text: 'overseer 0.2.0 -> 0.3.1' });
-    c.emit({ event: 'line', text: 'overseer was successfully upgraded!' });
-    c.finish('0.3.1');
-    await done;
-    expect(u.phase).toBe('updated');
-    expect(u.error).toBe('');
-    expect(u.brewError).toBeNull();
-    expect(u.installedVersion).toBe('0.3.1');
-    expect(dialogAction(u)).toBe('restart');
-  });
-
-  it('falls back to the offered version when brew does not report one', async () => {
-    const c = controlled();
-    const u = new Updater(c.b);
-    await u.check();
-    const done = u.brewUpgrade();
-    c.finish(null);
-    await done;
-    expect(u.installedVersion).toBe('0.3.0');
-  });
-
-  it('retries after a stale tap, then asks to restart', async () => {
-    let stale = true;
-    const b = backend({ check: async () => available('homebrew'), brew: vi.fn(async () => (stale ? Promise.reject({ kind: 'stale' }) : '0.3.0')) });
+  it('installs an msix update and leaves the finish to Windows App Installer', async () => {
+    const b = backend({ check: async () => available('msix') });
     const u = new Updater(b);
     await u.check();
-    await u.brewUpgrade();
+    expect(dialogAction(u)).toBe('install');
+    await u.install();
+    expect(b.install).toHaveBeenCalledOnce();
+    expect(u.phase).toBe('updated');
+    expect(u.installedVersion).toBe('0.3.0');
+    expect(dialogAction(u)).toBeNull();
+    expect(pillLabel(u)).toBe('Finish in App Installer');
+    await u.restart();
+    expect(b.relaunch).not.toHaveBeenCalled();
+  });
+
+  it('retries a failed msix install', async () => {
+    let fail = true;
+    const u = new Updater(backend({ check: async () => available('msix'), install: async () => (fail ? Promise.reject(new Error('hash mismatch')) : undefined) }));
+    await u.check();
+    await u.install();
     expect(u.phase).toBe('error');
-    expect(dialogAction(u)).toBe('brew');
-    stale = false;
-    await u.brewUpgrade();
+    expect(u.error).toBe('hash mismatch');
+    expect(dialogAction(u)).toBe('install');
+    fail = false;
+    await u.install();
     expect(u.phase).toBe('updated');
     expect(u.error).toBe('');
-    expect(dialogAction(u)).toBe('restart');
   });
 
-  it('keeps only the last log lines', async () => {
-    const c = controlled();
-    const u = new Updater(c.b);
+  it('ignores an install while busy or without an update', async () => {
+    const b = backend();
+    const u = new Updater(b);
+    await u.install();
+    expect(b.install).not.toHaveBeenCalled();
     await u.check();
-    const done = u.brewUpgrade();
-    for (let i = 0; i < LOG_LINES + 5; i++) c.emit({ event: 'line', text: `line ${i}` });
-    expect(u.log).toHaveLength(LOG_LINES);
-    expect(u.log[0]).toBe('line 5');
-    c.finish();
-    await done;
-  });
-
-  it('offers to trust an untrusted tap, then retries with it', async () => {
-    const c = controlled();
-    const u = new Updater(c.b);
-    await u.check();
-    const first = u.brewUpgrade();
-    c.reject({ kind: 'untrusted', tap: 'basilelt/tap' });
-    await first;
-    expect(u.phase).toBe('error');
-    expect(u.brewError).toEqual({ kind: 'untrusted', tap: 'basilelt/tap' });
-    expect(u.error).toContain('brew trust basilelt/tap');
-    expect(dialogAction(u)).toBe('brew');
-    expect(pillLabel(u)).toBe('Update 0.3.0');
-    const second = u.brewUpgrade('basilelt/tap');
-    expect(u.brewError).toBeNull();
-    expect(c.b.brew).toHaveBeenLastCalledWith('basilelt/tap', expect.any(Function));
-    c.finish();
-    await second;
-    expect(u.phase).toBe('updated');
-  });
-
-  it('explains common failures', async () => {
-    for (const [err, text] of [
-      [{ kind: 'missing' }, 'Homebrew was not found'],
-      [{ kind: 'stale' }, 'does not have this version yet'],
-      [{ kind: 'failed', message: 'Error: disk full' }, 'Error: disk full'],
-      [new Error('ipc closed'), 'ipc closed'],
-    ] as const) {
-      const u = new Updater(backend({ check: async () => available('homebrew'), brew: async () => Promise.reject(err) }));
-      await u.check();
-      await u.brewUpgrade();
-      expect(u.phase).toBe('error');
-      expect(u.error).toContain(text);
-      expect(dialogAction(u)).toBe('brew');
-    }
-  });
-
-  it('normalises backend errors', async () => {
-    expect(brewError({ kind: 'untrusted' })).toEqual({ kind: 'untrusted', tap: 'basilelt/tap' });
-    expect(brewError('boom')).toEqual({ kind: 'failed', message: 'boom' });
-    expect(brewError({ kind: 'auth', message: 'old' })).toEqual({ kind: 'failed', message: 'old' });
-    expect(brewError({ kind: 'nope' })).toEqual({ kind: 'failed', message: '[object Object]' });
-    setLocale('fr');
-    await loadLocale('fr');
-    expect(brewMessage({ kind: 'untrusted', tap: 'a/b' })).toContain('brew trust a/b');
-  });
-
-  it('reports a failed relaunch', async () => {
-    const u = new Updater(backend({ check: async () => available('homebrew'), brewRelaunch: async () => Promise.reject(new Error('open exited with 1')) }));
-    await u.check();
-    await u.restart();
-    expect(u.phase).toBe('available');
-    await u.brewUpgrade();
-    await u.restart();
-    expect(u.phase).toBe('updated');
-    expect(u.error).toBe('open exited with 1');
-    expect(dialogAction(u)).toBe('restart');
-  });
-
-  it('never runs brew for other installs', async () => {
-    for (const kind of ['bundle', 'package'] as const) {
-      const b = backend({ check: async () => available(kind) });
-      const u = new Updater(b);
-      await u.check();
-      await u.brewUpgrade();
-      expect(b.brew).not.toHaveBeenCalled();
-      expect(u.phase).toBe('available');
-    }
+    u.phase = 'installing';
+    await u.install();
+    expect(b.install).not.toHaveBeenCalled();
   });
 });
 

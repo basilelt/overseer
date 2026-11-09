@@ -1,35 +1,32 @@
-use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
-use std::process::Stdio;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 
 use reqwest::header::ACCEPT;
+use reqwest::Client;
 use serde::Serialize;
+use sha2::{Digest, Sha256};
 use tauri::ipc::Channel;
 use tauri::{AppHandle, Manager, State};
 use tauri_plugin_updater::{Update, UpdaterExt};
-use tokio::io::{AsyncBufReadExt, BufReader};
+use tokio::io::AsyncWriteExt;
 
-pub const REPO: &str = "basilelt/overseer";
-const BREW_BINS: [&str; 2] = ["/opt/homebrew/bin/brew", "/usr/local/bin/brew"];
-const BREW_TAP: &str = "basilelt/tap";
-const CASK: &str = "overseer";
-const CASK_FULL: &str = "basilelt/tap/overseer";
+use crate::release_http::{asset_url, client, get, hex, ApkError, REPO};
+
+const GITHUB: &str = "https://github.com";
+const PROGRESS_STEP: u64 = 256 * 1024;
 #[cfg(any(target_os = "macos", test))]
 const APP_BUNDLE: &str = "Applications/Overseer.app";
+
 #[derive(Default)]
 pub struct UpdaterState {
     pending: Mutex<Option<Update>>,
-    brewing: AtomicBool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum InstallKind {
     Bundle,
-    Homebrew,
-    Package,
+    Msix,
 }
 
 #[derive(Serialize)]
@@ -63,81 +60,22 @@ pub struct UpdateInfo {
 pub enum UpdateEvent {
     Progress { downloaded: u64, total: Option<u64> },
     Installing,
-    Step { name: &'static str },
-    Line { text: String },
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-#[serde(tag = "kind", rename_all = "lowercase")]
-pub enum BrewError {
-    Missing,
-    Untrusted { tap: String },
-    Stale,
-    Failed { message: String },
-}
-
-impl BrewError {
-    fn failed(message: impl Into<String>) -> Self {
-        BrewError::Failed {
-            message: message.into(),
-        }
-    }
-}
-
-pub fn install_kind(
-    os: &str,
-    exe: &Path,
-    caskrooms: &[PathBuf],
-    is_dir: impl Fn(&Path) -> bool,
-    appimage: bool,
-) -> InstallKind {
-    match os {
-        "macos" => {
-            let in_caskroom = exe.components().any(|c| c.as_os_str() == "Caskroom");
-            if in_caskroom || caskrooms.iter().any(|r| is_dir(&r.join("overseer"))) {
-                InstallKind::Homebrew
-            } else {
-                InstallKind::Bundle
-            }
-        }
-        "linux" if !appimage => InstallKind::Package,
-        "windows" if is_msix(exe) => InstallKind::Package,
-        _ => InstallKind::Bundle,
-    }
-}
-
-fn is_msix(exe: &Path) -> bool {
-    exe.to_string_lossy()
+pub fn install_kind(exe: &Path) -> InstallKind {
+    if exe
+        .to_string_lossy()
         .to_ascii_lowercase()
         .contains("\\windowsapps\\")
+    {
+        InstallKind::Msix
+    } else {
+        InstallKind::Bundle
+    }
 }
 
-fn caskrooms() -> Vec<PathBuf> {
-    let mut roots: Vec<PathBuf> = std::env::var_os("HOMEBREW_PREFIX")
-        .map(|p| PathBuf::from(p).join("Caskroom"))
-        .into_iter()
-        .collect();
-    roots.push("/opt/homebrew/Caskroom".into());
-    roots.push("/usr/local/Caskroom".into());
-    roots
-}
-
-fn current_kind(app: &AppHandle) -> InstallKind {
-    #[cfg(target_os = "linux")]
-    let appimage = app.env().appimage.is_some();
-    #[cfg(not(target_os = "linux"))]
-    let appimage = {
-        let _ = app;
-        false
-    };
-    let exe = std::env::current_exe().unwrap_or_default();
-    install_kind(
-        std::env::consts::OS,
-        &exe,
-        &caskrooms(),
-        Path::is_dir,
-        appimage,
-    )
+fn current_kind() -> InstallKind {
+    install_kind(&std::env::current_exe().unwrap_or_default())
 }
 
 fn current_version(app: &AppHandle) -> String {
@@ -145,19 +83,34 @@ fn current_version(app: &AppHandle) -> String {
 }
 
 pub(crate) fn manifest_url() -> String {
-    format!("https://github.com/{REPO}/releases/latest/download/latest.json")
+    format!("{GITHUB}/{REPO}/releases/latest/download/latest.json")
 }
 
 fn release_url(version: &str) -> String {
-    format!("https://github.com/{REPO}/releases/tag/v{version}")
+    format!("{GITHUB}/{REPO}/releases/tag/v{version}")
+}
+
+pub fn msix_name(version: &str, arch: &str) -> String {
+    let arch = if arch == "aarch64" { "arm64" } else { "x64" };
+    format!("Overseer_{version}_{arch}.msix")
+}
+
+pub fn sum_for(sums: &str, file: &str) -> Option<String> {
+    sums.lines().find_map(|line| {
+        let mut words = line.split_whitespace();
+        let hash = words.next()?;
+        let name = words.next()?.trim_start_matches('*');
+        (name == file && hash.len() == 64 && hash.bytes().all(|b| b.is_ascii_hexdigit()))
+            .then(|| hash.to_ascii_lowercase())
+    })
 }
 
 #[tauri::command]
 pub async fn update_status(app: AppHandle) -> UpdateStatus {
     UpdateStatus {
         current: current_version(&app),
-        kind: current_kind(&app),
-        releases_url: format!("https://github.com/{REPO}/releases"),
+        kind: current_kind(),
+        releases_url: format!("{GITHUB}/{REPO}/releases"),
     }
 }
 
@@ -208,7 +161,7 @@ async fn check_update(
             .get("pub_date")
             .and_then(|d| d.as_str())
             .map(str::to_string),
-        kind: current_kind(&app),
+        kind: current_kind(),
         release_url: release_url(&update.version),
     };
     *state.pending.lock().unwrap() = Some(update);
@@ -235,18 +188,26 @@ async fn install_update(
     state: State<'_, UpdaterState>,
     on_progress: Channel<UpdateEvent>,
 ) -> Result<(), String> {
-    if current_kind(&app) != InstallKind::Bundle {
-        return Err("This installation is updated by its package manager".into());
-    }
     let update = state
         .pending
         .lock()
         .unwrap()
         .take()
         .ok_or("No update to install, check again")?;
+    let result = match current_kind() {
+        InstallKind::Msix => install_msix(&app, &update.version, &on_progress).await,
+        InstallKind::Bundle => install_bundle(&update, &on_progress).await,
+    };
+    if result.is_err() {
+        *state.pending.lock().unwrap() = Some(update);
+    }
+    result
+}
+
+async fn install_bundle(update: &Update, on_progress: &Channel<UpdateEvent>) -> Result<(), String> {
     let mut downloaded = 0u64;
     let installing = on_progress.clone();
-    let result = update
+    update
         .download_and_install(
             |chunk, total| {
                 downloaded += chunk as u64;
@@ -259,117 +220,117 @@ async fn install_update(
                 let _ = installing.send(UpdateEvent::Installing);
             },
         )
-        .await;
-    if let Err(e) = result {
-        *state.pending.lock().unwrap() = Some(update);
-        return Err(e.to_string());
+        .await
+        .map_err(|e| e.to_string())
+}
+
+fn http_error(e: ApkError) -> String {
+    match e {
+        ApkError::Network { message } | ApkError::Failed { message } => message,
+        ApkError::Checksum => "The download does not match the release checksum".into(),
     }
-    Ok(())
 }
 
-pub fn brew_path(path_env: Option<&OsStr>, is_file: impl Fn(&Path) -> bool) -> Option<PathBuf> {
-    BREW_BINS
-        .iter()
-        .map(PathBuf::from)
-        .chain(
-            path_env
-                .into_iter()
-                .flat_map(std::env::split_paths)
-                .map(|d| d.join("brew")),
-        )
-        .find(|p| is_file(p))
-}
-
-fn valid_tap(tap: &str) -> bool {
-    let part = |s: &str| {
-        !s.is_empty()
-            && s.bytes()
-                .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-' || b == b'_')
-    };
-    matches!(tap.split_once('/'), Some((user, repo)) if part(user) && part(repo))
-}
-
-fn untrusted_tap(log: &str) -> String {
-    log.split("brew trust ")
-        .skip(1)
-        .filter_map(|rest| rest.split_whitespace().next())
-        .map(|t| {
-            t.trim_matches(|c: char| {
-                !(c.is_ascii_alphanumeric() || c == '/' || c == '-' || c == '_')
-            })
-            .to_lowercase()
-        })
-        .find(|t| valid_tap(t))
-        .unwrap_or_else(|| BREW_TAP.to_string())
-}
-
-fn last_error(log: &str) -> String {
-    let lines: Vec<&str> = log
-        .lines()
-        .map(str::trim)
-        .filter(|l| !l.is_empty())
-        .collect();
-    let line = lines
-        .iter()
-        .rfind(|l| l.starts_with("Error:"))
-        .or(lines.last())
-        .copied()
-        .unwrap_or("Homebrew failed");
-    line.chars().take(400).collect()
-}
-
-pub fn classify(log: &str, ok: bool) -> Result<(), BrewError> {
-    let lower = log.to_lowercase();
-    if lower.contains("untrusted") || lower.contains("not trusted") || lower.contains("brew trust ")
-    {
-        return Err(BrewError::Untrusted {
-            tap: untrusted_tap(log),
-        });
-    }
-    if ok {
-        return Ok(());
-    }
-    Err(BrewError::failed(last_error(log)))
-}
-
-fn semver(v: &str) -> Option<semver::Version> {
-    semver::Version::parse(v.trim().trim_start_matches('v')).ok()
-}
-
-pub fn installed_version(list: &str) -> Option<&str> {
-    let versions = list
-        .lines()
-        .find_map(|l| l.trim().strip_prefix(CASK).filter(|r| r.starts_with(' ')))?
-        .split_whitespace();
-    versions
-        .clone()
-        .filter_map(|v| semver(v).map(|s| (s, v)))
-        .max_by(|a, b| a.0.cmp(&b.0))
-        .map(|(_, v)| v)
-        .or_else(|| versions.last())
-}
-
-pub fn brew_outcome(
-    target: Option<&str>,
-    list: &str,
-    log: &str,
-) -> Result<Option<String>, BrewError> {
-    let installed = installed_version(list);
-    let upgraded = log.to_lowercase().contains("was successfully upgraded");
-    let current = match (target, installed) {
-        (None, _) => true,
-        (Some(t), Some(i)) => match (semver(t), semver(i)) {
-            (Some(t), Some(i)) => i >= t,
-            _ => i == t,
+async fn install_msix(
+    app: &AppHandle,
+    version: &str,
+    on_progress: &Channel<UpdateEvent>,
+) -> Result<(), String> {
+    use tauri_plugin_opener::OpenerExt;
+    let dir = app
+        .path()
+        .app_cache_dir()
+        .map_err(|e| e.to_string())?
+        .join("updates");
+    let name = msix_name(version, std::env::consts::ARCH);
+    let path = download_verified(
+        &client().map_err(http_error)?,
+        GITHUB,
+        version,
+        &name,
+        &dir,
+        |downloaded, total| {
+            let _ = on_progress.send(UpdateEvent::Progress { downloaded, total });
         },
-        (Some(_), None) => false,
-    };
-    let older = matches!((target.and_then(semver), installed.and_then(semver)), (Some(t), Some(i)) if i < t);
-    if current || (upgraded && !older) {
-        Ok(installed.map(str::to_string))
-    } else {
-        Err(BrewError::Stale)
+    )
+    .await
+    .map_err(http_error)?;
+    let _ = on_progress.send(UpdateEvent::Installing);
+    app.opener()
+        .open_path(path.to_string_lossy(), None::<&str>)
+        .map_err(|e| e.to_string())
+}
+
+pub async fn download_verified(
+    client: &Client,
+    base: &str,
+    version: &str,
+    name: &str,
+    dir: &Path,
+    mut progress: impl FnMut(u64, Option<u64>),
+) -> Result<PathBuf, ApkError> {
+    let sums = get(client, &asset_url(base, version, "SHA256SUMS"))
+        .await?
+        .text()
+        .await
+        .map_err(crate::release_http::network)?;
+    let want = sum_for(&sums, name).ok_or_else(|| {
+        crate::release_http::failed(format!("{name} is not in the release checksums"))
+    })?;
+    tokio::fs::create_dir_all(dir)
+        .await
+        .map_err(crate::release_http::failed)?;
+    let part = dir.join(format!("{name}.part"));
+    let streamed = stream_to(
+        client,
+        &asset_url(base, version, name),
+        &part,
+        &mut progress,
+    )
+    .await;
+    match streamed {
+        Ok(got) if got == want => {
+            let out = dir.join(name);
+            tokio::fs::rename(&part, &out)
+                .await
+                .map_err(crate::release_http::failed)?;
+            Ok(out)
+        }
+        Ok(_) => {
+            let _ = tokio::fs::remove_file(&part).await;
+            Err(ApkError::Checksum)
+        }
+        Err(e) => {
+            let _ = tokio::fs::remove_file(&part).await;
+            Err(e)
+        }
     }
+}
+
+async fn stream_to(
+    client: &Client,
+    url: &str,
+    part: &Path,
+    progress: &mut impl FnMut(u64, Option<u64>),
+) -> Result<String, ApkError> {
+    use crate::release_http::{failed, network};
+    let mut res = get(client, url).await?;
+    let total = res.content_length();
+    let mut file = tokio::fs::File::create(part).await.map_err(failed)?;
+    let mut hasher = Sha256::new();
+    let (mut downloaded, mut reported) = (0u64, 0u64);
+    progress(0, total);
+    while let Some(chunk) = res.chunk().await.map_err(network)? {
+        hasher.update(&chunk);
+        file.write_all(&chunk).await.map_err(failed)?;
+        downloaded += chunk.len() as u64;
+        if downloaded - reported >= PROGRESS_STEP || Some(downloaded) == total {
+            reported = downloaded;
+            progress(downloaded, total);
+        }
+    }
+    file.flush().await.map_err(failed)?;
+    Ok(hex(&hasher.finalize()))
 }
 
 #[cfg(any(target_os = "macos", test))]
@@ -377,186 +338,6 @@ pub fn bundle_path(home: Option<&Path>, is_dir: impl Fn(&Path) -> bool) -> Optio
     std::iter::once(Path::new("/").join(APP_BUNDLE))
         .chain(home.map(|h| h.join(APP_BUNDLE)))
         .find(|p| is_dir(p))
-}
-
-fn scrub(line: &str) -> String {
-    line.split('\r')
-        .map(str::trim_end)
-        .rfind(|s| !s.is_empty())
-        .unwrap_or("")
-        .to_string()
-}
-
-fn brew_command(brew: &Path, args: &[&str]) -> tokio::process::Command {
-    let mut dirs: Vec<PathBuf> = brew.parent().map(Path::to_path_buf).into_iter().collect();
-    let inherited = std::env::var_os("PATH")
-        .map(|p| std::env::split_paths(&p).collect::<Vec<_>>())
-        .unwrap_or_default();
-    let defaults = BREW_BINS
-        .iter()
-        .filter_map(|b| Path::new(b).parent().map(Path::to_path_buf));
-    let system = ["/usr/bin", "/bin", "/usr/sbin", "/sbin"].map(PathBuf::from);
-    for d in defaults.chain(inherited).chain(system) {
-        if !dirs.contains(&d) {
-            dirs.push(d);
-        }
-    }
-    let mut cmd = tokio::process::Command::new(brew);
-    cmd.args(args)
-        .env("HOMEBREW_NO_ENV_HINTS", "1")
-        .env("HOMEBREW_NO_COLOR", "1")
-        .env("HOMEBREW_NO_EMOJI", "1")
-        .env("NO_COLOR", "1")
-        .env("NONINTERACTIVE", "1")
-        .env("GIT_TERMINAL_PROMPT", "0")
-        .env_remove("HOMEBREW_NO_AUTO_UPDATE")
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .kill_on_drop(true);
-    if let Ok(path) = std::env::join_paths(dirs) {
-        cmd.env("PATH", path);
-    }
-    if args.first() != Some(&"update") {
-        cmd.env("HOMEBREW_NO_AUTO_UPDATE", "1");
-    }
-    cmd
-}
-
-fn push_line(log: &mut String, line: &str, out: Option<&Channel<UpdateEvent>>) {
-    let line = scrub(line);
-    if line.is_empty() {
-        return;
-    }
-    log.push_str(&line);
-    log.push('\n');
-    if let Some(ch) = out {
-        let _ = ch.send(UpdateEvent::Line { text: line });
-    }
-}
-
-async fn run_brew(
-    brew: &Path,
-    args: &[&str],
-    out: Option<&Channel<UpdateEvent>>,
-) -> (bool, String) {
-    let mut child = match brew_command(brew, args).spawn() {
-        Ok(c) => c,
-        Err(e) => return (false, format!("Error: {e}")),
-    };
-    let (Some(stdout), Some(stderr)) = (child.stdout.take(), child.stderr.take()) else {
-        return (false, "Error: brew has no output".into());
-    };
-    let (mut stdout, mut stderr) = (
-        BufReader::new(stdout).lines(),
-        BufReader::new(stderr).lines(),
-    );
-    let (mut o, mut e) = (true, true);
-    let mut log = String::new();
-    while o || e {
-        tokio::select! {
-            l = stdout.next_line(), if o => match l {
-                Ok(Some(l)) => push_line(&mut log, &l, out),
-                _ => o = false,
-            },
-            l = stderr.next_line(), if e => match l {
-                Ok(Some(l)) => push_line(&mut log, &l, out),
-                _ => e = false,
-            },
-        }
-    }
-    let ok = child.wait().await.map(|s| s.success()).unwrap_or(false);
-    (ok, log)
-}
-
-struct Busy<'a>(&'a AtomicBool);
-
-impl Drop for Busy<'_> {
-    fn drop(&mut self) {
-        self.0.store(false, Ordering::SeqCst);
-    }
-}
-
-#[tauri::command]
-pub async fn update_brew(
-    app: AppHandle,
-    state: State<'_, UpdaterState>,
-    trust: Option<String>,
-    on_progress: Channel<UpdateEvent>,
-) -> Result<Option<String>, BrewError> {
-    crate::diag::info("updater", "updating through Homebrew");
-    let res = brew_update(app, state, trust, on_progress).await;
-    match &res {
-        Ok(v) => crate::diag::info(
-            "updater",
-            format!(
-                "Homebrew update done ({})",
-                v.as_deref().unwrap_or("unknown version")
-            ),
-        ),
-        Err(e) => crate::diag::warn("updater", format!("Homebrew update failed: {e:?}")),
-    }
-    res
-}
-
-async fn brew_update(
-    app: AppHandle,
-    state: State<'_, UpdaterState>,
-    trust: Option<String>,
-    on_progress: Channel<UpdateEvent>,
-) -> Result<Option<String>, BrewError> {
-    if current_kind(&app) != InstallKind::Homebrew {
-        return Err(BrewError::failed(
-            "This installation is not managed by Homebrew",
-        ));
-    }
-    let brew =
-        brew_path(std::env::var_os("PATH").as_deref(), Path::is_file).ok_or(BrewError::Missing)?;
-    if state.brewing.swap(true, Ordering::SeqCst) {
-        return Err(BrewError::failed("An update is already running"));
-    }
-    let _busy = Busy(&state.brewing);
-    let target = state
-        .pending
-        .lock()
-        .unwrap()
-        .as_ref()
-        .map(|u| u.version.clone());
-    let out = Some(&on_progress);
-    let step = |name: &'static str| {
-        let _ = on_progress.send(UpdateEvent::Step { name });
-    };
-
-    if let Some(tap) = trust {
-        if tap != BREW_TAP {
-            return Err(BrewError::failed(format!(
-                "Overseer only trusts {BREW_TAP}, run `brew trust {tap}` yourself"
-            )));
-        }
-        step("trust");
-        let (ok, log) = run_brew(&brew, &["trust", tap.as_str()], out).await;
-        if !ok {
-            return Err(BrewError::failed(last_error(&log)));
-        }
-    }
-
-    step("update");
-    let (ok, log) = run_brew(&brew, &["update"], out).await;
-    if let Err(e @ BrewError::Untrusted { .. }) = classify(&log, ok) {
-        return Err(e);
-    }
-
-    step("upgrade");
-    let (ok, upgrade_log) = run_brew(&brew, &["upgrade", "--cask", CASK_FULL], out).await;
-    classify(&upgrade_log, ok)?;
-
-    if run_brew(&brew, &["list", "--formula", CASK], None).await.0 {
-        step("formula");
-        run_brew(&brew, &["upgrade", "--formula", CASK_FULL], out).await;
-    }
-
-    let (_, list) = run_brew(&brew, &["list", "--cask", "--versions", CASK], None).await;
-    brew_outcome(target.as_deref(), &list, &upgrade_log)
 }
 
 #[cfg(any(target_os = "macos", test))]
@@ -624,9 +405,9 @@ fn relaunch_bundle(app: &AppHandle, reason: &str) -> Result<(), String> {
         let _ = std::process::Command::new("/usr/bin/xattr")
             .args(["-dr", "com.apple.quarantine"])
             .arg(b)
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
             .status();
     }
     let target = bundle
@@ -639,9 +420,9 @@ fn relaunch_bundle(app: &AppHandle, reason: &str) -> Result<(), String> {
             bundle.as_deref(),
             &app.config().identifier,
         ))
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
         .process_group(0)
         .spawn()
         .map_err(|e| e.to_string())?;
@@ -663,211 +444,10 @@ pub fn update_relaunch(app: AppHandle, reason: Option<String>) -> Result<(), Str
     }
 }
 
-#[tauri::command]
-pub async fn update_brew_relaunch(app: AppHandle) -> Result<(), String> {
-    #[cfg(target_os = "macos")]
-    return relaunch_bundle(&app, "relaunch after Homebrew update");
-    #[cfg(not(target_os = "macos"))]
-    {
-        let _ = app;
-        Err("Homebrew updates are macOS only".into())
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn brew_upgrade_names_the_tap_so_homebrew_trusts_it() {
-        assert_eq!(CASK_FULL, format!("{BREW_TAP}/{CASK}"));
-    }
-
-    #[test]
-    fn homebrew_detection() {
-        let roots = [
-            PathBuf::from("/opt/homebrew/Caskroom"),
-            PathBuf::from("/usr/local/Caskroom"),
-        ];
-        let none = |_: &Path| false;
-        let intel = |p: &Path| p == Path::new("/usr/local/Caskroom/overseer");
-        let app = Path::new("/Applications/Overseer.app/Contents/MacOS/overseer-app");
-        let cask = Path::new(
-            "/opt/homebrew/Caskroom/overseer/0.2.0/Overseer.app/Contents/MacOS/overseer-app",
-        );
-        assert_eq!(
-            install_kind("macos", app, &roots, none, false),
-            InstallKind::Bundle
-        );
-        assert_eq!(
-            install_kind("macos", cask, &roots, none, false),
-            InstallKind::Homebrew
-        );
-        assert_eq!(
-            install_kind("macos", app, &roots, intel, false),
-            InstallKind::Homebrew
-        );
-        assert_eq!(
-            install_kind("macos", app, &[], intel, false),
-            InstallKind::Bundle
-        );
-    }
-
-    #[test]
-    fn brew_path_prefers_known_prefixes_then_path() {
-        let path = std::env::join_paths(["/nix/bin", "/custom/bin"]).unwrap();
-        let only = |want: &'static str| move |p: &Path| p == Path::new(want);
-        assert_eq!(
-            brew_path(Some(&path), |_| true),
-            Some(PathBuf::from("/opt/homebrew/bin/brew"))
-        );
-        assert_eq!(
-            brew_path(Some(&path), only("/usr/local/bin/brew")),
-            Some(PathBuf::from("/usr/local/bin/brew"))
-        );
-        assert_eq!(
-            brew_path(Some(&path), only("/custom/bin/brew")),
-            Some(PathBuf::from("/custom/bin/brew"))
-        );
-        assert_eq!(brew_path(None, only("/custom/bin/brew")), None);
-        assert_eq!(brew_path(Some(&path), |_| false), None);
-    }
-
-    #[test]
-    fn brew_success() {
-        let log = "==> Upgrading 1 outdated package:\noverseer 0.6.1 -> 0.6.2\n==> Moving App 'Overseer.app' to '/Applications/Overseer.app'\n🍺  overseer was successfully upgraded!\n";
-        assert_eq!(classify(log, true), Ok(()));
-    }
-
-    #[test]
-    fn brew_untrusted_tap() {
-        let log = "Error: Refusing to load untrusted tap basilelt/tap.\nRun `brew trust basilelt/tap` to trust it.\n";
-        assert_eq!(
-            classify(log, false),
-            Err(BrewError::Untrusted {
-                tap: "basilelt/tap".into()
-            })
-        );
-        let other = "Warning: tap Other/Tap is not trusted. To trust it: brew trust Other/Tap\n";
-        assert_eq!(
-            classify(other, true),
-            Err(BrewError::Untrusted {
-                tap: "other/tap".into()
-            })
-        );
-        assert_eq!(
-            classify("Error: untrusted tap\n", false),
-            Err(BrewError::Untrusted {
-                tap: BREW_TAP.into()
-            })
-        );
-        assert_eq!(untrusted_tap("brew trust `evil;rm -rf`"), BREW_TAP);
-    }
-
-    #[test]
-    fn brew_auth_looking_logs_fall_through_to_the_error_line() {
-        let log = "==> Downloading https://api.github.com/repos/basilelt/overseer/releases/assets/1\ncurl: (22) The requested URL returned error: 404\nError: Download failed on Cask 'overseer' with message: Download failed\n";
-        assert!(
-            matches!(classify(log, false), Err(BrewError::Failed { message }) if message.starts_with("Error: Download failed"))
-        );
-        let git = "fatal: could not read Username for 'https://github.com': terminal prompts disabled\nError: Fetching /opt/homebrew/Library/Taps/basilelt/homebrew-tap failed!\n";
-        assert!(
-            matches!(classify(git, false), Err(BrewError::Failed { message }) if message.contains("Fetching"))
-        );
-    }
-
-    #[test]
-    fn brew_other_failures_keep_the_error_line() {
-        let log = "==> Upgrading overseer\nError: It seems there is already an App at '/Applications/Overseer.app'.\nsome trailing noise\n";
-        assert_eq!(
-            classify(log, false),
-            Err(BrewError::failed(
-                "Error: It seems there is already an App at '/Applications/Overseer.app'."
-            ))
-        );
-        assert_eq!(
-            classify("\n  last words  \n", false),
-            Err(BrewError::failed("last words"))
-        );
-        assert_eq!(
-            classify("", false),
-            Err(BrewError::failed("Homebrew failed"))
-        );
-    }
-
-    #[test]
-    fn installed_cask_version() {
-        assert_eq!(installed_version("overseer 0.6.2\n"), Some("0.6.2"));
-        assert_eq!(installed_version("overseer 0.6.1 0.6.2\n"), Some("0.6.2"));
-        assert_eq!(
-            installed_version("overseer 0.11.1 0.10.0\n"),
-            Some("0.11.1")
-        );
-        assert_eq!(
-            installed_version("Warning: something\noverseer 0.12.0\n"),
-            Some("0.12.0")
-        );
-        assert_eq!(installed_version("overseer latest\n"), Some("latest"));
-        assert_eq!(installed_version("overseer-nightly 1.0\n"), None);
-        assert_eq!(installed_version(""), None);
-    }
-
-    const UPGRADED: &str = "==> Upgrading overseer\noverseer 0.10.0 -> 0.11.1\n🍺  overseer was successfully upgraded!\n";
-
-    #[test]
-    fn brew_outcome_newer_than_offered() {
-        assert_eq!(
-            brew_outcome(Some("0.11.0"), "overseer 0.11.1\n", UPGRADED),
-            Ok(Some("0.11.1".into()))
-        );
-        assert_eq!(
-            brew_outcome(Some("0.11.0"), "overseer 0.12.0\n", ""),
-            Ok(Some("0.12.0".into()))
-        );
-        assert_eq!(
-            brew_outcome(Some("0.9.0"), "overseer 0.10.0\n", ""),
-            Ok(Some("0.10.0".into()))
-        );
-    }
-
-    #[test]
-    fn brew_outcome_same_as_offered() {
-        assert_eq!(
-            brew_outcome(Some("0.11.0"), "overseer 0.11.0\n", ""),
-            Ok(Some("0.11.0".into()))
-        );
-        assert_eq!(
-            brew_outcome(None, "overseer 0.11.0\n", ""),
-            Ok(Some("0.11.0".into()))
-        );
-        assert_eq!(brew_outcome(None, "", ""), Ok(None));
-    }
-
-    #[test]
-    fn brew_outcome_still_older() {
-        assert_eq!(
-            brew_outcome(Some("0.11.0"), "overseer 0.10.0\n", ""),
-            Err(BrewError::Stale)
-        );
-        assert_eq!(
-            brew_outcome(Some("0.11.0"), "overseer 0.10.5\n", UPGRADED),
-            Err(BrewError::Stale)
-        );
-        assert_eq!(brew_outcome(Some("0.11.0"), "", ""), Err(BrewError::Stale));
-    }
-
-    #[test]
-    fn brew_outcome_trusts_the_success_line() {
-        assert_eq!(brew_outcome(Some("0.11.0"), "", UPGRADED), Ok(None));
-        assert_eq!(
-            brew_outcome(Some("0.11.0"), "overseer latest\n", UPGRADED),
-            Ok(Some("latest".into()))
-        );
-        assert_eq!(
-            brew_outcome(Some("0.11.0"), "overseer latest\n", ""),
-            Err(BrewError::Stale)
-        );
-    }
+    use crate::release_http::testhttp;
 
     #[test]
     fn app_bundle_location() {
@@ -958,54 +538,147 @@ mod tests {
     }
 
     #[test]
-    fn brew_gets_no_github_token_env() {
-        let cmd = brew_command(Path::new("/opt/homebrew/bin/brew"), &["update"]);
-        assert!(cmd
-            .as_std()
-            .get_envs()
-            .all(|(k, _)| k != "HOMEBREW_GITHUB_API_TOKEN"));
+    fn only_a_windowsapps_install_is_msix() {
+        for exe in [
+            "/Applications/Overseer.app/Contents/MacOS/overseer-app",
+            "/opt/homebrew/Caskroom/overseer/0.2.0/Overseer.app/Contents/MacOS/overseer-app",
+            "/usr/bin/overseer-app",
+            "/tmp/.mount_Overseer/usr/bin/overseer-app",
+            "C:\\Users\\me\\AppData\\Local\\Overseer\\overseer-app.exe",
+        ] {
+            assert_eq!(install_kind(Path::new(exe)), InstallKind::Bundle, "{exe}");
+        }
+        assert_eq!(
+            install_kind(Path::new(
+                "C:\\Program Files\\WindowsApps\\io.github.basilelt.overseer_1.2.3.0_arm64__x\\Overseer.exe"
+            )),
+            InstallKind::Msix
+        );
     }
 
     #[test]
-    fn progress_lines_keep_the_last_carriage_return_segment() {
-        assert_eq!(scrub("###   10%\r######  50%\r"), "######  50%");
-        assert_eq!(scrub("plain line  "), "plain line");
-        assert_eq!(scrub("\r\r"), "");
+    fn msix_asset_follows_the_release_names() {
+        assert_eq!(msix_name("0.35.0", "x86_64"), "Overseer_0.35.0_x64.msix");
+        assert_eq!(msix_name("0.35.0", "aarch64"), "Overseer_0.35.0_arm64.msix");
+    }
+
+    const SHA: &str = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
+
+    #[test]
+    fn sum_for_reads_one_file_from_sha256sums() {
+        let sums = format!(
+            "{}  Overseer_0.35.0_arm64.msix\n{SHA}  Overseer_0.35.0_x64.msix\n{} *other\n",
+            "0".repeat(64),
+            "1".repeat(64)
+        );
+        assert_eq!(
+            sum_for(&sums, "Overseer_0.35.0_x64.msix").as_deref(),
+            Some(SHA)
+        );
+        assert_eq!(
+            sum_for(&sums, "other").as_deref(),
+            Some("1".repeat(64).as_str())
+        );
+        assert_eq!(sum_for(&sums, "Overseer_0.35.0_x64.msi"), None);
+        assert_eq!(sum_for("nothex  f\n", "f"), None);
+    }
+
+    fn tmp(tag: &str) -> PathBuf {
+        let d = std::env::temp_dir().join(format!("sb-upd-{tag}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        d
+    }
+
+    #[tokio::test]
+    async fn download_verified_keeps_a_matching_file() {
+        let sums = format!("{SHA}  pkg.msix\n");
+        let (base, reqs) =
+            testhttp::serve_script(vec![(200, vec![], &sums), (200, vec![], "abc")]).await;
+        let dir = tmp("ok");
+        let mut seen = Vec::new();
+        let out = download_verified(
+            &client().unwrap(),
+            &base,
+            "0.35.0",
+            "pkg.msix",
+            &dir,
+            |d, _| seen.push(d),
+        )
+        .await
+        .unwrap();
+        assert_eq!(out, dir.join("pkg.msix"));
+        assert_eq!(std::fs::read(&out).unwrap(), b"abc");
+        assert_eq!(seen.last(), Some(&3));
+        let reqs = reqs.await.unwrap();
+        assert!(
+            reqs[0].starts_with("get /basilelt/overseer/releases/download/v0.35.0/sha256sums "),
+            "{}",
+            reqs[0]
+        );
+        assert!(
+            reqs[1].starts_with("get /basilelt/overseer/releases/download/v0.35.0/pkg.msix "),
+            "{}",
+            reqs[1]
+        );
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[tokio::test]
+    async fn download_verified_rejects_a_tampered_file() {
+        let sums = format!("{SHA}  pkg.msix\n");
+        let (base, _r) =
+            testhttp::serve_script(vec![(200, vec![], &sums), (200, vec![], "evil")]).await;
+        let dir = tmp("bad");
+        let err = download_verified(
+            &client().unwrap(),
+            &base,
+            "0.35.0",
+            "pkg.msix",
+            &dir,
+            |_, _| {},
+        )
+        .await;
+        assert_eq!(err, Err(ApkError::Checksum));
+        assert!(!dir.join("pkg.msix").exists() && !dir.join("pkg.msix.part").exists());
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[tokio::test]
+    async fn download_verified_fails_when_the_asset_is_not_listed() {
+        let (base, _r) = testhttp::serve_script(vec![(200, vec![], "")]).await;
+        let err = download_verified(
+            &client().unwrap(),
+            &base,
+            "0.35.0",
+            "pkg.msix",
+            &tmp("missing"),
+            |_, _| {},
+        )
+        .await;
+        assert!(matches!(err, Err(ApkError::Failed { message }) if message.contains("pkg.msix")));
+    }
+
+    #[tokio::test]
+    async fn download_verified_reports_a_missing_release() {
+        let (base, _r) = testhttp::serve_script(vec![(404, vec![], "")]).await;
+        let err = download_verified(
+            &client().unwrap(),
+            &base,
+            "0.35.0",
+            "pkg.msix",
+            &tmp("404"),
+            |_, _| {},
+        )
+        .await;
+        assert!(matches!(err, Err(ApkError::Failed { message }) if message.contains("404")));
     }
 
     #[test]
-    fn linux_and_windows_kinds() {
-        let exe = Path::new("/usr/bin/overseer-app");
-        let any = |_: &Path| true;
+    fn http_errors_read_as_text() {
         assert_eq!(
-            install_kind("linux", exe, &[], any, true),
-            InstallKind::Bundle
+            http_error(ApkError::Checksum),
+            "The download does not match the release checksum"
         );
-        assert_eq!(
-            install_kind("linux", exe, &[], any, false),
-            InstallKind::Package
-        );
-        assert_eq!(
-            install_kind(
-                "windows",
-                Path::new("C:\\Overseer\\overseer-app.exe"),
-                &[],
-                any,
-                false
-            ),
-            InstallKind::Bundle
-        );
-        assert_eq!(
-            install_kind(
-                "windows",
-                Path::new(
-                    "C:\\Program Files\\WindowsApps\\io.github.basilelt.overseer_1.2.3.0_arm64__x\\Overseer.exe"
-                ),
-                &[],
-                any,
-                false
-            ),
-            InstallKind::Package
-        );
+        assert_eq!(http_error(crate::release_http::failed("x")), "x");
     }
 }

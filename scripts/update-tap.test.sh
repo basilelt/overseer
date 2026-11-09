@@ -38,6 +38,7 @@ check() {
     brew audit --strict --cask overseer-ci/tap/overseer &&
     grep -q 'url "https://github.com/basilelt/overseer/releases/download/v#{version}/' "$tap_dir/Casks/overseer.rb" &&
     grep -q 'strategy :github_latest' "$tap_dir/Casks/overseer.rb" &&
+    grep -q '^  auto_updates true$' "$tap_dir/Casks/overseer.rb" &&
     grep -q 'zap launchctl: "dev.overseer.daemon"' "$tap_dir/Casks/overseer.rb" &&
     grep -q 'args:         \["uninstall", "--apply"\]' "$tap_dir/Casks/overseer.rb" &&
     grep -q '"~/.overseer",' "$tap_dir/Casks/overseer.rb" &&
