@@ -1,6 +1,6 @@
 mod common;
 
-use common::{bin, output, read_until, wait_for, App};
+use common::{bin, output, read_until, send, wait_for, App};
 use serde_json::{json, Value};
 use std::process::Command;
 
@@ -372,4 +372,45 @@ fn subtasks_and_reviewers_start_on_their_own_and_a_silent_reviewer_rejects() {
         app.ok("GET", &format!("/v1/tasks/{}", id(&r)), Value::Null)["status"],
         "completed"
     );
+}
+
+#[test]
+fn a_rejected_worker_goes_back_to_work_and_its_next_turn_starts_round_two() {
+    let app = App::new("quorum-round", json!({"autoConcurrency": 2}));
+    let wt = app.fx.wt.to_string_lossy().into_owned();
+    let root = app.ok(
+        "POST",
+        "/v1/tasks",
+        json!({"title": "Job", "project": wt, "agent": "claude",
+               "quorum": {"workers": ["claude"], "reviewers": ["opencode"]}}),
+    );
+    let w = app.ok(
+        "POST",
+        "/v1/tasks",
+        json!({"title": "Part", "project": wt, "parentId": id(&root)}),
+    );
+    let wid = id(&w);
+    let get = || app.ok("GET", &format!("/v1/tasks/{wid}"), Value::Null);
+    let term = wait_for(|| get()["termId"].as_str().map(str::to_string));
+    let mut ws = app.ws(&term);
+    read_until(&mut ws, "❯");
+    let turn = |ws: &mut _| {
+        send(ws, "busy\n");
+        send(ws, "done\n");
+    };
+    turn(&mut ws);
+    wait_for(|| (get()["votes"]["round"] == 1).then_some(()));
+    let r = children(&app, &wid).pop().unwrap();
+    let mut c = Command::new(bin());
+    app.fx.env(&mut c);
+    c.env("OVERSEER_TASK_ID", id(&r))
+        .args(["vote", "reject", "no", "tests"]);
+    assert!(output(&mut c, None).status.success());
+    let w = get();
+    assert_eq!(w["votes"]["outcome"], "rejected");
+    assert_eq!(w["status"], "in_progress");
+    turn(&mut ws);
+    wait_for(|| (get()["votes"]["round"] == 2).then_some(()));
+    assert_eq!(get()["status"], "in_testing");
+    assert_eq!(children(&app, &wid).len(), 2);
 }

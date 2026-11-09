@@ -332,6 +332,10 @@ fn record(
     state["votes"] = json!(votes);
     state["outcome"] = json!(decided);
     let round = state["round"].as_u64().unwrap_or(1);
+    if decided == Some("rejected") && w.status == "in_testing" && w.live_term().is_some() {
+        w.status = "in_progress".into();
+        w.started_ms = Some(crate::procs::now_ms());
+    }
     tasks::store(reg, &mut w, &ctx.config.station_id)?;
     if let Some(o) = decided {
         stop_reviewers(ctx, reg, &w.id);
@@ -368,7 +372,7 @@ fn verdict(w: &Task, round: u64, o: &str, votes: &[Value], voters: usize) -> Str
         )
     } else {
         format!(
-            "Send the fixes to it with send_message (to: {}); it is reviewed again when it is ready.",
+            "Send the fixes to it with send_message (to: {}); it is reviewed again when its next turn ends.",
             w.id
         )
     };

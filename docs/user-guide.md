@@ -1270,8 +1270,12 @@ needs the Overseer MCP); with another agent the switch is disabled with a hint.
   strict majority of all voters: with one reviewer both must approve (2 of 2), with two reviewers 2 of 3.
   The worker card shows the tally (for example **2/3 accepted · Round 1**, **1/3 rejected**, or
   **1/3 voting** until the daemon decides); the task detail lists each vote with its reason.
-- The orchestrator merges accepted branches into its own branch. After a rejection it sends the
-  reasons to the worker as a message; when the worker is ready again it is reviewed in a new round.
+- The daemon sends the outcome and every reason to the orchestrator, which merges accepted branches
+  into its own branch. After a rejection a worker that still runs goes back to In progress; the
+  orchestrator sends it the fixes, and when its next turn ends it is reviewed in a new round. A
+  reviewer that ends without voting counts as a rejection.
+- While it waits for subtasks, the orchestrator's card can sit in Review between its turns; its
+  messages still reach it.
 - Agents that have the Overseer MCP (Claude Code, Codex) vote with the `cast_vote` tool. Any other
   reviewer votes from its task terminal with the CLI: `overseer vote approve "<reason>"` or
   `overseer vote reject "<reason>"`.
