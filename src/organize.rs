@@ -1298,6 +1298,7 @@ mod tests {
             updated_ms: NOW,
             subject: false,
             cwd: None,
+            parent_id: None,
         }
     }
 
