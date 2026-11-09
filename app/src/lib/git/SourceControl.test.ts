@@ -99,6 +99,10 @@ describe('git tab', () => {
     expect(graph).toMatch(/\.graph\.phone \.toolbar \{\s*flex-wrap: wrap;/);
   });
 
+  it('follows the layout live, so a tablet turning across the phone width switches layout', () => {
+    expect(graph).toMatch(/const phone = \$derived\(isPhone\(\)\);/);
+  });
+
   it('splits changes and graph into tabs on phone', () => {
     expect(graph).toMatch(/\{#if phone\}\s*<div class="ptabs" role="tablist">/);
     expect(graph).toMatch(/class:hidden=\{phone && phoneView !== 'graph'\}/);

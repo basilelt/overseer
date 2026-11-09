@@ -54,7 +54,7 @@
     phoneView = 'changes';
     app.gitWorktree = null;
   });
-  const phone = isPhone();
+  const phone = $derived(isPhone());
   const scm = new Scm(
     () => (app.client ? gitApi(app.client) : null),
     (text) => app.notify(text, 'error'),
