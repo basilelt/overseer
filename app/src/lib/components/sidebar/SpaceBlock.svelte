@@ -176,7 +176,7 @@
           <div class="kids">{@render list(workspaceSessions(c.items, now), c.id, kids.isClosedOpen(c.id), () => kids.onclosed(c.id))}</div>
         {/if}
       {/each}
-      {#if kids.onnew}<button class="more new" type="button" onclick={kids.onnew}>{t('ws.sub.add')}</button>{/if}
+      {#if kids.onnew}<button class="more new" type="button" data-tour="subjects" onclick={kids.onnew}>{t('ws.sub.add')}</button>{/if}
     {/if}
   </WorkspaceFrame>
 {:else}
