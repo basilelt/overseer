@@ -344,7 +344,7 @@ asked, so a missing secret fails them.
 
 | Secret | Enables | Without it |
 |---|---|---|
-| `TAURI_SIGNING_PRIVATE_KEY` | minisign signatures of the self-updating bundles (`.AppImage.sig`, `-setup.exe.sig`, `.app.tar.gz.sig`) and `latest.json`, so installed apps update themselves | bundles built without updater artifacts, no `.sig`, no `latest.json`: installed apps do not see the release |
+| `TAURI_SIGNING_PRIVATE_KEY` | minisign signatures of the self-updating bundles (`.AppImage.sig`, `-setup.exe.sig`, `.app.tar.gz.sig`, `.deb.sig`, `.rpm.sig`) and `latest.json`, so installed apps update themselves | bundles built without updater artifacts, no `.sig`, no `latest.json`: installed apps do not see the release |
 | `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | password of that key (leave unset if the key has none) | |
 | `MACOS_SELF_SIGN_P12_BASE64`, `MACOS_SELF_SIGN_P12_PASSWORD` | stable self-signed macOS code signature ([macOS signing](#macos-signing)) | ad-hoc signature: macOS forgets the Local Network grant on every update |
 | `APPLE_CERTIFICATE`, `APPLE_CERTIFICATE_PASSWORD`, `APPLE_SIGNING_IDENTITY` | Developer ID signature of the macOS app (wins over the self-signed one) | self-signed or ad-hoc, as above |
@@ -377,8 +377,8 @@ The `.msix` packages wrap the same `overseer-app.exe` as the NSIS installer with
 publisher `CN=basilelt`), packed with `makeappx` and signed with `signtool` from the Windows SDK of
 the runner (`scripts/msix.sh`). Windows installs an MSIX only when its signer is trusted, so each
 release also carries the public `overseer-msix.cer`; users import it once into Local Machine >
-Trusted People. An MSIX install never self-updates: the app sees its `WindowsApps` path and shows
-the release link like a `.deb`/`.rpm` install. Windows keeps an MSIX app's `%APPDATA%` apart, so
+Trusted People. An MSIX install updates from the app: it sees its `WindowsApps` path, downloads the matching
+`.msix`, checks its SHA-256 against `SHA256SUMS` and opens it in Windows App Installer. Windows keeps an MSIX app's `%APPDATA%` apart, so
 switching between the MSIX and the NSIS install starts with fresh settings.
 
 Create the certificate once, on any machine with `openssl`:
@@ -405,12 +405,16 @@ The app updates itself with `tauri-plugin-updater` from the GitHub releases (`ap
 - Updater files attached to the release: `Overseer_<v>_amd64.AppImage.sig`,
   `Overseer_<v>_aarch64.AppImage.sig`, `Overseer_<v>_x64-setup.exe.sig`,
   `Overseer_<v>_arm64-setup.exe.sig`, and `Overseer_<v>_aarch64.app.tar.gz` and
-  `Overseer_<v>_x64.app.tar.gz` with their `.sig` (renamed from `bundle/macos/Overseer.app.tar.gz`). `.deb`, `.rpm` and `.dmg` are not
-  self-updating.
+  `Overseer_<v>_x64.app.tar.gz` with their `.sig` (renamed from `bundle/macos/Overseer.app.tar.gz`),
+  and the `.deb.sig` and `.rpm.sig` files tauri already produced for the Linux packages. The
+  `.dmg` and `.msix` have no signature; the app checks a downloaded `.msix` against `SHA256SUMS`.
 - `publish` then runs `scripts/latest-json.sh <version>`: it reads `gh release view --json
   assets,body,publishedAt`, downloads the `.sig` files and writes `latest.json` with `version`,
   `notes` (the release body), `pub_date` and `platforms` (`darwin-aarch64`, `darwin-x86_64`,
-  `windows-x86_64`, `windows-aarch64`, `linux-x86_64`, `linux-aarch64`). URLs are API
+  `windows-x86_64`, `windows-aarch64`, `linux-x86_64`, `linux-aarch64`, plus
+  `linux-x86_64-deb`, `linux-aarch64-deb`, `linux-x86_64-rpm`, `linux-aarch64-rpm`, which the
+  updater plugin looks up first as `{os}-{arch}-{bundle}` so a `.deb` or `.rpm` install gets its own
+  package). URLs are API
   asset URLs (`https://api.github.com/repos/.../releases/assets/<id>`), which the app downloads
   with `Accept: application/octet-stream`; on a public repository they need no token. A platform
   without a signed file is left out with a warning; no platform at all fails the step. It is
@@ -428,7 +432,8 @@ with the old key, before signing with the new one.
 ## Homebrew tap
 
 `basilelt/homebrew-tap` (tap `basilelt/tap`) has the `overseer` cask (the `.dmg`) and formula (the
-daemon binaries for macOS and Linux, both arches). The `tap` job, after `publish` and only when
+daemon binaries for macOS and Linux, both arches). The cask declares `auto_updates true`: the app
+updates itself, so `brew upgrade` skips it, and the app never runs `brew`. The `tap` job, after `publish` and only when
 `HOMEBREW_TAP_DEPLOY_KEY` is set:
 
 1. checks out the tap over SSH with the deploy key;

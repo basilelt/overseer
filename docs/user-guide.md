@@ -26,6 +26,17 @@ and `~/Library/Application Support/overseer` on macOS; `OVERSEER_STATE_DIR` over
 `bin/overseer` (the in-checkout wrapper) uses `<checkout>/.state` unless the variable is set.
 Make sure the CLI, the services and the hooks resolve the same dir.
 
+**Updating the desktop app.** The app never runs Homebrew. **Settings, Updates** (and the update
+pill) offer one **Download & install** button that downloads the release asset matching how the app
+was installed and installs it: on macOS (`.dmg` or Homebrew cask) the signed `.app.tar.gz` replaces
+the app in place and **Restart to finish** relaunches it; an AppImage is replaced in place; a `.deb`
+or `.rpm` install downloads the signed package and installs it with `dpkg -i` or `rpm -U` through
+`pkexec` (a system password prompt), then restarts; a Windows `-setup.exe` install runs the signed
+installer in passive mode; a Windows `.msix` install downloads the matching x64 or arm64 `.msix`,
+checks its SHA-256 against the release `SHA256SUMS` and opens it in Windows App Installer, where you
+click **Update**. The Homebrew cask declares `auto_updates true`, so `brew upgrade` skips an app that
+updated itself; `brew install` still works for a first install.
+
 ## 3. Per-station setup
 
 ### 3.1 State dir and `config.json`
@@ -887,7 +898,7 @@ On first launch, once the app is connected (immediately in local mode, after the
 connection on a phone), a welcome card offers **Take the tour** or **Skip**. The tour dims the
 window and highlights the real controls one at a time: host chip, workspaces sidebar, tabs and the
 new-session menu, the Terminal/Chat toggle, the side panel, Tasks, Review, the usage, system and ports
-chips, notifications and hooks, the command palette and Feedback, in 0.25 the Cmd/Ctrl+P palette shortcut, and in 0.27 the demo mode (on the **Demo mode** pill while in the demo, else on the host chip), and in 0.28 the GPU rendering option for terminals, and in 0.29 the clean up of unused worktrees and the import from Switchboard (on its button in Settings, Help, or on the Settings button), and in 0.30 click to move the cursor in a terminal (on the tabs), and in 0.31 the Light and Dark palettes (on Settings, or More on a phone), and in 0.33 the one-click install of skills and plugins (on Settings), and in 0.34 the auto-approval defaults (on Settings, Agents), the Review, Merged and Closed columns (on the Merged column when the board is open, else on the Tasks tab) and the clean removal of everything Overseer added (on Settings, Connection, **Remove**). Steps whose control is not on
+chips, notifications and hooks, the command palette and Feedback, in 0.25 the Cmd/Ctrl+P palette shortcut, and in 0.27 the demo mode (on the **Demo mode** pill while in the demo, else on the host chip), and in 0.28 the GPU rendering option for terminals, and in 0.29 the clean up of unused worktrees and the import from Switchboard (on its button in Settings, Help, or on the Settings button), and in 0.30 click to move the cursor in a terminal (on the tabs), and in 0.31 the Light and Dark palettes (on Settings, or More on a phone), and in 0.33 the one-click install of skills and plugins (on Settings), and in 0.34 the auto-approval defaults (on Settings, Agents), the Review, Merged and Closed columns (on the Merged column when the board is open, else on the Tasks tab) and the clean removal of everything Overseer added (on Settings, Connection, **Remove**), and in 0.35 one-click in-app updates for every install (on Settings, Updates, else on the Settings button). Steps whose control is not on
 screen (no session selected, a feature the server lacks, phone layout) are skipped. On a phone the
 card is a sheet at the bottom (or top, when the control sits low) and points at the bottom
 navigation, the session strip and the menu.
@@ -1534,8 +1545,10 @@ through the daemon: `list_tasks`, `get_task`, `create_task` (always `pending`; o
 `update_task_progress {done,total,note}` and `set_task_status` (only its own task, only to
 `in_testing`, `merged` or `in_progress`; `in_progress` only while its agent runs). The daemon sets `OVERSEER_TASK_ID` in agents it starts for a task. Codex tasks get
 the server on their command line (`-c mcp_servers.overseer.*`, with the task id and state dir in
-its env, since Codex clears the environment of MCP servers), so Codex agents can message other
-agents without any setup. Overseer never edits agent configuration; to enable it yourself
+its env, since Codex clears the environment of MCP servers) and Claude Code tasks get it through
+`--mcp-config` (its tools pre-approved with `--allowedTools mcp__overseer`), so those agents can
+message other agents without any setup. Every task terminal also has the directory of the
+`overseer` shim (`~/.overseer/bin`) on its `PATH`, so the `overseer` CLI works in it. Overseer never edits agent configuration; to enable it yourself
 elsewhere:
 
 - Claude Code (user scope): `claude mcp add --scope user overseer -- /path/to/overseer mcp`,
@@ -1977,7 +1990,7 @@ Per platform:
 | Platform | How |
 | --- | --- |
 | Windows | Uninstalling from Apps and features runs `overseer uninstall --apply` first only when you tick the uninstaller's **Delete the application data** box; a plain uninstall or reinstall keeps your tasks and state. An update never does: the updater's installer runs the old uninstaller in update mode, which skips it. |
-| macOS, Homebrew | `brew uninstall --cask overseer` removes the app; add `--zap` (`brew uninstall --zap --cask overseer`) to also run `overseer uninstall --apply` and delete the app's data. Plain `brew uninstall` and `brew upgrade` leave hooks and data alone on purpose. |
+| macOS, Homebrew | `brew uninstall --cask overseer` removes the app; add `--zap` (`brew uninstall --zap --cask overseer`) to also run `overseer uninstall --apply` and delete the app's data. Plain `brew uninstall` leaves hooks and data alone on purpose, and an in-app update never touches them. |
 | macOS, dragged to the Trash | Click the in-app button first (or run `/Applications/Overseer.app/Contents/Resources/server/darwin-<arch>/overseer uninstall --apply`), then delete the app. |
 | Linux `.deb`, `.rpm`, AppImage | The packages ship no removal script (it would also run on upgrades, as root, without your home). Click the in-app button or run `~/.overseer/bin/overseer uninstall --apply` first, then remove the package or the AppImage. |
 | Remote server | Connect to it and use the button, or run `~/.overseer/bin/overseer uninstall --apply` on the server. |

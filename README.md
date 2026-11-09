@@ -170,8 +170,10 @@ brew install --formula basilelt/tap/overseer
 ```
 
 The full `basilelt/tap/...` name taps the repository and tells Homebrew to trust these packages,
-so no `brew trust` or `--trust` step is needed. Upgrade with
-`brew update && brew upgrade --cask basilelt/tap/overseer && brew upgrade --formula basilelt/tap/overseer`.
+so no `brew trust` or `--trust` step is needed. Homebrew is only the first install: the app
+updates itself afterwards (see [Updates](#updates)) and the cask declares `auto_updates true`, so
+`brew upgrade` leaves it alone. To upgrade the `overseer` CLI/daemon formula, run
+`brew update && brew upgrade --formula basilelt/tap/overseer`.
 
 The app is signed with a Developer ID and notarized by Apple, so macOS opens it without a
 warning. Each release asset carries a build provenance attestation:
@@ -184,7 +186,7 @@ Download from the latest release (`.AppImage`, `.deb` or `.rpm` on Linux x64 and
 `-setup.exe` or `.msix` on Windows x64 and arm64). The Linux builds need glibc 2.35 or newer
 (Ubuntu 22.04, Debian 12, Fedora 36 and later). The `.msix` is self-signed: import
 `overseer-msix.cer` from the release into Local Machine > Trusted People once, then open the
-`.msix`; it does not update itself, use the `-setup.exe` for in-app updates. For example:
+`.msix`. Every one of these installs updates itself from the app afterwards. For example:
 
 ```sh
 gh release download --repo basilelt/overseer --pattern '*.AppImage'
@@ -206,20 +208,27 @@ updater. iOS: [Overseer Agents on the App Store](https://apps.apple.com/us/app/o
 
 #### Google Play (closed testing)
 
-Overseer is in closed testing on Google Play before its public release. To install it from Play
-and get updates there:
+Overseer is in closed testing on Google Play before its public release. Testers get it for free
+with a promo code. To install it from Play and get updates there:
 
 1. With the Google account of your Android phone, join the
    [Overseer testers group](https://groups.google.com/g/overseer-testers) ("Join group").
 2. Open the [testing invitation](https://play.google.com/apps/testing/io.github.basilelt.overseer.pro)
    with the same account and tap **Become a tester**. If it says the app is not available, the
    group join has not reached Play yet: wait a few minutes and reload.
-3. Install Overseer from the
-   [Play Store page](https://play.google.com/store/apps/details?id=io.github.basilelt.overseer.pro)
-   (the link from the invitation page). Updates arrive through Play like any app.
-4. Stay in the group and keep the app installed: Play only opens the app to everyone after
+3. Get a free promo code: in the group, open the pinned **Free promo codes** post and its code
+   sheet, take the first code nobody has claimed and write your name next to it. Each code works
+   once.
+4. Redeem it with the same account: tap its redeem link, or in the Play Store app, your profile
+   picture > **Payments & subscriptions** > **Redeem code**. Overseer is then yours at no cost;
+   install it from the
+   [Play Store page](https://play.google.com/store/apps/details?id=io.github.basilelt.overseer.pro).
+   Updates arrive through Play like any app.
+5. Stay in the group and keep the app installed: Play only opens the app to everyone after
    testers have used it for 14 days. Send feedback from the app (More > Send feedback) or on the
    Play listing.
+
+No code left? Ask in the group.
 
 No server yet? Tap **Try the demo** on the first screen to explore the app with sample data.
 
@@ -249,9 +258,18 @@ do it for you; on a server run `overseer uninstall --apply`. See the
 
 ### Updates
 
-From 0.4.0 the app updates itself (AppImage and Windows installer) from the public GitHub
-releases; no token or sign-in is needed. Homebrew installs get an Update button that runs
-`brew upgrade` for you (the command stays copyable); `.deb`/`.rpm` installs link to the release.
+The desktop app updates itself from the public GitHub releases; no token or sign-in is needed,
+and it never runs Homebrew. Whatever way you installed it, one **Download & install** button
+fetches the update that matches that install and applies it:
+
+- **macOS** (from the `.dmg` or the Homebrew cask): the app is replaced in place, then **Restart
+  to finish**.
+- **Linux AppImage**: the AppImage is replaced in place.
+- **Linux `.deb` or `.rpm`**: the signed package of the release is downloaded and installed with
+  `dpkg -i` or `rpm -U` through `pkexec`, so the system asks for your password; then restart.
+- **Windows `-setup.exe`**: the signed installer runs in passive mode.
+- **Windows `.msix`**: the matching x64 or arm64 `.msix` is downloaded, checked against the
+  release `SHA256SUMS`, and Windows App Installer opens it; click **Update** there.
 
 ## Components
 

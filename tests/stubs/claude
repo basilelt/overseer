@@ -10,6 +10,7 @@ done
 dir=${CLAUDE_CONFIG_DIR:?}
 mkdir -p "$dir/sessions"
 echo "$$ $*" >> "${SB_STUB_LOG:?}"
+printf '%s\n' "$PATH" > "$SB_STUB_LOG.path"
 # procStart is /proc's start tick; empty elsewhere, where the daemon compares startedAt instead.
 start=$(cut -d' ' -f22 /proc/$$/stat 2>/dev/null || true)
 started=$(date +%s)000

@@ -37,6 +37,10 @@ add windows-x86_64 _x64-setup.exe
 add windows-aarch64 _arm64-setup.exe
 add linux-x86_64 _amd64.AppImage
 add linux-aarch64 _aarch64.AppImage
+add linux-x86_64-deb _amd64.deb
+add linux-aarch64-deb _arm64.deb
+add linux-x86_64-rpm .x86_64.rpm
+add linux-aarch64-rpm .aarch64.rpm
 
 if [ "$platforms" = '{}' ]; then
   echo "v$version has no signed updater artifact" >&2
