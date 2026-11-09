@@ -479,6 +479,10 @@ fn tasks(r: &Request, segs: &[&str], body: &Value, ctx: &Ctx) -> Option<(u16, Va
         ("GET", ["v1", "tasks", id, "overlaps"]) => {
             res(200, crate::task_agents::overlaps(ctx, id).map(Value::from))
         }
+        ("POST", ["v1", "tasks", id, "votes"]) => res(
+            200,
+            crate::quorum::vote(ctx, id, body).map(|t| t.to_json(st)),
+        ),
         ("POST", ["v1", "tasks", id, "review"]) => res(200, tasks::review(ctx, id, body)),
         ("GET", ["v1", "projects"]) => res(
             200,

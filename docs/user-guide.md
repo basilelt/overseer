@@ -898,7 +898,7 @@ On first launch, once the app is connected (immediately in local mode, after the
 connection on a phone), a welcome card offers **Take the tour** or **Skip**. The tour dims the
 window and highlights the real controls one at a time: host chip, workspaces sidebar, tabs and the
 new-session menu, the Terminal/Chat toggle, the side panel, Tasks, Review, the usage, system and ports
-chips, notifications and hooks, the command palette and Feedback, in 0.25 the Cmd/Ctrl+P palette shortcut, and in 0.27 the demo mode (on the **Demo mode** pill while in the demo, else on the host chip), and in 0.28 the GPU rendering option for terminals, and in 0.29 the clean up of unused worktrees and the import from Switchboard (on its button in Settings, Help, or on the Settings button), and in 0.30 click to move the cursor in a terminal (on the tabs), and in 0.31 the Light and Dark palettes (on Settings, or More on a phone), and in 0.33 the one-click install of skills and plugins (on Settings), and in 0.34 the auto-approval defaults (on Settings, Agents), the Review, Merged and Closed columns (on the Merged column when the board is open, else on the Tasks tab) and the clean removal of everything Overseer added (on Settings, Connection, **Remove**), and in 0.35 one-click in-app updates for every install (on Settings, Updates, else on the Settings button). Steps whose control is not on
+chips, notifications and hooks, the command palette and Feedback, in 0.25 the Cmd/Ctrl+P palette shortcut, and in 0.27 the demo mode (on the **Demo mode** pill while in the demo, else on the host chip), and in 0.28 the GPU rendering option for terminals, and in 0.29 the clean up of unused worktrees and the import from Switchboard (on its button in Settings, Help, or on the Settings button), and in 0.30 click to move the cursor in a terminal (on the tabs), and in 0.31 the Light and Dark palettes (on Settings, or More on a phone), and in 0.33 the one-click install of skills and plugins (on Settings), and in 0.34 the auto-approval defaults (on Settings, Agents), the Review, Merged and Closed columns (on the Merged column when the board is open, else on the Tasks tab) and the clean removal of everything Overseer added (on Settings, Connection, **Remove**), and in 0.35 one-click in-app updates for every install (on Settings, Updates, else on the Settings button), and in 0.36 the Quorum option of a new task (on the Quorum control in the New task dialog, else on the Tasks tab). Steps whose control is not on
 screen (no session selected, a feature the server lacks, phone layout) are skipped. On a phone the
 card is a sheet at the bottom (or top, when the control sits low) and points at the bottom
 navigation, the session strip and the menu.
@@ -1252,6 +1252,31 @@ curl --unix-socket "$S" 'http://unix/v1/tasks?status=in_progress,in_testing'
   files, create tasks or start tasks, and its task stays off the board: an "Organizing…" label
   replaces the button while it runs. **Settings → Auto organize** runs it by itself, shortly
   after new tasks arrive (off by default).
+
+#### 14.2c Quorum
+
+Tick **Quorum** in the New task dialog to have several agent CLIs share one task and check each
+other. It is only offered when the task's agent is Claude Code or Codex (the orchestrator, which
+needs the Overseer MCP); with another agent the switch is disabled with a hint.
+
+- **Workers** (one or more installed agents) get the subtasks the orchestrator cuts the task into.
+  **Reviewers** (one or two installed agents) review each worker's result. Neither list can hold
+  `shell` or the same agent twice. The defaults are every installed agent as a worker and two
+  other agents as reviewers.
+- The orchestrator creates the subtasks, which start by themselves on their own branches, with one
+  worker agent each. The root card carries a **Quorum** chip (hover for the agents); a subtask's
+  reviewer tasks carry a **Reviewer #N** chip and start by themselves when the worker reaches Review.
+- Every reviewer and the orchestrator vote approve or reject, with a reason. A result is accepted on a
+  strict majority of all voters: with one reviewer both must approve (2 of 2), with two reviewers 2 of 3.
+  The worker card shows the tally (for example **2/3 accepted · Round 1**, **1/3 rejected**, or
+  **1/3 voting** until the daemon decides); the task detail lists each vote with its reason.
+- The orchestrator merges accepted branches into its own branch. After a rejection it sends the
+  reasons to the worker as a message; when the worker is ready again it is reviewed in a new round.
+- Agents that have the Overseer MCP (Claude Code, Codex) vote with the `cast_vote` tool. Any other
+  reviewer votes from its task terminal with the CLI: `overseer vote approve "<reason>"` or
+  `overseer vote reject "<reason>"`.
+- The quorum is set when the task is created and can only change while the task is Pending or Auto.
+  A subtask cannot run its own quorum.
 
 #### 14.2a Session tasks
 

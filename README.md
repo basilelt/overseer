@@ -76,7 +76,9 @@ their own, in order, within your concurrency limit. A new task can be filled fro
 GitHub or GitLab issues or Jira tickets, and agents can read and update tasks through the
 built-in MCP server. Finished work waits in **Review**; a task moves to **Merged** by itself once
 its branch lands in the default branch, **Closed** keeps the rest, and an agent moves its task
-back to In progress when work resumes.
+back to In progress when work resumes. Tick **Quorum** on a Claude or Codex task and its agent
+splits the work between several agent CLIs; one or two other agents review each result and vote
+with the orchestrator, and only results a majority accepts are merged.
 
 ![Tasks](app/docs/screenshots/kanban-dark.png)
 

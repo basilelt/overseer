@@ -7,6 +7,9 @@
   import { flagPatch, isSession, mergeMessage, quadrant, quadrantFlags } from '../../kanban';
   import { onDestroy, untrack } from 'svelte';
   import DepPicker from './DepPicker.svelte';
+  import QuorumChips from './QuorumChips.svelte';
+  import { agentName } from '../../agents';
+  import { fromOverseer } from '../../quorum';
   import type { Task, TaskMessage } from '../../types';
 
   let { onclose }: { onclose: () => void } = $props();
@@ -90,6 +93,7 @@
   }
 
   function sender(m: TaskMessage): string {
+    if (fromOverseer(m)) return t('task.fromOverseer');
     if (m.from === null) return t('task.you');
     if (m.from === task?.id) {
       const to = app.data.tasks.find((x) => x.id === m.taskId);
@@ -110,9 +114,31 @@
           {#if task.origin === 'agent'}
             <span class="by"><Bot size={11} />{parent ? t('task.createdByTask', { n: parent.number }) : t('task.createdByAgent')}</span>
           {/if}
+          <QuorumChips {task} />
         </div>
         {#if task.description}<p class="desc">{task.description}</p>{/if}
       </div>
+
+      {#if task.quorum}
+        <section>
+          <h4>{t('quorum.config')}</h4>
+          <p class="desc">{t('quorum.configBody', { workers: task.quorum.workers.map((id) => agentName(app.agents, id)).join(', '), reviewers: task.quorum.reviewers.map((id) => agentName(app.agents, id)).join(', ') })}</p>
+        </section>
+      {/if}
+
+      {#if task.votes}
+        <section>
+          <h4>{t('quorum.votes')} · {t('quorum.round', { n: task.votes.round })}</h4>
+          <ul class="votes">
+            {#each task.votes.votes as v (v.from)}
+              <li class:no={!v.approve}>
+                <div class="who"><span>{v.role === 'orchestrator' ? t('quorum.orchestrator') : t('quorum.reviewer')} #{v.number} · {agentName(app.agents, v.agent)}</span><span class="verdict">{v.approve ? t('quorum.approve') : t('quorum.reject')}</span></div>
+                {#if v.reason}<div class="reason">{v.reason}</div>{/if}
+              </li>
+            {/each}
+          </ul>
+        </section>
+      {/if}
 
       {#if !isSession(task)}
         <section>
@@ -145,7 +171,7 @@
         <h4>{t('task.messages')}</h4>
         <div class="list" bind:this={list} role="log" aria-label={t('task.messages')}>
           {#each messages as m (m.id)}
-            <div class="msg" class:mine={m.from === null} class:out={m.from === task.id}>
+            <div class="msg" class:mine={m.from === null && !fromOverseer(m)} class:out={m.from === task.id}>
               <div class="who"><span>{sender(m)}</span>{#if !m.delivered}<span class="faint">{t('task.undelivered')}</span>{/if}</div>
               <div class="text">{m.body}</div>
             </div>
@@ -231,6 +257,35 @@
   }
   .quad.delegate {
     --c: var(--st-input);
+  }
+  .votes {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .votes li {
+    padding: 6px 8px;
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--st-done);
+    border-radius: var(--radius);
+    font-size: 12px;
+  }
+  .votes li.no {
+    border-left-color: var(--st-failed);
+  }
+  .votes .who {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+    color: var(--text-2);
+  }
+  .votes .reason {
+    margin-top: 2px;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
   }
   .prio {
     display: flex;

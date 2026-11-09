@@ -13,6 +13,8 @@
   import { initialChoice, resolveProfile } from '../../profiles';
   import ProfileSelect from '../ui/ProfileSelect.svelte';
   import DepPicker from './DepPicker.svelte';
+  import QuorumField from './QuorumField.svelte';
+  import { defaultQuorum, quorumBody } from '../../quorum';
   import type { Effort } from '../../types';
   import { taskDrafts, type TaskDraft } from '../../task-drafts';
   import { ft } from '../../feedback.svelte';
@@ -42,6 +44,8 @@
   let ticketKey = $state(saved?.ticketKey ?? '');
   let dependsOn = $state<string[]>(after ? [after.id] : []);
   let inheritBranch = $state<boolean | null>(null);
+  let quorumOn = $state(false);
+  let quorum = $state(defaultQuorum(app.agents, initialAgent));
   let error = $state('');
   let busy = $state(false);
   let importing = $state(false);
@@ -71,6 +75,7 @@
 
   function setAgent(id: string) {
     agent = id;
+    quorum = defaultQuorum(app.agents, id);
     reset();
   }
 
@@ -131,6 +136,7 @@
         ...(profile ? { profile } : {}),
         ...(dependsOn.length ? { dependsOn } : {}),
         ...(dependsOn.length === 1 && inheritBranch !== null ? { inheritBranch } : {}),
+        ...quorumBody(quorumOn, agent, quorum),
         ...(attachments.length ? { attachments: attachments.map(({ path, name }) => ({ path, name })) } : {}),
       });
       if (!app.data.tasks.some((x) => x.id === task.id)) app.data = { ...app.data, tasks: [...app.data.tasks, task] };
@@ -256,6 +262,7 @@
         />
       </div>
     {/if}
+    <QuorumField agents={app.agents} {agent} on={quorumOn} value={quorum} onon={(v) => (quorumOn = v)} onchange={(q) => (quorum = q)} />
     {#if info && !info.turns}
       <p class="hint faint">{t('task.noTurns', { agent: info.name })}</p>
     {/if}
