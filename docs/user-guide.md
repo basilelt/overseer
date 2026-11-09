@@ -898,7 +898,7 @@ On first launch, once the app is connected (immediately in local mode, after the
 connection on a phone), a welcome card offers **Take the tour** or **Skip**. The tour dims the
 window and highlights the real controls one at a time: host chip, workspaces sidebar, tabs and the
 new-session menu, the Terminal/Chat toggle, the side panel, Tasks, Review, the usage, system and ports
-chips, notifications and hooks, the command palette and Feedback, in 0.25 the Cmd/Ctrl+P palette shortcut, and in 0.27 the demo mode (on the **Demo mode** pill while in the demo, else on the host chip), and in 0.28 the GPU rendering option for terminals, and in 0.29 the clean up of unused worktrees and the import from Switchboard (on its button in Settings, Help, or on the Settings button), and in 0.30 click to move the cursor in a terminal (on the tabs), and in 0.31 the Light and Dark palettes (on Settings, or More on a phone), and in 0.33 the one-click install of skills and plugins (on Settings), and in 0.34 the auto-approval defaults (on Settings, Agents), the Review, Merged and Closed columns (on the Merged column when the board is open, else on the Tasks tab) and the clean removal of everything Overseer added (on Settings, Connection, **Remove**), and in 0.35 one-click in-app updates for every install (on Settings, Updates, else on the Settings button). Steps whose control is not on
+chips, notifications and hooks, the command palette and Feedback, in 0.25 the Cmd/Ctrl+P palette shortcut, and in 0.27 the demo mode (on the **Demo mode** pill while in the demo, else on the host chip), and in 0.28 the GPU rendering option for terminals, and in 0.29 the clean up of unused worktrees and the import from Switchboard (on its button in Settings, Help, or on the Settings button), and in 0.30 click to move the cursor in a terminal (on the tabs), and in 0.31 the Light and Dark palettes (on Settings, or More on a phone), and in 0.33 the one-click install of skills and plugins (on Settings), and in 0.34 the auto-approval defaults (on Settings, Agents), the Review, Merged and Closed columns (on the Merged column when the board is open, else on the Tasks tab) and the clean removal of everything Overseer added (on Settings, Connection, **Remove**), and in 0.35 one-click in-app updates for every install (on Settings, Updates, else on the Settings button), and in 0.36 installing a missing agent from the app (on the title bar **+**, else on the palette). Steps whose control is not on
 screen (no session selected, a feature the server lacks, phone layout) are skipped. On a phone the
 card is a sheet at the bottom (or top, when the control sits low) and points at the bottom
 navigation, the session strip and the menu.
@@ -1080,6 +1080,15 @@ shell does not answer, the usual user directories that exist are added to `PATH`
 daemon keeps its environment: the new one applies from its next start (the next server update),
 it is never restarted for this since that would end its terms. **Rescan** in the agent picker
 runs the detection again (`POST /v1/agents/rescan`), for instance after installing an agent.
+
+An agent that is not installed is marked **Install** in the title bar and tab bar **+** menus,
+the agent picker, and the palette (**Install <agent>**). Choosing it opens a shell tab that runs
+its install command (`POST /v1/terms` with `{"install": "<agent>"}`; for example
+`npm install -g @openai/codex`) with the daemon's `PATH`, then exits with the command's status. A
+clean exit closes the tab, the app rescans the agents and says whether the agent is now found
+(an install that succeeded into a folder missing from the daemon's `PATH` says so); a failure keeps the tab open with its output and `Install failed with exit code N`. Agents without
+an install command (Antigravity, which has a download page) stay greyed out with their hint.
+Not available when the daemon runs on Windows.
 
 **Auto-approve** in Settings → Agents chooses which supported CLIs Overseer starts with their
 native automatic permission mode. It is on by default for Claude Code, Codex, Gemini CLI,

@@ -33,13 +33,20 @@ describe('tour steps', () => {
     expect(STEPS.some((s) => s.since === TOUR_VERSION)).toBe(true);
   });
 
-  it('shows only the one-click update step to users who saw 0.34', () => {
-    expect(stepsFor('whatsNew', '0.34').map((s) => s.id)).toEqual(['autoUpdate']);
+  it('shows only the agent install step to users who saw 0.35', () => {
+    expect(stepsFor('whatsNew', '0.35').map((s) => s.id)).toEqual(['installAgent']);
+    const step = STEPS.find((s) => s.id === 'installAgent')!;
+    expect(targetOf(step, (n) => n === 'new-session' || n === 'palette')).toBe('new-session');
+    expect(targetOf(step, (n) => n === 'palette')).toBe('palette');
+  });
+
+  it('shows the one-click update step to users who saw 0.34', () => {
+    expect(stepsFor('whatsNew', '0.34').map((s) => s.id)).toEqual(['autoUpdate', 'installAgent']);
     expect(STEPS.find((s) => s.id === 'autoUpdate')?.targets).toContain('updates');
   });
 
   it('shows the three 0.34 steps to users who saw 0.33', () => {
-    expect(stepsFor('whatsNew', '0.33').map((s) => s.id)).toEqual(['autoApprove', 'merged', 'uninstall', 'autoUpdate']);
+    expect(stepsFor('whatsNew', '0.33').map((s) => s.id)).toEqual(['autoApprove', 'merged', 'uninstall', 'autoUpdate', 'installAgent']);
     const step = STEPS.find((s) => s.id === 'autoApprove')!;
     expect(targetOf(step, (n) => n === 'auto-approve' || n === 'settings')).toBe('auto-approve');
     expect(targetOf(step, (n) => n === 'settings' || n === 'palette')).toBe('settings');
@@ -96,21 +103,21 @@ describe('tour versioning', () => {
 
   it('shows the organize step to users who saw the 0.15 tour', () => {
     expect(modeFor(1)).toBe('whatsNew');
-    expect(stepsFor('whatsNew', 1).map((s) => s.id)).toEqual(['organize', 'settings', 'paletteKey', 'demo', 'gpuTerminal', 'worktreeCleanup', 'switchboard', 'clickCursor', 'palettes', 'skills', 'autoApprove', 'merged', 'uninstall', 'autoUpdate']);
+    expect(stepsFor('whatsNew', 1).map((s) => s.id)).toEqual(['organize', 'settings', 'paletteKey', 'demo', 'gpuTerminal', 'worktreeCleanup', 'switchboard', 'clickCursor', 'palettes', 'skills', 'autoApprove', 'merged', 'uninstall', 'autoUpdate', 'installAgent']);
     expect(stepsFor('full', undefined).map((s) => s.id)).toContain('organize');
     expect(targetOf(STEPS.find((s) => s.id === 'organize')!, (n) => n === 'workspaces')).toBe('workspaces');
   });
 
   it('shows the 0.25 to 0.29 steps to users who saw 0.24', () => {
     expect(modeFor('0.24')).toBe('whatsNew');
-    expect(stepsFor('whatsNew', '0.24').map((s) => s.id)).toEqual(['settings', 'paletteKey', 'demo', 'gpuTerminal', 'worktreeCleanup', 'switchboard', 'clickCursor', 'palettes', 'skills', 'autoApprove', 'merged', 'uninstall', 'autoUpdate']);
+    expect(stepsFor('whatsNew', '0.24').map((s) => s.id)).toEqual(['settings', 'paletteKey', 'demo', 'gpuTerminal', 'worktreeCleanup', 'switchboard', 'clickCursor', 'palettes', 'skills', 'autoApprove', 'merged', 'uninstall', 'autoUpdate', 'installAgent']);
     expect(stepsFor('full', undefined).map((s) => s.id)).toContain('settings');
     expect(targetOf(STEPS.find((s) => s.id === 'settings')!, (n) => n === 'settings')).toBe('settings');
   });
 
   it('shows the GPU rendering, worktree cleanup and Switchboard steps to users who saw 0.27', () => {
     expect(modeFor('0.27')).toBe('whatsNew');
-    expect(stepsFor('whatsNew', '0.27').map((s) => s.id)).toEqual(['gpuTerminal', 'worktreeCleanup', 'switchboard', 'clickCursor', 'palettes', 'skills', 'autoApprove', 'merged', 'uninstall', 'autoUpdate']);
+    expect(stepsFor('whatsNew', '0.27').map((s) => s.id)).toEqual(['gpuTerminal', 'worktreeCleanup', 'switchboard', 'clickCursor', 'palettes', 'skills', 'autoApprove', 'merged', 'uninstall', 'autoUpdate', 'installAgent']);
   });
 
   it('points the demo step at the Demo mode pill in the demo, else at the host chip', () => {
@@ -125,29 +132,29 @@ describe('tour versioning', () => {
 
   it('shows the steps added after 0.17 to users who saw the 0.17 tour', () => {
     expect(modeFor('0.17')).toBe('whatsNew');
-    expect(stepsFor('whatsNew', '0.17').map((s) => s.id)).toEqual(['settings', 'paletteKey', 'demo', 'gpuTerminal', 'worktreeCleanup', 'switchboard', 'clickCursor', 'palettes', 'skills', 'autoApprove', 'merged', 'uninstall', 'autoUpdate']);
+    expect(stepsFor('whatsNew', '0.17').map((s) => s.id)).toEqual(['settings', 'paletteKey', 'demo', 'gpuTerminal', 'worktreeCleanup', 'switchboard', 'clickCursor', 'palettes', 'skills', 'autoApprove', 'merged', 'uninstall', 'autoUpdate', 'installAgent']);
     expect(STEPS.find((s) => s.id === 'paletteKey')?.since).toBe('0.25');
   });
 
   it('shows the 0.27, 0.28 and 0.29 steps to users who saw 0.26', () => {
     expect(modeFor('0.26')).toBe('whatsNew');
-    expect(stepsFor('whatsNew', '0.26').map((s) => s.id)).toEqual(['demo', 'gpuTerminal', 'worktreeCleanup', 'switchboard', 'clickCursor', 'palettes', 'skills', 'autoApprove', 'merged', 'uninstall', 'autoUpdate']);
+    expect(stepsFor('whatsNew', '0.26').map((s) => s.id)).toEqual(['demo', 'gpuTerminal', 'worktreeCleanup', 'switchboard', 'clickCursor', 'palettes', 'skills', 'autoApprove', 'merged', 'uninstall', 'autoUpdate', 'installAgent']);
     expect(STEPS.find((s) => s.id === 'gpuTerminal')?.since).toBe('0.28');
   });
 
   it('shows the worktree cleanup and Switchboard steps to users who saw 0.28', () => {
-    expect(TOUR_VERSION).toBe('0.35');
+    expect(TOUR_VERSION).toBe('0.36');
     expect(modeFor('0.28')).toBe('whatsNew');
-    expect(stepsFor('whatsNew', '0.28').map((s) => s.id)).toEqual(['worktreeCleanup', 'switchboard', 'clickCursor', 'palettes', 'skills', 'autoApprove', 'merged', 'uninstall', 'autoUpdate']);
+    expect(stepsFor('whatsNew', '0.28').map((s) => s.id)).toEqual(['worktreeCleanup', 'switchboard', 'clickCursor', 'palettes', 'skills', 'autoApprove', 'merged', 'uninstall', 'autoUpdate', 'installAgent']);
     expect(targetOf(STEPS.find((s) => s.id === 'switchboard')!, (n) => n === 'switchboard')).toBe('switchboard');
     expect(modeFor('0.33')).toBe('whatsNew');
     expect(targetOf(STEPS.find((s) => s.id === 'worktreeCleanup')!, (n) => n === 'palette')).toBe('palette');
   });
 
   it('shows the palettes step to users who saw 0.29 or 0.30', () => {
-    expect(stepsFor('whatsNew', '0.29').map((s) => s.id)).toEqual(['clickCursor', 'palettes', 'skills', 'autoApprove', 'merged', 'uninstall', 'autoUpdate']);
+    expect(stepsFor('whatsNew', '0.29').map((s) => s.id)).toEqual(['clickCursor', 'palettes', 'skills', 'autoApprove', 'merged', 'uninstall', 'autoUpdate', 'installAgent']);
     expect(modeFor('0.30')).toBe('whatsNew');
-    expect(stepsFor('whatsNew', '0.30').map((s) => s.id)).toEqual(['palettes', 'skills', 'autoApprove', 'merged', 'uninstall', 'autoUpdate']);
+    expect(stepsFor('whatsNew', '0.30').map((s) => s.id)).toEqual(['palettes', 'skills', 'autoApprove', 'merged', 'uninstall', 'autoUpdate', 'installAgent']);
     const step = STEPS.find((s) => s.id === 'palettes')!;
     expect(step.since).toBe('0.31');
     expect(targetOf(step, (n) => n === 'settings')).toBe('settings');
@@ -156,7 +163,7 @@ describe('tour versioning', () => {
 
   it('shows the click-to-move-cursor step to users who saw 0.29', () => {
     expect(modeFor('0.29')).toBe('whatsNew');
-    expect(stepsFor('whatsNew', '0.29').map((s) => s.id)).toEqual(['clickCursor', 'palettes', 'skills', 'autoApprove', 'merged', 'uninstall', 'autoUpdate']);
+    expect(stepsFor('whatsNew', '0.29').map((s) => s.id)).toEqual(['clickCursor', 'palettes', 'skills', 'autoApprove', 'merged', 'uninstall', 'autoUpdate', 'installAgent']);
     expect(targetOf(STEPS.find((s) => s.id === 'clickCursor')!, (n) => n === 'tabs')).toBe('tabs');
   });
 
@@ -176,8 +183,8 @@ describe('tour versioning', () => {
 
   it('shows skills and auto-approval to users who saw 0.31 or 0.32', () => {
     expect(modeFor('0.31')).toBe('whatsNew');
-    expect(stepsFor('whatsNew', '0.31').map((s) => s.id)).toEqual(['skills', 'autoApprove', 'merged', 'uninstall', 'autoUpdate']);
-    expect(stepsFor('whatsNew', '0.32').map((s) => s.id)).toEqual(['skills', 'autoApprove', 'merged', 'uninstall', 'autoUpdate']);
+    expect(stepsFor('whatsNew', '0.31').map((s) => s.id)).toEqual(['skills', 'autoApprove', 'merged', 'uninstall', 'autoUpdate', 'installAgent']);
+    expect(stepsFor('whatsNew', '0.32').map((s) => s.id)).toEqual(['skills', 'autoApprove', 'merged', 'uninstall', 'autoUpdate', 'installAgent']);
     const step = STEPS.find((s) => s.id === 'skills')!;
     expect(step.since).toBe('0.33');
     expect(targetOf(step, (n) => n === 'settings')).toBe('settings');
@@ -185,7 +192,7 @@ describe('tour versioning', () => {
 
   it('shows the Merged column step to users who saw 0.33', () => {
     expect(modeFor('0.33')).toBe('whatsNew');
-    expect(stepsFor('whatsNew', '0.33').map((s) => s.id)).toEqual(['autoApprove', 'merged', 'uninstall', 'autoUpdate']);
+    expect(stepsFor('whatsNew', '0.33').map((s) => s.id)).toEqual(['autoApprove', 'merged', 'uninstall', 'autoUpdate', 'installAgent']);
     const step = STEPS.find((s) => s.id === 'merged')!;
     expect(step.since).toBe('0.34');
     expect(targetOf(step, (n) => n === 'merged' || n === 'kanban')).toBe('merged');
@@ -197,7 +204,8 @@ describe('tour versioning', () => {
     expect(modeFor('0.26', '0.25')).toBeNull();
     expect(modeFor('0.33')).toBe('whatsNew');
     expect(modeFor('0.34')).toBe('whatsNew');
-    expect(modeFor('0.35')).toBeNull();
+    expect(modeFor('0.35')).toBe('whatsNew');
+    expect(modeFor('0.36')).toBeNull();
     expect(modeFor(2, '0.17')).toBeNull();
   });
 });

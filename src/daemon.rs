@@ -241,6 +241,17 @@ fn term_spec(b: &Value, state_dir: &std::path::Path) -> Result<crate::term::Spec
         workspace_id: s("workspaceId")?,
         ..Default::default()
     };
+    if let Some(id) = s("install")? {
+        if !spec.cmd.is_empty() || !b["agent"].is_null() {
+            return Err("give either install, agent or cmd".into());
+        }
+        let a = crate::agents::get(&id).ok_or_else(|| format!("unknown agent {id}"))?;
+        spec.cmd = crate::agents::install_argv(a)?;
+        spec.shown = a.install_cmd().map(|c| vec![c.to_string()]);
+        if spec.title.is_none() {
+            spec.title = Some(format!("Install {}", a.name));
+        }
+    }
     if let Some(id) = s("agent")? {
         if !spec.cmd.is_empty() {
             return Err("give either agent or cmd, not both".into());

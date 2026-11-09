@@ -611,6 +611,30 @@ describe('MockDaemon', () => {
   });
 });
 
+describe('agent install terms', () => {
+  it('runs the install command in a shell term titled after the agent', async () => {
+    const { a } = setup();
+    const t = await a.createTerm({ install: 'amp', cwd: '/tmp', cols: 120, rows: 32 });
+    expect(t.cmd).toEqual(['npm install -g --allow-scripts=@ampcode/cli @sourcegraph/amp']);
+    expect(t.title).toBe('Install Amp');
+  });
+
+  it('shows the agent as installed on the next rescan', async () => {
+    const { a } = setup();
+    expect((await a.rescanAgents()).find((x) => x.id === 'amp')?.installed).toBe(false);
+    await a.createTerm({ install: 'amp' });
+    expect((await a.rescanAgents()).find((x) => x.id === 'amp')?.installed).toBe(true);
+  });
+
+  it('rejects what the daemon rejects, with its messages', async () => {
+    const { a } = setup();
+    await expect(a.createTerm({ install: 'nope' })).rejects.toMatchObject({ status: 400, message: 'unknown agent nope' });
+    await expect(a.createTerm({ install: 'shell' })).rejects.toMatchObject({ status: 400, message: 'Shell has no install command' });
+    await expect(a.createTerm({ install: 'amp', agent: 'amp' })).rejects.toMatchObject({ status: 400, message: 'give either install, agent or cmd' });
+    await expect(a.createTerm({ install: 'amp', cmd: ['sh'] })).rejects.toMatchObject({ status: 400, message: 'give either install, agent or cmd' });
+  });
+});
+
 describe('fault injection', () => {
   it('fails matching requests at the configured rate', async () => {
     const f = { rate: 0.5, on: 'POST', hang: '', hangMs: 0 };

@@ -61,6 +61,7 @@ class AppState {
   data = $state.raw<Snapshot>({ lines: [], terms: [], tasks: [], activity: {} });
   projects = $state.raw<Project[]>([]);
   agents = $state.raw<AgentInfo[]>([]);
+  private installing = new Map<string, string>();
   profiles = $state.raw<ProfilesStore | null>(null);
   nextProfile = $state<string | null>(null);
   connected = $state(false);
@@ -209,6 +210,7 @@ class AppState {
     this.conn = { phase: 'idle', target };
     this.data = EMPTY;
     this.agents = [];
+    this.installing.clear();
     this.profiles = null;
     this.nextProfile = null;
     this.selectedKey = null;
@@ -572,7 +574,31 @@ class AppState {
     return term.id;
   }
 
-  async newSession(agent: string, opts: { cwd?: string; model?: string; effort?: Effort; worktree?: boolean; profile?: string } = {}): Promise<Term> {
+  async installAgent(id: string): Promise<Term> {
+    const term = await this.newSession('shell', { install: id, worktree: false });
+    this.installing.set(term.id, id);
+    void this.installsEnded(this.data.terms);
+    return term;
+  }
+
+  async installsEnded(terms: Term[]): Promise<void> {
+    if (!this.installing.size) return;
+    const ended = terms.filter((x) => x.exited && this.installing.has(x.id)).map((x) => ({ id: this.installing.get(x.id)!, ok: x.exitCode === 0 }));
+    if (!ended.length) return;
+    for (const x of terms) if (x.exited) this.installing.delete(x.id);
+    try {
+      this.agents = await this.api.rescanAgents();
+    } catch (e) {
+      this.notify(String((e as Error)?.message ?? e), 'error');
+      return;
+    }
+    for (const e of ended) {
+      const a = this.agents.find((x) => x.id === e.id);
+      if (a) this.notify(t(a.installed ? 'agents.installed' : e.ok ? 'agents.installNotFound' : 'agents.installFailed', { name: a.name }), a.installed ? 'info' : 'error');
+    }
+  }
+
+  async newSession(agent: string, opts: { cwd?: string; model?: string; effort?: Effort; worktree?: boolean; profile?: string; install?: string } = {}): Promise<Term> {
     const scoped = this.sidebarMode === 'workspaces' ? this.currentWorkspace : null;
     // A subject has no directory: the daemon starts the term in its cwd and assigns it.
     // A repo workspace is assigned too: the term runs in a worktree outside its path until it reports a line.
@@ -581,7 +607,7 @@ class AppState {
     const worktree = (opts.worktree ?? (agent !== 'shell' && !settings.sessionsInCheckout)) && this.inProject(cwd ?? (subject ? (scoped?.cwd ?? undefined) : undefined));
     const size = { cols: 120, rows: 32, ...(worktree ? { worktree: true } : {}) };
     const profile = agent === 'shell' ? undefined : (opts.profile ?? this.nextProfile ?? undefined);
-    const term = await this.api.createTerm(agent === 'shell' ? { cwd, ...(subject ? { workspaceId: subject } : {}), ...size } : { agent, cwd, ...(subject ? { workspaceId: subject } : {}), model: opts.model || undefined, effort: opts.effort, ...(profile ? { profile } : {}), ...size });
+    const term = await this.api.createTerm(agent === 'shell' ? { cwd, ...(opts.install ? { install: opts.install } : {}), ...(subject ? { workspaceId: subject } : {}), ...size } : { agent, cwd, ...(subject ? { workspaceId: subject } : {}), model: opts.model || undefined, effort: opts.effort, ...(profile ? { profile } : {}), ...size });
     if (profile && !opts.profile) this.nextProfile = null;
     this.followSession(term, false);
     return term;
@@ -798,5 +824,6 @@ onTabClosed((key, end) => {
 });
 
 app.onChange((prev, next) => {
+  if (prev.terms !== next.terms) void app.installsEnded(next.terms);
   if (prev.terms !== next.terms && next.terms.some((t) => t.exited)) void tabLazy().then((m) => m.closeCleanExits(app, prev.terms, next.terms));
 });

@@ -1,9 +1,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { MOCK_AGENTS } from '../../mock';
+import type { AgentInfo } from '../../types';
 
-async function rendered(connected: boolean) {
+async function rendered(connected: boolean, agents: AgentInfo[] = []) {
   vi.resetModules();
   const { app } = await import('../../state.svelte');
   vi.spyOn(app, 'connected', 'get').mockReturnValue(connected);
+  app.agents = agents;
   const { render } = await import('svelte/server');
   const { default: Palette } = await import('./CommandPalette.svelte');
   return render(Palette, { props: { onclose: () => {} } }).body;
@@ -39,5 +42,13 @@ describe('command palette views', () => {
   it('lists Install skills and plugins under Actions only when connected', async () => {
     expect(section(await rendered(true), 'Actions')).toContain('Install skills and plugins');
     expect(await rendered(false)).not.toContain('Install skills and plugins');
+  });
+
+  it('offers to install each absent agent that has an install command', async () => {
+    const actions = section(await rendered(true, MOCK_AGENTS), 'Actions');
+    for (const name of ['opencode', 'Amp', 'Cursor Agent']) expect(actions).toContain(`Install ${name}`);
+    expect(actions).not.toContain('Install Codex');
+    expect(actions).not.toContain('New Amp session');
+    expect(await rendered(false, MOCK_AGENTS)).not.toContain('Install Amp');
   });
 });

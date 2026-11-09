@@ -77,10 +77,10 @@ export const MOCK_AGENTS: AgentInfo[] = [
   { id: 'codex', name: 'Codex', installed: true, version: '0.58.0', efforts: [...ALL_EFFORTS], resume: true, verified: true, sessions: true, turns: true },
   { id: 'gemini', name: 'Gemini CLI', installed: true, version: '0.21.0', efforts: [], resume: true, verified: true, sessions: true, turns: false },
   { id: 'agy', name: 'Antigravity', installed: true, version: '1.4.2', efforts: AGY_EFFORTS, resume: false, verified: true, sessions: false, turns: false },
-  { id: 'opencode', name: 'opencode', installed: false, efforts: [], resume: true, verified: true, install: 'npm install -g --allow-scripts=opencode-ai opencode-ai', sessions: false, turns: false },
-  { id: 'amp', name: 'Amp', installed: false, models: [], efforts: [...ALL_EFFORTS], resume: true, verified: true, install: 'npm install -g --allow-scripts=@ampcode/cli @sourcegraph/amp', sessions: false, turns: false },
+  { id: 'opencode', name: 'opencode', installed: false, efforts: [], resume: true, verified: true, install: 'npm install -g --allow-scripts=opencode-ai opencode-ai', installable: true, sessions: false, turns: false },
+  { id: 'amp', name: 'Amp', installed: false, models: [], efforts: [...ALL_EFFORTS], resume: true, verified: true, install: 'npm install -g --allow-scripts=@ampcode/cli @sourcegraph/amp', installable: true, sessions: false, turns: false },
   { id: 'copilot', name: 'Copilot CLI', installed: true, version: '0.0.354', efforts: [...ALL_EFFORTS], resume: true, verified: true, sessions: false, turns: false },
-  { id: 'cursor', name: 'Cursor Agent', installed: false, efforts: [], resume: true, verified: false, install: 'curl https://cursor.com/install -fsS | bash', sessions: false, turns: false },
+  { id: 'cursor', name: 'Cursor Agent', installed: false, efforts: [], resume: true, verified: false, install: 'curl https://cursor.com/install -fsS | bash', installable: true, sessions: false, turns: false },
   { id: 'shell', name: 'Shell', installed: true, models: [], efforts: [], resume: false, verified: true, sessions: false, turns: false },
 ];
 
@@ -712,7 +712,7 @@ export class MockDaemon implements DaemonClient {
     if (method === 'DELETE' && path.startsWith('/v1/projects/sources/')) return this.removeSource(decodeURIComponent(path.slice('/v1/projects/sources/'.length)));
     if (method === 'GET' && path === '/v1/projects/items') return this.sourceItems(new URLSearchParams(qs).get('project') ?? '');
     if (method === 'GET' && path === '/v1/agents') return structuredClone(this.agents);
-    if (method === 'POST' && path === '/v1/agents/rescan') return structuredClone(this.agents);
+    if (method === 'POST' && path === '/v1/agents/rescan') return this.rescanAgents();
     if (method === 'GET' && path === '/v1/agents/settings') return { autoApprove: structuredClone(this.autoApprove) };
     if (method === 'PUT' && path === '/v1/agents/settings') {
       if (typeof body?.agent !== 'string' || typeof body?.autoApprove !== 'boolean') throw new DaemonError(400, 'agent and autoApprove are required');
@@ -1185,7 +1185,15 @@ export class MockDaemon implements DaemonClient {
     return term;
   }
 
+  private installed = new Set<string>();
+
+  private rescanAgents(): AgentInfo[] {
+    for (const a of this.agents) if (this.installed.has(a.id)) Object.assign(a, { installed: true, version: '0.0.0' });
+    return structuredClone(this.agents);
+  }
+
   private startTerm(body: NewTerm): Term {
+    if (body?.install !== undefined) return this.installTerm(body);
     const scopeCwd = body?.cwd;
     const project = body?.worktree && this.projects.find((p) => p.path === body.cwd);
     if (project) {
@@ -1205,6 +1213,17 @@ export class MockDaemon implements DaemonClient {
     const cmd = a.id === 'shell' ? ['zsh'] : [a.id, ...(this.autoApprove[a.id] ? AUTO_APPROVE_ARGS[a.id] ?? [] : []), ...(model ? ['--model', model] : []), ...(effort && a.efforts.includes(effort) ? ['--effort', effort] : [])];
     const profile = p || model || effort ? { ...(p ? { id: p.id, name: p.name } : {}), ...(model ? { model } : {}), ...(effort ? { effort } : {}) } : undefined;
     return this.spawn({ ...body, cmd, title: body.title ?? (a.id === 'shell' ? 'zsh' : a.name) }, a.id, profile);
+  }
+
+  private installTerm(body: NewTerm): Term {
+    if (typeof body.install !== 'string') throw new DaemonError(400, 'install must be a string');
+    if (body.cmd || body.agent !== undefined) throw new DaemonError(400, 'give either install, agent or cmd');
+    const a = this.agents.find((x) => x.id === body.install);
+    if (!a) throw new DaemonError(400, `unknown agent ${body.install}`);
+    if (!a.installable || !a.install) throw new DaemonError(400, `${a.name} has no install command`);
+    this.installed.add(a.id);
+    const { install: _i, ...rest } = body;
+    return this.spawn({ ...rest, cmd: [a.install], title: body.title ?? `Install ${a.name}` }, 'shell');
   }
 
   private discover(): { added: number; projects: Project[] } {

@@ -18,7 +18,7 @@
   import { st } from '../../system/strings';
   import { saveSettings, settings } from '../../settings.svelte';
   import { projectName } from '../../state.svelte';
-  import { ordered } from '../../agents';
+  import { canInstall, ordered } from '../../agents';
   import { coarsePointer, focusSession, stripScroll, tabInfo, type TabInfo } from '../../tabs';
   import { broadcastTo } from '../../wsactions';
   import { wsDropTarget } from '../../workspaces';
@@ -99,10 +99,11 @@
 
   function addMenu(): MenuItem[] {
     const start = (id: string) => () => app.newSession(id).catch((e) => app.notify(String((e as Error)?.message ?? e), 'error'));
+    const install = (id: string) => () => app.installAgent(id).catch((e) => app.notify(String((e as Error)?.message ?? e), 'error'));
     const agents = ordered(app.agents).filter((a) => a.id !== 'shell');
     const shell = app.agents.find((a) => a.id === 'shell');
     return [
-      ...agents.map((a) => ({ label: a.name, agent: a.id, default: a.id === settings.defaultAgent, disabled: !a.installed, hint: a.installed ? undefined : (a.install ?? t('agents.notInstalled')), run: start(a.id) })),
+      ...agents.map((a) => ({ label: canInstall(a) ? t('palette.installAgent', { name: a.name }) : a.name, agent: a.id, default: a.id === settings.defaultAgent, disabled: !a.installed && !canInstall(a), hint: a.installed ? undefined : (a.install ?? t('agents.notInstalled')), run: a.installed ? start(a.id) : install(a.id) })),
       { label: t('tabs.inCheckout'), checked: settings.sessionsInCheckout, run: () => saveSettings({ sessionsInCheckout: !settings.sessionsInCheckout }) },
       { label: '', separator: true },
       { label: shell?.name ?? t('tabs.shell'), agent: 'shell', run: start('shell') },
