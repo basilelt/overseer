@@ -1534,8 +1534,10 @@ through the daemon: `list_tasks`, `get_task`, `create_task` (always `pending`; o
 `update_task_progress {done,total,note}` and `set_task_status` (only its own task, only to
 `in_testing`, `merged` or `in_progress`; `in_progress` only while its agent runs). The daemon sets `OVERSEER_TASK_ID` in agents it starts for a task. Codex tasks get
 the server on their command line (`-c mcp_servers.overseer.*`, with the task id and state dir in
-its env, since Codex clears the environment of MCP servers), so Codex agents can message other
-agents without any setup. Overseer never edits agent configuration; to enable it yourself
+its env, since Codex clears the environment of MCP servers) and Claude Code tasks get it through
+`--mcp-config` (its tools pre-approved with `--allowedTools mcp__overseer`), so those agents can
+message other agents without any setup. Every task terminal also has the directory of the
+`overseer` shim (`~/.overseer/bin`) on its `PATH`, so the `overseer` CLI works in it. Overseer never edits agent configuration; to enable it yourself
 elsewhere:
 
 - Claude Code (user scope): `claude mcp add --scope user overseer -- /path/to/overseer mcp`,

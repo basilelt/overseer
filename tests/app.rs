@@ -2181,6 +2181,47 @@ fn tasks_take_any_agent_and_deliver_the_prompt_by_flag() {
 }
 
 #[test]
+fn claude_tasks_get_the_overseer_mcp_server_and_cli() {
+    let app = App::new("claudemcp", json!({"autoConcurrency": 0}));
+    let wt = app.fx.wt.to_string_lossy().into_owned();
+    let t = app.ok(
+        "POST",
+        "/v1/tasks",
+        json!({"title": "Mcp", "project": wt, "agent": "claude"}),
+    );
+    let id = t["id"].as_str().unwrap().to_string();
+    let s = app.ok("POST", &format!("/v1/tasks/{id}/start"), json!({}));
+    wait(|| stub_log(&app).contains("--mcp-config"));
+    let log = stub_log(&app);
+    let line = log.lines().find(|l| l.contains("--mcp-config")).unwrap();
+    assert!(line.contains("--allowedTools mcp__overseer"), "{line}");
+    let json_start = line.find("{\"mcpServers\"").expect(line);
+    let json_end = line.rfind("}}}").unwrap() + 3;
+    let cfg: Value = serde_json::from_str(&line[json_start..json_end]).unwrap();
+    let srv = &cfg["mcpServers"]["overseer"];
+    assert_eq!(srv["args"], json!(["mcp"]));
+    assert_eq!(srv["env"]["OVERSEER_TASK_ID"], id.as_str());
+    assert_eq!(
+        srv["env"]["OVERSEER_STATE_DIR"],
+        app.fx.base.join("state").to_string_lossy().as_ref()
+    );
+    wait(|| app.fx.base.join("stub.log.path").exists());
+    let path = std::fs::read_to_string(app.fx.base.join("stub.log.path")).unwrap();
+    let shim_dir = app
+        .fx
+        .base
+        .join("home/.overseer/bin")
+        .to_string_lossy()
+        .into_owned();
+    assert!(path.trim().starts_with(&format!("{shim_dir}:")), "{path}");
+    app.ok(
+        "POST",
+        &format!("/v1/terms/{}/kill", s["termId"].as_str().unwrap()),
+        json!({"confirm": true}),
+    );
+}
+
+#[test]
 fn task_rank_and_added_projects() {
     let app = App::new("rank", json!({"autoConcurrency": 0}));
     let wt = app.fx.wt.to_string_lossy().into_owned();

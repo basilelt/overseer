@@ -905,6 +905,11 @@ pub(crate) fn start_with_args(
             &ctx.state_dir.to_string_lossy(),
             &t.id,
         ),
+        "claude" => crate::claude::overseer_mcp(
+            &crate::actions::self_exe(),
+            &ctx.state_dir.to_string_lossy(),
+            &t.id,
+        ),
         _ => vec![],
     };
     let mut launch = p.clone();
@@ -920,6 +925,18 @@ pub(crate) fn start_with_args(
     );
     let mut env = vec![("OVERSEER_TASK_ID".into(), t.id.clone())];
     env.extend(p.env.iter().cloned());
+    let base = env
+        .iter()
+        .rev()
+        .find(|(k, _)| k == "PATH")
+        .map(|(_, v)| v.clone())
+        .or_else(|| std::env::var("PATH").ok())
+        .unwrap_or_default();
+    env.retain(|(k, _)| k != "PATH");
+    env.push((
+        "PATH".into(),
+        crate::install::path_with_shim(&base, &crate::install::shim_path()),
+    ));
     let mut flags = agent.flags(&p.model, &p.effort);
     flags.extend(p.extra.iter().cloned());
     if auto_approve {
