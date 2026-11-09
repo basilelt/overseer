@@ -9,7 +9,6 @@
   import { t } from '../i18n.svelte';
   import { app, type View } from '../state.svelte';
   import { closePaneAt, toggleSplit, update, workspace } from '../workspace.svelte';
-  import AgentAvatars from './titlebar/AgentAvatars.svelte';
   import HostChip from './titlebar/HostChip.svelte';
   import PortsChip from './ports/PortsChip.svelte';
   import SystemChip from './system/SystemChip.svelte';
@@ -59,7 +58,6 @@
     {/each}
   </div>
   <div class="spacer" data-tauri-drag-region></div>
-  <AgentAvatars />
   <DemoPill />
   <UpdatePill />
   <SystemChip />
