@@ -487,3 +487,71 @@ fn status_reads_while_an_agent_holds_the_index_lock() {
     assert!(lock.exists());
     std::fs::remove_file(lock).unwrap();
 }
+
+fn with_submodule(g: &G) -> PathBuf {
+    let lib = g.fx.base.join("lib-src");
+    git(
+        &g.fx.base,
+        &["init", "-q", "-b", "main", lib.to_str().unwrap()],
+    );
+    ident(&lib);
+    commit(&lib, "f.txt", "one\n", "lib init");
+    git(
+        &g.work,
+        &[
+            "-c",
+            "protocol.file.allow=always",
+            "submodule",
+            "add",
+            "-q",
+            lib.to_str().unwrap(),
+            "lib",
+        ],
+    );
+    git(&g.work, &["commit", "-q", "-m", "add lib"]);
+    let inner = g.work.join("lib");
+    ident(&inner);
+    inner
+}
+
+#[test]
+fn submodules_are_flagged_and_dirty_inside_cannot_be_staged() {
+    let g = setup("gitops-sub");
+    let inner = with_submodule(&g);
+    let top = std::fs::canonicalize(&inner).unwrap();
+    write(&inner, "f.txt", "dirty\n");
+    let s = g.status();
+    assert_eq!(paths(&s["changes"]), vec!["Mlib"]);
+    assert_eq!(
+        s["changes"][0]["submodule"],
+        json!({"commit": false, "modified": true, "untracked": false})
+    );
+    assert_eq!(
+        s["submodules"],
+        json!([{"path": "lib", "worktree": top.to_str().unwrap()}])
+    );
+    g.fails(
+        "stage",
+        json!({"files": ["lib"]}),
+        409,
+        "lib is a submodule with uncommitted changes inside: commit them in the submodule first",
+    );
+    let (c, inside) = g.status_of(top.to_str().unwrap());
+    assert_eq!(c, 200, "{inside}");
+    assert!(inside.get("error").is_none(), "{inside}");
+    assert_eq!(paths(&inside["changes"]), vec!["Mf.txt"]);
+
+    git(&inner, &["commit", "-q", "-am", "inner"]);
+    let s = g.status();
+    assert_eq!(
+        s["changes"][0]["submodule"],
+        json!({"commit": true, "modified": false, "untracked": false})
+    );
+    let v = g.ok("stage", json!({"files": ["lib"]}));
+    assert_eq!(paths(&v["status"]["staged"]), vec!["Mlib"]);
+    assert!(v["status"]["staged"][0]["submodule"].is_object(), "{v}");
+    let v = g.ok("commit", json!({"message": "bump lib"}));
+    assert!(v["commit"].as_str().is_some_and(|c| c.len() == 40), "{v}");
+    assert_eq!(v["status"]["changes"], json!([]));
+    assert_eq!(v["status"]["staged"], json!([]));
+}

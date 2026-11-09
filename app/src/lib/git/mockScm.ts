@@ -141,6 +141,7 @@ export class MockScm {
       incoming: t.upstream ? t.incoming : [],
       stashes: t.stashes.length,
       branches: t.branches,
+      submodules: [],
       operation: null,
     });
   }

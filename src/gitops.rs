@@ -17,28 +17,79 @@ fn conflict(m: impl Into<String>) -> (u16, String) {
 }
 
 #[derive(Debug, Default, PartialEq)]
+pub struct Sub {
+    pub commit: bool,
+    pub modified: bool,
+    pub untracked: bool,
+}
+
+#[derive(Debug, Default, PartialEq)]
 pub struct Entry {
     pub path: String,
     pub old: Option<String>,
     pub x: char,
     pub y: char,
+    pub sub: Option<Sub>,
+}
+
+fn xy(f: &str) -> (char, char) {
+    let mut c = f.chars().map(|c| if c == '.' { ' ' } else { c });
+    (c.next().unwrap_or(' '), c.next().unwrap_or(' '))
+}
+
+fn sub(f: &str) -> Option<Sub> {
+    let c: Vec<char> = f.chars().collect();
+    (c.first() == Some(&'S') && c.len() == 4).then(|| Sub {
+        commit: c[1] == 'C',
+        modified: c[2] == 'M',
+        untracked: c[3] == 'U',
+    })
 }
 
 pub fn parse_porcelain(s: &str) -> Vec<Entry> {
     let mut out = vec![];
     let mut it = s.split('\0');
     while let Some(rec) = it.next() {
-        let mut cs = rec.chars();
-        let (Some(x), Some(y), Some(' ')) = (cs.next(), cs.next(), cs.next()) else {
+        let Some((kind, rest)) = rec.split_once(' ') else {
             continue;
         };
-        let path = cs.as_str().to_string();
-        let old = if matches!(x, 'R' | 'C') || matches!(y, 'R' | 'C') {
-            it.next().map(str::to_string)
-        } else {
-            None
+        let e = match kind {
+            "?" | "!" => {
+                let c = kind.chars().next().unwrap_or('?');
+                Entry {
+                    path: rest.to_string(),
+                    x: c,
+                    y: c,
+                    ..Entry::default()
+                }
+            }
+            "1" | "2" | "u" => {
+                let n = match kind {
+                    "1" => 8,
+                    "2" => 9,
+                    _ => 10,
+                };
+                let f: Vec<&str> = rest.splitn(n, ' ').collect();
+                if f.len() < n {
+                    continue;
+                }
+                let (x, y) = xy(f[0]);
+                let old = if kind == "2" {
+                    it.next().map(str::to_string)
+                } else {
+                    None
+                };
+                Entry {
+                    path: f[n - 1].to_string(),
+                    old,
+                    x,
+                    y,
+                    sub: sub(f[1]),
+                }
+            }
+            _ => continue,
         };
-        out.push(Entry { path, old, x, y });
+        out.push(e);
     }
     out
 }
@@ -50,10 +101,14 @@ fn unmerged(e: &Entry) -> bool {
     )
 }
 
-fn file(path: &str, status: char, old: Option<&str>) -> Value {
-    let mut v = json!({"path": path, "status": status.to_string()});
+fn file(e: &Entry, status: char, old: Option<&str>) -> Value {
+    let mut v = json!({"path": e.path, "status": status.to_string()});
     if let Some(o) = old {
         v["oldPath"] = json!(o);
+    }
+    if let Some(s) = &e.sub {
+        v["submodule"] =
+            json!({"commit": s.commit, "modified": s.modified, "untracked": s.untracked});
     }
     v
 }
@@ -62,26 +117,26 @@ pub fn split(entries: &[Entry]) -> (Vec<Value>, Vec<Value>, Vec<Value>) {
     let (mut staged, mut changes, mut conflicts) = (vec![], vec![], vec![]);
     for e in entries {
         if unmerged(e) {
-            conflicts.push(file(&e.path, 'U', None));
+            conflicts.push(file(e, 'U', None));
             continue;
         }
         match (e.x, e.y) {
             ('?', '?') => {
-                changes.push(file(&e.path, '?', None));
+                changes.push(file(e, '?', None));
                 continue;
             }
             ('!', '!') => continue,
             _ => {}
         }
         match e.x {
-            'M' | 'A' | 'D' | 'T' => staged.push(file(&e.path, e.x, None)),
-            'R' => staged.push(file(&e.path, 'R', e.old.as_deref())),
-            'C' => staged.push(file(&e.path, 'A', None)),
+            'M' | 'A' | 'D' | 'T' => staged.push(file(e, e.x, None)),
+            'R' => staged.push(file(e, 'R', e.old.as_deref())),
+            'C' => staged.push(file(e, 'A', None)),
             _ => {}
         }
         match e.y {
-            'M' | 'D' | 'T' | 'A' => changes.push(file(&e.path, e.y, None)),
-            'R' => changes.push(file(&e.path, 'R', e.old.as_deref())),
+            'M' | 'D' | 'T' | 'A' => changes.push(file(e, e.y, None)),
+            'R' => changes.push(file(e, 'R', e.old.as_deref())),
             _ => {}
         }
     }
@@ -145,7 +200,7 @@ fn run(wt: &str, args: &[&str]) -> Res<String> {
 }
 
 fn entries(wt: &str) -> Res<Vec<Entry>> {
-    let args = ["status", "--porcelain=v1", "-z", "--untracked-files=all"];
+    let args = ["status", "--porcelain=v2", "-z", "--untracked-files=all"];
     let out = crate::git::run_in("git", wt, &args, crate::git::limit_for(&args))
         .map_err(|e| conflict(format!("git status: {e}")))?;
     if !out.status.success() {
@@ -219,6 +274,33 @@ fn resolves(wt: &str, rev: &str) -> Option<String> {
     .filter(|s| !s.is_empty())
 }
 
+fn submodules(wt: &str) -> Vec<Value> {
+    git(
+        wt,
+        &[
+            "config",
+            "--file",
+            ".gitmodules",
+            "--get-regexp",
+            r"^submodule\..*\.path$",
+        ],
+    )
+    .map(|s| {
+        s.lines()
+            .filter_map(|l| l.split_once(' ').map(|(_, p)| p.to_string()))
+            .filter_map(|p| {
+                let dir = Path::new(wt).join(&p);
+                if !dir.join(".git").exists() {
+                    return None;
+                }
+                let top = git(dir.to_str()?, &["rev-parse", "--show-toplevel"])?;
+                Some(json!({"path": p, "worktree": top}))
+            })
+            .collect()
+    })
+    .unwrap_or_default()
+}
+
 pub fn status(wt: &str) -> Res<Value> {
     let list = entries(wt)?;
     let (staged, changes, conflicts) = split(&list);
@@ -288,6 +370,7 @@ pub fn status(wt: &str) -> Res<Value> {
         "incoming": incoming,
         "stashes": stashes,
         "branches": branches,
+        "submodules": submodules(wt),
         "operation": operation(wt),
     }))
 }
@@ -328,6 +411,20 @@ fn clean_tree(wt: &str) -> Res<()> {
 }
 
 pub fn stage(wt: &str, f: &Files) -> Res<Value> {
+    if let Files::Some(paths) = f {
+        let list = entries(wt)?;
+        let inner = list.iter().find(|e| {
+            paths.iter().any(|p| p.trim_end_matches('/') == e.path)
+                && e.sub.as_ref().is_some_and(|s| !s.commit)
+                && e.x == ' '
+        });
+        if let Some(e) = inner {
+            return Err(conflict(format!(
+                "{} is a submodule with uncommitted changes inside: commit them in the submodule first",
+                e.path
+            )));
+        }
+    }
     match f {
         Files::All => run(wt, &["add", "-A"])?,
         Files::Some(f) => run(wt, &with_files(&["add", "-A"], f))?,
@@ -603,10 +700,15 @@ pub fn routes(ctx: &Ctx, r: &Request, segs: &[&str], body: &Value) -> Option<(u1
 mod tests {
     use super::*;
 
+    const H: &str = "N... 100644 100644 100644 aaaa bbbb";
+    const SUB: &str = "160000 160000 160000 aaaa bbbb";
+
     #[test]
-    fn parses_porcelain_with_renames_untracked_and_unmerged() {
-        let s = "M  a.rs\0 M b.rs\0R  new.rs\0old.rs\0?? n.txt\0UU c.rs\0AM d.rs\0!! t\0";
-        let e = parse_porcelain(s);
+    fn parses_porcelain_v2_with_renames_untracked_and_unmerged() {
+        let s = format!(
+            "1 M. {H} a.rs\01 .M {H} b.rs\02 R. {H} R100 new.rs\0old.rs\0? n.txt\0u UU N... 100644 100644 100644 100644 a b c c.rs\01 AM {H} d.rs\0! t\0"
+        );
+        let e = parse_porcelain(&s);
         assert_eq!(e.len(), 7);
         assert_eq!(e[2].path, "new.rs");
         assert_eq!(e[2].old.as_deref(), Some("old.rs"));
@@ -632,17 +734,49 @@ mod tests {
 
     #[test]
     fn keeps_spaces_in_paths_and_skips_garbage() {
-        let e = parse_porcelain(" M with space.txt\0x\0\0");
-        assert_eq!(e.len(), 1);
+        let e = parse_porcelain(&format!("1 .M {H} with space.txt\0x\0\0? a b\0"));
+        assert_eq!(e.len(), 2);
         assert_eq!(e[0].path, "with space.txt");
+        assert_eq!(e[1].path, "a b");
     }
 
     #[test]
     fn every_unmerged_pair_is_a_conflict() {
         for xy in ["DD", "AU", "UD", "UA", "DU", "AA", "UU"] {
-            let (s, c, k) = split(&parse_porcelain(&format!("{xy} f\0")));
+            let rec = format!("u {xy} N... 100644 100644 100644 100644 a b c f\0");
+            let (s, c, k) = split(&parse_porcelain(&rec));
             assert!(s.is_empty() && c.is_empty() && k.len() == 1, "{xy}");
         }
+    }
+
+    #[test]
+    fn flags_submodules_by_kind_of_change() {
+        let case = |flags: &str, xy: &str| {
+            let (s, c, _) = split(&parse_porcelain(&format!("1 {xy} {flags} {SUB} lib\0")));
+            (s, c)
+        };
+        let (s, c) = case("S.M.", ".M");
+        assert!(s.is_empty());
+        assert_eq!(
+            c,
+            vec![
+                json!({"path": "lib", "status": "M", "submodule": {"commit": false, "modified": true, "untracked": false}})
+            ]
+        );
+        let (_, c) = case("SC..", ".M");
+        assert_eq!(
+            c[0]["submodule"],
+            json!({"commit": true, "modified": false, "untracked": false})
+        );
+        let (_, c) = case("SCM.", ".M");
+        assert_eq!(
+            c[0]["submodule"],
+            json!({"commit": true, "modified": true, "untracked": false})
+        );
+        let (s, _) = case("SC..", "M.");
+        assert_eq!(s[0]["submodule"]["commit"], json!(true));
+        let (_, c) = case("S..U", ".M");
+        assert_eq!(c[0]["submodule"]["untracked"], json!(true));
     }
 
     #[test]

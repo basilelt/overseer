@@ -153,6 +153,12 @@ export interface ScmFile {
   path: string;
   oldPath?: string;
   status: FileState;
+  submodule?: { commit: boolean; modified: boolean; untracked: boolean };
+}
+
+export interface ScmSubmodule {
+  path: string;
+  worktree: string;
 }
 
 export interface ScmCommit {
@@ -176,6 +182,7 @@ export interface ScmStatus {
   incoming: ScmCommit[];
   stashes: number;
   branches: string[];
+  submodules: ScmSubmodule[];
   operation: 'merge' | 'rebase' | 'cherry-pick' | 'revert' | null;
 }
 

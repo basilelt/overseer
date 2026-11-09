@@ -33,6 +33,7 @@ describe('mock /v1/git routes', () => {
     expect(s.base).toBe('main');
     expect(s.branches).toContain('main');
     expect(s.operation).toBeNull();
+    expect(s.submodules).toEqual([]);
     expect(s.staged.length + s.changes.length).toBeGreaterThan(0);
     expect(s.ahead).toBe(s.upstream ? s.outgoing.length : 0);
   });
