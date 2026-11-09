@@ -603,7 +603,7 @@
 
       {#if vis('usage')}
         <section>
-          <h3>{t('settings.usage')}</h3>
+          <h3>{t('settings.usage.claude')}</h3>
           {#if row('usage', 'claudeLimits')}
             <label class="row" class:hit={hit('usage', 'claudeLimits')}>
               <span>{t('settings.fetchClaudeLimits')}<small>{t('settings.fetchClaudeLimitsHint')}</small></span>
@@ -619,6 +619,28 @@
               >
               <input type="checkbox" class="switch" checked={statusline.installed} disabled={statuslineBusy} title={statusline.path} onchange={(e) => setStatusline(e.currentTarget.checked)} />
             </label>
+          {/if}
+        </section>
+      {/if}
+
+      {#if vis('usageCodex')}
+        <section>
+          <h3>{t('settings.usage.codex')}</h3>
+          {#if row('usageCodex', 'codexLimits')}
+            <div class="row" class:hit={hit('usageCodex', 'codexLimits')}>
+              <span>{t('settings.codexLimits')}<small>{t('settings.codexLimitsHint')}</small></span>
+            </div>
+          {/if}
+        </section>
+      {/if}
+
+      {#if vis('usageGemini')}
+        <section>
+          <h3>{t('settings.usage.gemini')}</h3>
+          {#if row('usageGemini', 'geminiTokens')}
+            <div class="row" class:hit={hit('usageGemini', 'geminiTokens')}>
+              <span>{t('settings.geminiTokens')}<small>{t('settings.geminiTokensHint')}</small></span>
+            </div>
           {/if}
         </section>
       {/if}

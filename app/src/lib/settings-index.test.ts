@@ -93,8 +93,31 @@ describe('categories and sections', () => {
   it('opens notifications for the notifications argument', () => {
     expect(initialCategory('notifications')).toBe('notifications');
     expect(initialCategory('skills')).toBe('agents');
+    expect(initialCategory('usage')).toBe('usage');
     expect(initialCategory(null)).toBe('general');
     expect(initialCategory('other')).toBe('general');
+  });
+});
+
+describe('usage', () => {
+  it('has its own category with one section per provider the daemon tracks', () => {
+    expect(availableCategories(none).map((c) => c.id)).toContain('usage');
+    expect(sectionsOf('usage', none).map((s) => s.id)).toEqual(['usage', 'usageCodex', 'usageGemini']);
+    expect(sectionsOf('agents', all).map((s) => s.id)).not.toContain('usage');
+  });
+
+  it('finds Codex and Gemini usage by provider name', () => {
+    const codex = search('codex', all, en2);
+    expect(codex.hits.usageCodex).toBe('all');
+    expect(codex.categories).toContain('usage');
+    expect(search('gemini', all, en2).hits.usageGemini).toBe('all');
+  });
+
+  it('finds every provider row when searching for limits', () => {
+    const r = search('limits', all, en2);
+    expect(r.hits.usage).toEqual(['claudeLimits', 'statusline']);
+    expect(r.hits.usageCodex).toEqual(['codexLimits']);
+    expect(r.hits.usageGemini).toEqual(['geminiTokens']);
   });
 });
 
