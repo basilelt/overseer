@@ -703,6 +703,37 @@ paths:
         "400": { description: "Relative path, or not a directory" }
         "403": { description: Not readable }
         "404": { description: Does not exist }
+  /power/lid:
+    get:
+      summary: Whether the computer is kept awake with the lid closed
+      operationId: getLidPower
+      responses:
+        "200":
+          description: Option and system state
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LidPower" }
+    put:
+      summary: Keep the computer awake with the lid closed, or stop
+      operationId: setLidPower
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [enabled]
+              properties:
+                enabled: { type: boolean }
+      responses:
+        "200":
+          description: Option and system state
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LidPower" }
+        "400": { description: enabled is not a boolean }
+        "500": { description: The system refused the change }
+        "501": { description: Not supported on this system }
   /lifecycle:
     get:
       summary: Start-at-boot service status and the after-reboot choice (contract/app-daemon.md, Lifecycle)
@@ -2135,6 +2166,14 @@ paths:
         "504": { description: Timed out }
 components:
   schemas:
+    LidPower:
+      type: object
+      required: [enabled, active, supported, error]
+      properties:
+        enabled: { type: boolean }
+        active: { type: boolean }
+        supported: { type: boolean }
+        error: { type: [string, "null"] }
     GhError:
       type: object
       required: [error, code]

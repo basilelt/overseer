@@ -859,6 +859,7 @@ pub fn handle(ctx: &Ctx, r: &Request) -> (u16, Value) {
         .or_else(|| crate::import::routes(&r.method, &segs, &body, &ctx.state_dir))
         .or_else(|| crate::lifecycle::routes(&r.method, &segs, &body, &ctx.state_dir))
         .or_else(|| crate::termtheme::routes(&r.method, &segs, &body))
+        .or_else(|| crate::power::routes(&r.method, &segs, &body, &ctx.state_dir))
         .or_else(|| crate::feedback::routes(ctx, &r.method, &segs, &body))
         .or_else(|| crate::github::routes(ctx, r, &segs, &body))
         .or_else(|| crate::profiles::routes(ctx, r, &segs, &body))
@@ -1396,6 +1397,7 @@ pub fn run(
     let adopted = crate::upgrade::resume(saved, &state_dir);
     crate::shellenv::init();
     crate::lifecycle::on_start(&state_dir, restarted || once);
+    crate::power::on_start(&state_dir);
     let path = socket_path(&state_dir);
     crate::scanner::share();
     listen(&path, adopted)?;

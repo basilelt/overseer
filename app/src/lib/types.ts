@@ -408,6 +408,13 @@ export interface AutostartStatus {
   lingerCommand: string | null;
 }
 
+export interface LidPower {
+  enabled: boolean;
+  active: boolean;
+  supported: boolean;
+  error: string | null;
+}
+
 export interface Lifecycle {
   afterReboot: AfterReboot;
   autostart: AutostartStatus;

@@ -32,6 +32,7 @@ pub mod mcp;
 pub mod naming;
 pub mod organize;
 pub mod ports;
+pub mod power;
 pub mod procs;
 pub mod profiles;
 pub mod proxy;

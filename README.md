@@ -148,6 +148,9 @@ on a TCP port on the server.
   opencode, Copilot CLI, Cursor Agent, Amp or Antigravity, from Settings → Agents or the command
   palette. The install runs in a terminal you can watch.
 - **Usage and system monitor**: agent quotas, token usage, CPU and RAM in the title bar.
+- **Keep agents running with the lid closed**: an opt-in switch (Settings → Connection) stops the
+  laptop running Overseer from sleeping when you close it, on Linux, macOS and Windows, so agents
+  finish their work with the network on. It drains the battery, and the switch says so.
 - **Light and Dark palettes**: choose System, Light or Dark as the theme (System follows your OS live), then pick a palette for each mode: Default, Graphite or Solarized Soft for Dark, or make your own with color pickers, a live preview and a contrast warning. Find them in Settings → General → Appearance ([Graphite](app/docs/screenshots/graphite.png), [Solarized Soft](app/docs/screenshots/solarized.png)).
 - **Settings with search**: categories in a sidebar, and a search box that finds any setting by name or description, in your language or in English.
 - **Command palette** (history, actions, sessions) and keyboard shortcuts.
