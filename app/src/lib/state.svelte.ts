@@ -372,6 +372,7 @@ class AppState {
   }
 
   selectWorkspace(id: string) {
+    this.following = null;
     this.workspaceId = id;
     this.wsChosen = true;
     rememberWorkspace(this.conn.target, id);
