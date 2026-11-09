@@ -175,9 +175,12 @@ describe('WsDrag', () => {
     const { deps, drag } = setup(at({ drop: 'child', id: 'sub' }));
     // When it moves and is released
     drag.start(ev(0, 0), 'session', 'line:l1');
+    expect(drag.kind).toBeNull();
     drag.move(ev(0, 30));
+    expect(drag.kind).toBe('session');
     expect(drag.posOf('workspace', 'sub')).toBe('inside');
     await drag.end();
+    expect(drag.kind).toBeNull();
     // Then the session moves there and no workspace is reordered
     expect(deps.moveSession).toHaveBeenCalledWith('line:l1', 'sub');
     expect(deps.patchWorkspace).not.toHaveBeenCalled();

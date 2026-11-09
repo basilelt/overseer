@@ -748,6 +748,24 @@ describe('workspaces', () => {
     expect(app.workspaceId).toBe('ws_oslabs');
   });
 
+  it('opens a top-level workspace, not a nested one listed first, when none is remembered or busy', async () => {
+    // Given a daemon whose first workspace is nested, with no session anywhere and nothing remembered
+    const at = '2026-11-01T00:00:00Z';
+    const base = { station: 'atlas', kind: 'dir' as const, cwd: null, folderId: null, pinned: false, archived: false, auto: true, rank: 1, tabs: [], notifyIdle: false, createdAt: at, updatedAt: at };
+    (m as unknown as { workspaces: unknown[] }).workspaces = [
+      { ...base, id: 'w_lib', name: 'lib', path: '/p/40/lib', parentId: 'w_proj' },
+      { ...base, id: 'w_proj', name: 'proj', path: '/p', parentId: null },
+    ];
+    (m as unknown as { lines: unknown[] }).lines = [];
+    (m as unknown as { terms: unknown[] }).terms = [];
+    settings.workspaceByHost = {};
+    settings.workspaceId = undefined;
+    // When the app connects
+    await connect();
+    // Then the top-level workspace opens
+    expect(app.workspaceId).toBe('w_proj');
+  });
+
   it('keeps the sidebar mode across launches', () => {
     app.setSidebarMode('status');
     expect(app.sidebarMode).toBe('status');

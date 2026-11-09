@@ -406,10 +406,18 @@ describe('spaces with nested workspaces', () => {
     expect(r.rows[0]!.children!.find((c) => c.id === 'n1')!.items).toHaveLength(1);
   });
 
-  it('folds an idle parent into the empty chips without its nested workspaces', () => {
+  it('keeps an idle parent as a block listing its nested workspaces, so they can be started in', () => {
     const r = spaces(all, [], new Map(), '');
+    expect(r.rows.map((x) => x.id)).toEqual(['p']);
+    expect(r.rows[0]!.children!.map((c) => c.id)).toEqual(['n2', 'n1']);
+    expect(r.rows[0]!.summary.total).toBe(0);
+    expect(r.empty.map((w) => w.id)).toEqual(['o']);
+  });
+
+  it('drops an idle parent whose name and nested workspaces miss the filter', () => {
+    const r = spaces(all, [], new Map(), 'zzz');
     expect(r.rows).toEqual([]);
-    expect(r.empty.map((w) => w.id)).toEqual(['p', 'o']);
+    expect(r.empty).toEqual([]);
   });
 
   it('hides nested workspaces with an archived parent and sends their sessions to "other"', () => {

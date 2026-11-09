@@ -71,12 +71,13 @@ export function spaces(workspaces: Workspace[], items: SidebarItem[], wsOf: Read
       if (q && !cmine.length && !(wNamed || named(c))) continue;
       children.push({ id: c.id, name: c.name, workspace: c, items: cmine, summary: workspaceSummary(cmine) });
     }
-    const busy = mine.length || children.some((c) => c.items.length);
+    // A workspace with subjects stays a block so they can be seen and started in, even with no session yet.
+    const busy = mine.length || children.length;
     if (busy) {
       const row: SpaceRow = { id: w.id, name: w.name, workspace: w, items: mine, summary: sum([workspaceSummary(mine), ...children.map((c) => c.summary)]) };
       if (children.length) row.children = children;
       rows.push(row);
-    } else if (!all.length && !childAll && (!q || wNamed || children.length)) empty.push(w);
+    } else if (!all.length && !childAll && (!q || wNamed)) empty.push(w);
   }
   const others = narrow(null, by.get('') ?? []);
   if (others.length) rows.push({ id: '', name: null, workspace: null, items: others, summary: workspaceSummary(others) });

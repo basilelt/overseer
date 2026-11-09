@@ -31,7 +31,8 @@
   const trail = $derived(spaceTrail(app.ws));
   const hk = $derived(hostKey(app.conn.target));
   const saved = $derived(settings.spacesOpen?.[hk]);
-  const opened = $derived(new Set(saved ?? [app.workspaceId]));
+  // The parent of the active nested workspace stays open, so the active one is always in view.
+  const opened = $derived(new Set([...(saved ?? [app.workspaceId]), ...(app.currentWorkspace?.parentId ? [app.currentWorkspace.parentId] : [])]));
   // Every session of a connection runs on that connection's host.
   const host = $derived(hostFor(app.conn));
   const q = $derived(filter.trim());
@@ -155,7 +156,7 @@
       {/if}
     </div>
   {/each}
-  {#if drag.dragging && !pinned}<div class="ghost" data-drop="pinned" class:target={drag.over?.type === 'pinned'}>{t('ws.dropToPin')}</div>{/if}
+  {#if drag.dragging && drag.kind !== 'session' && !pinned}<div class="ghost" data-drop="pinned" class:target={drag.over?.type === 'pinned'}>{t('ws.dropToPin')}</div>{/if}
   {#if !nodes.length}<p class="none faint">{q ? t('common.none') : t('ws.empty')}</p>{/if}
   {#if !q && app.connected}
     <div class="gtitle">
@@ -179,7 +180,7 @@
       </button>
     {/each}
   {/if}
-  {#if drag.dragging}<div class="rootdrop" data-drop="root"></div>{/if}
+  {#if drag.dragging && drag.kind !== 'session'}<div class="rootdrop" data-drop="root"></div>{/if}
 </div>
 
 <style>

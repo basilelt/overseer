@@ -206,4 +206,13 @@ describe('Sidebar touch menus', () => {
     expect(sidebarSrc).toMatch(/<aside class="sidebar"[^>]*use:touchContextMenu>/);
     expect(sidebarSrc).toMatch(/\.sidebar \{[^}]*-webkit-touch-callout: none/s);
   });
+
+  it('keeps the parent of the active nested workspace open, wires subjects to the same toggles and drags only real workspaces', () => {
+    expect(src).toMatch(/const opened = \$derived\(new Set\(\[\.\.\.\(saved \?\? \[app\.workspaceId\]\), \.\.\.\(app\.currentWorkspace\?\.parentId \? \[app\.currentWorkspace\.parentId\] : \[\]\)\]\)\)/);
+    expect(src).toMatch(/ontoggle: toggle,\s*onpick: pick,\s*onclosed: toggleClosed,/);
+    expect(src).toMatch(/kids=\{kidsFor\(r\.workspace\)\}/);
+    expect(src).toMatch(/drag\.start\(e, 'session', key\)/);
+    expect(src).toMatch(/drag\.dragging && drag\.kind !== 'session' && !pinned/);
+    expect(src).toMatch(/drag\.dragging && drag\.kind !== 'session'\}<div class="rootdrop"/);
+  });
 });

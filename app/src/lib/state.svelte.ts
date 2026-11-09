@@ -353,7 +353,7 @@ class AppState {
     const pref = live.find((w) => w.id === want);
     if (pref) return pref.id;
     const busy = live.filter((w) => this.aggregates.get(w.id)?.agents).sort((a, b) => Number(b.pinned) - Number(a.pinned) || a.rank - b.rank);
-    return (busy[0] ?? live[0])?.id ?? NO_WORKSPACE;
+    return (busy[0] ?? live.find((w) => !w.parentId) ?? live[0])?.id ?? NO_WORKSPACE;
   }
 
   membersOf(workspaceId: string) {

@@ -41,6 +41,8 @@ const appDeps = (): DragDeps => ({
 export class WsDrag {
   over = $state<DropTarget | null>(null);
   dragging = $state(false);
+  /** What is being dragged, once the drag is under way. */
+  kind = $state<'workspace' | 'folder' | 'session' | null>(null);
   /** True for the click that follows a drag, so releasing over a header does not select or fold it. */
   suppressed = false;
   #deps: DragDeps;
@@ -79,6 +81,7 @@ export class WsDrag {
     if (!d.active && Math.hypot(e.clientX - d.x, e.clientY - d.y) < 5) return;
     d.active = true;
     this.dragging = true;
+    this.kind = d.kind;
     this.over = this.#targetAt(e.clientX, e.clientY);
   };
 
@@ -87,6 +90,7 @@ export class WsDrag {
     const target = this.over;
     this.#drag = null;
     this.dragging = false;
+    this.kind = null;
     this.over = null;
     if (!d?.active) return;
     this.suppressed = true;
@@ -111,6 +115,7 @@ export class WsDrag {
   cancel = () => {
     this.#drag = null;
     this.dragging = false;
+    this.kind = null;
     this.over = null;
   };
 
