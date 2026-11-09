@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { agentLevel, authNote, barHeights, chipSegments, chipText, countdown, formatCost, formatDuration, formatTokens, level, tzOffset, usagePath, worst } from './format';
+import { agentLevel, authNote, onCredits, windowLevel, barHeights, chipSegments, chipText, countdown, formatCost, formatDuration, formatTokens, level, tzOffset, usagePath, worst } from './format';
 import type { UsageAgent, UsageTotals } from './types';
 import { mockUsage } from './mock';
+import { creditsNote } from './strings';
 
 const zero: UsageTotals = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0, cost: 0, costPartial: false, messages: 0, activeMs: 0 };
 const agent = (id: string, total: number, windows: [string, number, boolean?][] = [], hit = false): UsageAgent => ({
@@ -50,6 +51,53 @@ describe('usage chip', () => {
   it('flags a reached limit and hides idle agents', () => {
     expect(chipSegments([agent('claude', 10, [], true)], name, 'limit')[0]).toMatchObject({ parts: ['limit'], level: 'crit' });
     expect(chipSegments([agent('claude', 0)], name, 'limit')).toEqual([]);
+  });
+});
+
+describe('plan quota spent but paid by credits', () => {
+  const spent = (credits: UsageAgent['limits']['credits'], extra: Partial<UsageAgent['limits']> = {}): UsageAgent => {
+    const a = agent('codex', 50, [['mo', 100]]);
+    return { ...a, limits: { ...a.limits, plan: 'go', credits, ...extra } };
+  };
+  const paid = { hasCredits: true, unlimited: false, balance: 1272.182153 };
+
+  it('rates a spent window as a warning, not a reached limit, while credits remain', () => {
+    const a = spent(paid);
+    expect(onCredits(a)).toBe(true);
+    expect(windowLevel(a, a.limits.windows[0])).toBe('warn');
+    expect(agentLevel(a)).toBe('warn');
+  });
+
+  it('keeps a spent window critical without credits, when blocked or when a limit was hit', () => {
+    for (const a of [
+      spent(null),
+      spent({ hasCredits: false, unlimited: false, balance: 0 }),
+      spent(paid, { reached: 'workspace_member_usage_limit_reached' }),
+      spent(paid, { hit: { at: '2026-11-09T08:00:00Z', message: 'limit' } }),
+    ]) {
+      expect(onCredits(a)).toBe(false);
+      expect(agentLevel(a)).toBe('crit');
+    }
+  });
+
+  it('does not mention credits while plan quota is left', () => {
+    const a = agent('codex', 50, [['mo', 40]]);
+    expect(onCredits({ ...a, limits: { ...a.limits, credits: paid } })).toBe(false);
+  });
+
+  it('adds credits to the chip and states the balance left', () => {
+    const a = spent(paid);
+    expect(chipSegments([a], name, 'limit', 'credits')[0]).toMatchObject({ parts: ['mo 100%', 'credits'], level: 'warn' });
+    expect(creditsNote(a)).toContain('1,272.18');
+    expect(creditsNote(spent({ hasCredits: false, unlimited: true, balance: null }))).toBe('Plan quota used up, running on credits');
+  });
+
+  it('serves the credits state from the mock as the daemon does', () => {
+    const r = mockUsage('range=today&by=agent&codexCredits=1', Date.parse('2026-11-09T09:00:00Z'));
+    const codex = r.agents.find((a) => a.agent === 'codex')!;
+    expect(codex.limits.credits).toEqual({ hasCredits: true, unlimited: false, balance: 1272.18 });
+    expect(codex.limits.reached).toBeNull();
+    expect(onCredits(codex)).toBe(true);
   });
 });
 

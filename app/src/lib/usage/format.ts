@@ -76,9 +76,20 @@ export function authNote(l: UsageLimits | undefined): 'authExpired' | 'authUnava
   return null;
 }
 
+export function onCredits(a: UsageAgent): boolean {
+  const l = a.limits;
+  if (!l || l.hit || l.reached || !(l.credits?.hasCredits || l.credits?.unlimited)) return false;
+  return liveWindows(a).some((w) => w.usedPercent >= 100);
+}
+
+export function windowLevel(a: UsageAgent, w: UsageWindow): Level {
+  const l = level(w.usedPercent);
+  return l === 'crit' && onCredits(a) ? 'warn' : l;
+}
+
 export function agentLevel(a: UsageAgent): Level {
   if (a.limits?.hit) return 'crit';
-  return worst(liveWindows(a).map((w) => level(w.usedPercent)));
+  return worst(liveWindows(a).map((w) => windowLevel(a, w)));
 }
 
 export interface ChipSegment {
@@ -88,13 +99,16 @@ export interface ChipSegment {
   level: Level;
 }
 
-export function chipSegments(agents: UsageAgent[], name: (id: string) => string, limitLabel: string): ChipSegment[] {
+export function chipSegments(agents: UsageAgent[], name: (id: string) => string, limitLabel: string, creditsLabel = 'credits'): ChipSegment[] {
   return agents
     .map((a): ChipSegment | null => {
       const windows = liveWindows(a);
       const nm = name(a.agent);
       if (a.limits?.hit) return { agent: a.agent, name: nm, parts: [limitLabel], level: 'crit' };
-      if (windows.length) return { agent: a.agent, name: nm, parts: windows.map((w) => `${w.key} ${formatPct(w.usedPercent)}`), level: agentLevel(a) };
+      if (windows.length) {
+        const parts = windows.map((w) => `${w.key} ${formatPct(w.usedPercent)}`);
+        return { agent: a.agent, name: nm, parts: onCredits(a) ? [...parts, creditsLabel] : parts, level: agentLevel(a) };
+      }
       if (a.today.total > 0) return { agent: a.agent, name: nm, parts: [formatTokens(a.today.total)], level: 'ok' };
       return null;
     })

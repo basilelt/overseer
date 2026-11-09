@@ -45,20 +45,36 @@ export function mockUsage(qs: string, now = Date.now()): UsageResponse {
       {
         agent: 'codex',
         today: tot(days[n - 1].usage.total * 0.3, 1.2, 60),
-        limits: {
-          source: 'codex',
-          observedAt: new Date(now - 120_000).toISOString(),
-          plan: 'plus',
-          windows: [
-            { key: '5h', windowMinutes: 300, usedPercent: 82, resetsAt: reset(2.2), stale: false },
-            { key: 'wk', windowMinutes: 10080, usedPercent: 38, resetsAt: reset(80), stale: false },
-          ],
-          hit: null,
-        },
+        limits: codexCredits(q)
+          ? {
+              source: 'codex',
+              observedAt: new Date(now - 120_000).toISOString(),
+              plan: 'go',
+              windows: [{ key: 'mo', windowMinutes: 43200, usedPercent: 100, resetsAt: reset(500), stale: false }],
+              hit: null,
+              credits: { hasCredits: true, unlimited: false, balance: 1272.18 },
+              reached: null,
+              via: 'codex',
+            }
+          : {
+              source: 'codex',
+              observedAt: new Date(now - 120_000).toISOString(),
+              plan: 'plus',
+              windows: [
+                { key: '5h', windowMinutes: 300, usedPercent: 82, resetsAt: reset(2.2), stale: false },
+                { key: 'wk', windowMinutes: 10080, usedPercent: 38, resetsAt: reset(80), stale: false },
+              ],
+              hit: null,
+            },
       },
     ],
     indexing: false,
   };
+}
+
+function codexCredits(q: URLSearchParams): boolean {
+  const page = globalThis.location ? new URLSearchParams(globalThis.location.search) : null;
+  return (q.get('codexCredits') ?? page?.get('codexCredits')) === '1';
 }
 
 function claudeLimits(on: boolean, now: number, reset: (h: number) => string): UsageLimits {
