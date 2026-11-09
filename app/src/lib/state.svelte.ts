@@ -73,6 +73,8 @@ class AppState {
   fileArg = $state<FileArg | null>(null);
   selectedKey = $state<string | null>(null);
   panelOpen = $state(true);
+  gitPanel = $state(false);
+  gitWorktree = $state<{ project: string; path: string } | null>(null);
   sidebarOpen = $state(true);
   browserUrl = $state('');
   toast = $state<{ text: string; kind: 'info' | 'error'; action?: ToastAction; progress?: number } | null>(null);
@@ -612,6 +614,15 @@ class AppState {
     const cur = this.selectedKey;
     if (cur !== item.key && (cur === null || cur === `term:${id}` || !this.items.some((i) => i.key === cur))) this.focusKey(item.key);
     if (item.lineId) this.following = null;
+  }
+
+  toggleGitPanel() {
+    if (this.gitPanel && this.panelOpen) {
+      this.gitPanel = false;
+      return;
+    }
+    this.gitPanel = true;
+    this.panelOpen = true;
   }
 
   openProjectTab(kind: 'graph' | 'worktrees', project?: string) {

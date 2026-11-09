@@ -6,6 +6,10 @@
   import RefreshCw from '@lucide/svelte/icons/refresh-cw';
   import Search from '@lucide/svelte/icons/search';
   import Tag from '@lucide/svelte/icons/tag';
+  import PanelRight from '@lucide/svelte/icons/panel-right';
+  import { isPhone } from '../mobile/ui.svelte';
+  import { Scm, fileCount } from './scm.svelte';
+  import SourceControl from './SourceControl.svelte';
   import Segmented from '../components/kanban/Segmented.svelte';
   import AgentGlyph from '../components/ui/AgentGlyph.svelte';
   import { app } from '../state.svelte';
@@ -17,7 +21,7 @@
   import { maxWidth } from './layout';
   import { EMPTY_GRAPH, GraphLoader, type GraphSnapshot } from './loader';
   import { gt } from './strings';
-  import type { Overlay, RefsFilter } from './types';
+  import type { Overlay, RefsFilter, Worktree } from './types';
   import { ROW_H, authors, dimmed, graphWidth, labelsBySha, needsMore, overlaysBySha, scrollToRow, searchMatches, stepMatch, visibleRange } from './view';
 
   let { projectPath }: { projectPath: string } = $props();
@@ -35,9 +39,55 @@
   let list: HTMLDivElement | undefined = $state();
   let canvas: HTMLCanvasElement | undefined = $state();
   let loader: GraphLoader | null = null;
+  let showScm = $state(true);
+  let phoneView = $state<'changes' | 'graph'>('changes');
+  let trees = $state.raw<Worktree[]>([]);
+  let chosen = $state(untrack(() => projectPath));
+
+  $effect(() => {
+    const w = app.gitWorktree;
+    if (w?.project !== projectPath) return;
+    chosen = w.path;
+    showScm = true;
+    phoneView = 'changes';
+    app.gitWorktree = null;
+  });
+  const phone = isPhone();
+  const scm = new Scm(
+    () => (app.client ? gitApi(app.client) : null),
+    (text) => app.notify(text, 'error'),
+  );
+  const wip = $derived(fileCount(scm.status));
+
+  $effect(() => {
+    scm.setTarget({ worktree: chosen });
+  });
+
+  async function loadTrees() {
+    if (!app.client) return;
+    try {
+      const d = await gitApi(app.client).worktrees(projectPath);
+      trees = d.worktrees.filter((w) => w.state !== 'missing');
+    } catch {
+      trees = [];
+    }
+  }
+
+  async function mergePick() {
+    if (!pick) return;
+    const r = await scm.merge(pick.sha);
+    if (r) app.notify(gt('mergedRev', { rev: pick.sha.slice(0, 7), branch: r.status.branch ?? 'HEAD' }));
+  }
+
+  async function revertPick() {
+    if (!pick) return;
+    const r = await scm.revert(pick.sha);
+    if (r) app.notify(gt('reverted', { sha: pick.sha.slice(0, 7), commit: (r.commit ?? '').slice(0, 7) }));
+  }
 
   const commits = $derived(snap.commits);
   const page = $derived(snap.page);
+  const pick = $derived(selected >= 0 ? commits[selected] : undefined);
   const range = $derived(visibleRange(commits.length, scrollTop, viewport));
   const lanes = $derived(maxWidth(snap.rows));
   const gw = $derived(graphWidth(lanes));
@@ -87,6 +137,7 @@
       if (list) list.scrollTop = 0;
       scrollTop = 0;
       load();
+      loadTrees();
     });
   });
 
@@ -129,7 +180,10 @@
       const p = e.data?.project ?? e.data?.worktree?.project;
       if (p && p !== projectPath) return;
       clearTimeout(timer);
-      timer = setTimeout(() => load(true), 300);
+      timer = setTimeout(() => {
+        load(true);
+        if (e.type.startsWith('worktree.')) loadTrees();
+      }, 300);
     });
     return () => {
       off();
@@ -212,10 +266,25 @@
     <span class="spacer"></span>
     <span class="faint total">{snap.next ? gt('moreCommits', { n: commits.length.toLocaleString() }) : gt('commits', { n: commits.length.toLocaleString() })}</span>
     <button class="icon-btn" title={gt('refresh')} aria-label={gt('refresh')} onclick={() => load(true)}><RefreshCw size={14} /></button>
+    {#if !phone}
+      <button class="icon-btn" class:on={showScm} title={showScm ? gt('hideScm') : gt('showScm')} aria-label={showScm ? gt('hideScm') : gt('showScm')} aria-pressed={showScm} onclick={() => (showScm = !showScm)}><PanelRight size={14} /></button>
+    {/if}
   </div>
+  {#if phone}
+    <div class="ptabs" role="tablist">
+      <button role="tab" aria-selected={phoneView === 'changes'} class:on={phoneView === 'changes'} onclick={() => (phoneView = 'changes')}>{gt('sc.changes')}{#if wip}<span class="n">{wip}</span>{/if}</button>
+      <button role="tab" aria-selected={phoneView === 'graph'} class:on={phoneView === 'graph'} onclick={() => (phoneView = 'graph')}>{gt('graph')}</button>
+    </div>
+  {/if}
 
   <div class="body">
-    <div class="table">
+    <div class="table" class:hidden={phone && phoneView !== 'graph'}>
+      {#if wip && scm.status}
+        <button class="wip" style:--gw="{gw}px" onclick={() => (phone ? (phoneView = 'changes') : (showScm = true))}>
+          <span class="c-graph"><span class="dot"></span></span>
+          <span class="c-subject"><span class="subj">{gt('uncommitted')}</span><span class="faint">{gt('uncommittedHint', { n: wip, branch: scm.status.branch ?? 'HEAD' })}</span></span>
+        </button>
+      {/if}
       <div class="head" style:--gw="{gw}px">
         <span class="c-graph">{gt('colGraph')}</span>
         <span class="c-subject">{gt('colSubject')}</span>
@@ -290,8 +359,31 @@
         </div>
       </div>
     </div>
-    {#if detail && page}
+    {#if detail && page && !phone}
       <CommitDetail project={projectPath} repo={page.repo} sha={detail} onclose={() => (detail = null)} onselect={(s) => select(commits.findIndex((c) => c.sha === s), true)} />
+    {/if}
+    {#if phone ? phoneView === 'changes' : showScm}
+      <aside class="scm" class:full={phone} aria-label={gt('button')} data-tour="git-tab">
+        <label class="tree">
+          <span class="lbl">{gt('worktree')}</span>
+          <select class="mono" bind:value={chosen}>
+            {#if !trees.some((w) => w.path === chosen)}<option value={chosen}>{chosen}</option>{/if}
+            {#each trees as w (w.path)}<option value={w.path}>{w.branch ?? w.path}{w.kind === 'main' ? ` · ${gt('main')}` : ''}</option>{/each}
+          </select>
+        </label>
+        <SourceControl {scm} />
+        {#if pick && scm.status && !phone}
+          <div class="picked">
+            <span class="lbl">{gt('selected')}</span>
+            <span class="psubj">{pick.subject}</span>
+            <span class="mono faint">{pick.sha.slice(0, 7)} · {pick.author}</span>
+            <span class="pacts">
+              <button class="btn" onclick={mergePick} disabled={!!scm.busy || pick.sha === scm.status.head}>{gt('mergeCommit', { branch: scm.status.branch ?? 'HEAD' })}</button>
+              <button class="btn" onclick={revertPick} disabled={!!scm.busy}>{gt('revert')}</button>
+            </span>
+          </div>
+        {/if}
+      </aside>
     {/if}
   </div>
 </section>
@@ -368,6 +460,135 @@
     flex: 1;
     display: flex;
     min-height: 0;
+  }
+  .hidden {
+    display: none !important;
+  }
+  .ptabs {
+    display: flex;
+    border-bottom: 1px solid var(--border);
+  }
+  .ptabs button {
+    flex: 1;
+    height: 44px;
+    border: 0;
+    border-bottom: 2px solid transparent;
+    background: none;
+    color: var(--text-2);
+    font-size: 14px;
+  }
+  .ptabs button.on {
+    color: var(--text);
+    border-bottom-color: var(--accent);
+  }
+  .ptabs .n {
+    margin-left: 6px;
+    color: var(--text-3);
+  }
+  .wip {
+    display: grid;
+    grid-template-columns: var(--gw) minmax(0, 1fr);
+    align-items: center;
+    column-gap: 12px;
+    width: 100%;
+    height: 28px;
+    flex: none;
+    padding: 0 12px 0 0;
+    border: 0;
+    border-bottom: 1px solid var(--border);
+    background: var(--accent-soft);
+    color: var(--text);
+    font-size: 13px;
+    text-align: left;
+  }
+  .wip .c-graph {
+    display: flex;
+    padding-left: 5px;
+  }
+  .wip .dot {
+    width: 9px;
+    height: 9px;
+    border: 2px dashed var(--text-2);
+    border-radius: 50%;
+  }
+  .wip .c-subject {
+    display: flex;
+    gap: 10px;
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+  }
+  .scm {
+    width: 320px;
+    flex: none;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    border-left: 1px solid var(--border);
+    background: var(--bg);
+  }
+  .scm.full {
+    width: auto;
+    flex: 1;
+    border-left: 0;
+  }
+  .tree {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 10px 12px 0;
+  }
+  .tree select {
+    height: 28px;
+    padding: 0 6px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--surface);
+    color: var(--text);
+    font-size: 12px;
+    min-width: 0;
+  }
+  .lbl {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--text-2);
+  }
+  .picked {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 10px 12px;
+    border-top: 1px solid var(--border);
+    font-size: 12px;
+  }
+  .psubj {
+    font-size: 13px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .pacts {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 4px;
+  }
+  .btn {
+    height: 28px;
+    padding: 0 10px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: transparent;
+    color: var(--text);
+    font-size: 12px;
+  }
+  .btn:hover:not(:disabled) {
+    background: var(--surface-hover);
+  }
+  .btn:disabled {
+    opacity: 0.5;
   }
   .table {
     flex: 1;

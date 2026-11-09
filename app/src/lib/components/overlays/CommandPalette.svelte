@@ -143,6 +143,7 @@
     ...(connected ? [action('disconnect', 'palette.disconnect', Unplug, () => app.disconnect())] : []),
     action('theme', 'palette.toggleTheme', SunMoon, () => saveSettings({ theme: nextTheme[settings.theme] })),
     action('panel', 'palette.togglePanel', PanelRight, () => (app.panelOpen = !app.panelOpen)),
+    action('git-panel', 'palette.toggleGitPanel', GitGraph, () => app.toggleGitPanel()),
     action('split-right', 'palette.splitRight', Columns2, () => split('horizontal')),
     action('split-down', 'palette.splitDown', Rows2, () => split('vertical')),
     action('settings', 'palette.settings', Settings, () => app.open('settings')),

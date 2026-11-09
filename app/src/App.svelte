@@ -60,6 +60,7 @@
 
   const kanban = () => import('./lib/components/kanban/KanbanView.svelte');
   const tourView = () => import('./lib/components/tour/Tour.svelte');
+  const gitPanel = () => import('./lib/git/GitPanel.svelte');
 
   $effect(() => {
     tour.setReady(ui.layout !== 'phone');
@@ -177,7 +178,7 @@
       </main>
       {#if app.panelOpen && app.view === 'agents' && !/^(graph|worktrees):/.test(app.selectedKey ?? '')}
         <Resizer width={panelW} bounds={PANEL} side="right" label={t('layout.resizePanel')} onchange={(w) => (panelW = w)} oncommit={(w) => saveSettings({ panelWidth: w })} />
-        <Boundary name="panel" width="var(--panel-w, 340px)"><SidePanel /></Boundary>
+        <Boundary name="panel" width="var(--panel-w, 340px)">{#if app.gitPanel}{#await gitPanel() then { default: GitPanel }}<GitPanel />{/await}{:else}<SidePanel />{/if}</Boundary>
       {/if}
     </div>
     {/if}

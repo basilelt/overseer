@@ -21,18 +21,18 @@ afterEach(() => vi.restoreAllMocks());
 describe('command palette views', () => {
   it('groups every view under its own Views section', async () => {
     const views = section(await rendered(true), 'Views');
-    for (const label of ['Review changes', 'Open browser', 'Open the Git graph', 'Open the worktrees', 'Open PR reviews']) expect(views).toContain(label);
+    for (const label of ['Review changes', 'Open browser', 'Open Git (graph and source control)', 'Open the worktrees', 'Open PR reviews']) expect(views).toContain(label);
   });
 
   it('keeps the views out of the Actions section', async () => {
     const actions = section(await rendered(true), 'Actions');
-    expect(actions).not.toContain('Open the Git graph');
+    expect(actions).not.toContain('Open Git (graph and source control)');
     expect(actions).not.toContain('Open PR reviews');
   });
 
   it('still lists the local views when disconnected', async () => {
     const views = section(await rendered(false), 'Views');
-    expect(views).toContain('Open the Git graph');
+    expect(views).toContain('Open Git (graph and source control)');
     expect(views).not.toContain('Review changes');
   });
 

@@ -1118,6 +1118,20 @@ describe('sessions', () => {
     expect(allTabs(workspace.layout)).toEqual([]);
   });
 
+  it('toggles source control in the side panel, reopening a closed panel', () => {
+    app.gitPanel = false;
+    app.panelOpen = false;
+    app.toggleGitPanel();
+    expect([app.gitPanel, app.panelOpen]).toEqual([true, true]);
+    app.toggleGitPanel();
+    expect([app.gitPanel, app.panelOpen]).toEqual([false, true]);
+    app.gitPanel = true;
+    app.panelOpen = false;
+    app.toggleGitPanel();
+    expect([app.gitPanel, app.panelOpen]).toEqual([true, true]);
+    app.gitPanel = false;
+  });
+
   it('frees an exited terminal when its tab closes', async () => {
     const term = app.data.terms.find((x) => x.id === 'tm_shell1')!;
     app.data = { ...app.data, terms: app.data.terms.map((x) => (x === term ? { ...x, exited: true } : x)) };
