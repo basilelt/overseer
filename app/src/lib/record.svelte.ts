@@ -1,5 +1,5 @@
 import { type Sub, t } from './i18n.svelte';
-import { describe, FRAME_RATE, isField, MAX_EVENTS, MAX_MS, pickMime, shortcut, VIDEO_BPS, type EventKind, type RecEvent, type Recording } from './record';
+import { describe, FRAME_RATE, isField, LOG, MAX_EVENTS, MAX_MS, pickMime, shortcut, VIDEO_BPS, type EventKind, type RecEvent, type Recording } from './record';
 
 import { rec, setupRecording, tap, type Phase } from './record-state.svelte';
 
@@ -76,7 +76,7 @@ class Recorder {
     this.t0 = Date.now();
     this.phase = 'recording';
     tap.note = (kind, text) => this.note(kind, text);
-    this.note('start', rt(this.media ? 'startedVideo' : 'started'));
+    this.note('start', this.media ? LOG.startedVideo : LOG.started);
     this.listen();
   }
 
@@ -110,7 +110,7 @@ class Recorder {
       if (s) return this.note('key', s);
       if (field && el && e.key.length === 1 && this.typedIn !== el) {
         this.typedIn = el;
-        this.note('type', rt('typed', { target: describe(el) ?? el.tagName.toLowerCase() }));
+        this.note('type', LOG.typed(describe(el) ?? el.tagName.toLowerCase()));
       }
     };
     const onFocus = (e: FocusEvent) => {
@@ -181,7 +181,7 @@ class Recorder {
   }
 
   cancel() {
-    if (this.phase !== 'recording') return;
+    if (this.phase !== 'recording' || this.finishing) return;
     this.unlisten();
     try {
       if (this.media?.state !== 'inactive') this.media?.stop();

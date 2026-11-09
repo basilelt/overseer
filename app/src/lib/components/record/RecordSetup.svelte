@@ -19,6 +19,8 @@
   const close = () => recorder.dismiss();
 </script>
 
+<svelte:window onkeydown={(e) => e.key === 'Escape' && close()} />
+
 <Modal title={rt('setupTitle')} onclose={close} width={460}>
   <div class="setup">
     <p class="small">{rt('setupBody')}</p>

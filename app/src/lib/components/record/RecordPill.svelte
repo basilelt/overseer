@@ -4,17 +4,17 @@
   import X from '@lucide/svelte/icons/x';
   import { app } from '../../state.svelte';
   import { ui } from '../../mobile/ui.svelte';
-  import { clock } from '../../record';
+  import { clock, LOG } from '../../record';
   import { recorder, rt } from '../../record.svelte';
 
   $effect(() => {
     const v = app.mobile || ui.layout === 'phone' ? ui.tab : app.view;
-    untrack(() => recorder.note('view', rt('view', { view: v })));
+    untrack(() => recorder.note('view', LOG.view(v)));
   });
 
   $effect(() => {
     const o = app.overlay;
-    if (o) untrack(() => recorder.note('view', rt('overlay', { overlay: o })));
+    if (o) untrack(() => recorder.note('view', LOG.overlay(o)));
   });
 </script>
 

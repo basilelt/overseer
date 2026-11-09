@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { recorder, rt } from './record.svelte';
+import { recorder } from './record.svelte';
 import { MAX_EVENTS, MAX_MS, type Recording } from './record';
 import { el, FakeEl } from '../test/fake-dom';
 
@@ -108,7 +108,7 @@ describe('recording actions', () => {
     vi.advanceTimersByTime(1_000);
     const rec = await recorder.stop();
     expect(rec?.events).toEqual([
-      { at: 0, kind: 'start', text: rt('started') },
+      { at: 0, kind: 'start', text: 'Recording started' },
       { at: 2_500, kind: 'click', text: 'button "Open settings"' },
     ]);
     expect(rec?.duration).toBe(3_500);
@@ -135,7 +135,7 @@ describe('recording actions', () => {
     const rec = await recorder.stop();
     expect(rec?.events.slice(1).map((e) => [e.kind, e.text])).toEqual([
       ['key', 'Ctrl+P'],
-      ['type', rt('typed', { target: 'input "Search"' })],
+      ['type', 'typed in input "Search"'],
     ]);
     expect(JSON.stringify(rec)).not.toContain('hunter');
   });
@@ -204,6 +204,16 @@ describe('recording actions', () => {
     expect(recorder.count).toBe(0);
   });
 
+  it('ignores a discard while a stop is still flushing the video', async () => {
+    stubMedia();
+    const done = await recording(true);
+    const stopping = recorder.stop();
+    recorder.cancel();
+    const rec = await stopping;
+    expect(done).toHaveBeenCalledWith(rec);
+    expect(await rec?.video?.text()).toBe('frames');
+  });
+
   it('discards everything on cancel without calling back', async () => {
     const done = await recording();
     fire('click', el('button', { title: 'X' }));
@@ -222,7 +232,7 @@ describe('screen video', () => {
     expect(getDisplayMedia).toHaveBeenCalledOnce();
     expect(FakeMediaRecorder.last?.opts).toEqual({ mimeType: 'video/webm;codecs=vp8', videoBitsPerSecond: 600_000 });
     const rec = await recorder.stop();
-    expect(rec?.events[0].text).toBe(rt('startedVideo'));
+    expect(rec?.events[0].text).toBe('Recording started with screen video');
     expect(rec?.mime).toBe('video/webm;codecs=vp8');
     expect(await rec?.video?.text()).toBe('frames');
     expect(track.stop).toHaveBeenCalled();

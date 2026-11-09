@@ -94,7 +94,7 @@
   {#await recordPill() then { default: RecordPill }}<RecordPill />{/await}
 {/if}
 {#if feedback.open}
-  {#await feedbackSheet() then { default: FeedbackSheet }}<FeedbackSheet />{/await}
+  {#await feedbackSheet() then { default: FeedbackSheet }}{#key feedback.prefill}<FeedbackSheet />{/key}{/await}
 {/if}
 {#if organizer.phase === 'choice' || organizer.phase === 'waiting'}
   {#await organizeDialog() then { default: OrganizeDialog }}<OrganizeDialog />{/await}

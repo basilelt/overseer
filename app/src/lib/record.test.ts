@@ -53,6 +53,19 @@ group('describe', () => {
     expect(describe(asEl(el('button', { 'data-tour': 'palette' })))).toBe('button "palette"');
   });
 
+  it('never logs the text of something that is not a control', () => {
+    expect(describe(asEl(el('p', {}, 'private chat message')))).toBeNull();
+    expect(describe(asEl(el('span', {}, 'diff line').in(el('div', {}, 'card'))))).toBeNull();
+  });
+
+  it('names a click in a tour area by the area id only', () => {
+    expect(describe(asEl(el('p', {}, 'session name').in(el('div', { 'data-tour': 'workspaces' }, 'all the sidebar'))))).toBe('area "workspaces"');
+  });
+
+  it('names a checkbox by its label', () => {
+    expect(describe(asEl(el('input', { type: 'checkbox' }).in(el('label', {}, ' Include diagnostics '))))).toBe('input "Include diagnostics"');
+  });
+
   it('returns null for an unnamed element and for no target', () => {
     expect(describe(asEl(el('div')))).toBeNull();
     expect(describe(null)).toBeNull();

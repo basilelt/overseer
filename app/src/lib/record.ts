@@ -35,20 +35,32 @@ export function isField(el: Element | null): boolean {
   return tag === 'TEXTAREA' || (tag === 'INPUT' && !['checkbox', 'radio', 'button', 'submit', 'reset', 'range', 'color', 'file'].includes((el as HTMLInputElement).type)) || (el as HTMLElement).isContentEditable === true || !!el.closest('[data-terminal], canvas');
 }
 
-const CONTROL = 'button, a, [role="button"], [role="tab"], [role="radio"], [role="menuitem"], [role="option"], [role="checkbox"], [role="switch"], input, select, textarea, summary, label, [data-tour]';
+const CONTROL = 'button, a, [role="button"], [role="tab"], [role="radio"], [role="menuitem"], [role="option"], [role="checkbox"], [role="switch"], input, select, textarea, summary';
 
 export function describe(target: Element | null): string | null {
-  if (target?.closest('[data-terminal]')) return 'terminal';
-  const el = target?.closest(CONTROL) ?? target;
-  if (!el) return null;
+  if (!target) return null;
+  if (target.closest('[data-terminal]')) return 'terminal';
+  const el = target.closest(CONTROL);
+  if (!el) {
+    const tour = target.closest('[data-tour]')?.getAttribute('data-tour');
+    return tour ? `area "${clip(tour)}"` : null;
+  }
   const own = el.getAttribute('aria-label') || el.getAttribute('title') || el.getAttribute('placeholder');
   const field = isField(el);
-  const text = own || (field ? '' : (el.textContent ?? '').trim()) || el.getAttribute('data-tour') || '';
+  const text = own || (field ? '' : ((el.tagName === 'INPUT' ? el.closest('label')?.textContent : el.textContent) ?? '').trim()) || el.getAttribute('data-tour') || '';
   const role = el.getAttribute('role') || el.tagName.toLowerCase();
   const name = clip(redact(text));
   if (!name) return field ? `${role} field` : null;
   return `${role} "${name}"`;
 }
+
+export const LOG = {
+  started: 'Recording started',
+  startedVideo: 'Recording started with screen video',
+  typed: (target: string) => `typed in ${target}`,
+  view: (view: string) => `view ${view}`,
+  overlay: (overlay: string) => `opened ${overlay}`,
+};
 
 const NAMED = new Set(['Escape', 'Enter', 'Tab', 'Backspace', 'Delete', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'PageUp', 'PageDown', 'Home', 'End']);
 
