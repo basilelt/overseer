@@ -3,6 +3,7 @@ pub mod deliver;
 pub mod diff;
 pub mod graph;
 pub mod lang;
+pub mod map;
 pub mod symbols;
 pub mod triage;
 pub mod watch;
@@ -1375,6 +1376,18 @@ pub fn routes(r: &Request, segs: &[&str], body: &Value, ctx: &Ctx) -> Option<(u1
             200,
             target_q(ctx, r)
                 .and_then(|t| graph::route(ctx, &t, q(r, "base").map(decode).as_deref())),
+        ),
+        ("GET", ["v1", "review", "map"]) => out(
+            200,
+            target_q(ctx, r).and_then(|t| {
+                let with: Vec<String> = r
+                    .query
+                    .iter()
+                    .filter(|(k, _)| k == "with")
+                    .map(|(_, v)| decode(v))
+                    .collect();
+                map::route(ctx, &t, &with)
+            }),
         ),
         ("GET", ["v1", "review", "worktrees"]) => out(
             200,
