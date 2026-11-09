@@ -554,4 +554,10 @@ fn submodules_are_flagged_and_dirty_inside_cannot_be_staged() {
     assert!(v["commit"].as_str().is_some_and(|c| c.len() == 40), "{v}");
     assert_eq!(v["status"]["changes"], json!([]));
     assert_eq!(v["status"]["staged"], json!([]));
+    g.fails(
+        "push",
+        json!({}),
+        409,
+        "lib has commits that are not pushed: push the submodule first",
+    );
 }
