@@ -86,6 +86,9 @@
     {#each sessions.live as it (it.key)}
       <SessionRow item={it} {now} {host} selected={selectedKey === it.key} multi={multi?.has(it.key)} onselect={(e) => onselect(it.key, e)} onmenu={onitemmenu && ((e) => onitemmenu(it.key, it.title, e))} />
     {/each}
+    {#each sessions.shells as it (it.key)}
+      <SessionRow item={it} {now} {host} selected={selectedKey === it.key} multi={multi?.has(it.key)} onselect={(e) => onselect(it.key, e)} onmenu={onitemmenu && ((e) => onitemmenu(it.key, it.title, e))} />
+    {/each}
     {#if sessions.closed.count}
       <button class="more" type="button" aria-expanded={closedOpen} onclick={onclosed}>{sessions.closed.count === 1 ? t('ws.closedOne') : t('ws.closedMore', { n: sessions.closed.count })}</button>
       {#if closedOpen}

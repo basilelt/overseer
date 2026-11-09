@@ -41,7 +41,7 @@ export function spaces(workspaces: Workspace[], items: SidebarItem[], wsOf: Read
   const visible = new Set(live.map((w) => w.id));
   const by = new Map<string, SidebarItem[]>();
   for (const it of items) {
-    if (it.kind === 'shell') continue;
+    if (it.kind === 'shell' && it.state === 'closed') continue;
     const w = wsOf.get(it.key);
     const id = w !== undefined && visible.has(w) ? w : '';
     const list = by.get(id);

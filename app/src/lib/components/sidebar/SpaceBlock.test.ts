@@ -54,6 +54,25 @@ describe('SpaceBlock', () => {
     expect(html([item('l', 'open')], { open: true })).not.toContain('closed');
   });
 
+  it('lists running shells discreetly after the live sessions and before the closed count', () => {
+    // Given a live session, a running shell and a closed session
+    // When it renders expanded
+    // Then the shell row comes after the session and before "+ 1 closed", marked as a shell
+    const h = html([item('l', 'open'), { ...item('s', 'running'), kind: 'shell' }, item('c', 'closed')], { open: true });
+    const [l, s, c] = ['T-l', 'T-s', '+ 1 closed'].map((x) => h.indexOf(x));
+    expect(l).toBeGreaterThan(0);
+    expect(s).toBeGreaterThan(l);
+    expect(c).toBeGreaterThan(s);
+    expect(h).toMatch(/class="row[^"]*\bshell\b/);
+  });
+
+  it('expands a workspace holding only a shell into a frame with that shell', () => {
+    // Given a workspace whose only item is a running shell
+    // When it renders expanded
+    // Then the shell row shows
+    expect(html([{ ...item('s', 'running'), kind: 'shell' }], { open: true })).toContain('T-s');
+  });
+
   it('passes the host to SSH rows only', () => {
     // Given an SSH host
     // When rows render
@@ -139,11 +158,11 @@ describe('SpaceBlock', () => {
 });
 
 describe('SpaceBlock multi-select', () => {
-  it('hands the multi selection to every session row, live and closed', async () => {
+  it('hands the multi selection to every session row, live, shells and closed', async () => {
     // Given the component source
     // When the rows are read
-    // Then both SessionRow uses get multi from the set
+    // Then every SessionRow use gets multi from the set
     const src = (await import('./SpaceBlock.svelte?raw')).default;
-    expect(src.match(/multi=\{multi\?\.has\(it\.key\)\}/g)).toHaveLength(2);
+    expect(src.match(/multi=\{multi\?\.has\(it\.key\)\}/g)).toHaveLength(3);
   });
 });

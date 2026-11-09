@@ -1611,7 +1611,8 @@ Stopped: no live agent process, resumable); the toggle is at the top of the side
 
 - **Spaces**: pinned workspaces on top, then your folders (one level of sub-folders) and the
   workspaces outside any folder. Each workspace is one block with its sessions under it: click its
-  name to open it (its tab strip and `+` show), the chevron only folds it. A group section at the
+  name to open it (its tab strip and `+` show), the chevron only folds it. Running plain shells are
+  listed after its sessions, muted with a terminal icon, and are not counted in its pills. A group section at the
   bottom lists your groups; click one to open it. Every project the daemon knows gets a workspace: the
   repositories its agents ran in, and the git repositories it finds under `discoverRoots`
   (3.1; by default `~/Documents/Github`, `~/src`, `~/code`, `~/projects`, `~/dev`), scanned at
