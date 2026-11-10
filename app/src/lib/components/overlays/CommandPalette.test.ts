@@ -1,9 +1,14 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-async function rendered(connected: boolean) {
+async function rendered(connected: boolean, current?: Record<string, unknown>, all: Record<string, unknown>[] = []) {
   vi.resetModules();
   const { app } = await import('../../state.svelte');
   vi.spyOn(app, 'connected', 'get').mockReturnValue(connected);
+  if (current) {
+    vi.spyOn(app, 'currentWorkspace', 'get').mockReturnValue(current as never);
+    vi.spyOn(app, 'wsPersistent', 'get').mockReturnValue(true);
+    app.ws = { workspaces: all as never, folders: [], groups: [] };
+  }
   const { render } = await import('svelte/server');
   const { default: Palette } = await import('./CommandPalette.svelte');
   return render(Palette, { props: { onclose: () => {} } }).body;
@@ -39,5 +44,15 @@ describe('command palette views', () => {
   it('lists Install skills and plugins under Actions only when connected', async () => {
     expect(section(await rendered(true), 'Actions')).toContain('Install skills and plugins');
     expect(await rendered(false)).not.toContain('Install skills and plugins');
+  });
+
+  it('offers a new subject for a folder workspace or the parent of a nested one, never for a subject or none', async () => {
+    const parent = { id: 'p', name: 'endurance', path: '/e', kind: 'dir', parentId: null };
+    const nested = { id: 'n', name: 'Onboarding', path: '/e/x', kind: 'dir', parentId: 'p' };
+    const label = 'New subject in the current workspace';
+    expect(section(await rendered(true, parent, [parent]), 'Actions')).toContain(label);
+    expect(section(await rendered(true, nested, [parent, nested]), 'Actions')).toContain(label);
+    expect(await rendered(true, { id: 's', name: 'S', path: null, kind: 'subject', parentId: null }, [])).not.toContain(label);
+    expect(await rendered(true)).not.toContain(label);
   });
 });

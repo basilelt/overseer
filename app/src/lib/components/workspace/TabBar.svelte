@@ -16,13 +16,11 @@
   import GitCompare from '@lucide/svelte/icons/git-compare';
   import Megaphone from '@lucide/svelte/icons/megaphone';
   import { st } from '../../system/strings';
-  import { saveSettings, settings } from '../../settings.svelte';
+  import { settings } from '../../settings.svelte';
   import { projectName } from '../../state.svelte';
-  import { ordered } from '../../agents';
   import { coarsePointer, focusSession, stripScroll, tabInfo, type TabInfo } from '../../tabs';
-  import { broadcastTo } from '../../wsactions';
+  import { broadcastTo, newSessionItems } from '../../wsactions';
   import { wsDropTarget } from '../../workspaces';
-  import type { MenuItem } from '../../menu';
   import { t, type Key } from '../../i18n.svelte';
   import { app, tabLazy } from '../../state.svelte';
   import { whenIdle } from '../../idle';
@@ -97,21 +95,9 @@
     return tab.key;
   }
 
-  function addMenu(): MenuItem[] {
-    const start = (id: string) => () => app.newSession(id).catch((e) => app.notify(String((e as Error)?.message ?? e), 'error'));
-    const agents = ordered(app.agents).filter((a) => a.id !== 'shell');
-    const shell = app.agents.find((a) => a.id === 'shell');
-    return [
-      ...agents.map((a) => ({ label: a.name, agent: a.id, default: a.id === settings.defaultAgent, disabled: !a.installed, hint: a.installed ? undefined : (a.install ?? t('agents.notInstalled')), run: start(a.id) })),
-      { label: t('tabs.inCheckout'), checked: settings.sessionsInCheckout, run: () => saveSettings({ sessionsInCheckout: !settings.sessionsInCheckout }) },
-      { label: '', separator: true },
-      { label: shell?.name ?? t('tabs.shell'), agent: 'shell', run: start('shell') },
-    ];
-  }
-
   function openAdd(e?: MouseEvent) {
     const r = plus?.getBoundingClientRect();
-    app.openMenu(e && e.clientX ? { clientX: e.clientX, clientY: e.clientY } : { clientX: r?.left ?? 0, clientY: (r?.bottom ?? 0) + 4 }, t('tabs.new'), addMenu());
+    app.openMenu(e && e.clientX ? { clientX: e.clientX, clientY: e.clientY } : { clientX: r?.left ?? 0, clientY: (r?.bottom ?? 0) + 4 }, t('tabs.new'), newSessionItems());
   }
 
   $effect(() => {

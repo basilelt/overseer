@@ -48,7 +48,10 @@ a minute. You can replay it any time from Settings → Help.
 
 ### Every agent in one window
 
-Workspaces group sessions by project. Each session opens in a tab with its live terminal, and
+Workspaces group sessions by project. Inside a workspace, subjects sort its sessions further: a
+subject covers a sub-folder or a git submodule (submodules show up on their own), sessions running
+there join it, and you can drag any session onto one or start a new one in it, at the workspace
+root if your agents read their instructions there. Each session opens in a tab with its live terminal, and
 the side panel shows what the agent is doing: last message, work log, todos, edited files and
 changes. Switch to **By status** to see at a glance who needs your input, who is running and who
 is done. Agent tabs also have a **Chat** view rebuilt live from the agent's session file.
