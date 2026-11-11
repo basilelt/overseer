@@ -1476,11 +1476,15 @@ are reachable directly. Windows daemons do not detect ports yet.
 The bell in the title bar (Notifications in More on the phone) lists what happened in the
 background on the connected host: an agent needs input, finished or failed, a task reached
 testing, a workspace went idle, ports forwarded or closed, an app or server update, uploads and
-errors. Each entry shows its time, its source and an unread dot; click it to act (open the line,
-open the port in the browser, open the update). Mark all read and Clear sit at the top. The list
-is kept per host in the app (last 200 entries) and survives a reload; a replayed event after a
-reconnect never adds a second entry. The bell counts unread entries; port and upload entries
-arrive already read, so they never light it.
+errors. Each session, task, workspace and port has one entry that shows its latest event: a new
+event replaces the old one, moves it to the top and makes it unread again. When an agent moves its
+task to testing, the "finished" that follows within a minute is folded into that entry (no second
+toast or system notification). Opening a session marks its entry read. Each entry shows its time,
+its source and an unread dot; click it to act (open the line, open the port in the browser, open
+the update). Mark all read and Clear sit at the top. The list is kept per host in the app (last
+100 entries) and survives a reload; a replayed event after a reconnect never adds a second entry,
+and lists saved by older versions are reduced to one entry per session. The bell counts unread
+entries; port and upload entries arrive already read, so they never light it.
 
 Toasts are kept for errors and for direct answers to what you just did (copied, saved, a failed
 forward). In-app events only go to the center, unless Settings > Notifications > "Show toasts for
