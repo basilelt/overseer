@@ -29,6 +29,19 @@ describe('SessionRow', () => {
     for (const s of ['>Fix login<', '>Ran the tests<', '>5m<', '>devbox<']) expect(h).toContain(s);
   });
 
+  it('draws a plain shell muted, with a terminal icon instead of the state dot', () => {
+    // Given a running shell, then an agent session
+    // When they render
+    // Then the shell row carries the shell class and no dot, the agent row keeps its dot
+    const sh = html({ kind: 'shell', status: undefined, title: 'zsh' });
+    expect(sh).toMatch(/class="row[^"]*\bshell\b/);
+    expect(sh).toContain('class="icon');
+    expect(sh).not.toContain('class="dot');
+    expect(sh).toContain('>zsh<');
+    expect(html()).toContain('class="dot');
+    expect(html()).not.toMatch(/class="row[^"]*\bshell\b/);
+  });
+
   it('fills the placeholders of the host connection text', () => {
     // Given a host that is reconnecting
     // When the row renders

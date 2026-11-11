@@ -2,7 +2,7 @@ import type { Key } from './i18n.svelte';
 
 export type CategoryId = 'general' | 'terminal' | 'agents' | 'notifications' | 'connection' | 'updates' | 'help';
 export type SectionId = 'appearance' | 'links' | 'terminal' | 'keyboard' | 'defaults' | 'profiles' | 'hooks' | 'skills' | 'usage' | 'notifications' | 'hosts' | 'server' | 'updater' | 'apk' | 'tour' | 'diag' | 'feedback' | 'switchboard';
-export type Gate = 'desktop' | 'nonMac' | 'connected' | 'profiles' | 'hooks' | 'updater' | 'apk' | 'switchboard';
+export type Gate = 'desktop' | 'nonMac' | 'connected' | 'localServer' | 'profiles' | 'hooks' | 'updater' | 'apk' | 'switchboard';
 export type Gates = Record<Gate, boolean>;
 
 export interface Category {
@@ -71,7 +71,7 @@ export const ENTRIES: Entry[] = [
   { id: 'newTabShell', section: 'keyboard', keys: ['settings.newTabShell', 'settings.newTabShellHint'] },
   { id: 'wrapTabs', section: 'keyboard', keys: ['settings.wrapTabs', 'settings.wrapTabsHint'] },
   { id: 'defaultAgent', section: 'defaults', keys: ['settings.defaultAgent'] },
-  { id: 'autoApprove', section: 'defaults', keys: ['settings.autoApprove', 'settings.autoApproveHint'] },
+  { id: 'autoApprove', section: 'defaults', keys: ['settings.autoApprove', 'settings.autoApproveHint', 'settings.autoApproveAll'] },
   { id: 'defaultModel', section: 'defaults', keys: ['settings.defaultModel'] },
   { id: 'defaultEffort', section: 'defaults', keys: ['settings.defaultEffort'] },
   { id: 'autoConcurrency', section: 'defaults', keys: ['settings.autoConcurrency', 'settings.autoConcurrencyHint'] },
@@ -91,6 +91,7 @@ export const ENTRIES: Entry[] = [
   { id: 'serverBinDir', section: 'hosts', keys: ['settings.serverBinDir', 'settings.serverBinDirHint'] },
   { id: 'keepRunning', section: 'server', keys: ['settings.keepRunning', 'settings.keepRunningHint'] },
   { id: 'afterReboot', section: 'server', keys: ['settings.afterReboot', 'settings.afterRebootHint', 'settings.afterReboot.agents', 'settings.afterReboot.shells', 'settings.afterReboot.nothing'] },
+  { id: 'lidClosed', section: 'server', gate: 'localServer', keys: ['settings.lidClosed', 'settings.lidClosedHint', 'settings.lidClosedBattery'] },
   { id: 'uninstall', section: 'server', keys: ['settings.uninstall', 'settings.uninstallRemote', 'settings.uninstallHint', 'settings.uninstallButton'] },
   { id: 'update', section: 'updater', keys: ['updater.version', 'updater.check'] },
   { id: 'apk', section: 'apk', keys: ['apk.version', 'apk.check'] },
