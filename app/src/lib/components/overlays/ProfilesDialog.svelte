@@ -3,6 +3,7 @@
   import Plus from '@lucide/svelte/icons/plus';
   import Copy from '@lucide/svelte/icons/copy';
   import Trash from '@lucide/svelte/icons/trash-2';
+  import ChevronRight from '@lucide/svelte/icons/chevron-right';
   import Modal from '../ui/Modal.svelte';
   import ModelField from '../ui/ModelField.svelte';
   import AgentGlyph from '../ui/AgentGlyph.svelte';
@@ -184,6 +185,7 @@
       {/if}
       <details class="types" data-tour="profile-types" open={typed > 0}>
         <summary>
+          <ChevronRight size={14} class="chev" />
           <span>{t('profile.byType')}<small>{t('profile.byTypeHint')}</small></span>
           {#if typed}<span class="count">{typed}</span>{/if}
         </summary>
@@ -400,14 +402,22 @@
     min-height: 34px;
     cursor: pointer;
   }
-  .types summary > span:first-child {
+  .types summary :global(.chev) {
+    flex: none;
+    color: var(--text-3);
+    transition: transform 0.15s;
+  }
+  .types[open] summary :global(.chev) {
+    transform: rotate(90deg);
+  }
+  .types summary > span:first-of-type {
     display: flex;
     flex-direction: column;
     flex: 1;
     min-width: 0;
   }
   .types .row {
-    padding-left: 16px;
+    padding-left: 22px;
   }
   .count {
     font-size: 11px;
