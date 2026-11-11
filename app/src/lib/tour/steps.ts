@@ -41,6 +41,7 @@ export const STEPS: Step[] = [
   { id: 'recordBug', targets: ['palette'], since: '0.36', center: true },
   { id: 'quorum', targets: ['quorum', 'kanban'], since: '0.36' },
   { id: 'installAgent', targets: ['new-session', 'palette'], since: '0.36' },
+  { id: 'taskType', targets: ['task-type', 'kanban'], since: '0.36' },
 ];
 
 export type Mode = 'full' | 'whatsNew';

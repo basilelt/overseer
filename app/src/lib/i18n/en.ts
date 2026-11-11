@@ -1917,6 +1917,8 @@ export const en = {
   'tour.quorum.body': 'Tick Quorum when creating a task and its Claude or Codex agent splits the work between several agent CLIs, then every result is reviewed and voted on by other agents before it is merged.',
   'tour.installAgent.title': 'Install agents from the app',
   'tour.installAgent.body': 'An agent that is not installed yet is no longer greyed out under +: pick it and its install command runs in a new terminal. Overseer rescans once it finishes, so the agent is ready to start.',
+  'tour.taskType.title': 'Profiles by task type',
+  'tour.taskType.body': 'Give a task a type (bug fix, feature, migration, triage…) and map each type to a profile under Agents & models, so a small fix and a large migration start with different models and effort. Imported tickets take their type from their labels or issue type.',
   'tour.installAgent.phone': 'Tap +, then Install and the agent name for one that is missing: its install command runs in a new terminal.',
   'tour.settings.title': 'Settings, searchable',
   'tour.settings.body': 'Settings are grouped in a sidebar: General, Terminal, Agents, Notifications, Connection, Updates and Help. Type in the search box to find any setting by name.',
