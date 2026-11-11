@@ -6,6 +6,7 @@
   import { feedback } from '../../feedback.svelte';
   import { organizer } from '../../organize.svelte';
   import { mainOverlay, type MainOverlay } from '../../overlay-route';
+  import { rec } from '../../record-state.svelte';
   import type { Component } from 'svelte';
 
   const close = () => app.open(null);
@@ -15,6 +16,8 @@
   const organizeDialog = () => import('./OrganizeDialog.svelte');
   const planReview = () => import('./PlanReview.svelte');
   const pickUp = () => import('./PickUp.svelte');
+  const recordSetup = () => import('../record/RecordSetup.svelte');
+  const recordPill = () => import('../record/RecordPill.svelte');
 
   type Load = () => Promise<{ default: Component<any> }>;
   const loaders: Record<MainOverlay, Load> = {
@@ -59,8 +62,13 @@
 {#if diag.mode}
   {#await logsDialog() then { default: LogsDialog }}<LogsDialog />{/await}
 {/if}
+{#if rec.phase === 'setup'}
+  {#await recordSetup() then { default: RecordSetup }}<RecordSetup />{/await}
+{:else if rec.phase === 'recording'}
+  {#await recordPill() then { default: RecordPill }}<RecordPill />{/await}
+{/if}
 {#if feedback.open}
-  {#await feedbackSheet() then { default: FeedbackSheet }}<FeedbackSheet />{/await}
+  {#await feedbackSheet() then { default: FeedbackSheet }}{#key feedback.prefill}<FeedbackSheet />{/key}{/await}
 {/if}
 {#if organizer.phase === 'choice' || organizer.phase === 'waiting'}
   {#await organizeDialog() then { default: OrganizeDialog }}<OrganizeDialog />{/await}

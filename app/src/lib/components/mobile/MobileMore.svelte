@@ -20,6 +20,8 @@
   import { tt } from '../../tour/strings';
   import { replayTour } from '../../tour/replay';
   import { feedback, ft } from '../../feedback.svelte';
+  import Clapperboard from '@lucide/svelte/icons/clapperboard';
+  import { recorder, rt } from '../../record.svelte';
   import Gauge from '@lucide/svelte/icons/gauge';
   import { ust } from '../../usage/strings';
   import GitPullRequestArrow from '@lucide/svelte/icons/git-pull-request-arrow';
@@ -70,6 +72,7 @@
     { icon: Search, label: () => t('mobile.more.search'), run: () => app.open('palette') },
     { icon: ScrollText, label: () => dt('show'), run: () => diag.open('live') },
     { icon: MessageSquarePlus, label: () => ft('title'), run: () => feedback.show() },
+    { icon: Clapperboard, label: () => rt('palette'), run: () => recorder.setup(), disabled: () => recorder.phase !== 'idle' },
     { icon: WandSparkles, label: () => t('org.title'), run: () => organizer.show(), disabled: () => !app.connected },
     { icon: Compass, label: () => tt('again'), run: () => replayTour() },
   ];

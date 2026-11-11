@@ -1,6 +1,7 @@
 import { type Sub, t } from './i18n.svelte';
 import { isComment, isFeedbackTerm, UrlWatcher } from './feedback-watch';
 import type { Kind } from './feedback';
+import type { Recording } from './record';
 import type { DaemonClient, TermIO } from './client';
 import type { Term } from './types';
 
@@ -9,6 +10,7 @@ export interface Prefill {
   title?: string;
   description?: string;
   crash?: { report: string | null; appLog: string[]; summary: string };
+  recording?: Recording;
 }
 
 export interface Result {
