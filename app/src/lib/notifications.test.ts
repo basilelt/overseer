@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { addEntry, COALESCE_MS, loadEntries, MAX_ENTRIES, storageKey, type Entry } from './notifications';
+import { addEntry, loadEntries, MAX_ENTRIES, storageKey, SUPERSEDE_MS, type Entry } from './notifications';
 import { center, NotificationCenter, runEntry, startCenter } from './notifications.svelte';
 import { app } from './state.svelte';
 import { updater } from './updater.svelte';
@@ -28,29 +28,61 @@ describe('addEntry', () => {
     expect(addEntry(a, { id: 'needsInput|line:1|ev-1', kind: 'needsInput', title: 'Claude needs input' }, 9)).toBeNull();
   });
 
-  it('coalesces the same key within the window into one entry', () => {
+  it('keeps one entry per key, newest first', () => {
     let list: Entry[] = [];
     for (let i = 0; i < 5; i++) {
       list = addEntry(list, { kind: 'portForwarded', title: 'Port 3000 forwarded', coalesce: 'port:ssh:dev:3000', quiet: true }, 1000 + i)!;
       list = addEntry(list, { kind: 'portClosed', title: 'Port 3000 closed', coalesce: 'port:ssh:dev:3000', quiet: true }, 1000 + i)!;
     }
-    expect(list).toHaveLength(1);
-    expect(list[0]).toMatchObject({ kind: 'portClosed', count: 10, read: true });
+    list = addEntry(list, { kind: 'error', title: 'other' }, 2000)!;
+    list = addEntry(list, { kind: 'portForwarded', title: 'Port 3000 forwarded', coalesce: 'port:ssh:dev:3000', quiet: true }, 10 * 3600_000)!;
+    expect(list.map((e) => [e.id, e.kind, e.at])).toEqual([
+      ['port:ssh:dev:3000', 'portForwarded', 10 * 3600_000],
+      [expect.any(String), 'error', 2000],
+    ]);
+    expect(list[0].read).toBe(true);
   });
 
-  it('starts a fresh entry once the window has passed', () => {
-    const a = addEntry([], { kind: 'portForwarded', title: 'a', coalesce: 'k' }, 0)!;
-    const b = addEntry(a, { kind: 'portForwarded', title: 'b', coalesce: 'k' }, COALESCE_MS + 1)!;
-    expect(b).toHaveLength(1);
-    expect(b[0]).toMatchObject({ title: 'b', at: COALESCE_MS + 1 });
-    expect(b[0].count).toBeUndefined();
+  it('marks a merged entry unread on a new event, and a quiet one keeps its read state', () => {
+    const read = [{ ...addEntry([], { kind: 'error', title: 'x', coalesce: 'k' }, 0)![0], read: true }];
+    expect(addEntry(read, { kind: 'error', title: 'x', coalesce: 'k' }, 1)![0].read).toBe(false);
+    expect(addEntry(read, { kind: 'error', title: 'x', coalesce: 'k', quiet: true }, 1)![0].read).toBe(true);
+    const unread = addEntry([], { kind: 'error', title: 'x', coalesce: 'k' }, 0)!;
+    expect(addEntry(unread, { kind: 'portClosed', title: 'x', coalesce: 'k', quiet: true }, 1)![0].read).toBe(false);
   });
 
-  it('marks a coalesced entry unread again when its kind changes', () => {
-    let list = addEntry([], { kind: 'error', title: 'x', coalesce: 'k' }, 0)!;
-    list = [{ ...list[0], read: true }];
-    expect(addEntry(list, { kind: 'error', title: 'x', coalesce: 'k' }, 1)![0].read).toBe(true);
-    expect(addEntry(list, { kind: 'failed', title: 'x', coalesce: 'k' }, 1)![0].read).toBe(false);
+  it('ignores a replayed event id after it was merged into a row', () => {
+    const a = addEntry([], { id: 'ev-1', kind: 'finished', title: 'done', coalesce: 'line:a' }, 0)!;
+    expect(a[0]).toMatchObject({ id: 'line:a', ev: 'ev-1' });
+    expect(addEntry(a, { id: 'ev-1', kind: 'finished', title: 'done', coalesce: 'line:a' }, 5)).toBeNull();
+  });
+
+  it('keeps a testing or failed row over the finished turn that follows it, not later', () => {
+    const testing = addEntry([], { kind: 'taskTesting', title: 'ready', coalesce: 'line:a' }, 0)!;
+    expect(addEntry(testing, { kind: 'finished', title: 'done', coalesce: 'line:a' }, SUPERSEDE_MS - 1)).toBeNull();
+    expect(addEntry(testing, { kind: 'finished', title: 'done', coalesce: 'line:a' }, SUPERSEDE_MS)![0].kind).toBe('finished');
+    const failed = addEntry([], { kind: 'failed', title: 'boom', coalesce: 'line:a' }, 0)!;
+    expect(addEntry(failed, { kind: 'finished', title: 'done', coalesce: 'line:a' }, 1)).toBeNull();
+    expect(addEntry(testing, { kind: 'needsInput', title: 'ask', coalesce: 'line:a' }, 1)![0].kind).toBe('needsInput');
+  });
+
+  it('compacts a stored list from older versions to one row per session', () => {
+    const kv = memory();
+    const line = (id: string, kind: Entry['kind'], at: number, read = false): Entry => ({ id, kind, title: kind, at, read, count: 3, action: { kind: 'line', key: 'line:a' } }) as Entry;
+    const idle = (id: string, at: number): Entry => ({ id, kind: 'allIdle', title: 'All agents in overseer are idle', at, read: false });
+    kv.data.set(
+      storageKey('local'),
+      JSON.stringify([line('t3', 'taskTesting', 30), line('f3', 'finished', 29), idle('i3', 28), line('t2', 'taskTesting', 20, true), idle('i2', 19), { id: 'update:1.0', kind: 'update', title: 'u', at: 1, read: true }]),
+    );
+    const list = loadEntries(kv, 'local');
+    expect(list.map((e) => [e.id, e.kind, e.ev])).toEqual([
+      ['line:a', 'taskTesting', 't3'],
+      ['i3', 'allIdle', undefined],
+      ['update:1.0', 'update', undefined],
+    ]);
+    expect(list[0]).not.toHaveProperty('count');
+    expect(addEntry(list, { id: 't3', kind: 'taskTesting', title: 'again', coalesce: 'line:a' }, 40)).toBeNull();
+    expect(addEntry(list, { kind: 'needsInput', title: 'ask', coalesce: 'line:a' }, 40)!).toHaveLength(3);
   });
 
   it('caps the list', () => {
@@ -62,6 +94,21 @@ describe('addEntry', () => {
 });
 
 describe('NotificationCenter', () => {
+  it('marks every row of a session read when it is opened', () => {
+    const c = new NotificationCenter(memory(), clock().now);
+    c.setHost('local');
+    c.add({ kind: 'needsInput', title: 'a', coalesce: 'line:a', action: { kind: 'line', key: 'line:a' } });
+    c.add({ kind: 'finished', title: 'b', coalesce: 'line:b', action: { kind: 'line', key: 'line:b' } });
+    const before = c.entries;
+    c.markSubjectRead('line:zzz');
+    expect(c.entries).toBe(before);
+    c.markSubjectRead('line:a');
+    expect(c.entries.map((e) => [e.id, e.read])).toEqual([
+      ['line:b', false],
+      ['line:a', true],
+    ]);
+  });
+
   it('counts unread, marks read and clears', () => {
     const c = new NotificationCenter(memory(), clock().now);
     c.setHost('local');
@@ -168,6 +215,18 @@ describe('runEntry', () => {
     vi.spyOn(app, 'open').mockImplementation(() => {});
     runEntry(app, entry({ kind: 'update', action: { kind: 'update' } }));
     expect(updater.dialog).toBe(true);
+  });
+
+  it('marks a session read when the user opens it', () => {
+    vi.spyOn(app, 'open').mockImplementation(() => {});
+    center.add({ kind: 'needsInput', title: 'needs you', coalesce: 'line:open-me', action: { kind: 'line', key: 'line:open-me' } });
+    center.add({ kind: 'finished', title: 'other', coalesce: 'line:other', action: { kind: 'line', key: 'line:other' } });
+    app.select('line:open-me');
+    expect(center.entries.map((e) => [e.id, e.read])).toEqual([
+      ['line:other', false],
+      ['line:open-me', true],
+    ]);
+    app.select(null);
   });
 
   it('only marks read when the entry has no action', () => {

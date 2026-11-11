@@ -12,6 +12,7 @@ import { pages } from './session-pages.svelte';
 import type { EntryKind } from './notifications';
 import type { Proposal } from './organize';
 import { dispatch, type NoticeInput } from './os-notify';
+import { center } from './notifications.svelte';
 import type { Activity, AgentInfo, ConnState, DaemonEvent, Effort, HostTarget, LocalLine, LocalNetworkReport, ProfilesStore, Project, Term, TaskMessage } from './types';
 import { isNoRoute } from './localnet';
 import { startupTarget } from './conn';
@@ -688,6 +689,7 @@ class AppState {
     }
     this.selectedKey = key;
     this.view = 'agents';
+    if (key) center.markSubjectRead(key);
   }
 
   open(overlay: Overlay, arg: string | FileArg | null = null) {

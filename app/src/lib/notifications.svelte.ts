@@ -1,4 +1,4 @@
-import { addEntry, loadEntries, saveEntries, storageKey, unreadCount, type Entry, type EntryInput } from './notifications';
+import { addEntry, loadEntries, markSubjectRead, saveEntries, storageKey, unreadCount, type Entry, type EntryInput } from './notifications';
 import { untrack } from 'svelte';
 import type { KV } from './notify';
 import { t } from './i18n.svelte';
@@ -13,7 +13,7 @@ export class NotificationCenter {
 
   constructor(
     private store: KV | undefined = globalThis.localStorage,
-    private now: () => number = Date.now,
+    private now: () => number = () => Date.now(),
   ) {}
 
   setHost(host: string) {
@@ -44,6 +44,11 @@ export class NotificationCenter {
   markRead(id: string) {
     const list = this.latest();
     if (list.some((e) => e.id === id && !e.read)) this.set(list.map((e) => (e.id === id ? { ...e, read: true } : e)));
+  }
+
+  markSubjectRead(key: string) {
+    const next = markSubjectRead(this.latest(), key);
+    if (next) this.set(next);
   }
 
   markAllRead() {
