@@ -13,7 +13,7 @@ import detail from './CommitDetail.svelte?raw';
 
 describe('git button', () => {
   it('toggles the live review of its session instead of opening the review menu', () => {
-    expect(bar).toMatch(/onclick=\{\(\) => toggleLiveReview\(pane\.active\)\}/);
+    expect(bar).toMatch(/onclick=\{\(\) => void import\('\.\.\/\.\.\/git\/live-actions'\)\.then\(\(m\) => m\.toggleLiveReview\(pane\.active\)\)\}/);
     expect(bar).toMatch(/aria-pressed=\{liveOn\(\)\}/);
     expect(bar).not.toMatch(/reviewMenu|review\.beside|review\.asTab|setReviewMode/);
   });

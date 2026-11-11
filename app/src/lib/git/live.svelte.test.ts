@@ -4,7 +4,8 @@ import { ui } from '../mobile/ui.svelte';
 import { beside } from '../review/beside.svelte';
 import { app } from '../state.svelte';
 import { EMPTY_LAYOUT, allTabs, workspace } from '../workspace.svelte';
-import { live, liveOn, liveTarget, restoreLiveReview, sessionTarget, toggleLiveReview } from './live.svelte';
+import { live, liveOn, liveTarget, sessionTarget } from './live.svelte';
+import { restoreLiveReview, toggleLiveReview } from './live-actions';
 import { primaryAction } from './scm.svelte';
 import type { ScmStatus } from './types';
 

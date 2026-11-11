@@ -16,13 +16,11 @@
   import GitBranch from '@lucide/svelte/icons/git-branch';
   import Megaphone from '@lucide/svelte/icons/megaphone';
   import { st } from '../../system/strings';
-  import { saveSettings, settings } from '../../settings.svelte';
+  import { settings } from '../../settings.svelte';
   import { projectName } from '../../state.svelte';
-  import { ordered } from '../../agents';
   import { coarsePointer, focusSession, stripScroll, tabInfo, type TabInfo } from '../../tabs';
-  import { broadcastTo } from '../../wsactions';
+  import { broadcastTo, newSessionItems } from '../../wsactions';
   import { wsDropTarget } from '../../workspaces';
-  import type { MenuItem } from '../../menu';
   import { t, type Key } from '../../i18n.svelte';
   import { app, tabLazy } from '../../state.svelte';
   import { whenIdle } from '../../idle';
@@ -30,7 +28,7 @@
   import AgentIcon, { GROUP_COLOR } from '../sidebar/AgentIcon.svelte';
   import ReviewBadge from '../review/ReviewBadge.svelte';
   import { itemTarget, reviewTitle } from '../../review/open';
-  import { liveOn, toggleLiveReview } from '../../git/live.svelte';
+  import { liveOn } from '../../git/live.svelte';
   import { chatCapable } from '../../chat/viewmode';
   import ModeToggle from '../chat/ModeToggle.svelte';
   import { chipLabel, chipShort } from '../../profiles';
@@ -97,21 +95,9 @@
     return tab.key;
   }
 
-  function addMenu(): MenuItem[] {
-    const start = (id: string) => () => app.newSession(id).catch((e) => app.notify(String((e as Error)?.message ?? e), 'error'));
-    const agents = ordered(app.agents).filter((a) => a.id !== 'shell');
-    const shell = app.agents.find((a) => a.id === 'shell');
-    return [
-      ...agents.map((a) => ({ label: a.name, agent: a.id, default: a.id === settings.defaultAgent, disabled: !a.installed, hint: a.installed ? undefined : (a.install ?? t('agents.notInstalled')), run: start(a.id) })),
-      { label: t('tabs.inCheckout'), checked: settings.sessionsInCheckout, run: () => saveSettings({ sessionsInCheckout: !settings.sessionsInCheckout }) },
-      { label: '', separator: true },
-      { label: shell?.name ?? t('tabs.shell'), agent: 'shell', run: start('shell') },
-    ];
-  }
-
   function openAdd(e?: MouseEvent) {
     const r = plus?.getBoundingClientRect();
-    app.openMenu(e && e.clientX ? { clientX: e.clientX, clientY: e.clientY } : { clientX: r?.left ?? 0, clientY: (r?.bottom ?? 0) + 4 }, t('tabs.new'), addMenu());
+    app.openMenu(e && e.clientX ? { clientX: e.clientX, clientY: e.clientY } : { clientX: r?.left ?? 0, clientY: (r?.bottom ?? 0) + 4 }, t('tabs.new'), newSessionItems());
   }
 
   $effect(() => {
@@ -309,7 +295,7 @@
   <div class="actions">
     {#if activeItem && chatCapable(activeItem)}<ModeToggle item={activeItem} />{/if}
     {#if reviewable}
-      <button class="icon-btn" class:on={liveOn()} title={t('git.button')} aria-label={t('git.button')} aria-pressed={liveOn()} data-tour="git-button" onclick={() => toggleLiveReview(pane.active)}><GitBranch size={14} /></button>
+      <button class="icon-btn" class:on={liveOn()} title={t('git.button')} aria-label={t('git.button')} aria-pressed={liveOn()} data-tour="git-button" onclick={() => void import('../../git/live-actions').then((m) => m.toggleLiveReview(pane.active))}><GitBranch size={14} /></button>
     {/if}
     {#if activeWeb?.pages.length}
       <button class="icon-btn web" class:on={activeWeb.open} title={t('web.toggle')} aria-label={t('web.toggle')} aria-pressed={activeWeb.open} onclick={() => activeItem && pages.setOpen(activeItem.key, !activeWeb.open)}

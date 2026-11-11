@@ -898,7 +898,7 @@ On first launch, once the app is connected (immediately in local mode, after the
 connection on a phone), a welcome card offers **Take the tour** or **Skip**. The tour dims the
 window and highlights the real controls one at a time: host chip, workspaces sidebar, tabs and the
 new-session menu, the Terminal/Chat toggle, the side panel, Tasks, Review, the usage, system and ports
-chips, notifications and hooks, the command palette and Feedback, in 0.25 the Cmd/Ctrl+P palette shortcut, and in 0.27 the demo mode (on the **Demo mode** pill while in the demo, else on the host chip), and in 0.28 the GPU rendering option for terminals, and in 0.29 the clean up of unused worktrees and the import from Switchboard (on its button in Settings, Help, or on the Settings button), and in 0.30 click to move the cursor in a terminal (on the tabs), and in 0.31 the Light and Dark palettes (on Settings, or More on a phone), and in 0.33 the one-click install of skills and plugins (on Settings), and in 0.34 the auto-approval defaults (on Settings, Agents), the Review, Merged and Closed columns (on the Merged column when the board is open, else on the Tasks tab) and the clean removal of everything Overseer added (on Settings, Connection, **Remove**), and in 0.35 one-click in-app updates for every install (on Settings, Updates, else on the Settings button), and in 0.36 the live review behind the git button (on the git button of a session's tab bar, else on the command palette) and the review map (on List | Map in a review, else on the Review tab). Steps whose control is not on
+chips, notifications and hooks, the command palette and Feedback, in 0.25 the Cmd/Ctrl+P palette shortcut, and in 0.27 the demo mode (on the **Demo mode** pill while in the demo, else on the host chip), and in 0.28 the GPU rendering option for terminals, and in 0.29 the clean up of unused worktrees and the import from Switchboard (on its button in Settings, Help, or on the Settings button), and in 0.30 click to move the cursor in a terminal (on the tabs), and in 0.31 the Light and Dark palettes (on Settings, or More on a phone), and in 0.33 the one-click install of skills and plugins (on Settings), and in 0.34 the auto-approval defaults (on Settings, Agents), the Review, Merged and Closed columns (on the Merged column when the board is open, else on the Tasks tab) and the clean removal of everything Overseer added (on Settings, Connection, **Remove**), and in 0.35 one-click in-app updates for every install (on Settings, Updates, else on the Settings button), and in 0.36 subjects inside a workspace (on **+ New subject** in the open workspace, else on the sidebar), and the live review behind the git button (on the git button of a session's tab bar, else on the command palette), and the review map (on List | Map in a review, else on the Review tab). Steps whose control is not on
 screen (no session selected, a feature the server lacks, phone layout) are skipped. On a phone the
 card is a sheet at the bottom (or top, when the control sits low) and points at the bottom
 navigation, the session strip and the menu.
@@ -1591,6 +1591,24 @@ Each target answers `sent`, `skipped` (busy or waiting for a permission answer),
 (typed when the agent becomes idle, within an hour, unless the daemon restarts) or `refused`
 (not running, no terminal). `actions.log` records the outcome and the text length, never the text.
 
+A workspace can be **nested** in a top-level directory workspace with `parentId`: a sub-folder or a
+submodule (`{"path":"/home/u/endurance/20_processus/onboarding","parentId":"<id>","cwd":"/home/u/endurance"}`),
+or a subject (`{"kind":"subject","name":"Archi V3","parentId":"<id>"}`, whose `cwd` defaults to the
+parent's path). The path must be inside the parent's, the parent must be a top-level `dir` workspace
+(one level only), and a nested workspace has no folder and cannot be pinned (each refused with a 400).
+`cwd` on a nested folder is where its sessions start (`null` starts them in its own folder) and can be
+patched; on a top-level directory it is refused. Creating a nested folder on a path that already has a
+top-level workspace adopts that workspace, keeping its id, tabs and sessions. Every checked-out
+submodule of a top-level workspace (the `path =` entries of its `.gitmodules` whose folder holds a
+`.git`) becomes a nested workspace on its own, when the workspace is created, at start, every 10 minutes
+and on **Rescan folders**; one you delete stays deleted. Deleting a workspace deletes its nested ones
+(the answer lists them under `children`). A session goes to the innermost workspace whose path holds
+it, so a session in a sub-folder or a submodule joins the nested workspace, and a worktree of a
+submodule kept outside the repository joins the submodule's when that submodule is checked out in
+one clone only; with several clones of the same repository (as for any repository cloned several
+times), such a worktree belongs to none of them unless it was started from the subject or moved
+there by hand.
+
 A **subject** is a workspace without a directory of its own, for work organised by topic rather than
 by folder. Create it with `POST /v1/workspaces` and `{"kind":"subject","name":"Acme deal","cwd":"~/code/app"}`
 (`folderId` and `pinned` optional); `cwd` is its default working directory, `~` accepted, and several
@@ -1629,6 +1647,18 @@ Stopped: no live agent process, resumable); the toggle is at the top of the side
 - **Block**: the most urgent state of its sessions (Needs input, then Running, then Needs testing,
   then Idle; shells do not count) with how many agents are in it, the last status line ("Claude
   finished", "Asking: …"), the host and its connection state, and the folder path.
+- **Subjects**: a workspace can hold subjects, listed inside its block after its own sessions:
+  sub-folders (folder icon), submodules (git icon, added on their own for every checked-out
+  submodule) and subjects without a folder (# icon). A session running inside a subject's folder
+  joins it; drag any session onto a subject, or use **Move to workspace…** in its context menu, to
+  put it there by hand. **+ New subject** at the bottom of the block (also in the workspace's
+  context menu and the palette, **New subject in the current workspace**) asks for a path inside the
+  workspace (Browse starts there), a name, and where its sessions start: the workspace root, so
+  agents read the instructions at the root, or the subject's own folder. The `+` of a subject
+  (shown on hover, always on a touch screen) opens the new-session menu and starts the session in
+  the subject; a subject's context menu toggles **Start sessions at the workspace root**. A subject
+  has no folder or pin of its own; deleting a workspace deletes its subjects, and a deleted
+  submodule subject does not come back. The attention banner shows `workspace › subject`.
 - **Membership**: a line belongs to the workspace of its task's project, else to the workspace
   whose folder contains its worktree, unless the line's repository has its own workspace that
   does not contain that folder (so a workspace on your home folder does not take every
