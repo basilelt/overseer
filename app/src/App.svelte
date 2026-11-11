@@ -4,7 +4,6 @@
   import TitleBar from './lib/components/TitleBar.svelte';
   import Sidebar from './lib/components/sidebar/Sidebar.svelte';
   import Workspace from './lib/components/workspace/Workspace.svelte';
-  import SidePanel from './lib/components/panel/SidePanel.svelte';
   import Overlays from './lib/components/overlays/Overlays.svelte';
   import Toast from './lib/components/ui/Toast.svelte';
   import { offerSwitchboard, switchboard } from './lib/switchboard.svelte';
@@ -63,6 +62,7 @@
   const tourView = () => import('./lib/components/tour/Tour.svelte');
   const liveBar = () => import('./lib/git/LiveBar.svelte');
   const rail = () => import('./lib/components/sidebar/SessionRail.svelte');
+  const sidePanel = preload(() => import('./lib/components/panel/SidePanel.svelte'));
   const live = $derived(liveOn());
 
   $effect(() => {
@@ -184,7 +184,7 @@
       </main>
       {#if app.panelOpen && !live && app.view === 'agents' && !/^(graph|worktrees):/.test(app.selectedKey ?? '')}
         <Resizer width={panelW} bounds={PANEL} side="right" label={t('layout.resizePanel')} onchange={(w) => (panelW = w)} oncommit={(w) => saveSettings({ panelWidth: w })} />
-        <Boundary name="panel" width="var(--panel-w, 340px)"><SidePanel /></Boundary>
+        <Boundary name="panel" width="var(--panel-w, 340px)">{#await sidePanel() then { default: SidePanel }}<SidePanel />{/await}</Boundary>
       {/if}
     </div>
     {/if}
