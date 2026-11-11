@@ -14,7 +14,15 @@ async function rendered(tasks: Task[]) {
   app.profiles = { profiles: [{ id: 'eco', name: 'Economy', builtin: true, agents: {} }], scopes: {}, default: '' } as never;
   const { render } = await import('svelte/server');
   const { default: TaskCosts } = await import('./TaskCosts.svelte');
-  return render(TaskCosts, { props: {} }).body.replace(/<!--[\s\S]*?-->/g, '');
+  return stripComments(render(TaskCosts, { props: {} }).body);
+}
+
+function stripComments(html: string): string {
+  for (let prev = ''; prev !== html; ) {
+    prev = html;
+    html = html.replace(/<!--[\s\S]*?-->/g, '');
+  }
+  return html;
 }
 
 afterEach(() => vi.restoreAllMocks());

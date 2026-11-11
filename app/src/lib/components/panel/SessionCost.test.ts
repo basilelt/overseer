@@ -20,7 +20,15 @@ const base: Cost = {
   switches: [{ at: '2026-11-11T10:00:00Z', from: 'claude-opus-5-5', to: 'claude-sonnet-5-5', cacheWrite: 60_000, cost: 0.16 }],
 };
 
-const html = (c: Cost) => render(SessionCost, { props: { cost: c } }).body.replace(/<!--[\s\S]*?-->/g, '');
+function stripComments(html: string): string {
+  for (let prev = ''; prev !== html; ) {
+    prev = html;
+    html = html.replace(/<!--[\s\S]*?-->/g, '');
+  }
+  return html;
+}
+
+const html = (c: Cost) => stripComments(render(SessionCost, { props: { cost: c } }).body);
 
 describe('SessionCost', () => {
   it('lists each model with its cost and its token split', () => {
