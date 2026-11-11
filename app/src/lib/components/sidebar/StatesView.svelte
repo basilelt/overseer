@@ -117,4 +117,13 @@
     padding: 24px 12px;
     text-align: center;
   }
+  :global(:root.phone) .head {
+    font-size: 12px;
+  }
+  :global(:root.phone) .bucket {
+    flex: none;
+    height: var(--touch);
+    padding: 0 10px;
+    border-radius: 10px;
+  }
 </style>

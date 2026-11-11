@@ -152,4 +152,15 @@
   .chev.open {
     transform: rotate(90deg);
   }
+  :global(:root.phone) .section {
+    min-height: 40px;
+    padding: 12px 10px 4px;
+    font-size: 12px;
+  }
+  :global(:root.phone) .row {
+    height: var(--touch);
+    padding: 0 10px;
+    gap: 8px;
+    border-radius: 10px;
+  }
 </style>

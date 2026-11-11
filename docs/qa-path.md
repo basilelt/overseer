@@ -196,7 +196,8 @@ Each step is **Do → Expect**. Check every screenshot for overlaps, clipped tex
 
 - **L1** `?phone=1` at 390×844 → Agents, Tasks, Review and More tabs. Session chips scroll, and the composer and **Resume in terminal** are reachable.
 - **L2** Tasks: the column chips switch columns, and long-press moves a card. The review dialog footer stays usable, wrapping instead of clipping.
-- **L3** Run **L1** and **L2** in the `android`, `android-tablet`, `iphone` and `ipad` modes, then open Agents and Tasks in `android-tablet-landscape` and `ipad-landscape`: the desktop layout fits 1024 and 1194 px, and toolbars wrap instead of pushing buttons such as **Add Task** off the screen (`overflow.py` checks every mode).
+- **L2a** Workspace drawer: tap the menu button → the drawer covers most of the width; **Workspaces**, **By status** and **Git** fill the first row with full labels; the filter shares the next row with **New workspace**, **New folder** and **Show archived**. Every row (workspace, subject, folder, session, group, closed bucket, attention entry), chevron, subject **+** and **No session** chip is at least 40 px tall and opens, folds or starts what it shows with a thumb; session rows show the host name without its connection state. Pick a workspace or session → the drawer closes on it. Both themes. On the desktop layout the sidebar looks as before.
+- **L3** Run **L1**, **L2** and **L2a** in the `android`, `android-tablet`, `iphone` and `ipad` modes, then open Agents and Tasks in `android-tablet-landscape` and `ipad-landscape`: the desktop layout fits 1024 and 1194 px, and toolbars wrap instead of pushing buttons such as **Add Task** off the screen (`overflow.py` checks every mode).
 
 ### M. Life events
 

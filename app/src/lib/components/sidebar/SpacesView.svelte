@@ -358,4 +358,35 @@
     padding: 24px 12px;
     text-align: center;
   }
+  :global(:root.phone) .empty {
+    padding: 4px 6px;
+  }
+  :global(:root.phone) .label {
+    font-size: 12px;
+  }
+  :global(:root.phone) .chips {
+    gap: 6px;
+    margin-top: 6px;
+  }
+  :global(:root.phone) .chip {
+    height: 40px;
+    padding: 0 14px;
+    border-radius: 20px;
+    font-size: 14px;
+  }
+  :global(:root.phone) .gtitle {
+    padding: 8px 6px 0 12px;
+    font-size: 12px;
+  }
+  :global(:root.phone) .add {
+    width: var(--touch);
+    height: var(--touch);
+  }
+  :global(:root.phone) .group {
+    flex: none;
+    gap: 10px;
+    height: var(--touch);
+    padding: 0 10px;
+    border-radius: 10px;
+  }
 </style>

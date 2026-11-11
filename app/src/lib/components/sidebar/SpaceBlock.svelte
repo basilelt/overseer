@@ -351,4 +351,34 @@
     font-size: 11px;
     color: var(--text-2);
   }
+  :global(:root.phone) .line {
+    height: var(--touch);
+    border-radius: 10px;
+  }
+  :global(:root.phone) .chev {
+    width: 36px;
+    font-size: 18px;
+    border-radius: 10px;
+  }
+  :global(:root.phone) .child {
+    padding-left: 0;
+  }
+  :global(:root.phone) .start {
+    width: 40px;
+    height: 40px;
+    margin-right: 2px;
+    border-radius: 10px;
+  }
+  :global(:root.phone) .more {
+    height: 40px;
+    margin-left: 12px;
+    padding: 0 10px;
+    font-size: 14px;
+    border-radius: 10px;
+  }
+  :global(:root.phone) .bucket {
+    margin-left: 12px;
+    padding: 6px 10px 2px;
+    font-size: 12px;
+  }
 </style>
