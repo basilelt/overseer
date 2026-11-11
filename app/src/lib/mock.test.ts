@@ -620,6 +620,29 @@ describe('MockDaemon', () => {
     expect(await a.autoOrganize()).toEqual({ enabled: true });
   });
 
+  it('stores the agent messaging switch, on by default, and refuses a non-boolean', async () => {
+    const { a, m } = setup();
+    expect(await a.agentMessaging()).toEqual({ enabled: true });
+    expect(await a.setAgentMessaging(false)).toEqual({ enabled: false });
+    expect(await a.agentMessaging()).toEqual({ enabled: false });
+    await expect(m.request('PUT', '/v1/tasks/agent-messaging', { enabled: 'no' })).rejects.toMatchObject({ status: 400, message: expect.stringContaining('enabled must be a boolean') });
+  });
+
+  it('keeps agent messages inside a project and honours the switch, like the daemon', async () => {
+    const { a, m } = setup();
+    const mk = (title: string, project: string) => a.createTask({ title, description: '', project, agent: 'claude', model: '' });
+    const [x, y, far] = [await mk('X', '/p'), await mk('Y', '/p'), await mk('Far', '/q')];
+    const send = (to: string, from?: string) => m.request('POST', `/v1/tasks/${to}/messages`, { body: 'hi', ...(from ? { from } : {}) });
+    await expect(send(y.id, x.id)).resolves.toMatchObject({ from: x.id });
+    await expect(send(far.id, x.id)).rejects.toMatchObject({ status: 403, message: expect.stringContaining('another project (/q)') });
+    await a.setAgentMessaging(false);
+    await expect(send(y.id, x.id)).rejects.toMatchObject({ status: 403, message: expect.stringContaining('turned off') });
+    await expect(send(y.id)).resolves.toMatchObject({ from: null });
+    const sub = (await a.tasks()).find((t) => t.parentId)!;
+    await expect(send(sub.id, sub.parentId!)).resolves.toMatchObject({ from: sub.parentId });
+    await expect(send(sub.parentId!, sub.id)).resolves.toMatchObject({ from: sub.id });
+  });
+
   it('walks the remote connection phases', async () => {
     const { m } = setup();
     const phases: ConnPhase[] = [];

@@ -79,6 +79,7 @@ export const ENTRIES: Entry[] = [
   { id: 'defaultEffort', section: 'defaults', keys: ['settings.defaultEffort'] },
   { id: 'autoConcurrency', section: 'defaults', keys: ['settings.autoConcurrency', 'settings.autoConcurrencyHint'] },
   { id: 'autoOrganize', section: 'defaults', keys: ['settings.autoOrganize', 'settings.autoOrganizeHint'] },
+  { id: 'agentMessaging', section: 'defaults', keys: ['settings.agentMessaging', 'settings.agentMessagingHint'] },
   { id: 'profileDefault', section: 'profiles', keys: ['profile.globalDefault', 'profile.globalHint'] },
   { id: 'profileEdit', section: 'profiles', keys: ['profile.editTitle', 'profile.editHint'] },
   { id: 'hooks', section: 'hooks', keys: ['hooks.hint'] },

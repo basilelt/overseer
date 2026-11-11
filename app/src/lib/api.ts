@@ -49,6 +49,8 @@ export function api(c: DaemonClient) {
     sendTaskMessage: (id: string, body: string) => c.request<TaskMessage>('POST', `/v1/tasks/${enc(id)}/messages`, { body }),
     autoOrganize: () => c.request<{ enabled: boolean }>('GET', '/v1/tasks/auto-organize'),
     setAutoOrganize: (enabled: boolean) => c.request<{ enabled: boolean }>('PUT', '/v1/tasks/auto-organize', { enabled }),
+    agentMessaging: () => c.request<{ enabled: boolean }>('GET', '/v1/tasks/agent-messaging'),
+    setAgentMessaging: (enabled: boolean) => c.request<{ enabled: boolean }>('PUT', '/v1/tasks/agent-messaging', { enabled }),
     organize: (project?: string) => c.request<{ started: Task[] }>('POST', '/v1/tasks/organize', project ? { project } : {}),
     projects: () => c.request<Project[]>('GET', '/v1/projects'),
     createProject: (path: string) => c.request<Project>('POST', '/v1/projects', { path }),
