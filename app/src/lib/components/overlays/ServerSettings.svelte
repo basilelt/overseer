@@ -2,6 +2,7 @@
   import { untrack } from 'svelte';
   import TriangleAlert from '@lucide/svelte/icons/triangle-alert';
   import { t } from '../../i18n.svelte';
+  import { lid, lidAvailable, loadLid, setLid } from '../../lid.svelte';
   import { lingerOff } from '../../lifecycle';
   import { lifecycle, loadLifecycle, patchLifecycle } from '../../lifecycle.svelte';
   import { toggleAutostart } from '../../lifecycle-switch';
@@ -18,6 +19,7 @@
 
   $effect(() => {
     untrack(() => loadLifecycle(true));
+    untrack(() => loadLid(true));
   });
 </script>
 
@@ -51,6 +53,21 @@
           {#each modes as m (m)}<option value={m}>{t(`settings.afterReboot.${m}`)}</option>{/each}
         </select>
       </label>
+    {/if}
+  {/if}
+  {#if lid.status?.supported && lidAvailable() && row('lidClosed')}
+    <label class="row" class:hit={hit('lidClosed')}>
+      <span
+        >{t('settings.lidClosed')}<small
+          >{t('settings.lidClosedHint')}{auto?.platform === 'launchd' ? ` ${t('settings.lidClosedMac')}` : ''}</small
+        ><small class="battery"><TriangleAlert size={11} />{t('settings.lidClosedBattery')}</small></span
+      >
+      <input type="checkbox" class="switch" data-tour="lid-closed" checked={lid.status.enabled} disabled={lid.busy} onchange={(e) => setLid(e.currentTarget)} />
+    </label>
+    {#if lid.status.error}
+      <div class="row warn"><span class="msg"><TriangleAlert size={13} />{t('settings.lidClosedFailed', { error: lid.status.error })}</span></div>
+    {:else if lid.status.enabled && !lid.status.active}
+      <div class="row warn"><span class="msg"><TriangleAlert size={13} />{t('settings.lidClosedInactive')}</span></div>
     {/if}
   {/if}
   {#if row('uninstall')}
@@ -93,6 +110,15 @@
   }
   .row + .row {
     margin-top: 6px;
+  }
+  .battery {
+    margin-top: 2px;
+    color: var(--text-2);
+  }
+  .battery :global(svg) {
+    vertical-align: -1px;
+    margin-right: 4px;
+    color: var(--st-failed);
   }
   .warn > .msg {
     display: block;

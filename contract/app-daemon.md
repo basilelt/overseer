@@ -1586,3 +1586,18 @@ repository, which the daemon cannot find from a `missing` directory otherwise.
   recreates the saved terms with their ids before it serves requests, then publishes the usual
   `term.created` events.
 
+## Lid closed (keep agents running)
+
+- `GET /v1/power/lid` → `{"enabled", "active", "supported", "error": string|null}`. `enabled` is the
+  stored option, `active` whether the system is kept awake right now, `error` the last refusal.
+- `PUT /v1/power/lid` with `{"enabled": true|false}` → the same object. 400 when `enabled` is not a
+  boolean, 500 with `{"error"}` when the system refuses (the option stays as it was), 501 on a
+  system other than Linux, macOS or Windows.
+- Linux: the daemon holds `systemd-inhibit --what=handle-lid-switch --no-ask-password --mode=block` while it
+  runs, fed by a pipe so the lock goes away with the daemon (crash or upgrade) and is taken again
+  at start. polkit may refuse it when the daemon has no active session.
+- macOS: `pmset -a disablesleep 1|0` through an administrator prompt (`osascript`); the setting
+  persists in the OS until the option is turned off.
+- Windows: `powercfg` sets the lid close action of the current scheme to Do nothing (AC and DC),
+  remembers the previous actions in the registry and puts them back when turned off.
+- The app offers it only for a local daemon on the desktop.

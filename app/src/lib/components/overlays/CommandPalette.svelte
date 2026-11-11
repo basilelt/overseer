@@ -28,6 +28,8 @@
   import ScrollText from '@lucide/svelte/icons/scroll-text';
   import MessageSquarePlus from '@lucide/svelte/icons/message-square-plus';
   import Compass from '@lucide/svelte/icons/compass';
+  import Clapperboard from '@lucide/svelte/icons/clapperboard';
+  import { recorder, rt } from '../../record.svelte';
   import WandSparkles from '@lucide/svelte/icons/wand-sparkles';
   import { organizer } from '../../organize.svelte';
   import { tt } from '../../tour/strings';
@@ -163,6 +165,7 @@
     ...(connected ? [action('skills', 'palette.skills', Puzzle, () => app.open('settings', 'skills'))] : []),
     { id: 'logs', label: dt('show'), icon: ScrollText, section: 'actions', run: () => diag.open('live') },
     { id: 'feedback', label: ft('title'), icon: MessageSquarePlus, section: 'actions', run: () => feedback.show() },
+    ...(recorder.phase === 'idle' ? [{ id: 'record', label: rt('palette'), icon: Clapperboard, section: 'actions', run: () => recorder.setup() } as Cmd] : []),
     { id: 'tour', label: tt('palette'), icon: Compass, section: 'actions', run: () => replayTour() },
     ...(connected ? [{ id: 'organize', label: t('org.palette'), icon: WandSparkles, section: 'actions', run: () => organizer.show() } as Cmd] : []),
     ...(connected && app.wsPersistent

@@ -1007,6 +1007,16 @@ describe('sessions', () => {
       expect(app.selectedKey).toBe(`term:${term.id}`);
     });
 
+    it('does not pull a shell into another workspace after the user switched', async () => {
+      app.selectWorkspace('ws_proxmox');
+      const shell = await app.newSession('shell');
+      app.selectWorkspace('ws_webshop');
+      app.selectedKey = null;
+      m.emit('term.updated', { term: { ...shell, title: 'renamed' } as Term });
+      expect(app.selectedKey).toBeNull();
+      expect(app.workspaceId).toBe('ws_webshop');
+    });
+
     it('opens the workspace that holds a session started from elsewhere', async () => {
       app.selectWorkspace('ws_webshop');
       const base = await app.newSession('shell');

@@ -26,6 +26,7 @@ import { t } from './i18n.svelte';
 import { browsers, openOutside } from './browsers.svelte';
 import { ui } from './mobile/ui.svelte';
 import { feedback } from './feedback.svelte';
+import { tap } from './record-state.svelte';
 
 export type View = 'agents' | 'kanban' | 'browser';
 export type Overlay = null | 'taskDetail' | 'palette' | 'connect' | 'settings' | 'task' | 'project' | 'review' | 'ports' | 'system' | 'usage' | 'broadcast' | 'holdAll' | 'name' | 'workspaceNew' | 'profiles' | 'shortcuts' | 'file' | 'notifications' | 'closeTab' | 'switchboardImport' | 'uninstall';
@@ -377,6 +378,7 @@ class AppState {
   }
 
   selectWorkspace(id: string) {
+    this.following = null;
     this.workspaceId = id;
     this.wsChosen = true;
     rememberWorkspace(this.conn.target, id);
@@ -742,6 +744,7 @@ class AppState {
   }
 
   notify(text: string, kind: 'info' | 'error' = 'info', action?: ToastAction, entry: EntryKind = 'error') {
+    if (kind === 'error') tap.note?.('toast', text);
     if (kind === 'error') dispatch(this, { kind: entry, title: text, coalesce: `error:${text}`, toast: false }, () => {});
     this.show(text, kind, action);
   }

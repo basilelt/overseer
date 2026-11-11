@@ -174,7 +174,29 @@ export type TaskStatus = 'pending' | 'auto' | 'in_progress' | 'in_testing' | 'me
 export type Effort = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 export const TASK_STATUSES: TaskStatus[] = ['pending', 'auto', 'in_progress', 'in_testing', 'merged', 'completed'];
 
-export type TaskOrigin = 'user' | 'session' | 'agent' | 'organizer' | 'configurator';
+export type TaskOrigin = 'user' | 'session' | 'agent' | 'organizer' | 'configurator' | 'reviewer';
+
+export interface Quorum {
+  workers: string[];
+  reviewers: string[];
+}
+
+export interface Vote {
+  from: string;
+  number: number;
+  agent: string;
+  role: 'reviewer' | 'orchestrator';
+  approve: boolean;
+  reason: string;
+}
+
+export interface TaskVotes {
+  round: number;
+  voters: number;
+  needed: number;
+  votes: Vote[];
+  outcome: 'accepted' | 'rejected' | null;
+}
 export type TaskBadge = 'needs_input' | 'paused';
 
 export interface Progress {
@@ -211,6 +233,8 @@ export interface Task {
   manualStatus?: TaskStatus | null;
   badges?: TaskBadge[];
   profile?: string | null;
+  quorum?: Quorum | null;
+  votes?: TaskVotes | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -239,6 +263,7 @@ export interface NewTask {
   dependsOn?: string[];
   inheritBranch?: boolean;
   attachments?: { path: string; name?: string }[];
+  quorum?: Quorum | null;
 }
 
 export interface Project {
@@ -408,6 +433,13 @@ export interface AutostartStatus {
   path: string | null;
   linger: boolean | null;
   lingerCommand: string | null;
+}
+
+export interface LidPower {
+  enabled: boolean;
+  active: boolean;
+  supported: boolean;
+  error: string | null;
 }
 
 export interface Lifecycle {

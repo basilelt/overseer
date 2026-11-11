@@ -18,7 +18,7 @@ function fixture(n: number) {
   const wsOf = new Map<string, string>();
   const items = Array.from({ length: n }, (_, i) => {
     const at = new Date(now - ((i * 7919) % 4_000_000) * 1000).toISOString();
-    const target = { key: `k${i}`, kind: 'claude', group: 'ready', state: STATES[i % 5]!, title: 't', at } as SidebarItem;
+    const target = { key: `k${i}`, kind: i % 10 === 6 ? 'shell' : 'claude', group: 'ready', state: STATES[i % 5]!, title: 't', at } as SidebarItem;
     wsOf.set(target.key, `w${i % 7}`);
     return new Proxy(target, {
       get(o, p) {

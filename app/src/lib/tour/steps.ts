@@ -1,4 +1,4 @@
-export type StepId = 'host' | 'workspaces' | 'tabs' | 'view' | 'panel' | 'kanban' | 'review' | 'chips' | 'notify' | 'profiles' | 'palette' | 'paletteKey' | 'organize' | 'settings' | 'feedback' | 'demo' | 'gpuTerminal' | 'worktreeCleanup' | 'switchboard' | 'clickCursor' | 'palettes' | 'skills' | 'autoApprove' | 'merged' | 'uninstall' | 'autoUpdate' | 'subjects' | 'sourceControl' | 'reviewMap' | 'installAgent';
+export type StepId = 'host' | 'workspaces' | 'tabs' | 'view' | 'panel' | 'kanban' | 'review' | 'chips' | 'notify' | 'profiles' | 'palette' | 'paletteKey' | 'organize' | 'settings' | 'feedback' | 'demo' | 'gpuTerminal' | 'worktreeCleanup' | 'switchboard' | 'clickCursor' | 'palettes' | 'skills' | 'autoApprove' | 'merged' | 'uninstall' | 'autoUpdate' | 'subjects' | 'sourceControl' | 'reviewMap' | 'lidClosed' | 'recordBug' | 'quorum' | 'installAgent';
 
 export interface Step {
   id: StepId;
@@ -37,6 +37,9 @@ export const STEPS: Step[] = [
   { id: 'subjects', targets: ['subjects', 'workspaces'], since: '0.36' },
   { id: 'sourceControl', targets: ['git-button', 'palette'], since: '0.36' },
   { id: 'reviewMap', targets: ['review-map', 'review'], since: '0.36' },
+  { id: 'lidClosed', targets: ['lid-closed', 'settings'], since: '0.36' },
+  { id: 'recordBug', targets: ['palette'], since: '0.36', center: true },
+  { id: 'quorum', targets: ['quorum', 'kanban'], since: '0.36' },
   { id: 'installAgent', targets: ['new-session', 'palette'], since: '0.36' },
 ];
 

@@ -125,6 +125,9 @@
       onpointerdown={onsessiondown && ((e) => onsessiondown(e, it.key))}
     />
   {/each}
+  {#each s.shells as it (it.key)}
+    <SessionRow item={it} {now} {host} selected={selectedKey === it.key} multi={multi?.has(it.key)} onselect={(e) => onselect(it.key, e)} onmenu={onitemmenu && ((e) => onitemmenu(it.key, it.title, e))} onpointerdown={onsessiondown && ((e) => onsessiondown(e, it.key))} />
+  {/each}
   {#if s.closed.count}
     <button class="more" type="button" data-closed={key} aria-expanded={isClosedOpen} onclick={toggleClosed}>{s.closed.count === 1 ? t('ws.closedOne') : t('ws.closedMore', { n: s.closed.count })}</button>
     {#if isClosedOpen}

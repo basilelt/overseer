@@ -268,3 +268,28 @@ describe('attachment note', () => {
     expect(note).not.toContain('GitHub CLI');
   });
 });
+
+describe('recorded actions', () => {
+  it('adds a Recorded actions block with the duration before the diagnostics', () => {
+    const body = buildBody(form({ actions: { log: '0:00  start  Recording started\n0:04  click  button "Save"', duration: 65_000 }, diagnostics: 'App: 1' }));
+    expect(body).toContain('<details><summary>Recorded actions (1:05)</summary>\n\n```text\n0:00  start  Recording started\n0:04  click  button "Save"\n```\n\n</details>');
+    expect(body.indexOf('Recorded actions')).toBeLessThan(body.indexOf('Diagnostics'));
+  });
+
+  it('leaves the block out without a recording or with an empty log', () => {
+    expect(buildBody(form())).not.toContain('Recorded actions');
+    expect(buildBody(form({ actions: null }))).not.toContain('Recorded actions');
+    expect(buildBody(form({ actions: { log: '', duration: 1000 } }))).not.toContain('Recorded actions');
+  });
+
+  it('redacts secrets in the log and counts it toward the size limit', () => {
+    expect(buildBody(form({ actions: { log: 'error token=abc123def', duration: 0 } }))).toContain('token=***');
+    expect(validate(form({ actions: { log: 'x'.repeat(70_000), duration: 0 } }), 'o/r')).toBe('tooLong');
+  });
+
+  it('tells the agent to keep the block and that its times match the video', () => {
+    const p = buildPrompt({ repo: 'o/r', kind: 'bug', title: 'Bug: x', attachments: [], investigate: false, inClone: false });
+    expect(p).toContain('Recorded actions');
+    expect(p).toContain('match the attached recording');
+  });
+});
