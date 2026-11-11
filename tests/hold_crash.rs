@@ -50,3 +50,31 @@ fn a_pending_hold_survives_a_daemon_crash_and_applies_when_the_turn_ends() {
     wait(|| line_json(&app, &line)["line"]["state"] == "held");
     wait(|| line_json(&app, &line)["local"]["holdPending"] != true);
 }
+
+#[test]
+fn a_profile_chip_survives_a_daemon_crash() {
+    let mut app = App::new("chipcrash", json!({}));
+    let wt = app.fx.wt.to_string_lossy().into_owned();
+    let t = app.ok(
+        "POST",
+        "/v1/terms",
+        json!({"cwd": wt, "agent": "claude", "profile": "economy", "cols": 100, "rows": 30}),
+    );
+    let tid = t["id"].as_str().unwrap().to_string();
+    let chip = json!({"id": "economy", "name": "Economy", "model": "sonnet", "effort": "low"});
+    assert_eq!(t["profile"], chip);
+    wait(|| {
+        app.ok("GET", "/v1/lines?all=true", Value::Null)
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|l| l["local"]["termId"] == tid.as_str() && l["local"]["pid"].is_u64())
+    });
+    std::thread::sleep(Duration::from_secs(3));
+    app.crash_and_restart();
+    let restored = wait_for(|| {
+        let (code, v) = app.req("GET", &format!("/v1/terms/{tid}"), Value::Null);
+        (code == 200).then_some(v)
+    });
+    assert_eq!(restored["profile"], chip);
+}
