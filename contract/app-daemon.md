@@ -577,6 +577,16 @@ directory or not in a git repository.
   `lastAssistantText` are `""` when unknown.
 - `status` is the line state (`active|idle|held|hung-up`). Content is shown to the user in the
   app; the daemon never writes it to a log.
+- `cost` (omitted when the transcript has no token counts): `{input, cacheWrite, cacheRead,
+  output, cost, partial, model, effort, pricesAsOf, models:[{model, input, cacheWrite, cacheRead,
+  output, cost}], switches:[{at, from, to, cacheWrite, cost}]}`. Tokens come from each assistant
+  message's `usage` (Claude, counted once per message id, subagent transcripts included), the
+  `token_count` totals per `turn_context` model (Codex) or the message `tokens` (Gemini).
+  `input` is uncached input. `cost` is USD at the daemon's API list prices (`usage::PRICES`,
+  dated `pricesAsOf`), `null` when no model is priced; `partial` when some are not. A switch is
+  the first main-transcript turn on a new model, with what it cost (the cache it rebuilt).
+  Tasks carry the sum of their sessions as `cost` (`TaskCost`), snapshot on the task row at most
+  once a minute while the session is busy and after each turn.
 - `GET /v1/lines/{id}/diff` (existing) gives the worktree diff.
 
 ## 6b. Chat view (ADR 0036)

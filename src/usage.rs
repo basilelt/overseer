@@ -37,7 +37,11 @@ const fn p(input: f64, output: f64, cache_read: f64, write_5m: f64, write_1h: f6
     }
 }
 
+pub const PRICES_AS_OF: &str = "2026-11-11";
+
 pub const PRICES: &[(&str, Price)] = &[
+    ("claude-fable-5-2", p(8.0, 40.0, 0.2, 10.0, 16.0)),
+    ("claude-mythos-5-2", p(8.0, 40.0, 0.2, 10.0, 16.0)),
     ("claude-fable-", p(10.0, 50.0, 0.25, 12.5, 20.0)),
     ("claude-mythos-", p(10.0, 50.0, 0.25, 12.5, 20.0)),
     ("claude-opus-5-5", p(4.0, 20.0, 0.2, 5.0, 8.0)),
@@ -47,9 +51,11 @@ pub const PRICES: &[(&str, Price)] = &[
     ("claude-opus-4-7", p(5.0, 25.0, 0.5, 6.25, 10.0)),
     ("claude-opus-4-8", p(5.0, 25.0, 0.5, 6.25, 10.0)),
     ("claude-opus-4", p(15.0, 75.0, 1.5, 18.75, 30.0)),
+    ("claude-sonnet-5-5", p(2.0, 10.0, 0.1, 2.5, 4.0)),
     ("claude-sonnet-5", p(2.0, 10.0, 0.2, 2.5, 4.0)),
     ("claude-sonnet-4", p(3.0, 15.0, 0.3, 3.75, 6.0)),
     ("claude-3-7-sonnet", p(3.0, 15.0, 0.3, 3.75, 6.0)),
+    ("claude-haiku-5-5", p(0.1, 0.5, 0.01, 0.125, 0.2)),
     ("claude-haiku-4", p(1.0, 5.0, 0.1, 1.25, 2.0)),
     ("claude-3-5-haiku", p(0.8, 4.0, 0.08, 1.0, 1.6)),
     ("gpt-5-mini", p(0.25, 2.0, 0.025, 0.0, 0.0)),
@@ -90,7 +96,7 @@ impl Tokens {
         self.input + self.output + self.cache_read + self.cache_write
     }
 
-    fn add(&mut self, o: &Tokens) {
+    pub(crate) fn add(&mut self, o: &Tokens) {
         self.input += o.input;
         self.output += o.output;
         self.cache_read += o.cache_read;
@@ -478,6 +484,40 @@ fn gemini_msg(c: &mut Cursor, v: &Value, b: &mut Batch) {
     }
     let a = if same { 0 } else { active(c, ts, false) };
     b.add(ts, &model, &delta, !same, a);
+}
+
+#[derive(Default)]
+pub(crate) struct Meter {
+    c: Cursor,
+}
+
+impl Meter {
+    pub(crate) fn line(&mut self, agent: &str, line: &[u8]) -> Vec<(String, Tokens, bool)> {
+        let mut b = Batch::default();
+        match agent {
+            "codex" => codex_line(&mut self.c, line, &mut b),
+            "gemini" => {
+                if let Ok(v) = serde_json::from_slice::<Value>(line) {
+                    gemini_msg(&mut self.c, &v, &mut b);
+                }
+            }
+            _ => claude_line(&mut self.c, true, line, &mut b),
+        }
+        Self::turns(b)
+    }
+
+    pub(crate) fn gemini(&mut self, v: &Value) -> Vec<(String, Tokens, bool)> {
+        let mut b = Batch::default();
+        gemini_msg(&mut self.c, v, &mut b);
+        Self::turns(b)
+    }
+
+    fn turns(b: Batch) -> Vec<(String, Tokens, bool)> {
+        b.buckets
+            .into_iter()
+            .map(|((_, model), a)| (model, a.tokens, a.messages > 0))
+            .collect()
+    }
 }
 
 fn mtime_len(p: &Path) -> Option<(i64, u64)> {
