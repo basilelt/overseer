@@ -73,6 +73,8 @@ class AppState {
   fileArg = $state<FileArg | null>(null);
   selectedKey = $state<string | null>(null);
   panelOpen = $state(true);
+  liveReview = $state(false);
+  gitWorktree = $state<{ project: string; path: string } | null>(null);
   sidebarOpen = $state(true);
   browserUrl = $state('');
   toast = $state<{ text: string; kind: 'info' | 'error'; action?: ToastAction; progress?: number } | null>(null);
@@ -86,6 +88,7 @@ class AppState {
   ws = $state.raw<WsData>(EMPTY_WS);
   wsPersistent = $state(true);
   sidebarMode = $state<SidebarMode>(settings.sidebarMode ?? 'workspaces');
+  sidebarGit = $state(settings.sidebarGit ?? false);
   workspaceId = $state<string>(NO_WORKSPACE);
   private following: { id: string; goToWorkspace: boolean } | null = null;
   private pendingTab: 'graph' | 'worktrees' | null = initialTab();
@@ -382,8 +385,19 @@ class AppState {
     this.menu = { items, x: at.clientX, y: at.clientY, label };
   }
 
+  setSidebarGit(on: boolean) {
+    this.sidebarGit = on;
+    if (on) this.sidebarOpen = true;
+    saveSettings({ sidebarGit: on });
+  }
+
+  toggleSourceControl() {
+    this.setSidebarGit(!(this.sidebarGit && this.sidebarOpen));
+  }
+
   setSidebarMode(mode: SidebarMode) {
     this.sidebarMode = mode;
+    if (this.sidebarGit) this.setSidebarGit(false);
     saveSettings({ sidebarMode: mode });
   }
 
@@ -619,6 +633,7 @@ class AppState {
     if (!p) return;
     const key = newTabKey(kind, p);
     this.view = 'agents';
+    if (ui.layout === 'phone') ui.tab = 'agents';
     update((l) => openInFocused(l, key));
     this.selectedKey = key;
   }

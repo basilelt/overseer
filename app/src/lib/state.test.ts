@@ -6,6 +6,7 @@ import { MockDaemon } from './mock';
 import { center } from './notifications.svelte';
 import { setPresence } from './presence';
 import { pages } from './session-pages.svelte';
+import { ui } from './mobile/ui.svelte';
 import { settings, workspaceFor } from './settings.svelte';
 import { app, NO_WORKSPACE, projectName, statusLine } from './state.svelte';
 import { allTabs, closeTabAt, EMPTY_LAYOUT, openInFocused, workspace } from './workspace.svelte';
@@ -1141,6 +1142,35 @@ describe('sessions', () => {
     expect(key).toContain('/home/alice/Documents/Github/uni/os-labs');
     expect(allTabs(workspace.layout)).toEqual([key]);
     expect(app.view).toBe('agents');
+  });
+
+  it('shows source control in the sidebar, reopening a hidden sidebar, and leaves it for a session list', () => {
+    app.sidebarGit = false;
+    app.sidebarOpen = false;
+    app.toggleSourceControl();
+    expect([app.sidebarGit, app.sidebarOpen]).toEqual([true, true]);
+    expect(settings.sidebarGit).toBe(true);
+    app.toggleSourceControl();
+    expect(app.sidebarGit).toBe(false);
+    app.setSidebarGit(true);
+    const mode = app.sidebarMode;
+    app.setSidebarMode('status');
+    expect(app.sidebarGit).toBe(false);
+    expect(app.sidebarMode).toBe('status');
+    app.setSidebarMode(mode);
+  });
+
+  it('shows a project tab opened from More on the phone', () => {
+    ui.layout = 'phone';
+    ui.tab = 'more';
+    try {
+      app.openProjectTab('graph');
+      expect(ui.tab).toBe('agents');
+      expect(app.selectedKey).toMatch(/^graph:/);
+    } finally {
+      ui.layout = 'desktop';
+      ui.tab = 'agents';
+    }
   });
 
   it('opens no project tab without any project', () => {

@@ -13,7 +13,7 @@
   import OctagonX from '@lucide/svelte/icons/octagon-x';
   import Plus from '@lucide/svelte/icons/plus';
   import Globe from '@lucide/svelte/icons/globe';
-  import GitCompare from '@lucide/svelte/icons/git-compare';
+  import GitBranch from '@lucide/svelte/icons/git-branch';
   import Megaphone from '@lucide/svelte/icons/megaphone';
   import { st } from '../../system/strings';
   import { settings } from '../../settings.svelte';
@@ -27,8 +27,8 @@
   import { closePaneAt, closeTabAt, openInFocused, reorderTab, split, update, type Pane } from '../../workspace.svelte';
   import AgentIcon, { GROUP_COLOR } from '../sidebar/AgentIcon.svelte';
   import ReviewBadge from '../review/ReviewBadge.svelte';
-  import { itemTarget, modeFor, reviewTitle, setReviewMode } from '../../review/open';
-  import type { ReviewMode } from '../../review/pane';
+  import { itemTarget, reviewTitle } from '../../review/open';
+  import { liveOn, toggleLiveReview } from '../../git/live.svelte';
   import { chatCapable } from '../../chat/viewmode';
   import ModeToggle from '../chat/ModeToggle.svelte';
   import { chipLabel, chipShort } from '../../profiles';
@@ -187,18 +187,6 @@
   }
   const reviewable = $derived(!!pane.active && !!itemTarget(pane.active));
 
-  function reviewMenu(e: MouseEvent) {
-    const target = itemTarget(pane.active);
-    if (!target) return;
-    const mode = modeFor(pane.active);
-    const set = (m: ReviewMode) => () => setReviewMode(target, m, index);
-    app.openMenu(e, t('review.mode'), [
-      { label: t('review.beside'), checked: mode === 'side', run: set('side') },
-      { label: t('review.asTab'), checked: mode === 'tab', run: set('tab') },
-      { label: t('review.close'), checked: mode === 'off', disabled: mode === 'off', run: set('off') },
-    ]);
-  }
-
   const term = $derived(activeItem?.termId ? app.data.terms.find((x) => x.id === activeItem.termId) : undefined);
   const killable = $derived(!!term && !term.exited);
 
@@ -307,7 +295,7 @@
   <div class="actions">
     {#if activeItem && chatCapable(activeItem)}<ModeToggle item={activeItem} />{/if}
     {#if reviewable}
-      <button class="icon-btn" class:on={modeFor(pane.active) !== 'off'} title={t('review.mode')} aria-label={t('review.mode')} aria-haspopup="menu" onclick={reviewMenu}><GitCompare size={14} /></button>
+      <button class="icon-btn" class:on={liveOn()} title={t('git.button')} aria-label={t('git.button')} aria-pressed={liveOn()} data-tour="git-button" onclick={() => toggleLiveReview(pane.active)}><GitBranch size={14} /></button>
     {/if}
     {#if activeWeb?.pages.length}
       <button class="icon-btn web" class:on={activeWeb.open} title={t('web.toggle')} aria-label={t('web.toggle')} aria-pressed={activeWeb.open} onclick={() => activeItem && pages.setOpen(activeItem.key, !activeWeb.open)}

@@ -3,6 +3,7 @@ import { mockUsage } from './usage/mock';
 import { DaemonError, type DaemonClient, type TermIO } from './client';
 import { phoneParam } from './mobile/layout';
 import { MockGit } from './git/mockGit';
+import { MockScm } from './git/mockScm';
 import { bigDiff, bigPatch, MockReview } from './review/mock';
 import { chatPage, mockScreen, MOCK_COMMANDS, seedAgentChat, seedChat } from './chat/mock';
 import type { Effort, HookResult, HooksStatus, SwitchboardStatus, Profile, ProfileChip, ProfilesStore, SourceItem, SourceItems, SubagentDef, TaskSource } from './types';
@@ -647,6 +648,7 @@ export class MockDaemon implements DaemonClient {
   statusline = { path: '~/.claude/settings.json', installed: false, command: '~/.claude/statusline.sh' as string | null };
   profileStore: ProfilesStore = structuredClone(MOCK_PROFILES);
   git = new MockGit(this);
+  scm = new MockScm(this, (wt) => this.git.projectOf(wt) ?? wt, (p, rev) => this.git.hasCommit(p, rev));
   workspaces: Workspace[];
   folders: Folder[];
   groups: Group[];
@@ -804,6 +806,8 @@ export class MockDaemon implements DaemonClient {
     if (path.startsWith('/v1/organize/')) return this.organizeRoute(method, path, body);
     if ((r = m(/^\/v1\/tasks\/([^/]+)\/messages$/))) return this.messagesRoute(method, decodeURIComponent(r[1]), body);
     if ((r = m(/^\/v1\/tasks\/([^/]+)(?:\/(start|review))?$/))) return this.taskAction(method, decodeURIComponent(r[1]), r[2], body);
+    const sc = this.scm.route(method, path, new URLSearchParams(qs), body);
+    if (sc !== undefined) return sc;
     const g = this.git.route(method, path, new URLSearchParams(qs), body);
     if (g !== undefined) return g;
     throw new DaemonError(404, `no route ${method} ${path}`);

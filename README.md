@@ -105,13 +105,22 @@ commit from the Kanban card when the task is in Review.
 
 </details>
 
-### Git graph and worktrees
+### Source control, Git graph and worktrees
 
-A per-project git graph that stays fast on large histories, with agent branches, tasks and PRs
-on it. Worktrees live in one store outside your repositories, show whether they are in use, idle
+The git button above each session opens its live review: the agent stays on the left, the
+review of everything it changed sits beside it, the sidebar shrinks to a rail of sessions, and one
+bar at the bottom runs git on the worktree you pick among the session's worktrees and submodules.
+Write a message and press Enter to commit; Push, Publish or Pull takes the button's place when it
+is the next step, and the ⋯ menu holds fetch, amend, stage or discard all, merge, stash and the Git
+graph. While you work in a terminal, the sidebar's **Git** tab (Ctrl+Shift+G) keeps source control at
+hand like VS Code: the selected session's worktree, its branch, fetch, pull and push, a commit box,
+staged and changed files, and merge and stash. The Git graph tab keeps a per-project history that stays fast on large histories, with agent
+branches, tasks and PRs on it; from a commit you can merge it into a worktree or revert it.
+Worktrees live in one store outside your repositories, show whether they are in use, idle
 or stale, and are cleaned up safely: **Clean up merged** picks the merged ones with no agent left,
 and you untick the ones to keep.
 
+![Live review of a session](app/docs/screenshots/live-dark.png)
 ![Git graph](app/docs/screenshots/graph-light.png)
 ![Worktrees](app/docs/screenshots/worktrees-dark.png)
 

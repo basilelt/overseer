@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { toggleLiveReview } from '../../git/live.svelte';
   import Gauge from '@lucide/svelte/icons/gauge';
   import { ust } from '../../usage/strings';
   import GitPullRequestArrow from '@lucide/svelte/icons/git-pull-request-arrow';
@@ -149,6 +150,8 @@
     ...(connected ? [action('disconnect', 'palette.disconnect', Unplug, () => app.disconnect())] : []),
     action('theme', 'palette.toggleTheme', SunMoon, () => saveSettings({ theme: nextTheme[settings.theme] })),
     action('panel', 'palette.togglePanel', PanelRight, () => (app.panelOpen = !app.panelOpen)),
+    action('live-review', 'palette.toggleLiveReview', GitGraph, () => toggleLiveReview()),
+    action('source-control', 'palette.sourceControl', GitGraph, () => app.toggleSourceControl()),
     action('split-right', 'palette.splitRight', Columns2, () => split('horizontal')),
     action('split-down', 'palette.splitDown', Rows2, () => split('vertical')),
     action('settings', 'palette.settings', Settings, () => app.open('settings')),
