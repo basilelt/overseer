@@ -26,6 +26,11 @@ describe('tab strip', () => {
     expect(bar).not.toMatch(/\.tabs:hover/);
   });
 
+  it('shows the session cost on its tab, shrinking before the title does', () => {
+    expect(bar).toMatch(/\{#if costOf\(tab\)\}.*<span class="chip cost mono" title=\{t\('cost\.tab'/);
+    expect(rule('.chip.cost')).toMatch(/flex:\s*0 8 auto/);
+  });
+
   it('lays no overlay over the strip on hover', () => {
     expect(bar).not.toMatch(/TabFullTitle|onpointerenter/);
   });

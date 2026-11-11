@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import source from './SidePanel.svelte?raw';
 
-async function rendered(lastAssistantText: string) {
+async function rendered(lastAssistantText: string, cost?: unknown) {
   vi.resetModules();
-  const activity = { l1: { workLog: [], todos: [], editedFiles: [], needsInput: false, lastAssistantText } };
+  const activity = { l1: { workLog: [], todos: [], editedFiles: [], needsInput: false, lastAssistantText, cost } };
   const { app } = await import('../../state.svelte');
   app.data.activity = activity as never;
   app.data.lines = [{ line: { id: 'l1', agent: 'claude', state: 'active' }, project: 'p' }] as never;
@@ -44,5 +44,27 @@ describe('SidePanel last message', () => {
     const html = await rendered('hello');
     expect(html).toContain('Pin');
     for (const label of ['Hold', 'Resume', 'Close line']) expect(html).not.toContain(label);
+  });
+});
+
+describe('SidePanel cost', () => {
+  const cost = {
+    input: 10, cacheWrite: 2000, cacheRead: 500_000, output: 3000, cost: 1.234, partial: false,
+    model: 'claude-opus-5-5', effort: 'high', pricesAsOf: '2026-11-11',
+    models: [{ model: 'claude-opus-5-5', input: 10, cacheWrite: 2000, cacheRead: 500_000, output: 3000, cost: 1.234 }],
+    switches: [],
+  };
+
+  it('shows the session cost with its model and effort, and a cost section', async () => {
+    const html = await rendered('hello', cost);
+    expect(html).toContain('≈$1.23 · claude-opus-5-5 · effort high');
+    expect(html).toContain('data-sec="cost"');
+    expect(html).toContain('cache read 500k');
+  });
+
+  it('shows no cost when the transcript has no token counts', async () => {
+    const html = await rendered('hello');
+    expect(html).not.toContain('data-sec="cost"');
+    expect(html).not.toContain('≈$');
   });
 });
