@@ -211,7 +211,9 @@ describe('Sidebar touch menus', () => {
     expect(src).toMatch(/const opened = \$derived\(new Set\(\[\.\.\.\(saved \?\? \[app\.workspaceId\]\), \.\.\.\(app\.currentWorkspace\?\.parentId \? \[app\.currentWorkspace\.parentId\] : \[\]\)\]\)\)/);
     expect(src).toMatch(/ontoggle: toggle,\s*onpick: pick,\s*onclosed: toggleClosed,/);
     expect(src).toMatch(/kids=\{kidsFor\(r\.workspace\)\}/);
-    expect(src).toMatch(/drag\.start\(e, 'session', key\)/);
+    expect(src).toMatch(/drag\.start\(e, 'session', key, zone\)/);
+    expect(src).toMatch(/tabs=\{tabsOf\(r\.id\)\}/);
+    expect(src).toMatch(/tabsOf,/);
     expect(src).toMatch(/drag\.dragging && drag\.kind !== 'session' && !pinned/);
     expect(src).toMatch(/drag\.dragging && drag\.kind !== 'session'\}<div class="rootdrop"/);
   });

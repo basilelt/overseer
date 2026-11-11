@@ -1702,8 +1702,11 @@ Stopped: no live agent process, resumable); the toggle is at the top of the side
 
 - **Spaces**: pinned workspaces on top, then your folders (one level of sub-folders) and the
   workspaces outside any folder. Each workspace is one block with its sessions under it: click its
-  name to open it (its tab strip and `+` show), the chevron only folds it. Running plain shells are
-  listed after its sessions, muted with a terminal icon, and are not counted in its pills. A group section at the
+  name to open it (its tab strip and `+` show), the chevron only folds it. Its sessions are listed in
+  the order of its tabs (split panes left or top first), then the ones without a tab by urgency and
+  age; drag a session above or below another of the same workspace to move its tab there too. Running
+  plain shells are listed after its sessions, in tab order as well, muted with a terminal icon, and are
+  not counted in its pills. A group section at the
   bottom lists your groups; click one to open it. Every project the daemon knows gets a workspace: the
   repositories its agents ran in, and the git repositories it finds under `discoverRoots`
   (3.1; by default `~/Documents/Github`, `~/src`, `~/code`, `~/projects`, `~/dev`), scanned at
@@ -1744,7 +1747,7 @@ Stopped: no live agent process, resumable); the toggle is at the top of the side
   wheel or trackpad, and hovering a tab shows its full title. `+` starts any installed agent or a shell in the
   workspace folder. Views (browser, **Review changes**, Git graph, worktrees, System, Usage, PR reviews)
   open from the **Views** section of the command palette (Cmd/Ctrl+P). Drag tabs
-  to reorder, middle-click or `×` to close (this ends the agent or shell; right-click > **Hide tab
+  to reorder (the sidebar follows), middle-click or `×` to close (this ends the agent or shell; right-click > **Hide tab
   (keep running)** only hides it), split right or down. The
   order is saved in the daemon, so it comes back on another machine.
   Keyboard: see 14.7a (close with Cmd+W or Ctrl+W, reopen with Cmd/Ctrl+Shift+T, new tab with
