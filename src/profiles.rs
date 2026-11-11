@@ -885,6 +885,18 @@ pub fn for_resume(state_dir: &Path, a: &Agent, cwd: &str) -> Applied {
     }
 }
 
+pub fn for_restore(state_dir: &Path, a: &Agent, cwd: &str, saved: Option<&Chip>) -> Applied {
+    let Some(chip) = saved else {
+        return for_resume(state_dir, a, cwd);
+    };
+    let p = Some(chip.id.as_str())
+        .filter(|id| !id.is_empty())
+        .and_then(|id| find(&load(state_dir), id));
+    let mut x = apply(a, p.as_ref(), "", "");
+    x.chip = Some(chip.clone());
+    x
+}
+
 pub fn routes(
     ctx: &crate::Ctx,
     r: &crate::daemon::Request,
@@ -1089,6 +1101,33 @@ mod tests {
             .iter()
             .map(|(k, v)| (k.as_str(), v.as_str()))
             .collect()
+    }
+
+    #[test]
+    fn restore_keeps_the_saved_chip_and_reapplies_its_profile_env() {
+        let d = std::env::temp_dir().join(format!("sb-profiles-{}-restore", std::process::id()));
+        let claude = get("claude").unwrap();
+        let chip = Chip {
+            id: "economy".into(),
+            name: "Economy".into(),
+            model: "sonnet".into(),
+            effort: "low".into(),
+        };
+        let a = for_restore(&d, claude, "/nowhere", Some(&chip));
+        assert_eq!(a.chip.as_ref(), Some(&chip));
+        assert_eq!(env(&a), env(&applied("claude", "economy", "", "")));
+        let gone = Chip {
+            id: "deleted".into(),
+            ..chip.clone()
+        };
+        let a = for_restore(&d, claude, "/nowhere", Some(&gone));
+        assert_eq!(a.chip, Some(gone), "a deleted profile keeps its chip");
+        assert!(a.env.is_empty());
+        assert_eq!(
+            for_restore(&d, claude, "/nowhere", None),
+            for_resume(&d, claude, "/nowhere"),
+            "no saved chip falls back to the project profile"
+        );
     }
 
     #[test]
