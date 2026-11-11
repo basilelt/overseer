@@ -146,3 +146,59 @@ export interface CleanupPlan {
   remove: PlanItem[];
   keep: PlanItem[];
 }
+
+export type FileState = 'M' | 'A' | 'D' | 'R' | 'T' | 'U' | '?';
+
+export interface ScmFile {
+  path: string;
+  oldPath?: string;
+  status: FileState;
+  submodule?: { commit: boolean; modified: boolean; untracked: boolean };
+}
+
+export interface ScmSubmodule {
+  path: string;
+  worktree: string;
+}
+
+export interface ScmCommit {
+  sha: string;
+  subject: string;
+}
+
+export interface ScmStatus {
+  worktree: string;
+  project: string;
+  branch: string | null;
+  head: string | null;
+  upstream: string | null;
+  base: string;
+  ahead: number;
+  behind: number;
+  staged: ScmFile[];
+  changes: ScmFile[];
+  conflicts: ScmFile[];
+  outgoing: ScmCommit[];
+  incoming: ScmCommit[];
+  stashes: number;
+  branches: string[];
+  submodules: ScmSubmodule[];
+  operation: 'merge' | 'rebase' | 'cherry-pick' | 'revert' | null;
+}
+
+export interface ScmTarget {
+  worktree?: string;
+  lineId?: string;
+}
+
+export interface CommitOptions {
+  message: string;
+  amend?: boolean;
+  all?: boolean;
+  push?: boolean;
+}
+
+export interface ScmResult {
+  status: ScmStatus;
+  commit?: string;
+}

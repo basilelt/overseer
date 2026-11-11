@@ -73,6 +73,8 @@ class AppState {
   fileArg = $state<FileArg | null>(null);
   selectedKey = $state<string | null>(null);
   panelOpen = $state(true);
+  liveReview = $state(false);
+  gitWorktree = $state<{ project: string; path: string } | null>(null);
   sidebarOpen = $state(true);
   browserUrl = $state('');
   toast = $state<{ text: string; kind: 'info' | 'error'; action?: ToastAction; progress?: number } | null>(null);
@@ -86,6 +88,7 @@ class AppState {
   ws = $state.raw<WsData>(EMPTY_WS);
   wsPersistent = $state(true);
   sidebarMode = $state<SidebarMode>(settings.sidebarMode ?? 'workspaces');
+  sidebarGit = $state(settings.sidebarGit ?? false);
   workspaceId = $state<string>(NO_WORKSPACE);
   private following: { id: string; goToWorkspace: boolean } | null = null;
   private pendingTab: 'graph' | 'worktrees' | null = initialTab();
@@ -353,7 +356,7 @@ class AppState {
     const pref = live.find((w) => w.id === want);
     if (pref) return pref.id;
     const busy = live.filter((w) => this.aggregates.get(w.id)?.agents).sort((a, b) => Number(b.pinned) - Number(a.pinned) || a.rank - b.rank);
-    return (busy[0] ?? live[0])?.id ?? NO_WORKSPACE;
+    return (busy[0] ?? live.find((w) => !w.parentId) ?? live[0])?.id ?? NO_WORKSPACE;
   }
 
   membersOf(workspaceId: string) {
@@ -382,8 +385,19 @@ class AppState {
     this.menu = { items, x: at.clientX, y: at.clientY, label };
   }
 
+  setSidebarGit(on: boolean) {
+    this.sidebarGit = on;
+    if (on) this.sidebarOpen = true;
+    saveSettings({ sidebarGit: on });
+  }
+
+  toggleSourceControl() {
+    this.setSidebarGit(!(this.sidebarGit && this.sidebarOpen));
+  }
+
   setSidebarMode(mode: SidebarMode) {
     this.sidebarMode = mode;
+    if (this.sidebarGit) this.setSidebarGit(false);
     saveSettings({ sidebarMode: mode });
   }
 
@@ -577,7 +591,7 @@ class AppState {
     // A subject has no directory: the daemon starts the term in its cwd and assigns it.
     // A repo workspace is assigned too: the term runs in a worktree outside its path until it reports a line.
     const subject = scoped && (!opts.cwd || (scoped.kind !== 'subject' && !!scoped.path && within(opts.cwd, scoped.path))) ? scoped.id : undefined;
-    const cwd = opts.cwd ?? scoped?.path ?? undefined;
+    const cwd = opts.cwd ?? (scoped?.kind === 'subject' ? undefined : (scoped?.cwd ?? scoped?.path)) ?? undefined;
     const worktree = (opts.worktree ?? (agent !== 'shell' && !settings.sessionsInCheckout)) && this.inProject(cwd ?? (subject ? (scoped?.cwd ?? undefined) : undefined));
     const size = { cols: 120, rows: 32, ...(worktree ? { worktree: true } : {}) };
     const profile = agent === 'shell' ? undefined : (opts.profile ?? this.nextProfile ?? undefined);
@@ -619,6 +633,7 @@ class AppState {
     if (!p) return;
     const key = newTabKey(kind, p);
     this.view = 'agents';
+    if (ui.layout === 'phone') ui.tab = 'agents';
     update((l) => openInFocused(l, key));
     this.selectedKey = key;
   }

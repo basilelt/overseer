@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { tabClosed } from './tab-edits';
+import { moveMenu, tabClosed } from './tab-edits';
 
 function fakeApp(lineId: string | null, termId: string | null, fail?: Error) {
   const close = vi.fn(async () => {
@@ -40,5 +40,20 @@ describe('tabClosed on a session', () => {
     await tabClosed(app, 'line:ln_1', true);
     expect(notify).toHaveBeenCalledWith('agent pid 1 did not exit', 'error');
     expect(refresh).toHaveBeenCalled();
+  });
+});
+
+describe('moveMenu', () => {
+  it('names a nested workspace after its parent and checks the current one', () => {
+    const w = (id: string, name: string, over = {}) => ({ id, name, path: `/${id}`, rank: 1, pinned: false, archived: false, folderId: null, ...over });
+    const app = {
+      ws: { workspaces: [w('p', 'endurance'), w('n', 'Onboarding', { parentId: 'p' })], folders: [], groups: [] },
+      itemWs: new Map([['line:l', 'p']]),
+      moveToWorkspace: vi.fn(async () => true),
+    };
+    const items = moveMenu(app as never, 'line:l');
+    expect(items.map((i) => [i.label, !!i.checked])).toEqual([['endurance', true], ['endurance › Onboarding', false]]);
+    items[1]!.run!();
+    expect(app.moveToWorkspace).toHaveBeenCalledWith('line:l', 'n');
   });
 });
