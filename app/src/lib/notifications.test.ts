@@ -69,20 +69,23 @@ describe('addEntry', () => {
   it('compacts a stored list from older versions to one row per session', () => {
     const kv = memory();
     const line = (id: string, kind: Entry['kind'], at: number, read = false): Entry => ({ id, kind, title: kind, at, read, count: 3, action: { kind: 'line', key: 'line:a' } }) as Entry;
-    const idle = (id: string, at: number): Entry => ({ id, kind: 'allIdle', title: 'All agents in overseer are idle', at, read: false });
+    const idle = (id: string, at: number): Entry => ({ id: `allIdle|All agents in overseer are idle|${id}`, kind: 'allIdle', title: 'All agents in overseer are idle', at, read: false });
+    const named = (id: string): Entry => ({ id, kind: 'allIdle', title: 'All agents in overseer are idle', at: 1, read: false });
     kv.data.set(
       storageKey('local'),
-      JSON.stringify([line('t3', 'taskTesting', 30), line('f3', 'finished', 29), idle('i3', 28), line('t2', 'taskTesting', 20, true), idle('i2', 19), { id: 'update:1.0', kind: 'update', title: 'u', at: 1, read: true }]),
+      JSON.stringify([line('t3', 'taskTesting', 30), line('f3', 'finished', 29), idle('i3', 28), line('t2', 'taskTesting', 20, true), idle('2026-11-09T07:39:19Z', 19), named('w:1'), named('g:1'), { id: 'update:1.0', kind: 'update', title: 'u', at: 1, read: true }]),
     );
     const list = loadEntries(kv, 'local');
     expect(list.map((e) => [e.id, e.kind, e.ev])).toEqual([
       ['line:a', 'taskTesting', 't3'],
-      ['i3', 'allIdle', undefined],
+      ['allIdle|All agents in overseer are idle|i3', 'allIdle', undefined],
+      ['w:1', 'allIdle', undefined],
+      ['g:1', 'allIdle', undefined],
       ['update:1.0', 'update', undefined],
     ]);
     expect(list[0]).not.toHaveProperty('count');
     expect(addEntry(list, { id: 't3', kind: 'taskTesting', title: 'again', coalesce: 'line:a' }, 40)).toBeNull();
-    expect(addEntry(list, { kind: 'needsInput', title: 'ask', coalesce: 'line:a' }, 40)!).toHaveLength(3);
+    expect(addEntry(list, { kind: 'needsInput', title: 'ask', coalesce: 'line:a' }, 40)!).toHaveLength(5);
   });
 
   it('caps the list', () => {
@@ -221,11 +224,14 @@ describe('runEntry', () => {
     vi.spyOn(app, 'open').mockImplementation(() => {});
     center.add({ kind: 'needsInput', title: 'needs you', coalesce: 'line:open-me', action: { kind: 'line', key: 'line:open-me' } });
     center.add({ kind: 'finished', title: 'other', coalesce: 'line:other', action: { kind: 'line', key: 'line:other' } });
-    app.select('line:open-me');
+    app.selectedKey = 'line:open-me';
     expect(center.entries.map((e) => [e.id, e.read])).toEqual([
       ['line:other', false],
       ['line:open-me', true],
     ]);
+    app.selectedKey = null;
+    app.select('line:other');
+    expect(center.unread).toBe(0);
     app.select(null);
   });
 

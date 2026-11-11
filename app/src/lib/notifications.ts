@@ -56,7 +56,7 @@ export function saveEntries(store: KV | undefined, host: string, list: Entry[]):
 }
 
 function subjectOf(e: Entry): string {
-  return e.action?.kind === 'line' ? e.action.key : e.kind === 'allIdle' ? `${e.kind}|${e.title}` : e.id;
+  return e.action?.kind === 'line' ? e.action.key : e.id.startsWith('allIdle|') ? `allIdle|${e.title}` : e.id;
 }
 
 function compact(list: Entry[]): Entry[] {

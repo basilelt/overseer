@@ -74,7 +74,14 @@ class AppState {
   overlay = $state<Overlay>(null);
   overlayArg = $state<string | null>(null);
   fileArg = $state<FileArg | null>(null);
-  selectedKey = $state<string | null>(null);
+  #selectedKey = $state<string | null>(null);
+  get selectedKey(): string | null {
+    return this.#selectedKey;
+  }
+  set selectedKey(key: string | null) {
+    this.#selectedKey = key;
+    if (key) center.markSubjectRead(key);
+  }
   panelOpen = $state(true);
   liveReview = $state(false);
   gitWorktree = $state<{ project: string; path: string } | null>(null);
@@ -689,7 +696,6 @@ class AppState {
     }
     this.selectedKey = key;
     this.view = 'agents';
-    if (key) center.markSubjectRead(key);
   }
 
   open(overlay: Overlay, arg: string | FileArg | null = null) {
