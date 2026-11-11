@@ -11,11 +11,13 @@ self-hosted runner.
 | `store.yml` | manual, from `main` only | App Store submission (iOS) and Play Store upload (Android) of a release tag |
 | `release-pr.yml` | manual | opens the draft release PR from `next` to `main` (skips when one is open or `next` is not ahead) |
 | `mobile-init.yml` | manual | generates `app/src-tauri/gen/{android,apple}` and commits them to the branch |
-| `pages.yml` | push to `next` that changes `docs/showreel/` or this workflow, manual | deploys `docs/showreel/` (the showreel page, the repository's website) to GitHub Pages |
+| `pages.yml` | push to `next` that changes `docs/showreel/` or this workflow, manual | renders both cuts of the showreel and its poster, then deploys `docs/showreel/` (the showreel page, the repository's website) to GitHub Pages; a manual run on another branch renders without deploying |
 
 Concurrency: `ci-pr-<PR number or ref>` cancels the previous run of the same PR;
 `release-refs/heads/main` never cancels a running release (a newer push waits); `store` never
-cancels a running store upload; `pages` never cancels a running deployment.
+cancels a running store upload; `pages` never cancels a running deployment. The showreel render is cached on a hash of its
+sources (`reel.html`, `audio.mjs`, `render.py`, `build.sh`, `shots/`, `fonts/`) and the Playwright
+version, so a change to the page alone deploys without rendering again.
 
 Runner budget: CI runs nothing on draft PRs, only the jobs the change needs on ready PRs
 ([Path filtering](#path-filtering)), and is not repeated on `main` when the merged PR already passed
