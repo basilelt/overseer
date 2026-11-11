@@ -18,7 +18,7 @@ function fixture(n: number) {
   const wsOf = new Map<string, string>();
   const items = Array.from({ length: n }, (_, i) => {
     const at = new Date(now - ((i * 7919) % 4_000_000) * 1000).toISOString();
-    const target = { key: `k${i}`, kind: 'claude', group: 'ready', state: STATES[i % 5]!, title: 't', at } as SidebarItem;
+    const target = { key: `k${i}`, kind: i % 10 === 6 ? 'shell' : 'claude', group: 'ready', state: STATES[i % 5]!, title: 't', at } as SidebarItem;
     wsOf.set(target.key, `w${i % 7}`);
     return new Proxy(target, {
       get(o, p) {
@@ -64,7 +64,7 @@ describe('session lists scale with the session count', () => {
   });
 
   it('folderSpaces and spaceTrail scale with workspaces and folders, never quadratic', () => {
-    // Given n workspaces (some archived and shown) over n/5 folders nested three deep, and n sessions, for n = 100 and 1000
+    // Given n workspaces (some archived and shown, a quarter nested in another) over n/5 folders nested three deep, and n sessions, for n = 100 and 1000
     // When the folder tree and every workspace trail are built
     // Then 10x the input costs between 10x and 20x the reads of folder, workspace and session fields
     const reads = [100, 1000].map((n) => {
@@ -78,7 +78,7 @@ describe('session lists scale with the session count', () => {
           },
         });
       const folders = Array.from({ length: n / 5 }, (_, i) => spy({ id: `f${i}`, name: `f${i}`, parentId: i % 3 ? `f${i - 1}` : null, rank: i, collapsed: i % 7 === 0 } as Folder));
-      const workspaces = Array.from({ length: n }, (_, i) => spy({ id: `w${i}`, name: `ws${i}`, rank: i, pinned: i % 50 === 0, archived: i % 9 === 0, folderId: `f${i % (n / 5)}` } as Workspace));
+      const workspaces = Array.from({ length: n }, (_, i) => spy({ id: `w${i}`, name: `ws${i}`, rank: i, pinned: i % 50 === 0, archived: i % 9 === 0, folderId: `f${i % (n / 5)}`, parentId: i % 4 === 1 ? `w${i - 1}` : null } as Workspace));
       const wsOf = new Map(f.items.map((it, i) => [`k${i}`, `w${(i * 31) % n}`]));
       folderSpaces(spaces(workspaces, f.items, wsOf, '', true), folders, '');
       const trail = spaceTrail({ workspaces, folders, groups: [] });

@@ -24,8 +24,8 @@ import {
   type Text,
 } from './settings-index';
 
-const all: Gates = { desktop: true, nonMac: true, connected: true, profiles: true, hooks: true, updater: true, apk: true, switchboard: true };
-const none: Gates = { desktop: false, nonMac: false, connected: false, profiles: false, hooks: false, updater: false, apk: false, switchboard: false };
+const all: Gates = { desktop: true, nonMac: true, connected: true, localServer: true, profiles: true, hooks: true, updater: true, apk: true, switchboard: true };
+const none: Gates = { desktop: false, nonMac: false, connected: false, localServer: false, profiles: false, hooks: false, updater: false, apk: false, switchboard: false };
 const en2: Text = (k) => [en[k]];
 const both: Text = (k) => [(fr as Partial<Record<Key, string>>)[k] ?? en[k], en[k]];
 
@@ -93,8 +93,31 @@ describe('categories and sections', () => {
   it('opens notifications for the notifications argument', () => {
     expect(initialCategory('notifications')).toBe('notifications');
     expect(initialCategory('skills')).toBe('agents');
+    expect(initialCategory('usage')).toBe('usage');
     expect(initialCategory(null)).toBe('general');
     expect(initialCategory('other')).toBe('general');
+  });
+});
+
+describe('usage', () => {
+  it('has its own category with one section per provider the daemon tracks', () => {
+    expect(availableCategories(none).map((c) => c.id)).toContain('usage');
+    expect(sectionsOf('usage', none).map((s) => s.id)).toEqual(['usage', 'usageCodex', 'usageGemini']);
+    expect(sectionsOf('agents', all).map((s) => s.id)).not.toContain('usage');
+  });
+
+  it('finds Codex and Gemini usage by provider name', () => {
+    const codex = search('codex', all, en2);
+    expect(codex.hits.usageCodex).toBe('all');
+    expect(codex.categories).toContain('usage');
+    expect(search('gemini', all, en2).hits.usageGemini).toBe('all');
+  });
+
+  it('finds every provider row when searching for limits', () => {
+    const r = search('limits', all, en2);
+    expect(r.hits.usage).toEqual(['claudeLimits', 'statusline']);
+    expect(r.hits.usageCodex).toEqual(['codexLimits']);
+    expect(r.hits.usageGemini).toEqual(['geminiTokens']);
   });
 });
 
@@ -157,7 +180,14 @@ describe('search', () => {
     expect(r.hits.server).toEqual(['afterReboot']);
     expect(showEntry(r, 'server', 'keepRunning')).toBe(false);
     expect(isHit(r, 'server', 'afterReboot')).toBe(true);
-    expect(search('keep running', all, en2).hits.server).toEqual(['keepRunning']);
+    expect(search('keep running', all, en2).hits.server).toEqual(['keepRunning', 'lidClosed']);
+    expect(search('reboot', all, en2).hits.server).toEqual(['keepRunning', 'afterReboot']);
+  });
+
+  it('finds the lid option only for a local server', () => {
+    expect(search('lid closed', all, en2).hits.server).toEqual(['lidClosed']);
+    expect(search('battery', all, en2).hits.server).toEqual(['lidClosed']);
+    expect(search('lid closed', { ...all, localServer: false }, en2).hits.server).toBeUndefined();
   });
 
   it('limits the updates sections to the matching rows', () => {

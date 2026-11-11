@@ -114,7 +114,9 @@ pub fn delivery_text(m: &Message) -> String {
             "[Overseer] Message from task {from}: {}\nReply with the send_message tool (to: {from}) if needed.",
             m.body
         ),
-        _ if m.body.starts_with(OVERLAP_PREFIX) => format!("[Overseer] {}", m.body),
+        _ if m.body.starts_with(OVERLAP_PREFIX) || m.body.starts_with(crate::quorum::PREFIX) => {
+            format!("[Overseer] {}", m.body)
+        }
         _ => format!("[Overseer] Message from the user: {}", m.body),
     }
 }
@@ -621,6 +623,12 @@ mod tests {
         let mut m = msg("m", "A", None, 1);
         m.body = "hello".into();
         assert_eq!(delivery_text(&m), "[Overseer] Message from the user: hello");
+        m.body = "Quorum: subtask #2 is accepted".into();
+        assert_eq!(
+            delivery_text(&m),
+            "[Overseer] Quorum: subtask #2 is accepted"
+        );
+        m.body = "hello".into();
         m.from = Some("X1".into());
         m.from_number = Some(7);
         m.from_title = Some("Fix it".into());

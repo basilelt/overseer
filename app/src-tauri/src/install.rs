@@ -172,9 +172,155 @@ pub fn binary_candidates(
     out
 }
 
+/// An AppImage runs from a FUSE mount (`$APPDIR`, e.g. `/tmp/.mount_OverseXXXX`) that changes
+/// on every launch and disappears when the app quits. A daemon started from the bundled binary
+/// in there would leave the `~/.overseer/bin/overseer` shim (hooks, MCP, systemd unit, CLI)
+/// pointing at a dead path. Copy that binary to the per-version server dir the daemon already
+/// upgrades from (`~/.overseer/server/<version>/overseer`) and use the copy instead, so each app
+/// update brings a stable daemon of its own version. Any other path, or a failed copy, is
+/// returned unchanged.
+pub fn stable_local_binary(
+    bin: &Path,
+    appdir: Option<&Path>,
+    home: &Path,
+    version: &str,
+) -> PathBuf {
+    let inside = appdir.is_some_and(|d| !d.as_os_str().is_empty() && bin.starts_with(d));
+    if !inside || version.is_empty() || !home.is_absolute() {
+        return bin.to_path_buf();
+    }
+    let dest = home.join(".overseer/server").join(version).join("overseer");
+    match stage(bin, &dest) {
+        Ok(()) => dest,
+        Err(e) => {
+            crate::diag::warn(
+                "conn",
+                format!(
+                    "could not copy {} to {}: {e}",
+                    bin.display(),
+                    dest.display()
+                ),
+            );
+            bin.to_path_buf()
+        }
+    }
+}
+
+fn stage(src: &Path, dest: &Path) -> std::io::Result<()> {
+    let len = std::fs::metadata(src)?.len();
+    if std::fs::metadata(dest).is_ok_and(|m| m.is_file() && m.len() == len) {
+        return Ok(());
+    }
+    let dir = dest
+        .parent()
+        .ok_or_else(|| std::io::Error::other("no parent dir"))?;
+    std::fs::create_dir_all(dir)?;
+    let tmp = dir.join(format!(".overseer.{}.tmp", std::process::id()));
+    let res = (|| {
+        std::fs::copy(src, &tmp)?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o755))?;
+        }
+        std::fs::rename(&tmp, dest)
+    })();
+    if res.is_err() {
+        let _ = std::fs::remove_file(&tmp);
+    }
+    res
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn scratch(name: &str) -> PathBuf {
+        let d = std::env::temp_dir().join(format!("ov-stage-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        d
+    }
+
+    #[test]
+    fn a_binary_outside_the_appimage_mount_is_used_as_is() {
+        let d = scratch("outside");
+        let bin = d.join("overseer");
+        std::fs::write(&bin, b"bin").unwrap();
+        let home = d.join("home");
+        assert_eq!(stable_local_binary(&bin, None, &home, "1.2.3"), bin);
+        assert_eq!(
+            stable_local_binary(&bin, Some(&d.join("other")), &home, "1.2.3"),
+            bin
+        );
+        assert!(!home.exists(), "nothing is copied");
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn a_binary_inside_the_appimage_mount_is_copied_to_the_versioned_server_dir() {
+        let d = scratch("inside");
+        let appdir = d.join(".mount_Overse");
+        let bin = appdir.join("usr/lib/Overseer/server/linux-x86_64/overseer");
+        std::fs::create_dir_all(bin.parent().unwrap()).unwrap();
+        std::fs::write(&bin, b"daemon v1").unwrap();
+        let home = d.join("home");
+        let got = stable_local_binary(&bin, Some(&appdir), &home, "1.2.3");
+        let want = home.join(".overseer/server/1.2.3/overseer");
+        assert_eq!(got, want);
+        assert_eq!(std::fs::read(&want).unwrap(), b"daemon v1");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = std::fs::metadata(&want).unwrap().permissions().mode();
+            assert_eq!(mode & 0o777, 0o755);
+        }
+        let leftovers: Vec<_> = std::fs::read_dir(want.parent().unwrap())
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .filter(|e| e.file_name().to_string_lossy().ends_with(".tmp"))
+            .collect();
+        assert!(leftovers.is_empty(), "no temp file left behind");
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn an_existing_copy_is_kept_and_a_truncated_one_is_replaced() {
+        let d = scratch("existing");
+        let appdir = d.join(".mount_Overse");
+        let bin = appdir.join("overseer");
+        std::fs::create_dir_all(&appdir).unwrap();
+        std::fs::write(&bin, b"daemon v2").unwrap();
+        let home = d.join("home");
+        let want = home.join(".overseer/server/2.0.0/overseer");
+        std::fs::create_dir_all(want.parent().unwrap()).unwrap();
+        std::fs::write(&want, b"same size").unwrap();
+        assert_eq!(
+            stable_local_binary(&bin, Some(&appdir), &home, "2.0.0"),
+            want
+        );
+        assert_eq!(std::fs::read(&want).unwrap(), b"same size", "left alone");
+        std::fs::write(&want, b"short").unwrap();
+        stable_local_binary(&bin, Some(&appdir), &home, "2.0.0");
+        assert_eq!(std::fs::read(&want).unwrap(), b"daemon v2");
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn a_failed_copy_falls_back_to_the_bundled_binary() {
+        let d = scratch("fail");
+        let appdir = d.join(".mount_Overse");
+        let bin = appdir.join("overseer");
+        std::fs::create_dir_all(&appdir).unwrap();
+        std::fs::write(&bin, b"daemon").unwrap();
+        let home = d.join("home");
+        std::fs::write(&home, b"a file, not a dir").unwrap();
+        assert_eq!(
+            stable_local_binary(&bin, Some(&appdir), &home, "1.0.0"),
+            bin
+        );
+        let _ = std::fs::remove_dir_all(&d);
+    }
 
     #[test]
     fn maps_uname_to_platforms() {

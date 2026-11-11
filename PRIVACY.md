@@ -29,6 +29,10 @@ The app contains no analytics, no advertising and no tracking.
   GitHub Privacy Statement.
 - **Feedback**: when you choose to send feedback, an agent runs on your own server and creates a
   GitHub issue with your own GitHub account. You see and can edit everything before it is sent.
+- **Recordings**: Record a bug logs what you click, your shortcuts, the views you open and errors,
+  never the text you type. The screen video shows whatever you share, terminals included. When you
+  stop, the video is uploaded to your own server like any feedback attachment; nothing reaches
+  GitHub unless you send the report, and you can remove the recording from it first.
 - **AI coding agents**: the agents you start (such as Claude Code or Codex) run on your server under
   your own accounts with their providers; their providers' terms and privacy policies apply. The app
   does not send them anything itself.

@@ -1,0 +1,11 @@
+#!/bin/sh
+log=${SB_INHIBIT_LOG:-/dev/null}
+echo "$$ $*" >> "$log"
+if [ -f "$log.fail" ]; then
+  echo "Failed to inhibit: Access denied" >&2
+  exit 1
+fi
+while [ $# -gt 0 ]; do
+  case $1 in --*) shift ;; *) break ;; esac
+done
+exec "$@"

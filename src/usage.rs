@@ -147,6 +147,17 @@ pub struct Limits {
     pub at: i64,
     pub windows: Vec<Window>,
     pub plan: Option<String>,
+    #[serde(default)]
+    pub credits: Option<Credits>,
+    #[serde(default)]
+    pub reached: Option<String>,
+}
+
+#[derive(Default, Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Credits {
+    pub has_credits: bool,
+    pub unlimited: bool,
+    pub balance: Option<f64>,
 }
 
 #[derive(Default, Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -369,6 +380,18 @@ fn codex_limits(rl: &Value, ts: i64) -> Option<Limits> {
         at: ts,
         windows,
         plan: rl["plan_type"].as_str().map(str::to_string),
+        credits: rl["credits"].is_object().then(|| {
+            let c = &rl["credits"];
+            Credits {
+                has_credits: c["has_credits"].as_bool().unwrap_or(false),
+                unlimited: c["unlimited"].as_bool().unwrap_or(false),
+                balance: c["balance"]
+                    .as_str()
+                    .and_then(|b| b.parse().ok())
+                    .or_else(|| c["balance"].as_f64()),
+            }
+        }),
+        reached: rl["rate_limit_reached_type"].as_str().map(str::to_string),
     })
 }
 
@@ -1238,6 +1261,12 @@ fn limits_json(
                 })
             }).collect::<Vec<_>>(),
             "hit": hit,
+            "credits": l.credits.as_ref().map(|c| json!({
+                "hasCredits": c.has_credits,
+                "unlimited": c.unlimited,
+                "balance": c.balance,
+            })),
+            "reached": l.reached,
             "via": if via_tap { "statusline" } else { agent },
         }),
         None => json!({
@@ -1850,6 +1879,62 @@ mod tests {
     }
 
     #[test]
+    fn codex_spent_plan_window_reports_the_credits_still_in_use() {
+        let (d, mut idx) = home("codexcredits");
+        let r = d.join("codex/sessions/2026/10/29/rollout-2026-11-09T08-43-52-01a1bf7a-68b2-71c2-bc92-0e5477d8ed37.jsonl");
+        let line = json!({
+            "timestamp": "2026-11-09T08:45:34.126Z",
+            "type": "event_msg",
+            "payload": {
+                "type": "token_count",
+                "info": {"total_token_usage": {"input_tokens": 10, "output_tokens": 2}},
+                "rate_limits": {
+                    "limit_id": "codex",
+                    "limit_name": null,
+                    "primary": {"used_percent": 100.0, "window_minutes": 43_200, "resets_at": 1_795_622_413_i64},
+                    "secondary": null,
+                    "credits": {"has_credits": true, "unlimited": false, "balance": "1272.1821530000"},
+                    "individual_limit": null,
+                    "spend_control_reached": null,
+                    "plan_type": "go",
+                    "rate_limit_reached_type": null
+                }
+            }
+        })
+        .to_string();
+        std::fs::write(&r, format!("{line}\n")).unwrap();
+        touch_now(&r);
+        idx.sweep(now(), true, None).unwrap();
+
+        let v = get(&idx, Range::Today, "agent", 0);
+        let codex = v["agents"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|a| a["agent"] == "codex")
+            .unwrap();
+        let limits = &codex["limits"];
+        assert_eq!(limits["windows"][0]["usedPercent"], 100.0);
+        assert_eq!(limits["credits"]["hasCredits"], true);
+        assert_eq!(limits["credits"]["unlimited"], false);
+        assert_eq!(limits["credits"]["balance"], 1272.182153);
+        assert_eq!(limits["reached"], Value::Null);
+
+        std::fs::remove_dir_all(&d).unwrap();
+    }
+
+    #[test]
+    fn limits_stored_before_credits_still_load() {
+        let old: Limits = serde_json::from_str(
+            r#"{"at":5,"windows":[{"key":"mo","minutes":43200,"used":100.0,"resets_at":0}],"plan":"go"}"#,
+        )
+        .unwrap();
+        assert_eq!(old.windows.len(), 1);
+        assert_eq!(old.credits, None);
+        assert_eq!(old.reached, None);
+    }
+
+    #[test]
     fn gemini_json_session_is_replaced_on_rewrite() {
         let (d, mut idx) = home("gemini");
         let chats = d.join("gemini/tmp/repo/chats");
@@ -2075,6 +2160,7 @@ mod tests {
                 resets_at: now() + 3_600_000,
             }],
             plan: None,
+            ..Limits::default()
         };
         let v = lim_tap(&idx, true, Some(tapped.clone()));
         assert_eq!(v["via"], "statusline");

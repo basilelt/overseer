@@ -105,6 +105,13 @@ describe('shortcut resolver', () => {
     expect(resolveShortcut(ev('?', 'Slash', { meta: true, shift: true }), mac)).toEqual({ id: 'shortcuts' });
   });
 
+  it('opens source control with Ctrl+Shift+G, even from a terminal, like VS Code', () => {
+    expect(resolveShortcut(ev('G', 'KeyG', { ctrl: true, shift: true }), linuxTerm)).toEqual({ id: 'sourceControl' });
+    expect(resolveShortcut(ev('G', 'KeyG', { ctrl: true, shift: true }), linux)).toEqual({ id: 'sourceControl' });
+    expect(resolveShortcut(ev('G', 'KeyG', { meta: true, shift: true }), mac)).toEqual({ id: 'sourceControl' });
+    expect(resolveShortcut(ev('g', 'KeyG', { ctrl: true }), linuxTerm)).toBeNull();
+  });
+
   it('copies and pastes with Ctrl+Shift+C/V only in a terminal and leaves Ctrl+V and macOS native', () => {
     expect(resolveShortcut(ev('C', 'KeyC', { ctrl: true, shift: true }), linuxTerm)).toEqual({ id: 'copy' });
     expect(resolveShortcut(ev('C', 'KeyC', { ctrl: true, shift: true }), linux)).toBeNull();
