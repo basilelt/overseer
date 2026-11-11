@@ -858,12 +858,20 @@ fn vibe_found(ctx: &Ctx, hooks: &HashMap<String, HookState>) -> Vec<Found> {
         .into_iter()
         .map(|s| {
             let mut f = Found::new("vibe", s.id.clone());
-            let live = s
+            let leased = s
                 .pid
                 .filter(|p| ctx.probe.info(*p).is_some())
-                .and_then(|p| tui(p).map(|t| (p, t)))
-                .filter(|(_, t)| claimed.insert(*t));
-            if let Some((_, t)) = live {
+                .and_then(tui)
+                .filter(|t| !claimed.contains(t));
+            let named = || {
+                procs
+                    .iter()
+                    .find(|(pid, argv)| !claimed.contains(*pid) && argv.contains(&s.id))
+                    .map(|(pid, _)| *pid)
+            };
+            let live = leased.or_else(named);
+            if let Some(t) = live {
+                claimed.insert(t);
                 let flags = procs
                     .get(&t)
                     .and_then(|argv| flags_after(argv, vibe::is_vibe))

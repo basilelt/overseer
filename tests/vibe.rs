@@ -259,3 +259,28 @@ fn a_vibe_task_starts_trusted_with_its_prompt_after_the_separator() {
     wait(|| log().contains("-- Fix it"));
     assert!(log().contains("vibe --trust"), "{}", log());
 }
+
+#[test]
+fn a_resumed_vibe_term_without_a_lease_keeps_its_line() {
+    let app = App::new("vibe-resume", json!({}));
+    let wt = app.fx.wt.to_string_lossy().into_owned();
+    let sid = "5b0e1d2c-3f4a-4b5c-8d6e-7f8091a2b3c4";
+    store(
+        &app.fx.base.join("home"),
+        sid,
+        &wt,
+        &[message("m1", "user", "Resume me")],
+    );
+    let t = app.ok(
+        "POST",
+        "/v1/terms",
+        json!({"cwd": wt, "cmd": ["vibe", "--resume", sid]}),
+    );
+    let tid = t["id"].as_str().unwrap().to_string();
+    let l = wait_for(|| vibe_line(&app, sid).filter(|l| l["local"]["termId"] == tid.as_str()));
+    assert_eq!(l["line"]["state"], "active");
+    assert_eq!(
+        l["local"]["resumeCommand"].as_str().unwrap(),
+        format!("cd {wt} && vibe --resume {sid}")
+    );
+}
