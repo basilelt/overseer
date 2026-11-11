@@ -11,6 +11,7 @@
   import { beside } from '../review/beside.svelte';
   import { reviewApi } from '../review/api';
   import { folder } from '../review/scope';
+  import { worktreeChoices } from './worktrees';
   import type { Related } from '../review/types';
   import type { MenuItem } from '../menu';
   import { gitApi } from './api';
@@ -146,13 +147,11 @@
   }
 
   function worktreeMenu(e: MouseEvent) {
-    const cur = s?.worktree;
-    const items: MenuItem[] = [];
-    for (const w of related?.worktrees ?? []) {
-      items.push({ label: `${folder(w.path)} · ${w.branch ?? 'HEAD'}`, hint: w.files ? gt('live.changed', { n: w.files }) : gt('live.clean'), checked: w.path === cur, run: () => (live.worktree = w.path) });
-      for (const m of subs[w.path] ?? []) items.push({ label: `   ↳ ${gt('live.submodule', { name: m.path })}`, checked: m.worktree === cur, run: () => (live.worktree = m.worktree) });
-    }
-    if (!items.length && cur) items.push({ label: folder(cur), checked: true, disabled: true });
+    const items: MenuItem[] = worktreeChoices(related, subs, s?.worktree).map((w) =>
+      w.submodule
+        ? { label: `   ↳ ${gt('live.submodule', { name: w.name })}`, checked: w.current, run: () => (live.worktree = w.path) }
+        : { label: `${w.name} · ${w.branch ?? 'HEAD'}`, hint: w.files ? gt('live.changed', { n: w.files }) : gt('live.clean'), checked: w.current, run: () => (live.worktree = w.path) },
+    );
     if (s) {
       items.push({ label: '', separator: true });
       items.push({ label: gt('sc.switchBranch'), disabled: true });

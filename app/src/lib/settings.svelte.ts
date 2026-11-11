@@ -50,6 +50,7 @@ export interface Settings {
   hooksNever: string[];
   keepRunningOffered?: string[];
   sidebarMode?: 'workspaces' | 'status';
+  sidebarGit?: boolean;
   /** Expanded workspaces, per host. */
   spacesOpen?: Record<string, string[]>;
   /** Opened closed-intervals of the by-state view, per host. */

@@ -1112,6 +1112,22 @@ describe('sessions', () => {
     expect(app.view).toBe('agents');
   });
 
+  it('shows source control in the sidebar, reopening a hidden sidebar, and leaves it for a session list', () => {
+    app.sidebarGit = false;
+    app.sidebarOpen = false;
+    app.toggleSourceControl();
+    expect([app.sidebarGit, app.sidebarOpen]).toEqual([true, true]);
+    expect(settings.sidebarGit).toBe(true);
+    app.toggleSourceControl();
+    expect(app.sidebarGit).toBe(false);
+    app.setSidebarGit(true);
+    const mode = app.sidebarMode;
+    app.setSidebarMode('status');
+    expect(app.sidebarGit).toBe(false);
+    expect(app.sidebarMode).toBe('status');
+    app.setSidebarMode(mode);
+  });
+
   it('shows a project tab opened from More on the phone', () => {
     ui.layout = 'phone';
     ui.tab = 'more';
