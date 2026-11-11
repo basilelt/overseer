@@ -162,6 +162,7 @@ Each step is **Do → Expect**. Check every screenshot for overlaps, clipped tex
   - Windows `-setup.exe`: the installer runs in passive mode and the app relaunches updated.
   - Windows `.msix`: Windows App Installer opens the matching `.msix`; clicking **Update** there installs it. A tampered file (SHA-256 not in `SHA256SUMS`) is refused with an error.
   Offline or with the release asset missing, the button shows an error and the app keeps working. **(desktop)** for every platform step; a platform that cannot be run locally is reported as not run.
+- **I19** Lid closed (sandbox; the `systemd-inhibit` stub logs to `$SB_INHIBIT_LOG`, `$QA_DIR/inhibit.log`): Settings, Connection, Server on a local daemon shows **Keep agents running with the lid closed**, off, with the battery warning under it; a remote host and the phone app do not show it. Turn it on → the switch stays on and the stub log has one `--what=handle-lid-switch --no-ask-password --mode=block … cat` line whose pid is alive. Reload → still on. Turn it off → the pid is gone. With `$QA_DIR/inhibit.log.fail` present, turn it on → the switch flips back off and "Could not change the lid setting: Failed to inhibit: Access denied" shows under it and in a toast. Search `lid` or `battery` → only this row. After an update from 0.35, **What's new** shows **Close the lid, agents keep going**, pointing at the switch (or the Settings button when Settings is closed). On a real laptop: Linux, close the lid with it on → the machine stays awake (`systemd-inhibit --list` shows Overseer), off → it sleeps; macOS, turning it on asks for an administrator password and `pmset -g` shows `SleepDisabled 1`, off → `0`; Windows, `powercfg /query SCHEME_CURRENT SUB_BUTTONS LIDACTION` shows 0 for AC and DC when on and the previous values when off. A platform that cannot be run is reported as not run.
 
 ### J. Feedback
 
@@ -193,6 +194,7 @@ Each step is **Do → Expect**. Check every screenshot for overlaps, clipped tex
 - **M2** Reload the app → tabs, workspaces and the selected session come back (in Workspaces and By status, with the same tab selected). The resumed agent answers input.
 - **M3** Set **After a server reboot or restart** to Nothing, then crash and start → nothing is restored.
 - **M4** Idle: leave the app untouched for 70 s with a session open → the only DOM changes are the CPU/RAM chip (about every 15 s) and relative-age labels ("3m ago"); any other mutation or repaint is a bug (count `MutationObserver` records over 10 s and check each one's target).
+- **M6** With **Keep agents running with the lid closed** on (**I19**): `sandbox.sh crash` → the inhibitor pid in the stub log exits with the daemon; `start` → a new line appears with a live pid, and Settings still shows the switch on with no warning.
 - **M5** With the Codex sessions of **C7**–**C9** running: `sandbox.sh crash`, then `start` → `stub.log` shows one `codex resume <id>` per live session, each with its own thread id, and each comes back on its own line, active.
 
 ### N. Demo mode

@@ -898,7 +898,7 @@ On first launch, once the app is connected (immediately in local mode, after the
 connection on a phone), a welcome card offers **Take the tour** or **Skip**. The tour dims the
 window and highlights the real controls one at a time: host chip, workspaces sidebar, tabs and the
 new-session menu, the Terminal/Chat toggle, the side panel, Tasks, Review, the usage, system and ports
-chips, notifications and hooks, the command palette and Feedback, in 0.25 the Cmd/Ctrl+P palette shortcut, and in 0.27 the demo mode (on the **Demo mode** pill while in the demo, else on the host chip), and in 0.28 the GPU rendering option for terminals, and in 0.29 the clean up of unused worktrees and the import from Switchboard (on its button in Settings, Help, or on the Settings button), and in 0.30 click to move the cursor in a terminal (on the tabs), and in 0.31 the Light and Dark palettes (on Settings, or More on a phone), and in 0.33 the one-click install of skills and plugins (on Settings), and in 0.34 the auto-approval defaults (on Settings, Agents), the Review, Merged and Closed columns (on the Merged column when the board is open, else on the Tasks tab) and the clean removal of everything Overseer added (on Settings, Connection, **Remove**), and in 0.35 one-click in-app updates for every install (on Settings, Updates, else on the Settings button), and in 0.36 subjects inside a workspace (on **+ New subject** in the open workspace, else on the sidebar), and the live review behind the git button (on the git button of a session's tab bar, else on the command palette), and the review map (on List | Map in a review, else on the Review tab). Steps whose control is not on
+chips, notifications and hooks, the command palette and Feedback, in 0.25 the Cmd/Ctrl+P palette shortcut, and in 0.27 the demo mode (on the **Demo mode** pill while in the demo, else on the host chip), and in 0.28 the GPU rendering option for terminals, and in 0.29 the clean up of unused worktrees and the import from Switchboard (on its button in Settings, Help, or on the Settings button), and in 0.30 click to move the cursor in a terminal (on the tabs), and in 0.31 the Light and Dark palettes (on Settings, or More on a phone), and in 0.33 the one-click install of skills and plugins (on Settings), and in 0.34 the auto-approval defaults (on Settings, Agents), the Review, Merged and Closed columns (on the Merged column when the board is open, else on the Tasks tab) and the clean removal of everything Overseer added (on Settings, Connection, **Remove**), and in 0.35 one-click in-app updates for every install (on Settings, Updates, else on the Settings button), and in 0.36 subjects inside a workspace (on **+ New subject** in the open workspace, else on the sidebar), and the live review behind the git button (on the git button of a session's tab bar, else on the command palette), and the review map (on List | Map in a review, else on the Review tab), and keeping agents running with the lid closed (on its switch in Settings, Connection, else on the Settings button). Steps whose control is not on
 screen (no session selected, a feature the server lacks, phone layout) are skipped. On a phone the
 card is a sheet at the bottom (or top, when the control sits low) and points at the bottom
 navigation, the session strip and the menu.
@@ -1342,6 +1342,21 @@ request, the event stream, every terminal and every forwarded port over that one
   run the command on the server yourself). Turning the switch off disables and removes the unit.
   API: `GET /v1/lifecycle`, `PATCH /v1/lifecycle {"autostart": true|false, "linger": true,
   "afterReboot": "agents"|"shells"|"nothing"}`.
+- **Keep agents running with the lid closed** (Settings → Connection → Server, desktop app on a
+  local server only, off by default): closing the laptop lid no longer puts the computer to sleep,
+  so agents keep working with the network on. It drains the battery and the laptop can get hot:
+  plug it in, and turn the option off before putting the laptop in a bag. On Linux the daemon holds
+  a `systemd-inhibit --what=handle-lid-switch` lock while it runs (taken again when it restarts,
+  gone when it stops). polkit allows it from your desktop session but may refuse it when the
+  daemon runs as a boot service (**Keep server running after reboot**) with no active session;
+  Settings then shows the reason. Check with `systemd-run --user --wait systemd-inhibit
+  --what=handle-lid-switch --mode=block --who=t --why=t true`. A desktop that handles the lid
+  itself (KDE's power settings, for example) ignores this lock: set its lid action there;
+  `systemd-inhibit --list` shows who holds the lid switch. On macOS it runs `pmset -a disablesleep 1`
+  after asking for an administrator password, and `0` when you turn it off. On Windows it sets the
+  lid close action of the current power plan to **Do nothing** (plugged in and on battery) and puts
+  the previous actions back when you turn it off. If the system refuses, the switch stays off and
+  the reason is shown under it. API: `GET`/`PUT /v1/power/lid {"enabled": true|false}`.
 - **After a server reboot or restart**: the daemon keeps its terminal list (folder, title, size,
   line, task, and for a running agent its current session and flags) in `overseer.db`, written
   only when it changes. When it starts after a machine reboot, a crash or a plain restart (anything
@@ -2099,7 +2114,9 @@ Per platform:
 - Writes: the state dir (including `usage.db`), files sent from the app in `~/.overseer/u/`,
   the daemon's service file when you turn on **Keep server running after reboot**
   (`~/.config/systemd/user/overseer-daemon.service` or
-  `~/Library/LaunchAgents/dev.overseer.daemon.plist`), plus `hooks install --apply` and the app's hook switches (the agents' hook files, with backups, and Overseer's own plugin files), the `~/.overseer/bin/overseer` symlink,
+  `~/Library/LaunchAgents/dev.overseer.daemon.plist`), the lid close setting when you turn on
+  **Keep agents running with the lid closed** (`pmset disablesleep` on macOS, the power plan's lid
+  action on Windows; restored when turned off), plus `hooks install --apply` and the app's hook switches (the agents' hook files, with backups, and Overseer's own plugin files), the `~/.overseer/bin/overseer` symlink,
   `hold`/`close --yes` (SIGTERM to the agent, `@sb_held` and the stub in its pane), `resume`
   (relaunches the agent), Board commit/stash, relayed commands when `acceptRemoteCommands` is on,
   and the worktrees and tmux sessions created by `start` and `patch --local`; the worktree store

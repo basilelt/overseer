@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { lidAvailable } from '../../lid.svelte';
   import { untrack } from 'svelte';
   import X from '@lucide/svelte/icons/x';
   import Search from '@lucide/svelte/icons/search';
@@ -243,6 +244,7 @@
     desktop: !phone,
     nonMac: !isMac,
     connected: app.connected,
+    localServer: lidAvailable(),
     profiles: !!app.profiles,
     hooks: !!hooks.status,
     updater: updater.enabled && !app.mobile,

@@ -637,6 +637,7 @@ export class MockDaemon implements DaemonClient {
   terms: Term[];
   tasks: Task[];
   autoOrganize = false;
+  lidPower = { enabled: false, active: false, supported: true, error: null as string | null };
   autoApprove: Record<string, boolean> = Object.fromEntries(Object.keys(AUTO_APPROVE_ARGS).map((id) => [id, true]));
   messages: TaskMessage[];
   activity: Record<string, Activity>;
@@ -797,6 +798,12 @@ export class MockDaemon implements DaemonClient {
     if (method === 'POST' && (r = m(/^\/v1\/ports\/([^/]+)\/kill$/))) return this.killPortProcess(decodeURIComponent(r[1]), body);
     if (method === 'DELETE' && (r = m(/^\/v1\/terms\/([^/]+)$/))) return this.deleteTerm(decodeURIComponent(r[1]));
     if ((r = m(/^\/v1\/terms\/([^/]+)\/(resize|kill|title)$/))) return this.termAction(decodeURIComponent(r[1]), r[2], body);
+    if (method === 'GET' && path === '/v1/power/lid') return { ...this.lidPower };
+    if (method === 'PUT' && path === '/v1/power/lid') {
+      if (typeof body?.enabled !== 'boolean') throw new DaemonError(400, 'enabled must be a boolean');
+      this.lidPower = { ...this.lidPower, enabled: body.enabled, active: body.enabled, error: null };
+      return { ...this.lidPower };
+    }
     if (method === 'GET' && path === '/v1/tasks/auto-organize') return { enabled: this.autoOrganize };
     if (method === 'PUT' && path === '/v1/tasks/auto-organize') {
       this.autoOrganize = body?.enabled === true;
