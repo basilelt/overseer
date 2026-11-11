@@ -21,6 +21,7 @@ export type ShortcutId =
   | 'fontDown'
   | 'fontReset'
   | 'toggleSidebar'
+  | 'sourceControl'
   | 'togglePanel'
   | 'kanban'
   | 'newWorkspace'
@@ -65,7 +66,7 @@ export const SECTIONS: { id: 'tabs' | 'panes' | 'terminal' | 'app'; ids: Shortcu
   { id: 'tabs', ids: ['newTab', 'closeTab', 'reopenTab', 'nextTab', 'prevTab', 'tabIndex'] },
   { id: 'panes', ids: ['splitRight', 'splitDown', 'focusLeft', 'focusRight', 'focusUp', 'focusDown'] },
   { id: 'terminal', ids: ['find', 'copy', 'paste', 'fontUp', 'fontDown', 'fontReset'] },
-  { id: 'app', ids: ['palette', 'settings', 'shortcuts', 'toggleSidebar', 'togglePanel', 'kanban', 'newWorkspace', 'reconnect', 'newWindow', 'closeWindow'] },
+  { id: 'app', ids: ['palette', 'settings', 'shortcuts', 'toggleSidebar', 'sourceControl', 'togglePanel', 'kanban', 'newWorkspace', 'reconnect', 'newWindow', 'closeWindow'] },
 ];
 
 export function bindings({ mac, ctrlWClosesTab }: ShortcutOptions): Binding[] {
@@ -94,6 +95,7 @@ export function bindings({ mac, ctrlWClosesTab }: ShortcutOptions): Binding[] {
     { id: 'fontDown', combos: [m('-', { anyShift: true })] },
     { id: 'fontReset', combos: [m('0')] },
     { id: 'toggleSidebar', combos: termSafe('B') },
+    { id: 'sourceControl', combos: [m('G', { shift: true })] },
     { id: 'togglePanel', combos: termSafe('J') },
     { id: 'kanban', combos: [m('K', { shift: true })] },
     { id: 'newWorkspace', combos: [m('N', { shift: true })] },

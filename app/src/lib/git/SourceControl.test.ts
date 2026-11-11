@@ -6,6 +6,8 @@ import more from '../components/mobile/MobileMore.svelte?raw';
 import graph from './GitGraphTab.svelte?raw';
 import liveBar from './LiveBar.svelte?raw';
 import rail from '../components/sidebar/SessionRail.svelte?raw';
+import sidebar from '../components/sidebar/Sidebar.svelte?raw';
+import sideGit from './SidebarGit.svelte?raw';
 import sc from './SourceControl.svelte?raw';
 import detail from './CommitDetail.svelte?raw';
 
@@ -36,6 +38,24 @@ describe('git button', () => {
   });
 });
 
+describe('sidebar git tab', () => {
+  it('sits next to Workspaces and By status, and swaps the session list for source control, loaded only when used', () => {
+    expect(sidebar).toMatch(/aria-selected=\{!app\.sidebarGit && app\.sidebarMode === m\.id\}/);
+    expect(sidebar).toMatch(/aria-selected=\{app\.sidebarGit\}[^>]*onclick=\{\(\) => app\.setSidebarGit\(true\)\}/);
+    expect(sidebar).toMatch(/\{#if app\.sidebarGit\}\s*\{#await gitView\(\) then \{ default: SidebarGit \}\}<SidebarGit \/>\{\/await\}/);
+    expect(sidebar).toMatch(/const gitView = \(\) => import\('\.\.\/\.\.\/git\/SidebarGit\.svelte'\)/);
+    expect(sidebar).toMatch(/\{#if !app\.sidebarGit\}\s*<label class="filter">/);
+  });
+
+  it('follows the selected session, lets you pick another worktree or submodule, and resets the pick on a new session', () => {
+    expect(sideGit).toMatch(/const session = \$derived\(itemTarget\(app\.selectedKey\)\)/);
+    expect(sideGit).toMatch(/const target = \$derived<ScmTarget \| null>\(picked \? \{ worktree: picked \} : session\)/);
+    expect(sideGit).toMatch(/lastSession = k;\s*untrack\(\(\) => \(picked = null\)\);/);
+    expect(sideGit).toMatch(/worktreeChoices\(related, subs, s\?\.worktree\)/);
+    expect(sideGit).toMatch(/<SourceControl \{scm\} onopen=\{\(w\) => \(picked = w\)\} \/>/);
+  });
+});
+
 describe('session rail', () => {
   it('lists the sessions of the workspace and opens one in the agent pane, not the review pane', () => {
     expect(rail).toMatch(/app\.scopeItems\(\)\.filter\(\(i\) => i\.lineId \|\| i\.termId\)/);
@@ -50,7 +70,7 @@ describe('git bar', () => {
     expect(liveBar).toMatch(/const target = \$derived\(liveTarget\(\)\)/);
     expect(liveBar).toMatch(/scm\.setTarget\(target\)/);
     expect(liveBar).toMatch(/\.related\(t\)/);
-    expect(liveBar).toMatch(/for \(const m of subs\[w\.path\] \?\? \[\]\)/);
+    expect(liveBar).toMatch(/worktreeChoices\(related, subs, s\?\.worktree\)/);
     expect(liveBar).toMatch(/<span class="nm">\{name\}<\/span>/);
   });
 
