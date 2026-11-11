@@ -58,6 +58,11 @@ pub const PRICES: &[(&str, Price)] = &[
     ("claude-haiku-5-5", p(0.1, 0.5, 0.01, 0.125, 0.2)),
     ("claude-haiku-4", p(1.0, 5.0, 0.1, 1.25, 2.0)),
     ("claude-3-5-haiku", p(0.8, 4.0, 0.08, 1.0, 1.6)),
+    ("gpt-5.5", p(5.0, 30.0, 0.5, 0.0, 0.0)),
+    ("gpt-5.4-mini", p(0.75, 4.5, 0.075, 0.0, 0.0)),
+    ("gpt-5.4", p(2.5, 15.0, 0.25, 0.0, 0.0)),
+    ("gpt-5.3-codex", p(1.75, 14.0, 0.175, 0.0, 0.0)),
+    ("gpt-5.2", p(1.75, 14.0, 0.175, 0.0, 0.0)),
     ("gpt-5-mini", p(0.25, 2.0, 0.025, 0.0, 0.0)),
     ("gpt-5-nano", p(0.05, 0.4, 0.005, 0.0, 0.0)),
     ("gpt-5", p(1.25, 10.0, 0.125, 0.0, 0.0)),
@@ -77,7 +82,10 @@ pub fn price(model: &str) -> Option<&'static Price> {
     let m = m.rsplit('/').next().unwrap_or(&m);
     PRICES
         .iter()
-        .filter(|(k, _)| m.starts_with(k))
+        .filter(|(k, _)| {
+            m.strip_prefix(k)
+                .is_some_and(|rest| k.ends_with('-') || rest.is_empty() || rest.starts_with('-'))
+        })
         .max_by_key(|(k, _)| k.len())
         .map(|(_, p)| p)
 }
@@ -501,6 +509,7 @@ impl Meter {
                     gemini_msg(&mut self.c, &v, &mut b);
                 }
             }
+            _ if !contains(line, "\"usage\"") => return vec![],
             _ => claude_line(&mut self.c, true, line, &mut b),
         }
         Self::turns(b)
@@ -1708,7 +1717,15 @@ mod tests {
         assert_eq!(price("claude-opus-4-6").unwrap().input, 5.0);
         assert_eq!(price("claude-fable-5-1").unwrap().output, 50.0);
         assert_eq!(price("claude-sonnet-4-6").unwrap().input, 3.0);
-        assert_eq!(price("gpt-5.4").unwrap().input, 1.25);
+        assert_eq!(price("gpt-5.4").unwrap().input, 2.5);
+        assert_eq!(price("gpt-5.5").unwrap().output, 30.0);
+        assert_eq!(price("gpt-5.4-mini").unwrap().input, 0.75);
+        assert_eq!(price("gpt-5-codex").unwrap().input, 1.25);
+        assert!(price("gpt-5.9").is_none());
+        assert!(price("gpt-6-luna").is_none());
+        assert_eq!(price("claude-fable-5-2").unwrap().input, 8.0);
+        assert_eq!(price("claude-sonnet-5-5").unwrap().cache_read, 0.1);
+        assert_eq!(price("claude-haiku-5-5").unwrap().output, 0.5);
         assert_eq!(price("gpt-5-mini").unwrap().input, 0.25);
         assert_eq!(price("gemini-2.5-flash-lite").unwrap().input, 0.1);
         assert_eq!(price("models/gemini-2.5-pro").unwrap().input, 1.25);
@@ -1843,7 +1860,7 @@ mod tests {
         assert_eq!(u["cacheRead"], 9_000);
         assert_eq!(u["output"], 400);
         assert_eq!(u["messages"], 2);
-        let expect = (6_000.0 * 1.25 + 9_000.0 * 0.125 + 400.0 * 10.0) / 1e6;
+        let expect = (6_000.0 * 2.5 + 9_000.0 * 0.25 + 400.0 * 15.0) / 1e6;
         assert!((u["cost"].as_f64().unwrap() - expect).abs() < 1e-4);
         let m = get(&idx, Range::Today, "model", 0);
         assert_eq!(m["groups"][0]["model"], "gpt-5.4");

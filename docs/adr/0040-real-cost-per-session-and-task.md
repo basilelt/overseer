@@ -15,20 +15,24 @@ session, its effort, model switches or anything that outlives the transcript.
   id, Codex `token_count` deltas per `turn_context` model, Gemini message `tokens`), and keeps
   tokens per model split into uncached input, cache write (5 m and 1 h apart), cache read and
   output. It is incremental like the rest of the parser: only appended bytes are read.
-- **Subagents count at their own model's price**: `activity::spend` adds the
-  `<session>/subagents/*.jsonl` transcripts. Model, effort and switches come from the main
+- **Subagents count at their own model's price**: `activity::spend` adds the transcripts under
+  `<session>/subagents/`, three levels deep so workflow agents (`subagents/workflows/<id>/`) count. Model, effort and switches come from the main
   transcript only.
 - **Model switches are events**: the first main-transcript message on a new model is kept (at
-  most 50) with its own tokens, which are mostly the cache it had to write again.
+  most 50), priced on its cache write and uncached input: the cache it had to build again.
 - **Effort** comes from the transcript when it records one (Codex `turn_context.effort`), else
   from the launch flags (`--effort`, `model_reasoning_effort=`).
 - **One price table, in the daemon** (`usage::PRICES`, dated `PRICES_AS_OF`). Models match by the
-  longest id prefix; an unknown model keeps its tokens with a `null` cost and marks the total
+  longest id that equals the model or is followed by `-` (so `gpt-5.5` is not priced as `gpt-5`);
+  an unknown model keeps its tokens with a `null` cost and marks the total
   `partial`. Agents whose logs have no token counts get no cost, never an estimate.
 - **Cost is snapshot on the task** (`tasks.cost`, per `agent:session`), from `tasks::tick` when
-  the line's activity is newer than the snapshot: at most once a minute while busy, then after
-  the turn. It outlives the transcript and adds up over a task's sessions. No timer and no event
-  when nothing changed.
+  the line's activity moved since the last check (kept in memory): at most once a minute while
+  busy, then after the turn, and at most 8 sessions per scan so the first scan after an upgrade
+  does not parse every transcript at once. The row is written, and `task.updated` sent, only when
+  a number changed; an idle daemon does nothing. It outlives the transcript and adds up over a
+  task's sessions. An effort the session no longer reports (the process has exited) keeps its
+  last value, else the task's.
 - **The app groups, the daemon does not**: tasks carry their cost, so the usage view's
   **Cost per task** groups them by profile and agent, ticket or task without a new endpoint.
   There is no task type yet; profile and agent stand in for it.

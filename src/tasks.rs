@@ -6,7 +6,7 @@ use crate::util::{format_rfc3339, ticket_any, ulid};
 use crate::{Ctx, Line};
 use rusqlite::{params, OptionalExtension, Row};
 use serde_json::{json, Value};
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 
@@ -175,6 +175,17 @@ impl Task {
 }
 
 const COST_BUSY_MS: i64 = 60_000;
+const COST_PER_TICK: usize = 8;
+
+static COST_SEEN: Mutex<Option<HashMap<String, (i64, i64)>>> = Mutex::new(None);
+
+fn cost_due(seen: Option<(i64, i64)>, activity_ms: i64, busy: bool, now: i64) -> bool {
+    match seen {
+        None => true,
+        Some((a, _)) if a == activity_ms => false,
+        Some((_, at)) => !busy || now - at >= COST_BUSY_MS,
+    }
+}
 
 fn cost_total(c: &Value) -> Option<Value> {
     let sessions = c["sessions"].as_object().filter(|m| !m.is_empty())?;
@@ -204,6 +215,11 @@ fn cost_total(c: &Value) -> Option<Value> {
 fn track_cost(ctx: &Ctx, reg: &Registry, lines: &[Line]) {
     let Ok(tasks) = all(reg) else { return };
     let now = crate::procs::now_ms();
+    let mut budget = COST_PER_TICK;
+    let mut seen = COST_SEEN.lock().unwrap_or_else(|e| e.into_inner());
+    let seen = seen.get_or_insert_with(HashMap::new);
+    let live: HashSet<String> = tasks.iter().map(|t| t.id.clone()).collect();
+    seen.retain(|k, _| k.split_once(' ').is_some_and(|(id, _)| live.contains(id)));
     for t in tasks {
         let Some(l) = t
             .line_id
@@ -216,13 +232,12 @@ fn track_cost(ctx: &Ctx, reg: &Registry, lines: &[Line]) {
             continue;
         }
         let key = format!("{}:{}", l.agent, l.session_id);
-        let at = t
-            .cost
-            .as_ref()
-            .and_then(|c| c["sessions"][&key]["at"].as_i64());
-        if at.is_some_and(|at| at >= l.last_activity_ms || (l.busy && now - at < COST_BUSY_MS)) {
+        let mark = format!("{} {key}", t.id);
+        if !cost_due(seen.get(&mark).copied(), l.last_activity_ms, l.busy, now) || budget == 0 {
             continue;
         }
+        budget -= 1;
+        seen.insert(mark, (l.last_activity_ms, now));
         let Some(spend) = crate::activity::find_transcript(
             &ctx.claude_dir,
             &ctx.codex_dir,
@@ -234,6 +249,11 @@ fn track_cost(ctx: &Ctx, reg: &Registry, lines: &[Line]) {
             continue;
         };
         let full = crate::activity::spend_json(&spend, &l.launch_args);
+        let mut cost = t.cost.clone().unwrap_or_else(|| json!({"sessions": {}}));
+        if !cost["sessions"].is_object() {
+            cost["sessions"] = json!({});
+        }
+        let old = cost["sessions"][&key].clone();
         let mut snap = json!({"at": now.max(l.last_activity_ms)});
         for k in [
             "model",
@@ -247,23 +267,27 @@ fn track_cost(ctx: &Ctx, reg: &Registry, lines: &[Line]) {
         ] {
             snap[k] = full[k].clone();
         }
-        let mut cost = t.cost.clone().unwrap_or_else(|| json!({"sessions": {}}));
-        if !cost["sessions"].is_object() {
-            cost["sessions"] = json!({});
+        if snap["effort"].is_null() {
+            snap["effort"] = match &old["effort"] {
+                Value::Null if !t.effort.is_empty() => json!(t.effort),
+                e => e.clone(),
+            };
         }
-        let same = {
-            let old = &cost["sessions"][&key];
-            [
-                "cost",
-                "input",
-                "cacheWrite",
-                "cacheRead",
-                "output",
-                "effort",
-            ]
-            .iter()
-            .all(|k| old[k] == snap[k])
-        };
+        if [
+            "model",
+            "effort",
+            "cost",
+            "partial",
+            "input",
+            "cacheWrite",
+            "cacheRead",
+            "output",
+        ]
+        .iter()
+        .all(|k| old[k] == snap[k])
+        {
+            continue;
+        }
         cost["sessions"][&key] = snap;
         if reg
             .conn
@@ -272,7 +296,6 @@ fn track_cost(ctx: &Ctx, reg: &Registry, lines: &[Line]) {
                 params![t.id, cost.to_string()],
             )
             .is_err()
-            || same
         {
             continue;
         }
@@ -1617,6 +1640,16 @@ mod tests {
         let _ = std::fs::remove_dir_all(&base);
     }
     use super::*;
+
+    #[test]
+    fn cost_is_recomputed_only_when_the_session_moved() {
+        assert!(cost_due(None, 5, false, 0));
+        assert!(!cost_due(Some((5, 0)), 5, false, 10));
+        assert!(!cost_due(Some((5, 0)), 5, true, 10 * COST_BUSY_MS));
+        assert!(cost_due(Some((5, 0)), 6, false, 1));
+        assert!(!cost_due(Some((5, 0)), 6, true, COST_BUSY_MS - 1));
+        assert!(cost_due(Some((5, 0)), 6, true, COST_BUSY_MS));
+    }
 
     #[test]
     fn task_cost_sums_its_sessions_and_takes_the_latest_model() {

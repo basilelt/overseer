@@ -2628,7 +2628,7 @@ components:
               cost: { type: [number, "null"] }
         switches:
           type: array
-          description: First turn on a new model in the main transcript (at most 50)
+          description: "First turn on a new model in the main transcript (at most 50), priced on its cache write and uncached input"
           items:
             type: object
             required: [at, from, to, cacheWrite, cost]

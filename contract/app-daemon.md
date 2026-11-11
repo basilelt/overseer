@@ -583,10 +583,14 @@ directory or not in a git repository.
   message's `usage` (Claude, counted once per message id, subagent transcripts included), the
   `token_count` totals per `turn_context` model (Codex) or the message `tokens` (Gemini).
   `input` is uncached input. `cost` is USD at the daemon's API list prices (`usage::PRICES`,
-  dated `pricesAsOf`), `null` when no model is priced; `partial` when some are not. A switch is
-  the first main-transcript turn on a new model, with what it cost (the cache it rebuilt).
-  Tasks carry the sum of their sessions as `cost` (`TaskCost`), snapshot on the task row at most
-  once a minute while the session is busy and after each turn.
+  dated `pricesAsOf`; a row matches a model id that equals it or continues with `-`), `null`
+  when no model is priced; `partial` when some are not. Subagent transcripts are read up to
+  `subagents/*/*/*.jsonl` (workflow agents included). A switch is the first main-transcript turn
+  on a new model, priced on its cache write and uncached input (the cache it rebuilt).
+  Tasks carry the sum of their sessions as `cost` (`TaskCost`), snapshot on the task row when the
+  session's activity moved (at most once a minute while busy, at most 8 sessions per scan); the
+  row is written and `task.updated` sent only when a number changed. An effort the session no
+  longer reports keeps its last value, else the task's.
 - `GET /v1/lines/{id}/diff` (existing) gives the worktree diff.
 
 ## 6b. Chat view (ADR 0036)

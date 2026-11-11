@@ -198,6 +198,20 @@ fn transcripts(path: &Path) -> Vec<std::path::PathBuf> {
     files
 }
 
+fn sub_transcripts(dir: &Path, depth: u32, out: &mut Vec<PathBuf>) {
+    let Ok(rd) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for e in rd.flatten() {
+        let p = e.path();
+        match e.file_type() {
+            Ok(t) if t.is_dir() && depth > 1 => sub_transcripts(&p, depth - 1, out),
+            Ok(t) if t.is_file() && p.extension().is_some_and(|x| x == "jsonl") => out.push(p),
+            _ => {}
+        }
+    }
+}
+
 pub fn touched(agent: &str, path: &Path) -> (Vec<String>, Vec<String>) {
     let files = transcripts(path);
     let (mut edited, mut dirs) = (vec![], vec![]);
@@ -258,7 +272,9 @@ thread_local! {
 
 pub fn spend(agent: &str, path: &Path) -> Option<Spend> {
     let mut out: Option<Spend> = None;
-    for (i, f) in transcripts(path).iter().enumerate() {
+    let mut files = vec![path.to_path_buf()];
+    sub_transcripts(&path.with_extension("").join("subagents"), 3, &mut files);
+    for (i, f) in files.iter().enumerate() {
         let Some(s) = with_state(agent, f, |st| st.spend.clone()) else {
             continue;
         };
@@ -469,7 +485,12 @@ impl State {
                         at: self.last_ts,
                         from: prev.clone(),
                         to: model.clone(),
-                        tokens: t,
+                        tokens: Tokens {
+                            input: t.input,
+                            cache_write: t.cache_write,
+                            cache_write_1h: t.cache_write_1h,
+                            ..Tokens::default()
+                        },
                     });
                 }
                 self.turn_model = Some(model.clone());
@@ -1264,6 +1285,22 @@ mod tests {
     }
 
     #[test]
+    fn claude_spend_adds_workflow_agents_nested_under_subagents() {
+        let d = tmp_dir("spend-nested");
+        let f = d.join("s.jsonl");
+        write(&f, &[asst("m1", "claude-opus-5-5", 1, [0, 0, 0, 0, 10])]);
+        let wf = d.join("s").join("subagents").join("workflows").join("wf_1");
+        std::fs::create_dir_all(&wf).unwrap();
+        write(
+            &wf.join("agent-b.jsonl"),
+            &[asst("w1", "claude-haiku-5-5", 1, [0, 0, 0, 0, 7])],
+        );
+        let v = spend("claude", &f).unwrap().to_json();
+        assert_eq!(v["output"], 17);
+        assert_eq!(model(&v, "claude-haiku-5-5")["output"], 7);
+    }
+
+    #[test]
     fn model_switch_is_recorded_with_its_cache_write_cost() {
         let d = tmp_dir("spend-switch");
         let f = d.join("s.jsonl");
@@ -1286,7 +1323,7 @@ mod tests {
         assert_eq!(sw[0]["to"], "claude-sonnet-5-5");
         assert_eq!(sw[0]["cacheWrite"], 50_000);
         assert_eq!(sw[0]["at"], ts(4));
-        let want = (3.0 * 2.0 + 50_000.0 * 2.5 + 10.0 * 10.0) / 1e6;
+        let want = (3.0 * 2.0 + 50_000.0 * 2.5) / 1e6;
         assert!((sw[0]["cost"].as_f64().unwrap() - want).abs() < 1e-4);
         assert_eq!(v["model"], "claude-sonnet-5-5");
     }

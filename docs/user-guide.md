@@ -1581,7 +1581,7 @@ keeps it as a workspace tab.
 main model and effort ("≈$1.23 · claude-opus-5-5 · effort high"), and a **Cost** section that
 splits it per model (subagents included, each at its own model's price) into uncached input,
 cache writes, cache reads and output. A switch to another model mid-session is listed as its own
-line with what its first turn cost, since the new model rebuilds the whole cache. The session tab
+line with what rebuilding the cache cost, since the new model writes the whole context again. The session tab
 shows the same total, and each task card the total of the task's sessions. Tasks keep that number
 after the transcripts are gone. At the bottom of the Usage panel, **Cost per task** groups the
 tasks by profile (and agent), by ticket or lists each task, with the average cost per finished
