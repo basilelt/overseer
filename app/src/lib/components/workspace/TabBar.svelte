@@ -28,7 +28,7 @@
   import AgentIcon, { GROUP_COLOR } from '../sidebar/AgentIcon.svelte';
   import ReviewBadge from '../review/ReviewBadge.svelte';
   import { itemTarget, reviewTitle } from '../../review/open';
-  import { liveOn, toggleLiveReview } from '../../git/live.svelte';
+  import { liveOn } from '../../git/live.svelte';
   import { chatCapable } from '../../chat/viewmode';
   import ModeToggle from '../chat/ModeToggle.svelte';
   import { chipLabel, chipShort } from '../../profiles';
@@ -295,7 +295,7 @@
   <div class="actions">
     {#if activeItem && chatCapable(activeItem)}<ModeToggle item={activeItem} />{/if}
     {#if reviewable}
-      <button class="icon-btn" class:on={liveOn()} title={t('git.button')} aria-label={t('git.button')} aria-pressed={liveOn()} data-tour="git-button" onclick={() => toggleLiveReview(pane.active)}><GitBranch size={14} /></button>
+      <button class="icon-btn" class:on={liveOn()} title={t('git.button')} aria-label={t('git.button')} aria-pressed={liveOn()} data-tour="git-button" onclick={() => void import('../../git/live-actions').then((m) => m.toggleLiveReview(pane.active))}><GitBranch size={14} /></button>
     {/if}
     {#if activeWeb?.pages.length}
       <button class="icon-btn web" class:on={activeWeb.open} title={t('web.toggle')} aria-label={t('web.toggle')} aria-pressed={activeWeb.open} onclick={() => activeItem && pages.setOpen(activeItem.key, !activeWeb.open)}

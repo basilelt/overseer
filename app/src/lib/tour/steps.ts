@@ -1,4 +1,4 @@
-export type StepId = 'host' | 'workspaces' | 'tabs' | 'view' | 'panel' | 'kanban' | 'review' | 'chips' | 'notify' | 'profiles' | 'palette' | 'paletteKey' | 'organize' | 'settings' | 'feedback' | 'demo' | 'gpuTerminal' | 'worktreeCleanup' | 'switchboard' | 'clickCursor' | 'palettes' | 'skills' | 'autoApprove' | 'merged' | 'uninstall' | 'autoUpdate' | 'subjects' | 'sourceControl';
+export type StepId = 'host' | 'workspaces' | 'tabs' | 'view' | 'panel' | 'kanban' | 'review' | 'chips' | 'notify' | 'profiles' | 'palette' | 'paletteKey' | 'organize' | 'settings' | 'feedback' | 'demo' | 'gpuTerminal' | 'worktreeCleanup' | 'switchboard' | 'clickCursor' | 'palettes' | 'skills' | 'autoApprove' | 'merged' | 'uninstall' | 'autoUpdate' | 'subjects' | 'sourceControl' | 'reviewMap';
 
 export interface Step {
   id: StepId;
@@ -36,6 +36,7 @@ export const STEPS: Step[] = [
   { id: 'autoUpdate', targets: ['updates', 'settings'], since: '0.35' },
   { id: 'subjects', targets: ['subjects', 'workspaces'], since: '0.36' },
   { id: 'sourceControl', targets: ['git-button', 'palette'], since: '0.36' },
+  { id: 'reviewMap', targets: ['review-map', 'review'], since: '0.36' },
 ];
 
 export type Mode = 'full' | 'whatsNew';

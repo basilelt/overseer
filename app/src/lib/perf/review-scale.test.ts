@@ -2,9 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { parseDiff, tokenize } from '../diff';
 import { layout } from '../git/layout';
 import { expectLinear, counted } from './work';
-import { graphOrder, nextStep } from '../review/linked.svelte';
 import { buildRows, fileTree, keepUnchanged, placeThreads } from '../review/rows';
-import type { ReviewStore } from '../review/store.svelte';
 import type { ReviewFile, ReviewHunk, ReviewLine, Thread } from '../review/types';
 
 function hunk(k: number): ReviewHunk {
@@ -129,39 +127,5 @@ describe('git graph layout at scale', () => {
       return () => void layout(commits);
     };
     expectLinear(make(2000), make(20000));
-  });
-});
-
-describe('review graph order across linked worktrees at scale', () => {
-  function stores(perStore: number) {
-    return Array.from({ length: 5 }, (_, w) => {
-      const nodes = Array.from({ length: perStore }, (_, i) => ({ id: `n${i}`, name: `n${i}`, path: `w${w}/f${i}.ts`, line: 1, hunks: [] }));
-      return { graph: { revision: `r${w}`, nodes, edges: [], order: nodes.map((n) => n.id) }, orderAt: -1 } as unknown as ReviewStore;
-    });
-  }
-
-  function walk(list: ReviewStore[]): number {
-    let steps = 0;
-    let cur = list[0];
-    cur.orderAt = -1;
-    for (let st = nextStep(list, cur); st; st = nextStep(list, cur)) {
-      st.store.orderAt = st.at;
-      cur = st.store;
-      steps++;
-    }
-    for (const s of list) s.orderAt = -1;
-    return steps;
-  }
-
-  it('walks every node of every linked graph once, linear in nodes, with the order memoized per graph', () => {
-    expect(walk(stores(200))).toBe(1000);
-    const big = stores(2000);
-    expect(walk(big)).toBe(10000);
-    expect(graphOrder(big[1])).toBe(graphOrder(big[1]));
-    const make = (n: number) => () => {
-      const list = counted(stores(n));
-      return () => void walk(list);
-    };
-    expectLinear(make(200), make(2000));
   });
 });

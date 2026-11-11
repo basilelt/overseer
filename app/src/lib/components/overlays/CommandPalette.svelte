@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { toggleLiveReview } from '../../git/live.svelte';
+  import { toggleLiveReview } from '../../git/live-actions';
   import Gauge from '@lucide/svelte/icons/gauge';
   import { ust } from '../../usage/strings';
   import GitPullRequestArrow from '@lucide/svelte/icons/git-pull-request-arrow';

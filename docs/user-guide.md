@@ -898,7 +898,7 @@ On first launch, once the app is connected (immediately in local mode, after the
 connection on a phone), a welcome card offers **Take the tour** or **Skip**. The tour dims the
 window and highlights the real controls one at a time: host chip, workspaces sidebar, tabs and the
 new-session menu, the Terminal/Chat toggle, the side panel, Tasks, Review, the usage, system and ports
-chips, notifications and hooks, the command palette and Feedback, in 0.25 the Cmd/Ctrl+P palette shortcut, and in 0.27 the demo mode (on the **Demo mode** pill while in the demo, else on the host chip), and in 0.28 the GPU rendering option for terminals, and in 0.29 the clean up of unused worktrees and the import from Switchboard (on its button in Settings, Help, or on the Settings button), and in 0.30 click to move the cursor in a terminal (on the tabs), and in 0.31 the Light and Dark palettes (on Settings, or More on a phone), and in 0.33 the one-click install of skills and plugins (on Settings), and in 0.34 the auto-approval defaults (on Settings, Agents), the Review, Merged and Closed columns (on the Merged column when the board is open, else on the Tasks tab) and the clean removal of everything Overseer added (on Settings, Connection, **Remove**), and in 0.35 one-click in-app updates for every install (on Settings, Updates, else on the Settings button), and in 0.36 subjects inside a workspace (on **+ New subject** in the open workspace, else on the sidebar), and the live review behind the git button (on the git button of a session's tab bar, else on the command palette). Steps whose control is not on
+chips, notifications and hooks, the command palette and Feedback, in 0.25 the Cmd/Ctrl+P palette shortcut, and in 0.27 the demo mode (on the **Demo mode** pill while in the demo, else on the host chip), and in 0.28 the GPU rendering option for terminals, and in 0.29 the clean up of unused worktrees and the import from Switchboard (on its button in Settings, Help, or on the Settings button), and in 0.30 click to move the cursor in a terminal (on the tabs), and in 0.31 the Light and Dark palettes (on Settings, or More on a phone), and in 0.33 the one-click install of skills and plugins (on Settings), and in 0.34 the auto-approval defaults (on Settings, Agents), the Review, Merged and Closed columns (on the Merged column when the board is open, else on the Tasks tab) and the clean removal of everything Overseer added (on Settings, Connection, **Remove**), and in 0.35 one-click in-app updates for every install (on Settings, Updates, else on the Settings button), and in 0.36 subjects inside a workspace (on **+ New subject** in the open workspace, else on the sidebar), and the live review behind the git button (on the git button of a session's tab bar, else on the command palette), and the review map (on List | Map in a review, else on the Review tab). Steps whose control is not on
 screen (no session selected, a feature the server lacks, phone layout) are skipped. On a phone the
 card is a sheet at the bottom (or top, when the control sits low) and points at the bottom
 navigation, the session strip and the menu.
@@ -1823,11 +1823,25 @@ A GitHub-style review of what an agent changed, while it works (ADR 0030, contra
   file tree shows a risk score per file (what is left to read, weighted up for changed
   signatures and down for tests) and can sort by it. Copied files show as `C` when the repository
   sets `git config diff.renames copies`.
-- **Graph**: List | Graph in the header shows the changed functions, types and components as a
-  graph, with an edge when one uses or imports another; colour is the kind of change, size the
-  number of changed lines. Drag to pan, scroll to zoom, click a node to jump to its change.
-  Review order lists them definitions first, callers after; Next walks through it. On a phone only
-  the list is shown.
+- **Map**: List | Map in the header (the choice is remembered) draws every worktree of the review
+  on one map: the review's worktree, the worktrees the session's agent also edited, and their
+  checked-out submodules, each a region, files sized by bytes, unchanged folders folded into
+  grey blocks. Changed files take the colour of the indicator picked above the map: **Real
+  logic** (changed lines that are not moves, formatting, renames, imports or generated code),
+  **Blast radius** (changed files that use this one, double for another repository), **Contract
+  change** (public signatures and shared types), **Agent struggle** (times the agent rewrote the
+  file, and test runs that failed after it did), **Untested** (logic no changed test reaches),
+  **Not yet seen** (lines not marked viewed, open comments) and **Priority**, their weighted
+  mean (real logic 1.2, agent struggle 1.1, blast radius and contract 1, untested 0.9, not yet
+  seen 0.6). Hovering a file draws what it uses (blue) and what uses it (orange); a link to
+  another repository is dashed violet, and one found only through a shared name is marked so.
+  **Every link of the change** shows them all faintly. The side lists the files in that order,
+  and the picked file's six scores with plain reasons ("used by 3 changed files, 1 in another
+  repository"); **Open the diff** (or a double click) jumps to it in the list. In the list, a heat
+  band along the files shows the same colours top to bottom, and **Next hottest file** (or J and
+  K) walks the files hottest first across every worktree. On a phone the ranking comes first and
+  the map below it. The daemon serves it at `GET /v1/review/map?worktree=…` (or `line=`, `task=`),
+  plus `with=` for each extra worktree the review already shows.
 - **Comment**: click a line number (shift-click or drag for a range), write, Add review comment
   (Ctrl/Cmd+Enter). Suggest inserts a ```` ```suggestion ```` block prefilled with the lines; the
   thread then offers Apply suggestion, which writes it into the worktree if the lines did not
