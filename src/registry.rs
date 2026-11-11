@@ -201,6 +201,7 @@ const ADDED_COLUMNS: &[(&str, &str, &str)] = &[
     ("tasks", "inherit_branch", "INTEGER"),
     ("tasks", "quorum", "TEXT"),
     ("tasks", "votes", "TEXT"),
+    ("tasks", "task_type", "TEXT"),
 ];
 
 impl Registry {

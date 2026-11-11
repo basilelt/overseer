@@ -2778,6 +2778,109 @@ fn profiles_apply_at_launch_with_workspace_and_task_precedence() {
 }
 
 #[test]
+fn task_type_picks_the_profile_between_explicit_and_workspace() {
+    let app = App::new("profiles-types", json!({"autoConcurrency": 0}));
+    let wt = app.fx.wt.to_string_lossy().into_owned();
+    let p = app.ok("GET", "/v1/profiles", Value::Null);
+    assert_eq!(
+        p["taskTypes"],
+        json!(["fix", "feature", "engineering", "refactor", "triage"])
+    );
+    assert_eq!(p["types"], json!({}));
+    let bad = app.req(
+        "PUT",
+        "/v1/profiles",
+        json!({"types": {"migration": "max"}}),
+    );
+    assert_eq!(bad.0, 400);
+    assert!(bad.1["error"]
+        .as_str()
+        .unwrap()
+        .starts_with("unknown task type \"migration\""));
+    assert_eq!(
+        app.req("PUT", "/v1/profiles", json!({"types": {"fix": "ghost"}}))
+            .0,
+        400
+    );
+    let saved = app.ok(
+        "PUT",
+        "/v1/profiles",
+        json!({
+            "scopes": {wt.clone(): "economy"},
+            "types": {"refactor": "max", "triage": "none"},
+        }),
+    );
+    assert_eq!(saved["types"]["refactor"], "max");
+
+    let refactor = app.ok(
+        "POST",
+        "/v1/tasks",
+        json!({"title": "migrate", "project": wt, "taskType": "refactor"}),
+    );
+    assert_eq!(refactor["taskType"], "refactor");
+    assert_eq!(refactor["effort"], "");
+    let triage = app.ok(
+        "POST",
+        "/v1/tasks",
+        json!({"title": "logs", "project": wt, "taskType": "triage", "agent": "gemini"}),
+    );
+    assert_eq!(triage["effort"], "high");
+    let r = app.req(
+        "POST",
+        "/v1/tasks",
+        json!({"title": "x", "project": wt, "taskType": "chore"}),
+    );
+    assert_eq!(r.0, 400);
+    assert_eq!(
+        r.1["error"],
+        "taskType must be one of fix, feature, engineering, refactor, triage"
+    );
+
+    let start = |id: &str| {
+        let s = app.ok("POST", &format!("/v1/tasks/{id}/start"), json!({}));
+        app.ok(
+            "GET",
+            &format!("/v1/terms/{}", s["termId"].as_str().unwrap()),
+            Value::Null,
+        )
+    };
+    let term = start(refactor["id"].as_str().unwrap());
+    let cmd = strs(&term["cmd"]);
+    assert_eq!(cmd[cmd.len() - 4..], ["--model", "opus", "--effort", "max"]);
+    assert_eq!(term["profile"]["id"], "max");
+
+    let feature = app.ok(
+        "POST",
+        "/v1/tasks",
+        json!({"title": "small", "project": wt}),
+    );
+    let fid = feature["id"].as_str().unwrap();
+    let patched = app.ok(
+        "PATCH",
+        &format!("/v1/tasks/{fid}"),
+        json!({"taskType": "feature", "effort": ""}),
+    );
+    assert_eq!(patched["taskType"], "feature");
+    let term = start(fid);
+    assert_eq!(term["profile"]["id"], "economy");
+
+    let explicit = app.ok(
+        "POST",
+        "/v1/tasks",
+        json!({"title": "pinned", "project": wt, "taskType": "refactor", "profile": "balanced"}),
+    );
+    let term = start(explicit["id"].as_str().unwrap());
+    assert_eq!(term["profile"]["id"], "balanced");
+
+    let cleared = app.ok(
+        "PATCH",
+        &format!("/v1/tasks/{}", triage["id"].as_str().unwrap()),
+        json!({"taskType": null}),
+    );
+    assert!(cleared.get("taskType").is_none());
+}
+
+#[test]
 fn profiles_list_and_apply_gemini_and_antigravity_subagent_models_over_http() {
     let app = App::new("gsubs", json!({"autoConcurrency": 0}));
     let wt = app.fx.wt.to_string_lossy().into_owned();
