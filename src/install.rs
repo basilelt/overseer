@@ -4,6 +4,7 @@ use serde_json::{json, Map, Value};
 use std::path::{Path, PathBuf};
 
 pub const MARKER: &str = "#overseer-hook";
+pub const OLD_MARKER: &str = "#switchboard-hook";
 
 const CODEX_TRUST: &str = "Codex runs edited hooks only after you trust them again: open codex and accept the hooks prompt (Overseer never edits config.toml).";
 
@@ -224,15 +225,33 @@ fn commands(v: &Value) -> Vec<String> {
     out
 }
 
+fn hook_binary(cmd: &str) -> Option<&str> {
+    cmd.split_whitespace()
+        .find(|w| !w.contains('='))
+        .map(|w| w.trim_matches(['\'', '"']))
+}
+
+fn orphaned_switchboard(v: &Value) -> bool {
+    let old: Vec<String> = commands(v)
+        .into_iter()
+        .filter(|c| c.contains(OLD_MARKER))
+        .collect();
+    !old.is_empty()
+        && old
+            .iter()
+            .all(|c| hook_binary(c).is_some_and(|b| !Path::new(b).exists()))
+}
+
 pub fn validate(original: &Value, written: &[u8], expect_ours: &[String]) -> Result<(), String> {
     let v: Value = serde_json::from_slice(written).map_err(|e| format!("invalid JSON: {e}"))?;
     if !v.is_object() || !v["hooks"].is_object() {
         return Err("top level or .hooks is not an object".into());
     }
     let after = commands(&v);
+    let orphaned = orphaned_switchboard(original);
     for c in commands(original)
         .into_iter()
-        .filter(|c| !c.contains(MARKER))
+        .filter(|c| !c.contains(MARKER) && !(orphaned && c.contains(OLD_MARKER)))
     {
         if !after.contains(&c) {
             return Err("an existing hook would be lost".into());
@@ -557,7 +576,10 @@ pub fn plan(t: &Target, uninstall: bool, bin: &Path, state_dir: &Path) -> Result
             t.path.display()
         ));
     }
-    let base = before.clone().unwrap_or_else(|| json!({}));
+    let mut base = before.clone().unwrap_or_else(|| json!({}));
+    if !uninstall && orphaned_switchboard(&base) {
+        base = unmerge_marker(&base, OLD_MARKER);
+    }
     let cmd = |ev: &str| hook_command(bin, state_dir, t.agent, ev);
     let after = match (uninstall, t.format) {
         (true, _) => unmerge(&base),
@@ -1130,6 +1152,67 @@ mod tests {
         {
             assert_eq!(planned.after["hooks"][*event][0]["hooks"][0]["timeout"], 5);
         }
+    }
+
+    fn switchboard_hooks(bin: &Path) -> Value {
+        let cmd = |event: &str| {
+            format!(
+                "SWITCHBOARD_STATE_DIR=/s {} hook codex {event} \"$PPID\" 2>/dev/null||:;echo {{}};{OLD_MARKER}",
+                bin.display()
+            )
+        };
+        let mut v = merge_groups(&json!({}), hooks::CODEX_EVENTS, cmd, 5);
+        v["hooks"]["SessionEnd"]
+            .as_array_mut()
+            .unwrap()
+            .push(json!({ "hooks": [{ "type": "command", "command": "keep-me", "timeout": 2 }] }));
+        v
+    }
+
+    fn codex_at(path: PathBuf) -> Target {
+        let mut codex = targets().into_iter().find(|t| t.agent == "codex").unwrap();
+        codex.path = path;
+        codex
+    }
+
+    #[test]
+    fn install_drops_hooks_of_a_removed_switchboard() {
+        let d = dir("switchboard-orphan");
+        let codex = codex_at(d.join("hooks.json"));
+        let gone = d.join(".switchboard/bin/switchboard");
+        std::fs::write(&codex.path, pretty(&switchboard_hooks(&gone))).unwrap();
+
+        let out = go(
+            std::slice::from_ref(&codex),
+            Mode::Install,
+            Path::new("/sb"),
+            &d,
+        );
+        assert!(out[0].error.is_none(), "{:?}", out[0].error);
+
+        let text = std::fs::read_to_string(&codex.path).unwrap();
+        assert!(!text.contains(OLD_MARKER));
+        let after = read(&codex.path);
+        let end = after["hooks"]["SessionEnd"].as_array().unwrap();
+        assert_eq!(end.len(), 2);
+        assert_eq!(end[0]["hooks"][0]["command"], "keep-me");
+        assert_eq!(end[1]["hooks"][0]["timeout"], 3);
+    }
+
+    #[test]
+    fn install_keeps_hooks_of_an_installed_switchboard() {
+        let d = dir("switchboard-alive");
+        let codex = codex_at(d.join("hooks.json"));
+        let bin = d.join("switchboard");
+        std::fs::write(&bin, "").unwrap();
+        std::fs::write(&codex.path, pretty(&switchboard_hooks(&bin))).unwrap();
+
+        let planned = plan(&codex, false, Path::new("/sb"), &d).unwrap();
+        assert_eq!(
+            planned.after["hooks"]["SessionEnd"][0]["hooks"][0]["timeout"],
+            5
+        );
+        assert!(planned.after_text.contains(OLD_MARKER));
     }
 
     #[test]
