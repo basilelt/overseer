@@ -9,7 +9,7 @@ async function html(file: 'QuorumChips' | 'QuorumField', props: Record<string, u
   app.data = { ...app.data, tasks };
   const { render } = await import('svelte/server');
   const mod = file === 'QuorumChips' ? await import('./QuorumChips.svelte') : await import('./QuorumField.svelte');
-  return render(mod.default as never, { props } as never).body.replace(/<!--[\s\S]*?-->/g, '');
+  return render(mod.default as never, { props } as never).body.split(/<!--[\s\S]*?--!?>/).join('');
 }
 
 afterEach(() => vi.resetModules());
