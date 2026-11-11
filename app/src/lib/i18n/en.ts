@@ -22,7 +22,6 @@ export const en = {
   'time.d': '{n}d',
   'title.layout': 'Toggle layout',
   'title.new': 'New session',
-  'title.history': 'History',
   'title.run': 'RUN',
   'title.runHint': 'Start next queued task',
   'title.settings': 'Settings',
