@@ -407,13 +407,31 @@ fn profile_of(ctx: &Ctx, v: &Value) -> Res<Option<String>> {
     }
 }
 
+/// The checkout of a submodule whose git dir is `<repo>/.git/modules/<name>`: git
+/// records it as `core.worktree`, so a worktree of a submodule maps back to it.
+pub fn module_worktree(common: &Path) -> Option<String> {
+    let text = std::fs::read_to_string(common.join("config")).ok()?;
+    let mut core = false;
+    for l in text.lines().map(str::trim) {
+        if l.starts_with('[') {
+            core = l.eq_ignore_ascii_case("[core]");
+        } else if let Some((k, v)) = l.split_once('=').filter(|_| core) {
+            if k.trim() == "worktree" {
+                let p = common.join(v.trim()).canonicalize().ok()?;
+                return Some(p.to_string_lossy().into_owned());
+            }
+        }
+    }
+    None
+}
+
 pub fn main_root(g: &mut Git, path: &str) -> Option<(String, String)> {
     let i = g.info(path)?;
     let common = Path::new(&i.common);
     let root = if common.file_name().is_some_and(|n| n == ".git") {
         common.parent()?.to_string_lossy().into_owned()
     } else {
-        i.top.clone()
+        module_worktree(common).unwrap_or_else(|| i.top.clone())
     };
     let repo = g.info(&root).map(|r| r.repo).unwrap_or(i.repo);
     Some((root, repo))
@@ -1382,6 +1400,105 @@ pub fn add_project(ctx: &Ctx, b: &Value) -> Res<(bool, Value)> {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn a_worktree_of_a_submodule_maps_to_the_submodule_checkout() {
+        // Given a repo with a real submodule and a git worktree made from that submodule
+        // When the main root of the worktree is asked
+        // Then it is the submodule checkout inside the repo, not the worktree itself
+        let base = std::env::temp_dir().join(format!(
+            "sb-submod-{}-{}",
+            std::process::id(),
+            crate::procs::now_ms()
+        ));
+        let git = |dir: &Path, args: &[&str]| {
+            let out = std::process::Command::new("git")
+                .env("GIT_CONFIG_GLOBAL", "/dev/null")
+                .env("GIT_CONFIG_NOSYSTEM", "1")
+                .args([
+                    "-c",
+                    "protocol.file.allow=always",
+                    "-c",
+                    "commit.gpgsign=false",
+                    "-c",
+                    "user.name=t",
+                    "-c",
+                    "user.email=t@t",
+                    "-c",
+                    "init.defaultBranch=main",
+                ])
+                .args(args)
+                .current_dir(dir)
+                .output()
+                .unwrap();
+            assert!(
+                out.status.success(),
+                "{args:?}: {}",
+                String::from_utf8_lossy(&out.stderr)
+            );
+        };
+        let (lib, meta) = (base.join("lib"), base.join("meta"));
+        for d in [&lib, &meta] {
+            std::fs::create_dir_all(d).unwrap();
+            git(d, &["init", "-q"]);
+            git(d, &["commit", "-q", "--allow-empty", "-m", "init"]);
+        }
+        git(
+            &meta,
+            &[
+                "submodule",
+                "add",
+                "-q",
+                lib.to_str().unwrap(),
+                "40_code/lib",
+            ],
+        );
+        let sub = meta.join("40_code/lib");
+        let wt = base.join("wt");
+        git(
+            &sub,
+            &["worktree", "add", "-q", "-b", "feat", wt.to_str().unwrap()],
+        );
+        let mut g = Git::default();
+        let want = sub.canonicalize().unwrap().to_string_lossy().into_owned();
+        assert_eq!(main_root(&mut g, wt.to_str().unwrap()).unwrap().0, want);
+        assert_eq!(main_root(&mut g, sub.to_str().unwrap()).unwrap().0, want);
+        let top = meta.canonicalize().unwrap().to_string_lossy().into_owned();
+        assert_eq!(main_root(&mut g, meta.to_str().unwrap()).unwrap().0, top);
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn module_worktree_reads_core_worktree_only_from_the_core_section() {
+        let base = std::env::temp_dir().join(format!(
+            "sb-modwt-{}-{}",
+            std::process::id(),
+            crate::procs::now_ms()
+        ));
+        let common = base.join(".git/modules/x");
+        std::fs::create_dir_all(&common).unwrap();
+        std::fs::create_dir_all(base.join("src/x")).unwrap();
+        std::fs::write(
+            common.join("config"),
+            "[remote \"o\"]\n\tworktree = ../nope\n",
+        )
+        .unwrap();
+        assert_eq!(module_worktree(&common), None);
+        std::fs::write(
+            common.join("config"),
+            "[core]\n\tbare = false\n\tworktree = ../../../src/x\n",
+        )
+        .unwrap();
+        let want = base
+            .join("src/x")
+            .canonicalize()
+            .unwrap()
+            .to_string_lossy()
+            .into_owned();
+        assert_eq!(module_worktree(&common), Some(want));
+        assert_eq!(module_worktree(&base.join("missing")), None);
+        let _ = std::fs::remove_dir_all(&base);
+    }
     use super::*;
 
     #[test]

@@ -184,6 +184,7 @@ const ADDED_COLUMNS: &[(&str, &str, &str)] = &[
     ("lines", "workspace_id", "TEXT"),
     ("workspaces", "kind", "TEXT NOT NULL DEFAULT 'dir'"),
     ("workspaces", "cwd", "TEXT"),
+    ("workspaces", "parent_id", "TEXT"),
     ("lines", "hold_pending", "INTEGER NOT NULL DEFAULT 0"),
     ("lines", "held_at", "TEXT"),
     ("tasks", "rank", "REAL"),

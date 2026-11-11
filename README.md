@@ -48,7 +48,10 @@ a minute. You can replay it any time from Settings → Help.
 
 ### Every agent in one window
 
-Workspaces group sessions by project. Each session opens in a tab with its live terminal, and
+Workspaces group sessions by project. Inside a workspace, subjects sort its sessions further: a
+subject covers a sub-folder or a git submodule (submodules show up on their own), sessions running
+there join it, and you can drag any session onto one or start a new one in it, at the workspace
+root if your agents read their instructions there. Each session opens in a tab with its live terminal, and
 the side panel shows what the agent is doing: last message, work log, todos, edited files and
 changes. Switch to **By status** to see at a glance who needs your input, who is running and who
 is done. Agent tabs also have a **Chat** view rebuilt live from the agent's session file.
@@ -93,9 +96,14 @@ with the orchestrator, and only results a majority accepts are merged.
 
 A GitHub-style review of an agent's changes while it works. Comment on lines, suggest edits, and
 send the comments back to the agent; threads follow the code as it changes. Approve, reject or
-commit from the Kanban card when the task is in Review.
+commit from the Kanban card when the task is in Review. When an agent works across several
+repositories, one review covers them all: the Map view draws every worktree on one map with the
+links between files, colours each file by what makes it worth your attention (real logic, blast
+radius, contract changes, where the agent struggled, untested or not yet seen code), and J and K
+walk the files hottest first.
 
 ![Live review](app/docs/screenshots/review-light.png)
+![Review map](app/docs/screenshots/review-map-dark.png)
 
 <details>
 <summary>A review thread with a suggestion</summary>
@@ -104,13 +112,22 @@ commit from the Kanban card when the task is in Review.
 
 </details>
 
-### Git graph and worktrees
+### Source control, Git graph and worktrees
 
-A per-project git graph that stays fast on large histories, with agent branches, tasks and PRs
-on it. Worktrees live in one store outside your repositories, show whether they are in use, idle
+The git button above each session opens its live review: the agent stays on the left, the
+review of everything it changed sits beside it, the sidebar shrinks to a rail of sessions, and one
+bar at the bottom runs git on the worktree you pick among the session's worktrees and submodules.
+Write a message and press Enter to commit; Push, Publish or Pull takes the button's place when it
+is the next step, and the ⋯ menu holds fetch, amend, stage or discard all, merge, stash and the Git
+graph. While you work in a terminal, the sidebar's **Git** tab (Ctrl+Shift+G) keeps source control at
+hand like VS Code: the selected session's worktree, its branch, fetch, pull and push, a commit box,
+staged and changed files, and merge and stash. The Git graph tab keeps a per-project history that stays fast on large histories, with agent
+branches, tasks and PRs on it; from a commit you can merge it into a worktree or revert it.
+Worktrees live in one store outside your repositories, show whether they are in use, idle
 or stale, and are cleaned up safely: **Clean up merged** picks the merged ones with no agent left,
 and you untick the ones to keep.
 
+![Live review of a session](app/docs/screenshots/live-dark.png)
 ![Git graph](app/docs/screenshots/graph-light.png)
 ![Worktrees](app/docs/screenshots/worktrees-dark.png)
 
@@ -144,12 +161,16 @@ on a TCP port on the server.
   for Gemini CLI and Antigravity. Apply a profile to new work, scope it to a workspace, and choose
   when to update the agent files.
 - **Auto-approve defaults per agent**: choose which CLIs Overseer starts in their native
-  auto-approval mode. The defaults are stored on each connected host and apply to new sessions.
+  auto-approval mode, one by one or all at once. The defaults are stored on each connected host and
+  apply to new sessions.
 - **Skills and plugins in one click**: install RTK (trims shell output before the agent reads it),
   Caveman (terse replies) or Ponytail (simplest code that works) for Claude Code, Codex, Gemini CLI,
   opencode, Copilot CLI, Cursor Agent, Amp or Antigravity, from Settings → Agents or the command
   palette. The install runs in a terminal you can watch.
 - **Usage and system monitor**: agent quotas, token usage, CPU and RAM in the title bar.
+- **Keep agents running with the lid closed**: an opt-in switch (Settings → Connection) stops the
+  laptop running Overseer from sleeping when you close it, on Linux, macOS and Windows, so agents
+  finish their work with the network on. It drains the battery, and the switch says so.
 - **Light and Dark palettes**: choose System, Light or Dark as the theme (System follows your OS live), then pick a palette for each mode: Default, Graphite or Solarized Soft for Dark, or make your own with color pickers, a live preview and a contrast warning. Find them in Settings → General → Appearance ([Graphite](app/docs/screenshots/graphite.png), [Solarized Soft](app/docs/screenshots/solarized.png)).
 - **Settings with search**: categories in a sidebar, and a search box that finds any setting by name or description, in your language or in English.
 - **Command palette** (history, actions, sessions) and keyboard shortcuts.
@@ -159,6 +180,7 @@ on a TCP port on the server.
 - **Team mode**: a shared API merges every station's lines, relays commands between stations,
   and publishes events and signed webhooks for other tools.
 - **Updates** in the app, and a feedback button with optional diagnostics.
+- **Record a bug**: show a problem while Overseer logs your clicks, shortcuts, views and errors next to a screen video, then send both in one report. Replay plays the video and the timeline in sync; what you type is never logged.
 
 ## Install
 

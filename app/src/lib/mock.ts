@@ -3,6 +3,7 @@ import { mockUsage } from './usage/mock';
 import { DaemonError, type DaemonClient, type TermIO } from './client';
 import { phoneParam } from './mobile/layout';
 import { MockGit } from './git/mockGit';
+import { MockScm } from './git/mockScm';
 import { bigDiff, bigPatch, MockReview } from './review/mock';
 import { chatPage, mockScreen, MOCK_COMMANDS, seedAgentChat, seedChat } from './chat/mock';
 import type { Effort, HookResult, HooksStatus, SwitchboardStatus, Profile, ProfileChip, ProfilesStore, SourceItem, SourceItems, SubagentDef, TaskSource, Quorum } from './types';
@@ -202,6 +203,7 @@ function seedLines(now: number): LocalLine[] {
       tasks: 0,
       title: s.title,
       heldReason: s.state === 'held' ? (s.ago > 600 ? 'lost' : 'user') : undefined,
+      ...(NESTED_LINES[s.id] ? { workspaceId: NESTED_LINES[s.id] } : {}),
     },
   }));
 }
@@ -529,13 +531,20 @@ const WS_SEEDS: [string, string, string, string | null, boolean, boolean, boolea
   ['ws_thesis', 'thesis', `${HOME}/Documents/thesis`, 'f_alice', false, false, true],
 ];
 
+// Nested workspaces of webshop: a sub-folder whose sessions start at the repo root, and a checked-out submodule.
+const NESTED_SEEDS: [string, string, string, string, string | null, boolean][] = [
+  ['ws_webshop_invoicing', 'Invoicing', `${repoPath('webshop')}/services/invoicing`, 'ws_webshop', repoPath('webshop'), false],
+  ['ws_webshop_design', 'design-system', `${repoPath('webshop')}/vendor/design-system`, 'ws_webshop', null, true],
+];
+const NESTED_LINES: Record<string, string> = { ln_05: 'ws_webshop_invoicing' };
+
 const DISCOVERABLE: Project[] = [{ path: `${HOME}/Documents/Github/perso/dotfiles`, name: 'dotfiles', repo: 'github.com/alice/dotfiles' }];
 
 function seedWs(now: number): { workspaces: Workspace[]; folders: Folder[]; groups: Group[] } {
   const at = iso(60 * 24, now);
   return {
     folders: FOLDER_SEEDS.map(([id, name, collapsed], i) => ({ id, name, parentId: null, rank: i + 1, collapsed, createdAt: at, updatedAt: at })),
-    workspaces: WS_SEEDS.map(([id, name, path, folderId, pinned, auto, missing], i) => ({
+    workspaces: WS_SEEDS.map(([id, name, path, folderId, pinned, auto, missing], i): Workspace => ({
       id,
       name,
       path,
@@ -552,7 +561,26 @@ function seedWs(now: number): { workspaces: Workspace[]; folders: Folder[]; grou
       ...(missing ? { missing } : {}),
       createdAt: at,
       updatedAt: at,
-    })),
+    })).concat(
+      NESTED_SEEDS.map(([id, name, path, parentId, cwd, auto], i): Workspace => ({
+        id,
+        name,
+        path,
+        station: 'atlas',
+        kind: 'dir' as const,
+        cwd,
+        parentId,
+        folderId: null,
+        pinned: false,
+        archived: false,
+        auto,
+        rank: WS_SEEDS.length + i + 1,
+        tabs: [],
+        notifyIdle: false,
+        createdAt: at,
+        updatedAt: at,
+      })),
+    ),
     groups: [
       { id: 'g_release', name: 'release 5.8', rank: 1, members: ['line:ln_01', 'line:ln_05', 'line:ln_08'], notifyIdle: false, createdAt: at, updatedAt: at },
       { id: 'g_infra', name: 'infra', rank: 2, members: ['line:ln_07', 'line:ln_11', 'line:ln_04'], notifyIdle: false, createdAt: at, updatedAt: at },
@@ -653,6 +681,7 @@ export class MockDaemon implements DaemonClient {
   terms: Term[];
   tasks: Task[];
   autoOrganize = false;
+  lidPower = { enabled: false, active: false, supported: true, error: null as string | null };
   autoApprove: Record<string, boolean> = Object.fromEntries(Object.keys(AUTO_APPROVE_ARGS).map((id) => [id, true]));
   messages: TaskMessage[];
   activity: Record<string, Activity>;
@@ -664,6 +693,7 @@ export class MockDaemon implements DaemonClient {
   statusline = { path: '~/.claude/settings.json', installed: false, command: '~/.claude/statusline.sh' as string | null };
   profileStore: ProfilesStore = structuredClone(MOCK_PROFILES);
   git = new MockGit(this);
+  scm = new MockScm(this, (wt) => this.git.projectOf(wt) ?? wt, (p, rev) => this.git.hasCommit(p, rev));
   workspaces: Workspace[];
   folders: Folder[];
   groups: Group[];
@@ -812,6 +842,12 @@ export class MockDaemon implements DaemonClient {
     if (method === 'POST' && (r = m(/^\/v1\/ports\/([^/]+)\/kill$/))) return this.killPortProcess(decodeURIComponent(r[1]), body);
     if (method === 'DELETE' && (r = m(/^\/v1\/terms\/([^/]+)$/))) return this.deleteTerm(decodeURIComponent(r[1]));
     if ((r = m(/^\/v1\/terms\/([^/]+)\/(resize|kill|title)$/))) return this.termAction(decodeURIComponent(r[1]), r[2], body);
+    if (method === 'GET' && path === '/v1/power/lid') return { ...this.lidPower };
+    if (method === 'PUT' && path === '/v1/power/lid') {
+      if (typeof body?.enabled !== 'boolean') throw new DaemonError(400, 'enabled must be a boolean');
+      this.lidPower = { ...this.lidPower, enabled: body.enabled, active: body.enabled, error: null };
+      return { ...this.lidPower };
+    }
     if (method === 'GET' && path === '/v1/tasks/auto-organize') return { enabled: this.autoOrganize };
     if (method === 'PUT' && path === '/v1/tasks/auto-organize') {
       this.autoOrganize = body?.enabled === true;
@@ -821,6 +857,8 @@ export class MockDaemon implements DaemonClient {
     if (path.startsWith('/v1/organize/')) return this.organizeRoute(method, path, body);
     if ((r = m(/^\/v1\/tasks\/([^/]+)\/messages$/))) return this.messagesRoute(method, decodeURIComponent(r[1]), body);
     if ((r = m(/^\/v1\/tasks\/([^/]+)(?:\/(start|review))?$/))) return this.taskAction(method, decodeURIComponent(r[1]), r[2], body);
+    const sc = this.scm.route(method, path, new URLSearchParams(qs), body);
+    if (sc !== undefined) return sc;
     const g = this.git.route(method, path, new URLSearchParams(qs), body);
     if (g !== undefined) return g;
     throw new DaemonError(404, `no route ${method} ${path}`);
@@ -1022,16 +1060,27 @@ export class MockDaemon implements DaemonClient {
       if (kind === 'workspaces' && body?.kind === 'subject') {
         if (body.path != null) throw new DaemonError(400, 'a subject has no path, give cwd');
         if (!name) throw new DaemonError(400, 'name required');
-        const cwd = this.subjectCwd(body.cwd);
-        item = { id: `ws_${Math.random().toString(36).slice(2, 8)}`, name, path: null, kind: 'subject', cwd, station: 'atlas', folderId: body?.folderId ?? null, pinned: !!body?.pinned, archived: false, auto: false, rank: Date.now(), tabs: [], notifyIdle: false, createdAt: now, updatedAt: now } as unknown as Workspace;
+        const parent = this.wsParent(body);
+        const cwd = body?.cwd == null && parent ? parent.path! : this.subjectCwd(body.cwd);
+        item = { id: `ws_${Math.random().toString(36).slice(2, 8)}`, name, path: null, kind: 'subject', cwd, parentId: parent?.id ?? null, station: 'atlas', folderId: body?.folderId ?? null, pinned: !!body?.pinned, archived: false, auto: false, rank: Date.now(), tabs: [], notifyIdle: false, createdAt: now, updatedAt: now } as unknown as Workspace;
       } else if (kind === 'workspaces') {
         if (body?.kind != null && body.kind !== 'dir') throw new DaemonError(400, 'kind must be "dir" or "subject"');
-        if (body?.cwd != null) throw new DaemonError(400, 'cwd is only for subjects');
         const path = String(body?.path ?? '').trim().replace(/^~(?=\/|$)/, HOME).replace(/\/+$/, '');
+        if (!path) throw new DaemonError(400, 'path required');
         if (!path.startsWith('/')) throw new DaemonError(400, 'path must be absolute');
+        const parent = this.wsParent(body);
+        if (!parent && body?.cwd != null) throw new DaemonError(400, 'cwd is only for subjects and nested workspaces');
+        if (parent && (path === parent.path || !path.startsWith(`${parent.path}/`))) throw new DaemonError(400, `${path} is not inside ${parent.path}`);
+        const cwd = body?.cwd == null ? null : this.subjectCwd(body.cwd);
         const existing = this.workspaces.find((w) => w.path === path);
-        if (existing) return structuredClone(existing);
-        item = { id: `ws_${Math.random().toString(36).slice(2, 8)}`, name: name || path.split('/').pop() || path, path, station: 'atlas', kind: 'dir', cwd: null, folderId: body?.folderId ?? null, pinned: !!body?.pinned, archived: false, auto: false, rank: Date.now(), tabs: [], notifyIdle: false, createdAt: now, updatedAt: now } as unknown as Workspace;
+        if (existing) {
+          if (parent && !existing.parentId && !this.workspaces.some((w) => w.parentId === existing.id)) {
+            Object.assign(existing, { parentId: parent.id, folderId: null, pinned: false, cwd, archived: false, updatedAt: now }, body?.name != null ? { name } : {});
+            this.emit('workspace.updated', { workspace: existing });
+          }
+          return structuredClone(existing);
+        }
+        item = { id: `ws_${Math.random().toString(36).slice(2, 8)}`, name: name || path.split('/').pop() || path, path, station: 'atlas', kind: 'dir', cwd, parentId: parent?.id ?? null, folderId: body?.folderId ?? null, pinned: !!body?.pinned, archived: false, auto: false, rank: Date.now(), tabs: [], notifyIdle: false, createdAt: now, updatedAt: now } as unknown as Workspace;
       } else {
         if (!name) throw new DaemonError(400, 'name required');
         if (kind === 'folders') {
@@ -1047,17 +1096,24 @@ export class MockDaemon implements DaemonClient {
     const item = list.find((x) => x.id === id);
     if (!item) throw new DaemonError(404, `no ${single} ${id}`);
     if (method === 'DELETE') {
-      (this as any)[kind] = list.filter((x) => x.id !== id);
+      const children = kind === 'workspaces' ? this.workspaces.filter((w) => w.parentId === id).map((w) => w.id) : [];
+      const gone = new Set<string>([...children, item.id]);
+      (this as any)[kind] = list.filter((x) => !gone.has(x.id));
       if (kind === 'folders') for (const w of this.workspaces) if (w.folderId === id) w.folderId = (item as Folder).parentId;
-      if (kind === 'workspaces') this.unassign(item.id);
-      this.emit(`${single}.deleted` as EventType, { id });
-      return { deleted: id };
+      for (const g of gone) {
+        if (kind === 'workspaces') this.unassign(g);
+        this.emit(`${single}.deleted` as EventType, { id: g });
+      }
+      return children.length ? { deleted: id, children } : { deleted: id };
     }
     if (method === 'PATCH') {
       const { add, remove, id: _i, ...patch } = body ?? {};
+      const nested = kind === 'workspaces' && !!(item as Workspace).parentId;
+      if (nested && ((patch.folderId != null) || (patch.pinned != null && patch.pinned !== false))) throw new DaemonError(400, 'a nested workspace has no folder and cannot be pinned');
       if (kind === 'workspaces' && 'cwd' in patch) {
-        if ((item as any).kind !== 'subject') throw new DaemonError(400, 'cwd is only for subjects');
-        patch.cwd = this.subjectCwd(patch.cwd);
+        if ((item as any).kind === 'subject') patch.cwd = this.subjectCwd(patch.cwd);
+        else if (nested) patch.cwd = patch.cwd == null ? null : this.subjectCwd(patch.cwd);
+        else throw new DaemonError(400, 'cwd is only for subjects and nested workspaces');
       }
       Object.assign(item, patch, { updatedAt: now });
       if (kind === 'groups') {
@@ -1068,6 +1124,17 @@ export class MockDaemon implements DaemonClient {
       return structuredClone(item);
     }
     return structuredClone(item);
+  }
+
+  private wsParent(body: any): Workspace | null {
+    const pid = body?.parentId;
+    if (pid == null) return null;
+    if (typeof pid !== 'string') throw new DaemonError(400, 'parentId must be a string or null');
+    const p = this.workspaces.find((w) => w.id === pid);
+    if (!p) throw new DaemonError(400, `no workspace ${pid}`);
+    if (p.kind === 'subject' || p.parentId) throw new DaemonError(400, 'the parent must be a top-level folder workspace');
+    if (body?.folderId != null || body?.pinned != null) throw new DaemonError(400, 'a nested workspace has no folder and cannot be pinned');
+    return p;
   }
 
   private subjectCwd(raw: unknown): string {

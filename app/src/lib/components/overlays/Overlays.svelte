@@ -1,14 +1,15 @@
 <script lang="ts">
   import { app } from '../../state.svelte';
   import { preload } from '../../idle';
-  import Menu from '../ui/Menu.svelte';
   import { ui } from '../../mobile/ui.svelte';
   import { diag } from '../../diag.svelte';
   import { feedback } from '../../feedback.svelte';
   import { organizer } from '../../organize.svelte';
+  import { rec } from '../../record-state.svelte';
 
   const close = () => app.open(null);
   const commandPalette = preload(() => import('./CommandPalette.svelte'));
+  const menu = preload(() => import('../ui/Menu.svelte'));
   const settingsDialog = () => import('./SettingsDialog.svelte');
   const connectDialog = () => import('./ConnectDialog.svelte');
   const taskModal = () => import('../kanban/TaskModal.svelte');
@@ -35,6 +36,8 @@
   const closeTabDialog = () => import('./CloseTabDialog.svelte');
   const switchboardDialog = () => import('./SwitchboardImportDialog.svelte');
   const uninstallDialog = () => import('./UninstallDialog.svelte');
+  const recordSetup = () => import('../record/RecordSetup.svelte');
+  const recordPill = () => import('../record/RecordPill.svelte');
 </script>
 
 {#if app.overlay === 'palette'}
@@ -85,8 +88,13 @@
 {#if diag.mode}
   {#await logsDialog() then { default: LogsDialog }}<LogsDialog />{/await}
 {/if}
+{#if rec.phase === 'setup'}
+  {#await recordSetup() then { default: RecordSetup }}<RecordSetup />{/await}
+{:else if rec.phase === 'recording'}
+  {#await recordPill() then { default: RecordPill }}<RecordPill />{/await}
+{/if}
 {#if feedback.open}
-  {#await feedbackSheet() then { default: FeedbackSheet }}<FeedbackSheet />{/await}
+  {#await feedbackSheet() then { default: FeedbackSheet }}{#key feedback.prefill}<FeedbackSheet />{/key}{/await}
 {/if}
 {#if organizer.phase === 'choice' || organizer.phase === 'waiting'}
   {#await organizeDialog() then { default: OrganizeDialog }}<OrganizeDialog />{/await}
@@ -96,5 +104,5 @@
   {#await pickUp() then { default: PickUp }}<PickUp items={organizer.proposal.pickUp} />{/await}
 {/if}
 {#if app.menu}
-  <Menu {...app.menu} onclose={() => (app.menu = null)} />
+  {#await menu() then { default: Menu }}<Menu {...app.menu} onclose={() => (app.menu = null)} />{/await}
 {/if}

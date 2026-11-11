@@ -3600,6 +3600,29 @@ fn direct_feedback_attaches_files_with_gh() {
 }
 
 #[test]
+fn direct_feedback_attaches_a_screen_recording_and_keeps_its_action_log() {
+    let fx = Fx::new("feedback-recording", 0);
+    let _d = fx.daemon(false);
+    let rec = upload(&fx, "recording-20261109-162639.webm", "WEBMDATA");
+    let report = "It broke\n\n### Attachments\n@ATTACHMENTS@\n\n<details><summary>Recorded actions (0:05)</summary>\n\n```text\n0:00  start  Recording started with screen video\n0:03  click  button \"Settings\"\n```\n\n</details>\n\n_Sent from Overseer._";
+    let body = json!({"repo": "o/r", "title": "Bug: x", "labels": ["bug"], "body": report, "attachments": [{"path": rec["path"], "name": rec["name"]}]});
+    let (code, out) = fx.req("POST", "/v1/feedback/direct", &body.to_string());
+    assert_eq!(code, 201, "{out}");
+    assert!(!out.contains("attachWarning"), "{out}");
+    let log = gh_log(&fx);
+    assert!(
+        log.contains(&format!("--attach={}", rec["path"].as_str().unwrap())),
+        "{log}"
+    );
+    let issue = std::fs::read_to_string(fx.base.join("gh.log.body")).unwrap();
+    assert!(issue.contains("Recorded actions (0:05)"), "{issue}");
+    assert!(
+        issue.contains("0:03  click  button \"Settings\""),
+        "{issue}"
+    );
+}
+
+#[test]
 fn direct_feedback_reports_files_gh_refused_but_keeps_the_issue() {
     let fx = Fx::new("feedback-attach-partial", 0);
     let _d = fx.daemon(false);
