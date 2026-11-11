@@ -3791,4 +3791,14 @@ fn rescan_finds_an_agent_installed_into_a_dir_created_after_start() {
     let mut ws = app.ws(t["id"].as_str().unwrap());
     read_until(&mut ws, "cursor-agent ready");
     send(&mut ws, "exit\n");
+
+    let t = app.ok(
+        "POST",
+        "/v1/tasks",
+        json!({"title": "cur", "description": "", "project": wt, "agent": "cursor"}),
+    );
+    let id = t["id"].as_str().unwrap().to_string();
+    let s = app.ok("POST", &format!("/v1/tasks/{id}/start"), json!({}));
+    let mut ws = app.ws(s["termId"].as_str().unwrap());
+    read_until(&mut ws, "cursor-agent ready");
 }
