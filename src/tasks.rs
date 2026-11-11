@@ -12,7 +12,7 @@ use std::sync::{Arc, Mutex};
 
 pub(crate) type Res<T> = Result<T, (u16, String)>;
 
-const COLS: &str = "id, number, title, description, project, status, agent, model, effort, ticket_key, line_id, term_id, branch, worktree_path, progress, error, started_ms, created_ms, updated_ms, rank, origin, manual_status, session_state, badge, profile, title_source, urgent, important, parent_id, depends_on, inherit_branch";
+const COLS: &str = "id, number, title, description, project, status, agent, model, effort, ticket_key, line_id, term_id, branch, worktree_path, progress, error, started_ms, created_ms, updated_ms, rank, origin, manual_status, session_state, badge, profile, title_source, urgent, important, parent_id, depends_on, inherit_branch, quorum, votes";
 
 pub const TITLE_USER: &str = "user";
 pub const TITLE_AUTO: &str = "auto";
@@ -53,6 +53,8 @@ pub struct Task {
     pub parent_id: Option<String>,
     pub depends_on: Vec<String>,
     pub inherit_branch: Option<bool>,
+    pub quorum: Option<Value>,
+    pub votes: Option<Value>,
 }
 
 fn row(r: &Row) -> rusqlite::Result<Task> {
@@ -94,7 +96,14 @@ fn row(r: &Row) -> rusqlite::Result<Task> {
             .and_then(|s| serde_json::from_str(&s).ok())
             .unwrap_or_default(),
         inherit_branch: r.get(30)?,
+        quorum: json_col(r, 31)?,
+        votes: json_col(r, 32)?,
     })
+}
+
+fn json_col(r: &Row, i: usize) -> rusqlite::Result<Option<Value>> {
+    Ok(r.get::<_, Option<String>>(i)?
+        .and_then(|s| serde_json::from_str(&s).ok()))
 }
 
 impl Task {
@@ -135,6 +144,12 @@ impl Task {
         }
         if let Some(x) = &self.parent_id {
             v["parentId"] = json!(x);
+        }
+        if let Some(q) = &self.quorum {
+            v["quorum"] = q.clone();
+        }
+        if let Some(x) = &self.votes {
+            v["votes"] = x.clone();
         }
         if let Some(b) = &self.badge {
             v["badges"] = json!([b]);
@@ -197,7 +212,7 @@ pub(crate) fn store(reg: &Registry, t: &mut Task, station: &str) -> Res<()> {
            ticket_key = ?8, line_id = ?9, term_id = ?10, branch = ?11, worktree_path = ?12, progress = ?13,
            error = ?14, started_ms = ?15, updated_ms = ?16, rank = ?17, manual_status = ?18,
            session_state = ?19, badge = ?20, profile = ?21, title_source = ?22, urgent = ?23, important = ?24,
-           depends_on = ?25, inherit_branch = ?26 WHERE id = ?1",
+           depends_on = ?25, inherit_branch = ?26, quorum = ?27, votes = ?28 WHERE id = ?1",
         params![
             t.id,
             t.title,
@@ -225,6 +240,8 @@ pub(crate) fn store(reg: &Registry, t: &mut Task, station: &str) -> Res<()> {
             t.important,
             deps_json(&t.depends_on),
             t.inherit_branch,
+            t.quorum.as_ref().map(Value::to_string),
+            t.votes.as_ref().map(Value::to_string),
         ],
     ))?;
     publish("task.updated", json!({"task": t.to_json(station)}));
@@ -432,8 +449,32 @@ pub fn create(ctx: &Ctx, b: &Value) -> Res<Task> {
         .ok_or_else(|| bad("project required"))?;
     let (project, _) = main_root(&mut Git::default(), path)
         .ok_or_else(|| bad(format!("{path} is not in a git repository")))?;
-    let status = pick(b, "status", &["pending", "auto"], "pending")?;
-    let agent = agent_of(b, "agent")?.unwrap_or("claude");
+    let mut status = pick(b, "status", &["pending", "auto"], "pending")?;
+    let reg = db(ctx)?;
+    let parent = match &b["parentId"] {
+        Value::Null => None,
+        Value::String(p) => {
+            let parent = get(&reg, p).map_err(|_| bad(format!("parentId {p} is not a task")))?;
+            if crate::task_agents::is_organizer(&parent) {
+                return Err(bad("the organizer may not create tasks"));
+            }
+            Some(parent)
+        }
+        _ => return Err(bad("parentId must be a string or null")),
+    };
+    let asked = agent_of(b, "agent")?;
+    let agent = match &parent {
+        Some(p) => crate::quorum::child_agent(p, asked)?,
+        None => asked,
+    }
+    .unwrap_or("claude");
+    let quorum = crate::quorum::parse(&b["quorum"], agent)?;
+    if quorum.is_some() && parent.is_some() {
+        return Err(bad("a subtask cannot run a quorum"));
+    }
+    if parent.as_ref().is_some_and(|p| p.quorum.is_some()) {
+        status = "auto";
+    }
     let profile = profile_of(ctx, &b["profile"])?;
     let profiled = {
         let s = crate::profiles::load(&ctx.state_dir);
@@ -451,18 +492,7 @@ pub fn create(ctx: &Ctx, b: &Value) -> Res<Task> {
         _ => return Err(bad("model must be a string")),
     };
     let origin = pick(b, "origin", &["user", "agent"], "user")?;
-    let reg = db(ctx)?;
-    let parent_id = match &b["parentId"] {
-        Value::Null => None,
-        Value::String(p) => {
-            let parent = get(&reg, p).map_err(|_| bad(format!("parentId {p} is not a task")))?;
-            if crate::task_agents::is_organizer(&parent) {
-                return Err(bad("the organizer may not create tasks"));
-            }
-            Some(p.clone())
-        }
-        _ => return Err(bad("parentId must be a string or null")),
-    };
+    let parent_id = parent.map(|p| p.id);
     let depends_on = deps_of(&reg, "", &project, &b["dependsOn"])?;
     let now = crate::procs::now_ms();
     let mut t = Task {
@@ -482,6 +512,7 @@ pub fn create(ctx: &Ctx, b: &Value) -> Res<Task> {
         parent_id,
         depends_on,
         inherit_branch: flag_of("inheritBranch", &b["inheritBranch"])?,
+        quorum,
         created_ms: now,
         updated_ms: now,
         rank: match &b["rank"] {
@@ -518,8 +549,8 @@ pub(crate) fn insert(reg: &Registry, t: &mut Task, station: &str) -> Res<bool> {
     ))?;
     let n = sql(tx.execute(
         "INSERT INTO tasks (id, number, title, description, project, status, agent, model, effort, ticket_key,
-           line_id, branch, worktree_path, progress, created_ms, updated_ms, rank, origin, session_state, badge, profile, title_source, urgent, important, parent_id, depends_on, inherit_branch)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27)
+           line_id, branch, worktree_path, progress, created_ms, updated_ms, rank, origin, session_state, badge, profile, title_source, urgent, important, parent_id, depends_on, inherit_branch, quorum, votes)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29)
          ON CONFLICT DO NOTHING",
         params![
             t.id,
@@ -549,6 +580,8 @@ pub(crate) fn insert(reg: &Registry, t: &mut Task, station: &str) -> Res<bool> {
             t.parent_id,
             deps_json(&t.depends_on),
             t.inherit_branch,
+            t.quorum.as_ref().map(Value::to_string),
+            t.votes.as_ref().map(Value::to_string),
         ],
     ))?;
     if n == 0 {
@@ -642,8 +675,20 @@ pub fn patch(ctx: &Ctx, id: &str, b: &Value) -> Res<Task> {
             "profile" => t.profile = profile_of(ctx, v)?,
             "ticketKey" => t.ticket_key = ticket_of(v)?,
             "progress" => t.progress = progress(v)?,
+            "quorum" => {
+                if !matches!(was.as_str(), "pending" | "auto") {
+                    return Err((
+                        409,
+                        "the quorum can only change before the task starts".into(),
+                    ));
+                }
+                t.quorum = crate::quorum::parse(v, &effort_agent)?;
+            }
             _ => {}
         }
+    }
+    if t.quorum.is_some() {
+        crate::quorum::check_orchestrator(&t.agent)?;
     }
     leave_merged(&mut t, &was);
     if t.status == "completed" && was != "completed" {
@@ -652,6 +697,7 @@ pub fn patch(ctx: &Ctx, id: &str, b: &Value) -> Res<Task> {
     save(ctx, &reg, &mut t)?;
     if t.status == "in_testing" && was != "in_testing" {
         crate::task_agents::spawn_overlap_alert(ctx, &t);
+        crate::quorum::on_ready(ctx, &t);
     }
     Ok(t)
 }
@@ -899,6 +945,8 @@ pub(crate) fn start_with_args(
     let auto_approve = crate::agents::auto_approve_enabled(&reg, agent.id).map_err(|e| (500, e))?;
     let wt = if here {
         in_place(&mut t)
+    } else if let Some(cwd) = crate::quorum::reviewer_cwd(&reg, &t) {
+        cwd
     } else {
         worktree(ctx, &reg, &mut t)?
     };
@@ -911,6 +959,10 @@ pub(crate) fn start_with_args(
     let mut prompt = format!("{}\n\n{}", t.title, t.description)
         .trim()
         .to_string();
+    if let Some(q) = &t.quorum {
+        prompt.push_str("\n\n");
+        prompt.push_str(&crate::quorum::orchestrator_prompt(q));
+    }
     if !waiting.is_empty() {
         prompt.push_str("\n\nMessages received before you started:\n");
         prompt.push_str(&crate::task_agents::backlog(&waiting));
@@ -1166,11 +1218,8 @@ pub fn tick(ctx: &Ctx, lines: &[Line]) {
             ),
             _ => None,
         };
-        let done = if crate::task_agents::is_organizer(&t) {
-            "completed"
-        } else {
-            "in_testing"
-        };
+        let one_shot = crate::task_agents::is_organizer(&t) || crate::quorum::is_reviewer(&t);
+        let done = if one_shot { "completed" } else { "in_testing" };
         if let Some(err) = ended {
             t.status = done.into();
             t.error = err;
@@ -1184,8 +1233,12 @@ pub fn tick(ctx: &Ctx, lines: &[Line]) {
             let _ = save(ctx, &reg, &mut t);
             if t.status == "in_testing" {
                 crate::task_agents::spawn_overlap_alert(ctx, &t);
+                crate::quorum::on_ready(ctx, &t);
             }
-            if turn && crate::task_agents::is_organizer(&t) {
+            if t.status == "completed" {
+                crate::quorum::reviewer_ended(ctx, &reg, &t);
+            }
+            if turn && one_shot {
                 if let Some(x) = term.as_ref().filter(|x| !x.exited()) {
                     let _ = x.kill();
                 }
@@ -1225,6 +1278,7 @@ pub fn tick(ctx: &Ctx, lines: &[Line]) {
             .filter(|t| {
                 t.status == "in_progress"
                     && !crate::task_agents::is_organizer(t)
+                    && t.quorum.is_none()
                     && t.live_term().is_some()
             })
             .count();

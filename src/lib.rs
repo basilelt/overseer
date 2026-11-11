@@ -37,6 +37,7 @@ pub mod power;
 pub mod procs;
 pub mod profiles;
 pub mod proxy;
+pub mod quorum;
 pub mod registry;
 pub mod remote;
 pub mod review;

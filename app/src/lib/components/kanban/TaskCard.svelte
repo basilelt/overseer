@@ -5,6 +5,7 @@
 </script>
 
 <script lang="ts">
+  import QuorumChips from './QuorumChips.svelte';
   import GitBranch from '@lucide/svelte/icons/git-branch';
   import FolderGit from '@lucide/svelte/icons/folder-git';
   import LoaderCircle from '@lucide/svelte/icons/loader-circle';
@@ -175,6 +176,7 @@
       {#if task.origin === 'agent'}
         <span class="by" title={parent ? t('kanban.byTaskTitle', { n: parent.number }) : t('task.createdByAgent')}><svg class="i" width="11" height="11" aria-hidden="true"><use href="#sbi-bot" /></svg>{#if parent}{t('kanban.byTask', { n: parent.number })}{/if}</span>
       {/if}
+      <QuorumChips {task} />
       {#if showStatus}<span class="stat {task.status}">{t(`kanban.col.${task.status}` as Key)}</span>{/if}
     </div>
     {#if editing}

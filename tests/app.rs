@@ -1407,7 +1407,7 @@ fn mcp_server_talks_to_the_daemon() {
         .collect();
     assert_eq!(replies.len(), 6, "{replies:?}");
     assert_eq!(replies[0]["result"]["protocolVersion"], "2025-06-18");
-    assert_eq!(replies[1]["result"]["tools"].as_array().unwrap().len(), 18);
+    assert_eq!(replies[1]["result"]["tools"].as_array().unwrap().len(), 19);
     let child = &replies[2]["result"]["structuredContent"];
     assert_eq!(child["status"], "pending");
     assert_eq!(child["origin"], "agent");
