@@ -1369,20 +1369,45 @@ impl Cache {
     }
 }
 
+// Lets tests pause a cold parse and see who waits on it, instead of racing a slow file.
 #[cfg(test)]
-fn cold_counts() -> &'static Mutex<HashMap<PathBuf, usize>> {
-    static C: OnceLock<Mutex<HashMap<PathBuf, usize>>> = OnceLock::new();
-    C.get_or_init(Default::default)
+#[derive(Default)]
+struct Probe {
+    parses: HashMap<PathBuf, usize>,
+    waits: HashMap<PathBuf, usize>,
+    held: HashSet<PathBuf>,
+}
+
+#[cfg(test)]
+fn probe() -> &'static (Mutex<Probe>, Condvar) {
+    static P: OnceLock<(Mutex<Probe>, Condvar)> = OnceLock::new();
+    P.get_or_init(Default::default)
+}
+
+#[cfg(test)]
+fn probe_lock() -> MutexGuard<'static, Probe> {
+    probe().0.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+#[cfg(test)]
+fn probe_wait(path: &Path) {
+    *probe_lock().waits.entry(path.to_path_buf()).or_default() += 1;
+    probe().1.notify_all();
+}
+
+#[cfg(test)]
+fn probe_parse(path: &Path) {
+    let mut p = probe_lock();
+    *p.parses.entry(path.to_path_buf()).or_default() += 1;
+    probe().1.notify_all();
+    while p.held.contains(path) {
+        p = probe().1.wait(p).unwrap_or_else(|e| e.into_inner());
+    }
 }
 
 #[cfg(test)]
 fn cold_parses(path: &Path) -> usize {
-    cold_counts()
-        .lock()
-        .unwrap()
-        .get(path)
-        .copied()
-        .unwrap_or(0)
+    probe_lock().parses.get(path).copied().unwrap_or(0)
 }
 
 fn slots() -> &'static Mutex<Cache> {
@@ -1628,6 +1653,8 @@ pub fn page(agent: &str, path: &Path, q: Query) -> Option<Value> {
     }
     let mut g = lock();
     while g.loading.contains(path) {
+        #[cfg(test)]
+        probe_wait(path);
         g = parsed().wait(g).unwrap_or_else(|e| e.into_inner());
     }
     let fresh = !g.chats.contains_key(path);
@@ -1639,13 +1666,7 @@ pub fn page(agent: &str, path: &Path, q: Query) -> Option<Value> {
     // A cold transcript can take seconds to parse: do it outside the lock so other chats stay served.
     let loaded = if fresh {
         #[cfg(test)]
-        {
-            *cold_counts()
-                .lock()
-                .unwrap()
-                .entry(path.to_path_buf())
-                .or_default() += 1;
-        }
+        probe_parse(path);
         let mut c = Chat::new(agent, path);
         c.live = q.live;
         refresh(&mut c, path)?;
@@ -2766,52 +2787,42 @@ mod tests {
         std::fs::remove_dir_all(&d).unwrap();
     }
 
-    // Given a cold transcript whose read blocks (a FIFO), opened by two callers at once
-    // When the parse is still running for the first one
-    // Then the second waits for it instead of starting its own full parse, and the watcher stays quiet
-    #[cfg(unix)]
+    fn probe_until(what: &str, done: impl Fn(&Probe) -> bool) {
+        let timed_out = probe()
+            .1
+            .wait_timeout_while(probe_lock(), std::time::Duration::from_secs(10), |p| {
+                !done(p)
+            })
+            .unwrap()
+            .1
+            .timed_out();
+        assert!(!timed_out, "timed out waiting for {what}");
+    }
+
+    // Given a cold transcript, opened by two callers while its parse is still running
+    // When the second caller arrives during the first one's parse
+    // Then it waits for that parse instead of starting its own, and the watcher stays quiet
     #[test]
     fn concurrent_cold_pages_parse_once() {
-        use std::ffi::CString;
-        use std::os::unix::ffi::OsStrExt;
-        use std::os::unix::fs::OpenOptionsExt;
-        use std::sync::atomic::{AtomicBool, Ordering};
-        use std::sync::Arc;
-        use std::time::Duration;
         let d = tmp("twice");
         let slow = d.join("slow.json");
-        let path = CString::new(slow.as_os_str().as_bytes()).unwrap();
-        assert_eq!(unsafe { libc::mkfifo(path.as_ptr(), 0o600) }, 0);
+        std::fs::write(&slow, br#"{"messages": []}"#).unwrap();
         slots().lock().unwrap().dropped.insert(slow.clone());
+        probe_lock().held.insert(slow.clone());
         let s = slow.clone();
         let a = std::thread::spawn(move || page("gemini", &s, tail()));
-        std::thread::sleep(Duration::from_millis(150));
+        probe_until("the first cold parse", |p| p.parses.contains_key(&slow));
         let s = slow.clone();
         let b = std::thread::spawn(move || page("gemini", &s, tail()));
-        std::thread::sleep(Duration::from_millis(150));
+        probe_until("the second caller to wait", |p| p.waits.contains_key(&slow));
         assert_eq!(
             changed(&slow),
             None,
             "the watcher announced a chat being loaded"
         );
-        // Feeds every reader that opens the FIFO, without blocking when none is there.
-        let stop = Arc::new(AtomicBool::new(false));
-        let (w, halt) = (slow.clone(), stop.clone());
-        let feeder = std::thread::spawn(move || {
-            while !halt.load(Ordering::Relaxed) {
-                if let Ok(mut f) = std::fs::OpenOptions::new()
-                    .write(true)
-                    .custom_flags(libc::O_NONBLOCK)
-                    .open(&w)
-                {
-                    let _ = f.write_all(br#"{"messages": []}"#);
-                }
-                std::thread::sleep(Duration::from_millis(20));
-            }
-        });
+        probe_lock().held.remove(&slow);
+        probe().1.notify_all();
         let (ra, rb) = (a.join().unwrap(), b.join().unwrap());
-        stop.store(true, Ordering::Relaxed);
-        feeder.join().unwrap();
         assert!(ra.is_some() && rb.is_some());
         assert_eq!(cold_parses(&slow), 1);
         std::fs::remove_dir_all(&d).unwrap();

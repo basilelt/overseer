@@ -169,6 +169,9 @@ on a TCP port on the server.
   Caveman (terse replies) or Ponytail (simplest code that works) for Claude Code, Codex, Gemini CLI,
   opencode, Copilot CLI, Cursor Agent, Amp, Antigravity or Mistral Vibe, from Settings → Agents or the command
   palette. The install runs in a terminal you can watch.
+- **Agents stay in their project**: task agents message each other only within the same
+  project, so they coordinate on shared files without spending tokens on unrelated repositories.
+  Settings → Defaults → Agents message each other turns their messages off entirely.
 - **Usage and system monitor**: agent quotas, token usage, CPU and RAM in the title bar.
 - **Keep agents running with the lid closed**: an opt-in switch (Settings → Connection) stops the
   laptop running Overseer from sleeping when you close it, on Linux, macOS and Windows, so agents

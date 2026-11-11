@@ -44,6 +44,10 @@ export function ordered(agents: AgentInfo[]): AgentInfo[] {
   return [...agents.filter((a) => a.installed), ...agents.filter((a) => !a.installed)];
 }
 
+export function splitInstalled(agents: AgentInfo[]): { installed: AgentInfo[]; missing: AgentInfo[] } {
+  return { installed: agents.filter((a) => a.installed), missing: agents.filter((a) => !a.installed) };
+}
+
 export function taskAgents(agents: AgentInfo[]): AgentInfo[] {
   return ordered(agents.filter((a) => a.id !== 'shell'));
 }

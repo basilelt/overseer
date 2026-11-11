@@ -683,6 +683,7 @@ export class MockDaemon implements DaemonClient {
   terms: Term[];
   tasks: Task[];
   autoOrganize = false;
+  agentMessaging = true;
   lidPower = { enabled: false, active: false, supported: true, error: null as string | null };
   autoApprove: Record<string, boolean> = Object.fromEntries(Object.keys(AUTO_APPROVE_ARGS).map((id) => [id, true]));
   messages: TaskMessage[];
@@ -854,6 +855,12 @@ export class MockDaemon implements DaemonClient {
     if (method === 'PUT' && path === '/v1/tasks/auto-organize') {
       this.autoOrganize = body?.enabled === true;
       return { enabled: this.autoOrganize };
+    }
+    if (method === 'GET' && path === '/v1/tasks/agent-messaging') return { enabled: this.agentMessaging };
+    if (method === 'PUT' && path === '/v1/tasks/agent-messaging') {
+      if (typeof body?.enabled !== 'boolean') throw new DaemonError(400, 'enabled must be a boolean');
+      this.agentMessaging = body.enabled;
+      return { enabled: this.agentMessaging };
     }
     if (method === 'POST' && path === '/v1/tasks/organize') return this.organize(body);
     if (path.startsWith('/v1/organize/')) return this.organizeRoute(method, path, body);
@@ -1670,6 +1677,8 @@ export class MockDaemon implements DaemonClient {
     const text = String(body?.body ?? '').trim();
     if (!text || text.length > 8000) throw new DaemonError(400, 'body must be 1 to 8000 characters');
     const sender = body?.from ? this.findTask(body.from) : null;
+    if (sender && sender.project !== t.project) throw new DaemonError(403, `task ${t.id} belongs to another project (${t.project}): agents may only message tasks of their own project. Do not retry.`);
+    if (sender && !this.agentMessaging && sender.parentId !== t.id && t.parentId !== sender.id) throw new DaemonError(403, "messages between agents are turned off in Overseer's settings. Do not retry; carry on without them.");
     const live = t.status === 'in_progress' && !!t.termId;
     const m: TaskMessage = {
       id: `msg_${Math.random().toString(36).slice(2, 8)}`,

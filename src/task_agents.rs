@@ -154,9 +154,43 @@ pub fn send_message(ctx: &Ctx, id: &str, b: &Value) -> Res<Message> {
     };
     let reg = db(ctx)?;
     if let Some(f) = &from {
-        tasks::get(&reg, f).map_err(|_| bad(format!("from {f} is not a task")))?;
+        let sender = tasks::get(&reg, f).map_err(|_| bad(format!("from {f} is not a task")))?;
+        allow_agent_message(&reg, &sender, &tasks::get(&reg, id)?)?;
     }
     post(&reg, id, from, body)
+}
+
+const AGENT_MESSAGING_KEY: &str = "agentMessaging";
+
+pub fn agent_messaging_enabled(reg: &Registry) -> bool {
+    !matches!(reg.get(AGENT_MESSAGING_KEY), Ok(Some(v)) if v == "false")
+}
+
+pub fn set_agent_messaging(reg: &Registry, on: bool) -> Result<(), String> {
+    reg.put(AGENT_MESSAGING_KEY, if on { "true" } else { "false" })
+}
+
+fn parent_and_child(a: &Task, b: &Task) -> bool {
+    a.parent_id.as_deref() == Some(b.id.as_str()) || b.parent_id.as_deref() == Some(a.id.as_str())
+}
+
+pub fn allow_agent_message(reg: &Registry, from: &Task, to: &Task) -> Res<()> {
+    if from.project != to.project {
+        return Err((
+            403,
+            format!(
+                "task {} belongs to another project ({}): agents may only message tasks of their own project. Do not retry.",
+                to.id, to.project
+            ),
+        ));
+    }
+    if !agent_messaging_enabled(reg) && !parent_and_child(from, to) {
+        return Err((
+            403,
+            "messages between agents are turned off in Overseer's settings. Do not retry; carry on without them.".into(),
+        ));
+    }
+    Ok(())
 }
 
 fn post(reg: &Registry, id: &str, from: Option<String>, body: &str) -> Res<Message> {
@@ -307,6 +341,9 @@ pub fn overlap_changed(stored: Option<&str>, files: &[String]) -> Option<String>
 }
 
 fn alert_overlaps(reg: &Registry, id: &str) -> Res<()> {
+    if !agent_messaging_enabled(reg) {
+        return Ok(());
+    }
     let me = tasks::get(reg, id)?;
     for o in overlaps_in(reg, id)? {
         let files: Vec<String> = o["files"]
@@ -356,11 +393,16 @@ pub fn spawn_overlap_alert(ctx: &Ctx, t: &Task) {
     });
 }
 
-pub fn organizer_prompt(project: &str) -> String {
+pub fn organizer_prompt(project: &str, messaging: bool) -> String {
     let name = Path::new(project)
         .file_name()
         .map(|n| n.to_string_lossy().into_owned())
         .unwrap_or_else(|| project.to_string());
+    let point_out = if messaging {
+        "Point out duplicate or overlapping tasks with send_message to the agents of the tasks concerned when they are in_progress. "
+    } else {
+        ""
+    };
     format!(
         "You are the Overseer board organizer for the project {name} ({project}).\n\
 Call list_tasks (project {project}, status pending,auto,in_progress,in_testing). \
@@ -368,8 +410,7 @@ Classify every task whose origin is not organizer with prioritize_task (urgent, 
 urgent and important = do, important only = plan, urgent only = delegate, neither = drop. \
 Also set rank so that within a status column do comes before plan, plan before delegate, delegate before drop, \
 keeping the current relative order inside a quadrant (ranks are floats, lower first). \
-Point out duplicate or overlapping tasks with send_message to the agents of the tasks concerned when they are in_progress. \
-Never edit files, never create tasks, never start tasks. Finish with a one-line summary."
+{point_out}Never edit files, never create tasks, never start tasks. Finish with a one-line summary."
     )
 }
 
@@ -434,7 +475,7 @@ fn organize_one(ctx: &Ctx, reg: &Registry, project: &str) -> Res<Task> {
     let mut t = Task {
         id: ulid(now),
         title: "Organize board".into(),
-        description: organizer_prompt(project),
+        description: organizer_prompt(project, agent_messaging_enabled(reg)),
         project: project.into(),
         status: "pending".into(),
         agent: "claude".into(),
@@ -791,6 +832,54 @@ mod tests {
         assert_eq!(organizable(&ts, None), ["/p", "/t"]);
         assert_eq!(organizable(&ts, Some("/t")), ["/t"]);
         assert!(organizable(&ts, Some("/q")).is_empty());
-        assert!(organizer_prompt("/home/u/repo").contains("repo (/home/u/repo)"));
+        assert!(organizer_prompt("/home/u/repo", true).contains("repo (/home/u/repo)"));
+    }
+
+    #[test]
+    fn organizer_is_told_to_message_agents_only_when_messaging_is_on() {
+        assert!(organizer_prompt("/p", true).contains("send_message"));
+        assert!(!organizer_prompt("/p", false).contains("send_message"));
+    }
+
+    #[test]
+    fn agent_messaging_is_on_by_default_and_roundtrips() {
+        let r = reg("messaging-flag");
+        assert!(agent_messaging_enabled(&r));
+        set_agent_messaging(&r, false).unwrap();
+        assert!(!agent_messaging_enabled(&r));
+        set_agent_messaging(&r, true).unwrap();
+        assert!(agent_messaging_enabled(&r));
+    }
+
+    #[test]
+    fn agents_message_only_inside_their_project() {
+        let r = reg("messaging-project");
+        let (a, b) = (
+            task("A", "/p", "in_progress", None, 1),
+            task("B", "/p", "in_progress", None, 2),
+        );
+        let far = task("C", "/q", "in_progress", None, 3);
+        assert!(allow_agent_message(&r, &a, &b).is_ok());
+        let (code, e) = allow_agent_message(&r, &a, &far).unwrap_err();
+        assert_eq!(code, 403);
+        assert!(e.contains("another project (/q)"), "{e}");
+    }
+
+    #[test]
+    fn messaging_off_refuses_agents_but_keeps_parent_and_subtask_talking() {
+        let r = reg("messaging-off");
+        set_agent_messaging(&r, false).unwrap();
+        let root = task("R", "/p", "in_progress", None, 1);
+        let mut sub = task("S", "/p", "in_progress", None, 2);
+        sub.parent_id = Some("R".into());
+        let other = task("O", "/p", "in_progress", None, 3);
+        let (code, e) = allow_agent_message(&r, &root, &other).unwrap_err();
+        assert_eq!(code, 403);
+        assert!(e.contains("turned off"), "{e}");
+        assert!(allow_agent_message(&r, &root, &sub).is_ok());
+        assert!(allow_agent_message(&r, &sub, &root).is_ok());
+        let mut far_sub = sub.clone();
+        far_sub.project = "/q".into();
+        assert!(allow_agent_message(&r, &root, &far_sub).is_err());
     }
 }

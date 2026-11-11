@@ -1,13 +1,17 @@
 <script lang="ts">
   import Check from '@lucide/svelte/icons/check';
-  import type { MenuItem } from '../../menu';
+  import ChevronRight from '@lucide/svelte/icons/chevron-right';
+  import { menuRows, type MenuItem } from '../../menu';
   import AgentGlyph from './AgentGlyph.svelte';
   import { ui } from '../../mobile/ui.svelte';
+  import { untrack } from 'svelte';
 
   let { items, x, y, label, onclose }: { items: MenuItem[]; x: number; y: number; label: string; onclose: () => void } = $props();
 
   let menu: HTMLDivElement | undefined = $state();
   let pos = $state({ left: 0, top: 0 });
+  let expanded = $state(new Set<number>());
+  const rows = $derived(menuRows(items, expanded));
 
   $effect(() => {
     if (!menu) return;
@@ -15,6 +19,18 @@
     pos = { left: Math.max(4, Math.min(x, innerWidth - r.width - 8)), top: Math.max(4, Math.min(y, innerHeight - r.height - 8)) };
     (menu.querySelector<HTMLElement>('button[data-default]:not([disabled])') ?? menu.querySelector<HTMLElement>('button:not([disabled])'))?.focus();
   });
+
+  $effect(() => {
+    if (!menu || !expanded.size) return;
+    const r = menu.getBoundingClientRect();
+    untrack(() => (pos = { left: pos.left, top: Math.max(4, Math.min(pos.top, innerHeight - r.height - 8)) }));
+  });
+
+  function toggle(index: number) {
+    const next = new Set(expanded);
+    if (!next.delete(index)) next.add(index);
+    expanded = next;
+  }
 
   function pick(it: MenuItem) {
     onclose();
@@ -38,11 +54,16 @@
 {#if ui.layout === 'phone'}<div class="scrim" role="presentation"></div>{/if}
 <div class="menu" role="menu" tabindex="-1" aria-label={label} bind:this={menu} style:left="{pos.left}px" style:top="{pos.top}px" onkeydown={onKey}>
   {#if ui.layout === 'phone' && label}<div class="sheet-title">{label}</div>{/if}
-  {#each items as it, i (i)}
+  {#each rows as { item: it, index, child }, i (i)}
     {#if it.separator}
       <hr />
+    {:else if it.more && !child}
+      <button role="menuitem" class="more" aria-expanded={expanded.has(index)} onclick={() => toggle(index)}>
+        <span class="ic chev" class:open={expanded.has(index)}><ChevronRight size={13} /></span>
+        <span class="label">{it.label}</span>
+      </button>
     {:else}
-      <button role="menuitem" class:danger={it.danger} disabled={it.disabled} data-default={it.default || undefined} title={it.hint} onclick={() => pick(it)}>
+      <button role="menuitem" class:child class:danger={it.danger} disabled={it.disabled} data-default={it.default || undefined} title={it.hint} onclick={() => pick(it)}>
         <span class="ic">
           {#if it.agent}<AgentGlyph agent={it.agent} size={13} />{:else if it.icon}<it.icon size={13} />{:else if it.checked}<Check size={13} />{/if}
         </span>
@@ -87,6 +108,18 @@
   }
   .danger {
     color: var(--st-failed);
+  }
+  .more {
+    color: var(--text-2);
+  }
+  .chev {
+    transition: transform 120ms;
+  }
+  .chev.open {
+    transform: rotate(90deg);
+  }
+  .child {
+    padding-left: 20px;
   }
   .ic {
     width: 16px;
