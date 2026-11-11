@@ -24,9 +24,16 @@ describe('TaskCosts', () => {
     const h = await rendered([task('a', { profile: 'eco', cost: cost(2) }), task('b', { profile: 'eco', cost: cost(4) }), task('c', { cost: cost(1), status: 'in_progress' })]);
     expect(h).toContain('Economy');
     expect(h).toContain('2 tasks · 2 finished');
-    expect(h).toContain('≈$3.00 per finished task');
+    expect(h).toContain('avg ≈$3.00');
+    expect(h).toContain('title="≈$3.00 per finished task"');
     expect(h).toContain('≈$6.00');
     expect(h).toContain('No profile');
+  });
+
+  it('says "1 task" for a single task', async () => {
+    const h = await rendered([task('a', { profile: 'eco', cost: cost(2), status: 'in_progress' })]);
+    expect(h).toContain('1 task · 0 finished');
+    expect(h).not.toContain('1 tasks');
   });
 
   it('says when no task has a measured cost', async () => {

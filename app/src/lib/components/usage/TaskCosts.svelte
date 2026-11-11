@@ -35,9 +35,9 @@
             <td class="name">
               {#if r.agent}<AgentGlyph agent={r.agent} size={11} />{/if}
               <span title={r.agent ? `${r.label} · ${agentName(app.agents, r.agent)}` : r.label}>{r.label}</span>
-              {#if by !== 'task'}<span class="faint small"> · {t('cost.tasks', { n: r.tasks, done: r.finished })}</span>{/if}
+              {#if by !== 'task'}<span class="faint small"> · {r.tasks === 1 ? t('cost.tasksOne', { done: r.finished }) : t('cost.tasks', { n: r.tasks, done: r.finished })}</span>{/if}
             </td>
-            <td class="num mono faint">{by === 'profile' && r.perTask != null ? t('cost.avg', { cost: formatCost(r.perTask) }) : ''}</td>
+            <td class="num avg mono faint" title={by === 'profile' && r.perTask != null ? t('cost.avg', { cost: formatCost(r.perTask) }) : undefined}>{by === 'profile' && r.perTask != null ? t('cost.avgShort', { cost: formatCost(r.perTask) }) : ''}</td>
             <td class="num mono">{formatCost(r.cost, r.partial)}</td>
           </tr>
         {/each}
@@ -103,7 +103,9 @@
     white-space: nowrap;
     width: 72px;
   }
-  .num.faint {
-    width: 150px;
+  .avg {
+    width: 96px;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 </style>
