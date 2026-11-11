@@ -119,7 +119,7 @@ Each step is **Do → Expect**. Check every screenshot for overlaps, clipped tex
 ### G. Sidebar and workspaces
 
 - **G1** Workspaces versus **By status** → the lists match the sessions. By status lists Requires attention first, then Running, Open, Paused and Closed sessions, and its count leaves plain shells out.
-- **G2** Add a workspace for a parent folder and one for a child folder, then open a shell in the child → it counts under the child, not the parent. Task sessions stay in their project's workspace, and no stray **Other sessions** group appears.
+- **G2** Add a workspace for a parent folder and one for a child folder, then open a shell in the child → it counts under the child, not the parent. In Workspaces, expand the child → the shell is listed under it, muted with a terminal icon, after its agent sessions and above the "+ N closed" line, and clicking it opens its tab; it adds nothing to the workspace's pills or count, and it leaves the list once it exits. Task sessions stay in their project's workspace, and no stray **Other sessions** group appears.
 - **G3** Groups: Cmd/Ctrl+click several sessions → Add to group → the group lists them and broadcast reaches them.
 - **G4** Drag the sidebar narrow → the mode tabs stay on one line, cut with an ellipsis. Drag it back.
 - **G5** Filter workspaces or sessions → the list narrows. Archive and restore a workspace.

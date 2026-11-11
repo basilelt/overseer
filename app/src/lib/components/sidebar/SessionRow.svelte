@@ -1,4 +1,5 @@
 <script lang="ts">
+  import SquareTerminal from '@lucide/svelte/icons/square-terminal';
   import type { SidebarItem } from '../../grouping';
   import { t } from '../../i18n.svelte';
   import { age } from '../../time';
@@ -27,11 +28,13 @@
   } = $props();
 
   const label = $derived(t(`session.state.${item.state}`));
+  const shell = $derived(item.kind === 'shell');
 </script>
 
-<button class="row" type="button" data-key={item.key} class:multi aria-current={selected ? 'true' : undefined} onclick={(e) => onselect(e)} oncontextmenu={(e) => onmenu && (e.preventDefault(), onmenu(e))} {onpointerdown}>
+<button class="row" type="button" data-key={item.key} class:multi class:shell aria-current={selected ? 'true' : undefined} onclick={(e) => onselect(e)} oncontextmenu={(e) => onmenu && (e.preventDefault(), onmenu(e))} {onpointerdown}>
   <span class="sr-only">{label}</span>
-  <span class="dot" data-state={item.state} data-hollow={item.state === 'closed' ? '' : undefined} style:--c="var(--state-{item.state})" aria-hidden="true">{item.state === 'paused' ? '❙❙' : ''}</span>
+  {#if shell}<span class="icon" aria-hidden="true"><SquareTerminal size={12} /></span>
+  {:else}<span class="dot" data-state={item.state} data-hollow={item.state === 'closed' ? '' : undefined} style:--c="var(--state-{item.state})" aria-hidden="true">{item.state === 'paused' ? '❙❙' : ''}</span>{/if}
   <span class="title">{item.title}</span>
   {#if item.status}<span class="action">{item.status}</span>{/if}
   <span class="age">{age(item.at, now)}</span>
@@ -65,6 +68,17 @@
     background: color-mix(in srgb, var(--accent) 25%, var(--session-row-bg));
     outline: 1px solid var(--accent);
     outline-offset: -1px;
+  }
+  .shell {
+    height: 24px;
+    background: none;
+    color: var(--text-2);
+  }
+  .icon {
+    flex: none;
+    display: inline-grid;
+    margin: 0 -2px;
+    color: var(--text-2);
   }
   .dot {
     flex: none;
@@ -108,6 +122,9 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+  .row.shell .title {
+    font-weight: 400;
   }
   .title:not(:has(+ .action)) {
     flex: 1;
