@@ -56,8 +56,9 @@ export function moveTabTo(key: string, to: string): () => void {
 export function moveMenu(app: App, key: string): MenuItem[] {
   const tree = buildTree(app.ws, { filter: () => true });
   const current = app.itemWs.get(key);
+  const names = new Map(app.ws.workspaces.map((w) => [w.id, w.name]));
   return [...tree.pinned, ...tree.nodes.flatMap((n) => (n.type === 'workspace' ? [n.workspace] : []))].map((w) => ({
-    label: w.name,
+    label: w.parentId && names.has(w.parentId) ? `${names.get(w.parentId)} › ${w.name}` : w.name,
     icon: FolderInput,
     checked: w.id === current,
     disabled: w.id === current,

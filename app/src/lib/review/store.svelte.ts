@@ -1,6 +1,7 @@
 import { app } from '../state.svelte';
 import type { DaemonEvent } from '../types';
 import { reviewApi, type ReviewApi } from './api';
+import { saveView, savedView } from './map.svelte';
 import { reviewCounts } from './counts.svelte';
 import * as D from './draft';
 import { keepUnchanged, type Mode } from './rows';
@@ -12,7 +13,7 @@ import { DaemonError } from '../client';
 import { Drafts } from '../drafts';
 import { inFlight, single } from '../inflight';
 import { onPresence, presence } from '../presence';
-import type { Delivery, Related, ReviewDiff, ReviewGraph, ReviewTarget, SubmitKind, Thread } from './types';
+import type { Delivery, Related, ReviewDiff, ReviewTarget, SubmitKind, Thread } from './types';
 
 const MODE_KEY = 'overseer.review.mode';
 const AUTO_KEY = 'overseer.review.autoRefresh';
@@ -61,11 +62,7 @@ export class ReviewStore {
   base = $state<string | null>(null);
   related = $state.raw<Related | null>(null);
   unfolded = $state<Record<string, number[]>>({});
-  view = $state<'list' | 'graph'>('list');
-  graph = $state.raw<ReviewGraph | null>(null);
-  graphError = $state('');
-  orderAt = $state(-1);
-  private graphFor = '';
+  view = $state<'list' | 'map'>(savedView());
 
   private off: (() => void) | null = null;
   private offPresence: (() => void) | null = null;
@@ -163,7 +160,6 @@ export class ReviewStore {
       this.live = true;
       this.stale = false;
       this.revision++;
-      this.graphSoon();
       reviewCounts.alias(this.target, diff.worktree);
       for (const path of Object.keys(this.expanded)) if (this.expanded[path].length) this.fetchLines(path, true);
       this.loadScope();
@@ -190,7 +186,6 @@ export class ReviewStore {
   async setBase(base: string | null, remember = false) {
     this.base = base;
     if (remember && !isSince(base)) saveBase(this.worktree, base);
-    this.graphFor = '';
     await this.reloadDiff();
   }
 
@@ -213,7 +208,6 @@ export class ReviewStore {
       this.missing = false;
       this.stale = false;
       this.revision++;
-      this.graphSoon();
       const paths = changed ?? Object.keys(this.fileLines);
       for (const p of paths) if (this.expanded[p]?.length) this.fetchLines(p, true);
     } catch (e) {
@@ -291,39 +285,9 @@ export class ReviewStore {
     if (!cur.includes(hunk)) this.unfolded[path] = [...cur, hunk];
   }
 
-  setView(v: 'list' | 'graph') {
+  setView(v: 'list' | 'map') {
     this.view = v;
-    this.graphSoon();
-  }
-
-  private graphSoon() {
-    const rev = this.diff?.revision;
-    if (this.view !== 'graph') {
-      if (this.graph && this.graph.revision !== rev) {
-        this.graph = null;
-        this.graphFor = '';
-        this.orderAt = -1;
-      }
-      return;
-    }
-    if (!rev || rev === this.graphFor) return;
-    this.graphFor = rev;
-    this.loadGraph(rev);
-  }
-
-  async loadGraph(rev: string) {
-    if (!app.client) return;
-    try {
-      const g = await this.api.graph(this.target, this.base ?? undefined);
-      if (this.graphFor !== rev) return;
-      if (this.graph?.revision !== g.revision) this.orderAt = -1;
-      this.graph = g;
-      this.graphError = '';
-    } catch (e) {
-      if (this.graphFor !== rev) return;
-      this.graphFor = '';
-      this.graphError = String((e as Error)?.message ?? e);
-    }
+    saveView(v);
   }
 
   setMode(m: Mode) {

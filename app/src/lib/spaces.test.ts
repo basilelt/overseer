@@ -386,3 +386,84 @@ describe('spaces filter on paths', () => {
   });
 });
 
+
+describe('spaces with nested workspaces', () => {
+  const parent = ws('p', 'endurance', { path: '/e' });
+  const onboarding = ws('n1', 'Onboarding', { path: '/e/20/onboarding', parentId: 'p', rank: 2 });
+  const os = ws('n2', 'endurance-os', { path: '/e/40/os', parentId: 'p', auto: true, rank: 1 });
+  const all = [parent, onboarding, os, ws('o', 'other', { rank: 3 })];
+
+  it('lists nested workspaces inside their parent row, never at the top level, and sums their sessions into it', () => {
+    // Given a session at the parent root and two in a nested workspace
+    const items = [it_('root', 'paused'), it_('a', 'attention'), it_('b', 'running')];
+    const wsOf = new Map([['root', 'p'], ['a', 'n1'], ['b', 'n1']]);
+    // When the spaces are built
+    const r = spaces(all, items, wsOf, '');
+    // Then the parent row holds its own session, both nested workspaces in rank order, and the totals of all three
+    expect(r.rows.map((x) => x.id)).toEqual(['p']);
+    const row = r.rows[0]!;
+    expect(row.items.map((i) => i.key)).toEqual(['root']);
+    expect(row.children!.map((c) => [c.id, c.items.length])).toEqual([['n2', 0], ['n1', 2]]);
+    expect(row.summary.total).toBe(3);
+    expect(row.summary.urgent).toBe('attention');
+    expect(r.empty.map((w) => w.id)).toEqual(['o']);
+  });
+
+  it('shows the parent block when only a nested workspace has sessions', () => {
+    const r = spaces(all, [it_('a', 'open')], new Map([['a', 'n1']]), '');
+    expect(r.rows[0]!.id).toBe('p');
+    expect(r.rows[0]!.items).toEqual([]);
+    expect(r.rows[0]!.children!.find((c) => c.id === 'n1')!.items).toHaveLength(1);
+  });
+
+  it('keeps an idle parent as a block listing its nested workspaces, so they can be started in', () => {
+    const r = spaces(all, [], new Map(), '');
+    expect(r.rows.map((x) => x.id)).toEqual(['p']);
+    expect(r.rows[0]!.children!.map((c) => c.id)).toEqual(['n2', 'n1']);
+    expect(r.rows[0]!.summary.total).toBe(0);
+    expect(r.empty.map((w) => w.id)).toEqual(['o']);
+  });
+
+  it('drops an idle parent whose name and nested workspaces miss the filter', () => {
+    const r = spaces(all, [], new Map(), 'zzz');
+    expect(r.rows).toEqual([]);
+    expect(r.empty).toEqual([]);
+  });
+
+  it('hides nested workspaces with an archived parent and sends their sessions to "other"', () => {
+    const r = spaces([{ ...parent, archived: true }, onboarding], [it_('a', 'open')], new Map([['a', 'n1']]), '');
+    expect(r.rows.map((x) => x.id)).toEqual(['']);
+  });
+
+  it('keeps on a filter only the nested workspaces that match, by name or session title', () => {
+    const items = [it_('fix kyc', 'open'), it_('image', 'open')];
+    const wsOf = new Map([['fix kyc', 'n1'], ['image', 'n2']]);
+    const byTitle = spaces(all, items, wsOf, 'kyc');
+    expect(byTitle.rows[0]!.children!.map((c) => c.id)).toEqual(['n1']);
+    const byName = spaces(all, items, wsOf, 'endurance-os');
+    expect(byName.rows[0]!.children!.map((c) => [c.id, c.items.length])).toEqual([['n2', 1]]);
+    const byParent = spaces(all, items, wsOf, 'endurance');
+    expect(byParent.rows[0]!.children!.map((c) => c.items.length)).toEqual([1, 1]);
+  });
+
+  it('builds the parent row in linear work for many nested workspaces', () => {
+    const many = Array.from({ length: 400 }, (_, i) => ws(`k${i}`, `kid ${i}`, { path: `/e/k${i}`, parentId: 'p', rank: i }));
+    const items = many.map((k) => it_(`s${k.id}`, 'open'));
+    const wsOf = new Map(many.map((k) => [`s${k.id}`, k.id]));
+    const r = spaces([parent, ...many], items, wsOf, '');
+    expect(r.rows[0]!.children).toHaveLength(400);
+    expect(r.rows[0]!.summary.total).toBe(400);
+  });
+});
+
+describe('spaceTrail of a nested workspace', () => {
+  it('reads the parent folder chain, the parent, then the nested name', () => {
+    const trail = spaceTrail({
+      workspaces: [ws('p', 'endurance', { folderId: 'c' }), ws('n', 'Onboarding PME', { parentId: 'p' }), ws('lost', 'Lost', { parentId: 'gone' })],
+      folders: [fo('c', 'Clients')],
+      groups: [],
+    });
+    expect(trail('n')).toBe('Clients › endurance › Onboarding PME');
+    expect(trail('lost')).toBe('Lost');
+  });
+});

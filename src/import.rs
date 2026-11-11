@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 const KEY: &str = "import.switchboard";
-const OLD_HOOK: &str = "#switchboard-hook";
+const OLD_HOOK: &str = install::OLD_MARKER;
 const OLD_STATUSLINE: &str = "#switchboard-statusline";
 const OLD_UNIT: &str = "switchboard-daemon.service";
 const OLD_LABEL: &str = "dev.switchboard.daemon";

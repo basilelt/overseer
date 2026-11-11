@@ -58,7 +58,6 @@ describe('ReviewStore without a daemon', () => {
     await s.load();
     await s.reloadDiff();
     await s.loadScope();
-    await s.loadGraph('r');
     expect(s.diff).toBeNull();
     expect(s.loading).toBe(false);
     expect(s.error).toBe('');
@@ -299,66 +298,21 @@ describe('ReviewStore live thread events', () => {
   });
 });
 
-describe('ReviewStore graph view', () => {
-  it('loads the graph once per diff revision and only while the graph view is shown', async () => {
-    const spy = vi.spyOn(d.review, 'route');
-    const graphCalls = () => spy.mock.calls.filter((c) => String(c[1]).startsWith('/v1/review/graph')).length;
-    const s = await loaded();
-    expect(graphCalls()).toBe(0);
-    s.setView('graph');
-    await vi.waitFor(() => expect(s.graph).not.toBeNull(), { interval: 1 });
-    expect(s.graph!.revision).toBe(s.diff!.revision);
-    await s.reloadDiff();
-    s.setView('graph');
-    expect(graphCalls()).toBe(1);
-  });
+describe('ReviewStore view', () => {
+  afterEach(() => vi.unstubAllGlobals());
 
-  it('drops a stale graph when the diff changes in the list view and resets the reading position', async () => {
-    const s = await loaded();
-    s.setView('graph');
-    await vi.waitFor(() => expect(s.graph).not.toBeNull(), { interval: 1 });
-    s.orderAt = 3;
+  it('remembers the chosen view and opens a saved graph view as the map', () => {
+    const data = new Map<string, string>();
+    vi.stubGlobal('localStorage', { getItem: (k: string) => data.get(k) ?? null, setItem: (k: string, v: string) => void data.set(k, v) });
+    const s = new ReviewStore({ worktree: MOCK_WORKTREE });
+    expect(s.view).toBe('list');
+    s.setView('map');
+    expect(localStorage.getItem('overseer.review.view')).toBe('map');
+    expect(new ReviewStore({ worktree: MOCK_WORKTREE }).view).toBe('map');
+    localStorage.setItem('overseer.review.view', 'graph');
+    expect(new ReviewStore({ worktree: MOCK_WORKTREE }).view).toBe('map');
     s.setView('list');
-    expect(s.graph).not.toBeNull();
-    s.diff = { ...s.diff!, revision: 'changed' };
-    s.setView('list');
-    expect(s.graph).toBeNull();
-    expect(s.orderAt).toBe(-1);
-  });
-
-  it('shows a graph error and retries on the next request', async () => {
-    const spy = failOn((m, p) => p.startsWith('/v1/review/graph'));
-    const s = await loaded();
-    s.setView('graph');
-    await vi.waitFor(() => expect(s.graphError).toBe('boom'), { interval: 1 });
-    expect(s.graph).toBeNull();
-    spy.mockRestore();
-    s.setView('graph');
-    await vi.waitFor(() => expect(s.graph).not.toBeNull(), { interval: 1 });
-    expect(s.graphError).toBe('');
-  });
-
-  it('discards graph answers and errors for a revision that is no longer wanted', async () => {
-    const s = await loaded();
-    const pending: { resolve: (v: unknown) => void; reject: (e: Error) => void }[] = [];
-    const request = d.request.bind(d);
-    vi.spyOn(d, 'request').mockImplementation((m: string, p: string, b?: unknown) => {
-      if (!p.startsWith('/v1/review/graph')) return request(m, p, b);
-      return new Promise((resolve, reject) => pending.push({ resolve, reject })) as never;
-    });
-    s.setView('graph');
-    s.diff = { ...s.diff!, revision: 'r2' };
-    s.setView('graph');
-    s.diff = { ...s.diff!, revision: 'r3' };
-    s.setView('graph');
-    expect(pending).toHaveLength(3);
-    pending[0].resolve({ revision: 'r1', nodes: [], edges: [], order: [], truncated: false });
-    pending[1].reject(new Error('late'));
-    await new Promise((r) => setTimeout(r, 0));
-    expect(s.graph).toBeNull();
-    expect(s.graphError).toBe('');
-    pending[2].resolve({ revision: 'r3', nodes: [], edges: [], order: [], truncated: false });
-    await vi.waitFor(() => expect(s.graph?.revision).toBe('r3'), { interval: 1 });
+    expect(new ReviewStore({ worktree: MOCK_WORKTREE }).view).toBe('list');
   });
 });
 

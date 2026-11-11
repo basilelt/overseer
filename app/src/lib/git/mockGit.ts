@@ -181,6 +181,19 @@ export class MockGit {
     return this.host.lines.filter((l) => l.line.repo === name || l.line.repo?.endsWith(`/${name}`) || (!!repo && l.line.repo === repo));
   }
 
+  hasCommit(project: string, rev: string): boolean {
+    const repo = this.repos.get(project);
+    return !!repo && (repo.bySha.has(rev) || repo.commits.some((c) => c.sha.startsWith(rev.toLowerCase())));
+  }
+
+  projectOf(wt: string): string | undefined {
+    const p = this.host.projects.find((x) => wt === x.path || wt.startsWith(`${x.path}/`));
+    if (p) return p.path;
+    for (const [root, repo] of this.repos) if (repo.worktrees.some((w) => w.path === wt)) return root;
+    const line = this.host.lines.find((l) => l.line.worktreePath === wt);
+    return line ? this.host.projects.find((x) => x.name === line.line.repo || line.line.repo?.endsWith(`/${x.name}`))?.path : undefined;
+  }
+
   repo(path: string, name: string): Repo {
     let repo = this.repos.get(path);
     if (repo) return repo;
