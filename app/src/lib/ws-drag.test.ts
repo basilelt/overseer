@@ -21,6 +21,8 @@ function setup(under: Element | null, over: Partial<DragDeps> = {}) {
     patchFolder: vi.fn(async () => {}),
     moveSession: vi.fn(async () => {}),
     refuse: vi.fn(),
+    canMove: () => true,
+    reorder: vi.fn(),
     ...over,
   } satisfies DragDeps;
   return { deps, drag: new WsDrag(deps) };
@@ -204,6 +206,61 @@ describe('WsDrag', () => {
     const { deps, drag } = setup(at({ drop: 'child', id: 'sub' }));
     drag.start(ev(0, 0), 'workspace', 'a');
     drag.move(ev(0, 30));
+    expect(drag.over).toBeNull();
+    await drag.end();
+    expect(deps.patchWorkspace).not.toHaveBeenCalled();
+  });
+
+  it('reorders the tabs when a session is dropped on the lower half of another row of its workspace', async () => {
+    // Given a session row b of workspace w under the pointer
+    const { deps, drag } = setup(at({ drop: 'session', id: 'b', zone: 'w' }));
+    // When session a of the same workspace is dragged over its upper half, then its lower half, and dropped
+    drag.start(ev(0, 0), 'session', 'a', 'w');
+    drag.move(ev(0, 20));
+    expect(drag.posOf('session', 'b')).toBe('before');
+    drag.move(ev(0, 80));
+    expect(drag.posOf('session', 'b')).toBe('after');
+    await drag.end();
+    // Then the tab of a goes after the one of b, and nothing moves to another workspace
+    expect(deps.reorder).toHaveBeenCalledWith('w', 'a', 'b', 'after');
+    expect(deps.moveSession).not.toHaveBeenCalled();
+  });
+
+  it('ignores a session row of another workspace and the dragged row itself', async () => {
+    const other = setup(at({ drop: 'session', id: 'b', zone: 'v' }));
+    other.drag.start(ev(0, 0), 'session', 'a', 'w');
+    other.drag.move(ev(0, 20));
+    expect(other.drag.over).toBeNull();
+    await other.drag.end();
+    const self = setup(at({ drop: 'session', id: 'a', zone: 'w' }));
+    self.drag.start(ev(0, 0), 'session', 'a', 'w');
+    self.drag.move(ev(0, 20));
+    expect(self.drag.over).toBeNull();
+    await self.drag.end();
+    expect(other.deps.reorder).not.toHaveBeenCalled();
+    expect(self.deps.reorder).not.toHaveBeenCalled();
+  });
+
+  it('reorders even when workspaces are not saved, but moves a session to another workspace only when it can', async () => {
+    // Given a client without persistent workspaces, and a session that cannot move
+    const rows = setup(at({ drop: 'session', id: 'b', zone: 'w' }), { persistent: () => false });
+    rows.drag.start(ev(0, 0), 'session', 'a', 'w');
+    rows.drag.move(ev(0, 20));
+    await rows.drag.end();
+    const head = setup(at({ drop: 'workspace', id: 'b' }), { canMove: () => false });
+    head.drag.start(ev(0, 0), 'session', 'a', 'w');
+    head.drag.move(ev(0, 20));
+    expect(head.drag.over).toBeNull();
+    await head.drag.end();
+    // Then the reorder happens and the move does not
+    expect(rows.deps.reorder).toHaveBeenCalledWith('w', 'a', 'b', 'before');
+    expect(head.deps.moveSession).not.toHaveBeenCalled();
+  });
+
+  it('never drops a workspace or a folder on a session row', async () => {
+    const { deps, drag } = setup(at({ drop: 'session', id: 'b', zone: 'w' }));
+    drag.start(ev(0, 0), 'workspace', 'a');
+    drag.move(ev(0, 20));
     expect(drag.over).toBeNull();
     await drag.end();
     expect(deps.patchWorkspace).not.toHaveBeenCalled();
