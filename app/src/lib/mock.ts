@@ -2398,7 +2398,7 @@ function mockHooks(): HooksStatus {
       row('gemini', 'Gemini CLI', 'hooks', false, '/home/dev/.gemini/settings.json'),
       row('opencode', 'opencode', 'plugin', true, '/home/dev/.config/opencode/plugins/overseer.js'),
       row('agy', 'Antigravity', 'polling', false, undefined, 'No stable hook file for the Antigravity CLI yet'),
-      row('vibe', 'Mistral Vibe', 'hooks', false, '/home/dev/.vibe/hooks.toml', 'Needs Mistral Vibe 3.0 or later. An interrupted turn fires no hook: it ends from terminal activity.'),
+      row('vibe', 'Mistral Vibe', 'hooks', false, '/home/dev/.vibe/hooks.toml', 'Needs Mistral Vibe 3.0 or later. An interrupted turn fires no hook: the line stays busy until the next turn ends.'),
     ],
   };
 }

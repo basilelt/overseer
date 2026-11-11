@@ -413,7 +413,7 @@ pub fn note(agent: &str) -> Option<&'static str> {
     Some(match agent {
         "codex" => CODEX_TRUST,
         "amp" => "Amp has no needs-input event: Overseer reports turn start and end only.",
-        "vibe" => "Needs Mistral Vibe 3.0 or later. An interrupted turn fires no hook: it ends from terminal activity.",
+        "vibe" => "Needs Mistral Vibe 3.0 or later. An interrupted turn fires no hook: the line stays busy until the next turn ends.",
         "cursor" => "Cursor Agent fires only some hooks in the CLI; a missing turn start falls back to terminal activity.",
         "agy" => "No stable hook file for the Antigravity CLI yet: finished turns come from terminal activity.",
         "shell" => return None,

@@ -195,6 +195,13 @@ fn a_running_vibe_session_is_a_line_with_chat_and_hook_state() {
     );
     wait(|| vibe_line(&app, sid).is_some_and(|l| l["local"]["needsInput"] == true));
 
+    let mut events = std::os::unix::net::UnixStream::connect(&app.fx.sock).unwrap();
+    events
+        .set_read_timeout(Some(std::time::Duration::from_millis(200)))
+        .unwrap();
+    events
+        .write_all(b"GET /v1/events HTTP/1.1\r\nHost: unix\r\n\r\n")
+        .unwrap();
     let rec = json!({"recovery_journal_record_version": 1, "sequence": 1, "previous_record_sha256": null,
         "record_sha256": "0".repeat(64), "type": "projection_delta",
         "payload": {"watermark": 1, "delta": [{"op": "append_entry", "entry": message("m3", "assistant", "Done.")}]}});
@@ -204,6 +211,20 @@ fn a_running_vibe_session_is_a_line_with_chat_and_hook_state() {
         .unwrap()
         .write_all(format!("{rec}\n").as_bytes())
         .unwrap();
+    let want = format!("\"lineId\":\"{line}\"");
+    let mut buf = String::new();
+    let end = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    let seen = |buf: &str, ev: &str| {
+        buf.split("\n\n")
+            .any(|e| e.contains(&format!("event: {ev}")) && e.contains(&want))
+    };
+    while !seen(&buf, "line.chat") || !seen(&buf, "line.activity") {
+        assert!(std::time::Instant::now() < end, "{buf}");
+        let mut b = [0u8; 4096];
+        if let Ok(n) = std::io::Read::read(&mut events, &mut b) {
+            buf.push_str(&String::from_utf8_lossy(&b[..n]));
+        }
+    }
     let more = wait_for(|| {
         let c = app.ok(
             "GET",
@@ -235,7 +256,7 @@ fn a_running_vibe_session_is_a_line_with_chat_and_hook_state() {
 }
 
 #[test]
-fn a_vibe_task_starts_trusted_with_its_prompt_after_the_separator() {
+fn a_vibe_task_starts_trusted_and_moves_to_review_when_its_turn_ends() {
     let app = App::new("vibe-task", json!({}));
     let wt = app.fx.wt.to_string_lossy().into_owned();
     let t = app.ok(
@@ -258,6 +279,40 @@ fn a_vibe_task_starts_trusted_with_its_prompt_after_the_separator() {
     let log = || std::fs::read_to_string(app.fx.base.join("stub.log")).unwrap_or_default();
     wait(|| log().contains("-- Fix it"));
     assert!(log().contains("vibe --trust"), "{}", log());
+
+    let wt_dir = s["worktreePath"]
+        .as_str()
+        .map(str::to_string)
+        .unwrap_or_else(|| app.task(&id)["worktreePath"].as_str().unwrap().to_string());
+    let pid = term["pid"].as_u64().unwrap();
+    let sid = "6c1f2e3d-4a5b-4c6d-9e7f-8091a2b3c4d5";
+    let home = app.fx.base.join("home");
+    store(&home, sid, &wt_dir, &[message("m1", "user", "Fix it")]);
+    let active = home.join(".vibe/logs/session/active");
+    std::fs::create_dir_all(&active).unwrap();
+    std::fs::write(
+        active.join(format!("{sid}.lock.json")),
+        json!({"lease_version": 1, "session_id": sid, "process_id": pid}).to_string(),
+    )
+    .unwrap();
+    let l = wait_for(|| vibe_line(&app, sid).filter(|l| l["local"]["termId"] == term["id"]));
+    let resume = l["local"]["resumeCommand"].as_str().unwrap();
+    assert!(
+        resume.ends_with(&format!("vibe --trust --auto-approve --resume {sid}")),
+        "{resume}"
+    );
+    assert!(
+        !resume.contains(" -- ") && !resume.contains("Fix it"),
+        "{resume}"
+    );
+    let body = |event: &str| {
+        json!({"session_id": sid, "parent_session_id": null, "cwd": wt_dir, "transcript_path": "",
+            "hook_event_name": event, "agent_name": "default"})
+    };
+    hook(&app, "pre_agent", pid, body("pre_agent"));
+    wait(|| vibe_line(&app, sid).is_some_and(|l| l["local"]["busy"] == true));
+    hook(&app, "post_agent", pid, body("post_agent"));
+    wait(|| app.task(&id)["status"] == "in_testing");
 }
 
 #[test]

@@ -11,9 +11,10 @@ content-addressed session store, hooks lost their experimental flag and were ren
 being replaced by 3 through its own update prompt.
 
 ## Decision
-- Support Vibe 3 only for sessions, chat, activity and hooks. A Vibe 2 install still launches and
-  resumes from Overseer; its sessions are not discovered and the hook file it would read has
-  other event names.
+- Support Vibe 3 only for sessions, chat, activity and hooks. A Vibe 2 install still launches from
+  Overseer, but its sessions are not discovered, so it gets no line: no chat, no resume from
+  Overseer and no restore after a daemon restart; the hook file it would read has other event
+  names.
 - Lines come from `$VIBE_HOME/logs/session/unified/<id>/meta.json` (folder, title, model, start).
   A session with a parent is listed only when `identity.kind` of its runtime state is `fork`, so
   subagents never become lines. A session is alive while `logs/session/active/<id>.lock.json`
@@ -38,5 +39,6 @@ being replaced by 3 through its own update prompt.
 - Every format was read from the 3.1.2 source; no live 3.x session was recorded, so the fixtures
   are built from the writers' models. A store format change in a later Vibe shows as no chat
   (409) rather than a wrong one.
-- An interrupted turn fires no Vibe hook; the line falls back to terminal activity.
+- An interrupted turn fires no Vibe hook: the line stays busy until the next turn ends (or the
+  session ends).
 - Usage (tokens) is not read: the store keeps only per-session totals without timestamps.

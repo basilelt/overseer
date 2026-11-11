@@ -123,7 +123,7 @@ those transitions into OS notifications: "<agent> finished in <workspace>" and
 hooks did not fire, fall back to terminal activity: in a daemon terminal, a line is busy while the
 agent keeps writing after you pressed Enter, and its turn ends after 4 s without output. Amp has no
 needs-input event; Cursor Agent fires only some hooks in the CLI; Mistral Vibe fires no hook
-when you interrupt a turn.
+when you interrupt a turn, so its line stays busy until the next turn ends.
 
 Hooks call `~/.overseer/bin/overseer`, a symlink the daemon points at its own binary on
 every start and hot upgrade, so a server upgrade never breaks them. When the daemon starts and
@@ -1095,7 +1095,8 @@ directory (Copilot resumes the exact session: the daemon gives it a session id a
 Claude, Codex and Mistral Vibe report the end of a turn (hooks): a task on another agent moves to
 `in_testing` when the agent exits or calls the MCP tool `set_task_status`.
 
-Mistral Vibe 3 sessions are read from `$VIBE_HOME/logs/session/unified/<id>/` (`meta.json` for
+Mistral Vibe 2 sessions are not read: a Vibe 2 started from Overseer runs in its terminal but gets
+no line (no chat, resume or restore); run `vibe update` to get Vibe 3. Mistral Vibe 3 sessions are read from `$VIBE_HOME/logs/session/unified/<id>/` (`meta.json` for
 the folder, title and model, the session store for the chat); a session is live while Vibe holds
 its lease in `logs/session/active/`. Forks (`/branch`) are lines of their own, subagents are not.
 Vibe has no launch flag for the model: a profile sets it with `VIBE_ACTIVE_MODEL`. A task started
