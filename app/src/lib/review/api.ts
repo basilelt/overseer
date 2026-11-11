@@ -1,5 +1,5 @@
 import type { DaemonClient } from '../client';
-import type { Bases, Branches, NewThread, Related, ReviewDiff, ReviewGraph, ReviewTarget, SubmitKind, SubmitResult, Thread } from './types';
+import type { Bases, Branches, NewThread, Related, ReviewDiff, ReviewMap, ReviewTarget, SubmitKind, SubmitResult, Thread } from './types';
 
 const enc = encodeURIComponent;
 
@@ -21,7 +21,7 @@ export function targetBody(t: ReviewTarget): ReviewTarget {
 export function reviewApi(c: DaemonClient) {
   return {
     diff: (t: ReviewTarget, base?: string) => c.request<ReviewDiff>('GET', `/v1/review?${targetQuery(t)}${base ? `&base=${enc(base)}` : ''}`),
-    graph: (t: ReviewTarget, base?: string) => c.request<ReviewGraph>('GET', `/v1/review/graph?${targetQuery(t)}${base ? `&base=${enc(base)}` : ''}`),
+    map: (t: ReviewTarget, also: string[] = []) => c.request<ReviewMap>('GET', `/v1/review/map?${targetQuery({ ...t, branch: undefined })}${also.map((w) => `&with=${enc(w)}`).join('')}`),
     file: (worktree: string, path: string, rev?: string) => c.request<{ path: string; lines: string[] }>('GET', `/v1/review/file?worktree=${enc(worktree)}&path=${enc(path)}${rev ? `&rev=${enc(rev)}` : ''}`),
     related: (t: ReviewTarget) => c.request<Related>('GET', `/v1/review/worktrees?${targetQuery({ ...t, branch: undefined })}`),
     branches: (t: ReviewTarget) => c.request<Branches>('GET', `/v1/review/branches?${targetQuery({ ...t, branch: undefined })}`),

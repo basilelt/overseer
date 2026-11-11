@@ -888,6 +888,7 @@ fn ws(path: &str) -> overseer::workspaces::Workspace {
         updated_ms: 0,
         subject: false,
         cwd: None,
+        parent_id: None,
     }
 }
 
