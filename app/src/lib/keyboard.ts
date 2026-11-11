@@ -14,7 +14,7 @@ export const isMac = typeof navigator !== 'undefined' && /mac/i.test(navigator.p
 
 export type TermAction = 'find' | 'copy' | 'paste';
 
-const GLOBAL = new Set<ShortcutId>(['palette', 'settings', 'shortcuts', 'kanban', 'toggleSidebar', 'togglePanel', 'newWorkspace', 'reconnect', 'fontUp', 'fontDown', 'fontReset', 'newWindow', 'closeWindow']);
+const GLOBAL = new Set<ShortcutId>(['palette', 'settings', 'shortcuts', 'kanban', 'toggleSidebar', 'sourceControl', 'togglePanel', 'newWorkspace', 'reconnect', 'fontUp', 'fontDown', 'fontReset', 'newWindow', 'closeWindow']);
 const WITH_OVERLAY = new Set<ShortcutId>(['palette', 'settings', 'shortcuts']);
 
 export function hint(id: ShortcutId): string {
@@ -130,6 +130,9 @@ export function runShortcut(s: Resolved) {
       return;
     case 'toggleSidebar':
       app.sidebarOpen = !app.sidebarOpen;
+      return;
+    case 'sourceControl':
+      app.toggleSourceControl();
       return;
     case 'togglePanel':
       app.panelOpen = !app.panelOpen;
