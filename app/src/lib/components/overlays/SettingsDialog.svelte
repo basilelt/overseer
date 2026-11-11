@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { lidAvailable } from '../../lid.svelte';
   import { untrack } from 'svelte';
   import X from '@lucide/svelte/icons/x';
   import Search from '@lucide/svelte/icons/search';
@@ -13,6 +14,7 @@
   import ServerSettings from './ServerSettings.svelte';
   import NotificationSettings from './NotificationSettings.svelte';
   import { adaptChoice, findAgent, hasModel, taskAgents } from '../../agents';
+  import { allState, setAll } from '../../auto-approve';
   import { localeName, locales, t, type Key } from '../../i18n.svelte';
   import { COLOR_TOKENS, saveSettings, settings, type ColorToken, type Mode, type PresetColors, type ThemePref } from '../../settings.svelte';
   import { contrastWarnings, fullColors, presetsFor, readableOn } from '../../theme-edit';
@@ -100,6 +102,7 @@
   let autoApproveLoaded = $state(false);
   let autoApproveBusy = $state<string | null>(null);
   const autoApproveAgents = $derived(app.agents.filter((agent) => Object.hasOwn(autoApprove, agent.id)));
+  const autoApproveAll = $derived(allState(autoApprove, autoApproveAgents.map((agent) => agent.id)));
 
   function setAgent(id: string) {
     const next = adaptChoice(findAgent(app.agents, id), { model: settings.defaultModel, effort: settings.defaultEffort });
@@ -213,6 +216,21 @@
     }
   }
 
+  async function setAllAutoApprove(el: HTMLInputElement) {
+    if (!autoApproveLoaded || autoApproveBusy) return;
+    autoApproveBusy = '*';
+    try {
+      autoApprove = await setAll(app.api, autoApprove, autoApproveAgents.map((agent) => agent.id), el.checked);
+    } catch (e) {
+      autoApprove = (e as { autoApprove?: Record<string, boolean> }).autoApprove ?? autoApprove;
+      app.notify(String((e as Error)?.message ?? e), 'error');
+    } finally {
+      autoApproveBusy = null;
+      el.checked = autoApproveAll === 'on';
+      el.indeterminate = autoApproveAll === 'mixed';
+    }
+  }
+
   const phoneLinks = $derived(app.mobile || ui.layout === 'phone');
   const linkValue = $derived(settings.linkTarget === 'browser' && !phoneLinks ? `browser:${settings.linkBrowser}` : settings.linkTarget === 'browser' ? 'default' : settings.linkTarget);
   $effect(() => void browsers.load(!phoneLinks));
@@ -226,6 +244,7 @@
     desktop: !phone,
     nonMac: !isMac,
     connected: app.connected,
+    localServer: lidAvailable(),
     profiles: !!app.profiles,
     hooks: !!hooks.status,
     updater: updater.enabled && !app.mobile,
@@ -485,7 +504,11 @@
           {#if row('defaults', 'autoApprove')}
             <div class="row" class:hit={hit('defaults', 'autoApprove')} data-tour="auto-approve">
               <span>{t('settings.autoApprove')}<small>{autoApproveLoaded ? t('settings.autoApproveHint') : t('settings.autoApproveConnect')}</small></span>
-              <span></span>
+              {#if autoApproveAgents.length}
+                <input type="checkbox" class="switch" aria-label={t('settings.autoApproveAll')} checked={autoApproveAll === 'on'} indeterminate={autoApproveAll === 'mixed'} disabled={!autoApproveLoaded || autoApproveBusy !== null} onchange={(e) => setAllAutoApprove(e.currentTarget)} />
+              {:else}
+                <span></span>
+              {/if}
             </div>
             {#each autoApproveAgents as agent (agent.id)}
               <label class="row" class:hit={hit('defaults', 'autoApprove')}>
@@ -603,7 +626,7 @@
 
       {#if vis('usage')}
         <section>
-          <h3>{t('settings.usage')}</h3>
+          <h3>{t('settings.usage.claude')}</h3>
           {#if row('usage', 'claudeLimits')}
             <label class="row" class:hit={hit('usage', 'claudeLimits')}>
               <span>{t('settings.fetchClaudeLimits')}<small>{t('settings.fetchClaudeLimitsHint')}</small></span>
@@ -619,6 +642,28 @@
               >
               <input type="checkbox" class="switch" checked={statusline.installed} disabled={statuslineBusy} title={statusline.path} onchange={(e) => setStatusline(e.currentTarget.checked)} />
             </label>
+          {/if}
+        </section>
+      {/if}
+
+      {#if vis('usageCodex')}
+        <section>
+          <h3>{t('settings.usage.codex')}</h3>
+          {#if row('usageCodex', 'codexLimits')}
+            <div class="row" class:hit={hit('usageCodex', 'codexLimits')}>
+              <span>{t('settings.codexLimits')}<small>{t('settings.codexLimitsHint')}</small></span>
+            </div>
+          {/if}
+        </section>
+      {/if}
+
+      {#if vis('usageGemini')}
+        <section>
+          <h3>{t('settings.usage.gemini')}</h3>
+          {#if row('usageGemini', 'geminiTokens')}
+            <div class="row" class:hit={hit('usageGemini', 'geminiTokens')}>
+              <span>{t('settings.geminiTokens')}<small>{t('settings.geminiTokensHint')}</small></span>
+            </div>
           {/if}
         </section>
       {/if}

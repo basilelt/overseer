@@ -36,6 +36,10 @@ struct State {
     last_text: Option<String>,
     last_ts: i64,
     done: HashSet<String>,
+    edit_count: HashMap<String, u32>,
+    test_fails: HashMap<String, u32>,
+    since_test: HashSet<String>,
+    test_calls: HashSet<String>,
 }
 
 type Cache = Mutex<HashMap<PathBuf, (u64, State)>>;
@@ -123,7 +127,45 @@ pub fn activity(agent: &str, path: &Path, since_ms: Option<i64>) -> Option<Value
     with_state(agent, path, |st| st.to_json(since_ms))
 }
 
-pub fn touched(agent: &str, path: &Path) -> (Vec<String>, Vec<String>) {
+pub fn is_test_run(text: &str) -> bool {
+    let t = text.to_ascii_lowercase();
+    t.split(|c: char| !c.is_ascii_alphanumeric()).any(|w| {
+        matches!(
+            w,
+            "test"
+                | "tests"
+                | "pytest"
+                | "vitest"
+                | "jest"
+                | "nextest"
+                | "rspec"
+                | "phpunit"
+                | "playwright"
+        )
+    })
+}
+
+pub fn edit_stats(agent: &str, path: &Path) -> HashMap<String, (u32, u32)> {
+    let mut out: HashMap<String, (u32, u32)> = HashMap::new();
+    for f in transcripts(path) {
+        let Some(stats) = with_state(agent, &f, |st| {
+            st.edit_count
+                .iter()
+                .map(|(p, n)| (p.clone(), (*n, st.test_fails.get(p).copied().unwrap_or(0))))
+                .collect::<Vec<_>>()
+        }) else {
+            continue;
+        };
+        for (p, (e, f)) in stats {
+            let slot = out.entry(p).or_default();
+            slot.0 += e;
+            slot.1 += f;
+        }
+    }
+    out
+}
+
+fn transcripts(path: &Path) -> Vec<std::path::PathBuf> {
     let mut files = vec![path.to_path_buf()];
     if let Ok(rd) = std::fs::read_dir(path.with_extension("").join("subagents")) {
         files.extend(
@@ -132,6 +174,11 @@ pub fn touched(agent: &str, path: &Path) -> (Vec<String>, Vec<String>) {
                 .filter(|p| p.extension().is_some_and(|e| e == "jsonl")),
         );
     }
+    files
+}
+
+pub fn touched(agent: &str, path: &Path) -> (Vec<String>, Vec<String>) {
+    let files = transcripts(path);
     let (mut edited, mut dirs) = (vec![], vec![]);
     for f in files {
         if let Some((e, d)) = with_state(agent, &f, |st| (st.edited.clone(), st.dirs.clone())) {
@@ -402,6 +449,8 @@ impl State {
             if self.edited_set.insert(p.clone()) {
                 self.edited.push(p.clone());
             }
+            *self.edit_count.entry(p.clone()).or_default() += 1;
+            self.since_test.insert(p.clone());
         }
         self.calls
             .entry(call.to_string())
@@ -428,7 +477,21 @@ impl State {
         }
     }
 
+    fn test_call(&mut self, call: &str, text: &str) {
+        if is_test_run(text) {
+            self.test_calls.insert(call.to_string());
+        }
+    }
+
     fn finish(&mut self, call: &str, failed: bool, ts: i64) {
+        if self.test_calls.remove(call) {
+            if failed {
+                for p in &self.since_test {
+                    *self.test_fails.entry(p.clone()).or_default() += 1;
+                }
+            }
+            self.since_test.clear();
+        }
         for seq in self.calls.remove(call).unwrap_or_default() {
             if let Some(e) = seq
                 .checked_sub(self.base)
@@ -499,6 +562,12 @@ impl State {
             }
             "Bash" => {
                 self.shell(s("command").unwrap_or(""));
+                let text = format!(
+                    "{} {}",
+                    s("command").unwrap_or(""),
+                    s("description").unwrap_or("")
+                );
+                self.test_call(c["id"].as_str().unwrap_or(""), &text);
                 (
                     "bash",
                     trunc(s("description").or(s("command")).unwrap_or(name), 120),
@@ -544,6 +613,7 @@ impl State {
                     "shell" | "exec_command" | "local_shell" | "shell_command" => {
                         let cmd = command_label(&args);
                         self.shell(&cmd);
+                        self.test_call(call, &cmd);
                         let label = trunc(&cmd, 120);
                         self.push(call, call.into(), "bash", label, None, ts)
                     }

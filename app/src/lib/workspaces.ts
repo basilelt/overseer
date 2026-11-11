@@ -205,24 +205,32 @@ export function isGhost(w: Workspace): boolean {
 
 export function buildTree(data: WsData, opts: { showArchived?: boolean; filter?: (w: Workspace) => boolean } = {}): { pinned: Workspace[]; nodes: TreeNode[] } {
   const keep = (w: Workspace) => !isGhost(w) && (opts.showArchived || !w.archived) && (!opts.filter || opts.filter(w));
-  const visible = data.workspaces.filter(keep);
-  const pinned = visible.filter((w) => w.pinned).sort(byRank);
+  const all = data.workspaces.filter(keep);
+  const tops = new Set(all.filter((w) => !w.parentId).map((w) => w.id));
+  const visible = all.filter((w) => !w.parentId);
+  const kidsOf = (id: string) => all.filter((w) => w.parentId === id && tops.has(id)).sort(byRank);
+  const withKids = (list: Workspace[]) => list.flatMap((w) => [w, ...kidsOf(w.id)]);
+  const pinned = withKids(visible.filter((w) => w.pinned).sort(byRank));
   const rest = visible.filter((w) => !w.pinned);
   const folderIds = new Set(data.folders.map((f) => f.id));
   const inFolder = (id: string | null) => rest.filter((w) => (id === null ? !w.folderId || !folderIds.has(w.folderId) : w.folderId === id)).sort(byRank);
   const top = data.folders.filter((f) => !f.parentId || !folderIds.has(f.parentId)).sort(byRank);
   const deep = (f: Folder): number => inFolder(f.id).length + data.folders.filter((c) => c.parentId === f.id).reduce((n, c) => n + inFolder(c.id).length, 0);
   const nodes: TreeNode[] = [];
+  const pushWs = (w: Workspace, depth: number) => {
+    nodes.push({ type: 'workspace', workspace: w, depth });
+    for (const c of kidsOf(w.id)) nodes.push({ type: 'workspace', workspace: c, depth: depth + 1 });
+  };
   const pushFolder = (f: Folder, depth: number) => {
     const count = deep(f);
     if (opts.filter && !count) return;
     nodes.push({ type: 'folder', folder: f, depth, count });
     if (f.collapsed && !opts.filter) return;
     if (depth === 0) for (const c of data.folders.filter((c) => c.parentId === f.id).sort(byRank)) pushFolder(c, 1);
-    for (const w of inFolder(f.id)) nodes.push({ type: 'workspace', workspace: w, depth: depth + 1 });
+    for (const w of inFolder(f.id)) pushWs(w, depth + 1);
   };
   for (const f of top) pushFolder(f, 0);
-  for (const w of inFolder(null)) nodes.push({ type: 'workspace', workspace: w, depth: 0 });
+  for (const w of inFolder(null)) pushWs(w, 0);
   return { pinned, nodes };
 }
 

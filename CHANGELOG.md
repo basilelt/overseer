@@ -14,6 +14,17 @@
   The unit now sets `OOMPolicy=continue`, so only that process dies. An installed unit is updated
   when the server starts.
 
+### Hooks and the CLI keep working after the AppImage closes (Linux)
+
+- **The local server no longer runs from the AppImage's temporary mount**: the AppImage started
+  the local server from the copy bundled inside it, under `/tmp/.mount_*`, which changes on every
+  launch and disappears when the app quits. The `~/.overseer/bin/overseer` shim used by agent
+  hooks, the MCP server and the systemd unit then pointed at a dead path, and notifications
+  stopped without an error. The app now copies that server to
+  `~/.overseer/server/<version>/overseer` and starts it from there, so each app update brings a
+  matching server and the shim follows it. Linking `~/.local/bin/overseer` to the shim gives a CLI
+  that stays in step with the app.
+
 ### Spanish and German, and easier translations
 
 - **Two new languages**: Settings → Language now lists Español and Deutsch next to English and

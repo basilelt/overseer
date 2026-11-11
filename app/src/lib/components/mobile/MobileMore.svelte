@@ -20,9 +20,12 @@
   import { tt } from '../../tour/strings';
   import { replayTour } from '../../tour/replay';
   import { feedback, ft } from '../../feedback.svelte';
+  import Clapperboard from '@lucide/svelte/icons/clapperboard';
+  import { recorder, rt } from '../../record.svelte';
   import Gauge from '@lucide/svelte/icons/gauge';
   import { ust } from '../../usage/strings';
   import GitPullRequestArrow from '@lucide/svelte/icons/git-pull-request-arrow';
+  import GitBranch from '@lucide/svelte/icons/git-branch';
   import { gt } from '../../github/strings';
   import { openPrReviews } from '../../github/open.svelte';
   import { diag, dt } from '../../diag.svelte';
@@ -63,11 +66,13 @@
     { icon: Network, label: () => t('ports.title'), run: () => app.open('ports'), disabled: () => !app.connected },
     { icon: Activity, label: () => st('title'), run: () => app.open('system'), disabled: () => !app.connected },
     { icon: Gauge, label: () => ust('title'), run: () => app.open('usage'), disabled: () => !app.connected },
+    { icon: GitBranch, label: () => t('tabs.gitGraph'), run: () => app.openProjectTab('graph'), disabled: () => !app.connected || !app.projects.length },
     { icon: GitPullRequestArrow, label: () => gt('title'), run: () => openPrReviews(), disabled: () => !app.connected },
     { icon: Settings, label: () => t('title.settings'), run: () => app.open('settings') },
     { icon: Search, label: () => t('mobile.more.search'), run: () => app.open('palette') },
     { icon: ScrollText, label: () => dt('show'), run: () => diag.open('live') },
     { icon: MessageSquarePlus, label: () => ft('title'), run: () => feedback.show() },
+    { icon: Clapperboard, label: () => rt('palette'), run: () => recorder.setup(), disabled: () => recorder.phase !== 'idle' },
     { icon: WandSparkles, label: () => t('org.title'), run: () => organizer.show(), disabled: () => !app.connected },
     { icon: Compass, label: () => tt('again'), run: () => replayTour() },
   ];

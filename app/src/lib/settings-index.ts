@@ -1,8 +1,8 @@
 import type { Key } from './i18n.svelte';
 
-export type CategoryId = 'general' | 'terminal' | 'agents' | 'notifications' | 'connection' | 'updates' | 'help';
-export type SectionId = 'appearance' | 'links' | 'terminal' | 'keyboard' | 'defaults' | 'profiles' | 'hooks' | 'skills' | 'usage' | 'notifications' | 'hosts' | 'server' | 'updater' | 'apk' | 'tour' | 'diag' | 'feedback' | 'switchboard';
-export type Gate = 'desktop' | 'nonMac' | 'connected' | 'profiles' | 'hooks' | 'updater' | 'apk' | 'switchboard';
+export type CategoryId = 'general' | 'terminal' | 'agents' | 'usage' | 'notifications' | 'connection' | 'updates' | 'help';
+export type SectionId = 'appearance' | 'links' | 'terminal' | 'keyboard' | 'defaults' | 'profiles' | 'hooks' | 'skills' | 'usage' | 'usageCodex' | 'usageGemini' | 'notifications' | 'hosts' | 'server' | 'updater' | 'apk' | 'tour' | 'diag' | 'feedback' | 'switchboard';
+export type Gate = 'desktop' | 'nonMac' | 'connected' | 'localServer' | 'profiles' | 'hooks' | 'updater' | 'apk' | 'switchboard';
 export type Gates = Record<Gate, boolean>;
 
 export interface Category {
@@ -28,6 +28,7 @@ export const CATEGORIES: Category[] = [
   { id: 'general', title: 'settings.cat.general' },
   { id: 'terminal', title: 'settings.cat.terminal' },
   { id: 'agents', title: 'settings.cat.agents' },
+  { id: 'usage', title: 'settings.usage' },
   { id: 'notifications', title: 'settings.cat.notifications' },
   { id: 'connection', title: 'settings.cat.connection' },
   { id: 'updates', title: 'settings.cat.updates' },
@@ -43,7 +44,9 @@ export const SECTIONS: Section[] = [
   { id: 'profiles', category: 'agents', title: 'profile.title', gate: 'profiles' },
   { id: 'hooks', category: 'agents', title: 'hooks.title', gate: 'hooks' },
   { id: 'skills', category: 'agents', title: 'skills.title', gate: 'connected' },
-  { id: 'usage', category: 'agents', title: 'settings.usage' },
+  { id: 'usage', category: 'usage', title: 'settings.usage.claude' },
+  { id: 'usageCodex', category: 'usage', title: 'settings.usage.codex' },
+  { id: 'usageGemini', category: 'usage', title: 'settings.usage.gemini' },
   { id: 'notifications', category: 'notifications', title: 'settings.notifications' },
   { id: 'hosts', category: 'connection', title: 'settings.hosts' },
   { id: 'server', category: 'connection', title: 'settings.server', gate: 'connected' },
@@ -71,7 +74,7 @@ export const ENTRIES: Entry[] = [
   { id: 'newTabShell', section: 'keyboard', keys: ['settings.newTabShell', 'settings.newTabShellHint'] },
   { id: 'wrapTabs', section: 'keyboard', keys: ['settings.wrapTabs', 'settings.wrapTabsHint'] },
   { id: 'defaultAgent', section: 'defaults', keys: ['settings.defaultAgent'] },
-  { id: 'autoApprove', section: 'defaults', keys: ['settings.autoApprove', 'settings.autoApproveHint'] },
+  { id: 'autoApprove', section: 'defaults', keys: ['settings.autoApprove', 'settings.autoApproveHint', 'settings.autoApproveAll'] },
   { id: 'defaultModel', section: 'defaults', keys: ['settings.defaultModel'] },
   { id: 'defaultEffort', section: 'defaults', keys: ['settings.defaultEffort'] },
   { id: 'autoConcurrency', section: 'defaults', keys: ['settings.autoConcurrency', 'settings.autoConcurrencyHint'] },
@@ -82,6 +85,8 @@ export const ENTRIES: Entry[] = [
   { id: 'skills', section: 'skills', keys: ['skills.hint', 'skills.rtk', 'skills.caveman', 'skills.ponytail', 'palette.skills'] },
   { id: 'claudeLimits', section: 'usage', keys: ['settings.fetchClaudeLimits', 'settings.fetchClaudeLimitsHint'] },
   { id: 'statusline', section: 'usage', keys: ['settings.statusline', 'settings.statuslineHint'] },
+  { id: 'codexLimits', section: 'usageCodex', keys: ['settings.codexLimits', 'settings.codexLimitsHint'] },
+  { id: 'geminiTokens', section: 'usageGemini', keys: ['settings.geminiTokens', 'settings.geminiTokensHint'] },
   { id: 'notifyPermission', section: 'notifications', keys: ['nb.permission', 'nb.request', 'nb.test'] },
   { id: 'notifyEvents', section: 'notifications', keys: ['nb.events', 'nb.kind.needsInput', 'nb.kind.finished', 'nb.kind.failed', 'nb.kind.allIdle', 'nb.kind.ports', 'nb.kind.updates', 'nb.kind.uploads', 'nb.kind.errors'] },
   { id: 'notifyBehaviour', section: 'notifications', keys: ['nb.behaviour', 'nb.sound', 'nb.preview', 'nb.previewHint', 'nb.unfocused', 'nb.unfocusedHint', 'nb.skipWatched', 'settings.notifyBackgroundToasts', 'nb.cooldown'] },
@@ -91,6 +96,7 @@ export const ENTRIES: Entry[] = [
   { id: 'serverBinDir', section: 'hosts', keys: ['settings.serverBinDir', 'settings.serverBinDirHint'] },
   { id: 'keepRunning', section: 'server', keys: ['settings.keepRunning', 'settings.keepRunningHint'] },
   { id: 'afterReboot', section: 'server', keys: ['settings.afterReboot', 'settings.afterRebootHint', 'settings.afterReboot.agents', 'settings.afterReboot.shells', 'settings.afterReboot.nothing'] },
+  { id: 'lidClosed', section: 'server', gate: 'localServer', keys: ['settings.lidClosed', 'settings.lidClosedHint', 'settings.lidClosedBattery'] },
   { id: 'uninstall', section: 'server', keys: ['settings.uninstall', 'settings.uninstallRemote', 'settings.uninstallHint', 'settings.uninstallButton'] },
   { id: 'update', section: 'updater', keys: ['updater.version', 'updater.check'] },
   { id: 'apk', section: 'apk', keys: ['apk.version', 'apk.check'] },
@@ -182,7 +188,7 @@ export function pickCategory(current: CategoryId | null, gates: Gates): Category
 }
 
 export function initialCategory(arg: string | null): CategoryId {
-  return arg === 'notifications' ? 'notifications' : arg === 'skills' ? 'agents' : 'general';
+  return arg === 'notifications' ? 'notifications' : arg === 'skills' ? 'agents' : arg === 'usage' ? 'usage' : 'general';
 }
 
 export type PhonePage = 'list' | 'results' | 'section';

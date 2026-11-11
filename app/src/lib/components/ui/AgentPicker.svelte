@@ -2,7 +2,7 @@
   import ChevronDown from '@lucide/svelte/icons/chevron-down';
   import Check from '@lucide/svelte/icons/check';
   import RefreshCw from '@lucide/svelte/icons/refresh-cw';
-  import { agentName } from '../../agents';
+  import { agentName, canInstall } from '../../agents';
   import { t } from '../../i18n.svelte';
   import { app } from '../../state.svelte';
   import type { AgentInfo, DaemonEnv } from '../../types';
@@ -42,10 +42,16 @@
   }
 
   function choose(a: AgentInfo | undefined) {
+    if (a && canInstall(a)) return install(a);
     if (!a?.installed) return;
     open = false;
     onchange(a.id);
     root.querySelector<HTMLElement>('.trigger')?.focus();
+  }
+
+  function install(a: AgentInfo) {
+    open = false;
+    app.installAgent(a.id).catch((e) => app.notify(String((e as Error)?.message ?? e), 'error'));
   }
 
   async function rescan() {
@@ -63,7 +69,7 @@
   function step(from: number, dir: number): number {
     for (let i = 1; i <= agents.length; i++) {
       const j = (from + dir * i + agents.length * i) % agents.length;
-      if (agents[j].installed) return j;
+      if (agents[j].installed || canInstall(agents[j])) return j;
     }
     return from;
   }
@@ -135,11 +141,12 @@
             data-i={i}
             role="option"
             aria-selected={a.id === value}
-            aria-disabled={!a.installed}
+            aria-disabled={!a.installed && !canInstall(a)}
             class:active={i === active}
             class:off={!a.installed}
-            title={a.installed ? (a.version ?? a.name) : `${t('agents.notInstalled')} · ${a.install ?? ''}`}
-            onpointermove={() => a.installed && (active = i)}
+            class:can={canInstall(a)}
+            title={a.installed ? (a.version ?? a.name) : canInstall(a) ? t('agents.installIn', { name: a.name, cmd: a.install ?? '' }) : `${t('agents.notInstalled')} · ${a.install ?? ''}`}
+            onpointermove={() => (a.installed || canInstall(a)) && (active = i)}
             onclick={() => choose(a)}
             onkeydown={() => {}}
           >
@@ -152,7 +159,7 @@
                 <span class="sub">{a.version}</span>
               {/if}
             </span>
-            {#if a.id === value}<Check size={13} />{/if}
+            {#if a.id === value}<Check size={13} />{:else if canInstall(a)}<span class="act">{t('agents.install')}</span>{/if}
           </li>
         {/each}
       </ul>
@@ -280,6 +287,14 @@
   li.off {
     cursor: default;
     color: var(--text-3);
+  }
+  li.off.can {
+    cursor: pointer;
+  }
+  .act {
+    font-size: 10.5px;
+    color: var(--accent);
+    flex: none;
   }
   .glyph {
     display: grid;

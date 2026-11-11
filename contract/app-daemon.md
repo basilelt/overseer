@@ -72,7 +72,7 @@ that predate it answer `404`.
 ```json
 [{"id":"claude","name":"Claude Code","installed":true,"version":"2.1.289 (Claude Code)",
   "models":["opus","sonnet","fable"],"efforts":["low","medium","high","max"],"resume":true,
-  "verified":true,"sessions":true,"turns":true,"install":"curl -fsSL https://claude.ai/install.sh | bash"}]
+  "verified":true,"sessions":true,"turns":true,"install":"curl -fsSL https://claude.ai/install.sh | bash","installable":true}]
 ```
 
 - `id` ∈ `claude | codex | gemini | agy | opencode | amp | copilot | cursor | shell`. `shell` is
@@ -80,6 +80,9 @@ that predate it answer `404`.
 - `installed`: the binary is on the daemon's `PATH` and `<bin> --version` exits 0 within 5 s
   (results cached 60 s); `version` is the first line it printed. A broken wrapper reports
   `installed: false`.
+- `install`: how to install the agent, a command or a hint (`see https://…`); `installable: true`
+  (absent otherwise) when it is a command `POST /v1/terms` with `install` can run (never on a
+  Windows daemon).
 - `models`: absent → free text; `[]` → the agent takes no model (the field is ignored);
   otherwise suggestions (free text still allowed). `efforts` is the subset of
   `low|medium|high|max` the agent maps (empty → effort ignored).
@@ -178,7 +181,7 @@ when not null. `PUT /v1/lines/{id}/title` `{"title": str | null}` stores it in t
 
 | Route | Body | Result |
 |---|---|---|
-| `POST /v1/terms` | `{cwd?, cmd?:[str] \| agent?:str, model?, effort?, env?:{str:str}, cols?, rows?, title?, lineId?, taskId?}` | **201** Term. `cwd` defaults to `$HOME`, `cmd` to the login shell (`$SHELL`, else `/bin/sh`; `%COMSPEC%` on Windows), `cols`×`rows` to 80×24 (each 1..=1000). `title` defaults to the basename of `cmd[0]`. The child gets the daemon's environment plus `env`, `TERM=xterm-256color`, `COLORTERM=truecolor`, `OVERSEER_TERM_ID=<id>`. With `agent` (instead of `cmd`) the daemon builds the argv from §2a with `model`/`effort`, a fresh session id when the agent takes one, and `title` = the agent's name. With `worktree: true` (or `{branch?, base?, slug?}`) and a `cwd` inside a git repository, the daemon first creates a worktree as `POST /v1/worktrees` does (branch `sb/<agent>/<slug>`, `shell` for a plain shell) and starts the term in it. 400: bad body, `cwd` not a directory, `cmd[0]` not found, both `agent` and `cmd`, unknown or not installed agent, bad `effort`, `worktree` with a `cwd` outside a repository; 409: the worktree could not be created. |
+| `POST /v1/terms` | `{cwd?, cmd?:[str] \| agent?:str \| install?:str, model?, effort?, env?:{str:str}, cols?, rows?, title?, lineId?, taskId?}` | **201** Term. `cwd` defaults to `$HOME`, `cmd` to the login shell (`$SHELL`, else `/bin/sh`; `%COMSPEC%` on Windows), `cols`×`rows` to 80×24 (each 1..=1000). `title` defaults to the basename of `cmd[0]`. The child gets the daemon's environment plus `env`, `TERM=xterm-256color`, `COLORTERM=truecolor`, `OVERSEER_TERM_ID=<id>`. With `agent` (instead of `cmd`) the daemon builds the argv from §2a with `model`/`effort`, a fresh session id when the agent takes one, and `title` = the agent's name. With `install` (an agent id, instead of `agent` and `cmd`; Unix only) the term runs `/bin/sh -c` with that agent's install command from §2a, shows it as `cmd` (`["npm install -g @openai/codex"]`), is titled `Install <name>`, and exits with the command's status after printing `Install failed with exit code N` on a failure. With `worktree: true` (or `{branch?, base?, slug?}`) and a `cwd` inside a git repository, the daemon first creates a worktree as `POST /v1/worktrees` does (branch `sb/<agent>/<slug>`, `shell` for a plain shell) and starts the term in it. 400: bad body, `cwd` not a directory, `cmd[0]` not found, both `agent` and `cmd`, `install` with `agent` or `cmd` (`give either install, agent or cmd`), an `install` agent without an install command (`<name> has no install command`), unknown or not installed agent, bad `effort`, `worktree` with a `cwd` outside a repository; 409: the worktree could not be created. |
 | `GET /v1/terms` | | 200 `[Term]` (running and exited, oldest first) |
 | `GET /v1/terms/{id}` | | 200 Term · 404 |
 | `POST /v1/terms/{id}/resize` | `{cols, rows, client?}` | 200 Term · 400 · 404 · 409 exited |
@@ -1583,3 +1586,18 @@ repository, which the daemon cannot find from a `missing` directory otherwise.
   recreates the saved terms with their ids before it serves requests, then publishes the usual
   `term.created` events.
 
+## Lid closed (keep agents running)
+
+- `GET /v1/power/lid` → `{"enabled", "active", "supported", "error": string|null}`. `enabled` is the
+  stored option, `active` whether the system is kept awake right now, `error` the last refusal.
+- `PUT /v1/power/lid` with `{"enabled": true|false}` → the same object. 400 when `enabled` is not a
+  boolean, 500 with `{"error"}` when the system refuses (the option stays as it was), 501 on a
+  system other than Linux, macOS or Windows.
+- Linux: the daemon holds `systemd-inhibit --what=handle-lid-switch --no-ask-password --mode=block` while it
+  runs, fed by a pipe so the lock goes away with the daemon (crash or upgrade) and is taken again
+  at start. polkit may refuse it when the daemon has no active session.
+- macOS: `pmset -a disablesleep 1|0` through an administrator prompt (`osascript`); the setting
+  persists in the OS until the option is turned off.
+- Windows: `powercfg` sets the lid close action of the current scheme to Do nothing (AC and DC),
+  remembers the previous actions in the registry and puts them back when turned off.
+- The app offers it only for a local daemon on the desktop.
