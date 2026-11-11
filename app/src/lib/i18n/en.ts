@@ -865,6 +865,7 @@ export const en = {
   'settings.defaultAgent': 'Default agent',
   'settings.autoApprove': 'Auto approve agent requests',
   'settings.autoApproveHint': 'New sessions use each CLI’s native auto-approval mode. Running sessions keep their current mode.',
+  'settings.autoApproveAll': 'Auto approve for every agent',
   'settings.autoApproveConnect': 'Connect to a host to load its agent settings.',
   'settings.defaultModel': 'Default model',
   'settings.defaultEffort': 'Default effort',
