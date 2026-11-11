@@ -1,6 +1,6 @@
 # Regenerating the showreel
 
-The showreel in this directory (live at https://basilelt.github.io/overseer/, the repository's website) shows the app as it ships. Remaking it is expensive: the scenes in `reel.html` have to be updated by hand, then both cuts take about 25 minutes of rendering on a 6-core machine. So an agent never regenerates it on its own judgement: it asks the user, and only a clear yes starts the work.
+The showreel in this directory (live at https://basilelt.github.io/overseer/, the repository's website) shows the app as it ships. Remaking it is expensive: the scenes in `reel.html` have to be updated by hand and checked frame by frame. CI renders the videos, but each change to the reel's sources costs a long render there too. So an agent never regenerates it on its own judgement: it asks the user, and only a clear yes starts the work.
 
 ## When to ask
 
@@ -19,7 +19,7 @@ Ask once per branch, as the last step of the work, before the PR is marked ready
 
 Ask one yes/no question, with No as the default, and say what it costs:
 
-> This branch [one line on what changed] leaves the showreel out of date. Regenerating it means updating the scenes and about 25 minutes of rendering. Regenerate the showreel now? (yes / no, default no)
+> This branch [one line on what changed] leaves the showreel out of date. Regenerating it means updating and checking the scenes by hand, then a long render in CI. Regenerate the showreel now? (yes / no, default no)
 
 Use your harness's question tool when it has one (in Claude Code, AskUserQuestion with "No" as the first option); otherwise ask in plain text and stop there.
 
@@ -35,5 +35,5 @@ Do not start a render, or any other part of the work, while you wait for the ans
 
 1. Update the scenes in `reel.html` to show the app as it now is. Keep every frame a pure function of time on the 128 BPM grid, and both cuts in sync (`reel.html?d=30` plays every event at twice its time). If a view changed, copy the new screenshot from `app/docs/screenshots/` into `shots/`.
 2. If cue times moved, move the matching events in `audio.mjs` and rebuild both soundtracks.
-3. Check stills or a contact sheet at every scene change of both cuts, then render both cuts and the poster (commands in [README.md](README.md)).
-4. Commit this directory, videos included, on the branch. When the PR merges into `next`, the Pages workflow deploys it.
+3. Check stills or a contact sheet at every scene change of both cuts (commands in [README.md](README.md)).
+4. Commit the sources on the branch; the videos and the poster are not committed. Run Actions > Pages on the branch and watch both cuts from its artifacts. When the PR merges into `next`, the Pages workflow renders them again (or reuses the cache) and deploys the site.
