@@ -764,6 +764,30 @@ describe('nested workspaces', () => {
     expect(pick(items, t('ws.sub.startsIn', { path: '/home/u/endurance' })).disabled).toBe(true);
   });
 
+  it('lists installed agents in the new-session menu and folds the missing ones under one row', () => {
+    app.agents = [
+      { id: 'claude', name: 'Claude Code', installed: true },
+      { id: 'amp', name: 'Amp', installed: false, installable: true, install: 'npm i -g amp' },
+      { id: 'agy', name: 'Antigravity', installed: false },
+      { id: 'shell', name: 'Shell', installed: true },
+    ];
+    app.installAgent = vi.fn(async () => {});
+    const items = newSessionItems();
+    expect(labels(items)).not.toContain('Amp');
+    const more = pick(items, t('agents.notInstalledCount', { n: 2 }));
+    expect(more.more!.map((i) => [i.label, !!i.disabled])).toEqual([
+      [t('palette.installAgent', { name: 'Amp' }), false],
+      ['Antigravity', true],
+    ]);
+    more.more![0].run!();
+    expect(app.installAgent).toHaveBeenCalledWith('amp');
+  });
+
+  it('shows no not-installed row when every agent is installed', () => {
+    app.agents = [{ id: 'claude', name: 'Claude Code', installed: true }];
+    expect(newSessionItems().some((i) => i.more)).toBe(false);
+  });
+
   it('starts the picked agent from the shared new-session menu and reports a failure', async () => {
     app.agents = [{ id: 'claude', name: 'Claude Code', installed: true }];
     app.newSession = vi.fn(async () => Promise.reject(new Error('daemon down')));

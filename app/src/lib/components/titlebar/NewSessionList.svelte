@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { canInstall, ordered } from '../../agents';
+  import ChevronRight from '@lucide/svelte/icons/chevron-right';
+  import { canInstall, splitInstalled } from '../../agents';
   import { t } from '../../i18n.svelte';
   import { app } from '../../state.svelte';
   import type { AgentInfo } from '../../types';
@@ -11,7 +12,8 @@
 
   const profileSelect = preload(() => import('../ui/ProfileSelect.svelte'));
   let menu: HTMLDivElement | undefined = $state();
-  const agents = $derived(ordered(app.agents));
+  const split = $derived(splitInstalled(app.agents));
+  let more = $state(false);
 
   onMount(() => {
     menu?.querySelector<HTMLElement>('button:not([disabled])')?.focus();
@@ -39,22 +41,37 @@
 </script>
 
 <div class="menu" role="menu" tabindex="-1" aria-label={t('title.new')} bind:this={menu} onkeydown={onKey}>
-  {#each agents as a, i (a.id)}
-    <button
-      role="menuitem"
-      disabled={!a.installed && !canInstall(a)}
-      title={a.installed ? (a.version ?? a.name) : canInstall(a) ? t('agents.installIn', { name: a.name, cmd: a.install ?? '' }) : `${t('agents.notInstalled')} · ${a.install ?? ''}`}
-      onclick={() => start(a)}
-    >
+  {#each split.installed as a (a.id)}
+    <button role="menuitem" title={a.version ?? a.name} onclick={() => start(a)}>
       <span class="glyph"><AgentGlyph agent={a.id} size={14} /></span>
-      <span class="text">
-        <span>{a.name}</span>
-        {#if !a.installed}<span class="sub mono">{a.install ?? t('agents.notInstalled')}</span>{/if}
-      </span>
-      {#if a.installed && a.version}<span class="ver mono">{a.version}</span>{:else if canInstall(a)}<span class="act">{t('agents.install')}</span>{/if}
+      <span class="text"><span>{a.name}</span></span>
+      {#if a.version}<span class="ver mono">{a.version}</span>{/if}
     </button>
-    {#if a.installed && agents[i + 1] && !agents[i + 1].installed}<hr />{/if}
   {/each}
+  {#if split.missing.length}
+    {#if split.installed.length}<hr />{/if}
+    <button role="menuitem" class="more" aria-expanded={more} onclick={() => (more = !more)}>
+      <span class="glyph chev" class:open={more}><ChevronRight size={14} /></span>
+      <span class="text"><span>{t('agents.notInstalledCount', { n: split.missing.length })}</span></span>
+    </button>
+    {#if more}
+      {#each split.missing as a (a.id)}
+        <button
+          role="menuitem"
+          disabled={!canInstall(a)}
+          title={canInstall(a) ? t('agents.installIn', { name: a.name, cmd: a.install ?? '' }) : `${t('agents.notInstalled')} · ${a.install ?? ''}`}
+          onclick={() => start(a)}
+        >
+          <span class="glyph"><AgentGlyph agent={a.id} size={14} /></span>
+          <span class="text">
+            <span>{a.name}</span>
+            <span class="sub mono">{a.install ?? t('agents.notInstalled')}</span>
+          </span>
+          {#if canInstall(a)}<span class="act">{t('agents.install')}</span>{/if}
+        </button>
+      {/each}
+    {/if}
+  {/if}
   {#if app.profiles}
     <hr />
     <div class="profile">
@@ -111,6 +128,16 @@
   button:disabled .glyph {
     background: transparent;
     color: var(--text-3);
+  }
+  .more {
+    color: var(--text-2);
+  }
+  .chev {
+    background: transparent;
+    transition: transform 120ms;
+  }
+  .chev.open {
+    transform: rotate(90deg);
   }
   .text {
     flex: 1;

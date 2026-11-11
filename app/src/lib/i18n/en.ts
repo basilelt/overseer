@@ -88,6 +88,7 @@ export const en = {
   'group.stopped': 'Closed',
   'card.goal': 'Goal',
   'agents.notInstalled': 'Not installed',
+  'agents.notInstalledCount': 'Not installed ({n})',
   'agents.install': 'Install',
   'agents.installIn': 'Install {name} in a new terminal: {cmd}',
   'agents.installed': '{name} is installed',
