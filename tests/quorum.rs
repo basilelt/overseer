@@ -400,7 +400,7 @@ fn a_rejected_worker_goes_back_to_work_and_its_next_turn_starts_round_two() {
     };
     turn(&mut ws);
     wait_for(|| (get()["votes"]["round"] == 1).then_some(()));
-    let r = children(&app, &wid).pop().unwrap();
+    let r = wait_for(|| children(&app, &wid).pop());
     let mut c = Command::new(bin());
     app.fx.env(&mut c);
     c.env("OVERSEER_TASK_ID", id(&r))
@@ -412,5 +412,5 @@ fn a_rejected_worker_goes_back_to_work_and_its_next_turn_starts_round_two() {
     turn(&mut ws);
     wait_for(|| (get()["votes"]["round"] == 2).then_some(()));
     assert_eq!(get()["status"], "in_testing");
-    assert_eq!(children(&app, &wid).len(), 2);
+    wait_for(|| (children(&app, &wid).len() == 2).then_some(()));
 }
