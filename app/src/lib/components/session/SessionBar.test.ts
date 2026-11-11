@@ -35,6 +35,17 @@ describe('SessionBar', () => {
     expect(button(h, 'close')).not.toContain('disabled');
   });
 
+  it('disables resume with its reason while a resumed agent is still starting in its terminal', () => {
+    // Given a stopped session whose resume is waiting on the agent's first prompt
+    // When the bar renders
+    // Then resume is off and says the agent is starting, close stays on
+    const v = sessionState({ line: { id: 'l1', agent: 'claude', state: 'held', lastActivityAt: '' }, local: { heldReason: 'lost' } } as LocalLine, 't1');
+    const h = html(v);
+    expect(button(h, 'resume')).toContain('disabled');
+    expect(button(h, 'resume')).toContain('The agent is starting in its terminal');
+    expect(button(h, 'close')).not.toContain('disabled');
+  });
+
   it('swaps pause for cancel pause only while a pause is queued', () => {
     // Given a busy session with a queued pause, then one without
     // When the bar renders

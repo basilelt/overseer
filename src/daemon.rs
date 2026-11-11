@@ -560,8 +560,8 @@ fn resume_term(ctx: &Ctx, r: &Request, id: &str, body: &Value) -> (u16, Value) {
         Err(e) => return err(404, e),
     };
     let attach_only = body["attachOnly"] == true;
-    if let Some(t) = actions::held_terms(l).into_iter().next() {
-        if !attach_only && q(r, "dryRun") != Some("true") {
+    if let Some(t) = actions::pending_terms(l).into_iter().next() {
+        if !attach_only && q(r, "dryRun") != Some("true") && actions::waits_for_enter(l, &t) {
             if let Err(e) = t.input(b"\r") {
                 return err(409, e.to_string());
             }

@@ -375,6 +375,12 @@
       {#if hiddenLocal > 0 || chat.more}
         <button class="earlier" bind:this={sentinel} onclick={earlier}>{t('chat.loadEarlier')}</button>
       {/if}
+      {#if view?.starting}
+        <div class="starting">
+          <p class="muted">{t('chat.starting')}</p>
+          <button class="btn primary" onclick={toTerminal}><SquareTerminal size={13} />{t('chat.openTerminal')}</button>
+        </div>
+      {/if}
       {#if failed}
         <p class="note error">{failed}</p>
       {:else if !chat.loaded}
@@ -510,6 +516,16 @@
     color: var(--text-2);
     font-size: 12px;
     cursor: pointer;
+  }
+  .starting {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    margin: 16px auto 0;
+    max-width: 420px;
+    text-align: center;
+    font-size: 13px;
   }
   .note {
     margin: 24px auto;
