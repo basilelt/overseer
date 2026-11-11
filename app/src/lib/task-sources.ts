@@ -1,5 +1,5 @@
 import type { DaemonClient } from './client';
-import type { SourceItem, SourceItems, TaskSource, TaskSourceKind } from './types';
+import type { SourceItem, SourceItems, TaskSource, TaskSourceKind, TaskType } from './types';
 
 const enc = encodeURIComponent;
 
@@ -18,11 +18,12 @@ export function filterItems(items: SourceItem[], query: string): SourceItem[] {
   return items.filter((i) => i.key.toLowerCase().includes(q) || i.title.toLowerCase().includes(q));
 }
 
-export function fillFrom(item: SourceItem): { title: string; description: string; ticketKey: string } {
+export function fillFrom(item: SourceItem): { title: string; description: string; ticketKey: string; taskType?: TaskType } {
   const ref = item.url || item.key;
   return {
     title: item.title,
     description: item.body.trim() ? `${item.body.trim()}\n\n${ref}` : ref,
     ticketKey: item.ticketKey ?? '',
+    ...(item.taskType ? { taskType: item.taskType } : {}),
   };
 }

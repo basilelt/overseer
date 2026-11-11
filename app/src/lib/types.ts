@@ -126,10 +126,13 @@ export interface ProfileSupport {
   subagentForce?: boolean;
 }
 
+export type TaskType = 'fix' | 'feature' | 'engineering' | 'refactor' | 'triage';
+
 export interface ProfilesStore {
   default: string;
   profiles: Profile[];
   scopes: Record<string, string>;
+  types?: Partial<Record<TaskType, string>>;
   support: Record<string, ProfileSupport>;
 }
 
@@ -233,6 +236,7 @@ export interface Task {
   manualStatus?: TaskStatus | null;
   badges?: TaskBadge[];
   profile?: string | null;
+  taskType?: TaskType | null;
   quorum?: Quorum | null;
   votes?: TaskVotes | null;
   createdAt: string;
@@ -260,6 +264,7 @@ export interface NewTask {
   ticketKey?: string;
   status?: TaskStatus;
   profile?: string;
+  taskType?: TaskType;
   dependsOn?: string[];
   inheritBranch?: boolean;
   attachments?: { path: string; name?: string }[];
@@ -292,6 +297,7 @@ export interface SourceItem {
   body: string;
   url: string;
   ticketKey?: string | null;
+  taskType?: TaskType | null;
 }
 
 export interface SourceItems {

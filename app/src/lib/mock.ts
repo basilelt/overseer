@@ -6,9 +6,9 @@ import { MockGit } from './git/mockGit';
 import { MockScm } from './git/mockScm';
 import { bigDiff, bigPatch, MockReview } from './review/mock';
 import { chatPage, mockScreen, MOCK_COMMANDS, seedAgentChat, seedChat } from './chat/mock';
-import type { Effort, HookResult, HooksStatus, SwitchboardStatus, Profile, ProfileChip, ProfilesStore, SourceItem, SourceItems, SubagentDef, TaskSource, Quorum } from './types';
+import type { Effort, HookResult, HooksStatus, SwitchboardStatus, Profile, ProfileChip, ProfilesStore, SourceItem, SourceItems, SubagentDef, TaskSource, TaskType, Quorum } from './types';
 import { mockSystem } from './system/mock';
-import { resolveProfile } from './profiles';
+import { resolveProfile, TASK_TYPES } from './profiles';
 import { fileKind } from './files';
 import { cleanTitle } from './titles';
 import { isDone } from './kanban-core';
@@ -88,6 +88,7 @@ export const MOCK_AGENTS: AgentInfo[] = [
 export const MOCK_PROFILES: ProfilesStore = {
   default: '',
   scopes: {},
+  types: {},
   profiles: [
     {
       id: 'economy',
@@ -1532,13 +1533,13 @@ export class MockDaemon implements DaemonClient {
           [63, "Bug: Doesn't reduce text correctly"],
           [50, 'Idea: add an option to add tasks to a project from multi sources'],
         ] as const) {
-          items.push({ source: s.id, kind: 'github', key: `#${n}`, title, body: `Reported from Overseer.\n\nSee ${s.target}#${n}.`, url: `https://github.com/${s.target}/issues/${n}` });
+          items.push({ source: s.id, kind: 'github', key: `#${n}`, title, body: `Reported from Overseer.\n\nSee ${s.target}#${n}.`, url: `https://github.com/${s.target}/issues/${n}`, taskType: title.startsWith('Bug') ? 'fix' : 'feature' });
         }
       } else if (s.kind === 'gitlab') {
-        items.push({ source: s.id, kind: 'gitlab', key: '#12', title: 'Pipeline cache misses on main', body: 'Cache key changes every run.', url: `https://gitlab.com/${s.target}/-/issues/12` });
+        items.push({ source: s.id, kind: 'gitlab', key: '#12', title: 'Pipeline cache misses on main', body: 'Cache key changes every run.', url: `https://gitlab.com/${s.target}/-/issues/12`, taskType: 'fix' });
       } else {
-        items.push({ source: s.id, kind: 'jira', key: 'PROJ-1204', title: 'Export orders as CSV', body: '', url: '', ticketKey: 'PROJ-1204' });
-        items.push({ source: s.id, kind: 'jira', key: 'OPS-7', title: 'Rotate staging certificates', body: '', url: '', ticketKey: null });
+        items.push({ source: s.id, kind: 'jira', key: 'PROJ-1204', title: 'Export orders as CSV', body: '', url: '', ticketKey: 'PROJ-1204', taskType: 'feature' });
+        items.push({ source: s.id, kind: 'jira', key: 'OPS-7', title: 'Rotate staging certificates', body: '', url: '', ticketKey: null, taskType: null });
       }
     }
     return { sources, items, errors };
@@ -1580,9 +1581,14 @@ export class MockDaemon implements DaemonClient {
     const next = structuredClone(this.profileStore);
     if (body?.default !== undefined) next.default = body.default;
     if (body?.scopes) next.scopes = body.scopes;
+    if (body?.types) next.types = body.types;
     if (body?.profiles) next.profiles = [...next.profiles.filter((p) => p.builtin), ...body.profiles.filter((p: Profile) => !p.builtin)];
     const ids = next.profiles.map((p) => p.id);
     if (next.default && next.default !== 'none' && !ids.includes(next.default)) throw new DaemonError(400, `unknown default profile ${next.default}`);
+    for (const [ty, id] of Object.entries(next.types ?? {})) {
+      if (!TASK_TYPES.includes(ty as TaskType)) throw new DaemonError(400, `unknown task type ${JSON.stringify(ty)}, expected one of ${TASK_TYPES.join(', ')}`);
+      if (!id || (id !== 'none' && !ids.includes(id))) throw new DaemonError(400, `task type ${ty}: unknown profile ${id}`);
+    }
     this.profileStore = next;
     this.emit('profiles.changed', {});
     return structuredClone(next);
@@ -1628,6 +1634,7 @@ export class MockDaemon implements DaemonClient {
   private createTask(body: NewTask): Task {
     if (!body?.title?.trim()) throw new DaemonError(400, 'title required');
     const quorum = body.quorum === undefined ? undefined : this.quorumOf(body.quorum, body.agent);
+    const taskType = this.taskTypeOf(body.taskType);
     if (quorum && (body as any).parentId) throw new DaemonError(400, 'a subtask cannot run a quorum');
     const now = new Date().toISOString();
     const id = `tk_${Math.random().toString(36).slice(2, 8)}`;
@@ -1642,8 +1649,9 @@ export class MockDaemon implements DaemonClient {
       status: body.status ?? 'pending',
       agent: body.agent,
       model: body.model,
-      effort: body.effort ?? (resolveProfile(this.profileStore, { explicit: body.profile, cwd: body.project })?.agents[body.agent]?.effort ? ('' as Effort) : 'high'),
+      effort: body.effort ?? (resolveProfile(this.profileStore, { explicit: body.profile, taskType, cwd: body.project })?.agents[body.agent]?.effort ? ('' as Effort) : 'high'),
       ...(body.profile ? { profile: body.profile } : {}),
+      ...(taskType ? { taskType } : {}),
       rank: Math.max(0, ...this.tasks.filter((x) => x.status === (body.status ?? 'pending')).map((x) => x.rank)) + 1,
       station: 'atlas',
       ticketKey: body.ticketKey || null,
@@ -1660,6 +1668,12 @@ export class MockDaemon implements DaemonClient {
     this.tasks.push(task);
     this.emit('task.created', { task });
     return structuredClone(task);
+  }
+
+  private taskTypeOf(v: unknown): TaskType | undefined {
+    if (v == null || v === '') return undefined;
+    if (typeof v === 'string' && TASK_TYPES.includes(v as TaskType)) return v as TaskType;
+    throw new DaemonError(400, `taskType must be one of ${TASK_TYPES.join(', ')}`);
   }
 
   private messagesRoute(method: string, id: string, body: any): unknown {
@@ -1873,6 +1887,12 @@ export class MockDaemon implements DaemonClient {
           delete patch.quorum;
           delete t.quorum;
         }
+      }
+      if ('taskType' in patch) {
+        const ty = this.taskTypeOf(patch.taskType);
+        delete patch.taskType;
+        if (ty) t.taskType = ty;
+        else delete t.taskType;
       }
       Object.assign(t, patch);
       if (t.origin === 'session' && patch.status) t.manualStatus = patch.status;

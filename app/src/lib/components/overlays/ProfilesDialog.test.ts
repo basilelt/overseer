@@ -21,6 +21,16 @@ describe('agent sections of the profiles dialog', () => {
     expect(source).toContain('setSub(a.id, d.name, { model: e.currentTarget.value })');
   });
 
+  it('maps each task type to a profile and saves on change', () => {
+    expect(source).toContain('{#each TASK_TYPES as ty (ty)}');
+    expect(source).toContain('onchange={(e) => setType(ty, e.currentTarget.value)}');
+    expect(source).toMatch(/if \(id\) types\[ty\] = id;\s*else delete types\[ty\];/);
+  });
+
+  it('drops task type rules that point at a deleted profile on save', () => {
+    expect(source).toContain('types: Object.fromEntries(Object.entries(store.types ?? {}).filter(([, id]) => known(id))),');
+  });
+
   it('wraps profile actions on phone so Delete stays visible', () => {
     expect(source).toMatch(/:global\(\.phone\) \.head\s*\{\s*flex-wrap:\s*wrap;/);
     expect(source).toMatch(/:global\(\.phone\) \.head \.name\s*\{\s*width:\s*100%;/);

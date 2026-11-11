@@ -72,7 +72,7 @@ export function api(c: DaemonClient) {
     statusline: () => c.request<StatuslineStatus>('GET', '/v1/usage/statusline'),
     setStatusline: (on: boolean) => c.request<StatuslineStatus>('POST', `/v1/usage/statusline/${on ? 'install' : 'uninstall'}`, { dryRun: false }),
     profiles: () => c.request<ProfilesStore>('GET', '/v1/profiles'),
-    saveProfiles: (patch: { default?: string; profiles?: Profile[]; scopes?: Record<string, string> }) => c.request<ProfilesStore>('PUT', '/v1/profiles', patch),
+    saveProfiles: (patch: { default?: string; profiles?: Profile[]; scopes?: Record<string, string>; types?: ProfilesStore['types'] }) => c.request<ProfilesStore>('PUT', '/v1/profiles', patch),
     subagents: (cwd?: string) => c.request<{ subagents: SubagentDef[] }>('GET', `/v1/profiles/subagents${cwd ? `?cwd=${enc(cwd)}` : ''}`),
     applyProfileFiles: (b: { profile: string; cwd?: string; dryRun: boolean; files?: string[] }) => c.request<{ dryRun: boolean; files: FileEdit[] }>('POST', '/v1/profiles/apply-files', b),
     holdPlan: (id: string) =>
