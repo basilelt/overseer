@@ -37,7 +37,7 @@ The user's 11 Claude subagents all set `model: opus` in frontmatter, so the plai
   resume), and desktop and phone share it.
 - **Resolution**, most specific first: the task's or session's explicit `profile` (`none` = CLI
   defaults) > the scope whose path is the longest prefix of the session cwd or task project >
-  `default`. The default ships empty, so nothing changes until the user picks a profile. Explicit
+  `default` (a task-type rule now sits after the explicit profile, ADR 0040). The default ships empty, so nothing changes until the user picks a profile. Explicit
   `model`/`effort` in a request still win over the profile. A task whose stored profile was deleted
   falls back to its scope instead of failing to start. Tasks gain a `profile` column. A task
   created with a profile and no explicit effort stores an empty effort, so the profile's effort applies at start.
