@@ -13,6 +13,7 @@
   import { startPorts } from './lib/ports.svelte';
   import { startCenter } from './lib/notifications.svelte';
   import { followReview, openReviewFromHash } from './lib/review/open';
+  import { liveOn } from './lib/git/live.svelte';
   import { isTauri } from './lib/client';
   import { themeReport } from './lib/terminal';
   import { colorPalette, customColors, resolvedTheme, saveSettings, setSystemDark, settings } from './lib/settings.svelte';
@@ -60,6 +61,9 @@
 
   const kanban = () => import('./lib/components/kanban/KanbanView.svelte');
   const tourView = () => import('./lib/components/tour/Tour.svelte');
+  const liveBar = () => import('./lib/git/LiveBar.svelte');
+  const rail = () => import('./lib/components/sidebar/SessionRail.svelte');
+  const live = $derived(liveOn());
 
   $effect(() => {
     tour.setReady(ui.layout !== 'phone');
@@ -85,6 +89,7 @@
         stopLayout = startLayout(true);
       }
       openReviewFromHash();
+      if (!ui.mobileOs) void import('./lib/git/live-actions').then((m) => m.restoreLiveReview());
       if (app.mobile && __SELF_UPDATE__) void import('./lib/mobile/apk-update.svelte').then((m) => stops.push(m.startApkUpdater(app.os, onResume)));
     });
     const stops = [startPresence(), startTextDefaults(), stopDiag, startCenter(app), startNotifications(app), startPorts(app), onResume(() => app.wake()), () => stopLayout()];
@@ -162,7 +167,9 @@
     {/if}
     {#if shownAgents}
     <div class="views" class:hidden={app.view === 'kanban'}>
-      {#if app.sidebarOpen}
+      {#if live}
+        <Boundary name="rail">{#await rail() then { default: SessionRail }}<SessionRail />{/await}</Boundary>
+      {:else if app.sidebarOpen}
         <Boundary name="sidebar" width="var(--sidebar-w, 288px)"><Sidebar /></Boundary>
         <Resizer width={sidebarW} bounds={SIDEBAR} side="left" label={t('layout.resizeSidebar')} onchange={(w) => (sidebarW = w)} oncommit={(w) => saveSettings({ sidebarWidth: w })} />
       {/if}
@@ -175,13 +182,16 @@
           {/if}
         </Boundary>
       </main>
-      {#if app.panelOpen && app.view === 'agents' && !/^(graph|worktrees):/.test(app.selectedKey ?? '')}
+      {#if app.panelOpen && !live && app.view === 'agents' && !/^(graph|worktrees):/.test(app.selectedKey ?? '')}
         <Resizer width={panelW} bounds={PANEL} side="right" label={t('layout.resizePanel')} onchange={(w) => (panelW = w)} oncommit={(w) => saveSettings({ panelWidth: w })} />
         <Boundary name="panel" width="var(--panel-w, 340px)"><SidePanel /></Boundary>
       {/if}
     </div>
     {/if}
   </div>
+  {#if live}
+    <Boundary name="live">{#await liveBar() then { default: LiveBar }}<LiveBar />{/await}</Boundary>
+  {/if}
 </div>
 {/if}
 <Boundary name="overlay" onclose={() => app.open(null)}><Overlays /></Boundary>

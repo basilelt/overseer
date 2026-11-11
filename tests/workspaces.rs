@@ -1007,3 +1007,246 @@ fn adding_a_project_announces_it_and_its_workspace() {
     }
     assert_eq!(buf[before..].matches("project.added").count(), 0);
 }
+
+fn canon_of(p: &std::path::Path) -> String {
+    p.canonicalize().unwrap().to_string_lossy().into_owned()
+}
+
+fn meta_repo(root: &std::path::Path, subs: &[&str], checked_out: &[&str]) {
+    std::fs::create_dir_all(root).unwrap();
+    common::git(root, &["init", "-q"]);
+    let mut text = String::new();
+    for s in subs {
+        text.push_str(&format!(
+            "[submodule \"{s}\"]\n\tpath = {s}\n\turl = git@example.com:o/{s}.git\n\tignore = all\n"
+        ));
+    }
+    std::fs::write(root.join(".gitmodules"), text).unwrap();
+    for s in checked_out {
+        std::fs::create_dir_all(root.join(s)).unwrap();
+        std::fs::write(
+            root.join(s).join(".git"),
+            format!("gitdir: ../.git/modules/{s}\n"),
+        )
+        .unwrap();
+    }
+}
+
+#[test]
+fn checked_out_submodules_become_nested_workspaces_and_a_deleted_one_stays_gone() {
+    // Given a repo whose .gitmodules lists two checked-out submodules (one two levels deep) and one not checked out
+    // When the repo is added as a workspace, a submodule is deleted, folders are rescanned, then the parent is deleted
+    // Then each checked-out submodule is nested under it, the deleted one does not come back, and the parent takes its children along
+    let app = App::new("ws-submodules", json!({"autoConcurrency": 0}));
+    let meta = app.fx.base.join("home/endurance");
+    meta_repo(
+        &meta,
+        &["40_code/os", "src/backend/docs", "absent"],
+        &["40_code/os", "src/backend/docs"],
+    );
+    let parent = app.ok(
+        "POST",
+        "/v1/workspaces",
+        json!({"path": meta.to_string_lossy()}),
+    );
+    let list = app.ok("GET", "/v1/workspaces", Value::Null);
+    let os = find(&list, "path", &canon_of(&meta.join("40_code/os"))).expect("os nested");
+    assert_eq!(os["parentId"], parent["id"]);
+    assert_eq!(os["name"], "os");
+    assert_eq!(os["auto"], true);
+    assert_eq!(os["kind"], "dir");
+    assert!(os["cwd"].is_null(), "{os}");
+    let docs = find(&list, "path", &canon_of(&meta.join("src/backend/docs"))).expect("docs nested");
+    assert_eq!(docs["parentId"], parent["id"]);
+    assert_eq!(docs["name"], "docs");
+    assert!(!list.to_string().contains("absent"), "{list}");
+    assert!(parent["parentId"].is_null());
+
+    app.ok(
+        "DELETE",
+        &format!("/v1/workspaces/{}", id(&os)),
+        Value::Null,
+    );
+    app.ok("POST", "/v1/projects/discover", Value::Null);
+    let list = app.ok("GET", "/v1/workspaces", Value::Null);
+    assert!(find(&list, "id", &id(&os)).is_none(), "{list}");
+    assert!(
+        find(&list, "path", os["path"].as_str().unwrap()).is_none(),
+        "{list}"
+    );
+    assert!(find(&list, "id", &id(&docs)).is_some());
+
+    let gone = app.ok(
+        "DELETE",
+        &format!("/v1/workspaces/{}", id(&parent)),
+        Value::Null,
+    );
+    assert_eq!(gone["children"], json!([id(&docs)]));
+    let list = app.ok("GET", "/v1/workspaces", Value::Null);
+    assert!(find(&list, "id", &id(&docs)).is_none(), "{list}");
+}
+
+#[test]
+fn a_top_level_workspace_on_a_submodule_is_adopted_with_its_id_and_tabs() {
+    // Given a top-level workspace already on a submodule checkout, with tabs
+    // When its enclosing repo is added
+    // Then the same workspace is nested under the repo, keeps its id and tabs, and loses its folder and pin
+    let app = App::new("ws-submodule-adopt", json!({"autoConcurrency": 0}));
+    let meta = app.fx.base.join("home/atk");
+    meta_repo(&meta, &["src/webplatform"], &["src/webplatform"]);
+    let f = app.ok("POST", "/v1/folders", json!({"name": "Clients"}));
+    let sub = app.ok(
+        "POST",
+        "/v1/workspaces",
+        json!({"path": meta.join("src/webplatform").to_string_lossy(), "folderId": f["id"], "pinned": true}),
+    );
+    app.ok(
+        "PATCH",
+        &format!("/v1/workspaces/{}", id(&sub)),
+        json!({"tabs": ["line:a"]}),
+    );
+    let parent = app.ok(
+        "POST",
+        "/v1/workspaces",
+        json!({"path": meta.to_string_lossy()}),
+    );
+    let list = app.ok("GET", "/v1/workspaces", Value::Null);
+    let w = find(&list, "id", &id(&sub)).unwrap();
+    assert_eq!(w["parentId"], parent["id"]);
+    assert_eq!(w["tabs"], json!(["line:a"]));
+    assert!(w["folderId"].is_null());
+    assert_eq!(w["pinned"], false);
+}
+
+#[test]
+fn nested_workspaces_validate_their_parent_and_start_in_their_cwd() {
+    // Given a top-level workspace with a sub-folder
+    // When a nested workspace starting at the parent root is created, a shell starts for it and another runs in the sub-folder, and bad bodies are sent
+    // Then the first shell starts at the root, the second belongs to the nested workspace by path, and each bad body is a 400 with its message
+    let app = App::new("ws-nested", json!({"autoConcurrency": 0}));
+    let root = app.fx.base.join("home/backbone");
+    let sub = root.join("20_processus/onboarding");
+    std::fs::create_dir_all(sub.join("kyc")).unwrap();
+    let parent = app.ok(
+        "POST",
+        "/v1/workspaces",
+        json!({"path": root.to_string_lossy()}),
+    );
+    let rootp = canon_of(&root);
+    let n = app.ok(
+        "POST",
+        "/v1/workspaces",
+        json!({"path": canon_of(&sub), "name": "Onboarding PME", "parentId": parent["id"], "cwd": rootp}),
+    );
+    assert_eq!(n["parentId"], parent["id"]);
+    assert_eq!(n["name"], "Onboarding PME");
+    assert_eq!(n["cwd"], rootp.as_str());
+    assert_eq!(n["auto"], false);
+
+    let started = app.ok(
+        "POST",
+        "/v1/terms",
+        json!({"workspaceId": n["id"], "cmd": ["/bin/sh"]}),
+    );
+    assert_eq!(started["cwd"], rootp.as_str());
+    let inside = app.ok(
+        "POST",
+        "/v1/terms",
+        json!({"cwd": canon_of(&sub.join("kyc")), "cmd": ["/bin/sh"]}),
+    );
+    let want = [id(&started), id(&inside)];
+    let got: Vec<String> = targets_of(&app, &id(&n))
+        .into_iter()
+        .filter(|t| want.iter().any(|w| t.contains(w.as_str())))
+        .collect();
+    assert_eq!(got.len(), 2, "{got:?}");
+
+    let subject = app.ok(
+        "POST",
+        "/v1/workspaces",
+        json!({"kind": "subject", "name": "Archi V3", "parentId": parent["id"]}),
+    );
+    assert_eq!(subject["cwd"], rootp.as_str());
+    assert_eq!(subject["parentId"], parent["id"]);
+
+    let p = app.ok(
+        "PATCH",
+        &format!("/v1/workspaces/{}", id(&n)),
+        json!({"cwd": null}),
+    );
+    assert!(p["cwd"].is_null(), "{p}");
+    let other = app.fx.base.join("elsewhere");
+    std::fs::create_dir_all(&other).unwrap();
+    let f = app.ok("POST", "/v1/folders", json!({"name": "F"}));
+    let ws = "/v1/workspaces".to_string();
+    for (m, path, body, msg) in [
+        (
+            "POST",
+            ws.clone(),
+            json!({"path": canon_of(&other), "parentId": parent["id"]}),
+            "is not inside",
+        ),
+        (
+            "POST",
+            ws.clone(),
+            json!({"path": rootp, "parentId": parent["id"]}),
+            "is not inside",
+        ),
+        (
+            "POST",
+            ws.clone(),
+            json!({"path": canon_of(&sub.join("kyc")), "parentId": n["id"]}),
+            "the parent must be a top-level folder workspace",
+        ),
+        (
+            "POST",
+            ws.clone(),
+            json!({"path": canon_of(&sub.join("kyc")), "parentId": "nope"}),
+            "no workspace nope",
+        ),
+        (
+            "POST",
+            ws.clone(),
+            json!({"path": canon_of(&sub.join("kyc")), "parentId": parent["id"], "pinned": true}),
+            "cannot be pinned",
+        ),
+        (
+            "POST",
+            ws.clone(),
+            json!({"path": canon_of(&other), "cwd": rootp}),
+            "cwd is only for subjects and nested workspaces",
+        ),
+        (
+            "PATCH",
+            format!("{ws}/{}", id(&n)),
+            json!({"folderId": f["id"]}),
+            "cannot be pinned",
+        ),
+        (
+            "PATCH",
+            format!("{ws}/{}", id(&n)),
+            json!({"pinned": true}),
+            "cannot be pinned",
+        ),
+        (
+            "PATCH",
+            format!("{ws}/{}", id(&parent)),
+            json!({"cwd": rootp}),
+            "cwd is only for subjects and nested workspaces",
+        ),
+    ] {
+        let (code, v) = app.req(m, &path, body.clone());
+        assert_eq!(code, 400, "{m} {path} {body} {v}");
+        assert!(
+            v["error"].as_str().unwrap().contains(msg),
+            "{m} {body}: {v}"
+        );
+    }
+    for t in [&started, &inside] {
+        app.ok(
+            "POST",
+            &format!("/v1/terms/{}/kill", id(t)),
+            json!({"confirm": true}),
+        );
+    }
+}

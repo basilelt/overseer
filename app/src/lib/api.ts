@@ -84,8 +84,8 @@ export function api(c: DaemonClient) {
         throw e;
       }),
     workspaces: () => c.request<Workspace[]>('GET', '/v1/workspaces'),
-    createWorkspace: (w: { path: string; name?: string; folderId?: string | null; pinned?: boolean }) => c.request<Workspace>('POST', '/v1/workspaces', w),
-    patchWorkspace: (id: string, patch: Partial<Pick<Workspace, 'name' | 'folderId' | 'pinned' | 'archived' | 'rank' | 'tabs' | 'notifyIdle'>>) =>
+    createWorkspace: (w: { path?: string; name?: string; kind?: 'dir' | 'subject'; folderId?: string | null; pinned?: boolean; parentId?: string; cwd?: string | null }) => c.request<Workspace>('POST', '/v1/workspaces', w),
+    patchWorkspace: (id: string, patch: Partial<Pick<Workspace, 'name' | 'folderId' | 'pinned' | 'archived' | 'rank' | 'tabs' | 'notifyIdle' | 'cwd'>>) =>
       c.request<Workspace>('PATCH', `/v1/workspaces/${enc(id)}`, patch),
     deleteWorkspace: (id: string) => c.request('DELETE', `/v1/workspaces/${enc(id)}`),
     folders: () => c.request<Folder[]>('GET', '/v1/folders'),

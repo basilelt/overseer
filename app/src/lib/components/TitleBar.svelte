@@ -15,7 +15,7 @@
   import UsageChip from './usage/UsageChip.svelte';
   import NewSessionMenu from './titlebar/NewSessionMenu.svelte';
   import UpdatePill from './titlebar/UpdatePill.svelte';
-  import DemoPill from './ui/DemoPill.svelte';
+  import { isDemo } from '../demo';
   import NotificationBell from './titlebar/NotificationBell.svelte';
   import { startable } from '../kanban-core';
 
@@ -35,6 +35,7 @@
       app.notify(String((e as Error).message ?? e), 'error');
     }
   }
+  const demoPill = isDemo() ? () => import('./ui/DemoPill.svelte') : null;
 </script>
 
 <header class="bar" class:mac data-tauri-drag-region>
@@ -58,7 +59,7 @@
     {/each}
   </div>
   <div class="spacer" data-tauri-drag-region></div>
-  <DemoPill />
+  {#if demoPill}{#await demoPill() then { default: DemoPill }}<DemoPill />{/await}{/if}
   <UpdatePill />
   <SystemChip />
   <UsageChip />
