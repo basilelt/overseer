@@ -407,7 +407,7 @@ pub fn deterministic(i: &Input) -> Value {
         let o = owners
             .entry(owner_of(repo_of(&w.path), &w.path))
             .or_default();
-        if w.folder_id.is_none() {
+        if w.folder_id.is_none() && w.parent_id.is_none() {
             o.0.push(w);
         }
     }
@@ -909,6 +909,9 @@ pub fn run_action(
         "move_workspace" => {
             let f = folder(refs)?;
             let w = workspaces::get(reg, s("workspaceId")).map_err(|e| e.1)?;
+            if w.parent_id.is_some() {
+                return Ok(skipped("nested in another workspace"));
+            }
             if w.folder_id.as_deref() == Some(f.as_str()) {
                 return Ok(skipped("already in the folder"));
             }
@@ -1298,6 +1301,7 @@ mod tests {
             updated_ms: NOW,
             subject: false,
             cwd: None,
+            parent_id: None,
         }
     }
 
@@ -1385,6 +1389,21 @@ mod tests {
             .filter(|a| a["kind"] == kind)
             .cloned()
             .collect()
+    }
+
+    #[test]
+    fn a_nested_workspace_is_never_moved_into_an_owner_folder() {
+        let mut nested = ws("wb", "/src/b");
+        nested.parent_id = Some("wa".into());
+        let workspaces = vec![ws("wa", "/src/a"), nested, ws("wc", "/src/c")];
+        let p = plan_of(&[], &workspaces, &[], &|_| None);
+        assert!(
+            kinds(&p, "move_workspace")
+                .iter()
+                .all(|a| a["workspaceId"] != "wb"),
+            "{p}"
+        );
+        assert!(kinds(&p, "create_folder").is_empty(), "{p}");
     }
 
     #[test]
@@ -1665,6 +1684,25 @@ mod tests {
                 )
             })
             .collect()
+    }
+
+    #[test]
+    fn applying_a_folder_move_skips_a_nested_workspace() {
+        let reg = reg("apply-nested");
+        sql(reg.conn.execute_batch(
+            "INSERT INTO workspaces (id, name, path, rank, created_ms, updated_ms) VALUES ('wp', 'p', '/p', 0, 0, 0);
+             INSERT INTO workspaces (id, name, path, rank, created_ms, updated_ms, parent_id) VALUES ('wn', 'n', '/p/n', 0, 0, 0, 'wp');
+             INSERT INTO folders (id, name, rank, created_ms, updated_ms) VALUES ('f1', 'F', 0, 0, 0);",
+        ))
+        .unwrap();
+        let plan = json!({"actions": [{"id": "a1", "kind": "move_workspace", "workspaceId": "wn", "folder": "f1"}]});
+        let fake = Fake {
+            reg: &reg,
+            calls: RefCell::new(vec![]),
+        };
+        let r = apply_with(&fake, &reg, &[], &plan, &["a1".to_string()]);
+        assert_eq!(statuses(&r), [("a1".to_string(), "skipped".to_string())]);
+        assert!(workspaces::get(&reg, "wn").unwrap().folder_id.is_none());
     }
 
     #[test]

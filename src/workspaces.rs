@@ -11,7 +11,7 @@ use std::path::Path;
 
 pub type Res<T> = Result<T, (u16, String)>;
 
-const WS_COLS: &str = "id, name, path, folder_id, pinned, archived, auto, rank, tabs, notify_idle, created_ms, updated_ms, kind, cwd";
+const WS_COLS: &str = "id, name, path, folder_id, pinned, archived, auto, rank, tabs, notify_idle, created_ms, updated_ms, kind, cwd, parent_id";
 const FOLDER_COLS: &str = "id, name, parent_id, rank, collapsed, created_ms, updated_ms";
 const GROUP_COLS: &str = "id, name, rank, members, notify_idle, created_ms, updated_ms";
 
@@ -31,8 +31,11 @@ pub struct Workspace {
     pub created_ms: i64,
     pub updated_ms: i64,
     pub subject: bool,
-    /// Default working directory of a subject; several subjects may share it.
+    /// Where its sessions start: required for a subject, optional for a nested dir
+    /// (none starts in its own folder).
     pub cwd: Option<String>,
+    /// The top-level dir workspace this one is nested in (one level only).
+    pub parent_id: Option<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -74,6 +77,7 @@ fn ws_row(r: &Row) -> rusqlite::Result<Workspace> {
         path: if subject { String::new() } else { r.get(2)? },
         subject,
         cwd: r.get(13)?,
+        parent_id: r.get(14)?,
         folder_id: r.get(3)?,
         pinned: r.get(4)?,
         archived: r.get(5)?,
@@ -113,14 +117,16 @@ fn group_row(r: &Row) -> rusqlite::Result<Group> {
 impl Workspace {
     /// Where a new session of this workspace starts.
     pub fn start_dir(&self) -> &str {
-        match (&self.cwd, self.subject) {
-            (Some(c), true) => c,
-            _ => &self.path,
-        }
+        self.cwd.as_deref().unwrap_or(&self.path)
     }
 
     pub fn missing(&self) -> bool {
-        !Path::new(self.start_dir()).is_dir()
+        let dir = if self.subject {
+            self.start_dir()
+        } else {
+            &self.path
+        };
+        !Path::new(dir).is_dir()
     }
 
     pub fn to_json(&self, station: &str) -> Value {
@@ -128,7 +134,7 @@ impl Workspace {
             "id": self.id, "name": self.name, "station": station,
             "path": (!self.subject).then_some(&self.path),
             "kind": if self.subject { "subject" } else { "dir" }, "cwd": self.cwd,
-            "folderId": self.folder_id, "pinned": self.pinned, "archived": self.archived,
+            "parentId": self.parent_id, "folderId": self.folder_id, "pinned": self.pinned, "archived": self.archived,
             "auto": self.auto, "rank": self.rank, "tabs": self.tabs, "notifyIdle": self.notify_idle,
             "missing": self.missing(),
             "createdAt": format_rfc3339(self.created_ms), "updatedAt": format_rfc3339(self.updated_ms),
@@ -281,10 +287,8 @@ fn ensure_auto(ctx: &Ctx, reg: &Registry, projects: &[Value]) -> Res<()> {
         ))?;
         if n > 0 {
             if let Some(w) = by_path(reg, path)? {
-                publish(
-                    "workspace.created",
-                    json!({"workspace": w.to_json(&ctx.config.station_id)}),
-                );
+                publish_ws(ctx, "workspace.created", &w);
+                ensure_submodules(ctx, reg, std::slice::from_ref(&w))?;
             }
         }
     }
@@ -337,6 +341,47 @@ fn canonical_as(path: &str, field: &str) -> Res<String> {
     Ok(p.to_string_lossy().into_owned())
 }
 
+struct Placement {
+    parent: Option<Workspace>,
+    folder_id: Option<String>,
+    pinned: bool,
+}
+
+/// A nested workspace lives in its parent's block: it has no folder and is never pinned.
+fn placement(reg: &Registry, b: &Value) -> Res<Placement> {
+    let parent = match &b["parentId"] {
+        Value::Null => None,
+        Value::String(id) => Some(parent_ws(reg, id)?),
+        _ => return Err(bad("parentId must be a string or null")),
+    };
+    if parent.is_some() && !(b["folderId"].is_null() && b["pinned"].is_null()) {
+        return Err(bad("a nested workspace has no folder and cannot be pinned"));
+    }
+    Ok(Placement {
+        folder_id: folder_ref(reg, &b["folderId"])?,
+        pinned: match &b["pinned"] {
+            Value::Null => false,
+            v => bool_of(v, "pinned")?,
+        },
+        parent,
+    })
+}
+
+fn parent_ws(reg: &Registry, id: &str) -> Res<Workspace> {
+    let p = get(reg, id).map_err(|(c, e)| if c == 404 { bad(e) } else { (c, e) })?;
+    if p.subject || p.parent_id.is_some() {
+        return Err(bad("the parent must be a top-level folder workspace"));
+    }
+    Ok(p)
+}
+
+fn publish_ws(ctx: &Ctx, kind: &str, w: &Workspace) {
+    publish(
+        kind,
+        json!({"workspace": w.to_json(&ctx.config.station_id)}),
+    );
+}
+
 fn create_subject(ctx: &Ctx, b: &Value) -> Res<(bool, Workspace)> {
     if !b["path"].is_null() {
         return Err(bad("a subject has no path, give cwd"));
@@ -345,26 +390,29 @@ fn create_subject(ctx: &Ctx, b: &Value) -> Res<(bool, Workspace)> {
         Value::Null => return Err(bad("name required")),
         v => name_of(v)?,
     };
-    let cwd = canonical_as(b["cwd"].as_str().unwrap_or_default(), "cwd")?;
     let reg = db(ctx)?;
-    let folder_id = folder_ref(&reg, &b["folderId"])?;
-    let pinned = match &b["pinned"] {
-        Value::Null => false,
-        v => bool_of(v, "pinned")?,
+    let at = placement(&reg, b)?;
+    let cwd = match (&b["cwd"], &at.parent) {
+        (Value::Null, Some(p)) => p.path.clone(),
+        (v, _) => canonical_as(v.as_str().unwrap_or_default(), "cwd")?,
     };
     let now = now_ms();
     let id = ulid(now);
     sql(reg.conn.execute(
-        "INSERT INTO workspaces (id, name, path, folder_id, pinned, auto, rank, created_ms, updated_ms, kind, cwd)
-         VALUES (?1, ?2, ?3, ?4, ?5, 0, ?6, ?7, ?7, 'subject', ?8)",
-        params![id, name, subject_path(&id), folder_id, pinned, now as f64, now, cwd],
+        "INSERT INTO workspaces (id, name, path, folder_id, pinned, auto, rank, created_ms, updated_ms, kind, cwd, parent_id)
+         VALUES (?1, ?2, ?3, ?4, ?5, 0, ?6, ?7, ?7, 'subject', ?8, ?9)",
+        params![id, name, subject_path(&id), at.folder_id, at.pinned, now as f64, now, cwd, at.parent.map(|p| p.id)],
     ))?;
     let w = get(&reg, &id)?;
-    publish(
-        "workspace.created",
-        json!({"workspace": w.to_json(&ctx.config.station_id)}),
-    );
+    publish_ws(ctx, "workspace.created", &w);
     Ok((true, w))
+}
+
+fn nested_cwd(v: &Value) -> Res<Option<String>> {
+    match v {
+        Value::Null => Ok(None),
+        v => canonical_as(v.as_str().unwrap_or_default(), "cwd").map(Some),
+    }
 }
 
 pub fn create(ctx: &Ctx, b: &Value) -> Res<(bool, Workspace)> {
@@ -375,12 +423,18 @@ pub fn create(ctx: &Ctx, b: &Value) -> Res<(bool, Workspace)> {
         Value::String(k) if k == "subject" => return create_subject(ctx, b),
         _ => return Err(bad("kind must be \"dir\" or \"subject\"")),
     }
-    if !b["cwd"].is_null() {
-        return Err(bad("cwd is only for subjects"));
-    }
     let path = canonical(b["path"].as_str().unwrap_or_default())?;
     let reg = db(ctx)?;
-    let folder_id = folder_ref(&reg, &b["folderId"])?;
+    let at = placement(&reg, b)?;
+    if at.parent.is_none() && !b["cwd"].is_null() {
+        return Err(bad("cwd is only for subjects and nested workspaces"));
+    }
+    if let Some(p) = &at.parent {
+        if p.path == path || !under(&path, &p.path) {
+            return Err(bad(format!("{path} is not inside {}", p.path)));
+        }
+    }
+    let cwd = nested_cwd(&b["cwd"])?;
     let name = match &b["name"] {
         Value::Null => Path::new(&path)
             .file_name()
@@ -388,14 +442,23 @@ pub fn create(ctx: &Ctx, b: &Value) -> Res<(bool, Workspace)> {
             .unwrap_or_else(|| path.clone()),
         v => name_of(v)?,
     };
-    let pinned = match &b["pinned"] {
-        Value::Null => false,
-        v => bool_of(v, "pinned")?,
-    };
     sql(reg
         .conn
         .execute("DELETE FROM workspace_tombstones WHERE path = ?1", [&path]))?;
     if let Some(mut w) = by_path(&reg, &path)? {
+        if let Some(p) = &at.parent {
+            if w.parent_id.is_none() && !is_parent(&reg, &w.id)? {
+                adopt(&reg, &w.id, &p.id)?;
+                w = get(&reg, &w.id)?;
+                if !b["name"].is_null() {
+                    w.name = name;
+                }
+                w.cwd = cwd;
+                w.archived = false;
+                save(ctx, &reg, &mut w, "workspace.updated")?;
+                return Ok((false, w));
+            }
+        }
         if w.archived {
             w.archived = false;
             save(ctx, &reg, &mut w, "workspace.updated")?;
@@ -405,25 +468,121 @@ pub fn create(ctx: &Ctx, b: &Value) -> Res<(bool, Workspace)> {
     let now = now_ms();
     let id = ulid(now);
     sql(reg.conn.execute(
-        "INSERT INTO workspaces (id, name, path, folder_id, pinned, auto, rank, created_ms, updated_ms)
-         VALUES (?1, ?2, ?3, ?4, ?5, 0, ?6, ?7, ?7)",
-        params![id, name, path, folder_id, pinned, now as f64, now],
+        "INSERT INTO workspaces (id, name, path, folder_id, pinned, auto, rank, created_ms, updated_ms, cwd, parent_id)
+         VALUES (?1, ?2, ?3, ?4, ?5, 0, ?6, ?7, ?7, ?8, ?9)",
+        params![id, name, path, at.folder_id, at.pinned, now as f64, now, cwd, at.parent.as_ref().map(|p| &p.id)],
     ))?;
     let w = get(&reg, &id)?;
-    publish(
-        "workspace.created",
-        json!({"workspace": w.to_json(&ctx.config.station_id)}),
-    );
+    publish_ws(ctx, "workspace.created", &w);
+    if at.parent.is_none() {
+        ensure_submodules(ctx, &reg, std::slice::from_ref(&w))?;
+    }
     Ok((true, w))
+}
+
+fn is_parent(reg: &Registry, id: &str) -> Res<bool> {
+    sql(reg.conn.query_row(
+        "SELECT EXISTS (SELECT 1 FROM workspaces WHERE parent_id = ?1)",
+        [id],
+        |r| r.get(0),
+    ))
+}
+
+fn adopt(reg: &Registry, id: &str, parent: &str) -> Res<()> {
+    sql(reg.conn.execute(
+        "UPDATE workspaces SET parent_id = ?2, folder_id = NULL, pinned = 0 WHERE id = ?1",
+        params![id, parent],
+    ))
+    .map(drop)
+}
+
+/// The `path = ...` entries of a `.gitmodules` file, relative to the repository.
+pub fn submodule_paths(gitmodules: &str) -> Vec<String> {
+    gitmodules
+        .lines()
+        .filter_map(|l| {
+            let (k, v) = l.split_once('=')?;
+            (k.trim() == "path").then(|| v.trim().trim_matches('"').to_string())
+        })
+        .filter(|p| !p.is_empty() && !Path::new(p).is_absolute())
+        .collect()
+}
+
+/// Nests a workspace for every checked-out submodule of the given top-level workspaces:
+/// creates it, or adopts the top-level workspace already at that path (keeping its id,
+/// tabs and sessions). A submodule workspace the user deleted stays deleted.
+pub fn ensure_submodules(ctx: &Ctx, reg: &Registry, parents: &[Workspace]) -> Res<()> {
+    for p in parents
+        .iter()
+        .filter(|p| !p.subject && p.parent_id.is_none())
+    {
+        let Ok(text) = std::fs::read_to_string(Path::new(&p.path).join(".gitmodules")) else {
+            continue;
+        };
+        for rel in submodule_paths(&text) {
+            let dir = Path::new(&p.path).join(&rel);
+            if !dir.join(".git").exists() {
+                continue;
+            }
+            let Ok(dir) = dir.canonicalize() else {
+                continue;
+            };
+            let path = dir.to_string_lossy().into_owned();
+            if path == p.path || !under(&path, &p.path) {
+                continue;
+            }
+            let gone: bool = sql(reg.conn.query_row(
+                "SELECT EXISTS (SELECT 1 FROM workspace_tombstones WHERE path = ?1)",
+                [&path],
+                |r| r.get(0),
+            ))?;
+            if gone {
+                continue;
+            }
+            match by_path(reg, &path)? {
+                Some(w) if w.parent_id.is_some() || is_parent(reg, &w.id)? => {}
+                Some(w) => {
+                    adopt(reg, &w.id, &p.id)?;
+                    publish_ws(ctx, "workspace.updated", &get(reg, &w.id)?);
+                }
+                None => {
+                    let now = now_ms();
+                    let id = ulid(now);
+                    let name = dir
+                        .file_name()
+                        .map(|n| n.to_string_lossy().into_owned())
+                        .unwrap_or_else(|| rel.clone());
+                    sql(reg.conn.execute(
+                        "INSERT INTO workspaces (id, name, path, auto, rank, created_ms, updated_ms, parent_id)
+                         VALUES (?1, ?2, ?3, 1, ?4, ?5, ?5, ?6)",
+                        params![id, name, path, now as f64, now, p.id],
+                    ))?;
+                    publish_ws(ctx, "workspace.created", &get(reg, &id)?);
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Runs submodule detection over every top-level workspace (start, rescan, every scan).
+pub fn scan_submodules(ctx: &Ctx) -> Res<()> {
+    let reg = db(ctx)?;
+    let top = all(&reg)?;
+    ensure_submodules(ctx, &reg, &top)
 }
 
 pub fn patch(ctx: &Ctx, id: &str, b: &Value) -> Res<Workspace> {
     let obj = object(b)?;
     let reg = db(ctx)?;
     let mut w = get(&reg, id)?;
+    let nested = w.parent_id.is_some();
     for (k, v) in obj {
         match k.as_str() {
             "name" => w.name = name_of(v)?,
+            "folderId" | "pinned" if nested && !v.is_null() && v != &json!(false) => {
+                return Err(bad("a nested workspace has no folder and cannot be pinned"))
+            }
             "folderId" => w.folder_id = folder_ref(&reg, v)?,
             "pinned" => w.pinned = bool_of(v, k)?,
             "archived" => w.archived = bool_of(v, k)?,
@@ -433,7 +592,8 @@ pub fn patch(ctx: &Ctx, id: &str, b: &Value) -> Res<Workspace> {
             "cwd" if w.subject => {
                 w.cwd = Some(canonical_as(v.as_str().unwrap_or_default(), "cwd")?)
             }
-            "cwd" => return Err(bad("cwd is only for subjects")),
+            "cwd" if nested => w.cwd = nested_cwd(v)?,
+            "cwd" => return Err(bad("cwd is only for subjects and nested workspaces")),
             _ => {}
         }
     }
@@ -443,6 +603,22 @@ pub fn patch(ctx: &Ctx, id: &str, b: &Value) -> Res<Workspace> {
 
 pub fn delete(reg: &Registry, id: &str) -> Res<Value> {
     let w = get(reg, id)?;
+    let children: Vec<Workspace> = all(reg)?
+        .into_iter()
+        .filter(|c| c.parent_id.as_deref() == Some(id))
+        .collect();
+    for c in children.iter().chain(std::iter::once(&w)) {
+        drop_one(reg, c)?;
+    }
+    let mut out = json!({ "deleted": id });
+    if !children.is_empty() {
+        out["children"] = json!(children.iter().map(|c| &c.id).collect::<Vec<_>>());
+    }
+    Ok(out)
+}
+
+fn drop_one(reg: &Registry, w: &Workspace) -> Res<()> {
+    let id = w.id.as_str();
     if !w.subject {
         sql(reg.conn.execute(
             "INSERT OR REPLACE INTO workspace_tombstones (path, at_ms) VALUES (?1, ?2)",
@@ -462,7 +638,7 @@ pub fn delete(reg: &Registry, id: &str) -> Res<Value> {
         }
     }
     publish("workspace.deleted", json!({"id": id}));
-    Ok(json!({"deleted": id}))
+    Ok(())
 }
 
 pub fn folders(reg: &Registry) -> Res<Vec<Folder>> {
@@ -897,6 +1073,28 @@ pub fn route(r: &Request, segs: &[&str], body: &Value, ctx: &Ctx) -> Option<(u16
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn submodule_paths_reads_path_entries_and_skips_absolute_ones() {
+        let text = "[submodule \"backend\"]\n\tpath = src/backend/document-service\n\turl = git@x:o/d.git\n\tignore = all\n[submodule \"web\"]\n  path=src/webplatform\n[submodule \"bad\"]\n\tpath = /etc\n\tpath =\n";
+        assert_eq!(
+            submodule_paths(text),
+            vec!["src/backend/document-service", "src/webplatform"]
+        );
+        assert!(submodule_paths("").is_empty());
+    }
+
+    #[test]
+    fn a_nested_dir_starts_in_its_cwd_but_is_missing_only_when_its_own_folder_is_gone() {
+        let mut n = ws("/nonexistent-nested");
+        n.parent_id = Some("p".into());
+        n.cwd = Some("/tmp".into());
+        assert_eq!(n.start_dir(), "/tmp");
+        assert!(n.missing());
+        assert_eq!(n.to_json("st")["parentId"], "p");
+        n.cwd = None;
+        assert_eq!(n.start_dir(), "/nonexistent-nested");
+    }
     use super::*;
 
     fn ws(path: &str) -> Workspace {
@@ -915,6 +1113,7 @@ mod tests {
             updated_ms: 0,
             subject: false,
             cwd: None,
+            parent_id: None,
         }
     }
 

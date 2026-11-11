@@ -22,6 +22,7 @@ pub mod gh;
 pub mod git;
 pub mod gitgraph;
 pub mod github;
+pub mod gitops;
 pub mod hold;
 pub mod hooks;
 pub mod import;

@@ -852,6 +852,7 @@ pub fn handle(ctx: &Ctx, r: &Request) -> (u16, Value) {
         .or_else(|| crate::review::routes(r, &segs, &body, ctx))
         .or_else(|| crate::workspaces::route(r, &segs, &body, ctx))
         .or_else(|| crate::gitgraph::routes(ctx, r, &segs, &body))
+        .or_else(|| crate::gitops::routes(ctx, r, &segs, &body))
         .or_else(|| crate::worktrees::routes(ctx, &r.method, &segs, &body))
         .or_else(|| crate::install::routes(&r.method, &segs, &body, &ctx.state_dir))
         .or_else(|| crate::statusline::routes(&r.method, &segs, &body, &ctx.state_dir))

@@ -653,8 +653,10 @@ export interface Workspace {
   /** Null for a subject, which has no directory of its own. */
   path: string | null;
   kind?: 'dir' | 'subject';
-  /** Default working directory of a subject; null for a dir. */
+  /** Where its sessions start: required for a subject, optional for a nested dir (null starts in its own folder). */
   cwd?: string | null;
+  /** The top-level dir workspace this one is nested in: a sub-folder, a submodule or a subject. */
+  parentId?: string | null;
   station?: string;
   folderId: string | null;
   pinned: boolean;

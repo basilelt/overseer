@@ -48,6 +48,21 @@
   --lane-3: #a8804f;
   --lane-4: #8a6fa8;
   --lane-5: #b0655f;
+  --heat-0: #fde9a8;
+  --heat-1: #fcc66b;
+  --heat-2: #f59c45;
+  --heat-3: #e2672b;
+  --heat-4: #bd3a1d;
+  --heat-5: #7a1c12;
+  --heat-ink-0: #3d1a00;
+  --heat-ink-1: #3d1a00;
+  --heat-ink-2: #3d1a00;
+  --heat-ink-3: #ffffff;
+  --heat-ink-4: #ffffff;
+  --heat-ink-5: #ffffff;
+  --link-out: #2563eb;
+  --link-in: #c2410c;
+  --link-cross: #7c3aed;
   --font: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
   --mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
   --radius: 6px;
@@ -101,6 +116,21 @@
   --lane-3: #c49b70;
   --lane-4: #a991c4;
   --lane-5: #cc8580;
+  --heat-0: #32204f;
+  --heat-1: #64235f;
+  --heat-2: #9c3358;
+  --heat-3: #d2523b;
+  --heat-4: #f08c26;
+  --heat-5: #fbe26b;
+  --heat-ink-0: #f6f0ff;
+  --heat-ink-1: #f6f0ff;
+  --heat-ink-2: #f6f0ff;
+  --heat-ink-3: #fff7f0;
+  --heat-ink-4: #1a0d00;
+  --heat-ink-5: #1a0d00;
+  --link-out: #60a5fa;
+  --link-in: #fb923c;
+  --link-cross: #c084fc;
 }
 
 :root[data-palette='custom'] {
@@ -300,6 +330,15 @@ input.switch:checked::after {
   transform: translate(14px, -50%);
 }
 
+input.switch:indeterminate {
+  border-color: var(--accent);
+}
+
+input.switch:indeterminate::after {
+  background: var(--accent);
+  transform: translate(7px, -50%);
+}
+
 input.switch:disabled {
   opacity: 0.45;
   cursor: default;
@@ -319,6 +358,10 @@ input.switch:disabled {
 
 :root.phone input.switch:checked::after {
   transform: translate(20px, -50%);
+}
+
+:root.phone input.switch:indeterminate::after {
+  transform: translate(10px, -50%);
 }
 
 ::placeholder {
