@@ -3673,3 +3673,75 @@ fn feedback_rejects_attachments_github_would_not_accept() {
     assert_eq!(direct(&fx, "o/r", &[&outside]).0, 400);
     assert!(gh_log(&fx).is_empty());
 }
+
+fn install_amp(app: &App) -> (String, WebSocketLike) {
+    let wt = app.fx.wt.to_string_lossy().into_owned();
+    let t = app.ok(
+        "POST",
+        "/v1/terms",
+        json!({"install": "amp", "cwd": wt, "cols": 120, "rows": 32}),
+    );
+    assert_eq!(
+        t["cmd"],
+        json!(["npm install -g --allow-scripts=@ampcode/cli @sourcegraph/amp"])
+    );
+    assert_eq!(t["title"], "Install Amp");
+    assert!(t["agent"].is_null());
+    let id = t["id"].as_str().unwrap().to_string();
+    let ws = app.ws(&id);
+    (id, ws)
+}
+
+type WebSocketLike = tungstenite::WebSocket<UnixStream>;
+
+fn exit_code(app: &App, id: &str) -> Value {
+    wait_for(|| {
+        let t = app.ok("GET", &format!("/v1/terms/{id}"), Value::Null);
+        (t["exited"] == true).then(|| t["exitCode"].clone())
+    })
+}
+
+#[test]
+fn install_term_runs_the_agent_install_command_and_exits_with_its_status() {
+    let app = App::new("install", json!({}));
+    let (id, mut ws) = install_amp(&app);
+    read_until(&mut ws, "added 1 package (stub)");
+    assert_eq!(exit_code(&app, &id), 0);
+    let log = std::fs::read_to_string(app.fx.base.join("stub.log")).unwrap();
+    assert!(
+        log.contains("npm install -g --allow-scripts=@ampcode/cli @sourcegraph/amp"),
+        "{log}"
+    );
+}
+
+#[test]
+fn install_term_reports_a_failed_install_and_keeps_its_exit_code() {
+    let app = App::with_env("installfail", json!({}), &[("SB_NPM_FAIL", "1")]);
+    let (id, mut ws) = install_amp(&app);
+    read_until(&mut ws, "Install failed with exit code 1");
+    assert_eq!(exit_code(&app, &id), 1);
+}
+
+#[test]
+fn install_term_rejects_agents_without_an_install_command() {
+    let app = App::new("installbad", json!({}));
+    let (code, v) = app.req("POST", "/v1/terms", json!({"install": "agy"}));
+    assert_eq!(
+        (code, v["error"].as_str()),
+        (400, Some("Antigravity has no install command"))
+    );
+    let (code, v) = app.req("POST", "/v1/terms", json!({"install": "nope"}));
+    assert_eq!(
+        (code, v["error"].as_str()),
+        (400, Some("unknown agent nope"))
+    );
+    let (code, v) = app.req(
+        "POST",
+        "/v1/terms",
+        json!({"install": "amp", "agent": "amp"}),
+    );
+    assert_eq!(
+        (code, v["error"].as_str()),
+        (400, Some("give either install, agent or cmd"))
+    );
+}

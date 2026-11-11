@@ -10,6 +10,7 @@ export interface AgentInfo {
   resume: boolean;
   verified: boolean;
   install?: string;
+  installable?: boolean;
   sessions: boolean;
   turns: boolean;
 }
@@ -155,6 +156,7 @@ export interface NewTerm {
   cwd?: string;
   cmd?: string[];
   agent?: string;
+  install?: string;
   model?: string;
   effort?: Effort;
   profile?: string;

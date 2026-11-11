@@ -68,4 +68,12 @@ describe('new tab menu', () => {
     expect(menu).toContain('app.newSession');
     for (const view of ['browser', 'graph', 'worktrees', 'system', 'usage', 'prs', 'reviewKey', 'tabs.reviewChanges']) expect(menu).not.toContain(view);
   });
+
+  it('installs an absent agent from its entry instead of greying it out', () => {
+    const menu = actions.slice(actions.indexOf('export function newSessionItems'), actions.indexOf('export function startIn'));
+    expect(menu).toMatch(/disabled: !a\.installed && !canInstall\(a\)/);
+    expect(menu).toMatch(/run: a\.installed \? start\(a\.id\) : install\(a\.id\)/);
+    expect(menu).toContain('app.installAgent');
+    expect(menu).toContain("label: canInstall(a) ? t('palette.installAgent', { name: a.name }) : a.name");
+  });
 });

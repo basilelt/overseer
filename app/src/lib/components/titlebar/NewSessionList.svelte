@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { ordered } from '../../agents';
+  import { canInstall, ordered } from '../../agents';
   import { t } from '../../i18n.svelte';
   import { app } from '../../state.svelte';
   import type { AgentInfo } from '../../types';
@@ -20,7 +20,7 @@
   async function start(a: AgentInfo) {
     onclose(false);
     try {
-      await app.newSession(a.id);
+      await (a.installed ? app.newSession(a.id) : app.installAgent(a.id));
     } catch (e) {
       app.notify(String((e as Error)?.message ?? e), 'error');
     }
@@ -42,8 +42,8 @@
   {#each agents as a, i (a.id)}
     <button
       role="menuitem"
-      disabled={!a.installed}
-      title={a.installed ? (a.version ?? a.name) : `${t('agents.notInstalled')} · ${a.install ?? ''}`}
+      disabled={!a.installed && !canInstall(a)}
+      title={a.installed ? (a.version ?? a.name) : canInstall(a) ? t('agents.installIn', { name: a.name, cmd: a.install ?? '' }) : `${t('agents.notInstalled')} · ${a.install ?? ''}`}
       onclick={() => start(a)}
     >
       <span class="glyph"><AgentGlyph agent={a.id} size={14} /></span>
@@ -51,7 +51,7 @@
         <span>{a.name}</span>
         {#if !a.installed}<span class="sub mono">{a.install ?? t('agents.notInstalled')}</span>{/if}
       </span>
-      {#if a.installed && a.version}<span class="ver mono">{a.version}</span>{/if}
+      {#if a.installed && a.version}<span class="ver mono">{a.version}</span>{:else if canInstall(a)}<span class="act">{t('agents.install')}</span>{/if}
     </button>
     {#if a.installed && agents[i + 1] && !agents[i + 1].installed}<hr />{/if}
   {/each}
@@ -128,6 +128,10 @@
   .ver {
     font-size: 10.5px;
     color: var(--text-3);
+  }
+  .act {
+    font-size: 10.5px;
+    color: var(--accent);
   }
   .profile {
     display: flex;

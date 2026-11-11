@@ -77,3 +77,5 @@ export function sessionsAvailable(agents: AgentInfo[], id: string): boolean {
   const a = findAgent(agents, id);
   return a ? a.sessions : true;
 }
+
+export const canInstall = (a: AgentInfo): boolean => !a.installed && !!a.installable && !!a.install;

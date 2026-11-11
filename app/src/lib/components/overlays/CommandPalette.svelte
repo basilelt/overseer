@@ -43,7 +43,7 @@
   import { saveSettings, settings, type ThemePref } from '../../settings.svelte';
   import { highlight, rank, type Match } from '../../fuzzy';
   import type { GroupId } from '../../grouping';
-  import { ordered } from '../../agents';
+  import { canInstall, ordered } from '../../agents';
   import AgentGlyph from '../ui/AgentGlyph.svelte';
   import FolderPlus from '@lucide/svelte/icons/folder-plus';
   import Megaphone from '@lucide/svelte/icons/megaphone';
@@ -90,9 +90,14 @@
   const connected = app.connected;
 
   const sessionActions: Cmd[] = connected
-    ? ordered(app.agents)
-        .filter((a) => a.installed)
-        .map((a) => ({ id: `new-${a.id}`, label: t('palette.newSession', { name: a.name }), agent: a.id, section: 'actions', run: () => app.newSession(a.id) }))
+    ? [
+        ...ordered(app.agents)
+          .filter((a) => a.installed)
+          .map((a): Cmd => ({ id: `new-${a.id}`, label: t('palette.newSession', { name: a.name }), agent: a.id, section: 'actions', run: () => app.newSession(a.id) })),
+        ...app.agents
+          .filter(canInstall)
+          .map((a): Cmd => ({ id: `install-${a.id}`, label: t('palette.installAgent', { name: a.name }), agent: a.id, section: 'actions', run: () => app.installAgent(a.id).catch((e) => app.notify(String((e as Error)?.message ?? e), 'error')) })),
+      ]
     : [];
 
   const reviewChanges = (side = false) => {

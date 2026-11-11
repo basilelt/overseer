@@ -58,6 +58,8 @@ is done. Agent tabs also have a **Chat** view rebuilt live from the agent's sess
 Terminals can optionally be drawn on the GPU with WebGL (Settings, Terminal, **GPU rendering**,
 off by default and experimental), which keeps long output smooth. Clicking in the line you are
 typing, in a shell or an agent like Claude Code or Codex, moves the cursor there like in a text editor.
+An agent you have not installed yet is one click away: pick it under **+** and its install
+command runs in a new terminal, then it is ready to start.
 Coming from Switchboard, the old name of Overseer? When its data is found, Overseer offers to import
 your sessions, tasks, workspaces and settings in one click (also in Settings, Help).
 

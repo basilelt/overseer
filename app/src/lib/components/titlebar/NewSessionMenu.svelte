@@ -17,7 +17,7 @@
 
 <svelte:window onpointerdown={(e) => open && !root.contains(e.target as Node) && (open = false)} />
 
-<div class="wrap" bind:this={root}>
+<div class="wrap" data-tour="new-session" bind:this={root}>
   <button
     class="icon-btn"
     class:active={open}
