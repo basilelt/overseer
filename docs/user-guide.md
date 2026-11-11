@@ -919,7 +919,7 @@ On first launch, once the app is connected (immediately in local mode, after the
 connection on a phone), a welcome card offers **Take the tour** or **Skip**. The tour dims the
 window and highlights the real controls one at a time: host chip, workspaces sidebar, tabs and the
 new-session menu, the Terminal/Chat toggle, the side panel, Tasks, Review, the usage, system and ports
-chips, notifications and hooks, the command palette and Feedback, in 0.25 the Cmd/Ctrl+P palette shortcut, and in 0.27 the demo mode (on the **Demo mode** pill while in the demo, else on the host chip), and in 0.28 the GPU rendering option for terminals, and in 0.29 the clean up of unused worktrees and the import from Switchboard (on its button in Settings, Help, or on the Settings button), and in 0.30 click to move the cursor in a terminal (on the tabs), and in 0.31 the Light and Dark palettes (on Settings, or More on a phone), and in 0.33 the one-click install of skills and plugins (on Settings), and in 0.34 the auto-approval defaults (on Settings, Agents), the Review, Merged and Closed columns (on the Merged column when the board is open, else on the Tasks tab) and the clean removal of everything Overseer added (on Settings, Connection, **Remove**), and in 0.35 one-click in-app updates for every install (on Settings, Updates, else on the Settings button), and in 0.36 subjects inside a workspace (on **+ New subject** in the open workspace, else on the sidebar), and the live review behind the git button (on the git button of a session's tab bar, else on the command palette), and the review map (on List | Map in a review, else on the Review tab), and keeping agents running with the lid closed (on its switch in Settings, Connection, else on the Settings button), and Record a bug (centred, on the command palette), and the Quorum option of a new task (on the Quorum control in the New task dialog, else on the Tasks tab), and installing a missing agent from the app (on the title bar **+**, else on the palette). Steps whose control is not on
+chips, notifications and hooks, the command palette and Feedback, in 0.25 the Cmd/Ctrl+P palette shortcut, and in 0.27 the demo mode (on the **Demo mode** pill while in the demo, else on the host chip), and in 0.28 the GPU rendering option for terminals, and in 0.29 the clean up of unused worktrees and the import from Switchboard (on its button in Settings, Help, or on the Settings button), and in 0.30 click to move the cursor in a terminal (on the tabs), and in 0.31 the Light and Dark palettes (on Settings, or More on a phone), and in 0.33 the one-click install of skills and plugins (on Settings), and in 0.34 the auto-approval defaults (on Settings, Agents), the Review, Merged and Closed columns (on the Merged column when the board is open, else on the Tasks tab) and the clean removal of everything Overseer added (on Settings, Connection, **Remove**), and in 0.35 one-click in-app updates for every install (on Settings, Updates, else on the Settings button), and in 0.36 subjects inside a workspace (on **+ New subject** in the open workspace, else on the sidebar), and the live review behind the git button (on the git button of a session's tab bar, else on the command palette), and the review map (on List | Map in a review, else on the Review tab), and keeping agents running with the lid closed (on its switch in Settings, Connection, else on the Settings button), and Record a bug (centred, on the command palette), and the Quorum option of a new task (on the Quorum control in the New task dialog, else on the Tasks tab), and installing a missing agent from the app (on the title bar **+**, else on the palette), and the real cost of each session and task (on the cost line of the side panel, else on the side panel). Steps whose control is not on
 screen (no session selected, a feature the server lacks, phone layout) are skipped. On a phone the
 card is a sheet at the bottom (or top, when the control sits low) and points at the bottom
 navigation, the session strip and the menu.
@@ -1575,8 +1575,22 @@ Clicking it (or "Agent usage" in the palette, or Usage in the phone's More tab) 
 panel: plan gauges per agent with a reset countdown, totals for today, 7 or 30 days (tokens with
 input / output / cache, estimated cost marked ≈, requests, active time), tokens per day, and a
 breakdown by project, session, model or agent; a session row opens that session. "Open in a tab"
-keeps it as a workspace tab. The side panel shows the selected session's tokens, cost and
-requests over the last 30 days.
+keeps it as a workspace tab.
+
+**Cost per session and task.** The side panel shows what the selected session cost, with its
+main model and effort ("≈$1.23 · claude-opus-5-5 · effort high"), and a **Cost** section that
+splits it per model (subagents included, each at its own model's price) into uncached input,
+cache writes, cache reads and output. A switch to another model mid-session is listed as its own
+line with what its first turn cost, since the new model rebuilds the whole cache. The session tab
+shows the same total, and each task card the total of the task's sessions. Tasks keep that number
+after the transcripts are gone. At the bottom of the Usage panel, **Cost per task** groups the
+tasks by profile (and agent), by ticket or lists each task, with the average cost per finished
+task (in testing, merged or completed) for each profile: run the same kind of work under two
+profiles and compare. The numbers are real token counts from the transcripts (Claude Code,
+Codex, Gemini CLI) priced at API list prices dated in the hint; a model without a known price
+keeps its tokens but adds nothing to the cost (marked "+"), and agents whose logs have no token
+counts show no cost at all rather than an estimate. Subscriptions are not billed per token, so
+read it as what the same work would cost on the API.
 
 Where the numbers come from (contract §7c): Claude Code transcripts, Codex rollouts and Gemini
 CLI sessions (when they record token counts) on the machine the app is connected to, read
