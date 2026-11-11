@@ -54,6 +54,7 @@ pub struct Saved {
     pub task_id: Option<String>,
     pub workspace_id: Option<String>,
     pub title_override: Option<String>,
+    pub profile: Option<crate::profiles::Chip>,
 }
 
 #[derive(Debug, PartialEq)]
@@ -120,6 +121,7 @@ pub fn snapshot(terms: &[Info], lines: &[Line]) -> Vec<Saved> {
                 task_id: i.task_id.clone(),
                 workspace_id: i.workspace_id.clone(),
                 title_override: i.title_override.clone(),
+                profile: line.and(i.profile.clone()),
             })
         })
         .collect()
@@ -151,6 +153,7 @@ pub fn plan(saved: Vec<Saved>, mode: AfterReboot, exists: impl Fn(&str) -> bool)
             saved.flags = vec![];
             saved.line_id = None;
             saved.task_id = None;
+            saved.profile = None;
         }
         out.push(Restore {
             cmd: resume.unwrap_or_default(),
@@ -199,7 +202,7 @@ pub fn on_start(state_dir: &Path, takeover: bool) {
         let s = r.saved;
         let agent = s.agent.as_deref().and_then(crate::agents::get);
         let applied = agent
-            .map(|a| crate::profiles::for_resume(state_dir, a, &s.cwd))
+            .map(|a| crate::profiles::for_restore(state_dir, a, &s.cwd, s.profile.as_ref()))
             .unwrap_or_default();
         let spawned = crate::term::spawn(crate::term::Spec {
             id: Some(s.id.clone()),
@@ -388,7 +391,17 @@ mod tests {
         let mut terms = terms;
         terms[1].workspace_id = Some("w1".into());
         terms[1].title_override = Some("build".into());
+        let chip = crate::profiles::Chip {
+            id: "economy".into(),
+            name: "Economy".into(),
+            model: "sonnet".into(),
+            effort: "low".into(),
+        };
+        terms[0].profile = Some(chip.clone());
+        terms[1].profile = Some(chip.clone());
         let s = snapshot(&terms, &lines);
+        assert_eq!(s[0].profile, Some(chip), "the agent keeps its profile chip");
+        assert_eq!(s[1].profile, None, "a shell left by the agent has no chip");
         assert_eq!(
             s.iter().map(|x| x.id.as_str()).collect::<Vec<_>>(),
             ["t1", "t2", "t5", "t6"]
@@ -458,6 +471,15 @@ mod tests {
             agents[1].cmd,
             Vec::<String>::new(),
             "shells start the login shell"
+        );
+        let mut shell = saved[1].clone();
+        shell.profile = Some(crate::profiles::Chip::default());
+        assert_eq!(
+            plan(vec![shell], AfterReboot::Agents, exists)[0]
+                .saved
+                .profile,
+            None,
+            "a term restored as a shell drops the chip"
         );
         let shells = plan(saved.clone(), AfterReboot::Shells, exists);
         assert_eq!(shells.len(), 1);
