@@ -16,6 +16,8 @@
     onselect,
     onmenu,
     onpointerdown,
+    zone,
+    dropPos = null,
   }: {
     item: SidebarItem;
     now: number;
@@ -25,13 +27,26 @@
     onselect: (e?: MouseEvent) => void;
     onmenu?: (e: MouseEvent) => void;
     onpointerdown?: (e: PointerEvent) => void;
+    /** The workspace this row is listed in; makes it a drop target for reordering its tabs. */
+    zone?: string;
+    dropPos?: 'before' | 'after' | 'inside' | null;
   } = $props();
 
   const label = $derived(t(`session.state.${item.state}`));
   const shell = $derived(item.kind === 'shell');
 </script>
 
-<button class="row" type="button" data-key={item.key} class:multi class:shell aria-current={selected ? 'true' : undefined} onclick={(e) => onselect(e)} oncontextmenu={(e) => onmenu && (e.preventDefault(), onmenu(e))} {onpointerdown}>
+<button
+  class="row"
+  type="button"
+  data-key={item.key}
+  data-drop={zone !== undefined ? 'session' : undefined}
+  data-id={zone !== undefined ? item.key : undefined}
+  data-zone={zone}
+  class:drop-before={dropPos === 'before'}
+  class:drop-after={dropPos === 'after'}
+  class:multi
+  class:shell aria-current={selected ? 'true' : undefined} onclick={(e) => onselect(e)} oncontextmenu={(e) => onmenu && (e.preventDefault(), onmenu(e))} {onpointerdown}>
   <span class="sr-only">{label}</span>
   {#if shell}<span class="icon" aria-hidden="true"><SquareTerminal size={12} /></span>
   {:else}<span class="dot" data-state={item.state} data-hollow={item.state === 'closed' ? '' : undefined} style:--c="var(--state-{item.state})" aria-hidden="true">{item.state === 'paused' ? '❙❙' : ''}</span>{/if}
@@ -57,6 +72,12 @@
     text-align: left;
     min-width: 0;
     overflow: hidden;
+  }
+  .drop-before {
+    box-shadow: inset 0 2px 0 var(--accent);
+  }
+  .drop-after {
+    box-shadow: inset 0 -2px 0 var(--accent);
   }
   .row:hover {
     background: var(--surface-hover);

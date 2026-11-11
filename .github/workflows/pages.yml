@@ -12,13 +12,63 @@ permissions:
   contents: read
 
 concurrency:
-  group: pages
+  group: pages-${{ github.ref }}
   cancel-in-progress: false
 
+env:
+  PLAYWRIGHT_VERSION: 1.60.0
+
 jobs:
+  render:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    strategy:
+      matrix:
+        cut: ["15", "30"]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+          sparse-checkout: docs/showreel
+
+      - id: cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: out
+          key: showreel-${{ matrix.cut }}-${{ env.PLAYWRIGHT_VERSION }}-${{ hashFiles('docs/showreel/reel.html', 'docs/showreel/audio.mjs', 'docs/showreel/render.py', 'docs/showreel/build.sh', 'docs/showreel/shots/**', 'docs/showreel/fonts/**') }}
+
+      - if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -yq --no-install-recommends ffmpeg
+          python3 -m venv "$RUNNER_TEMP/venv"
+          "$RUNNER_TEMP/venv/bin/pip" install -q "playwright==$PLAYWRIGHT_VERSION"
+          "$RUNNER_TEMP/venv/bin/python" -m playwright install --with-deps chromium
+
+      - if: steps.cache.outputs.cache-hit != 'true'
+        env:
+          CUT: ${{ matrix.cut }}
+        run: |
+          PYTHON="$RUNNER_TEMP/venv/bin/python" docs/showreel/build.sh "$CUT"
+          mkdir out
+          mv docs/showreel/*.mp4 docs/showreel/*.webm out/
+          if [ -f docs/showreel/poster.jpg ]; then mv docs/showreel/poster.jpg out/; fi
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: showreel-${{ matrix.cut }}
+          path: out
+          if-no-files-found: error
+          retention-days: 7
+
   deploy:
+    needs: render
+    if: github.ref == 'refs/heads/next'
     runs-on: ubuntu-slim
     timeout-minutes: 10
+    concurrency:
+      group: pages
+      cancel-in-progress: false
     permissions:
       contents: read
       pages: write
@@ -31,8 +81,18 @@ jobs:
         with:
           persist-credentials: false
           sparse-checkout: docs/showreel
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          pattern: showreel-*
+          path: docs/showreel
+          merge-multiple: true
+
+      - run: ls -l docs/showreel/*.mp4 docs/showreel/*.webm docs/showreel/poster.jpg
+
       - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5
         with:
           path: docs/showreel
+
       - id: deploy
         uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5

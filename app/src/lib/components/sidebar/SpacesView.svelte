@@ -12,6 +12,9 @@
   import { aggregate, byRank } from '../../workspaces';
   import { WsDrag } from '../../ws-drag.svelte';
   import { WS_COLOR } from '../../ws-color';
+  import { loadKnown } from '../../known-tabs';
+  import { tabOrder } from '../../tab-order';
+  import { allTabs, savedLayouts, workspace } from '../../workspace.svelte';
   import { createGroup, folderMenu, groupMenu, itemMenuAt, otherMenu, selectSession, startIn, workspaceMenu } from '../../wsactions';
   import type { Workspace } from '../../types';
   import AttentionBanner from './AttentionBanner.svelte';
@@ -38,6 +41,11 @@
   const q = $derived(filter.trim());
   const groups = $derived(app.ws.groups.slice().sort(byRank));
   const pinned = $derived(nodes.some((n) => n.type === 'folder' && !n.folder));
+  // Joined so the rows re-sort only when the tab list changes, not on a split resize or a tab switch.
+  const liveTabs = $derived(allTabs(workspace.layout).join('\n'));
+  const tabsOf = (id: string) =>
+    tabOrder(id, app.workspaceId, liveTabs ? liveTabs.split('\n') : [], savedLayouts, id === NO_WORKSPACE ? loadKnown(hk, '#other')?.tabs : app.ws.workspaces.find((w) => w.id === id)?.tabs);
+  const rowDrop = (key: string) => drag.posOf('session', key);
 
   function toggle(id: string) {
     if (drag.suppressed) return;
@@ -76,6 +84,7 @@
           onmenu: (e: MouseEvent, c: Workspace) => app.openMenu(e, c.name, workspaceMenu(c)),
           onstart: (e: MouseEvent, c: Workspace) => !drag.suppressed && startIn(e, c),
           onnew: w.path && w.kind !== 'subject' && app.wsPersistent ? () => app.open('workspaceNew', w.id) : undefined,
+          tabsOf,
         }
       : undefined;
 
@@ -122,7 +131,9 @@
           onpick={() => pick(r.id)}
           onclosed={() => toggleClosed(r.id)}
           onselect={select}
-          onsessiondown={app.wsPersistent ? (e, key) => app.canMoveToWorkspace(key) && drag.start(e, 'session', key) : undefined}
+          tabs={tabsOf(r.id)}
+          {rowDrop}
+          onsessiondown={(e, key, zone) => drag.start(e, 'session', key, zone)}
           onitemmenu={itemMenuAt}
           onmenu={(e) => (r.workspace ? app.openMenu(e, r.workspace.name, workspaceMenu(r.workspace)) : app.openMenu(e, t('ws.other'), otherMenu()))}
           onpointerdown={r.workspace ? (e) => drag.start(e, 'workspace', r.id) : undefined}

@@ -14,6 +14,8 @@
     onmenu: (e: MouseEvent, w: Workspace) => void;
     onstart: (e: MouseEvent, w: Workspace) => void;
     onnew?: () => void;
+    /** Tab order of a nested workspace. */
+    tabsOf?: (id: string) => string[];
   }
 </script>
 
@@ -50,6 +52,8 @@
     onitemmenu,
     onpointerdown,
     onsessiondown,
+    tabs = [],
+    rowDrop,
   }: {
     row: SpaceRow;
     now: number;
@@ -72,10 +76,14 @@
     onmenu?: (e: MouseEvent) => void;
     onitemmenu?: (key: string, title: string, e: MouseEvent) => void;
     onpointerdown?: (e: PointerEvent) => void;
-    onsessiondown?: (e: PointerEvent, key: string) => void;
+    onsessiondown?: (e: PointerEvent, key: string, zone: string) => void;
+    /** Tab order of this workspace, which its live sessions and shells follow. */
+    tabs?: string[];
+    /** Where a dragged session would land relative to this row. */
+    rowDrop?: (key: string) => 'before' | 'after' | 'inside' | null;
   } = $props();
 
-  const sessions = $derived(open ? workspaceSessions(row.items, now) : null);
+  const sessions = $derived(open ? workspaceSessions(row.items, now, tabs) : null);
   const name = $derived(row.name ?? t('ws.other'));
   const archived = $derived(!!row.workspace?.archived);
   const missing = $derived(!!row.workspace?.missing);
@@ -122,11 +130,13 @@
       multi={multi?.has(it.key)}
       onselect={(e) => onselect(it.key, e)}
       onmenu={onitemmenu && ((e) => onitemmenu(it.key, it.title, e))}
-      onpointerdown={onsessiondown && ((e) => onsessiondown(e, it.key))}
+      onpointerdown={onsessiondown && ((e) => onsessiondown(e, it.key, key))}
+      zone={onsessiondown ? key : undefined}
+      dropPos={rowDrop?.(it.key) ?? null}
     />
   {/each}
   {#each s.shells as it (it.key)}
-    <SessionRow item={it} {now} {host} selected={selectedKey === it.key} multi={multi?.has(it.key)} onselect={(e) => onselect(it.key, e)} onmenu={onitemmenu && ((e) => onitemmenu(it.key, it.title, e))} onpointerdown={onsessiondown && ((e) => onsessiondown(e, it.key))} />
+    <SessionRow item={it} {now} {host} selected={selectedKey === it.key} multi={multi?.has(it.key)} onselect={(e) => onselect(it.key, e)} onmenu={onitemmenu && ((e) => onitemmenu(it.key, it.title, e))} onpointerdown={onsessiondown && ((e) => onsessiondown(e, it.key, key))} zone={onsessiondown ? key : undefined} dropPos={rowDrop?.(it.key) ?? null} />
   {/each}
   {#if s.closed.count}
     <button class="more" type="button" data-closed={key} aria-expanded={isClosedOpen} onclick={toggleClosed}>{s.closed.count === 1 ? t('ws.closedOne') : t('ws.closedMore', { n: s.closed.count })}</button>
@@ -176,7 +186,7 @@
           <button class="start" type="button" title={t('ws.sub.startHere', { name: c.name ?? '' })} aria-label={t('ws.sub.startHere', { name: c.name ?? '' })} onclick={(e) => kids.onstart(e, w)}><Plus size={12} /></button>
         </div>
         {#if copen}
-          <div class="kids">{@render list(workspaceSessions(c.items, now), c.id, kids.isClosedOpen(c.id), () => kids.onclosed(c.id))}</div>
+          <div class="kids">{@render list(workspaceSessions(c.items, now, kids.tabsOf?.(c.id)), c.id, kids.isClosedOpen(c.id), () => kids.onclosed(c.id))}</div>
         {/if}
       {/each}
       {#if kids.onnew}<button class="more new" type="button" data-tour="subjects" onclick={kids.onnew}>{t('ws.sub.add')}</button>{/if}
