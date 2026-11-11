@@ -10,6 +10,7 @@ export interface AgentInfo {
   resume: boolean;
   verified: boolean;
   install?: string;
+  installable?: boolean;
   sessions: boolean;
   turns: boolean;
 }
@@ -155,6 +156,7 @@ export interface NewTerm {
   cwd?: string;
   cmd?: string[];
   agent?: string;
+  install?: string;
   model?: string;
   effort?: Effort;
   profile?: string;
@@ -172,7 +174,29 @@ export type TaskStatus = 'pending' | 'auto' | 'in_progress' | 'in_testing' | 'me
 export type Effort = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 export const TASK_STATUSES: TaskStatus[] = ['pending', 'auto', 'in_progress', 'in_testing', 'merged', 'completed'];
 
-export type TaskOrigin = 'user' | 'session' | 'agent' | 'organizer' | 'configurator';
+export type TaskOrigin = 'user' | 'session' | 'agent' | 'organizer' | 'configurator' | 'reviewer';
+
+export interface Quorum {
+  workers: string[];
+  reviewers: string[];
+}
+
+export interface Vote {
+  from: string;
+  number: number;
+  agent: string;
+  role: 'reviewer' | 'orchestrator';
+  approve: boolean;
+  reason: string;
+}
+
+export interface TaskVotes {
+  round: number;
+  voters: number;
+  needed: number;
+  votes: Vote[];
+  outcome: 'accepted' | 'rejected' | null;
+}
 export type TaskBadge = 'needs_input' | 'paused';
 
 export interface Progress {
@@ -209,6 +233,8 @@ export interface Task {
   manualStatus?: TaskStatus | null;
   badges?: TaskBadge[];
   profile?: string | null;
+  quorum?: Quorum | null;
+  votes?: TaskVotes | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -237,6 +263,7 @@ export interface NewTask {
   dependsOn?: string[];
   inheritBranch?: boolean;
   attachments?: { path: string; name?: string }[];
+  quorum?: Quorum | null;
 }
 
 export interface Project {
@@ -406,6 +433,13 @@ export interface AutostartStatus {
   path: string | null;
   linger: boolean | null;
   lingerCommand: string | null;
+}
+
+export interface LidPower {
+  enabled: boolean;
+  active: boolean;
+  supported: boolean;
+  error: string | null;
 }
 
 export interface Lifecycle {
@@ -646,8 +680,10 @@ export interface Workspace {
   /** Null for a subject, which has no directory of its own. */
   path: string | null;
   kind?: 'dir' | 'subject';
-  /** Default working directory of a subject; null for a dir. */
+  /** Where its sessions start: required for a subject, optional for a nested dir (null starts in its own folder). */
   cwd?: string | null;
+  /** The top-level dir workspace this one is nested in: a sub-folder, a submodule or a subject. */
+  parentId?: string | null;
   station?: string;
   folderId: string | null;
   pinned: boolean;

@@ -1407,7 +1407,7 @@ fn mcp_server_talks_to_the_daemon() {
         .collect();
     assert_eq!(replies.len(), 6, "{replies:?}");
     assert_eq!(replies[0]["result"]["protocolVersion"], "2025-06-18");
-    assert_eq!(replies[1]["result"]["tools"].as_array().unwrap().len(), 18);
+    assert_eq!(replies[1]["result"]["tools"].as_array().unwrap().len(), 19);
     let child = &replies[2]["result"]["structuredContent"];
     assert_eq!(child["status"], "pending");
     assert_eq!(child["origin"], "agent");
@@ -3600,6 +3600,29 @@ fn direct_feedback_attaches_files_with_gh() {
 }
 
 #[test]
+fn direct_feedback_attaches_a_screen_recording_and_keeps_its_action_log() {
+    let fx = Fx::new("feedback-recording", 0);
+    let _d = fx.daemon(false);
+    let rec = upload(&fx, "recording-20261109-162639.webm", "WEBMDATA");
+    let report = "It broke\n\n### Attachments\n@ATTACHMENTS@\n\n<details><summary>Recorded actions (0:05)</summary>\n\n```text\n0:00  start  Recording started with screen video\n0:03  click  button \"Settings\"\n```\n\n</details>\n\n_Sent from Overseer._";
+    let body = json!({"repo": "o/r", "title": "Bug: x", "labels": ["bug"], "body": report, "attachments": [{"path": rec["path"], "name": rec["name"]}]});
+    let (code, out) = fx.req("POST", "/v1/feedback/direct", &body.to_string());
+    assert_eq!(code, 201, "{out}");
+    assert!(!out.contains("attachWarning"), "{out}");
+    let log = gh_log(&fx);
+    assert!(
+        log.contains(&format!("--attach={}", rec["path"].as_str().unwrap())),
+        "{log}"
+    );
+    let issue = std::fs::read_to_string(fx.base.join("gh.log.body")).unwrap();
+    assert!(issue.contains("Recorded actions (0:05)"), "{issue}");
+    assert!(
+        issue.contains("0:03  click  button \"Settings\""),
+        "{issue}"
+    );
+}
+
+#[test]
 fn direct_feedback_reports_files_gh_refused_but_keeps_the_issue() {
     let fx = Fx::new("feedback-attach-partial", 0);
     let _d = fx.daemon(false);
@@ -3649,4 +3672,76 @@ fn feedback_rejects_attachments_github_would_not_accept() {
     let outside = json!({"path": "/etc/passwd", "name": "passwd.png"});
     assert_eq!(direct(&fx, "o/r", &[&outside]).0, 400);
     assert!(gh_log(&fx).is_empty());
+}
+
+fn install_amp(app: &App) -> (String, WebSocketLike) {
+    let wt = app.fx.wt.to_string_lossy().into_owned();
+    let t = app.ok(
+        "POST",
+        "/v1/terms",
+        json!({"install": "amp", "cwd": wt, "cols": 120, "rows": 32}),
+    );
+    assert_eq!(
+        t["cmd"],
+        json!(["npm install -g --allow-scripts=@ampcode/cli @sourcegraph/amp"])
+    );
+    assert_eq!(t["title"], "Install Amp");
+    assert!(t["agent"].is_null());
+    let id = t["id"].as_str().unwrap().to_string();
+    let ws = app.ws(&id);
+    (id, ws)
+}
+
+type WebSocketLike = tungstenite::WebSocket<UnixStream>;
+
+fn exit_code(app: &App, id: &str) -> Value {
+    wait_for(|| {
+        let t = app.ok("GET", &format!("/v1/terms/{id}"), Value::Null);
+        (t["exited"] == true).then(|| t["exitCode"].clone())
+    })
+}
+
+#[test]
+fn install_term_runs_the_agent_install_command_and_exits_with_its_status() {
+    let app = App::new("install", json!({}));
+    let (id, mut ws) = install_amp(&app);
+    read_until(&mut ws, "added 1 package (stub)");
+    assert_eq!(exit_code(&app, &id), 0);
+    let log = std::fs::read_to_string(app.fx.base.join("stub.log")).unwrap();
+    assert!(
+        log.contains("npm install -g --allow-scripts=@ampcode/cli @sourcegraph/amp"),
+        "{log}"
+    );
+}
+
+#[test]
+fn install_term_reports_a_failed_install_and_keeps_its_exit_code() {
+    let app = App::with_env("installfail", json!({}), &[("SB_NPM_FAIL", "1")]);
+    let (id, mut ws) = install_amp(&app);
+    read_until(&mut ws, "Install failed with exit code 1");
+    assert_eq!(exit_code(&app, &id), 1);
+}
+
+#[test]
+fn install_term_rejects_agents_without_an_install_command() {
+    let app = App::new("installbad", json!({}));
+    let (code, v) = app.req("POST", "/v1/terms", json!({"install": "agy"}));
+    assert_eq!(
+        (code, v["error"].as_str()),
+        (400, Some("Antigravity has no install command"))
+    );
+    let (code, v) = app.req("POST", "/v1/terms", json!({"install": "nope"}));
+    assert_eq!(
+        (code, v["error"].as_str()),
+        (400, Some("unknown agent nope"))
+    );
+    let (code, v) = app.req(
+        "POST",
+        "/v1/terms",
+        json!({"install": "amp", "agent": "amp"}),
+    );
+    assert_eq!(
+        (code, v["error"].as_str()),
+        (400, Some("give either install, agent or cmd"))
+    );
 }

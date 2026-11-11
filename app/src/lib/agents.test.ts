@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { adaptChoice, agentName, efforts, hasModel, ordered, pickAgent, sessionsAvailable, taskAgents } from './agents';
+import { adaptChoice, agentName, canInstall, efforts, hasModel, ordered, pickAgent, sessionsAvailable, taskAgents } from './agents';
 import { MOCK_AGENTS } from './mock';
 
 const by = (id: string) => MOCK_AGENTS.find((a) => a.id === id)!;
@@ -8,6 +8,13 @@ describe('agents', () => {
   it('lists installed agents first in daemon order, tasks without the shell', () => {
     expect(ordered(MOCK_AGENTS).map((a) => a.id)).toEqual(['claude', 'codex', 'gemini', 'agy', 'copilot', 'shell', 'opencode', 'amp', 'cursor']);
     expect(taskAgents(MOCK_AGENTS).map((a) => a.id)).not.toContain('shell');
+  });
+
+  it('offers to install only an absent agent with a runnable install command', () => {
+    expect(canInstall(by('amp'))).toBe(true);
+    expect(canInstall(by('codex'))).toBe(false);
+    expect(canInstall({ ...by('amp'), installable: undefined })).toBe(false);
+    expect(canInstall({ ...by('amp'), install: undefined })).toBe(false);
   });
 
   it('names agents from the daemon, then known ids, then the id', () => {

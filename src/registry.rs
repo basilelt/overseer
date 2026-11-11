@@ -184,6 +184,7 @@ const ADDED_COLUMNS: &[(&str, &str, &str)] = &[
     ("lines", "workspace_id", "TEXT"),
     ("workspaces", "kind", "TEXT NOT NULL DEFAULT 'dir'"),
     ("workspaces", "cwd", "TEXT"),
+    ("workspaces", "parent_id", "TEXT"),
     ("lines", "hold_pending", "INTEGER NOT NULL DEFAULT 0"),
     ("lines", "held_at", "TEXT"),
     ("tasks", "rank", "REAL"),
@@ -198,6 +199,8 @@ const ADDED_COLUMNS: &[(&str, &str, &str)] = &[
     ("tasks", "parent_id", "TEXT"),
     ("tasks", "depends_on", "TEXT"),
     ("tasks", "inherit_branch", "INTEGER"),
+    ("tasks", "quorum", "TEXT"),
+    ("tasks", "votes", "TEXT"),
 ];
 
 impl Registry {

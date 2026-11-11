@@ -40,9 +40,19 @@ describe('workspaceSessions', () => {
     ]);
   });
 
-  it('is empty for a workspace without sessions, and ignores plain shells', () => {
-    expect(workspaceSessions([], now)).toEqual({ live: [], closed: { count: 0, buckets: [] } });
-    expect(workspaceSessions([item('s', 'running', day(6), { kind: 'shell' })], now).live).toEqual([]);
+  it('is empty for a workspace without sessions', () => {
+    expect(workspaceSessions([], now)).toEqual({ live: [], closed: { count: 0, buckets: [] }, shells: [] });
+  });
+
+  it('lists running plain shells apart from the sessions, most recent first, and drops exited ones', () => {
+    // Given an agent session, two running shells and an exited one
+    const items = [item('s1', 'running', day(6, 9), { kind: 'shell' }), item('a', 'running', day(6, 8)), item('s2', 'running', day(6, 10), { kind: 'shell' }), item('x', 'stopped', day(6, 11), { kind: 'shell' })];
+    // When the workspace sessions are built
+    const r = workspaceSessions(items, now);
+    // Then shells stay out of live and closed, and only the running ones are listed, newest first
+    expect(r.live.map((i) => i.key)).toEqual(['a']);
+    expect(r.closed.count).toBe(0);
+    expect(r.shells.map((i) => i.key)).toEqual(['s2', 's1']);
   });
 
   it('treats a session with an unreadable date as the least recent', () => {

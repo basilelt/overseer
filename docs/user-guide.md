@@ -833,6 +833,27 @@ them too. With an older `gh`, or when GitHub refuses a file, the issue is still 
 that file as not uploaded with the reason, and the app shows GitHub's message. GitHub may require
 write access to the repository to attach files.
 
+### Recording a bug
+
+Palette > **Record a bug** (phone: More > Record a bug) records what you do while you show a
+problem. The setup dialog offers **Record the screen too** where the webview can capture the
+screen (`getDisplayMedia` and `MediaRecorder`; a browser asks which screen or window to share);
+elsewhere, such as iOS and Android, only the action log is recorded. While it runs, a red pill at
+the bottom shows the time and the number of actions, with **Stop** and a discard button. The log
+has the start, clicks (the control's label, never a field's content), shortcuts (Ctrl/Cmd/Alt
+combinations, Escape, function keys, arrows), "typed in <field>" once per field without the text,
+view and dialog changes, uncaught errors and error toasts, each with its time since the start.
+Recordings stop on their own after 2 minutes (about 10 MB of video, the free GitHub limit) or when
+the screen share ends.
+
+**Stop** opens the feedback sheet on Bug with the recording: the video is uploaded to the active
+host as a `recording-<date>-<time>.webm` (or `.mp4`) attachment, and the log goes into the report
+as a "Recorded actions" block whose times match the video. **Replay** plays the video in the sheet
+with the action list beside it: the current action is highlighted as it plays and clicking one
+seeks the video there. The x on the Recording row removes both the video and the log. When the
+upload fails (offline, daemon restarting), the log and Replay still work and **Attach video** on
+the Recording row tries again.
+
 ### `doctor` items
 
 Levels: `ok` (fine), `warn` (works, but something is missing or suspicious), `fail` (broken;
@@ -898,7 +919,7 @@ On first launch, once the app is connected (immediately in local mode, after the
 connection on a phone), a welcome card offers **Take the tour** or **Skip**. The tour dims the
 window and highlights the real controls one at a time: host chip, workspaces sidebar, tabs and the
 new-session menu, the Terminal/Chat toggle, the side panel, Tasks, Review, the usage, system and ports
-chips, notifications and hooks, the command palette and Feedback, in 0.25 the Cmd/Ctrl+P palette shortcut, and in 0.27 the demo mode (on the **Demo mode** pill while in the demo, else on the host chip), and in 0.28 the GPU rendering option for terminals, and in 0.29 the clean up of unused worktrees and the import from Switchboard (on its button in Settings, Help, or on the Settings button), and in 0.30 click to move the cursor in a terminal (on the tabs), and in 0.31 the Light and Dark palettes (on Settings, or More on a phone), and in 0.33 the one-click install of skills and plugins (on Settings), and in 0.34 the auto-approval defaults (on Settings, Agents), the Review, Merged and Closed columns (on the Merged column when the board is open, else on the Tasks tab) and the clean removal of everything Overseer added (on Settings, Connection, **Remove**), and in 0.35 one-click in-app updates for every install (on Settings, Updates, else on the Settings button). Steps whose control is not on
+chips, notifications and hooks, the command palette and Feedback, in 0.25 the Cmd/Ctrl+P palette shortcut, and in 0.27 the demo mode (on the **Demo mode** pill while in the demo, else on the host chip), and in 0.28 the GPU rendering option for terminals, and in 0.29 the clean up of unused worktrees and the import from Switchboard (on its button in Settings, Help, or on the Settings button), and in 0.30 click to move the cursor in a terminal (on the tabs), and in 0.31 the Light and Dark palettes (on Settings, or More on a phone), and in 0.33 the one-click install of skills and plugins (on Settings), and in 0.34 the auto-approval defaults (on Settings, Agents), the Review, Merged and Closed columns (on the Merged column when the board is open, else on the Tasks tab) and the clean removal of everything Overseer added (on Settings, Connection, **Remove**), and in 0.35 one-click in-app updates for every install (on Settings, Updates, else on the Settings button), and in 0.36 subjects inside a workspace (on **+ New subject** in the open workspace, else on the sidebar), and the live review behind the git button (on the git button of a session's tab bar, else on the command palette), and the review map (on List | Map in a review, else on the Review tab), and keeping agents running with the lid closed (on its switch in Settings, Connection, else on the Settings button), and Record a bug (centred, on the command palette), and the Quorum option of a new task (on the Quorum control in the New task dialog, else on the Tasks tab), and installing a missing agent from the app (on the title bar **+**, else on the palette). Steps whose control is not on
 screen (no session selected, a feature the server lacks, phone layout) are skipped. On a phone the
 card is a sheet at the bottom (or top, when the control sits low) and points at the bottom
 navigation, the session strip and the menu.
@@ -1086,7 +1107,9 @@ native automatic permission mode. It is on by default for Claude Code, Codex, Ge
 Antigravity, opencode, Copilot CLI and Cursor Agent. The settings are stored on the connected
 daemon host and apply to new sessions, task agents and feedback agents; changing a setting does
 not change sessions that are already running. Amp currently auto-approves by default unless its
-own permission configuration enables a policy, so it has no Overseer toggle.
+own permission configuration enables a policy, so it has no Overseer toggle. The switch on the
+**Auto approve agent requests** row turns it on or off for every agent at once; it shows a mixed
+state when only some agents auto-approve.
 
 **Skills and plugins** (Settings > Agents, or **Install skills and plugins** in the command
 palette) installs a tool for one agent in one click, on the host the app is connected to. Each
@@ -1253,6 +1276,35 @@ curl --unix-socket "$S" 'http://unix/v1/tasks?status=in_progress,in_testing'
   replaces the button while it runs. **Settings → Auto organize** runs it by itself, shortly
   after new tasks arrive (off by default).
 
+#### 14.2c Quorum
+
+Tick **Quorum** in the New task dialog to have several agent CLIs share one task and check each
+other. It is only offered when the task's agent is Claude Code or Codex (the orchestrator, which
+needs the Overseer MCP); with another agent the switch is disabled with a hint.
+
+- **Workers** (one or more installed agents) get the subtasks the orchestrator cuts the task into.
+  **Reviewers** (one or two installed agents) review each worker's result. Neither list can hold
+  `shell` or the same agent twice. The defaults are every installed agent as a worker and two
+  other agents as reviewers.
+- The orchestrator creates the subtasks, which start by themselves on their own branches, with one
+  worker agent each. The root card carries a **Quorum** chip (hover for the agents); a subtask's
+  reviewer tasks carry a **Reviewer #N** chip and start by themselves when the worker reaches Review.
+- Every reviewer and the orchestrator vote approve or reject, with a reason. A result is accepted on a
+  strict majority of all voters: with one reviewer both must approve (2 of 2), with two reviewers 2 of 3.
+  The worker card shows the tally (for example **2/3 accepted · Round 1**, **1/3 rejected**, or
+  **1/3 voting** until the daemon decides); the task detail lists each vote with its reason.
+- The daemon sends the outcome and every reason to the orchestrator, which merges accepted branches
+  into its own branch. After a rejection a worker that still runs goes back to In progress; the
+  orchestrator sends it the fixes, and when its next turn ends it is reviewed in a new round. A
+  reviewer that ends without voting counts as a rejection.
+- While it waits for subtasks, the orchestrator's card can sit in Review between its turns; its
+  messages still reach it.
+- Agents that have the Overseer MCP (Claude Code, Codex) vote with the `cast_vote` tool. Any other
+  reviewer votes from its task terminal with the CLI: `overseer vote approve "<reason>"` or
+  `overseer vote reject "<reason>"`.
+- The quorum is set when the task is created and can only change while the task is Pending or Auto.
+  A subtask cannot run its own quorum.
+
 #### 14.2a Session tasks
 
 Every agent session (Claude, Codex, Gemini, opencode, …) running in a git repository gets a task
@@ -1340,6 +1392,21 @@ request, the event stream, every terminal and every forwarded port over that one
   run the command on the server yourself). Turning the switch off disables and removes the unit.
   API: `GET /v1/lifecycle`, `PATCH /v1/lifecycle {"autostart": true|false, "linger": true,
   "afterReboot": "agents"|"shells"|"nothing"}`.
+- **Keep agents running with the lid closed** (Settings → Connection → Server, desktop app on a
+  local server only, off by default): closing the laptop lid no longer puts the computer to sleep,
+  so agents keep working with the network on. It drains the battery and the laptop can get hot:
+  plug it in, and turn the option off before putting the laptop in a bag. On Linux the daemon holds
+  a `systemd-inhibit --what=handle-lid-switch` lock while it runs (taken again when it restarts,
+  gone when it stops). polkit allows it from your desktop session but may refuse it when the
+  daemon runs as a boot service (**Keep server running after reboot**) with no active session;
+  Settings then shows the reason. Check with `systemd-run --user --wait systemd-inhibit
+  --what=handle-lid-switch --mode=block --who=t --why=t true`. A desktop that handles the lid
+  itself (KDE's power settings, for example) ignores this lock: set its lid action there;
+  `systemd-inhibit --list` shows who holds the lid switch. On macOS it runs `pmset -a disablesleep 1`
+  after asking for an administrator password, and `0` when you turn it off. On Windows it sets the
+  lid close action of the current power plan to **Do nothing** (plugged in and on battery) and puts
+  the previous actions back when you turn it off. If the system refuses, the switch stays off and
+  the reason is shown under it. API: `GET`/`PUT /v1/power/lid {"enabled": true|false}`.
 - **After a server reboot or restart**: the daemon keeps its terminal list (folder, title, size,
   line, task, and for a running agent its current session and flags) in `overseer.db`, written
   only when it changes. When it starts after a machine reboot, a crash or a plain restart (anything
@@ -1593,6 +1660,24 @@ Each target answers `sent`, `skipped` (busy or waiting for a permission answer),
 (typed when the agent becomes idle, within an hour, unless the daemon restarts) or `refused`
 (not running, no terminal). `actions.log` records the outcome and the text length, never the text.
 
+A workspace can be **nested** in a top-level directory workspace with `parentId`: a sub-folder or a
+submodule (`{"path":"/home/u/endurance/20_processus/onboarding","parentId":"<id>","cwd":"/home/u/endurance"}`),
+or a subject (`{"kind":"subject","name":"Archi V3","parentId":"<id>"}`, whose `cwd` defaults to the
+parent's path). The path must be inside the parent's, the parent must be a top-level `dir` workspace
+(one level only), and a nested workspace has no folder and cannot be pinned (each refused with a 400).
+`cwd` on a nested folder is where its sessions start (`null` starts them in its own folder) and can be
+patched; on a top-level directory it is refused. Creating a nested folder on a path that already has a
+top-level workspace adopts that workspace, keeping its id, tabs and sessions. Every checked-out
+submodule of a top-level workspace (the `path =` entries of its `.gitmodules` whose folder holds a
+`.git`) becomes a nested workspace on its own, when the workspace is created, at start, every 10 minutes
+and on **Rescan folders**; one you delete stays deleted. Deleting a workspace deletes its nested ones
+(the answer lists them under `children`). A session goes to the innermost workspace whose path holds
+it, so a session in a sub-folder or a submodule joins the nested workspace, and a worktree of a
+submodule kept outside the repository joins the submodule's when that submodule is checked out in
+one clone only; with several clones of the same repository (as for any repository cloned several
+times), such a worktree belongs to none of them unless it was started from the subject or moved
+there by hand.
+
 A **subject** is a workspace without a directory of its own, for work organised by topic rather than
 by folder. Create it with `POST /v1/workspaces` and `{"kind":"subject","name":"Acme deal","cwd":"~/code/app"}`
 (`folderId` and `pinned` optional); `cwd` is its default working directory, `~` accepted, and several
@@ -1613,7 +1698,8 @@ Stopped: no live agent process, resumable); the toggle is at the top of the side
 
 - **Spaces**: pinned workspaces on top, then your folders (one level of sub-folders) and the
   workspaces outside any folder. Each workspace is one block with its sessions under it: click its
-  name to open it (its tab strip and `+` show), the chevron only folds it. A group section at the
+  name to open it (its tab strip and `+` show), the chevron only folds it. Running plain shells are
+  listed after its sessions, muted with a terminal icon, and are not counted in its pills. A group section at the
   bottom lists your groups; click one to open it. Every project the daemon knows gets a workspace: the
   repositories its agents ran in, and the git repositories it finds under `discoverRoots`
   (3.1; by default `~/Documents/Github`, `~/src`, `~/code`, `~/projects`, `~/dev`), scanned at
@@ -1631,6 +1717,18 @@ Stopped: no live agent process, resumable); the toggle is at the top of the side
 - **Block**: the most urgent state of its sessions (Needs input, then Running, then Needs testing,
   then Idle; shells do not count) with how many agents are in it, the last status line ("Claude
   finished", "Asking: …"), the host and its connection state, and the folder path.
+- **Subjects**: a workspace can hold subjects, listed inside its block after its own sessions:
+  sub-folders (folder icon), submodules (git icon, added on their own for every checked-out
+  submodule) and subjects without a folder (# icon). A session running inside a subject's folder
+  joins it; drag any session onto a subject, or use **Move to workspace…** in its context menu, to
+  put it there by hand. **+ New subject** at the bottom of the block (also in the workspace's
+  context menu and the palette, **New subject in the current workspace**) asks for a path inside the
+  workspace (Browse starts there), a name, and where its sessions start: the workspace root, so
+  agents read the instructions at the root, or the subject's own folder. The `+` of a subject
+  (shown on hover, always on a touch screen) opens the new-session menu and starts the session in
+  the subject; a subject's context menu toggles **Start sessions at the workspace root**. A subject
+  has no folder or pin of its own; deleting a workspace deletes its subjects, and a deleted
+  submodule subject does not come back. The attention banner shows `workspace › subject`.
 - **Membership**: a line belongs to the workspace of its task's project, else to the workspace
   whose folder contains its worktree, unless the line's repository has its own workspace that
   does not contain that folder (so a workspace on your home folder does not take every
@@ -1795,11 +1893,25 @@ A GitHub-style review of what an agent changed, while it works (ADR 0030, contra
   file tree shows a risk score per file (what is left to read, weighted up for changed
   signatures and down for tests) and can sort by it. Copied files show as `C` when the repository
   sets `git config diff.renames copies`.
-- **Graph**: List | Graph in the header shows the changed functions, types and components as a
-  graph, with an edge when one uses or imports another; colour is the kind of change, size the
-  number of changed lines. Drag to pan, scroll to zoom, click a node to jump to its change.
-  Review order lists them definitions first, callers after; Next walks through it. On a phone only
-  the list is shown.
+- **Map**: List | Map in the header (the choice is remembered) draws every worktree of the review
+  on one map: the review's worktree, the worktrees the session's agent also edited, and their
+  checked-out submodules, each a region, files sized by bytes, unchanged folders folded into
+  grey blocks. Changed files take the colour of the indicator picked above the map: **Real
+  logic** (changed lines that are not moves, formatting, renames, imports or generated code),
+  **Blast radius** (changed files that use this one, double for another repository), **Contract
+  change** (public signatures and shared types), **Agent struggle** (times the agent rewrote the
+  file, and test runs that failed after it did), **Untested** (logic no changed test reaches),
+  **Not yet seen** (lines not marked viewed, open comments) and **Priority**, their weighted
+  mean (real logic 1.2, agent struggle 1.1, blast radius and contract 1, untested 0.9, not yet
+  seen 0.6). Hovering a file draws what it uses (blue) and what uses it (orange); a link to
+  another repository is dashed violet, and one found only through a shared name is marked so.
+  **Every link of the change** shows them all faintly. The side lists the files in that order,
+  and the picked file's six scores with plain reasons ("used by 3 changed files, 1 in another
+  repository"); **Open the diff** (or a double click) jumps to it in the list. In the list, a heat
+  band along the files shows the same colours top to bottom, and **Next hottest file** (or J and
+  K) walks the files hottest first across every worktree. On a phone the ranking comes first and
+  the map below it. The daemon serves it at `GET /v1/review/map?worktree=…` (or `line=`, `task=`),
+  plus `with=` for each extra worktree the review already shows.
 - **Comment**: click a line number (shift-click or drag for a range), write, Add review comment
   (Ctrl/Cmd+Enter). Suggest inserts a ```` ```suggestion ```` block prefilled with the lines; the
   thread then offers Apply suggestion, which writes it into the worktree if the lines did not
@@ -1892,9 +2004,55 @@ curl --unix-socket "$S" -X POST -d '{"dryRun":false}' "http://unix/v1/worktrees/
 `POST /v1/worktrees/<id>/cherry-pick {"sha"}` picks a commit into it; both refuse uncommitted
 changes and abort on conflicts (the error names the files).
 
-### 14.10 Git graph
+### 14.10 Live review and the Git tab
 
-The app's Git graph tab (command palette, "Open the Git graph") draws a project's history with lanes (branches, remote branches, tags, HEAD,
+The git button in a session's tab bar (or the palette's "Open or close the live review") turns the
+window into a live review of that session: the agent stays where it is, its review opens beside it,
+the sidebar becomes a rail of the workspace's sessions (click one to switch; the review follows),
+the side panel steps aside, and a bar at the bottom runs git. Press the button again to go back.
+
+The bar acts on one repository only: the worktree named on its left. Its menu lists every worktree
+of the session with its changes, and the submodules under their parent, plus the branches to switch
+to and **New branch…**. Next to it, **N changed** opens the files: stage, unstage, discard (asks
+first and cannot be undone); a submodule shows as one row, **Stage pointer** when its commit moved,
+**Open <name>** when it only has changes inside. Write a message and press Enter: **Commit** takes the
+staged files, or every change when nothing is staged. When there is nothing to commit, the button
+becomes **Push n**, **Publish branch** or **Pull n**, whichever is next. The ⋯ menu holds fetch,
+pull, push, commit and push, amend, stage all, unstage all, **Discard all changes…** (confirmed),
+**Merge <base> into it**, **Merge…**, stash and pop, and **Open the Git graph**. Comments and **Send to
+agent** stay at the bottom of the review, for the whole session. A pull or merge that conflicts is
+aborted and names the files; a merge started elsewhere shows as in progress; a push is refused while
+a submodule has commits that are not pushed. While the agent is running, the bar warns that files can
+still change. Everything refreshes on file and ref changes, never by polling.
+
+The sidebar has a **Git** tab next to **Workspaces** and **By status** (Ctrl+Shift+G, or the palette's
+"Show or hide source control in the sidebar"; it reopens a hidden sidebar). It keeps source control
+next to the terminal, like VS Code: the worktree of the selected session (its menu lists the session's
+other worktrees and submodules), the branch to switch or create, Fetch, Pull and Push or Publish, the
+commit message (Ctrl/Cmd+Enter) with Commit and its options, conflicts, staged files and changes with
+stage, unstage and discard (confirmed), outgoing and incoming commits, and merge and stash. A file
+opens its diff beside the session. It follows the selected session, and the tab is remembered.
+
+The **Git tab** of the project (command palette, "Open Git (graph and source control)", ⋯ › **Open the
+Git graph**; on a phone **More**, **Git**) shows the graph with an **Uncommitted changes** row on top,
+and source control in a column the toolbar button shows (hidden by default), for the worktree picked
+at the top. A commit's detail adds **Merge into <branch>** and **Revert in <branch>**. On a phone the
+tab has **Changes** and **Graph** sub-tabs.
+
+```
+curl --unix-socket "$S" "http://unix/v1/git/status?worktree=$W"
+curl --unix-socket "$S" -X POST http://unix/v1/git/commit -d '{"worktree":"'$W'","message":"fix: x","all":true,"push":true}'
+```
+
+Routes (`worktree` or `lineId` in the body, `worktree=` or `line=` in the query; every reply holds
+the new `status`): `GET /v1/git/status`, `POST /v1/git/stage|unstage|discard` (`files`: paths or
+`"all"`), `commit` (`message`, `amend`, `all`, `push`), `fetch`, `pull`, `push`, `switch`
+(`branch`, `create`), `merge` (`rev`), `stash` (`pop`), `revert` (`sha`). Each change sends
+`git.changed` and `worktree.updated`.
+
+### 14.10a Git graph
+
+The Git tab draws a project's history with lanes (branches, remote branches, tags, HEAD,
 merges), with Overseer's knowledge on top: the agent and its state on the tip of its branch,
 the task number, the ticket and the PR state. Filters: all branches, current, agents only (the
 branches of lines, tasks and worktrees), author; search by sha or subject. A commit shows its
@@ -2008,7 +2166,9 @@ Per platform:
 - Writes: the state dir (including `usage.db`), files sent from the app in `~/.overseer/u/`,
   the daemon's service file when you turn on **Keep server running after reboot**
   (`~/.config/systemd/user/overseer-daemon.service` or
-  `~/Library/LaunchAgents/dev.overseer.daemon.plist`), plus `hooks install --apply` and the app's hook switches (the agents' hook files, with backups, and Overseer's own plugin files), the `~/.overseer/bin/overseer` symlink,
+  `~/Library/LaunchAgents/dev.overseer.daemon.plist`), the lid close setting when you turn on
+  **Keep agents running with the lid closed** (`pmset disablesleep` on macOS, the power plan's lid
+  action on Windows; restored when turned off), plus `hooks install --apply` and the app's hook switches (the agents' hook files, with backups, and Overseer's own plugin files), the `~/.overseer/bin/overseer` symlink,
   `hold`/`close --yes` (SIGTERM to the agent, `@sb_held` and the stub in its pane), `resume`
   (relaunches the agent), Board commit/stash, relayed commands when `acceptRemoteCommands` is on,
   and the worktrees and tmux sessions created by `start` and `patch --local`; the worktree store

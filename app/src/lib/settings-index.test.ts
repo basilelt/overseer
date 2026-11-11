@@ -24,8 +24,8 @@ import {
   type Text,
 } from './settings-index';
 
-const all: Gates = { desktop: true, nonMac: true, connected: true, profiles: true, hooks: true, updater: true, apk: true, switchboard: true };
-const none: Gates = { desktop: false, nonMac: false, connected: false, profiles: false, hooks: false, updater: false, apk: false, switchboard: false };
+const all: Gates = { desktop: true, nonMac: true, connected: true, localServer: true, profiles: true, hooks: true, updater: true, apk: true, switchboard: true };
+const none: Gates = { desktop: false, nonMac: false, connected: false, localServer: false, profiles: false, hooks: false, updater: false, apk: false, switchboard: false };
 const en2: Text = (k) => [en[k]];
 const both: Text = (k) => [(fr as Partial<Record<Key, string>>)[k] ?? en[k], en[k]];
 
@@ -180,7 +180,14 @@ describe('search', () => {
     expect(r.hits.server).toEqual(['afterReboot']);
     expect(showEntry(r, 'server', 'keepRunning')).toBe(false);
     expect(isHit(r, 'server', 'afterReboot')).toBe(true);
-    expect(search('keep running', all, en2).hits.server).toEqual(['keepRunning']);
+    expect(search('keep running', all, en2).hits.server).toEqual(['keepRunning', 'lidClosed']);
+    expect(search('reboot', all, en2).hits.server).toEqual(['keepRunning', 'afterReboot']);
+  });
+
+  it('finds the lid option only for a local server', () => {
+    expect(search('lid closed', all, en2).hits.server).toEqual(['lidClosed']);
+    expect(search('battery', all, en2).hits.server).toEqual(['lidClosed']);
+    expect(search('lid closed', { ...all, localServer: false }, en2).hits.server).toBeUndefined();
   });
 
   it('limits the updates sections to the matching rows', () => {
