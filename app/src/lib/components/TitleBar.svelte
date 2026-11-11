@@ -1,5 +1,5 @@
 <script lang="ts">
-  import Command from '@lucide/svelte/icons/command';
+  import Search from '@lucide/svelte/icons/search';
   import Columns2 from '@lucide/svelte/icons/columns-2';
   import PanelRight from '@lucide/svelte/icons/panel-right';
   import Play from '@lucide/svelte/icons/play';
@@ -52,7 +52,7 @@
     >
     <NewSessionMenu />
     <button class="icon-btn" data-tour="palette" title={`${t('title.palette')} (${hint('palette')})`} aria-label={t('title.palette')} onclick={() => app.open('palette')}
-      ><Command size={15} /></button
+      ><Search size={15} /></button
     >
   </div>
   <div class="views" role="tablist">
