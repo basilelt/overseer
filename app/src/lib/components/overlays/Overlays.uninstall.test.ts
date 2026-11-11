@@ -4,7 +4,7 @@ import { en } from '../../i18n/en';
 
 describe('uninstall dialog overlay', () => {
   it('returns to Settings when closed instead of dropping every overlay', () => {
-    expect(source).toContain('<UninstallDialog onclose={() => app.closeOverlay()} />');
+    expect(source).toContain("if (k === 'uninstall') return { onclose: () => app.closeOverlay() };");
   });
 });
 

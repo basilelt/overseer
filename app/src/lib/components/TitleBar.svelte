@@ -1,5 +1,5 @@
 <script lang="ts">
-  import Command from '@lucide/svelte/icons/command';
+  import Search from '@lucide/svelte/icons/search';
   import Columns2 from '@lucide/svelte/icons/columns-2';
   import PanelRight from '@lucide/svelte/icons/panel-right';
   import Play from '@lucide/svelte/icons/play';
@@ -10,7 +10,6 @@
   import { hint } from '../keyboard';
   import { app, type View } from '../state.svelte';
   import { closePaneAt, toggleSplit, update, workspace } from '../workspace.svelte';
-  import AgentAvatars from './titlebar/AgentAvatars.svelte';
   import HostChip from './titlebar/HostChip.svelte';
   import PortsChip from './ports/PortsChip.svelte';
   import SystemChip from './system/SystemChip.svelte';
@@ -52,7 +51,7 @@
     >
     <NewSessionMenu />
     <button class="icon-btn" data-tour="palette" title={`${t('title.palette')} (${hint('palette')})`} aria-label={t('title.palette')} onclick={() => app.open('palette')}
-      ><Command size={15} /></button
+      ><Search size={15} /></button
     >
   </div>
   <div class="views" role="tablist">
@@ -61,7 +60,6 @@
     {/each}
   </div>
   <div class="spacer" data-tauri-drag-region></div>
-  <AgentAvatars />
   {#if demoPill}{#await demoPill() then { default: DemoPill }}<DemoPill />{/await}{/if}
   <UpdatePill />
   <SystemChip />

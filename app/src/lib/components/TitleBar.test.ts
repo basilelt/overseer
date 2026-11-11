@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { render } from 'svelte/server';
 import TitleBar from './TitleBar.svelte';
 import { hint } from '../keyboard';
+import titleBarSrc from './TitleBar.svelte?raw';
 
 const html = () => render(TitleBar).body;
 const paletteButton = () => html().match(/<button[^>]*data-tour="palette"[^>]*>/)?.[0] ?? '';
@@ -21,5 +22,13 @@ describe('TitleBar', () => {
     // When it renders
     // Then no control claims to be a history it does not show
     expect(html()).not.toMatch(/aria-label="History"/);
+  });
+
+  it('shows no avatar strip of running agents', () => {
+    // Given the title bar source
+    // When it is read
+    // Then it renders no per-agent avatar buttons, which only duplicated the sidebar
+    expect(titleBarSrc).not.toContain('AgentAvatars');
+    expect(Object.keys(import.meta.glob('./titlebar/AgentAvatars.svelte'))).toHaveLength(0);
   });
 });
