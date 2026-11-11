@@ -700,7 +700,15 @@ fn local_binary(ctx: &Ctx) -> Option<PathBuf> {
     if let Some(path) = std::env::var_os("PATH") {
         c.extend(std::env::split_paths(&path).map(|d| d.join(name)));
     }
-    c.into_iter().find(|p| p.is_file())
+    let bin = c.into_iter().find(|p| p.is_file())?;
+    let appdir = std::env::var_os("APPDIR").map(PathBuf::from);
+    let home = dirs::home_dir().unwrap_or_default();
+    Some(install::stable_local_binary(
+        &bin,
+        appdir.as_deref(),
+        &home,
+        SERVER_VERSION,
+    ))
 }
 
 async fn run(bin: &Path, args: &[&str]) -> Result<String, String> {
