@@ -646,6 +646,46 @@ describe('MockDaemon', () => {
   });
 });
 
+describe('agent install terms', () => {
+  it('runs the install command in a shell term titled after the agent', async () => {
+    const { a } = setup();
+    const t = await a.createTerm({ install: 'amp', cwd: '/tmp', cols: 120, rows: 32 });
+    expect(t.cmd).toEqual(['npm install -g --allow-scripts=@ampcode/cli @sourcegraph/amp']);
+    expect(t.title).toBe('Install Amp');
+  });
+
+  it('shows the agent as installed on the next rescan', async () => {
+    const { a } = setup();
+    expect((await a.rescanAgents()).find((x) => x.id === 'amp')?.installed).toBe(false);
+    await a.createTerm({ install: 'amp' });
+    expect((await a.rescanAgents()).find((x) => x.id === 'amp')?.installed).toBe(true);
+  });
+
+  it('finishes the install term in the live demo, like a clean install', async () => {
+    vi.useFakeTimers();
+    try {
+      const m = new MockDaemon({ live: true, delayMs: 0 });
+      const exited: unknown[] = [];
+      m.subscribe((e) => e.type === 'term.exited' && exited.push(e.data));
+      const t = await api(m).createTerm({ install: 'amp' });
+      expect(exited).toEqual([]);
+      await vi.advanceTimersByTimeAsync(1500);
+      expect(exited).toEqual([{ term: expect.objectContaining({ id: t.id, exited: true, exitCode: 0 }) }]);
+      await m.disconnect();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('rejects what the daemon rejects, with its messages', async () => {
+    const { a } = setup();
+    await expect(a.createTerm({ install: 'nope' })).rejects.toMatchObject({ status: 400, message: 'unknown agent nope' });
+    await expect(a.createTerm({ install: 'shell' })).rejects.toMatchObject({ status: 400, message: 'Shell has no install command' });
+    await expect(a.createTerm({ install: 'amp', agent: 'amp' })).rejects.toMatchObject({ status: 400, message: 'give either install, agent or cmd' });
+    await expect(a.createTerm({ install: 'amp', cmd: ['sh'] })).rejects.toMatchObject({ status: 400, message: 'give either install, agent or cmd' });
+  });
+});
+
 describe('fault injection', () => {
   it('fails matching requests at the configured rate', async () => {
     const f = { rate: 0.5, on: 'POST', hang: '', hangMs: 0 };
@@ -656,5 +696,66 @@ describe('fault injection', () => {
 
   it('times out hung requests like the transport does', async () => {
     await expect(inject('GET /api/review', { rate: 0, on: '', hang: '/review', hangMs: 1 })).rejects.toThrow('timed out');
+  });
+
+  describe('quorum', () => {
+    const mk = (a: ReturnType<typeof setup>['a'], quorum: unknown, extra: Record<string, unknown> = {}) =>
+      a.createTask({ title: 'Q', description: '', project: '/p', agent: 'claude', model: '', quorum, ...extra } as never);
+    const ok = { workers: ['claude', 'codex'], reviewers: ['codex', 'gemini'] };
+
+    it('stores and returns a valid quorum', async () => {
+      const { a } = setup();
+      const t = await mk(a, ok);
+      expect(t.quorum).toEqual(ok);
+      expect((await a.tasks()).find((x) => x.id === t.id)?.quorum).toEqual(ok);
+      expect((await mk(a, null)).quorum).toBeUndefined();
+    });
+
+    it.each([
+      ['a string', 'x', 'quorum must be an object or null'],
+      ['an array', [], 'quorum must be an object or null'],
+      ['no workers', { workers: [], reviewers: ['codex'] }, 'quorum.workers must be a non-empty array of agent ids'],
+      ['non-string workers', { workers: [1], reviewers: ['codex'] }, 'quorum.workers must be a non-empty array of agent ids'],
+      ['missing reviewers', { workers: ['claude'] }, 'quorum.reviewers must list 1 or 2 agent ids'],
+      ['no reviewer', { workers: ['claude'], reviewers: [] }, 'quorum.reviewers must list 1 or 2 agent ids'],
+      ['three reviewers', { workers: ['claude'], reviewers: ['codex', 'gemini', 'agy'] }, 'quorum.reviewers must list 1 or 2 agent ids'],
+      ['an unknown agent', { workers: ['nope'], reviewers: ['codex'] }, 'unknown agent nope'],
+      ['shell worker', { workers: ['shell'], reviewers: ['codex'] }, 'shell cannot join a quorum'],
+      ['shell reviewer', { workers: ['claude'], reviewers: ['shell'] }, 'shell cannot join a quorum'],
+      ['duplicate worker', { workers: ['claude', 'claude'], reviewers: ['codex'] }, 'quorum.workers lists claude twice'],
+      ['duplicate reviewer', { workers: ['claude'], reviewers: ['codex', 'codex'] }, 'quorum.reviewers lists codex twice'],
+    ])('rejects %s', async (_n, quorum, msg) => {
+      const { a } = setup();
+      await expect(mk(a, quorum)).rejects.toMatchObject({ status: 400, message: msg });
+    });
+
+    it('rejects an orchestrator that is not claude or codex', async () => {
+      const { a } = setup();
+      await expect(mk(a, ok, { agent: 'gemini' })).rejects.toMatchObject({ status: 400, message: 'the quorum orchestrator must be claude or codex' });
+    });
+
+    it('rejects a quorum on a subtask', async () => {
+      const { a } = setup();
+      await expect(mk(a, ok, { parentId: 'tk_01' })).rejects.toMatchObject({ status: 400, message: 'a subtask cannot run a quorum' });
+    });
+
+    it('patches and clears the quorum on a pending task only', async () => {
+      const { a } = setup();
+      const t = await mk(a, null);
+      expect((await a.patchTask(t.id, { quorum: ok })).quorum).toEqual(ok);
+      expect((await a.patchTask(t.id, { quorum: null })).quorum).toBeUndefined();
+      await expect(a.patchTask(t.id, { quorum: 3 as never })).rejects.toMatchObject({ status: 400 });
+      await expect(a.patchTask(t.id, { quorum: ok, agent: 'gemini' })).rejects.toMatchObject({ status: 400, message: 'the quorum orchestrator must be claude or codex' });
+      await a.startTask(t.id);
+      await expect(a.patchTask(t.id, { quorum: ok })).rejects.toMatchObject({ status: 409, message: 'the quorum can only change before the task starts' });
+    });
+
+    it('seeds a quorum root, a voted worker and reviewer tasks', async () => {
+      const { a } = setup();
+      const tasks = await a.tasks();
+      expect(tasks.find((t) => t.quorum)).toBeTruthy();
+      expect(tasks.find((t) => t.votes)?.votes?.outcome).toBe('rejected');
+      expect(tasks.filter((t) => t.origin === 'reviewer').every((t) => t.parentId === 'tk_q2')).toBe(true);
+    });
   });
 });

@@ -28,6 +28,8 @@
   import ScrollText from '@lucide/svelte/icons/scroll-text';
   import MessageSquarePlus from '@lucide/svelte/icons/message-square-plus';
   import Compass from '@lucide/svelte/icons/compass';
+  import Clapperboard from '@lucide/svelte/icons/clapperboard';
+  import { recorder, rt } from '../../record.svelte';
   import WandSparkles from '@lucide/svelte/icons/wand-sparkles';
   import { organizer } from '../../organize.svelte';
   import { tt } from '../../tour/strings';
@@ -41,7 +43,7 @@
   import { saveSettings, settings, type ThemePref } from '../../settings.svelte';
   import { highlight, rank, type Match } from '../../fuzzy';
   import type { GroupId } from '../../grouping';
-  import { ordered } from '../../agents';
+  import { canInstall, ordered } from '../../agents';
   import AgentGlyph from '../ui/AgentGlyph.svelte';
   import FolderPlus from '@lucide/svelte/icons/folder-plus';
   import Megaphone from '@lucide/svelte/icons/megaphone';
@@ -88,9 +90,14 @@
   const connected = app.connected;
 
   const sessionActions: Cmd[] = connected
-    ? ordered(app.agents)
-        .filter((a) => a.installed)
-        .map((a) => ({ id: `new-${a.id}`, label: t('palette.newSession', { name: a.name }), agent: a.id, section: 'actions', run: () => app.newSession(a.id) }))
+    ? [
+        ...ordered(app.agents)
+          .filter((a) => a.installed)
+          .map((a): Cmd => ({ id: `new-${a.id}`, label: t('palette.newSession', { name: a.name }), agent: a.id, section: 'actions', run: () => app.newSession(a.id) })),
+        ...app.agents
+          .filter(canInstall)
+          .map((a): Cmd => ({ id: `install-${a.id}`, label: t('palette.installAgent', { name: a.name }), agent: a.id, section: 'actions', run: () => app.installAgent(a.id).catch((e) => app.notify(String((e as Error)?.message ?? e), 'error')) })),
+      ]
     : [];
 
   const reviewChanges = (side = false) => {
@@ -158,6 +165,7 @@
     ...(connected ? [action('skills', 'palette.skills', Puzzle, () => app.open('settings', 'skills'))] : []),
     { id: 'logs', label: dt('show'), icon: ScrollText, section: 'actions', run: () => diag.open('live') },
     { id: 'feedback', label: ft('title'), icon: MessageSquarePlus, section: 'actions', run: () => feedback.show() },
+    ...(recorder.phase === 'idle' ? [{ id: 'record', label: rt('palette'), icon: Clapperboard, section: 'actions', run: () => recorder.setup() } as Cmd] : []),
     { id: 'tour', label: tt('palette'), icon: Compass, section: 'actions', run: () => replayTour() },
     ...(connected ? [{ id: 'organize', label: t('org.palette'), icon: WandSparkles, section: 'actions', run: () => organizer.show() } as Cmd] : []),
     ...(connected && app.wsPersistent

@@ -17,11 +17,21 @@ describe('spaces', () => {
     expect(r.empty.map((w) => w.id)).toEqual(['b']);
   });
 
-  it('counts shells out and keeps a workspace holding only shells empty', () => {
-    // Given a workspace whose only item is a shell
+  it('lists a workspace holding only a running shell as a row, without counting the shell', () => {
+    // Given a workspace whose only item is a running shell
     // When the spaces are built
-    // Then it is empty
-    const r = spaces([ws('a', 'A')], [it_('s', 'open', { kind: 'shell' })], new Map([['s', 'a']]), '');
+    // Then it is a row holding the shell, its summary counts no session, and it is not an empty chip
+    const r = spaces([ws('a', 'A')], [it_('s', 'running', { kind: 'shell' })], new Map([['s', 'a']]), '');
+    expect(r.rows.map((x) => x.items.map((i) => i.key))).toEqual([['s']]);
+    expect(r.rows[0]!.summary.total).toBe(0);
+    expect(r.empty).toEqual([]);
+  });
+
+  it('keeps a workspace holding only an exited shell empty', () => {
+    // Given a workspace whose only item is an exited shell
+    // When the spaces are built
+    // Then it stays an empty chip
+    const r = spaces([ws('a', 'A')], [it_('s', 'closed', { kind: 'shell' })], new Map([['s', 'a']]), '');
     expect(r.rows).toEqual([]);
     expect(r.empty).toHaveLength(1);
   });

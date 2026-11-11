@@ -241,6 +241,17 @@ fn term_spec(b: &Value, state_dir: &std::path::Path) -> Result<crate::term::Spec
         workspace_id: s("workspaceId")?,
         ..Default::default()
     };
+    if let Some(id) = s("install")? {
+        if !spec.cmd.is_empty() || !b["agent"].is_null() {
+            return Err("give either install, agent or cmd".into());
+        }
+        let a = crate::agents::get(&id).ok_or_else(|| format!("unknown agent {id}"))?;
+        spec.cmd = crate::agents::install_argv(a)?;
+        spec.shown = a.install_cmd().map(|c| vec![c.to_string()]);
+        if spec.title.is_none() {
+            spec.title = Some(format!("Install {}", a.name));
+        }
+    }
     if let Some(id) = s("agent")? {
         if !spec.cmd.is_empty() {
             return Err("give either agent or cmd, not both".into());
@@ -479,6 +490,10 @@ fn tasks(r: &Request, segs: &[&str], body: &Value, ctx: &Ctx) -> Option<(u16, Va
         ("GET", ["v1", "tasks", id, "overlaps"]) => {
             res(200, crate::task_agents::overlaps(ctx, id).map(Value::from))
         }
+        ("POST", ["v1", "tasks", id, "votes"]) => res(
+            200,
+            crate::quorum::vote(ctx, id, body).map(|t| t.to_json(st)),
+        ),
         ("POST", ["v1", "tasks", id, "review"]) => res(200, tasks::review(ctx, id, body)),
         ("GET", ["v1", "projects"]) => res(
             200,
@@ -860,6 +875,7 @@ pub fn handle(ctx: &Ctx, r: &Request) -> (u16, Value) {
         .or_else(|| crate::import::routes(&r.method, &segs, &body, &ctx.state_dir))
         .or_else(|| crate::lifecycle::routes(&r.method, &segs, &body, &ctx.state_dir))
         .or_else(|| crate::termtheme::routes(&r.method, &segs, &body))
+        .or_else(|| crate::power::routes(&r.method, &segs, &body, &ctx.state_dir))
         .or_else(|| crate::feedback::routes(ctx, &r.method, &segs, &body))
         .or_else(|| crate::github::routes(ctx, r, &segs, &body))
         .or_else(|| crate::profiles::routes(ctx, r, &segs, &body))
@@ -1397,6 +1413,7 @@ pub fn run(
     let adopted = crate::upgrade::resume(saved, &state_dir);
     crate::shellenv::init();
     crate::lifecycle::on_start(&state_dir, restarted || once);
+    crate::power::on_start(&state_dir);
     let path = socket_path(&state_dir);
     crate::scanner::share();
     listen(&path, adopted)?;

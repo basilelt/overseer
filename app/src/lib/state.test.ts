@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { FALLBACK_AGENTS } from './agents';
 import { DaemonError, setClient } from './client';
 import { t } from './i18n.svelte';
-import { MockDaemon } from './mock';
+import { MOCK_AGENTS, MockDaemon } from './mock';
 import { center } from './notifications.svelte';
 import { setPresence } from './presence';
 import { pages } from './session-pages.svelte';
@@ -917,6 +917,53 @@ describe('sessions', () => {
     expect(b).toMatchObject({ cwd: `${webshop}/vendor/design-system`, workspaceId: 'ws_webshop_design' });
   });
 
+  describe('installing an agent', () => {
+    it('opens a shell term that runs the install, outside any worktree', async () => {
+      app.selectWorkspace('ws_webshop');
+      const term = await app.installAgent('amp');
+      expect(m.bodies['POST /v1/terms']).toEqual([{ cwd: app.currentWorkspace!.path, install: 'amp', workspaceId: 'ws_webshop', cols: 120, rows: 32 }]);
+      expect(app.selectedKey).toBe(`term:${term.id}`);
+    });
+
+    it('rescans the agents and says so when the install term exits cleanly', async () => {
+      const term = await app.installAgent('amp');
+      expect(m.hits(/rescan/)).toEqual([]);
+      m.emit('term.exited', { term: { ...term, exited: true, exitCode: 0 } });
+      await vi.waitFor(() => expect(app.agents.find((a) => a.id === 'amp')?.installed).toBe(true));
+      expect(app.toast).toMatchObject({ text: 'Amp is installed', kind: 'info' });
+      m.emit('term.updated', { term: { ...term, exited: true, title: 'x' } });
+      expect(m.hits(/rescan/)).toHaveLength(1);
+    });
+
+    it('points to the terminal when the install command failed', async () => {
+      m.override['POST /v1/agents/rescan'] = () => structuredClone(MOCK_AGENTS);
+      const term = await app.installAgent('amp');
+      m.emit('term.exited', { term: { ...term, exited: true, exitCode: 1 } });
+      await vi.waitFor(() => expect(app.toast).toMatchObject({ text: 'Amp did not install; its terminal shows why', kind: 'error' }));
+    });
+
+    it('says the PATH is the problem when the install succeeded but the agent is still missing', async () => {
+      m.override['POST /v1/agents/rescan'] = () => structuredClone(MOCK_AGENTS);
+      const term = await app.installAgent('amp');
+      m.emit('term.exited', { term: { ...term, exited: true, exitCode: 0 } });
+      await vi.waitFor(() => expect(app.toast).toMatchObject({ text: 'Amp installed, but the daemon does not find it on its PATH', kind: 'error' }));
+    });
+
+    it('reports a rescan that fails', async () => {
+      m.override['POST /v1/agents/rescan'] = () => Promise.reject(new Error('daemon down'));
+      const term = await app.installAgent('amp');
+      m.emit('term.exited', { term: { ...term, exited: true, exitCode: 0 } });
+      await vi.waitFor(() => expect(app.toast).toMatchObject({ text: 'daemon down', kind: 'error' }));
+    });
+
+    it('ignores other terms exiting', async () => {
+      await app.installAgent('amp');
+      const other = await app.newSession('shell');
+      m.emit('term.exited', { term: { ...other, exited: true, exitCode: 0 } });
+      expect(m.hits(/rescan/)).toEqual([]);
+    });
+  });
+
   describe('following a session just started', () => {
     const lineFor = async () => {
       const all = await m.request<{ line: { id: string } }[]>('GET', '/v1/lines');
@@ -958,6 +1005,16 @@ describe('sessions', () => {
       const line = await lineFor();
       m.emit('line.updated', { line });
       expect(app.selectedKey).toBe(`term:${term.id}`);
+    });
+
+    it('does not pull a shell into another workspace after the user switched', async () => {
+      app.selectWorkspace('ws_proxmox');
+      const shell = await app.newSession('shell');
+      app.selectWorkspace('ws_webshop');
+      app.selectedKey = null;
+      m.emit('term.updated', { term: { ...shell, title: 'renamed' } as Term });
+      expect(app.selectedKey).toBeNull();
+      expect(app.workspaceId).toBe('ws_webshop');
     });
 
     it('opens the workspace that holds a session started from elsewhere', async () => {

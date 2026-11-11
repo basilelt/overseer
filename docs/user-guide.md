@@ -833,6 +833,27 @@ them too. With an older `gh`, or when GitHub refuses a file, the issue is still 
 that file as not uploaded with the reason, and the app shows GitHub's message. GitHub may require
 write access to the repository to attach files.
 
+### Recording a bug
+
+Palette > **Record a bug** (phone: More > Record a bug) records what you do while you show a
+problem. The setup dialog offers **Record the screen too** where the webview can capture the
+screen (`getDisplayMedia` and `MediaRecorder`; a browser asks which screen or window to share);
+elsewhere, such as iOS and Android, only the action log is recorded. While it runs, a red pill at
+the bottom shows the time and the number of actions, with **Stop** and a discard button. The log
+has the start, clicks (the control's label, never a field's content), shortcuts (Ctrl/Cmd/Alt
+combinations, Escape, function keys, arrows), "typed in <field>" once per field without the text,
+view and dialog changes, uncaught errors and error toasts, each with its time since the start.
+Recordings stop on their own after 2 minutes (about 10 MB of video, the free GitHub limit) or when
+the screen share ends.
+
+**Stop** opens the feedback sheet on Bug with the recording: the video is uploaded to the active
+host as a `recording-<date>-<time>.webm` (or `.mp4`) attachment, and the log goes into the report
+as a "Recorded actions" block whose times match the video. **Replay** plays the video in the sheet
+with the action list beside it: the current action is highlighted as it plays and clicking one
+seeks the video there. The x on the Recording row removes both the video and the log. When the
+upload fails (offline, daemon restarting), the log and Replay still work and **Attach video** on
+the Recording row tries again.
+
 ### `doctor` items
 
 Levels: `ok` (fine), `warn` (works, but something is missing or suspicious), `fail` (broken;
@@ -898,7 +919,7 @@ On first launch, once the app is connected (immediately in local mode, after the
 connection on a phone), a welcome card offers **Take the tour** or **Skip**. The tour dims the
 window and highlights the real controls one at a time: host chip, workspaces sidebar, tabs and the
 new-session menu, the Terminal/Chat toggle, the side panel, Tasks, Review, the usage, system and ports
-chips, notifications and hooks, the command palette and Feedback, in 0.25 the Cmd/Ctrl+P palette shortcut, and in 0.27 the demo mode (on the **Demo mode** pill while in the demo, else on the host chip), and in 0.28 the GPU rendering option for terminals, and in 0.29 the clean up of unused worktrees and the import from Switchboard (on its button in Settings, Help, or on the Settings button), and in 0.30 click to move the cursor in a terminal (on the tabs), and in 0.31 the Light and Dark palettes (on Settings, or More on a phone), and in 0.33 the one-click install of skills and plugins (on Settings), and in 0.34 the auto-approval defaults (on Settings, Agents), the Review, Merged and Closed columns (on the Merged column when the board is open, else on the Tasks tab) and the clean removal of everything Overseer added (on Settings, Connection, **Remove**), and in 0.35 one-click in-app updates for every install (on Settings, Updates, else on the Settings button), and in 0.36 subjects inside a workspace (on **+ New subject** in the open workspace, else on the sidebar), and the live review behind the git button (on the git button of a session's tab bar, else on the command palette), and the review map (on List | Map in a review, else on the Review tab). Steps whose control is not on
+chips, notifications and hooks, the command palette and Feedback, in 0.25 the Cmd/Ctrl+P palette shortcut, and in 0.27 the demo mode (on the **Demo mode** pill while in the demo, else on the host chip), and in 0.28 the GPU rendering option for terminals, and in 0.29 the clean up of unused worktrees and the import from Switchboard (on its button in Settings, Help, or on the Settings button), and in 0.30 click to move the cursor in a terminal (on the tabs), and in 0.31 the Light and Dark palettes (on Settings, or More on a phone), and in 0.33 the one-click install of skills and plugins (on Settings), and in 0.34 the auto-approval defaults (on Settings, Agents), the Review, Merged and Closed columns (on the Merged column when the board is open, else on the Tasks tab) and the clean removal of everything Overseer added (on Settings, Connection, **Remove**), and in 0.35 one-click in-app updates for every install (on Settings, Updates, else on the Settings button), and in 0.36 subjects inside a workspace (on **+ New subject** in the open workspace, else on the sidebar), and the live review behind the git button (on the git button of a session's tab bar, else on the command palette), and the review map (on List | Map in a review, else on the Review tab), and keeping agents running with the lid closed (on its switch in Settings, Connection, else on the Settings button), and Record a bug (centred, on the command palette), and the Quorum option of a new task (on the Quorum control in the New task dialog, else on the Tasks tab), and installing a missing agent from the app (on the title bar **+**, else on the palette). Steps whose control is not on
 screen (no session selected, a feature the server lacks, phone layout) are skipped. On a phone the
 card is a sheet at the bottom (or top, when the control sits low) and points at the bottom
 navigation, the session strip and the menu.
@@ -1086,7 +1107,9 @@ native automatic permission mode. It is on by default for Claude Code, Codex, Ge
 Antigravity, opencode, Copilot CLI and Cursor Agent. The settings are stored on the connected
 daemon host and apply to new sessions, task agents and feedback agents; changing a setting does
 not change sessions that are already running. Amp currently auto-approves by default unless its
-own permission configuration enables a policy, so it has no Overseer toggle.
+own permission configuration enables a policy, so it has no Overseer toggle. The switch on the
+**Auto approve agent requests** row turns it on or off for every agent at once; it shows a mixed
+state when only some agents auto-approve.
 
 **Skills and plugins** (Settings > Agents, or **Install skills and plugins** in the command
 palette) installs a tool for one agent in one click, on the host the app is connected to. Each
@@ -1253,6 +1276,35 @@ curl --unix-socket "$S" 'http://unix/v1/tasks?status=in_progress,in_testing'
   replaces the button while it runs. **Settings → Auto organize** runs it by itself, shortly
   after new tasks arrive (off by default).
 
+#### 14.2c Quorum
+
+Tick **Quorum** in the New task dialog to have several agent CLIs share one task and check each
+other. It is only offered when the task's agent is Claude Code or Codex (the orchestrator, which
+needs the Overseer MCP); with another agent the switch is disabled with a hint.
+
+- **Workers** (one or more installed agents) get the subtasks the orchestrator cuts the task into.
+  **Reviewers** (one or two installed agents) review each worker's result. Neither list can hold
+  `shell` or the same agent twice. The defaults are every installed agent as a worker and two
+  other agents as reviewers.
+- The orchestrator creates the subtasks, which start by themselves on their own branches, with one
+  worker agent each. The root card carries a **Quorum** chip (hover for the agents); a subtask's
+  reviewer tasks carry a **Reviewer #N** chip and start by themselves when the worker reaches Review.
+- Every reviewer and the orchestrator vote approve or reject, with a reason. A result is accepted on a
+  strict majority of all voters: with one reviewer both must approve (2 of 2), with two reviewers 2 of 3.
+  The worker card shows the tally (for example **2/3 accepted · Round 1**, **1/3 rejected**, or
+  **1/3 voting** until the daemon decides); the task detail lists each vote with its reason.
+- The daemon sends the outcome and every reason to the orchestrator, which merges accepted branches
+  into its own branch. After a rejection a worker that still runs goes back to In progress; the
+  orchestrator sends it the fixes, and when its next turn ends it is reviewed in a new round. A
+  reviewer that ends without voting counts as a rejection.
+- While it waits for subtasks, the orchestrator's card can sit in Review between its turns; its
+  messages still reach it.
+- Agents that have the Overseer MCP (Claude Code, Codex) vote with the `cast_vote` tool. Any other
+  reviewer votes from its task terminal with the CLI: `overseer vote approve "<reason>"` or
+  `overseer vote reject "<reason>"`.
+- The quorum is set when the task is created and can only change while the task is Pending or Auto.
+  A subtask cannot run its own quorum.
+
 #### 14.2a Session tasks
 
 Every agent session (Claude, Codex, Gemini, opencode, …) running in a git repository gets a task
@@ -1340,6 +1392,21 @@ request, the event stream, every terminal and every forwarded port over that one
   run the command on the server yourself). Turning the switch off disables and removes the unit.
   API: `GET /v1/lifecycle`, `PATCH /v1/lifecycle {"autostart": true|false, "linger": true,
   "afterReboot": "agents"|"shells"|"nothing"}`.
+- **Keep agents running with the lid closed** (Settings → Connection → Server, desktop app on a
+  local server only, off by default): closing the laptop lid no longer puts the computer to sleep,
+  so agents keep working with the network on. It drains the battery and the laptop can get hot:
+  plug it in, and turn the option off before putting the laptop in a bag. On Linux the daemon holds
+  a `systemd-inhibit --what=handle-lid-switch` lock while it runs (taken again when it restarts,
+  gone when it stops). polkit allows it from your desktop session but may refuse it when the
+  daemon runs as a boot service (**Keep server running after reboot**) with no active session;
+  Settings then shows the reason. Check with `systemd-run --user --wait systemd-inhibit
+  --what=handle-lid-switch --mode=block --who=t --why=t true`. A desktop that handles the lid
+  itself (KDE's power settings, for example) ignores this lock: set its lid action there;
+  `systemd-inhibit --list` shows who holds the lid switch. On macOS it runs `pmset -a disablesleep 1`
+  after asking for an administrator password, and `0` when you turn it off. On Windows it sets the
+  lid close action of the current power plan to **Do nothing** (plugged in and on battery) and puts
+  the previous actions back when you turn it off. If the system refuses, the switch stays off and
+  the reason is shown under it. API: `GET`/`PUT /v1/power/lid {"enabled": true|false}`.
 - **After a server reboot or restart**: the daemon keeps its terminal list (folder, title, size,
   line, task, and for a running agent its current session and flags) in `overseer.db`, written
   only when it changes. When it starts after a machine reboot, a crash or a plain restart (anything
@@ -1513,7 +1580,9 @@ requests over the last 30 days.
 
 Where the numbers come from (contract §7c): Claude Code transcripts, Codex rollouts and Gemini
 CLI sessions (when they record token counts) on the machine the app is connected to, read
-incrementally by the daemon. Claude Code does not store its 5-hour and weekly percentages on
+incrementally by the daemon. Settings → Usage lists each of these providers: Claude Code with its two
+plan-limit switches below, Codex (tokens, cost and its plan limits, always read from its session
+logs) and Gemini CLI (tokens and cost only; it records no plan limits). Claude Code does not store its 5-hour and weekly percentages on
 disk, but it passes them to its status line command (`rate_limits` in the status line's JSON input,
 for Pro and Max plans). Settings → Usage → "Plan limits from the status line" (off until you turn it
 on, per host) wraps your status line command in `~/.claude/settings.json` (a backup is written
@@ -1629,7 +1698,8 @@ Stopped: no live agent process, resumable); the toggle is at the top of the side
 
 - **Spaces**: pinned workspaces on top, then your folders (one level of sub-folders) and the
   workspaces outside any folder. Each workspace is one block with its sessions under it: click its
-  name to open it (its tab strip and `+` show), the chevron only folds it. A group section at the
+  name to open it (its tab strip and `+` show), the chevron only folds it. Running plain shells are
+  listed after its sessions, muted with a terminal icon, and are not counted in its pills. A group section at the
   bottom lists your groups; click one to open it. Every project the daemon knows gets a workspace: the
   repositories its agents ran in, and the git repositories it finds under `discoverRoots`
   (3.1; by default `~/Documents/Github`, `~/src`, `~/code`, `~/projects`, `~/dev`), scanned at
@@ -2096,7 +2166,9 @@ Per platform:
 - Writes: the state dir (including `usage.db`), files sent from the app in `~/.overseer/u/`,
   the daemon's service file when you turn on **Keep server running after reboot**
   (`~/.config/systemd/user/overseer-daemon.service` or
-  `~/Library/LaunchAgents/dev.overseer.daemon.plist`), plus `hooks install --apply` and the app's hook switches (the agents' hook files, with backups, and Overseer's own plugin files), the `~/.overseer/bin/overseer` symlink,
+  `~/Library/LaunchAgents/dev.overseer.daemon.plist`), the lid close setting when you turn on
+  **Keep agents running with the lid closed** (`pmset disablesleep` on macOS, the power plan's lid
+  action on Windows; restored when turned off), plus `hooks install --apply` and the app's hook switches (the agents' hook files, with backups, and Overseer's own plugin files), the `~/.overseer/bin/overseer` symlink,
   `hold`/`close --yes` (SIGTERM to the agent, `@sb_held` and the stub in its pane), `resume`
   (relaunches the agent), Board commit/stash, relayed commands when `acceptRemoteCommands` is on,
   and the worktrees and tmux sessions created by `start` and `patch --local`; the worktree store

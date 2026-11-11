@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { MOCK_AGENTS } from '../../mock';
+import type { AgentInfo } from '../../types';
 
-async function rendered(connected: boolean, current?: Record<string, unknown>, all: Record<string, unknown>[] = []) {
+async function rendered(connected: boolean, current?: Record<string, unknown>, all: Record<string, unknown>[] = [], agents: AgentInfo[] = []) {
   vi.resetModules();
   const { app } = await import('../../state.svelte');
   vi.spyOn(app, 'connected', 'get').mockReturnValue(connected);
@@ -9,6 +11,7 @@ async function rendered(connected: boolean, current?: Record<string, unknown>, a
     vi.spyOn(app, 'wsPersistent', 'get').mockReturnValue(true);
     app.ws = { workspaces: all as never, folders: [], groups: [] };
   }
+  app.agents = agents;
   const { render } = await import('svelte/server');
   const { default: Palette } = await import('./CommandPalette.svelte');
   return render(Palette, { props: { onclose: () => {} } }).body;
@@ -54,5 +57,13 @@ describe('command palette views', () => {
     expect(section(await rendered(true, nested, [parent, nested]), 'Actions')).toContain(label);
     expect(await rendered(true, { id: 's', name: 'S', path: null, kind: 'subject', parentId: null }, [])).not.toContain(label);
     expect(await rendered(true)).not.toContain(label);
+  });
+
+  it('offers to install each absent agent that has an install command', async () => {
+    const actions = section(await rendered(true, undefined, [], MOCK_AGENTS), 'Actions');
+    for (const name of ['opencode', 'Amp', 'Cursor Agent']) expect(actions).toContain(`Install ${name}`);
+    expect(actions).not.toContain('Install Codex');
+    expect(actions).not.toContain('New Amp session');
+    expect(await rendered(false, undefined, [], MOCK_AGENTS)).not.toContain('Install Amp');
   });
 });

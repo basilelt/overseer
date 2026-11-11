@@ -58,6 +58,8 @@ is done. Agent tabs also have a **Chat** view rebuilt live from the agent's sess
 Terminals can optionally be drawn on the GPU with WebGL (Settings, Terminal, **GPU rendering**,
 off by default and experimental), which keeps long output smooth. Clicking in the line you are
 typing, in a shell or an agent like Claude Code or Codex, moves the cursor there like in a text editor.
+An agent you have not installed yet is one click away: pick it under **+** and its install
+command runs in a new terminal, then it is ready to start.
 Coming from Switchboard, the old name of Overseer? When its data is found, Overseer offers to import
 your sessions, tasks, workspaces and settings in one click (also in Settings, Help).
 
@@ -79,7 +81,9 @@ their own, in order, within your concurrency limit. A new task can be filled fro
 GitHub or GitLab issues or Jira tickets, and agents can read and update tasks through the
 built-in MCP server. Finished work waits in **Review**; a task moves to **Merged** by itself once
 its branch lands in the default branch, **Closed** keeps the rest, and an agent moves its task
-back to In progress when work resumes.
+back to In progress when work resumes. Tick **Quorum** on a Claude or Codex task and its agent
+splits the work between several agent CLIs; one or two other agents review each result and vote
+with the orchestrator, and only results a majority accepts are merged.
 
 ![Tasks](app/docs/screenshots/kanban-dark.png)
 
@@ -159,12 +163,16 @@ on a TCP port on the server.
   for Gemini CLI and Antigravity. Apply a profile to new work, scope it to a workspace, and choose
   when to update the agent files.
 - **Auto-approve defaults per agent**: choose which CLIs Overseer starts in their native
-  auto-approval mode. The defaults are stored on each connected host and apply to new sessions.
+  auto-approval mode, one by one or all at once. The defaults are stored on each connected host and
+  apply to new sessions.
 - **Skills and plugins in one click**: install RTK (trims shell output before the agent reads it),
   Caveman (terse replies) or Ponytail (simplest code that works) for Claude Code, Codex, Gemini CLI,
   opencode, Copilot CLI, Cursor Agent, Amp or Antigravity, from Settings → Agents or the command
   palette. The install runs in a terminal you can watch.
 - **Usage and system monitor**: agent quotas, token usage, CPU and RAM in the title bar.
+- **Keep agents running with the lid closed**: an opt-in switch (Settings → Connection) stops the
+  laptop running Overseer from sleeping when you close it, on Linux, macOS and Windows, so agents
+  finish their work with the network on. It drains the battery, and the switch says so.
 - **Light and Dark palettes**: choose System, Light or Dark as the theme (System follows your OS live), then pick a palette for each mode: Default, Graphite or Solarized Soft for Dark, or make your own with color pickers, a live preview and a contrast warning. Find them in Settings → General → Appearance ([Graphite](app/docs/screenshots/graphite.png), [Solarized Soft](app/docs/screenshots/solarized.png)).
 - **Settings with search**: categories in a sidebar, and a search box that finds any setting by name or description, in your language or in English.
 - **Command palette** (history, actions, sessions) and keyboard shortcuts.
@@ -174,6 +182,7 @@ on a TCP port on the server.
 - **Team mode**: a shared API merges every station's lines, relays commands between stations,
   and publishes events and signed webhooks for other tools.
 - **Updates** in the app, and a feedback button with optional diagnostics.
+- **Record a bug**: show a problem while Overseer logs your clicks, shortcuts, views and errors next to a screen video, then send both in one report. Replay plays the video and the timeline in sync; what you type is never logged.
 
 ## Install
 

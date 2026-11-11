@@ -6,6 +6,10 @@
   import Copy from '@lucide/svelte/icons/copy';
   import ExternalLink from '@lucide/svelte/icons/external-link';
   import CircleCheck from '@lucide/svelte/icons/circle-check';
+  import Clapperboard from '@lucide/svelte/icons/clapperboard';
+  import Replay from '../record/Replay.svelte';
+  import { fileName, formatLog } from '../../record';
+  import { rt } from '../../record.svelte';
   import Modal from '../ui/Modal.svelte';
   import { app } from '../../state.svelte';
   import { isTauri, DaemonError } from '../../client';
@@ -15,7 +19,7 @@
   import { openExternal } from '../../ports.svelte';
   import { diagBackend, fetchServerLog } from '../../diag.svelte';
   import { feedback, ft, type Result } from '../../feedback.svelte';
-  import { APP_LINES, attachProblem, ATTACH_ACCEPT, VIDEO_FREE_MAX, buildBody, buildDiagnostics, buildPrompt, DEFAULT_REPO, findClone, issueTitle, labelsFor, newIssueUrl, SERVER_LINES, validate, wantsDiagnostics, type Kind } from '../../feedback';
+  import { APP_LINES, attachProblem, ATTACH_ACCEPT, VIDEO_FREE_MAX, buildBody, clock, buildDiagnostics, buildPrompt, DEFAULT_REPO, findClone, issueTitle, labelsFor, newIssueUrl, SERVER_LINES, validate, wantsDiagnostics, type Kind } from '../../feedback';
   import type { Term } from '../../types';
 
   const prefill = feedback.prefill;
@@ -38,8 +42,13 @@
   let dropping = $state(false);
   let zone = $state<HTMLElement | null>(null);
   let picker = $state<HTMLInputElement | null>(null);
+  let recording = $state.raw(prefill?.recording ?? null);
+  let recordingPath = $state<string | null>(null);
+  let replaying = $state(false);
+  let recUploading = $state(false);
 
-  const form = $derived({ kind, title, description, attachments: attachments.map((a) => a.path), diagnostics: includeDiag ? diagText : null });
+  const actions = $derived(recording ? { log: formatLog(recording.events), duration: recording.duration } : null);
+  const form = $derived({ kind, title, description, attachments: attachments.map((a) => a.path), diagnostics: includeDiag ? diagText : null, actions });
   const body = $derived(buildBody(form));
   const sentBody = $derived(buildBody(form, true));
   const fullTitle = $derived(issueTitle(form));
@@ -123,6 +132,41 @@
         uploading--;
       }
     }
+  }
+
+  async function attachRecording(r: NonNullable<typeof recording>) {
+    if (!r.video) return;
+    const client = app.client;
+    if (!client || !app.connected) return app.notify(rt('offlineVideo'), 'error');
+    const name = fileName(new Date(), r.mime);
+    if (!admit(name, r.video.size)) return;
+    uploading++;
+    recUploading = true;
+    try {
+      const local = await client.savePaste(name, new Uint8Array(await r.video.arrayBuffer()));
+      const up = await client.uploadFile(local);
+      if (recording !== r) return;
+      recordingPath = up.path;
+      attachments = [...attachments, { name: up.name, path: up.path }];
+    } catch (e) {
+      app.notify(ft('failed', { error: `${name}: ${msg(e)}` }), 'error');
+    } finally {
+      uploading--;
+      recUploading = false;
+    }
+  }
+
+  function removeRecording() {
+    const path = recordingPath;
+    recording = null;
+    recordingPath = null;
+    replaying = false;
+    if (path) attachments = attachments.filter((a) => a.path !== path);
+  }
+
+  function removeAttachment(i: number) {
+    if (attachments[i]?.path === recordingPath) recordingPath = null;
+    attachments = attachments.filter((_, j) => j !== i);
   }
 
   function onPaste(e: ClipboardEvent) {
@@ -222,6 +266,7 @@
 
   onMount(() => {
     if (feedback.result) return;
+    if (recording) void attachRecording(recording);
     return dropZone({ el: () => zone?.closest('.modal'), rank: 3, hover: (on) => (dropping = on), drop: (paths) => void addPaths(paths) });
   });
 
@@ -281,13 +326,31 @@
             {#each attachments as a, i (a.path)}
               <li>
                 <span class="mono">{a.name}</span>
-                <button class="icon-btn" aria-label={ft('remove', { name: a.name })} title={ft('remove', { name: a.name })} onclick={() => (attachments = attachments.filter((_, j) => j !== i))}><X size={12} /></button>
+                <button class="icon-btn" aria-label={ft('remove', { name: a.name })} title={ft('remove', { name: a.name })} onclick={() => removeAttachment(i)}><X size={12} /></button>
               </li>
             {/each}
           </ul>
           <p class="faint small">{ft('attachNote')}</p>
         {/if}
       </div>
+
+      {#if recording}
+        <div class="field">
+          <span>{rt('attached')}</span>
+          <div class="rec">
+            <Clapperboard size={14} />
+            <span class="mono">{clock(recording.duration)}</span>
+            <span class="faint">· {rt('actions', { n: recording.events.length })}</span>
+            <button class="linkish" aria-expanded={replaying} onclick={() => (replaying = !replaying)}>{rt('replay')}</button>
+            {#if recording.video && !recordingPath && !recUploading}
+              <button class="linkish" onclick={() => recording && void attachRecording(recording)}>{rt('attachVideo')}</button>
+            {/if}
+            <span class="spacer"></span>
+            <button class="icon-btn" aria-label={rt('discard')} title={rt('discard')} onclick={removeRecording}><X size={12} /></button>
+          </div>
+          {#if replaying}<Replay {recording} />{/if}
+        </div>
+      {/if}
 
       <label class="check">
         <input type="checkbox" class="switch" bind:checked={includeDiag} />
@@ -408,6 +471,15 @@
     border: 1px solid var(--border);
     border-radius: 999px;
     font-size: 11px;
+  }
+  .rec {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 10px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    font-size: 12px;
   }
   .check {
     display: flex;

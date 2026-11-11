@@ -5,88 +5,70 @@
   import { diag } from '../../diag.svelte';
   import { feedback } from '../../feedback.svelte';
   import { organizer } from '../../organize.svelte';
+  import { mainOverlay, type MainOverlay } from '../../overlay-route';
+  import { rec } from '../../record-state.svelte';
+  import type { Component } from 'svelte';
 
   const close = () => app.open(null);
-  const commandPalette = preload(() => import('./CommandPalette.svelte'));
   const menu = preload(() => import('../ui/Menu.svelte'));
-  const settingsDialog = () => import('./SettingsDialog.svelte');
-  const connectDialog = () => import('./ConnectDialog.svelte');
-  const taskModal = () => import('../kanban/TaskModal.svelte');
-  const taskDetail = () => import('../kanban/TaskDetail.svelte');
-  const projectModal = () => import('../kanban/ProjectModal.svelte');
-  const reviewDialog = () => import('../kanban/ReviewDialog.svelte');
-  const broadcastDialog = () => import('./BroadcastDialog.svelte');
-  const holdAllDialog = () => import('./HoldAllDialog.svelte');
-  const workspaceDialog = () => import('./WorkspaceDialog.svelte');
-  const portsPanel = () => import('../ports/PortsPanel.svelte');
-  const systemPanel = () => import('../system/SystemPanel.svelte');
-  const usagePanel = () => import('../usage/UsagePanel.svelte');
-  const mobileConnect = () => import('../mobile/MobileConnect.svelte');
   const logsDialog = () => import('./LogsDialog.svelte');
   const feedbackSheet = () => import('./FeedbackSheet.svelte');
-  const profilesDialog = () => import('./ProfilesDialog.svelte');
-  const shortcutsSheet = () => import('./ShortcutsSheet.svelte');
-  const notificationCenter = () => import('./NotificationCenter.svelte');
-  const fileViewer = () => import('./FileViewer.svelte');
   const organizeDialog = () => import('./OrganizeDialog.svelte');
   const planReview = () => import('./PlanReview.svelte');
   const pickUp = () => import('./PickUp.svelte');
-  const nameDialog = () => import('./NameDialog.svelte');
-  const closeTabDialog = () => import('./CloseTabDialog.svelte');
-  const switchboardDialog = () => import('./SwitchboardImportDialog.svelte');
-  const uninstallDialog = () => import('./UninstallDialog.svelte');
+  const recordSetup = () => import('../record/RecordSetup.svelte');
+  const recordPill = () => import('../record/RecordPill.svelte');
+
+  type Load = () => Promise<{ default: Component<any> }>;
+  const loaders: Record<MainOverlay, Load> = {
+    palette: preload(() => import('./CommandPalette.svelte')),
+    mobileConnect: () => import('../mobile/MobileConnect.svelte'),
+    connect: () => import('./ConnectDialog.svelte'),
+    settings: () => import('./SettingsDialog.svelte'),
+    task: () => import('../kanban/TaskModal.svelte'),
+    taskDetail: () => import('../kanban/TaskDetail.svelte'),
+    project: () => import('../kanban/ProjectModal.svelte'),
+    review: () => import('../kanban/ReviewDialog.svelte'),
+    broadcast: () => import('./BroadcastDialog.svelte'),
+    holdAll: () => import('./HoldAllDialog.svelte'),
+    name: () => import('./NameDialog.svelte'),
+    workspaceNew: () => import('./WorkspaceDialog.svelte'),
+    profiles: () => import('./ProfilesDialog.svelte'),
+    ports: () => import('../ports/PortsPanel.svelte'),
+    system: () => import('../system/SystemPanel.svelte'),
+    usage: () => import('../usage/UsagePanel.svelte'),
+    notifications: () => import('./NotificationCenter.svelte'),
+    file: () => import('./FileViewer.svelte'),
+    switchboardImport: () => import('./SwitchboardImportDialog.svelte'),
+    uninstall: () => import('./UninstallDialog.svelte'),
+    closeTab: () => import('./CloseTabDialog.svelte'),
+    shortcuts: () => import('./ShortcutsSheet.svelte'),
+  };
+  const main = $derived(mainOverlay({ overlay: app.overlay, overlayArg: app.overlayArg, hasFile: !!app.fileArg, phone: app.mobile || ui.layout === 'phone' }));
+  function propsOf(k: MainOverlay): Record<string, unknown> {
+    if (k === 'uninstall') return { onclose: () => app.closeOverlay() };
+    if (k === 'mobileConnect') return { onclose: close, initial: app.overlayArg };
+    if (k === 'profiles') return { onclose: close, scope: app.overlayArg };
+    if (k === 'switchboardImport') return { onclose: close, from: app.overlayArg };
+    if (k === 'closeTab') return { onclose: close, tabKey: app.overlayArg };
+    if (k === 'file') return { onclose: close, file: app.fileArg };
+    return { onclose: close };
+  }
 </script>
 
-{#if app.overlay === 'palette'}
-  {#await commandPalette() then { default: CommandPalette }}<CommandPalette onclose={close} />{/await}
-{:else if app.overlay === 'connect' && (app.mobile || ui.layout === 'phone')}
-  {#await mobileConnect() then { default: MobileConnect }}<MobileConnect onclose={close} initial={app.overlayArg} />{/await}
-{:else if app.overlay === 'connect'}
-  {#await connectDialog() then { default: ConnectDialog }}<ConnectDialog onclose={close} />{/await}
-{:else if app.overlay === 'settings'}
-  {#await settingsDialog() then { default: SettingsDialog }}<SettingsDialog onclose={close} />{/await}
-{:else if app.overlay === 'task'}
-  {#await taskModal() then { default: TaskModal }}<TaskModal onclose={close} />{/await}
-{:else if app.overlay === 'taskDetail'}
-  {#await taskDetail() then { default: TaskDetail }}<TaskDetail onclose={close} />{/await}
-{:else if app.overlay === 'project'}
-  {#await projectModal() then { default: ProjectModal }}<ProjectModal onclose={close} />{/await}
-{:else if app.overlay === 'review'}
-  {#await reviewDialog() then { default: ReviewDialog }}<ReviewDialog onclose={close} />{/await}
-{:else if app.overlay === 'broadcast'}
-  {#await broadcastDialog() then { default: BroadcastDialog }}<BroadcastDialog onclose={close} />{/await}
-{:else if app.overlay === 'holdAll'}
-  {#await holdAllDialog() then { default: HoldAllDialog }}<HoldAllDialog onclose={close} />{/await}
-{:else if app.overlay === 'name'}
-  {#await nameDialog() then { default: NameDialog }}<NameDialog onclose={close} />{/await}
-{:else if app.overlay === 'workspaceNew'}
-  {#await workspaceDialog() then { default: WorkspaceDialog }}<WorkspaceDialog onclose={close} />{/await}
-{:else if app.overlay === 'profiles'}
-  {#await profilesDialog() then { default: ProfilesDialog }}<ProfilesDialog onclose={close} scope={app.overlayArg} />{/await}
-{:else if app.overlay === 'ports'}
-  {#await portsPanel() then { default: PortsPanel }}<PortsPanel onclose={close} />{/await}
-{:else if app.overlay === 'system'}
-  {#await systemPanel() then { default: SystemPanel }}<SystemPanel onclose={close} />{/await}
-{:else if app.overlay === 'usage'}
-  {#await usagePanel() then { default: UsagePanel }}<UsagePanel onclose={close} />{/await}
-{:else if app.overlay === 'notifications'}
-  {#await notificationCenter() then { default: NotificationCenter }}<NotificationCenter onclose={close} />{/await}
-{:else if app.overlay === 'file' && app.fileArg}
-  {#await fileViewer() then { default: FileViewer }}<FileViewer onclose={close} file={app.fileArg} />{/await}
-{:else if app.overlay === 'switchboardImport'}
-  {#await switchboardDialog() then { default: SwitchboardImportDialog }}<SwitchboardImportDialog onclose={close} from={app.overlayArg} />{/await}
-{:else if app.overlay === 'uninstall'}
-  {#await uninstallDialog() then { default: UninstallDialog }}<UninstallDialog onclose={() => app.closeOverlay()} />{/await}
-{:else if app.overlay === 'closeTab' && app.overlayArg}
-  {#await closeTabDialog() then { default: CloseTabDialog }}<CloseTabDialog onclose={close} tabKey={app.overlayArg} />{/await}
-{:else if app.overlay === 'shortcuts' && !app.mobile && ui.layout !== 'phone'}
-  {#await shortcutsSheet() then { default: ShortcutsSheet }}<ShortcutsSheet onclose={close} />{/await}
+{#if main}
+  {#await loaders[main]() then { default: Overlay }}<Overlay {...propsOf(main)} />{/await}
 {/if}
 {#if diag.mode}
   {#await logsDialog() then { default: LogsDialog }}<LogsDialog />{/await}
 {/if}
+{#if rec.phase === 'setup'}
+  {#await recordSetup() then { default: RecordSetup }}<RecordSetup />{/await}
+{:else if rec.phase === 'recording'}
+  {#await recordPill() then { default: RecordPill }}<RecordPill />{/await}
+{/if}
 {#if feedback.open}
-  {#await feedbackSheet() then { default: FeedbackSheet }}<FeedbackSheet />{/await}
+  {#await feedbackSheet() then { default: FeedbackSheet }}{#key feedback.prefill}<FeedbackSheet />{/key}{/await}
 {/if}
 {#if organizer.phase === 'choice' || organizer.phase === 'waiting'}
   {#await organizeDialog() then { default: OrganizeDialog }}<OrganizeDialog />{/await}

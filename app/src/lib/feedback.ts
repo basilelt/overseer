@@ -28,6 +28,7 @@ export interface Form {
   description: string;
   attachments: string[];
   diagnostics: string | null;
+  actions?: { log: string; duration: number } | null;
 }
 
 export type Problem = 'description' | 'repo' | 'tooLong';
@@ -104,6 +105,11 @@ export function buildDiagnostics(d: DiagInput): string {
   return redact(parts.join('\n\n'));
 }
 
+export function clock(ms: number): string {
+  const s = Math.max(0, Math.floor(ms / 1000));
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+}
+
 function fence(text: string): string {
   const longest = Math.max(2, ...Array.from(text.matchAll(/`+/g), (m) => m[0].length));
   const f = '`'.repeat(longest + 1);
@@ -113,6 +119,7 @@ function fence(text: string): string {
 export function buildBody(f: Form, upload = false): string {
   const out = [`**Type:** ${KIND_PREFIX[f.kind]}`, '', f.description.trim()];
   if (f.attachments.length) out.push('', '### Attachments', ...(upload ? [ATTACHMENTS] : f.attachments.map((p) => `- \`${p}\``)));
+  if (f.actions?.log) out.push('', `<details><summary>Recorded actions (${clock(f.actions.duration)})</summary>`, '', fence(f.actions.log), '', '</details>');
   if (f.diagnostics) out.push('', '<details><summary>Diagnostics</summary>', '', fence(f.diagnostics), '', '</details>');
   out.push('', '_Sent from Overseer._');
   return redact(out.join('\n')) + '\n';
@@ -143,7 +150,7 @@ export function buildPrompt(p: PromptInput): string {
   ];
   if (p.kind === 'bug') lines.push('   - Add "Steps to reproduce", "Expected" and "Actual" sections from the report; write "Not specified" when the report does not say. Do not invent details.');
   lines.push(
-    '   - Keep the <details> Diagnostics block exactly as it is in the report.',
+    '   - Keep the <details> Diagnostics and Recorded actions blocks exactly as they are in the report. The times in Recorded actions match the attached recording.',
     `   - Labels: ${label.map((l) => `\`${l}\``).join(', ')}. Check \`gh label list --repo ${p.repo}\`; create a missing label with \`gh label create\` only if you have permission. If labels fail, create the issue without them.`,
     '   - Write the final body to a new file from `mktemp`, never inside a repository.',
   );

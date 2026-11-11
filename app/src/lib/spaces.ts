@@ -49,7 +49,7 @@ export function spaces(workspaces: Workspace[], items: SidebarItem[], wsOf: Read
   const visible = new Set([...tops, ...[...kids.values()].flat().map((w) => w.id)]);
   const by = new Map<string, SidebarItem[]>();
   for (const it of items) {
-    if (it.kind === 'shell') continue;
+    if (it.kind === 'shell' && it.state === 'closed') continue;
     const w = wsOf.get(it.key);
     push(by, w !== undefined && visible.has(w) ? w : '', it);
   }

@@ -6,7 +6,7 @@ import { MockGit } from './git/mockGit';
 import { MockScm } from './git/mockScm';
 import { bigDiff, bigPatch, MockReview } from './review/mock';
 import { chatPage, mockScreen, MOCK_COMMANDS, seedAgentChat, seedChat } from './chat/mock';
-import type { Effort, HookResult, HooksStatus, SwitchboardStatus, Profile, ProfileChip, ProfilesStore, SourceItem, SourceItems, SubagentDef, TaskSource } from './types';
+import type { Effort, HookResult, HooksStatus, SwitchboardStatus, Profile, ProfileChip, ProfilesStore, SourceItem, SourceItems, SubagentDef, TaskSource, Quorum } from './types';
 import { mockSystem } from './system/mock';
 import { resolveProfile } from './profiles';
 import { fileKind } from './files';
@@ -78,10 +78,10 @@ export const MOCK_AGENTS: AgentInfo[] = [
   { id: 'codex', name: 'Codex', installed: true, version: '0.58.0', efforts: [...ALL_EFFORTS], resume: true, verified: true, sessions: true, turns: true },
   { id: 'gemini', name: 'Gemini CLI', installed: true, version: '0.21.0', efforts: [], resume: true, verified: true, sessions: true, turns: false },
   { id: 'agy', name: 'Antigravity', installed: true, version: '1.4.2', efforts: AGY_EFFORTS, resume: false, verified: true, sessions: false, turns: false },
-  { id: 'opencode', name: 'opencode', installed: false, efforts: [], resume: true, verified: true, install: 'npm install -g --allow-scripts=opencode-ai opencode-ai', sessions: false, turns: false },
-  { id: 'amp', name: 'Amp', installed: false, models: [], efforts: [...ALL_EFFORTS], resume: true, verified: true, install: 'npm install -g --allow-scripts=@ampcode/cli @sourcegraph/amp', sessions: false, turns: false },
+  { id: 'opencode', name: 'opencode', installed: false, efforts: [], resume: true, verified: true, install: 'npm install -g --allow-scripts=opencode-ai opencode-ai', installable: true, sessions: false, turns: false },
+  { id: 'amp', name: 'Amp', installed: false, models: [], efforts: [...ALL_EFFORTS], resume: true, verified: true, install: 'npm install -g --allow-scripts=@ampcode/cli @sourcegraph/amp', installable: true, sessions: false, turns: false },
   { id: 'copilot', name: 'Copilot CLI', installed: true, version: '0.0.354', efforts: [...ALL_EFFORTS], resume: true, verified: true, sessions: false, turns: false },
-  { id: 'cursor', name: 'Cursor Agent', installed: false, efforts: [], resume: true, verified: false, install: 'curl https://cursor.com/install -fsS | bash', sessions: false, turns: false },
+  { id: 'cursor', name: 'Cursor Agent', installed: false, efforts: [], resume: true, verified: false, install: 'curl https://cursor.com/install -fsS | bash', installable: true, sessions: false, turns: false },
   { id: 'shell', name: 'Shell', installed: true, models: [], efforts: [], resume: false, verified: true, sessions: false, turns: false },
 ];
 
@@ -318,7 +318,7 @@ function seedTasks(now: number): Task[] {
     if (q) [t.urgent, t.important] = q;
     t.dependsOn = deps[t.id] ?? [];
   }
-  return own.concat(seedAgentTasks(now), seedSessionTasks(now));
+  return own.concat(seedAgentTasks(now), seedSessionTasks(now), seedQuorumTasks(now));
 }
 
 const AGENT_TASK_SEEDS: [string, string, string, boolean | null, boolean | null][] = [
@@ -347,6 +347,50 @@ function seedAgentTasks(now: number): Task[] {
     createdAt: iso(40 - i * 7, now),
     updatedAt: iso(40 - i * 7, now),
   }));
+}
+
+function seedQuorumTasks(now: number): Task[] {
+  const base = (id: string, n: number, title: string, agent: Agent, model: string, extra: Partial<Task>): Task => ({
+    id,
+    number: n,
+    title,
+    description: '',
+    project: repoPath('webshop'),
+    status: 'in_progress',
+    agent,
+    model,
+    effort: 'medium',
+    rank: 200 + n,
+    station: 'atlas',
+    createdAt: iso(50, now),
+    updatedAt: iso(5, now),
+    ...extra,
+  });
+  return [
+    base('tk_q1', 122, 'Add CSV export to the orders page', 'claude', 'opus', {
+      description: 'Split into the API endpoint, the UI button and the tests.',
+      quorum: { workers: ['claude', 'codex', 'gemini'], reviewers: ['codex', 'gemini'] },
+      progress: { done: 1, total: 3, note: 'Waiting for the reviewers' },
+    }),
+    base('tk_q2', 123, 'CSV export endpoint', 'codex', 'gpt-5-codex', {
+      status: 'in_testing',
+      origin: 'agent',
+      parentId: 'tk_q1',
+      votes: {
+        round: 1,
+        voters: 3,
+        needed: 2,
+        outcome: 'rejected',
+        votes: [
+          { from: 'tk_q3', number: 124, agent: 'gemini', role: 'reviewer', approve: false, reason: 'The endpoint loads every order in memory; stream the rows.' },
+          { from: 'tk_q4', number: 125, agent: 'codex', role: 'reviewer', approve: true, reason: 'Tests cover the empty and the large export.' },
+          { from: 'tk_q1', number: 122, agent: 'claude', role: 'orchestrator', approve: false, reason: 'Agree with the streaming remark.' },
+        ],
+      },
+    }),
+    base('tk_q3', 124, 'Review CSV export endpoint', 'gemini', '', { status: 'completed', origin: 'reviewer', parentId: 'tk_q2' }),
+    base('tk_q4', 125, 'Review CSV export endpoint', 'codex', 'gpt-5-codex', { status: 'completed', origin: 'reviewer', parentId: 'tk_q2' }),
+  ];
 }
 
 function seedMessages(tasks: Task[], now: number): TaskMessage[] {
@@ -637,6 +681,7 @@ export class MockDaemon implements DaemonClient {
   terms: Term[];
   tasks: Task[];
   autoOrganize = false;
+  lidPower = { enabled: false, active: false, supported: true, error: null as string | null };
   autoApprove: Record<string, boolean> = Object.fromEntries(Object.keys(AUTO_APPROVE_ARGS).map((id) => [id, true]));
   messages: TaskMessage[];
   activity: Record<string, Activity>;
@@ -741,7 +786,7 @@ export class MockDaemon implements DaemonClient {
     if (method === 'DELETE' && path.startsWith('/v1/projects/sources/')) return this.removeSource(decodeURIComponent(path.slice('/v1/projects/sources/'.length)));
     if (method === 'GET' && path === '/v1/projects/items') return this.sourceItems(new URLSearchParams(qs).get('project') ?? '');
     if (method === 'GET' && path === '/v1/agents') return structuredClone(this.agents);
-    if (method === 'POST' && path === '/v1/agents/rescan') return structuredClone(this.agents);
+    if (method === 'POST' && path === '/v1/agents/rescan') return this.rescanAgents();
     if (method === 'GET' && path === '/v1/agents/settings') return { autoApprove: structuredClone(this.autoApprove) };
     if (method === 'PUT' && path === '/v1/agents/settings') {
       if (typeof body?.agent !== 'string' || typeof body?.autoApprove !== 'boolean') throw new DaemonError(400, 'agent and autoApprove are required');
@@ -797,6 +842,12 @@ export class MockDaemon implements DaemonClient {
     if (method === 'POST' && (r = m(/^\/v1\/ports\/([^/]+)\/kill$/))) return this.killPortProcess(decodeURIComponent(r[1]), body);
     if (method === 'DELETE' && (r = m(/^\/v1\/terms\/([^/]+)$/))) return this.deleteTerm(decodeURIComponent(r[1]));
     if ((r = m(/^\/v1\/terms\/([^/]+)\/(resize|kill|title)$/))) return this.termAction(decodeURIComponent(r[1]), r[2], body);
+    if (method === 'GET' && path === '/v1/power/lid') return { ...this.lidPower };
+    if (method === 'PUT' && path === '/v1/power/lid') {
+      if (typeof body?.enabled !== 'boolean') throw new DaemonError(400, 'enabled must be a boolean');
+      this.lidPower = { ...this.lidPower, enabled: body.enabled, active: body.enabled, error: null };
+      return { ...this.lidPower };
+    }
     if (method === 'GET' && path === '/v1/tasks/auto-organize') return { enabled: this.autoOrganize };
     if (method === 'PUT' && path === '/v1/tasks/auto-organize') {
       this.autoOrganize = body?.enabled === true;
@@ -1245,7 +1296,15 @@ export class MockDaemon implements DaemonClient {
     return term;
   }
 
+  private installed = new Set<string>();
+
+  private rescanAgents(): AgentInfo[] {
+    for (const a of this.agents) if (this.installed.has(a.id)) Object.assign(a, { installed: true, version: '0.0.0' });
+    return structuredClone(this.agents);
+  }
+
   private startTerm(body: NewTerm): Term {
+    if (body?.install !== undefined) return this.installTerm(body);
     const scopeCwd = body?.cwd;
     const project = body?.worktree && this.projects.find((p) => p.path === body.cwd);
     if (project) {
@@ -1265,6 +1324,28 @@ export class MockDaemon implements DaemonClient {
     const cmd = a.id === 'shell' ? ['zsh'] : [a.id, ...(this.autoApprove[a.id] ? AUTO_APPROVE_ARGS[a.id] ?? [] : []), ...(model ? ['--model', model] : []), ...(effort && a.efforts.includes(effort) ? ['--effort', effort] : [])];
     const profile = p || model || effort ? { ...(p ? { id: p.id, name: p.name } : {}), ...(model ? { model } : {}), ...(effort ? { effort } : {}) } : undefined;
     return this.spawn({ ...body, cmd, title: body.title ?? (a.id === 'shell' ? 'zsh' : a.name) }, a.id, profile);
+  }
+
+  private installTerm(body: NewTerm): Term {
+    if (typeof body.install !== 'string') throw new DaemonError(400, 'install must be a string');
+    if (body.cmd || body.agent !== undefined) throw new DaemonError(400, 'give either install, agent or cmd');
+    const a = this.agents.find((x) => x.id === body.install);
+    if (!a) throw new DaemonError(400, `unknown agent ${body.install}`);
+    if (!a.installable || !a.install) throw new DaemonError(400, `${a.name} has no install command`);
+    this.installed.add(a.id);
+    const { install: _i, ...rest } = body;
+    const term = this.spawn({ ...rest, cmd: [a.install], title: body.title ?? `Install ${a.name}` }, 'shell');
+    if (this.live) this.installTimers.push(setTimeout(() => this.finishInstall(term.id), 1500));
+    return term;
+  }
+
+  private installTimers: ReturnType<typeof setTimeout>[] = [];
+
+  private finishInstall(id: string) {
+    const t = this.terms.find((x) => x.id === id);
+    if (!t || t.exited) return;
+    Object.assign(t, { exited: true, exitCode: 0 });
+    this.emit('term.exited', { term: structuredClone(t) });
   }
 
   private discover(): { added: number; projects: Project[] } {
@@ -1525,8 +1606,29 @@ export class MockDaemon implements DaemonClient {
     return { dryRun: false, files: files.filter((f) => body.files!.includes(f.path)).map((f) => ({ ...f, written: true, backup: `${f.path}.bak-202610291200` })) };
   }
 
+  private quorumOf(q: unknown, agent: string): Quorum | null {
+    if (q === null) return null;
+    if (typeof q !== 'object' || Array.isArray(q)) throw new DaemonError(400, 'quorum must be an object or null');
+    const { workers, reviewers } = q as Record<string, unknown>;
+    const strings = (v: unknown): v is string[] => Array.isArray(v) && v.every((x) => typeof x === 'string');
+    if (!strings(workers) || !workers.length) throw new DaemonError(400, 'quorum.workers must be a non-empty array of agent ids');
+    if (!strings(reviewers) || reviewers.length < 1 || reviewers.length > 2) throw new DaemonError(400, 'quorum.reviewers must list 1 or 2 agent ids');
+    for (const id of [...workers, ...reviewers]) {
+      if (!this.agents.some((a) => a.id === id)) throw new DaemonError(400, `unknown agent ${id}`);
+      if (id === 'shell') throw new DaemonError(400, 'shell cannot join a quorum');
+    }
+    for (const [name, list] of [['workers', workers], ['reviewers', reviewers]] as const) {
+      const dup = list.find((id, i) => list.indexOf(id) !== i);
+      if (dup) throw new DaemonError(400, `quorum.${name} lists ${dup} twice`);
+    }
+    if (agent !== 'claude' && agent !== 'codex') throw new DaemonError(400, 'the quorum orchestrator must be claude or codex');
+    return { workers: [...workers], reviewers: [...reviewers] };
+  }
+
   private createTask(body: NewTask): Task {
     if (!body?.title?.trim()) throw new DaemonError(400, 'title required');
+    const quorum = body.quorum === undefined ? undefined : this.quorumOf(body.quorum, body.agent);
+    if (quorum && (body as any).parentId) throw new DaemonError(400, 'a subtask cannot run a quorum');
     const now = new Date().toISOString();
     const id = `tk_${Math.random().toString(36).slice(2, 8)}`;
     const kept = this.keepAttachments(id, body.attachments);
@@ -1550,6 +1652,7 @@ export class MockDaemon implements DaemonClient {
       ...((body as any).origin ? { origin: (body as any).origin } : {}),
       ...((body as any).parentId ? { parentId: (body as any).parentId } : {}),
       dependsOn: body.dependsOn ?? [],
+      ...(quorum ? { quorum } : {}),
       ...(typeof body.inheritBranch === 'boolean' ? { inheritBranch: body.inheritBranch } : {}),
       createdAt: now,
       updatedAt: now,
@@ -1760,6 +1863,15 @@ export class MockDaemon implements DaemonClient {
           if (t.status !== 'in_progress' && !t.termId) throw new DaemonError(400, 'use POST /v1/tasks/{id}/start to start a task');
         } else if (!['pending', 'auto', 'in_testing', 'merged', 'completed'].includes(patch.status)) {
           throw new DaemonError(400, 'status must be one of pending, auto, in_testing, merged, completed');
+        }
+      }
+      if ('quorum' in patch) {
+        const quorum = this.quorumOf(patch.quorum, patch.agent ?? t.agent);
+        if (t.status !== 'pending' && t.status !== 'auto') throw new DaemonError(409, 'the quorum can only change before the task starts');
+        if (quorum) patch.quorum = quorum;
+        else {
+          delete patch.quorum;
+          delete t.quorum;
         }
       }
       Object.assign(t, patch);
@@ -2213,6 +2325,8 @@ export class MockDaemon implements DaemonClient {
     this.stop();
     for (const x of this.portTimers) clearTimeout(x);
     this.portTimers = [];
+    for (const x of this.installTimers) clearTimeout(x);
+    this.installTimers = [];
   }
 
   async sshHosts(): Promise<SshHost[]> {
