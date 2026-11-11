@@ -28,7 +28,7 @@ import { byRank, lineActions, type LineAction } from './workspaces';
 import { runSessionAction } from './session-action';
 import { movableStatuses, taskForItem } from './kanban-core';
 import { isTargetMuted, toggleTargetMute } from './os-notify';
-import { canInstall, ordered } from './agents';
+import { canInstall, splitInstalled } from './agents';
 import { saveSettings, settings } from './settings.svelte';
 import { tabLazy } from './state.svelte';
 
@@ -115,10 +115,13 @@ export function groupPicker(keys: string[]): MenuItem[] {
 export function newSessionItems(): MenuItem[] {
   const start = (id: string) => () => app.newSession(id).catch(fail);
   const install = (id: string) => () => app.installAgent(id).catch(fail);
-  const agents = ordered(app.agents).filter((a) => a.id !== 'shell');
+  const { installed, missing } = splitInstalled(app.agents.filter((a) => a.id !== 'shell'));
   const shell = app.agents.find((a) => a.id === 'shell');
   return [
-    ...agents.map((a) => ({ label: canInstall(a) ? t('palette.installAgent', { name: a.name }) : a.name, agent: a.id, default: a.id === settings.defaultAgent, disabled: !a.installed && !canInstall(a), hint: a.installed ? undefined : (a.install ?? t('agents.notInstalled')), run: a.installed ? start(a.id) : install(a.id) })),
+    ...installed.map((a) => ({ label: a.name, agent: a.id, default: a.id === settings.defaultAgent, run: start(a.id) })),
+    ...(missing.length
+      ? [{ label: t('agents.notInstalledCount', { n: missing.length }), more: missing.map((a) => ({ label: canInstall(a) ? t('palette.installAgent', { name: a.name }) : a.name, agent: a.id, disabled: !canInstall(a), hint: a.install ?? t('agents.notInstalled'), run: install(a.id) })) }]
+      : []),
     { label: t('tabs.inCheckout'), checked: settings.sessionsInCheckout, run: () => saveSettings({ sessionsInCheckout: !settings.sessionsInCheckout }) },
     { label: '', separator: true },
     { label: shell?.name ?? t('tabs.shell'), agent: 'shell', run: start('shell') },
