@@ -18,7 +18,7 @@ const MIN = 40;
 
 function phoneRule(src: string, selector: string): string {
   const css = src.slice(src.indexOf('<style>'));
-  const re = new RegExp(`:global\\(:root\\.phone\\) ${selector.replace(/[.]/g, '\\.')} \\{([^}]*)\\}`);
+  const re = new RegExp(`:global\\(:root\\.phone\\) ${selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} \\{([^}]*)\\}`);
   const m = re.exec(css);
   if (!m) throw new Error(`no phone rule for ${selector}`);
   return m[1];
