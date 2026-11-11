@@ -212,6 +212,7 @@ impl Fx {
             claude_dir: self.claude(),
             codex_dir: self.codex(),
             gemini_dir: self.base.join(".gemini"),
+            vibe_dir: self.base.join(".vibe"),
             state_dir: self.state(),
             snapshot: self.base.join("snapshot.json"),
             tmux: None,

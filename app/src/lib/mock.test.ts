@@ -403,17 +403,17 @@ describe('MockDaemon', () => {
   it('lists every agent with install state and capabilities', async () => {
     const { a } = setup();
     const agents = await a.agents();
-    expect(agents.map((x) => x.id)).toEqual(['claude', 'codex', 'gemini', 'agy', 'opencode', 'amp', 'copilot', 'cursor', 'shell']);
+    expect(agents.map((x) => x.id)).toEqual(['claude', 'codex', 'gemini', 'agy', 'opencode', 'amp', 'copilot', 'cursor', 'vibe', 'shell']);
     expect(agents.filter((x) => !x.installed).map((x) => x.id)).toEqual(['opencode', 'amp', 'cursor']);
     expect(agents.find((x) => x.id === 'amp')!.install).toContain('npm');
     expect(agents.find((x) => x.id === 'gemini')!.efforts).toEqual([]);
     expect(agents.find((x) => x.id === 'agy')!.efforts).toEqual(['low', 'medium', 'high', 'xhigh', 'max']);
-    expect(agents.filter((x) => x.sessions).map((x) => x.id)).toEqual(['claude', 'codex', 'gemini']);
+    expect(agents.filter((x) => x.sessions).map((x) => x.id)).toEqual(['claude', 'codex', 'gemini', 'vibe']);
   });
 
   it('persists per-agent auto-approval defaults and applies them to newly started terms', async () => {
     const { m, a } = setup();
-    expect((await a.agentSettings()).autoApprove).toEqual({ claude: true, codex: true, gemini: true, agy: true, opencode: true, copilot: true, cursor: true });
+    expect((await a.agentSettings()).autoApprove).toEqual({ claude: true, codex: true, gemini: true, agy: true, opencode: true, copilot: true, cursor: true, vibe: true });
     expect((await a.createTerm({ agent: 'codex' })).cmd).toContain('--ask-for-approval');
     expect((await a.setAgentAutoApprove('codex', false)).autoApprove.codex).toBe(false);
     expect((await a.createTerm({ agent: 'codex' })).cmd).not.toContain('--ask-for-approval');

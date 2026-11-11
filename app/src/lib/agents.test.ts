@@ -6,7 +6,7 @@ const by = (id: string) => MOCK_AGENTS.find((a) => a.id === id)!;
 
 describe('agents', () => {
   it('lists installed agents first in daemon order, tasks without the shell', () => {
-    expect(ordered(MOCK_AGENTS).map((a) => a.id)).toEqual(['claude', 'codex', 'gemini', 'agy', 'copilot', 'shell', 'opencode', 'amp', 'cursor']);
+    expect(ordered(MOCK_AGENTS).map((a) => a.id)).toEqual(['claude', 'codex', 'gemini', 'agy', 'copilot', 'vibe', 'shell', 'opencode', 'amp', 'cursor']);
     expect(taskAgents(MOCK_AGENTS).map((a) => a.id)).not.toContain('shell');
   });
 
@@ -20,6 +20,7 @@ describe('agents', () => {
   it('names agents from the daemon, then known ids, then the id', () => {
     expect(agentName(MOCK_AGENTS, 'gemini')).toBe('Gemini CLI');
     expect(agentName([], 'cursor')).toBe('Cursor Agent');
+    expect(agentName([], 'vibe')).toBe('Mistral Vibe');
     expect(agentName([], 'mystery')).toBe('mystery');
   });
 
