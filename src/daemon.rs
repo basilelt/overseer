@@ -565,6 +565,9 @@ fn resume_term(ctx: &Ctx, r: &Request, id: &str, body: &Value) -> (u16, Value) {
             if let Err(e) = t.input(b"\r") {
                 return err(409, e.to_string());
             }
+            if let Ok(reg) = crate::registry::Registry::open(&ctx.state_dir) {
+                let _ = reg.set_mark(&l.id, "held_by_user", None);
+            }
         }
         return (200, t.to_json());
     }

@@ -3853,3 +3853,36 @@ fn closing_a_session_still_at_its_trust_prompt_ends_the_starting_agent() {
     );
     wait(|| app.ok("GET", &format!("/v1/terms/{starting}"), Value::Null)["exited"] == true);
 }
+
+#[test]
+fn two_quick_resumes_of_a_paused_session_press_enter_on_its_stub_once() {
+    // Given a paused claude session whose agent will stop at the folder trust prompt
+    // When Resume is pressed twice in a row, before the stub has started the agent
+    // Then only the first press reaches the stub, so the prompt still waits for an answer
+    let sid = "cccccccc-0000-4000-8000-000000000074";
+    let app = App::new("resumeheldtwice", json!({}));
+    let (tid, line) = claude_term(&app, json!(["claude", "--session-id", sid]), sid);
+    let mut ws = app.ws(&tid);
+    read_until(&mut ws, "❯");
+    app.ok(
+        "POST",
+        &format!("/v1/lines/{line}/hold?dryRun=false"),
+        Value::Null,
+    );
+    wait(|| line_json(&app, &line)["line"]["state"] == "held");
+    let mut ws = app.ws(&tid);
+    read_until(&mut ws, "press Enter to resume");
+    std::fs::write(app.fx.base.join("stub.log.trust"), "").unwrap();
+    assert_eq!(resume_line(&app, &line)["id"], tid.as_str());
+    assert_eq!(resume_line(&app, &line)["id"], tid.as_str());
+    read_until(&mut ws, "Yes, I trust this folder");
+    std::thread::sleep(std::time::Duration::from_millis(500));
+    send(&mut ws, "trust\r");
+    wait(|| line_json(&app, &line)["local"]["pid"].is_u64());
+    assert_eq!(resumes_of(&app, sid), 1);
+    app.ok(
+        "POST",
+        &format!("/v1/terms/{tid}/kill"),
+        json!({"confirm": true}),
+    );
+}
