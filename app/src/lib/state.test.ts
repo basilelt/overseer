@@ -749,6 +749,24 @@ describe('workspaces', () => {
     expect(app.workspaceId).toBe('ws_oslabs');
   });
 
+  it('opens a top-level workspace, not a nested one listed first, when none is remembered or busy', async () => {
+    // Given a daemon whose first workspace is nested, with no session anywhere and nothing remembered
+    const at = '2026-11-01T00:00:00Z';
+    const base = { station: 'atlas', kind: 'dir' as const, cwd: null, folderId: null, pinned: false, archived: false, auto: true, rank: 1, tabs: [], notifyIdle: false, createdAt: at, updatedAt: at };
+    (m as unknown as { workspaces: unknown[] }).workspaces = [
+      { ...base, id: 'w_lib', name: 'lib', path: '/p/40/lib', parentId: 'w_proj' },
+      { ...base, id: 'w_proj', name: 'proj', path: '/p', parentId: null },
+    ];
+    (m as unknown as { lines: unknown[] }).lines = [];
+    (m as unknown as { terms: unknown[] }).terms = [];
+    settings.workspaceByHost = {};
+    settings.workspaceId = undefined;
+    // When the app connects
+    await connect();
+    // Then the top-level workspace opens
+    expect(app.workspaceId).toBe('w_proj');
+  });
+
   it('keeps the sidebar mode across launches', () => {
     app.setSidebarMode('status');
     expect(app.sidebarMode).toBe('status');
@@ -883,6 +901,20 @@ describe('sessions', () => {
     expect(app.data.terms.some((x) => x.id === term.id)).toBe(true);
     expect(app.selectedKey).toBe(`term:${term.id}`);
     expect(app.view).toBe('agents');
+  });
+
+  it('starts a session of a nested workspace in its start dir and assigns it there', async () => {
+    // Given a nested sub-folder that starts at the repo root, and a submodule that starts in its own folder
+    const webshop = app.ws.workspaces.find((w) => w.id === 'ws_webshop')!.path!;
+    // When a shell starts in each
+    app.selectWorkspace('ws_webshop_invoicing');
+    await app.newSession('shell');
+    app.selectWorkspace('ws_webshop_design');
+    await app.newSession('shell');
+    // Then the first runs at the root and the second in the submodule, each assigned to its nested workspace
+    const [a, b] = m.bodies['POST /v1/terms'].slice(-2) as { cwd: string; workspaceId: string }[];
+    expect(a).toMatchObject({ cwd: webshop, workspaceId: 'ws_webshop_invoicing' });
+    expect(b).toMatchObject({ cwd: `${webshop}/vendor/design-system`, workspaceId: 'ws_webshop_design' });
   });
 
   describe('following a session just started', () => {
