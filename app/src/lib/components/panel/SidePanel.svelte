@@ -27,6 +27,7 @@
   import { saveSettings, settings } from '../../settings.svelte';
   import { moveSection, normalizeOrder, type PanelSection } from '../../panelorder';
   import { diffs, relateds } from '../../panel-cache';
+  import { loadPanel } from '../../panel-load';
   import { hostKey } from '../../window';
 
   const item = $derived(app.selected);
@@ -83,18 +84,17 @@
 
   $effect(() => {
     const id = lineId;
+    const inGit = repo;
     missing = false;
-    if (!id || !app.client || !repo) {
+    if (!id || !app.client) {
       diff = null;
       related = null;
       return;
     }
     untrack(() => {
-      diff = diffs.get(cacheKey(id)) ?? null;
-      related = relateds.get(cacheKey(id)) ?? null;
-      app.loadActivity(id);
-      loadDiff(id);
-      loadRelated(id);
+      diff = inGit ? (diffs.get(cacheKey(id)) ?? null) : null;
+      related = inGit ? (relateds.get(cacheKey(id)) ?? null) : null;
+      loadPanel(id, inGit, { activity: (x) => app.loadActivity(x), diff: loadDiff, related: loadRelated });
     });
   });
 
