@@ -114,6 +114,52 @@ export interface ReviewGraph {
   truncated: boolean;
 }
 
+export interface MapFile {
+  path: string;
+  status: string;
+  size: number;
+  add: number;
+  del: number;
+  logic: number;
+  noise: number;
+  sig: number;
+  edits: number;
+  fails: number;
+  viewed: boolean;
+  threads: number;
+  test: boolean;
+}
+
+export interface MapRegion {
+  worktree: string;
+  name: string;
+  branch: string | null;
+  parent: number | null;
+  error: string | null;
+  truncated: boolean;
+  changed: MapFile[];
+  tree: [string, number][];
+}
+
+export interface MapEnd {
+  w: number;
+  path: string;
+}
+
+export interface MapLink {
+  from: MapEnd;
+  to: MapEnd;
+  kind: 'uses' | 'imports';
+  count: number;
+  cross: boolean;
+  probable?: boolean;
+}
+
+export interface ReviewMap {
+  regions: MapRegion[];
+  links: MapLink[];
+}
+
 export interface RelatedWorktree {
   path: string;
   branch?: string | null;

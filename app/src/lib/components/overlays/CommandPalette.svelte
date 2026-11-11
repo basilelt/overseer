@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { toggleLiveReview } from '../../git/live-actions';
   import Gauge from '@lucide/svelte/icons/gauge';
   import { ust } from '../../usage/strings';
   import GitPullRequestArrow from '@lucide/svelte/icons/git-pull-request-arrow';
@@ -103,6 +104,12 @@
     else app.notify(t('review.noLine'), 'error');
   };
   const desktop = !app.mobile && ui.layout !== 'phone';
+  // The current workspace, or the parent of the current nested one, takes new subjects.
+  const subjectParent = $derived.by(() => {
+    const w = app.currentWorkspace;
+    const top = w?.parentId ? app.ws.workspaces.find((p) => p.id === w.parentId) : w;
+    return top && top.path && top.kind !== 'subject' && !top.parentId ? top : undefined;
+  });
   const KEYED: Record<string, ShortcutId> = {
     kanban: 'kanban',
     panel: 'togglePanel',
@@ -148,6 +155,8 @@
     ...(connected ? [action('disconnect', 'palette.disconnect', Unplug, () => app.disconnect())] : []),
     action('theme', 'palette.toggleTheme', SunMoon, () => saveSettings({ theme: nextTheme[settings.theme] })),
     action('panel', 'palette.togglePanel', PanelRight, () => (app.panelOpen = !app.panelOpen)),
+    action('live-review', 'palette.toggleLiveReview', GitGraph, () => toggleLiveReview()),
+    action('source-control', 'palette.sourceControl', GitGraph, () => app.toggleSourceControl()),
     action('split-right', 'palette.splitRight', Columns2, () => split('horizontal')),
     action('split-down', 'palette.splitDown', Rows2, () => split('vertical')),
     action('settings', 'palette.settings', Settings, () => app.open('settings')),
@@ -160,6 +169,7 @@
       ? [action('ws-new', 'palette.newWorkspace', FolderTree, () => app.open('workspaceNew')), action('folder-new', 'palette.newFolder', FolderPlus, () => createFolder())]
       : []),
     ...(connected ? [action('rescan-folders', 'palette.rescanFolders', RefreshCw, () => rescanFolders())] : []),
+    ...(connected && app.wsPersistent && subjectParent ? [action('subject-new', 'palette.newSubject', FolderTree, () => app.open('workspaceNew', subjectParent.id))] : []),
     ...(connected && app.currentWorkspace
       ? [
           action('ws-broadcast', 'palette.broadcastWorkspace', Megaphone, () => broadcastTo({ kind: 'workspace', id: app.workspaceId })),

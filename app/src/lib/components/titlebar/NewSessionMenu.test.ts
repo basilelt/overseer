@@ -1,17 +1,34 @@
 import { describe, expect, it } from 'vitest';
-import menu from './NewSessionMenu.svelte?raw';
+import button from './NewSessionMenu.svelte?raw';
+import list from './NewSessionList.svelte?raw';
 
 describe('new session menu', () => {
-  it('installs an absent agent with an install command instead of disabling it', () => {
-    expect(menu).toContain('disabled={!a.installed && !canInstall(a)}');
-    expect(menu).toContain('a.installed ? app.newSession(a.id) : app.installAgent(a.id)');
+  it('keeps only the button at startup and loads the menu when it opens', () => {
+    expect(button).toMatch(/const list = preload\(\(\) => import\('\.\/NewSessionList\.svelte'\)\);/);
+    expect(button).toMatch(/\{#if open\}\s*\{#await list\(\) then \{ default: NewSessionList \}\}<NewSessionList onclose=\{close\} \/>\{\/await\}/);
+    expect(button).not.toMatch(/AgentGlyph|ProfileSelect/);
+  });
+
+  it('focuses the first agent when it opens, walks with the arrows and gives focus back on Escape', () => {
+    expect(list).toMatch(/onMount\(\(\) => \{\s*menu\?\.querySelector<HTMLElement>\('button:not\(\[disabled\]\)'\)\?\.focus\(\);/);
+    expect(list).toMatch(/else if \(e\.key === 'Escape'\) onclose\(true\);/);
+    expect(button).toMatch(/if \(refocus\) root\.querySelector<HTMLElement>\('\.icon-btn'\)\?\.focus\(\);/);
+  });
+
+  it('closes before starting the session so a failure shows as a toast, not a stuck menu', () => {
+    expect(list).toMatch(/onclose\(false\);\s*try \{\s*await \(a\.installed \? app\.newSession\(a\.id\) : app\.installAgent\(a\.id\)\);/);
   });
 });
 
-describe('install tour target', () => {
-  it('marks the + that starts sessions on desktop and on the phone', async () => {
+describe('installing from the new session menu', () => {
+  it('installs an absent agent with an install command instead of disabling it', () => {
+    expect(list).toContain('disabled={!a.installed && !canInstall(a)}');
+    expect(list).toContain('a.installed ? app.newSession(a.id) : app.installAgent(a.id)');
+  });
+
+  it('marks the + that starts sessions on desktop and on the phone for the tour', async () => {
     const chips = (await import('../mobile/MobileChips.svelte?raw')).default;
-    expect(menu).toContain('<div class="wrap" data-tour="new-session"');
+    expect(button).toContain('<div class="wrap" data-tour="new-session"');
     expect(chips).toMatch(/data-tour="new-session"[^>]*onclick=\{\(\) => app\.open\('palette'\)\}/);
   });
 });

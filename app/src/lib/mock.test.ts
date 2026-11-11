@@ -533,6 +533,41 @@ describe('MockDaemon', () => {
     expect((await a.terms()).find((x) => x.id === t.id)?.workspaceId ?? null).toBeNull();
   });
 
+  it('nests workspaces like the daemon: parent checks, start dir, adoption, the same error messages and cascading delete', async () => {
+    // Given the mock daemon and a top-level workspace
+    // When nested workspaces are created, a top-level one is adopted, bad bodies are sent and the parent is deleted
+    // Then each answer and error message matches the daemon's
+    const { m } = setup();
+    const post = (b: object) => m.request<any>('POST', '/v1/workspaces', b);
+    const err = (p: Promise<unknown>) => p.then(() => '', (e) => `${(e as { status: number }).status} ${(e as Error).message}`);
+    const parent = await post({ path: '/home/u/endurance' });
+    const n = await post({ path: '/home/u/endurance/20/onboarding', name: 'Onboarding PME', parentId: parent.id, cwd: '/home/u/endurance' });
+    expect(n).toMatchObject({ parentId: parent.id, cwd: '/home/u/endurance', name: 'Onboarding PME', folderId: null, pinned: false });
+    const subject = await post({ kind: 'subject', name: 'Archi V3', parentId: parent.id });
+    expect(subject).toMatchObject({ parentId: parent.id, cwd: '/home/u/endurance', path: null });
+    const top = await post({ path: '/home/u/endurance/40/os', pinned: true });
+    const adopted = await post({ path: '/home/u/endurance/40/os', parentId: parent.id });
+    expect(adopted).toMatchObject({ id: top.id, parentId: parent.id, pinned: false, folderId: null });
+    expect(await err(post({ path: '/home/u/elsewhere', parentId: parent.id }))).toBe('400 /home/u/elsewhere is not inside /home/u/endurance');
+    expect(await err(post({ path: '/home/u/endurance', parentId: parent.id }))).toBe('400 /home/u/endurance is not inside /home/u/endurance');
+    expect(await err(post({ path: '/home/u/endurance/20/onboarding/kyc', parentId: n.id }))).toBe('400 the parent must be a top-level folder workspace');
+    expect(await err(post({ path: '/home/u/endurance/x', parentId: 'nope' }))).toBe('400 no workspace nope');
+    expect(await err(post({ path: '/home/u/endurance/x', parentId: parent.id, pinned: true }))).toBe('400 a nested workspace has no folder and cannot be pinned');
+    expect(await err(post({ path: '/home/u/other', cwd: '/home/u' }))).toBe('400 cwd is only for subjects and nested workspaces');
+    expect(await err(m.request('PATCH', `/v1/workspaces/${n.id}`, { folderId: 'f_acme' }))).toBe('400 a nested workspace has no folder and cannot be pinned');
+    expect(await err(m.request('PATCH', `/v1/workspaces/${n.id}`, { pinned: true }))).toBe('400 a nested workspace has no folder and cannot be pinned');
+    expect(await err(m.request('PATCH', `/v1/workspaces/${parent.id}`, { cwd: '/home/u' }))).toBe('400 cwd is only for subjects and nested workspaces');
+    expect((await m.request<any>('PATCH', `/v1/workspaces/${n.id}`, { cwd: null })).cwd).toBeNull();
+    const t = await m.request<any>('POST', '/v1/terms', { workspaceId: subject.id, cmd: ['zsh'] });
+    expect(t.cwd).toBe('/home/u/endurance');
+    const gone = await m.request<any>('DELETE', `/v1/workspaces/${parent.id}`);
+    expect(gone.deleted).toBe(parent.id);
+    expect(new Set(gone.children)).toEqual(new Set([n.id, subject.id, top.id]));
+    const left = await m.request<any[]>('GET', '/v1/workspaces');
+    expect(left.some((w) => [parent.id, n.id, subject.id, top.id].includes(w.id))).toBe(false);
+    expect((await m.request<any[]>('GET', '/v1/terms')).find((x) => x.id === t.id)?.workspaceId ?? null).toBeNull();
+  });
+
   it('clears the term of a line when the line is unassigned and lets a line inherit its term assignment', async () => {
     // Given a subject and a term started for it on an existing line
     // When the line is unassigned

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import bar from './TabBar.svelte?raw';
+import actions from '../../wsactions.ts?raw';
 
 function rule(selector: string): string {
   const style = bar.slice(bar.indexOf('<style'));
@@ -62,13 +63,14 @@ describe('tab strip', () => {
 
 describe('new tab menu', () => {
   it('only starts sessions; views live in the command palette', () => {
-    const menu = bar.slice(bar.indexOf('function addMenu'), bar.indexOf('function openAdd'));
+    expect(bar).toContain("t('tabs.new'), newSessionItems())");
+    const menu = actions.slice(actions.indexOf('export function newSessionItems'), actions.indexOf('export function startIn'));
     expect(menu).toContain('app.newSession');
     for (const view of ['browser', 'graph', 'worktrees', 'system', 'usage', 'prs', 'reviewKey', 'tabs.reviewChanges']) expect(menu).not.toContain(view);
   });
 
   it('installs an absent agent from its entry instead of greying it out', () => {
-    const menu = bar.slice(bar.indexOf('function addMenu'), bar.indexOf('function openAdd'));
+    const menu = actions.slice(actions.indexOf('export function newSessionItems'), actions.indexOf('export function startIn'));
     expect(menu).toMatch(/disabled: !a\.installed && !canInstall\(a\)/);
     expect(menu).toMatch(/run: a\.installed \? start\(a\.id\) : install\(a\.id\)/);
     expect(menu).toContain('app.installAgent');

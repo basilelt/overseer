@@ -48,7 +48,10 @@ a minute. You can replay it any time from Settings → Help.
 
 ### Every agent in one window
 
-Workspaces group sessions by project. Each session opens in a tab with its live terminal, and
+Workspaces group sessions by project. Inside a workspace, subjects sort its sessions further: a
+subject covers a sub-folder or a git submodule (submodules show up on their own), sessions running
+there join it, and you can drag any session onto one or start a new one in it, at the workspace
+root if your agents read their instructions there. Each session opens in a tab with its live terminal, and
 the side panel shows what the agent is doing: last message, work log, todos, edited files and
 changes. Switch to **By status** to see at a glance who needs your input, who is running and who
 is done. Agent tabs also have a **Chat** view rebuilt live from the agent's session file.
@@ -93,9 +96,14 @@ back to In progress when work resumes.
 
 A GitHub-style review of an agent's changes while it works. Comment on lines, suggest edits, and
 send the comments back to the agent; threads follow the code as it changes. Approve, reject or
-commit from the Kanban card when the task is in Review.
+commit from the Kanban card when the task is in Review. When an agent works across several
+repositories, one review covers them all: the Map view draws every worktree on one map with the
+links between files, colours each file by what makes it worth your attention (real logic, blast
+radius, contract changes, where the agent struggled, untested or not yet seen code), and J and K
+walk the files hottest first.
 
 ![Live review](app/docs/screenshots/review-light.png)
+![Review map](app/docs/screenshots/review-map-dark.png)
 
 <details>
 <summary>A review thread with a suggestion</summary>
@@ -104,13 +112,22 @@ commit from the Kanban card when the task is in Review.
 
 </details>
 
-### Git graph and worktrees
+### Source control, Git graph and worktrees
 
-A per-project git graph that stays fast on large histories, with agent branches, tasks and PRs
-on it. Worktrees live in one store outside your repositories, show whether they are in use, idle
+The git button above each session opens its live review: the agent stays on the left, the
+review of everything it changed sits beside it, the sidebar shrinks to a rail of sessions, and one
+bar at the bottom runs git on the worktree you pick among the session's worktrees and submodules.
+Write a message and press Enter to commit; Push, Publish or Pull takes the button's place when it
+is the next step, and the ⋯ menu holds fetch, amend, stage or discard all, merge, stash and the Git
+graph. While you work in a terminal, the sidebar's **Git** tab (Ctrl+Shift+G) keeps source control at
+hand like VS Code: the selected session's worktree, its branch, fetch, pull and push, a commit box,
+staged and changed files, and merge and stash. The Git graph tab keeps a per-project history that stays fast on large histories, with agent
+branches, tasks and PRs on it; from a commit you can merge it into a worktree or revert it.
+Worktrees live in one store outside your repositories, show whether they are in use, idle
 or stale, and are cleaned up safely: **Clean up merged** picks the merged ones with no agent left,
 and you untick the ones to keep.
 
+![Live review of a session](app/docs/screenshots/live-dark.png)
 ![Git graph](app/docs/screenshots/graph-light.png)
 ![Worktrees](app/docs/screenshots/worktrees-dark.png)
 
