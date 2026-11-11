@@ -88,6 +88,7 @@ pub fn task_type_from(labels: &[&str]) -> Option<&'static str> {
             "engineering",
             &[
                 "engineering",
+                "development",
                 "debug",
                 "debugging",
                 "chore",
@@ -1244,6 +1245,7 @@ mod tests {
         assert_eq!(t(&["enhancement"]), Some("feature"));
         assert_eq!(t(&["Story"]), Some("feature"));
         assert_eq!(t(&["Task"]), Some("engineering"));
+        assert_eq!(t(&["Development"]), Some("engineering"));
         assert_eq!(t(&["Epic"]), Some("refactor"));
         assert_eq!(t(&["tech debt"]), Some("refactor"));
         assert_eq!(t(&["Spike"]), Some("triage"));

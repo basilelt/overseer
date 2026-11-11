@@ -89,6 +89,7 @@ export const MOCK_PROFILES: ProfilesStore = {
   default: '',
   scopes: {},
   types: {},
+  taskTypes: ['fix', 'feature', 'engineering', 'refactor', 'triage'],
   profiles: [
     {
       id: 'economy',

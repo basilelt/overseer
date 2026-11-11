@@ -133,6 +133,7 @@ export interface ProfilesStore {
   profiles: Profile[];
   scopes: Record<string, string>;
   types?: Partial<Record<TaskType, string>>;
+  taskTypes?: TaskType[];
   support: Record<string, ProfileSupport>;
 }
 

@@ -126,6 +126,7 @@
   }
 
   const typed = $derived(Object.keys(store?.types ?? {}).length);
+  let typesOpen = $state<boolean | null>(null);
 
   async function loadSubs() {
     subs = (await app.api.subagents(wsPath ?? undefined).catch(() => ({ subagents: [] }))).subagents;
@@ -183,23 +184,25 @@
           </select>
         </label>
       {/if}
-      <details class="types" data-tour="profile-types" open={typed > 0}>
-        <summary>
-          <ChevronRight size={14} class="chev" />
-          <span>{t('profile.byType')}<small>{t('profile.byTypeHint')}</small></span>
-          {#if typed}<span class="count">{typed}</span>{/if}
-        </summary>
-        {#each TASK_TYPES as ty (ty)}
-          <label class="row">
-            <span>{t(`taskType.${ty}` as Key)}<small>{t(`taskType.${ty}.hint` as Key)}</small></span>
-            <select aria-label={t(`taskType.${ty}` as Key)} value={store.types?.[ty] ?? ''} onchange={(e) => setType(ty, e.currentTarget.value)}>
-              <option value="">{t('profile.byPath')}</option>
-              {#each store.profiles as p (p.id)}<option value={p.id}>{p.name}</option>{/each}
-              <option value={NONE}>{t('profile.none')}</option>
-            </select>
-          </label>
-        {/each}
-      </details>
+      {#if store.taskTypes}
+        <details class="types" data-tour="profile-types" open={typesOpen ?? typed > 0} ontoggle={(e) => (typesOpen = e.currentTarget.open)}>
+          <summary>
+            <ChevronRight size={14} class="chev" />
+            <span>{t('profile.byType')}<small>{t('profile.byTypeHint')}</small></span>
+            {#if typed}<span class="count">{typed}</span>{/if}
+          </summary>
+          {#each TASK_TYPES as ty (ty)}
+            <label class="row">
+              <span>{t(`taskType.${ty}` as Key)}<small>{t(`taskType.${ty}.hint` as Key)}</small></span>
+              <select aria-label={t(`taskType.${ty}` as Key)} value={store.types?.[ty] ?? ''} onchange={(e) => setType(ty, e.currentTarget.value)}>
+                <option value="">{t('profile.byPath')}</option>
+                {#each store.profiles as p (p.id)}<option value={p.id}>{p.name}</option>{/each}
+                <option value={NONE}>{t('profile.none')}</option>
+              </select>
+            </label>
+          {/each}
+        </details>
+      {/if}
     </section>
 
     <div class="body">

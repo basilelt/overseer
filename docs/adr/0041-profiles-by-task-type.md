@@ -1,4 +1,4 @@
-# 0040 Agent profiles by task type
+# 0041 Agent profiles by task type
 
 Status: accepted
 
@@ -29,8 +29,9 @@ instead of a model routing itself (issue #272).
 - **Explore subagent** (verified in the Claude Code 2.1.322 bundle): the built-in `Explore`
   declares `model: "inherit"`, so `CLAUDE_CODE_SUBAGENT_MODEL` does not reach it; agents are
   merged by name (built-in < plugin < user < project < flag < policy), so a
-  `~/.claude/agents/Explore.md` replaces the built-in whole, prompt and tools included. This is
-  documented in the user guide; Overseer does not generate that file.
+  `~/.claude/agents/Explore.md` replaces the built-in whole, prompt and tools included.
+  `CLAUDE_CODE_SUBAGENT_MODEL_FORCE=1` does not help: under it an agent model of `inherit` stays
+  `inherit`. This is documented in the user guide; Overseer does not generate that file.
 
 ## Rejected
 - Reading the type from the ticket at each start: network on the launch path, failures when

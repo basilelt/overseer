@@ -1211,9 +1211,9 @@ the session's directory at resume time, without the task type: a resumed task se
 from its workspace or default profile, as it already does for an explicit task profile.
 
 **Claude's built-in Explore subagent** declares `model: inherit`, so it runs on the session's
-model whatever `CLAUDE_CODE_SUBAGENT_MODEL` says (checked in Claude Code 2.1.322). Two ways to
-move it to a cheaper model: turn on **Override every subagent** (`CLAUDE_CODE_SUBAGENT_MODEL_FORCE=1`),
-which also overrides the subagents that set their own model; or add your own `Explore` agent in
+model whatever `CLAUDE_CODE_SUBAGENT_MODEL` says, and **Override every subagent**
+(`CLAUDE_CODE_SUBAGENT_MODEL_FORCE=1`) does not change that either: it keeps `inherit` (checked in
+Claude Code 2.1.322). To move it to a cheaper model, add your own `Explore` agent in
 `~/.claude/agents/Explore.md` with `model: haiku`. Claude merges agents by name, and a user or
 project file replaces the built-in one whole, so that file must carry its own description,
 tools and prompt; once it exists, **Named subagents** and **Apply to agent files** manage its

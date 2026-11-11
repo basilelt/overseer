@@ -70,7 +70,7 @@
 
   function pick(fill: { title: string; description: string; ticketKey: string; taskType?: TaskType }) {
     ({ title, description, ticketKey } = fill);
-    if (fill.taskType) setTaskType(fill.taskType);
+    if (fill.taskType && app.profiles?.taskTypes) setTaskType(fill.taskType);
     error = '';
     importing = false;
   }
@@ -253,7 +253,7 @@
       <span>{t('task.dependsOn')}</span>
       <DepPicker value={dependsOn} {project} inherit={inheritBranch} onchange={(ids) => (dependsOn = ids)} oninherit={(on) => (inheritBranch = on)} />
     </div>
-    {#if app.profiles}
+    {#if app.profiles?.taskTypes}
       <div class="row">
         <label>
           <span>{t('task.type')}</span>
@@ -266,6 +266,11 @@
           <span>{t('profile.label')}</span>
           <ProfileSelect value={profile} cwd={project} {taskType} {agent} onchange={setProfile} />
         </div>
+      </div>
+    {:else if app.profiles}
+      <div class="field">
+        <span>{t('profile.label')}</span>
+        <ProfileSelect value={profile} cwd={project} {agent} onchange={setProfile} />
       </div>
     {/if}
     {#if effortOptions.length && effort}

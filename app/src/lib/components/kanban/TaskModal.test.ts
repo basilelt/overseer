@@ -11,7 +11,11 @@ describe('task type in the add task form', () => {
   });
 
   it('takes the type of an imported ticket', () => {
-    expect(source).toContain('if (fill.taskType) setTaskType(fill.taskType);');
+    expect(source).toContain('if (fill.taskType && app.profiles?.taskTypes) setTaskType(fill.taskType);');
+  });
+
+  it('keeps only the profile field on a daemon without task types', () => {
+    expect(source).toMatch(/\{#if app\.profiles\?\.taskTypes\}[\s\S]*\{:else if app\.profiles\}\s*<div class="field">\s*<span>\{t\('profile\.label'\)\}<\/span>\s*<ProfileSelect value=\{profile\} cwd=\{project\} \{agent\} onchange=\{setProfile\} \/>/);
   });
 
   it('sends the type and shows the profile it implies', () => {

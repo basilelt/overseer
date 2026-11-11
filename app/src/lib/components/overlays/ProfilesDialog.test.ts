@@ -27,6 +27,14 @@ describe('agent sections of the profiles dialog', () => {
     expect(source).toMatch(/if \(id\) types\[ty\] = id;\s*else delete types\[ty\];/);
   });
 
+  it('keeps the task type section open when its last rule is cleared', () => {
+    expect(source).toContain('open={typesOpen ?? typed > 0} ontoggle={(e) => (typesOpen = e.currentTarget.open)}');
+  });
+
+  it('hides the task type rules on a daemon that has no task types', () => {
+    expect(source).toMatch(/\{#if store\.taskTypes\}\s*<details class="types"/);
+  });
+
   it('drops task type rules that point at a deleted profile on save', () => {
     expect(source).toContain('types: Object.fromEntries(Object.entries(store.types ?? {}).filter(([, id]) => known(id))),');
   });

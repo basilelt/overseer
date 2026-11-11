@@ -443,7 +443,7 @@ mod tests {
 
     #[test]
     fn jira_output_becomes_items() {
-        let out = "Bug\tAS-12\tFix login\nStory\t\tOPS-3\tDeploy\tx\nWidget\tAS-9\tOther\n\nbroken line\nAS-1\tno type\n";
+        let out = "Bug\t\tAS-12\tFix login\nStory\t\tOPS-3\tDeploy\tx\nWidget\tAS-9\tOther\n\nbroken line\nAS-1\tno type\n";
         let v = parse_jira(out, "j");
         assert_eq!(v.len(), 3);
         assert_eq!(v[0]["key"], "AS-12");
