@@ -79,7 +79,7 @@
   const costOf = (tab: TabInfo) => (tab.item?.lineId ? app.data.activity[tab.item.lineId]?.cost : undefined);
   const effortLabel = (e: string) => t('profile.effortOf', { effort: t(`effort.${e}` as Key).toLowerCase() });
 
-  const label = (tab: TabInfo) => tabLabel(tab, { browserHost: true });
+  const label = (tab: TabInfo) => tabLabel(tab);
 
   function openAdd(e?: MouseEvent) {
     const r = plus?.getBoundingClientRect();

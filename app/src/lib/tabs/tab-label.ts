@@ -6,10 +6,9 @@ import { st } from '../system/strings';
 import type { TabInfo } from './tabs';
 import { ust } from '../usage/strings';
 
-export function tabLabel(tab: TabInfo, opts: { browserHost: boolean }): string {
+export function tabLabel(tab: TabInfo): string {
   if (tab.item) return tab.item.title;
   if (tab.kind === 'browser') {
-    if (!opts.browserHost) return t('tabs.browser');
     try {
       return tab.arg ? new URL(tab.arg).host || tab.arg : t('tabs.browser');
     } catch {

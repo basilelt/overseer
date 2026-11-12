@@ -32,7 +32,7 @@
   const inChat = $derived(chatItem ? modeOf(chatItem) === 'chat' : false);
   let strip: HTMLDivElement | undefined = $state();
 
-  const label = (tab: TabInfo) => tabLabel(tab, { browserHost: false });
+  const label = (tab: TabInfo) => tabLabel(tab);
 
   function chipMenu(e: PointerEvent, tab: TabInfo) {
     const line = tab.item?.lineId ? app.data.lines.find((l) => l.line.id === tab.item?.lineId) : undefined;
