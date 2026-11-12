@@ -1,6 +1,7 @@
 import type { ReviewApi } from './api';
 import type { MapFile, MapLink, MapRegion, ReviewMap, ReviewTarget } from './types';
 import { KEYS, readItem, writeItem } from '../storage';
+import { OneShot } from '../timer';
 
 export const SIGNALS = ['logic', 'reach', 'contract', 'struggle', 'untested', 'unseen'] as const;
 export type Signal = (typeof SIGNALS)[number];
@@ -299,19 +300,19 @@ export class ReviewMapStore {
   loading = $state(false);
   private want = '';
   private seq = 0;
-  private timer: ReturnType<typeof setTimeout> | undefined;
+  private timer = new OneShot();
 
   constructor(private api: () => ReviewApi | null) {}
 
   request(key: string, target: ReviewTarget, also: string[], delay = 300) {
     if (key === this.want) return;
     this.want = key;
-    clearTimeout(this.timer);
+    this.timer.clear();
     if (!this.data || delay <= 0) {
       this.load(target, also);
       return;
     }
-    this.timer = setTimeout(() => this.load(target, also), delay);
+    this.timer.set(() => this.load(target, also), delay);
   }
 
   async load(target: ReviewTarget, also: string[]) {
@@ -335,7 +336,7 @@ export class ReviewMapStore {
   }
 
   stop() {
-    clearTimeout(this.timer);
+    this.timer.clear();
     this.seq++;
   }
 }

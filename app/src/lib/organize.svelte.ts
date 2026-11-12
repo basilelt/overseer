@@ -1,6 +1,7 @@
 import { app } from './state.svelte';
 import { t } from './i18n.svelte';
 import { AGENT_WAIT_MS, organizeApi, type Proposal, type Result } from './organize';
+import { OneShot } from './timer';
 
 export type Phase = null | 'choice' | 'waiting' | 'review' | 'pickup';
 
@@ -15,7 +16,7 @@ class Organizer {
   late = $state(false);
   busy = $state(false);
   hidden = $state.raw<string[]>([]);
-  private timer: ReturnType<typeof setTimeout> | undefined;
+  private timer = new OneShot();
   private off: (() => void) | null = null;
 
   private api() {
@@ -68,8 +69,7 @@ class Organizer {
       this.manual = r.mcp === 'manual';
       this.late = false;
       this.phase = 'waiting';
-      clearTimeout(this.timer);
-      this.timer = setTimeout(() => (this.late = true), AGENT_WAIT_MS);
+      this.timer.set(() => (this.late = true), AGENT_WAIT_MS);
     } catch (e) {
       app.notify(t('org.failed', { error: msg(e) }), 'error');
     } finally {
@@ -107,8 +107,7 @@ class Organizer {
   }
 
   private stopWait() {
-    clearTimeout(this.timer);
-    this.timer = undefined;
+    this.timer.clear();
     this.waitingFor = null;
   }
 

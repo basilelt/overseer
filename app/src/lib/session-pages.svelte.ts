@@ -1,6 +1,7 @@
 import { isTauri } from './client';
 import { nativePage, type Bounds, type NavEvent } from './browser';
 import { attach, closePage, loadPages, MAX_LIVE, pageIds, patchPage, prune, savePages, select, setOpen, setRatio, touch, type Page, type PagesByKey } from './session-pages';
+import { OneShot } from './timer';
 
 let seq = 0;
 const newId = () => `p${Date.now().toString(36)}${(seq++).toString(36)}`;
@@ -11,7 +12,7 @@ export class SessionPages {
   loading = $state.raw<ReadonlySet<string>>(new Set());
   live: string[] = [];
   private shown = new Set<string>();
-  private timer: ReturnType<typeof setTimeout> | undefined;
+  private timer = new OneShot();
   private ready: Promise<unknown> | null = null;
 
   constructor(
@@ -61,8 +62,7 @@ export class SessionPages {
   }
 
   flush() {
-    clearTimeout(this.timer);
-    this.timer = undefined;
+    this.timer.clear();
     if (this.host) savePages(this.host, this.byKey);
   }
 
@@ -141,8 +141,7 @@ export class SessionPages {
     const ids = pageIds(next);
     for (const id of [...this.live]) if (!ids.has(id)) this.drop(id);
     this.byKey = next;
-    clearTimeout(this.timer);
-    this.timer = setTimeout(() => this.flush(), 500);
+    this.timer.set(() => this.flush(), 500);
   }
 }
 
