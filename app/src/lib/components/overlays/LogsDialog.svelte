@@ -9,7 +9,8 @@
   import { app } from '../../state.svelte';
   import { isTauri } from '../../client';
   import { diag, diagBackend, dt as tx, fetchServerLog } from '../../diag.svelte';
-  import { describeExit, filterLines, formatBundle, iso, parseLines, type DiagInfo, type LevelFilter, type ServerLog } from '../../diag';
+  import { describeExit, filterLines, iso, parseLines, type DiagInfo, type LevelFilter, type ServerLog } from '../../diag';
+  import { formatBundle } from '../../diag-bundle';
 
   type Tab = 'crash' | 'app' | 'server';
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { describeExit, errorText, filterLines, formatBundle, forwardWarning, Limiter, parseLines, type PreviousSession } from './diag';
+import { describeExit, errorText, filterLines, forwardWarning, Limiter, parseLines, type PreviousSession } from './diag';
 
 const LINES = [
   '2026-10-29T10:00:00.000Z INFO  app: Overseer 0.4.0 starting',
@@ -43,33 +43,6 @@ describe('diagnostic bundle', () => {
   it('describes how the previous session ended', () => {
     expect(describeExit(previous)).toBe('was frozen (UI unresponsive) when it ended, unresponsive for 14 s, view: agents/term/connected');
     expect(describeExit({ ...previous, kind: 'killed', view: '' })).toBe('was killed or force-quit (no clean exit)');
-  });
-
-  it('formats a single plain-text block with every section', () => {
-    const text = formatBundle({
-      generatedAt: Date.UTC(2026, 9, 29, 11, 0, 0),
-      info: { version: '0.4.0', serverVersion: '0.4.0', os: 'macos', arch: 'aarch64', logDir: '/Users/u/Library/Logs/io.github.basilelt.overseer' },
-      previous: { ...previous, kind: 'crash', crashReport: 'Overseer crash report\nMessage: boom\n' },
-      appLog: ['ignored when a previous session is shown'],
-      server: { status: 'ok', tail: { path: '/home/u/.overseer/daemon.log', lines: ['2026-10-29T10:00:00.000Z INFO listening'] } },
-      host: 'u@w:22',
-    });
-    expect(text.startsWith('Overseer diagnostic bundle\nGenerated: 2026-10-29T11:00:00.000Z\nApp: 0.4.0 (server 0.4.0), macos aarch64\n')).toBe(true);
-    expect(text).toContain('Host: u@w:22');
-    expect(text).toContain('===== Previous session =====\nStarted: 2026-10-29T09:00:00.000Z\nLast log line: 2026-10-29T10:00:04.000Z\nVersion: 0.4.0\nOutcome: crashed (Rust panic)');
-    expect(text).toContain('===== Crash report =====\nOverseer crash report\nMessage: boom\n');
-    expect(text).toContain('===== App log before the exit (last 2 lines) =====');
-    expect(text).not.toContain('ignored when a previous session');
-    expect(text).toContain('===== Server log =====\n# /home/u/.overseer/daemon.log (last 1 lines)\n2026-10-29T10:00:00.000Z INFO listening');
-    expect(text.endsWith('\n')).toBe(true);
-  });
-
-  it('explains a missing server log', () => {
-    const base = { generatedAt: 0, info: null, previous: null, appLog: [] };
-    expect(formatBundle({ ...base, server: null })).toContain('(not connected to a server)');
-    expect(formatBundle({ ...base, server: { status: 'unsupported' } })).toContain('too old to send its log');
-    expect(formatBundle({ ...base, server: { status: 'error', message: 'HTTP 500' } })).toContain('could not fetch the server log: HTTP 500');
-    expect(formatBundle({ ...base, server: { status: 'offline' } })).toContain('===== App log (last 0 lines) =====\n(empty)');
   });
 });
 
