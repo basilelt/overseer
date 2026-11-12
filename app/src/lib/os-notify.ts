@@ -23,6 +23,7 @@ import {
 import { saveSettings, settings } from './settings.svelte';
 import type { app as App, ToastAction } from './state.svelte';
 import { hostKey } from './window';
+import { readItem, writeItem, KEYS } from './storage';
 
 type Plugin = typeof import('@tauri-apps/plugin-notification');
 type AppLike = typeof App;
@@ -58,7 +59,7 @@ export function cooldownGate(now: () => number = Date.now, max = 500) {
   };
 }
 
-const ASKED = 'overseer.notifyAsked';
+const ASKED = KEYS.notifyAsked;
 const sent = new Map<number, string>();
 const cooled = cooldownGate();
 let taps: Promise<unknown> | null = null;
@@ -68,17 +69,11 @@ let pendingFocus: { key: string; at: number } | null = null;
 const hasFocus = () => typeof document !== 'undefined' && document.hasFocus();
 
 function asked(): boolean {
-  try {
-    return globalThis.localStorage?.getItem(ASKED) === '1';
-  } catch {
-    return false;
-  }
+  return readItem(ASKED) === '1';
 }
 
 function markAsked() {
-  try {
-    globalThis.localStorage?.setItem(ASKED, '1');
-  } catch {}
+  writeItem(ASKED, '1');
 }
 
 const plugin = (): Promise<Plugin> => import('@tauri-apps/plugin-notification');

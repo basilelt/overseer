@@ -1,5 +1,6 @@
 import type { SidebarItem } from './grouping';
 import type { Layout } from './workspace.svelte';
+import { KEYS, readJson, writeJson } from './storage';
 
 export interface KnownTabs {
   known: string[];
@@ -8,16 +9,11 @@ export interface KnownTabs {
   shape?: Layout;
 }
 
-const KEY = 'overseer.knownTabs';
+const KEY = KEYS.knownTabs;
 
 function loadAll(): Record<string, KnownTabs> {
-  try {
-    const raw = globalThis.localStorage?.getItem(KEY);
-    const v = raw ? JSON.parse(raw) : null;
-    return v && typeof v === 'object' ? v : {};
-  } catch {
-    return {};
-  }
+  const v = readJson(KEY);
+  return v && typeof v === 'object' ? (v as Record<string, KnownTabs>) : {};
 }
 
 export function loadKnown(host: string, layout: string): KnownTabs | null {
@@ -32,7 +28,7 @@ export function saveKnown(host: string, layout: string, rec: KnownTabs) {
     const id = `${host}|${layout}`;
     delete all[id];
     const kept = Object.entries(all).slice(-(MAX_KNOWN - 1));
-    globalThis.localStorage?.setItem(KEY, JSON.stringify(Object.fromEntries([...kept, [id, rec]])));
+    writeJson(KEY, Object.fromEntries([...kept, [id, rec]]));
   } catch {}
 }
 

@@ -1,12 +1,10 @@
-const BASE_KEY = 'overseer.review.base';
+import { KEYS, readJson, writeJson } from '../storage';
+
+const BASE_KEY = KEYS.reviewBase;
 
 function all(): Record<string, string> {
-  try {
-    const v = JSON.parse(globalThis.localStorage?.getItem(BASE_KEY) ?? '{}');
-    return v && typeof v === 'object' && !Array.isArray(v) ? v : {};
-  } catch {
-    return {};
-  }
+  const v = readJson(BASE_KEY);
+  return v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, string>) : {};
 }
 
 export function loadBase(worktree: string | null | undefined): string | null {
@@ -20,9 +18,7 @@ export function saveBase(worktree: string | null | undefined, base: string | nul
   const m = all();
   if (base) m[worktree] = base;
   else delete m[worktree];
-  try {
-    globalThis.localStorage?.setItem(BASE_KEY, JSON.stringify(m));
-  } catch {}
+  writeJson(BASE_KEY, m);
 }
 
 export const isSince = (base: string | null | undefined) => !!base && base.endsWith('~1');

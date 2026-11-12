@@ -1,5 +1,6 @@
 import type { ReviewApi } from './api';
 import type { MapFile, MapLink, MapRegion, ReviewMap, ReviewTarget } from './types';
+import { KEYS, readItem, writeItem } from '../storage';
 
 export const SIGNALS = ['logic', 'reach', 'contract', 'struggle', 'untested', 'unseen'] as const;
 export type Signal = (typeof SIGNALS)[number];
@@ -280,23 +281,15 @@ export function step(rank: Scored[], current: string | null, dir: 1 | -1): Score
   return rank[(i + dir + rank.length) % rank.length];
 }
 
-const VIEW_KEY = 'overseer.review.view';
+const VIEW_KEY = KEYS.reviewView;
 
 export function savedView(): 'list' | 'map' {
-  try {
-    const v = globalThis.localStorage?.getItem(VIEW_KEY);
-    return v === 'map' || v === 'graph' ? 'map' : 'list';
-  } catch {
-    return 'list';
-  }
+  const v = readItem(VIEW_KEY);
+  return v === 'map' || v === 'graph' ? 'map' : 'list';
 }
 
 export function saveView(v: 'list' | 'map') {
-  try {
-    globalThis.localStorage?.setItem(VIEW_KEY, v);
-  } catch {
-    return;
-  }
+  writeItem(VIEW_KEY, v);
 }
 
 export class ReviewMapStore {

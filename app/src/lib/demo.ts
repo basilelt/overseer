@@ -1,5 +1,7 @@
-export const DEMO_KEY = 'overseer.demo';
-export const DEMO_PREFIX = 'overseer.demo:';
+import { KEYS } from './storage';
+
+export const DEMO_KEY = KEYS.demo;
+export const DEMO_PREFIX = KEYS.demoPrefix;
 
 let real: Storage | undefined;
 

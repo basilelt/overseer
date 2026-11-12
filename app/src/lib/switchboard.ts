@@ -1,8 +1,9 @@
 import { hostId } from './hooks';
 import type { Key } from './i18n.svelte';
 import type { ConnState, SwitchboardStatus } from './types';
+import { KEYS, readItem, writeItem } from './storage';
 
-export const DISMISS_KEY = 'overseer.switchboardImport';
+export const DISMISS_KEY = KEYS.switchboardImport;
 
 export function shouldOffer(s: SwitchboardStatus | null, conn: ConnState, dismissed: boolean, offered: string[]): boolean {
   if (conn.phase !== 'connected' || !s || !s.found || s.imported || dismissed) return false;
@@ -10,28 +11,16 @@ export function shouldOffer(s: SwitchboardStatus | null, conn: ConnState, dismis
 }
 
 export function isDismissed(): boolean {
-  try {
-    return localStorage.getItem(DISMISS_KEY) === 'dismissed';
-  } catch {
-    return false;
-  }
+  return readItem(DISMISS_KEY) === 'dismissed';
 }
 
 export function dismissForever() {
-  try {
-    localStorage.setItem(DISMISS_KEY, 'dismissed');
-  } catch {
-    return;
-  }
+  writeItem(DISMISS_KEY, 'dismissed');
 }
 
 export function applySettings(entries: Record<string, string> | undefined) {
   for (const [k, v] of Object.entries(entries ?? {})) {
-    try {
-      localStorage.setItem(k, v);
-    } catch {
-      return;
-    }
+    if (!writeItem(k, v)) return;
   }
 }
 

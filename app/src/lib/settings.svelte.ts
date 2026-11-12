@@ -11,6 +11,8 @@ installDemoStorage();
 
 import { migrateTheme, modeOf, resolveTheme, COLOR_TOKENS, type ColorOverrides, type CustomPreset, type Mode, type ResolvedTheme, type ThemePref } from './theme';
 
+import { KEYS, readItem, writeJson } from './storage';
+
 export { COLOR_TOKENS, GRAPHITE_COLORS, SOLARIZED_COLORS } from './theme';
 export type { ColorOverrides, ColorPalette, ColorToken, CustomPreset, Mode, PresetColors, ThemePref } from './theme';
 
@@ -150,11 +152,11 @@ export const DEFAULT_SETTINGS: Settings = {
   hostReconnect: true,
 };
 
-const KEY = 'overseer.settings';
+const KEY = KEYS.settings;
 
 function load(): Settings {
   try {
-    const raw = globalThis.localStorage?.getItem(KEY);
+    const raw = readItem(KEY);
     if (!raw) return { ...DEFAULT_SETTINGS };
     const parsed = JSON.parse(raw);
     delete parsed.colors;
@@ -175,9 +177,7 @@ export const settings = $state<Settings>({ ...load(), ...urlTheme() });
 export function saveSettings(patch: Partial<Settings>) {
   Object.assign(settings, patch);
   if (patch.locale) setLocale(patch.locale);
-  try {
-    globalThis.localStorage?.setItem(KEY, JSON.stringify({ ...load(), ...$state.snapshot(patch) }));
-  } catch {}
+  writeJson(KEY, { ...load(), ...$state.snapshot(patch) });
   applyTheme();
 }
 

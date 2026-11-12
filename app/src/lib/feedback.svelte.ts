@@ -4,6 +4,7 @@ import type { Kind } from './feedback';
 import type { Recording } from './record';
 import type { DaemonClient, TermIO } from './client';
 import type { Term } from './types';
+import { KEYS, readJson, writeJson } from './storage';
 
 export interface Prefill {
   kind?: Kind;
@@ -19,16 +20,12 @@ export interface Result {
 }
 
 const WATCH_MS = 60 * 60 * 1000;
-const REPORTED_KEY = 'sb.feedback.reported';
+const REPORTED_KEY = KEYS.feedbackReported;
 const REPORTED_MAX = 100;
 
 function loadReported(): string[] {
-  try {
-    const v = JSON.parse(globalThis.localStorage?.getItem(REPORTED_KEY) ?? '[]');
-    return Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : [];
-  } catch {
-    return [];
-  }
+  const v = readJson(REPORTED_KEY);
+  return Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : [];
 }
 
 export function wasReported(termId: string): boolean {
@@ -39,7 +36,7 @@ function markReported(termId: string) {
   try {
     const ids = loadReported().filter((i) => i !== termId);
     ids.push(termId);
-    globalThis.localStorage?.setItem(REPORTED_KEY, JSON.stringify(ids.slice(-REPORTED_MAX)));
+    writeJson(REPORTED_KEY, ids.slice(-REPORTED_MAX));
   } catch {}
 }
 

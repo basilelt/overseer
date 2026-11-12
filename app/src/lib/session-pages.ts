@@ -1,3 +1,5 @@
+import { KEYS, readJson, writeJson } from './storage';
+
 export interface Page {
   id: string;
   url: string;
@@ -19,7 +21,7 @@ export const MAX_HOSTS = 8;
 export const MAX_LIVE = 4;
 export const DEFAULT_RATIO = 0.5;
 
-const KEY = 'overseer.sessionPages';
+const KEY = KEYS.sessionPages;
 const ID = /^[A-Za-z0-9_-]{1,32}$/;
 
 const empty = (): SessionWeb => ({ pages: [], active: null, open: true, ratio: DEFAULT_RATIO });
@@ -115,13 +117,8 @@ export function parsePages(v: unknown): PagesByKey {
 }
 
 function loadAll(): Record<string, unknown> {
-  try {
-    const raw = globalThis.localStorage?.getItem(KEY);
-    const v = raw ? JSON.parse(raw) : null;
-    return v && typeof v === 'object' ? v : {};
-  } catch {
-    return {};
-  }
+  const v = readJson(KEY);
+  return v && typeof v === 'object' ? (v as Record<string, unknown>) : {};
 }
 
 export function loadPages(host: string): PagesByKey {
@@ -133,6 +130,6 @@ export function savePages(host: string, s: PagesByKey) {
     const { [host]: _, ...rest } = loadAll();
     const kept = Object.entries(rest).slice(-(MAX_HOSTS - 1));
     const all = Object.keys(s).length ? [...kept, [host, s]] : kept;
-    globalThis.localStorage?.setItem(KEY, JSON.stringify(Object.fromEntries(all)));
+    writeJson(KEY, Object.fromEntries(all));
   } catch {}
 }
