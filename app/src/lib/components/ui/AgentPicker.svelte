@@ -217,7 +217,7 @@
   }
   .pop {
     position: fixed;
-    z-index: 70;
+    z-index: var(--z-picker);
     display: flex;
     flex-direction: column;
     background: var(--surface);

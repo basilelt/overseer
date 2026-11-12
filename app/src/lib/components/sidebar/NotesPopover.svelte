@@ -123,7 +123,7 @@
 <style>
   .notes {
     position: fixed;
-    z-index: 60;
+    z-index: var(--z-popover);
     display: flex;
     flex-direction: column;
     gap: 8px;
@@ -218,7 +218,7 @@
   .scrim {
     position: fixed;
     inset: 0;
-    z-index: 59;
+    z-index: var(--z-popover-scrim);
     background: var(--overlay);
   }
   :global(.phone) .notes {

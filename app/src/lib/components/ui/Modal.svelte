@@ -62,7 +62,7 @@
     display: grid;
     place-items: start center;
     padding-top: 12vh;
-    z-index: 50;
+    z-index: var(--z-modal);
   }
   .modal {
     max-width: calc(100vw - 32px);

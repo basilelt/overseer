@@ -83,7 +83,7 @@
     background: var(--surface);
     border-radius: var(--radius);
     box-shadow: var(--shadow);
-    z-index: 60;
+    z-index: var(--z-popover);
     outline: none;
   }
   button {
@@ -151,7 +151,7 @@
   .scrim {
     position: fixed;
     inset: 0;
-    z-index: 59;
+    z-index: var(--z-popover-scrim);
     background: var(--overlay);
   }
   .sheet-title {

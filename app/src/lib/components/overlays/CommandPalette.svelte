@@ -213,7 +213,7 @@
     justify-content: center;
     align-items: flex-start;
     padding-top: 14vh;
-    z-index: 60;
+    z-index: var(--z-popover);
   }
   .palette {
     width: 580px;

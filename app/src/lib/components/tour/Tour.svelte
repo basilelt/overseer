@@ -133,14 +133,14 @@
   .scrim {
     position: fixed;
     inset: 0;
-    z-index: 80;
+    z-index: var(--z-tour);
   }
   .scrim.dim {
     background: var(--overlay);
   }
   .hole {
     position: fixed;
-    z-index: 80;
+    z-index: var(--z-tour);
     border-radius: 8px;
     pointer-events: none;
     box-shadow:
@@ -149,7 +149,7 @@
   }
   .card {
     position: fixed;
-    z-index: 81;
+    z-index: var(--z-tour-card);
     width: 320px;
     max-width: calc(100vw - 24px);
     padding: 14px 16px 12px;

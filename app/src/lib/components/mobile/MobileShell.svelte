@@ -385,7 +385,7 @@
     position: fixed;
     inset: 0;
     background: var(--overlay);
-    z-index: 40;
+    z-index: var(--z-shell-scrim);
   }
   .drawer {
     position: fixed;
@@ -393,7 +393,7 @@
     bottom: 0;
     left: 0;
     width: min(92vw, 400px);
-    z-index: 41;
+    z-index: var(--z-shell);
     display: flex;
     flex-direction: column;
     padding: var(--safe-top) 0 var(--safe-bottom) var(--safe-left);
@@ -417,7 +417,7 @@
   .sheet {
     position: fixed;
     inset: 0;
-    z-index: 41;
+    z-index: var(--z-shell);
     display: flex;
     flex-direction: column;
     padding: var(--safe-top) var(--safe-right) var(--safe-bottom) var(--safe-left);

@@ -54,7 +54,7 @@
   .sheet {
     position: fixed;
     inset: 0;
-    z-index: 50;
+    z-index: var(--z-modal);
     background: var(--bg);
     display: flex;
     flex-direction: column;

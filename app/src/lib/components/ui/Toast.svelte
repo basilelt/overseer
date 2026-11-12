@@ -28,7 +28,7 @@
     box-shadow: var(--shadow);
     border-radius: var(--radius);
     padding: 8px 14px;
-    z-index: 100;
+    z-index: var(--z-toast);
     width: max-content;
     max-width: min(480px, calc(100vw - 32px));
     display: flex;
