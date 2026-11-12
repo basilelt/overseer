@@ -6,6 +6,20 @@ import { isTesting } from './task-status';
 export type GroupId = 'needs_input' | 'needs_testing' | 'running' | 'pushed' | 'ready' | 'paused' | 'stopped';
 export const GROUP_ORDER: GroupId[] = ['needs_input', 'needs_testing', 'running', 'pushed', 'ready', 'paused', 'stopped'];
 
+export const GROUP_STATE: Record<GroupId, SessionState> = {
+  needs_input: 'attention',
+  needs_testing: 'open',
+  running: 'running',
+  pushed: 'open',
+  ready: 'open',
+  paused: 'paused',
+  stopped: 'closed',
+};
+
+const OVERLAY_GROUPS: readonly GroupId[] = ['needs_testing', 'pushed'];
+
+export const STATE_GROUP = Object.fromEntries(GROUP_ORDER.filter((g) => !OVERLAY_GROUPS.includes(g)).map((g) => [GROUP_STATE[g], g])) as Record<SessionState, GroupId>;
+
 export type ItemKind = string;
 
 export interface SidebarItem {
@@ -36,13 +50,14 @@ export interface Group {
 export function lineGroup(l: LocalLine, testing: boolean, termId?: string | null): GroupId | null {
   if (isEnded(l)) return null;
   const state = sessionState(l, termId).state;
-  if (state === 'paused') return 'paused';
-  if (l.line.state === 'held') return 'stopped';
-  if (state === 'attention') return 'needs_input';
+  const base = STATE_GROUP[state];
+  if (state === 'paused') return base;
+  if (l.line.state === 'held') return STATE_GROUP.closed;
+  if (state === 'attention') return base;
   if (testing) return 'needs_testing';
-  if (state === 'running') return 'running';
+  if (state === 'running') return base;
   if (l.line.prUrl) return 'pushed';
-  return state === 'closed' ? 'stopped' : 'ready';
+  return base;
 }
 
 /** The session has no live process: paused on purpose or stopped. */

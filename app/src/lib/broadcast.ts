@@ -1,4 +1,5 @@
-import type { SidebarItem } from './grouping';
+import { GROUP_STATE, type SidebarItem } from './grouping';
+import type { SessionState } from './session-state';
 import type { BroadcastRequest, BroadcastResult } from './types';
 import { isShellItem, isAgentItem } from './agents';
 
@@ -13,12 +14,17 @@ export interface TargetRow {
   checked: boolean;
 }
 
+const TARGET_OF_STATE: Record<SessionState, TargetState> = {
+  attention: 'needs_input',
+  running: 'busy',
+  open: 'idle',
+  paused: 'paused',
+  closed: 'stopped',
+};
+
 export function targetState(i: SidebarItem): TargetState {
-  if (i.group === 'paused' || i.group === 'stopped') return i.group;
-  if (isShellItem(i)) return 'idle';
-  if (i.group === 'needs_input') return 'needs_input';
-  if (i.group === 'running') return 'busy';
-  return 'idle';
+  const target = TARGET_OF_STATE[GROUP_STATE[i.group]];
+  return isShellItem(i) && target !== 'paused' && target !== 'stopped' ? 'idle' : target;
 }
 
 export function targetRows(items: SidebarItem[], queue: boolean): TargetRow[] {

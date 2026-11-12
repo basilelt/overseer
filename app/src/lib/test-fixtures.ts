@@ -1,6 +1,4 @@
-import type { GroupId } from './grouping';
+import { GROUP_STATE, type GroupId } from './grouping';
 import type { SessionState } from './session-state';
 
-// Test items carry the process state their group implies; only the bucket groups need a choice.
-export const stateOfGroup = (group: GroupId): SessionState =>
-  group === 'pushed' || group === 'needs_testing' || group === 'ready' ? 'open' : group === 'needs_input' ? 'attention' : group === 'stopped' ? 'closed' : group;
+export const stateOfGroup = (group: GroupId): SessionState => GROUP_STATE[group];
