@@ -7,6 +7,7 @@ case $v in
   [0-9]*.[0-9]*.[0-9]*) ;;
   *) echo "usage: $0 X.Y.Z" >&2; exit 2 ;;
 esac
+. "$(dirname "$0")/version-files.sh"
 cd "${CHECK_VERSION_ROOT:-$(dirname "$0")/..}" || exit 2
 
 bad=0
@@ -28,10 +29,10 @@ lock() {
     next_v && /^version = / { gsub(/^version = "|"$/, ""); print n, $0; next_v = 0 }' "$1"
 }
 
-for f in Cargo.toml api/Cargo.toml app/src-tauri/Cargo.toml; do
+for f in $VERSION_MANIFESTS; do
   report "$f" "$(toml "$f")"
 done
-for f in Cargo.lock api/Cargo.lock app/src-tauri/Cargo.lock; do
+for f in $VERSION_LOCKS; do
   entries=$(lock "$f")
   [ -n "$entries" ] || report "$f" ""
   while read -r name ver; do
@@ -40,7 +41,7 @@ for f in Cargo.lock api/Cargo.lock app/src-tauri/Cargo.lock; do
 $entries
 EOF
 done
-for f in app/package.json app/src-tauri/tauri.conf.json; do
+for f in $VERSION_JSONS; do
   report "$f" "$(sed -n 's/^  "version": "\(.*\)",\{0,1\}$/\1/p' "$f" | head -1)"
 done
 

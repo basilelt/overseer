@@ -1,6 +1,6 @@
 #!/bin/sh
 set -eu
-version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
+version=$("$(dirname "$0")/version.sh")
 mkdir -p dist
 built=0
 for t in ${DIST_TARGETS:-x86_64-unknown-linux-musl aarch64-unknown-linux-musl}; do

@@ -6,7 +6,9 @@ case $v in
   [0-9]*.[0-9]*.[0-9]*) ;;
   *) echo "usage: $0 X.Y.Z" >&2; exit 2 ;;
 esac
-cd "$(dirname "$0")/.."
+here=$(dirname "$0")
+. "$here/version-files.sh"
+cd "$here/.."
 
 toml() {
   awk -v v="$v" '
@@ -23,10 +25,10 @@ json() {
   mv "$1.tmp" "$1"
 }
 
-for f in Cargo.toml Cargo.lock api/Cargo.toml api/Cargo.lock app/src-tauri/Cargo.toml app/src-tauri/Cargo.lock; do
+for f in $VERSION_MANIFESTS $VERSION_LOCKS; do
   toml "$f"
 done
-for f in app/package.json app/src-tauri/tauri.conf.json; do
+for f in $VERSION_JSONS; do
   json "$f"
 done
 echo "version $v"

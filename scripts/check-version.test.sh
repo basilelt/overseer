@@ -5,13 +5,14 @@ root=$(cd "$(dirname "$0")/.." && pwd)
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 fail=0
-files="Cargo.toml Cargo.lock api/Cargo.toml api/Cargo.lock app/src-tauri/Cargo.toml app/src-tauri/Cargo.lock app/package.json app/src-tauri/tauri.conf.json"
+. "$root/scripts/version-files.sh"
+files="$VERSION_MANIFESTS $VERSION_LOCKS $VERSION_JSONS"
 
 # A copy of the stamped files, so each case edits its own tree.
 tree() {
   local dir=$work/$RANDOM$RANDOM
   mkdir -p "$dir/scripts"
-  cp "$root/scripts/set-version.sh" "$dir/scripts/"
+  cp "$root/scripts/set-version.sh" "$root/scripts/version-files.sh" "$dir/scripts/"
   for f in $files; do
     mkdir -p "$dir/$(dirname "$f")"
     cp "$root/$f" "$dir/$f"
@@ -46,6 +47,17 @@ for f in $files; do
     *.lock) sed -i.bak '/^name = "overseer/{n;s/^version = .*/version = "0.0.1"/;}' "$dir/$f" ;;
   esac
   expect fail "rejects a stale $f" "$dir" 1.2.3 "$f.*: 0.0.1"
+done
+
+want=$(sed -n 's/^version = "\(.*\)"/\1/p' "$root/Cargo.toml" | head -1)
+if [ "$("$root/scripts/version.sh")" = "$want" ] && [ -n "$want" ]; then
+  echo "ok   version.sh reads the Cargo.toml version"
+else
+  echo "FAIL version.sh: want $want"
+  fail=1
+fi
+for f in $files; do
+  if [ -f "$root/$f" ]; then :; else echo "FAIL listed file $f is missing"; fail=1; fi
 done
 
 exit $fail

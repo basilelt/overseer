@@ -25,7 +25,7 @@ app/node_modules:
 app-dev: app/node_modules
 	$(APP) tauri dev
 
-VERSION = $(shell sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
+VERSION = $(shell scripts/version.sh)
 LINUX_SERVERS = linux-x86_64:x86_64-unknown-linux-musl linux-aarch64:aarch64-unknown-linux-musl
 DARWIN_SERVERS = darwin-x86_64:x86_64-apple-darwin darwin-aarch64:aarch64-apple-darwin
 WINDOWS = x86_64-pc-windows-msvc

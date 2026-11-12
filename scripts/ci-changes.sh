@@ -44,7 +44,7 @@ else
       .github/*) actionlint=true ;;
     esac
     case $f in
-      .github/actions/* | scripts/ci-*.sh | scripts/check-version*.sh | scripts/set-version.sh) ci_scripts=true ;;
+      .github/actions/* | scripts/ci-*.sh | scripts/check-version*.sh | scripts/set-version.sh | scripts/version*.sh) ci_scripts=true ;;
     esac
     case $f in
       scripts/update-tap.sh | scripts/update-tap.test.sh) tap=true ;;
