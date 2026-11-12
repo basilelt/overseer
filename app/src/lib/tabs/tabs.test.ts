@@ -171,6 +171,13 @@ describe('focusSession', () => {
     expect(active.el).toBe(box);
   });
 
+  it('moves focus from the clicked tab into a review, so J and K work', () => {
+    const review = fake('review');
+    vi.stubGlobal('document', { get activeElement() { return active.el; } });
+    expect(focusSession(pane({ '.review': review }))).toBe(true);
+    expect(active.el).toBe(review);
+  });
+
   it('leaves focus alone when the pane has no terminal or composer, or it is detached', () => {
     active.el = 'tab';
     vi.stubGlobal('document', { get activeElement() { return active.el; } });

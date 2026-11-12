@@ -10,6 +10,7 @@
   import ChevronRight from '@lucide/svelte/icons/chevron-right';
   import Link2 from '@lucide/svelte/icons/link-2';
   import { onMount, tick, untrack } from 'svelte';
+  import { walkDirection } from '../../review/walk-key';
   import { t } from '../../i18n.svelte';
   import { reviewCounts } from '../../review/counts.svelte';
   import { totals, type Mode } from '../../review/rows';
@@ -145,13 +146,11 @@
   }
 
   function onKey(e: KeyboardEvent) {
-    if (e.ctrlKey || e.metaKey || e.altKey || (e.key !== 'j' && e.key !== 'k')) return;
     const el = e.target as HTMLElement | null;
-    if (!root || !el || !root.contains(el)) return;
-    if (el?.closest('input, textarea, select, [contenteditable="true"]')) return;
-    if (!rank.length) return;
+    const dir = walkDirection(e, el);
+    if (!dir || !root || !el || !root.contains(el) || !rank.length) return;
     e.preventDefault();
-    walk(e.key === 'j' ? 1 : -1);
+    walk(dir);
   }
 
   function since(c: ReviewCommit) {

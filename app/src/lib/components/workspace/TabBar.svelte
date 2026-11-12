@@ -160,7 +160,8 @@
     }
     app.multi = new Set();
     activate(key);
-    if (e.detail > 0 && !coarsePointer() && tabInfo(key, app.items)?.item) {
+    const info = tabInfo(key, app.items);
+    if (e.detail > 0 && !coarsePointer() && (info?.item || info?.kind === 'review')) {
       const pane = (e.currentTarget as HTMLElement | null)?.closest('.pane');
       requestAnimationFrame(() => focusSession(pane));
     }

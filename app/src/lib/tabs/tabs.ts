@@ -118,7 +118,7 @@ export function endTarget(key: string, items: SidebarItem[]): { line: string } |
 }
 
 export function focusSession(pane: Element | null | undefined): boolean {
-  const target = pane?.querySelector<HTMLElement>('.chat .composer textarea') ?? pane?.querySelector<HTMLElement>('.keep:not(.hidden) [data-terminal]');
+  const target = pane?.querySelector<HTMLElement>('.chat .composer textarea') ?? pane?.querySelector<HTMLElement>('.keep:not(.hidden) [data-terminal]') ?? pane?.querySelector<HTMLElement>('.review');
   if (!target || !target.isConnected) return false;
   target.focus({ preventScroll: true });
   return document.activeElement === target;
