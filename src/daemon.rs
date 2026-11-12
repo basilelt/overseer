@@ -1571,7 +1571,7 @@ pub fn run(
             chores = now_ms() + 600_000;
             crate::uploads::cleanup(
                 &crate::uploads::dir(),
-                &state_dir.join("uploads"),
+                &state_dir.join(crate::paths::STATE_UPLOADS_DIR),
                 std::time::SystemTime::now(),
             );
             crate::discover::background();

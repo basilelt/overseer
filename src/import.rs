@@ -13,7 +13,7 @@ UPDATE hook_state SET pid = NULL, pane = NULL
 UPDATE lines SET held_by_user = 0 WHERE id IN (SELECT id FROM old.lines);
 ";
 const COPY_FILES: &[&str] = &crate::paths::MIGRATED_STATE_FILES;
-const COPY_DIRS: &[&str] = &["stations", "feedback"];
+const COPY_DIRS: &[&str] = &[crate::paths::STATIONS_DIR, "feedback"];
 const COPY_HOME_DIRS: &[&str] = &crate::paths::MIGRATED_HOME_DIRS;
 
 fn locate(get: &dyn Fn(&str) -> Option<String>, windows: bool, macos: bool) -> PathBuf {
@@ -413,7 +413,7 @@ fn merge_or_clone(state_dir: &Path, old_dir: &Path, name: &str, fix: &str) -> Re
     if !old.is_file() {
         return Ok(());
     }
-    if dest.exists() && name != "sync.db" {
+    if dest.exists() && name != crate::paths::SYNC_DB {
         merge_db(&dest, &old, fix)
     } else if dest.exists() {
         Ok(())
@@ -587,14 +587,19 @@ fn run_import(state_dir: &Path, dir: &Path) -> Result<Value, String> {
     let (sessions, tasks, workspaces) = counts(dir);
     let stopped = stop_old(dir, state_dir)?;
     Registry::open(state_dir)?;
-    merge_db(&state_dir.join("overseer.db"), &old_db(dir), FIX_REGISTRY)
-        .map_err(|e| format!("merging the database: {e}"))?;
-    merge_or_clone(state_dir, dir, "usage.db", "").map_err(|e| format!("merging usage: {e}"))?;
+    merge_db(
+        &state_dir.join(crate::paths::REGISTRY_DB),
+        &old_db(dir),
+        FIX_REGISTRY,
+    )
+    .map_err(|e| format!("merging the database: {e}"))?;
+    merge_or_clone(state_dir, dir, crate::paths::USAGE_DB, "")
+        .map_err(|e| format!("merging usage: {e}"))?;
     import_config(state_dir, dir)?;
     for f in COPY_FILES.iter().chain(COPY_DIRS) {
         copy_missing(&dir.join(f), &state_dir.join(f))?;
     }
-    merge_or_clone(state_dir, dir, "sync.db", "")?;
+    merge_or_clone(state_dir, dir, crate::paths::SYNC_DB, "")?;
     let home = crate::home();
     for d in COPY_HOME_DIRS {
         copy_missing(

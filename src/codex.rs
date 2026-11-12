@@ -78,7 +78,7 @@ fn from_db(db: &Path, state_dir: &Path) -> Option<Vec<Thread>> {
     let rows = match cached {
         Some(r) => r,
         None => {
-            let tmp = state_dir.join("tmp").join(format!(
+            let tmp = state_dir.join(crate::paths::TMP_DIR).join(format!(
                 "codex-{}-{}",
                 std::process::id(),
                 COPIES.fetch_add(1, Ordering::Relaxed)

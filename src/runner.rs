@@ -69,7 +69,7 @@ pub fn clone_for(ctx: &Ctx, repo: &str) -> Option<PathBuf> {
 }
 
 fn content_file(ctx: &Ctx, id: &str, text: &str) -> Result<PathBuf, String> {
-    let dir = ctx.state_dir.join("tmp");
+    let dir = ctx.state_dir.join(crate::paths::TMP_DIR);
     mkdir_private(&dir).map_err(|e| e.to_string())?;
     let path = dir.join(format!("{id}.prompt"));
     let _ = std::fs::remove_file(&path);

@@ -82,7 +82,7 @@ struct Station {
 }
 
 fn stations(ctx: &Ctx) -> Vec<Station> {
-    let Ok(dir) = std::fs::read_dir(ctx.state_dir.join("stations")) else {
+    let Ok(dir) = std::fs::read_dir(ctx.state_dir.join(crate::paths::STATIONS_DIR)) else {
         return vec![];
     };
     let mut out: Vec<Station> = dir

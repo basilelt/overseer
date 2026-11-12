@@ -815,7 +815,7 @@ pub fn run(
     r: &Run,
     available: impl Fn(&Target) -> bool,
 ) -> Vec<Outcome> {
-    let tmp = r.state_dir.join("tmp");
+    let tmp = r.state_dir.join(crate::paths::TMP_DIR);
     let mut out = vec![];
     for t in targets {
         if agents.is_some_and(|a| !a.iter().any(|x| x == t.agent)) {

@@ -1415,7 +1415,7 @@ pub fn init(state_dir: &Path, claude: PathBuf, codex: PathBuf, gemini: PathBuf) 
                 codex,
                 gemini,
             }),
-            db: state_dir.join("usage.db"),
+            db: state_dir.join(crate::paths::USAGE_DB),
             started: false,
             poked: false,
             full: true,

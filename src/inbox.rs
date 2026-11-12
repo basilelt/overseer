@@ -8,7 +8,9 @@ use std::path::{Path, PathBuf};
 pub const DISABLED: &str = "disabled: acceptRemoteCommands is false on this station";
 
 pub fn running(state_dir: &Path) -> PathBuf {
-    state_dir.join("commands").join("running")
+    state_dir
+        .join(crate::paths::COMMANDS_DIR)
+        .join(crate::paths::RUNNING_DIR)
 }
 
 #[derive(Debug)]

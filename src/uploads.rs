@@ -57,12 +57,11 @@ fn cap(s: &str) -> String {
     }
 }
 
-pub const SHORT_DIR: &str = ".overseer/u";
 const ID_LEN: usize = 6;
 const ALPHABET: &[u8; 36] = b"abcdefghijklmnopqrstuvwxyz0123456789";
 
 pub fn dir() -> PathBuf {
-    crate::home().join(SHORT_DIR)
+    crate::home().join(crate::paths::SHORT_UPLOADS_REL)
 }
 
 fn id(attempt: u32) -> String {
@@ -128,10 +127,8 @@ pub fn store(dir: &Path, name: &str, len: u64, body: impl Read) -> Res<PathBuf> 
     }
 }
 
-pub const TASK_DIR: &str = ".overseer/tasks";
-
 pub fn task_dir(id: &str) -> PathBuf {
-    crate::home().join(TASK_DIR).join(id)
+    crate::home().join(crate::paths::TASK_UPLOADS_REL).join(id)
 }
 
 pub fn attachments(uploads: &Path, list: &Value) -> Result<Vec<(PathBuf, String)>, String> {

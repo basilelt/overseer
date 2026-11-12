@@ -1085,7 +1085,7 @@ type Upsert = (u64, String, Vec<String>);
 type Upserted = HashMap<UpsertKey, Upsert>;
 
 fn db_id(state_dir: &Path) -> u64 {
-    let Ok(m) = std::fs::metadata(state_dir.join("overseer.db")) else {
+    let Ok(m) = std::fs::metadata(state_dir.join(paths::REGISTRY_DB)) else {
         return 0;
     };
     #[cfg(unix)]

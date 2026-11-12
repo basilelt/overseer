@@ -19,6 +19,22 @@ pub const USER_FILE: &str = "user.json";
 pub const SYNC_FILE: &str = "sync.json";
 pub const PROJECTS_FILE: &str = "projects.json";
 
+pub const REGISTRY_DB: &str = "overseer.db";
+pub const SYNC_DB: &str = "sync.db";
+pub const USAGE_DB: &str = "usage.db";
+pub const STATE_DBS: [&str; 3] = [REGISTRY_DB, SYNC_DB, USAGE_DB];
+
+pub const COMMANDS_DIR: &str = "commands";
+pub const INBOX_DIR: &str = "inbox";
+pub const DONE_DIR: &str = "done";
+pub const RUNNING_DIR: &str = "running";
+pub const STATIONS_DIR: &str = "stations";
+pub const TMP_DIR: &str = "tmp";
+pub const STATE_UPLOADS_DIR: &str = "uploads";
+
+pub const SHORT_UPLOADS_REL: &str = ".overseer/u";
+pub const TASK_UPLOADS_REL: &str = ".overseer/tasks";
+
 pub const MIGRATED_STATE_FILES: [&str; 5] = [
     PROFILES_FILE,
     BOARD_FILE,
@@ -58,6 +74,29 @@ mod tests {
     #[test]
     fn migrated_dirs_are_a_subset_of_the_home_dirs() {
         assert!(MIGRATED_HOME_DIRS.iter().all(|d| HOME_DIRS.contains(d)));
+    }
+
+    #[test]
+    fn relative_upload_paths_agree_with_the_home_names() {
+        assert_eq!(SHORT_UPLOADS_REL, format!("{OVERSEER_HOME}/{UPLOADS_DIR}"));
+        assert_eq!(TASK_UPLOADS_REL, format!("{OVERSEER_HOME}/{TASKS_DIR}"));
+    }
+
+    #[test]
+    fn state_names_keep_their_values() {
+        assert_eq!(STATE_DBS, ["overseer.db", "sync.db", "usage.db"]);
+        assert_eq!(
+            [
+                COMMANDS_DIR,
+                INBOX_DIR,
+                DONE_DIR,
+                RUNNING_DIR,
+                STATIONS_DIR,
+                TMP_DIR,
+                STATE_UPLOADS_DIR
+            ],
+            ["commands", "inbox", "done", "running", "stations", "tmp", "uploads"]
+        );
     }
 
     #[test]

@@ -478,10 +478,7 @@ fn looks_like_state_dir(dir: &Path) -> bool {
     let Some(first) = entries.next() else {
         return true;
     };
-    first.is_ok()
-        && ["overseer.db", "sync.db", "usage.db"]
-            .iter()
-            .any(|n| dir.join(n).exists())
+    first.is_ok() && crate::paths::STATE_DBS.iter().any(|n| dir.join(n).exists())
 }
 
 pub fn run(ctx: &Ctx, apply: bool) -> Report {

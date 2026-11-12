@@ -142,11 +142,15 @@ pub(crate) fn safe_id(id: &str) -> bool {
 }
 
 pub fn inbox(state_dir: &Path) -> PathBuf {
-    state_dir.join("commands").join("inbox")
+    state_dir
+        .join(crate::paths::COMMANDS_DIR)
+        .join(crate::paths::INBOX_DIR)
 }
 
 pub fn done(state_dir: &Path) -> PathBuf {
-    state_dir.join("commands").join("done")
+    state_dir
+        .join(crate::paths::COMMANDS_DIR)
+        .join(crate::paths::DONE_DIR)
 }
 
 pub fn complete(
@@ -173,7 +177,7 @@ pub fn complete(
 impl Client {
     pub fn open(state_dir: &Path, station: &str) -> Result<Client, String> {
         mkdir_private(state_dir).map_err(|e| e.to_string())?;
-        let path = state_dir.join("sync.db");
+        let path = state_dir.join(crate::paths::SYNC_DB);
         std::fs::OpenOptions::new()
             .create(true)
             .append(true)
@@ -514,7 +518,7 @@ impl Client {
 }
 
 pub fn write_stations(state_dir: &Path, me: &str, v: &Value) -> Result<(), String> {
-    let dir = state_dir.join("stations");
+    let dir = state_dir.join(crate::paths::STATIONS_DIR);
     mkdir_private(&dir).map_err(|e| e.to_string())?;
     let owner = load_config(state_dir).owner;
     let mut keep = vec![];

@@ -293,7 +293,7 @@ impl Registry {
     }
 
     fn open_once(state_dir: &Path) -> Result<Self, String> {
-        let path = state_dir.join("overseer.db");
+        let path = state_dir.join(crate::paths::REGISTRY_DB);
         std::fs::OpenOptions::new()
             .create(true)
             .append(true)
