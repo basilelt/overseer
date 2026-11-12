@@ -598,9 +598,8 @@ describe('system notifications', () => {
       dispatch(app, { id: 'cd-1', kind: 'needsInput', title: 'a', action: { kind: 'line', key: 'line:cooldown' } }, vi.fn());
       dispatch(app, { id: 'cd-2', kind: 'needsInput', title: 'a again', action: { kind: 'line', key: 'line:cooldown' } }, vi.fn());
       await vi.waitFor(() => expect(plug.sendNotification).toHaveBeenCalled());
-      await new Promise((r) => setTimeout(r, 0));
+      await vi.waitFor(() => expect(center.entries.map((e) => [e.id, e.title])).toEqual([['line:cooldown', 'a again']]));
       expect(plug.sendNotification).toHaveBeenCalledTimes(1);
-      expect(center.entries.map((e) => [e.id, e.title])).toEqual([['line:cooldown', 'a again']]);
     });
 
     it('toasts instead when sending fails', async () => {

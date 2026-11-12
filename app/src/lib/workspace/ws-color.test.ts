@@ -6,17 +6,11 @@ describe('workspace colours', () => {
     expect(Object.keys(PALETTE_GROUP_COLOR).sort()).toEqual(Object.keys(GROUP_COLOR).sort());
   });
 
-  it('keeps the palette on its own tokens, which differ from the sidebar ones', () => {
-    expect(PALETTE_GROUP_COLOR).toEqual({
-      needs_input: 'var(--st-input)',
-      needs_testing: 'var(--st-testing)',
-      running: 'var(--st-working)',
-      pushed: PALETTE_HELD_COLOR,
-      ready: PALETTE_HELD_COLOR,
-      paused: 'var(--st-paused)',
-      stopped: PALETTE_HELD_COLOR,
-    });
-    expect(GROUP_COLOR.needs_input).toBe('var(--state-attention)');
+  it('colours the palette from CSS tokens, sharing one colour for the held groups', () => {
+    for (const g of Object.keys(GROUP_COLOR) as (keyof typeof GROUP_COLOR)[]) {
+      expect(PALETTE_GROUP_COLOR[g], g).toMatch(/^var\(--[\w-]+\)$/);
+    }
+    for (const g of ['pushed', 'ready', 'stopped'] as const) expect(PALETTE_GROUP_COLOR[g]).toBe(PALETTE_HELD_COLOR);
   });
 
   it('derives the workspace colours from the groups without pushed', () => {

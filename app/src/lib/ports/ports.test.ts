@@ -149,7 +149,7 @@ describe('MockDaemon ports and prompts', () => {
     const states: PortsState[] = [];
     const stop = m.watchPorts((s) => states.push(s));
     await m.configurePorts({ autoForward: true, ignore: [8000], localhostOnly: true });
-    await new Promise((r) => setTimeout(r, 5));
+    await vi.waitFor(() => expect(states.flatMap((s) => s.added ?? [])).not.toEqual([]));
     stop();
     expect(states[0].remote).toBe(true);
     expect(states.flatMap((s) => s.added ?? []).map((f) => f.remotePort)).toEqual([5173]);
@@ -199,7 +199,7 @@ describe('MockDaemon ports and prompts', () => {
     const m = new MockDaemon({ live: false, delayMs: 0 });
     const seen: ConnState[] = [];
     const done = m.connect(ssh('hostkey-box'), (s) => seen.push(s));
-    await new Promise((r) => setTimeout(r, 0));
+    await vi.waitFor(() => expect(seen.at(-1)?.prompt).toBeDefined());
     const prompt = seen.at(-1)!.prompt!;
     expect(prompt).toMatchObject({ kind: 'hostkey', fingerprint: expect.stringMatching(/^SHA256:/) });
     expect(seen.at(-1)!.resolved).toContain('hostkey-box');
@@ -213,7 +213,7 @@ describe('MockDaemon ports and prompts', () => {
     const m = new MockDaemon({ live: false, delayMs: 0 });
     const seen: ConnState[] = [];
     const done = m.connect(ssh('hostkey-box'), (s) => seen.push(s));
-    await new Promise((r) => setTimeout(r, 0));
+    await vi.waitFor(() => expect(seen.at(-1)?.prompt).toBeDefined());
     await m.answerPrompt(seen.at(-1)!.prompt!.id, null);
     await expect(done).rejects.toThrow(/Host key verification failed/);
     expect(seen.at(-1)).toMatchObject({ phase: 'error', error: 'Host key verification failed.' });

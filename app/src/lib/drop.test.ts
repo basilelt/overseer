@@ -209,10 +209,11 @@ describe('dropZone', () => {
     const { dropZone } = await load();
     dropZone(tracked(leftF, 1).z);
     await vi.waitFor(() => expect(webview.calls).toBe(1));
-    await new Promise((r) => setTimeout(r, 0));
     webview.fail = false;
-    dropZone(tracked(rightF, 1).z);
-    await vi.waitFor(() => expect(webview.handler).not.toBeNull());
+    await vi.waitFor(() => {
+      dropZone(tracked(rightF, 1).z);
+      expect(webview.handler).not.toBeNull();
+    });
     expect(webview.calls).toBe(2);
   });
 });

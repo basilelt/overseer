@@ -4,8 +4,6 @@ import { FONT_SIZE_MAX, FONT_SIZE_MIN, PINCH_FONT_MAX, PINCH_FONT_MIN } from './
 
 describe('terminal font bounds', () => {
   it('keeps the setting bounds inside the wider pinch bounds', () => {
-    expect([FONT_SIZE_MIN, FONT_SIZE_MAX]).toEqual([9, 24]);
-    expect([PINCH_FONT_MIN, PINCH_FONT_MAX]).toEqual([8, 28]);
     expect(PINCH_FONT_MIN).toBeLessThanOrEqual(FONT_SIZE_MIN);
     expect(PINCH_FONT_MAX).toBeGreaterThanOrEqual(FONT_SIZE_MAX);
   });

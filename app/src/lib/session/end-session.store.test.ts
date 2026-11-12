@@ -3,6 +3,7 @@ import { setClient } from '../daemon/client';
 import { MockDaemon } from '../daemon/mock';
 import { app } from '../state.svelte';
 import { allTabs, closeTabAt, EMPTY_LAYOUT, workspace } from '../workspace/workspace.svelte';
+import { flush } from '../../test/flush';
 
 describe('ending a shell from its tab', () => {
   let m: MockDaemon;
@@ -41,7 +42,7 @@ describe('ending a shell from its tab', () => {
   it('keeps the term running when the tab is only hidden', async () => {
     const request = vi.spyOn(m, 'request');
     closeTabAt(0, key, false);
-    await new Promise((r) => setTimeout(r, 20));
+    await flush();
     expect(request).not.toHaveBeenCalledWith('POST', expect.stringContaining('/kill'), expect.anything());
     expect(app.data.terms.find((t) => t.id === id)?.exited).toBe(false);
   });

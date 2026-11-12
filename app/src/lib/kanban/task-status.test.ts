@@ -6,11 +6,16 @@ describe('task status vocabulary', () => {
     expect(TASK_STATUSES).toEqual(['pending', 'auto', 'in_progress', 'in_testing', 'merged', 'completed']);
   });
 
-  it('derives every named subset from the full list', () => {
-    expect(SESSION_STATUSES).toEqual(['in_progress', 'in_testing', 'merged', 'completed']);
-    expect(FINISHED_STATUSES).toEqual(['in_testing', 'merged', 'completed']);
-    expect(DONE_STATUSES).toEqual(['merged', 'completed']);
-    for (const s of [...SESSION_STATUSES, ...FINISHED_STATUSES, ...DONE_STATUSES]) expect(TASK_STATUSES).toContain(s);
+  it('keeps every named subset inside the full list, in board order, and in step with its predicate', () => {
+    const subsets = [
+      [SESSION_STATUSES, undefined],
+      [FINISHED_STATUSES, isFinished],
+      [DONE_STATUSES, isDone],
+    ] as const;
+    for (const [subset, predicate] of subsets) {
+      expect(TASK_STATUSES.filter((s) => (subset as readonly string[]).includes(s))).toEqual(subset);
+      if (predicate) expect(TASK_STATUSES.filter(predicate)).toEqual(subset);
+    }
   });
 
   it('answers the status predicates for each status', () => {

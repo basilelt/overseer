@@ -11,6 +11,7 @@ import { settings, workspaceFor } from './settings/settings.svelte';
 import { app, NO_WORKSPACE, projectName, statusLine } from './state.svelte';
 import { allTabs, closeTabAt, EMPTY_LAYOUT, openInFocused, workspace } from './workspace/workspace.svelte';
 import type { Activity, ConnState, DaemonEvent, HostTarget, PlatformInfo, Project, SavedHost, Term, Workspace } from './types';
+import { flush } from '../test/flush';
 
 type Handler = (body: unknown) => unknown;
 
@@ -230,7 +231,7 @@ describe('connecting', () => {
     m.onState!({ phase: 'connected', target: local });
     await vi.waitFor(() => expect(m.hits(/GET \/v1\/lines$/)).toHaveLength(1));
     m.onState!({ phase: 'connected', target: local });
-    await new Promise((r) => setTimeout(r, 0));
+    await flush();
     expect(m.hits(/GET \/v1\/lines$/)).toHaveLength(1);
   });
 
@@ -1276,7 +1277,7 @@ describe('sessions', () => {
     expect(labels(items).slice(-2)).toEqual([t('tab.hide'), t('common.close')]);
     items.find((i) => i.label === t('tab.hide'))!.run!();
     expect(allTabs(workspace.layout)).toEqual(['browser:x']);
-    await new Promise((r) => setTimeout(r, 0));
+    await flush();
     expect(m.hits(/^POST \/v1\/lines/)).toEqual([]);
   });
 
@@ -1286,7 +1287,7 @@ describe('sessions', () => {
     workspace.layout = openInFocused(EMPTY_LAYOUT, 'term:tm_shell1');
     app.connected = false;
     closeTabAt(0, 'term:tm_shell1');
-    await new Promise((r) => setTimeout(r, 0));
+    await flush();
     expect(m.calls).toEqual([]);
     app.connected = true;
     expect(app.data.terms).toBe(terms);

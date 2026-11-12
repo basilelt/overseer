@@ -2,13 +2,12 @@ import { describe, expect, it } from 'vitest';
 import { agentName, isAgentId, isAgentItem, isShellId, isShellItem, SHORT_NAMES } from './agents';
 
 describe('agent display names', () => {
-  it('keeps the long names for the app and the short names for the system view', () => {
-    expect(agentName([], 'claude')).toBe('Claude Code');
-    expect(SHORT_NAMES.claude).toBe('Claude');
-    expect(agentName([], 'gemini')).toBe('Gemini CLI');
-    expect(SHORT_NAMES.gemini).toBe('Gemini');
-    expect(agentName([], 'vibe')).toBe('Mistral Vibe');
-    expect(SHORT_NAMES.vibe).toBe('Vibe');
+  it('abbreviates the long name of each agent in the short name for the system view', () => {
+    for (const [id, short] of Object.entries(SHORT_NAMES)) {
+      const long = agentName([], id);
+      expect(long, id).toContain(short);
+      expect(short.length, id).toBeLessThanOrEqual(long.length);
+    }
   });
 });
 

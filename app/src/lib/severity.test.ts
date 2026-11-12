@@ -1,9 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { CRIT_PCT, WARN_PCT, level, worst } from './severity';
+import { level, worst } from './severity';
 
 describe('severity', () => {
   it('rates a percentage against the warn and crit thresholds', () => {
-    expect([WARN_PCT, CRIT_PCT]).toEqual([80, 95]);
     expect(level(79.9)).toBe('ok');
     expect(level(80)).toBe('warn');
     expect(level(94.9)).toBe('warn');

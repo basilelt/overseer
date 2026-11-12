@@ -97,7 +97,7 @@ describe('MockDaemon', () => {
     expect(t).toMatchObject({ title: 'Ship it', status: 'pending' });
     const started = await a.startTask(t.id);
     expect(started.status).toBe('in_progress');
-    expect(started.termId).toBeTruthy();
+    expect(started.termId).toMatch(/\S/);
     const done = await a.reviewTask(t.id, 'commit');
     expect(done.status).toBe('completed');
     expect(events.map((e) => e.type)).toEqual(['task.created', 'term.created', 'task.updated', 'task.updated']);
@@ -129,7 +129,7 @@ describe('MockDaemon', () => {
     const shot = await m.uploadFile('/Users/me/shot.png');
     const notes = await m.uploadFile('/Users/me/notes.txt');
     for (const path of ['/v1/feedback/direct', '/v1/feedback/start']) {
-      await expect(send(path, [{ path: shot.path, name: shot.name }])).resolves.toBeTruthy();
+      await expect(send(path, [{ path: shot.path, name: shot.name }])).resolves.toEqual(path.endsWith('direct') ? { url: 'https://github.com/o/r/issues/1', labelled: true } : { term: expect.objectContaining({ id: expect.any(String) }) });
       await expect(send(path, [{ path: notes.path, name: notes.name }])).rejects.toMatchObject({ status: 400, message: 'notes.txt: GitHub only accepts png, jpg, jpeg, gif, webp, svg and mp4, mov, webm attachments' });
       await expect(send(path, [{ path: '/etc/passwd' }])).rejects.toMatchObject({ status: 400, message: '/etc/passwd is not an upload' });
       await expect(send(path, 'x')).rejects.toThrow('attachments must be a list');
@@ -743,7 +743,7 @@ describe('fault injection', () => {
     it('seeds a quorum root, a voted worker and reviewer tasks', async () => {
       const { a } = setup();
       const tasks = await a.tasks();
-      expect(tasks.find((t) => t.quorum)).toBeTruthy();
+      expect(tasks.some((t) => t.quorum)).toBe(true);
       expect(tasks.find((t) => t.votes)?.votes?.outcome).toBe('rejected');
       expect(tasks.filter((t) => t.origin === 'reviewer').every((t) => t.parentId === 'tk_q2')).toBe(true);
     });

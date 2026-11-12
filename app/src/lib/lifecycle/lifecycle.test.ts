@@ -81,11 +81,11 @@ describe('app relaunch', () => {
   it('only attaches when opening a line, and resumes only on an explicit request', async () => {
     await app.connect(LOCAL_TARGET);
     const dead = app.items.find((i) => i.lineId && !i.termId && app.data.lines.find((l) => l.line.id === i.lineId)?.line.state === 'held');
-    expect(dead).toBeTruthy();
+    expect(dead).toMatchObject({ lineId: expect.any(String) });
     const before = app.data.terms.length;
     await expect(app.openTerm(dead!)).rejects.toThrow(/not running/);
     expect(app.data.terms.length).toBe(before);
-    expect(await app.resumeLine(dead!)).toBeTruthy();
+    expect(await app.resumeLine(dead!)).toEqual(expect.any(String));
     expect(app.data.terms.length).toBe(before + 1);
   });
 
