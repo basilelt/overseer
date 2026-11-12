@@ -46,14 +46,14 @@ describe('command palette views', () => {
   it('still lists the local views when disconnected', async () => {
     const views = section(await rendered(false), 'Views');
     expect(views).toContain('Open browser');
-    expect(views).toContain('Open the worktrees');
+    expect(views).not.toContain('Open the worktrees');
     expect(views).not.toContain('Open Git (graph and source control)');
     expect(views).not.toContain('Review changes');
   });
 
-  it('lists the Git graph only when connected with a project, like the phone More sheet', async () => {
-    expect(section(await rendered(true), 'Views')).toContain('Open Git (graph and source control)');
-    expect(section(await rendered(true, undefined, [], [], false), 'Views')).not.toContain('Open Git (graph and source control)');
+  it.each(['Open Git (graph and source control)', 'Open the worktrees'])('lists "%s" only when connected with a project, like the phone More sheet', async (entry) => {
+    expect(section(await rendered(true), 'Views')).toContain(entry);
+    expect(section(await rendered(true, undefined, [], [], false), 'Views')).not.toContain(entry);
   });
 
   it('lists Install skills and plugins under Actions only when connected', async () => {

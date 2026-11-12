@@ -56,7 +56,7 @@ describe('registry shape', () => {
 
 describe('availability', () => {
   const needConnection = ['review', 'review-beside', 'system', 'usage', 'prs', 'disconnect', 'skills', 'organize', 'rescan-folders', 'ports'];
-  const always = ['browser', 'worktrees', 'kanban', 'agents', 'connect', 'theme', 'panel', 'settings', 'logs', 'feedback', 'tour', 'palette', 'notifications', 'sidebar', 'shortcuts'];
+  const always = ['browser', 'kanban', 'agents', 'connect', 'theme', 'panel', 'settings', 'logs', 'feedback', 'tour', 'palette', 'notifications', 'sidebar', 'shortcuts'];
 
   it.each(needConnection)('%s needs a connection', (id) => {
     connect(false);
@@ -70,14 +70,14 @@ describe('availability', () => {
     expect(command(id).available()).toBe(true);
   });
 
-  it('offers the Git graph only when connected with a project, on every surface', () => {
+  it.each(['graph', 'worktrees'])('offers %s only when connected with a project, on every surface', (id) => {
     connect(false);
     vi.spyOn(app, 'projects', 'get').mockReturnValue([{ path: '/p' }] as never);
-    expect(command('graph').available()).toBe(false);
+    expect(command(id).available()).toBe(false);
     connect(true);
-    expect(command('graph').available()).toBe(true);
+    expect(command(id).available()).toBe(true);
     vi.spyOn(app, 'projects', 'get').mockReturnValue([]);
-    expect(command('graph').available()).toBe(false);
+    expect(command(id).available()).toBe(false);
   });
 
   it.each(['ws-new', 'folder-new'])('%s needs a connection and persistent workspaces', (id) => {
