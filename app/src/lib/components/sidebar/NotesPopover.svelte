@@ -1,5 +1,6 @@
 <script lang="ts">
   import { dismiss } from '../../dismiss';
+  import { isNotesTrigger } from '../../notes-trigger';
   import StickyNote from '@lucide/svelte/icons/sticky-note';
   import Trash2 from '@lucide/svelte/icons/trash-2';
   import X from '@lucide/svelte/icons/x';
@@ -78,7 +79,7 @@
     }
   }
 
-  const trigger = (el: Element | null) => !!el?.closest?.(`[data-notes="${CSS.escape(lineId)}"]`);
+  const trigger = (el: Element | null) => isNotesTrigger(el, lineId);
 </script>
 
 {#if phone}<div class="scrim" role="presentation"></div>{/if}

@@ -40,7 +40,8 @@
   import { settle } from '../../settle';
   import { openFile } from '../../preview';
   import { bracketed, clipboardFiles, fileInfos, insertText, planDrop, planPaste, refusalMessage, uploadedPath, type Refusal } from '../../uploads';
-  const pipeline = () => import('../../upload-pipeline');
+  import { preload } from '../../idle';
+  const pipeline = preload(() => import('../../upload-pipeline'));
   const accessoryBar = () => import('../mobile/AccessoryBar.svelte');
 
   let { termId, focused }: { termId: string; focused: boolean } = $props();
@@ -174,10 +175,13 @@
     };
     const refuse = (r: Refusal) => app.notify(refusalMessage(r), 'error');
 
+    const loadPipeline = () => pipeline().catch((e) => void app.notify(message(e), 'error', undefined, 'upload'));
+
     const uploadAll = async (paths: string[]): Promise<string[]> => {
+      const lib = await loadPipeline();
+      if (!lib) return [];
       const failures: string[] = [];
-      const { uploadList } = await pipeline();
-      const done = await uploadList((p, onProgress) => app.requireClient().uploadFile(p, onProgress), paths, {
+      const done = await lib.uploadList((p, onProgress) => app.requireClient().uploadFile(p, onProgress), paths, {
         progress: (name, fraction) => app.progress(t('upload.progress', { name }), fraction),
         fail: (name, e) => void failures.push(t('upload.failed', { name, error: message(e) })),
       });
@@ -191,8 +195,8 @@
     };
 
     const pasteFiles = async (files: File[]) => {
-      const { savePasteAll } = await pipeline();
-      const saved = await savePasteAll(files, (name, bytes) => app.requireClient().savePaste(name, bytes), (name, e) => app.notify(t('upload.pasteFailed', { name, error: message(e) }), 'error'));
+      const lib = await loadPipeline();
+      const saved = lib && (await lib.savePasteAll(files, (name, bytes) => app.requireClient().savePaste(name, bytes), (name, e) => app.notify(t('upload.pasteFailed', { name, error: message(e) }), 'error')));
       if (saved) send(insertText(await uploadAll(saved)));
     };
 

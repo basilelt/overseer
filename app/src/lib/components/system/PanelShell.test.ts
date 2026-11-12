@@ -4,7 +4,7 @@ async function rendered(phone: boolean) {
   vi.resetModules();
   vi.doMock('../../mobile/phone.svelte', () => ({ phoneOrMobile: () => phone }));
   const { render } = await import('svelte/server');
-  const { default: Host } = await import('./PanelShellHost.test.svelte');
+  const { default: Host } = await import('../../../test/PanelShellHost.svelte');
   return render(Host, { props: { onclose: () => {} } }).body;
 }
 

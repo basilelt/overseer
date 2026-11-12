@@ -1,5 +1,5 @@
 <script lang="ts">
-  import PanelShell from './PanelShell.svelte';
+  import PanelShell from '../lib/components/system/PanelShell.svelte';
 
   let { onclose }: { onclose: () => void } = $props();
 </script>

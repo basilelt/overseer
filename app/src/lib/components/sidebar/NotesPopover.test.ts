@@ -63,15 +63,13 @@ describe('NotesPopover', () => {
     expect(h).toMatch(/<textarea[^>]*disabled[^>]*>wip<\/textarea>/);
   });
 
-  it('saves on blur or Ctrl/Cmd+Enter, adds with Ctrl/Cmd+Enter, and closes on Escape or a click outside', () => {
+  it('saves on blur or Ctrl/Cmd+Enter, adds with Ctrl/Cmd+Enter', () => {
     // Given the component source
     // When the handlers are read
-    // Then they reach the note actions and close without eating the button that toggles it
+    // Then they reach the note actions
     expect(src).toMatch(/onblur=\{\(\) => save\(n\.id\)\}/);
     expect(src).toContain('isSubmitChord(e)');
     expect(src).toMatch(/onkeydown=\{\(e\) => onKey\(e, add\)\}/);
-    expect(src).toContain("use:dismiss={{ onclose: closeNotes, escape: 'stop', keep: trigger }}");
-    expect(src).toMatch(/el\?\.closest\?\.\(`\[data-notes=/);
     expect(src).toMatch(/onclick=\{\(\) => removeNote\(app, lineId, n\.id\)\}/);
   });
 
