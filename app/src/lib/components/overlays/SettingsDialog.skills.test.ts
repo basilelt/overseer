@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { AgentInfo } from '../../types';
 
 const agent = (id: string, name: string, installed = true): AgentInfo => ({ id, name, installed, efforts: [], resume: false, verified: true, sessions: true, turns: true });
@@ -16,6 +16,10 @@ async function rendered(agents: AgentInfo[]) {
 }
 
 const options = (html: string, label: string) => [...(html.match(new RegExp(`<select[^>]*aria-label="${label}"[^>]*>(.*?)</select>`))?.[1] ?? '').matchAll(/>([^<]+)<\/option>/g)].map((m) => m[1]);
+
+beforeAll(async () => {
+  await Promise.all([import('svelte/server'), import('./SettingsDialog.svelte')]);
+}, 60_000);
 
 afterEach(() => vi.unstubAllGlobals());
 
