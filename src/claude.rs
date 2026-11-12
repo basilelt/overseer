@@ -485,9 +485,6 @@ mod tests {
 
     #[test]
     fn a_session_file_read_mid_rewrite_keeps_the_session_live() {
-        // Given a live claude session whose sessions file was read once
-        // When a scan reads it torn by an in-place rewrite, then the process exits
-        // Then the session stays live with its last status, and is gone once the process is
         let dir = std::env::temp_dir().join(format!("sb-claude-torn-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(dir.join("sessions")).unwrap();

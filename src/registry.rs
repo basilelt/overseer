@@ -458,7 +458,6 @@ impl Registry {
             .map_err(|e| e.to_string())
     }
 
-    /// Atomically takes a pending hold: true only for the caller that cleared it.
     pub fn claim_hold_pending(&self, id: &str) -> Result<bool, String> {
         self.conn
             .execute(
@@ -695,9 +694,6 @@ mod tests {
 
     #[test]
     fn pending_hold_and_held_at_persist_across_reopen_and_clear() {
-        // Given a line with a pending hold and a held-at time
-        // When the registry is reopened
-        // Then both marks are still there, and clearing them removes them
         let dir = std::env::temp_dir().join(format!("sb-reg-pend-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
@@ -758,9 +754,6 @@ mod tests {
 
     #[test]
     fn notes_survive_reopen_on_an_old_database() {
-        // Given a database created before the notes column existed
-        // When a note is added through the transactional update, the registry reopened, then the note removed
-        // Then the note persists across the reopen, a missing line is a 404, and removing the last note clears the column
         let dir = std::env::temp_dir().join(format!("sb-reg-notes-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
@@ -809,9 +802,6 @@ mod tests {
 
     #[test]
     fn title_override_mark_survives_reopen_and_clears() {
-        // Given a database created before the title_override column existed
-        // When a custom title is set, the registry reopened, then the title cleared
-        // Then the title persists across the reopen and reads back as none once cleared
         let dir = std::env::temp_dir().join(format!("sb-reg-title-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
@@ -844,9 +834,6 @@ mod tests {
 
     #[test]
     fn a_line_workspace_assignment_persists_until_cleared() {
-        // Given a registry holding one line
-        // When the line is assigned to a workspace, the registry reopened, then the mark cleared
-        // Then the assignment survives the reopen and the clear removes it
         let dir = std::env::temp_dir().join(format!("sb-reg-wsid-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
@@ -908,9 +895,6 @@ mod tests {
 
     #[test]
     fn an_old_workspaces_table_gains_kind_and_cwd_and_keeps_its_rows() {
-        // Given a database created before subjects, with a workspace row
-        // When the registry is opened, then two subjects with no cwd clash are inserted
-        // Then the old row is a dir without cwd and several subjects can coexist
         let dir = std::env::temp_dir().join(format!("sb-reg-subj-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();

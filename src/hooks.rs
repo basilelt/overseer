@@ -401,9 +401,6 @@ mod tests {
 
     #[test]
     fn a_lost_subagent_stop_is_cleared_by_stop_never_but_by_session_end_and_start() {
-        // Given a session whose turn ended with a subagent and a task still counted
-        // When Stop arrives, then SessionEnd, and separately SessionStart
-        // Then Stop keeps the counts and both SessionEnd and SessionStart reset them
         let ev = |e: &str| json!({"event": e, "at": 1});
         let mut h = HookState::default();
         for e in ["UserPromptSubmit", "SubagentStart", "TaskCreated", "Stop"] {

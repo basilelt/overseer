@@ -154,7 +154,6 @@ fn group_row(r: &Row) -> rusqlite::Result<Group> {
 }
 
 impl Workspace {
-    /// Where a new session of this workspace starts.
     pub fn start_dir(&self) -> &str {
         self.cwd.as_deref().unwrap_or(&self.path)
     }
@@ -592,7 +591,6 @@ pub fn ensure_submodules(ctx: &Ctx, reg: &Registry, parents: &[Workspace]) -> Re
     Ok(())
 }
 
-/// Runs submodule detection over every top-level workspace (start, rescan, every scan).
 pub fn scan_submodules(ctx: &Ctx) -> Res<()> {
     let reg = db(ctx)?;
     let top = all(&reg)?;
@@ -976,8 +974,6 @@ impl Index {
     }
 }
 
-/// The body of a term start for a workspace: validates `workspaceId` and defaults
-/// the cwd to the workspace's start directory.
 pub fn start_body(ctx: &Ctx, body: &Value) -> Res<Value> {
     let Some(id) = body["workspaceId"].as_str() else {
         return Ok(body.clone());
@@ -1317,9 +1313,6 @@ mod tests {
 
     #[test]
     fn an_explicit_assignment_beats_derived_membership_and_unknown_ids_fall_back() {
-        // Given a task-linked line and a shell term, both explicitly assigned to /home/u
-        // When membership is resolved, then again once the assigned workspace is unknown
-        // Then the assignment wins over task and path, and an unknown id falls back to them
         let mut ix = Index {
             workspaces: vec![ws("/home/u"), ws("/home/u/src/app"), ws("/home/u/src/lib")],
             tasks: vec![Task {
@@ -1352,9 +1345,6 @@ mod tests {
 
     #[test]
     fn a_subject_never_matches_by_path_but_wins_when_assigned() {
-        // Given a dir workspace holding a line's cwd and a subject sharing that cwd
-        // When membership is resolved before and after assigning the line and a term to the subject
-        // Then the subject is never derived from the cwd and the assignment beats the dir workspace
         let mut subject = ws("subject:s1");
         subject.id = "s1".into();
         subject.path = String::new();
@@ -1386,9 +1376,6 @@ mod tests {
 
     #[test]
     fn a_subject_starts_in_its_cwd_and_a_dir_in_its_path() {
-        // Given a subject with a cwd and a dir workspace
-        // When their start directory is asked
-        // Then the subject answers its cwd and the dir its path, and the subject json has no path
         let mut s = ws("");
         s.subject = true;
         s.cwd = Some("/tmp".into());
@@ -1402,9 +1389,6 @@ mod tests {
 
     #[test]
     fn unassigning_a_line_clears_its_term_before_the_mark() {
-        // Given a term assignment and a line mark to clear
-        // When both are cleared through the helper
-        // Then the term is cleared first, so a scan in between cannot re-inherit it
         let order = std::cell::RefCell::new(vec![]);
         unassign_in_order(
             || order.borrow_mut().push("term"),

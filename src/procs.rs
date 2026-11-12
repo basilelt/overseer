@@ -50,7 +50,6 @@ pub fn parse_procargs(buf: &[u8]) -> Option<Vec<String>> {
         .take(argc)
         .map(|s| String::from_utf8_lossy(s).into_owned())
         .collect();
-    // The last arg must be NUL-terminated, otherwise the buffer was cut short.
     if argc == 0 || argv.len() < argc || parts.next().is_none() {
         return None;
     }
@@ -587,11 +586,8 @@ mod tests {
     #[cfg(target_os = "macos")]
     #[test]
     fn mac_memory_is_read_in_process_with_a_cached_total() {
-        // Given a macOS host
-        // When reading memory twice, with no ps-like process spawned (none is involved)
         let (total, avail) = mac_mem().unwrap();
         let (again, _) = mac_mem().unwrap();
-        // Then the total is stable and the available memory is a sane share of it
         assert_eq!(total, again);
         assert!(avail.is_some_and(|a| a > 0 && a <= total));
     }
@@ -630,9 +626,6 @@ mod tests {
     #[cfg(target_os = "linux")]
     #[test]
     fn linux_info_reads_the_start_time_of_a_process() {
-        // Given a child process spawned now
-        // When its info is read
-        // Then its start time is within a few seconds of now
         let mut child = std::process::Command::new("sleep")
             .arg("5")
             .spawn()
@@ -701,9 +694,6 @@ mod tests {
         assert!(same_process(None, Some(5)));
     }
 
-    // Given a KERN_PROCARGS2 buffer: argc, exec path, NUL padding, args with spaces, then env
-    // When it is parsed
-    // Then exactly argc args come back, spaces and empty args intact, env excluded
     #[test]
     fn procargs_keeps_args_with_spaces() {
         let args = v(&[
@@ -725,9 +715,6 @@ mod tests {
         assert_eq!(parse_procargs(&0i32.to_ne_bytes()), None);
     }
 
-    // Given a live child process started with an argument containing spaces
-    // When the system probe reads it through info, children and list
-    // Then its argv is returned exactly as it was launched
     #[cfg(unix)]
     #[test]
     fn live_argv_keeps_spaces() {
@@ -757,7 +744,6 @@ mod tests {
 
     #[test]
     fn rejoins_json_split_on_spaces() {
-        // Given launch flags stored before argv was read whole, a JSON value cut at its spaces
         let f = v(&[
             "--mcp-config={\"c\":\"/Application",
             "Support/x\",\"e\":{\"d\":\"/Application",
@@ -765,8 +751,6 @@ mod tests {
             "--permission-mode",
             "auto",
         ]);
-        // When they are repaired
-        // Then the JSON value is whole again and the other flags are untouched
         assert_eq!(
             rejoin_split_json(&f),
             v(&[

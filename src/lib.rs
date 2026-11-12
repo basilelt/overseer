@@ -995,7 +995,6 @@ pub fn snapshot_args(path: &Path) -> HashMap<String, Vec<String>> {
     out.into_iter().map(|(k, (_, a))| (k, a)).collect()
 }
 
-// Stored flags as resume passes them back, repairing rows captured before a fix.
 pub fn resume_flags(agent: &str, flags: &[String]) -> Vec<String> {
     let flags = procs::rejoin_split_json(flags);
     let Some(a) = agents::get(agent) else {

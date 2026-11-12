@@ -1659,9 +1659,6 @@ mod tests {
 
     #[test]
     fn many_threads_opening_a_fresh_database_at_once_all_get_a_connection() {
-        // Given a state dir without a usage database, as on the first request after a start
-        // When the indexer and several api requests open it at the same moment
-        // Then none of them fails with "database is locked"
         for round in 0..20 {
             let db = tmp(&format!("race{round}")).join("usage.db");
             let gate = std::sync::Barrier::new(8);

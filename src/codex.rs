@@ -375,9 +375,6 @@ mod tests {
 
     #[test]
     fn same_command_in_two_terminals_is_two_sessions() {
-        // Given `codex resume --last` started from two different shells
-        // When wrappers are folded
-        // Then both processes are kept, neither being the other's parent
         let argv = |s: &str| s.split(' ').map(str::to_string).collect::<Vec<_>>();
         let procs = vec![
             (10, argv("codex resume --last")),
@@ -389,9 +386,6 @@ mod tests {
 
     #[test]
     fn only_conversations_are_sessions() {
-        // Given codex command lines, interactive, one-shot and tooling
-        // When each is classified
-        // Then conversations are sessions and the Desktop backend, servers and tooling are not
         for cmd in [
             "codex",
             "codex --model o3",

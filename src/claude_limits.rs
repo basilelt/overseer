@@ -250,10 +250,7 @@ mod tests {
 
     #[test]
     fn keychain_is_only_read_for_the_default_claude_dir() {
-        // Given the default Claude dir and a custom one
         let home = crate::home();
-        // When asking whether the shared keychain item applies
-        // Then only the default dir may use it, so tests and custom dirs never read the host login
         assert!(keychain_applies(&home.join(".claude")));
         assert!(!keychain_applies(Path::new("/tmp/custom-claude")));
     }

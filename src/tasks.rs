@@ -1548,9 +1548,6 @@ mod tests {
 
     #[test]
     fn a_worktree_of_a_submodule_maps_to_the_submodule_checkout() {
-        // Given a repo with a real submodule and a git worktree made from that submodule
-        // When the main root of the worktree is asked
-        // Then it is the submodule checkout inside the repo, not the worktree itself
         let base = std::env::temp_dir().join(format!(
             "sb-submod-{}-{}",
             std::process::id(),

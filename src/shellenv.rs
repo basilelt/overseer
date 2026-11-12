@@ -412,9 +412,6 @@ mod tests {
         let _ = std::fs::remove_dir_all(&home);
     }
 
-    // Given a daemon that started before an installer created ~/.local/bin and ~/.bun/bin
-    // When a rescan looks for install dirs again
-    // Then only the dirs created since start and missing from the PATH are added
     #[test]
     fn new_dirs_are_only_those_created_after_start() {
         let home = std::env::temp_dir().join(format!(
@@ -469,9 +466,6 @@ mod session_tests {
         assert!(!session_bound("TERM", "screen"));
     }
 
-    // Given a daemon started from a Claude Code or Codex session
-    // When its inherited per-session agent markers are checked
-    // Then every one of them is session-bound and dropped from children
     #[test]
     fn drops_inherited_agent_session_markers() {
         for k in [
@@ -498,9 +492,6 @@ mod session_tests {
         }
     }
 
-    // Given the user's own Claude Code, Codex and Anthropic configuration
-    // When those variables are checked
-    // Then none of them is treated as session-bound
     #[test]
     fn keeps_agent_user_configuration() {
         for k in [

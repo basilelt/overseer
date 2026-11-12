@@ -1686,7 +1686,6 @@ pub fn page(agent: &str, path: &Path, q: Query) -> Option<Value> {
     if q.live.is_some() {
         chat.live = q.live;
     }
-    // Picks up only what was appended during the cold parse.
     let reset = refresh(chat, path);
     note_running(path, chat);
     let reset = reset?;
@@ -2732,9 +2731,6 @@ mod tests {
         std::fs::remove_dir_all(&d).unwrap();
     }
 
-    // Given a cold transcript whose read blocks (a FIFO with no writer yet)
-    // When another chat is paged meanwhile
-    // Then it is served without waiting for the slow cold parse
     #[cfg(unix)]
     #[test]
     fn cold_parse_does_not_block_other_chats() {
@@ -2799,9 +2795,6 @@ mod tests {
         assert!(!timed_out, "timed out waiting for {what}");
     }
 
-    // Given a cold transcript, opened by two callers while its parse is still running
-    // When the second caller arrives during the first one's parse
-    // Then it waits for that parse instead of starting its own, and the watcher stays quiet
     #[test]
     fn concurrent_cold_pages_parse_once() {
         let d = tmp("twice");

@@ -1223,7 +1223,6 @@ pub fn get(id: &str) -> Option<Arc<Term>> {
     lock(&TERMS).get(id).cloned()
 }
 
-/// The workspace a term is assigned to, read without cloning its whole info.
 pub fn workspace_of(id: &str) -> Option<String> {
     get(id)?.workspace_id()
 }
