@@ -54,7 +54,6 @@ export function api(c: DaemonClient) {
     commands: (id: string) => c.request<{ commands: CustomCommand[] }>('GET', `/v1/lines/${enc(id)}/commands`),
     terms: () => c.request<Term[]>('GET', '/v1/terms'),
     createTerm: (t: NewTerm) => c.request<Term>('POST', '/v1/terms', t),
-    resizeTerm: (id: string, cols: number, rows: number) => c.request('POST', `/v1/terms/${enc(id)}/resize`, { cols, rows }),
     killTerm: (id: string) => c.request('POST', `/v1/terms/${enc(id)}/kill`, { confirm: true }),
     deleteTerm: (id: string) => c.request('DELETE', `/v1/terms/${enc(id)}`),
     tasks: () => c.request<Task[]>('GET', '/v1/tasks'),
@@ -63,8 +62,8 @@ export function api(c: DaemonClient) {
     deleteTask: (id: string) => c.request('DELETE', `/v1/tasks/${enc(id)}`),
     startTask: (id: string, opts: { inPlace?: boolean } = {}) => c.request<Task>('POST', `/v1/tasks/${enc(id)}/start`, opts.inPlace ? { inPlace: true } : undefined),
     reviewTask: async (id: string, action: 'approve' | 'reject' | 'commit', message?: string, pr: { merge?: boolean; approvePr?: boolean } = {}): Promise<Task> => {
-      const r = await c.request<{ task: Task; commit?: string } | Task>('POST', `/v1/tasks/${enc(id)}/review`, { action, message, ...pr });
-      return 'task' in r ? r.task : r;
+      const r = await c.request<{ task: Task; commit?: string }>('POST', `/v1/tasks/${enc(id)}/review`, { action, message, ...pr });
+      return r.task;
     },
     taskMessages: (id: string) => c.request<TaskMessage[]>('GET', `/v1/tasks/${enc(id)}/messages`),
     sendTaskMessage: (id: string, body: string) => c.request<TaskMessage>('POST', `/v1/tasks/${enc(id)}/messages`, { body }),

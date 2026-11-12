@@ -72,6 +72,18 @@ const REPOS: Record<string, { path: string; repo: string }> = {
 };
 const repoPath = (name: string) => REPOS[name].path;
 
+export const DAEMON_ERRORS = {
+  noTerm: { source: 'src/daemon.rs, src/workspaces.rs', text: (id: string) => `no term ${id}` },
+  termStillRunning: { source: 'src/daemon.rs', text: 'term is still running; kill it first' },
+  termExited: { source: 'src/daemon.rs', text: 'term has exited' },
+  killNeedsConfirm: { source: 'src/daemon.rs, src/ports.rs', text: 'kill needs {"confirm":true}' },
+  termSize: { source: 'src/term.rs', text: 'cols and rows must be integers in 1..=1000' },
+  termSizeRequired: { source: 'src/daemon.rs', text: 'cols and rows required' },
+  shellInQuorum: { source: 'src/quorum.rs', text: 'shell cannot join a quorum' },
+  quorumOrchestrator: { source: 'src/quorum.rs', text: 'the quorum orchestrator must be claude or codex' },
+  sessionTaskStatus: { source: 'src/tasks.rs', text: 'a session task follows its session: status must be one of in_progress, in_testing, merged, completed' },
+} as const;
+
 const ALL_EFFORTS = ['low', 'medium', 'high', 'max'] as const;
 const AGY_EFFORTS: Effort[] = ['low', 'medium', 'high', 'xhigh', 'max'];
 
@@ -876,16 +888,20 @@ export class MockDaemon implements DaemonClient {
     if (method === 'GET' && path === '/v1/env') return { path: '/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin', source: 'login-shell' };
     if (method === 'POST' && path === '/v1/uploads') return this.storeUpload(new URLSearchParams(qs).get('name') ?? '', 0);
     if (method === 'POST' && path === '/v1/terms') return this.createTerm(body);
-    if (method === 'POST' && path === '/v1/feedback/start') this.feedbackAttachments(body.attachments);
-    if (method === 'POST' && path === '/v1/feedback/start') return { term: this.createTerm({ agent: body.agent, cwd: body.cwd ?? '/tmp/feedback', title: 'Feedback' }) };
+    if (method === 'POST' && path === '/v1/feedback/start') {
+      this.feedbackAttachments(body.attachments);
+      return { term: this.createTerm({ agent: body.agent, cwd: body.cwd ?? '/tmp/feedback', title: 'Feedback' }) };
+    }
     if (method === 'GET' && path === '/v1/github/review-requests') return mockReviewRequests();
     if ((r = m(/^\/v1\/github\/review-requests\/([^/]+)\/([^/]+)\/(\d+)\/review$/)) && method === 'POST') {
       const project = this.projects[0]?.path ?? '/tmp/review';
       const term = this.createTerm({ agent: body.agent, cwd: project, worktree: { branch: `review/pr-${r[3]}` }, title: `PR #${r[3]} ${r[1]}/${r[2]}` });
       return { term, worktree: term.cwd, project, branch: `review/pr-${r[3]}` };
     }
-    if (method === 'POST' && path === '/v1/feedback/direct') this.feedbackAttachments(body.attachments);
-    if (method === 'POST' && path === '/v1/feedback/direct') return { url: `https://github.com/${body.repo}/issues/1`, labelled: true };
+    if (method === 'POST' && path === '/v1/feedback/direct') {
+      this.feedbackAttachments(body.attachments);
+      return { url: `https://github.com/${body.repo}/issues/1`, labelled: true };
+    }
     if (method === 'POST' && path === '/v1/tasks') return this.createTask(body);
     if ((r = m(/^\/v1\/lines\/([^/]+)\/chat\/agents\/([^/]+)$/))) return this.agentChat(decodeURIComponent(r[1]), decodeURIComponent(r[2]), new URLSearchParams(qs));
     if ((r = m(/^\/v1\/lines\/([^/]+)\/(chat|screen|keys|commands)$/))) return this.chatRoute(decodeURIComponent(r[1]), r[2], new URLSearchParams(qs), body);
@@ -1323,7 +1339,7 @@ export class MockDaemon implements DaemonClient {
       return { lineId: id, workspaceId: wid };
     }
     const t = this.terms.find((x) => x.id === id);
-    if (!t) throw new DaemonError(404, `unknown term ${id}`);
+    if (!t) throw new DaemonError(404, DAEMON_ERRORS.noTerm.text(id));
     if (wid !== null && !this.workspaces.some((w) => w.id === wid)) throw new DaemonError(404, `no workspace ${wid}`);
     if (wid) t.workspaceId = wid;
     else delete t.workspaceId;
@@ -1344,16 +1360,20 @@ export class MockDaemon implements DaemonClient {
 
   private deleteTerm(id: string): unknown {
     const t = this.terms.find((x) => x.id === id);
-    if (!t) throw new DaemonError(404, `unknown term ${id}`);
-    if (!t.exited) throw new DaemonError(409, 'term is still running; kill it first');
+    if (!t) throw new DaemonError(404, DAEMON_ERRORS.noTerm.text(id));
+    if (!t.exited) throw new DaemonError(409, DAEMON_ERRORS.termStillRunning.text);
     this.terms = this.terms.filter((x) => x.id !== id);
     return { deleted: id };
   }
 
   private termAction(id: string, action: string, body: any): unknown {
     const t = this.terms.find((x) => x.id === id);
-    if (!t) throw new DaemonError(404, `unknown term ${id}`);
+    if (!t) throw new DaemonError(404, DAEMON_ERRORS.noTerm.text(id));
     if (action === 'resize') {
+      const given = [body?.cols, body?.rows];
+      if (given.every((v) => v == null)) throw new DaemonError(400, DAEMON_ERRORS.termSizeRequired.text);
+      if (!given.every((v) => Number.isInteger(v) && v >= 1 && v <= 1000)) throw new DaemonError(400, DAEMON_ERRORS.termSize.text);
+      if (t.exited) throw new DaemonError(409, DAEMON_ERRORS.termExited.text);
       Object.assign(t, { cols: body.cols, rows: body.rows });
       this.emit('term.updated', { term: t });
     }
@@ -1363,8 +1383,8 @@ export class MockDaemon implements DaemonClient {
       this.emit('term.updated', { term: t });
     }
     if (action === 'kill') {
-      if (!body?.confirm) throw new DaemonError(400, 'confirm required');
-      if (t.exited) throw new DaemonError(409, 'term already exited');
+      if (body?.confirm !== true) throw new DaemonError(400, DAEMON_ERRORS.killNeedsConfirm.text);
+      if (t.exited) throw new DaemonError(409, DAEMON_ERRORS.termExited.text);
       t.exited = true;
       t.exitCode = 1;
       this.emit('term.exited', { term: t });
