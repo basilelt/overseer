@@ -12,7 +12,7 @@ beforeAll(async () => {
   const fsModule = 'node:fs/promises';
   const { readFile } = (await import(/* @vite-ignore */ fsModule)) as { readFile(path: URL): Promise<Uint8Array<ArrayBuffer>> };
   wasm = await WebAssembly.compile(await readFile(new URL('../../node_modules/ghostty-web/ghostty-vt.wasm', import.meta.url)));
-  const url = `data:text/javascript;base64,${Buffer.from(patchGhostty(source)).toString('base64')}`;
+  const url = `data:text/javascript,${encodeURIComponent(patchGhostty(source))}`;
   mod = (await import(/* @vite-ignore */ url)) as Mod;
 });
 
