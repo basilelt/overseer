@@ -375,6 +375,90 @@ fn line_title_override_is_set_shared_and_cleared() {
 }
 
 #[test]
+fn line_notes_are_added_edited_removed_and_survive_a_restart() {
+    // Given a daemon with one local session line and a client listening to events
+    // When a client adds, edits and deletes sticky notes the way the app sends them, then the daemon restarts
+    // Then each change is served and announced, bad input gets the daemon's errors, and notes outlive the restart
+    let fx = Fx::new("notes", 1);
+    let d = fx.daemon(false);
+    let (tx, rx) = mpsc::channel();
+    sse_client(&fx.sock, tx);
+    let lines = js(&fx.req("GET", "/v1/lines", "").1);
+    let id = lines[0]["line"]["id"].as_str().unwrap().to_string();
+    assert_eq!(lines[0]["local"]["notes"], serde_json::json!([]));
+    let path = format!("/v1/lines/{}/notes", urlenc(&id));
+    let (code, v) = fx.req("POST", &path, "{}");
+    assert_eq!(
+        (code, js(&v)["error"].clone()),
+        (400, "text (string) required".into())
+    );
+    let (code, v) = fx.req("POST", &path, r#"{"text":"  \n "}"#);
+    assert_eq!(
+        (code, js(&v)["error"].clone()),
+        (400, "note text required".into())
+    );
+    assert_eq!(
+        fx.req("POST", "/v1/lines/nope/notes", r#"{"text":"x"}"#).0,
+        404
+    );
+    let (code, v) = fx.req(
+        "POST",
+        &path,
+        r#"{"text":"  check the flaky test\nbefore merge  "}"#,
+    );
+    assert_eq!(code, 200, "{v}");
+    let v = js(&v);
+    assert_eq!(v["note"]["text"], "check the flaky test\nbefore merge");
+    let note = v["note"]["id"].as_str().unwrap().to_string();
+    let end = Instant::now() + Duration::from_secs(10);
+    while rx.recv_timeout(Duration::from_millis(200)).ok().as_deref() != Some("line.updated") {
+        assert!(Instant::now() < end, "no line.updated after adding a note");
+    }
+    let notes = |fx: &Fx| {
+        js(&fx.req("GET", "/v1/lines", "").1)
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|l| l["line"]["id"] == id.as_str())
+            .unwrap()["local"]["notes"]
+            .clone()
+    };
+    wait(|| notes(&fx)[0]["id"] == note.as_str());
+    let one = format!("{path}/{}", urlenc(&note));
+    let (code, v) = fx.req("PUT", &one, r#"{"text":"ask about CI"}"#);
+    assert_eq!(
+        (code, js(&v)["note"]["text"].clone()),
+        (200, "ask about CI".into())
+    );
+    assert_eq!(
+        fx.req("PUT", &format!("{path}/nope"), r#"{"text":"x"}"#).0,
+        404
+    );
+    assert_eq!(fx.req("PUT", &one, r#"{"text":""}"#).0, 400);
+    fx.req("POST", &path, r#"{"text":"second"}"#);
+    drop(d);
+    let d = fx.daemon(false);
+    wait(|| notes(&fx).as_array().is_some_and(|a| a.len() == 2));
+    assert_eq!(notes(&fx)[0]["text"], "ask about CI");
+    let (code, v) = fx.req("DELETE", &one, "");
+    assert_eq!(code, 200, "{v}");
+    assert_eq!(js(&v)["notes"].as_array().unwrap().len(), 1);
+    assert_eq!(fx.req("DELETE", &one, "").0, 404);
+    drop(d);
+}
+
+fn urlenc(s: &str) -> String {
+    s.bytes()
+        .map(|b| match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                (b as char).to_string()
+            }
+            _ => format!("%{b:02X}"),
+        })
+        .collect()
+}
+
+#[test]
 fn http_refuses_non_loopback() {
     let fx = Fx::new("nolo", 0);
     let mut c = Command::new(env!("CARGO_BIN_EXE_overseer"));

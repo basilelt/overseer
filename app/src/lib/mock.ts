@@ -11,6 +11,7 @@ import { mockSystem } from './system/mock';
 import { resolveProfile, TASK_TYPES } from './profiles';
 import { fileKind } from './files';
 import { cleanTitle } from './titles';
+import { cleanNote, NOTES_MAX, type NotesReply } from './notes';
 import { isDone } from './kanban-core';
 import { attachProblem, IMAGE_EXTS, VIDEO_EXTS } from './feedback';
 import { AUTO_APPROVE_ARGS } from './agents';
@@ -40,6 +41,7 @@ import type {
   HostTarget,
   LocalLine,
   NewTask,
+  Note,
   TaskMessage,
   NewTerm,
   Port,
@@ -180,6 +182,10 @@ const SEEDS: Seed[] = [
   { id: 'ln_12', agent: 'claude', repo: 'webshop', branch: 'spike/graphql', title: 'GraphQL spike', goal: 'Evaluate async-graphql for the BFF', status: 'Process lost after reboot', state: 'held', ago: 1440 },
 ];
 
+const SEED_NOTES: Record<string, string[]> = {
+  ln_02: ['Ask Sam whether the backoff cap should be 30 s or 60 s', 'Do not merge before the stock team deploy on Thursday'],
+};
+
 function iso(minsAgo: number, now = Date.now()) {
   return new Date(now - minsAgo * MIN).toISOString();
 }
@@ -208,6 +214,7 @@ function seedLines(now: number): LocalLine[] {
       title: s.title,
       heldReason: s.state === 'held' ? (s.ago > 600 ? 'lost' : 'user') : undefined,
       ...(NESTED_LINES[s.id] ? { workspaceId: NESTED_LINES[s.id] } : {}),
+      ...(SEED_NOTES[s.id] ? { notes: SEED_NOTES[s.id].map((text, n) => ({ id: `note_${s.id}_${n}`, text, createdAt: iso(s.ago + 30, now), updatedAt: iso(s.ago + 30, now) })) } : {}),
     },
   }));
 }
@@ -884,6 +891,7 @@ export class MockDaemon implements DaemonClient {
     if ((r = m(/^\/v1\/lines\/([^/]+)\/(chat|screen|keys|commands)$/))) return this.chatRoute(decodeURIComponent(r[1]), r[2], new URLSearchParams(qs), body);
     if (method === 'PUT' && (r = m(/^\/v1\/(lines|terms)\/([^/]+)\/workspace$/))) return this.assignWorkspace(r[1], decodeURIComponent(r[2]), body);
     if (method === 'DELETE' && (r = m(/^\/v1\/lines\/([^/]+)\/hold$/))) return this.cancelHold(decodeURIComponent(r[1]));
+    if ((r = m(/^\/v1\/lines\/([^/]+)\/notes(?:\/([^/]+))?$/))) return this.notesRoute(method, decodeURIComponent(r[1]), r[2] && decodeURIComponent(r[2]), body);
     if ((r = m(/^\/v1\/lines\/([^/]+)\/(activity|diff|hold|close|resume|pin|title)$/))) return this.lineAction(decodeURIComponent(r[1]), r[2], body, !fullPath.includes('dryRun=false'), new URLSearchParams(qs).get('afterTurn') === 'true', fullPath.includes('force=true'));
     if ((r = m(/^\/v1\/(workspaces|folders|groups)(?:\/([^/]+))?$/))) return this.wsRoute(method, r[1] as WsKind, r[2] && decodeURIComponent(r[2]), body);
     if (method === 'POST' && path === '/v1/broadcast') return this.broadcast(body);
@@ -1037,6 +1045,34 @@ export class MockDaemon implements DaemonClient {
       notPinned: check(!l.local?.pinned, 'line is pinned'),
       notNeedsInput: check(!l.local?.needsInput, 'agent is waiting for you'),
     };
+  }
+
+  private notesRoute(method: string, lineId: string, noteId: string | undefined, body: any): NotesReply {
+    if (!((method === 'POST' && !noteId) || ((method === 'PUT' || method === 'DELETE') && noteId))) throw new DaemonError(404, 'not found');
+    let text: string | null = null;
+    if (method !== 'DELETE') {
+      if (typeof body?.text !== 'string') throw new DaemonError(400, 'text (string) required');
+      text = cleanNote(body.text);
+      if (!text) throw new DaemonError(400, 'note text required');
+    }
+    const l = this.lines.find((x) => x.line.id === lineId || x.line.agentSessionId === lineId);
+    if (!l) throw new DaemonError(404, `no line matches '${lineId}'`);
+    const notes = [...(l.local?.notes ?? [])];
+    const at = new Date().toISOString().replace(/\.\d+Z$/, 'Z');
+    let note: Note | null = null;
+    const i = noteId ? notes.findIndex((n) => n.id === noteId) : -1;
+    if (noteId && i < 0) throw new DaemonError(404, `no note ${noteId}`);
+    if (method === 'POST') {
+      if (notes.length >= NOTES_MAX) throw new DaemonError(409, `at most ${NOTES_MAX} notes per session`);
+      note = { id: `note-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`, text: text!, createdAt: at, updatedAt: at };
+      notes.push(note);
+    } else if (method === 'PUT') {
+      note = notes[i].text === text ? notes[i] : { ...notes[i], text: text!, updatedAt: at };
+      notes[i] = note;
+    } else notes.splice(i, 1);
+    l.local = { ...l.local, notes };
+    this.emit('line.updated', { line: l.line, local: { notes } });
+    return { lineId: l.line.id, note, notes: structuredClone(notes) };
   }
 
   private holdNow(l: LocalLine) {

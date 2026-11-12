@@ -23,6 +23,9 @@
   --st-done: #71717a;
   --st-held: #a1a1aa;
   --st-paused: #d97706;
+  --note-ink: #b45309;
+  --note-bg: #fef9c3;
+  --note-border: #fde68a;
   --state-running: #3fb950;
   --state-attention: #f0883e;
   --state-open: #58a6ff;
@@ -101,6 +104,9 @@
   --st-done: #71717a;
   --st-held: #52525b;
   --st-paused: #f59e0b;
+  --note-ink: #fbbf24;
+  --note-bg: color-mix(in srgb, var(--note-ink) 12%, var(--surface));
+  --note-border: color-mix(in srgb, var(--note-ink) 30%, var(--surface));
   --overlay: rgba(0, 0, 0, 0.5);
   --shadow: 0 12px 36px rgba(0, 0, 0, 0.5), 0 0 0 1px var(--border-strong);
   --diff-add-bg: rgba(34, 197, 94, 0.1);

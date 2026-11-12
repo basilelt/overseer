@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { GROUP_ORDER, groupItems, lineGroup, sidebarItems } from './grouping';
+import { GROUP_ORDER, groupItems, lineGroup, sidebarItems, stableItems } from './grouping';
 import { cleanTitle, titleEdit } from './titles';
 import type { LocalLine, Task, Term } from './types';
 
@@ -157,5 +157,30 @@ describe('custom titles', () => {
     expect(titleEdit(renamed, 'Mine')).toBeUndefined();
     expect(titleEdit(renamed, '  ')).toBeNull();
     expect(titleEdit(renamed, 'Other')).toBe('Other');
+  });
+});
+
+describe('sticky notes on sidebar items', () => {
+  const note = (id: string) => ({ id, text: id, createdAt: '', updatedAt: '' });
+
+  it('counts the notes of a session and leaves sessions without notes unmarked', () => {
+    // Given a session with two notes and one without
+    // When the sidebar items are built
+    // Then only the first carries a count
+    const [a, b] = sidebarItems([line('a', {}, { pid: 1, notes: [note('1'), note('2')] }), line('b', {}, { pid: 1, notes: [] })], [], []);
+    expect(a.notes).toBe(2);
+    expect(b.notes).toBeUndefined();
+  });
+
+  it('replaces a kept item when its note count changes, so the icon updates', () => {
+    // Given items built before and after a note was added
+    // When they are stabilised
+    // Then the item with a new count is a new object and the list changes
+    const before = sidebarItems([line('a', {}, { pid: 1 })], [], []);
+    const after = sidebarItems([line('a', {}, { pid: 1, notes: [note('1')] })], [], []);
+    const out = stableItems(before, after);
+    expect(out).not.toBe(before);
+    expect(out[0].notes).toBe(1);
+    expect(stableItems(after, sidebarItems([line('a', {}, { pid: 1, notes: [note('9')] })], [], []))).toBe(after);
   });
 });

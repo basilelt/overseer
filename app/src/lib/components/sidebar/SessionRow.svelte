@@ -1,5 +1,7 @@
 <script lang="ts">
   import SquareTerminal from '@lucide/svelte/icons/square-terminal';
+  import StickyNote from '@lucide/svelte/icons/sticky-note';
+  import { notesUi, toggleNotes } from '../../notes.svelte';
   import type { SidebarItem } from '../../grouping';
   import { t } from '../../i18n.svelte';
   import { age } from '../../time';
@@ -34,7 +36,11 @@
 
   const label = $derived(t(`session.state.${item.state}`));
   const shell = $derived(item.kind === 'shell');
+  const notes = $derived(item.notes ?? 0);
+  const notesLabel = $derived(notes ? t(notes === 1 ? 'notes.countOne' : 'notes.count', { n: notes }) : t('notes.add'));
 </script>
+
+<div class="wrap" class:noted={notes > 0} class:agent={!!item.lineId}>
 
 <button
   class="row"
@@ -54,10 +60,69 @@
   {#if item.status}<span class="action">{item.status}</span>{/if}
   <span class="age">{age(item.at, now)}</span>
   {#if host}<span class="host" title={connLabel(host)}><span class="hname">{host.name}</span><span class="hst">{connLabel(host)}</span></span>{/if}
+  {#if item.lineId}<span class="nslot" aria-hidden="true"></span>{/if}
   <span class="chev" aria-hidden="true">›</span>
 </button>
+{#if item.lineId}
+  <button
+    class="note"
+    type="button"
+    data-notes={item.lineId}
+    data-tour={notes ? 'session-notes' : undefined}
+    title={notesLabel}
+    aria-label={notesLabel}
+    aria-expanded={notesUi.lineId === item.lineId}
+    onpointerdown={(e) => e.stopPropagation()}
+    onclick={(e) => toggleNotes(item.lineId!, e.currentTarget.getBoundingClientRect())}><StickyNote size={13} /></button
+  >
+{/if}
+</div>
 
 <style>
+  .wrap {
+    position: relative;
+  }
+  .note {
+    position: absolute;
+    top: 50%;
+    right: 20px;
+    transform: translateY(-50%);
+    display: inline-grid;
+    place-items: center;
+    width: 20px;
+    height: 20px;
+    padding: 0;
+    border: 0;
+    border-radius: 4px;
+    background: none;
+    color: var(--text-2);
+    opacity: 0;
+  }
+  .note:hover {
+    background: var(--surface-hover);
+    color: var(--text);
+  }
+  .wrap:hover .note,
+  .wrap:focus-within .note,
+  .note[aria-expanded='true'] {
+    opacity: 1;
+  }
+  .wrap.noted .note {
+    opacity: 1;
+    color: var(--note-ink);
+  }
+  .wrap.agent:not(.noted):hover .age,
+  .wrap.agent:not(.noted):focus-within .age {
+    visibility: hidden;
+  }
+  .nslot {
+    display: none;
+    flex: none;
+    width: 14px;
+  }
+  .wrap.noted .nslot {
+    display: block;
+  }
   .row {
     display: flex;
     align-items: center;
@@ -195,6 +260,30 @@
     width: calc(100% - 12px);
     padding: 0 10px;
     border-radius: 10px;
+  }
+  @media (hover: none) {
+    .wrap.agent .note {
+      opacity: 1;
+    }
+    .wrap.agent .nslot {
+      display: block;
+    }
+    .wrap.agent:not(.noted) .age {
+      visibility: visible;
+    }
+  }
+  :global(:root.phone) .note {
+    right: 28px;
+    width: 32px;
+    height: 32px;
+    opacity: 1;
+  }
+  :global(:root.phone) .wrap.agent .age {
+    visibility: visible;
+  }
+  :global(:root.phone) .wrap.agent .nslot {
+    display: block;
+    width: 26px;
   }
   :global(:root.phone) .row.shell {
     height: 40px;

@@ -24,6 +24,7 @@ pub struct Marks {
     pub workspace_id: Option<String>,
     pub hold_pending: bool,
     pub held_at: Option<String>,
+    pub notes: Vec<serde_json::Value>,
 }
 
 #[derive(Default, Clone, Debug, PartialEq)]
@@ -187,6 +188,7 @@ const ADDED_COLUMNS: &[(&str, &str, &str)] = &[
     ("workspaces", "parent_id", "TEXT"),
     ("lines", "hold_pending", "INTEGER NOT NULL DEFAULT 0"),
     ("lines", "held_at", "TEXT"),
+    ("lines", "notes", "TEXT"),
     ("tasks", "rank", "REAL"),
     ("tasks", "origin", "TEXT"),
     ("tasks", "manual_status", "TEXT"),
@@ -273,7 +275,7 @@ impl Registry {
         self.conn
             .query_row(
                 "SELECT id, ticket_override, pinned, held_by_user, closed_at IS NOT NULL, launch_args,
-                   owner_override, origin, env_ref, title_override, workspace_id, hold_pending, held_at
+                   owner_override, origin, env_ref, title_override, workspace_id, hold_pending, held_at, notes
                  FROM lines WHERE agent = ?1 AND session_id = ?2",
                 params![agent, session_id],
                 |r| {
@@ -293,6 +295,7 @@ impl Registry {
                         workspace_id: r.get(10)?,
                         hold_pending: r.get(11)?,
                         held_at: r.get(12)?,
+                        notes: crate::notes::parse(r.get::<_, Option<String>>(13)?.as_deref()),
                     })
                 },
             )
@@ -679,6 +682,57 @@ mod tests {
         let t = crate::tasks::get(&reg, "t1").unwrap();
         assert!(t.depends_on.is_empty() && t.inherit_branch.is_none());
         assert_eq!(t.to_json("st")["dependsOn"], serde_json::json!([]));
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn notes_survive_reopen_on_an_old_database() {
+        // Given a database created before the notes column existed
+        // When a note is added through the transactional update, the registry reopened, then the note removed
+        // Then the note persists across the reopen, a missing line is a 404, and removing the last note clears the column
+        let dir = std::env::temp_dir().join(format!("sb-reg-notes-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let old = Connection::open(dir.join("overseer.db")).unwrap();
+        old.execute_batch(
+            "CREATE TABLE lines (id TEXT PRIMARY KEY, agent TEXT NOT NULL, session_id TEXT NOT NULL,
+               owner TEXT NOT NULL, station_id TEXT NOT NULL, repo TEXT NOT NULL, branch TEXT NOT NULL,
+               worktree_path TEXT NOT NULL, cwd TEXT NOT NULL, ticket_key TEXT, state TEXT NOT NULL,
+               held_reason TEXT, last_activity_at TEXT NOT NULL, launch_args TEXT,
+               first_seen_at TEXT NOT NULL, updated_at TEXT NOT NULL, UNIQUE (agent, session_id));
+             INSERT INTO lines VALUES ('st-1', 'claude', 's1', 'o', 'st', 'r', 'b', '/w', '/w', NULL,
+               'idle', NULL, 't', NULL, 't', 't');",
+        )
+        .unwrap();
+        drop(old);
+        let mut reg = Registry::open(&dir).unwrap();
+        assert!(reg.marks("claude", "s1").unwrap().notes.is_empty());
+        let (n, _) = crate::notes::update(&mut reg, "st-1", |v| {
+            crate::notes::add(v, "ask about CI", 0)
+        })
+        .unwrap();
+        assert_eq!(
+            crate::notes::update(&mut reg, "nope", |_| Ok(()))
+                .unwrap_err()
+                .0,
+            404
+        );
+        drop(reg);
+        let mut reg = Registry::open(&dir).unwrap();
+        let notes = reg.marks("claude", "s1").unwrap().notes;
+        assert_eq!(
+            (notes.len(), notes[0]["text"].as_str()),
+            (1, Some("ask about CI"))
+        );
+        let id = n["id"].as_str().unwrap();
+        crate::notes::update(&mut reg, "st-1", |v| crate::notes::remove(v, id)).unwrap();
+        let raw: Option<String> = reg
+            .conn
+            .query_row("SELECT notes FROM lines WHERE id = 'st-1'", [], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        assert_eq!(raw, None);
         std::fs::remove_dir_all(dir).unwrap();
     }
 

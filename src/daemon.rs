@@ -193,6 +193,19 @@ pub fn dry_run(r: &Request) -> bool {
     q(r, "dryRun") != Some("false")
 }
 
+fn notes_reply(r: Result<(crate::Line, Value, Vec<Value>), crate::notes::Err>) -> (u16, Value) {
+    match r {
+        Ok((l, note, notes)) => {
+            crate::board::publish(
+                "line.updated",
+                json!({"line": l.to_json()["line"], "local": {"notes": notes}}),
+            );
+            (200, json!({"lineId": l.id, "note": note, "notes": notes}))
+        }
+        Err((code, e)) => err(code, e),
+    }
+}
+
 fn err(code: u16, msg: impl Into<String>) -> (u16, Value) {
     (code, json!({ "error": msg.into() }))
 }
@@ -1041,6 +1054,35 @@ pub fn handle(ctx: &Ctx, r: &Request) -> (u16, Value) {
                 }
                 Err((code, e)) => err(code, e),
             }
+        }
+        ("POST", ["v1", "lines", id, "notes"]) => {
+            let Some(text) = body["text"].as_str() else {
+                return err(400, "text (string) required");
+            };
+            let Some(text) = crate::notes::clean_note(Some(text)) else {
+                return err(400, "note text required");
+            };
+            let now = now_ms();
+            notes_reply(actions::notes(ctx, id, |n| {
+                crate::notes::add(n, &text, now)
+            }))
+        }
+        ("PUT", ["v1", "lines", id, "notes", note]) => {
+            let Some(text) = body["text"].as_str() else {
+                return err(400, "text (string) required");
+            };
+            let Some(text) = crate::notes::clean_note(Some(text)) else {
+                return err(400, "note text required");
+            };
+            let now = now_ms();
+            notes_reply(actions::notes(ctx, id, |n| {
+                crate::notes::edit(n, note, &text, now)
+            }))
+        }
+        ("DELETE", ["v1", "lines", id, "notes", note]) => {
+            notes_reply(actions::notes(ctx, id, |n| {
+                crate::notes::remove(n, note).map(|_| Value::Null)
+            }))
         }
         ("POST", ["v1", "hook-events"]) => {
             let (Some(agent), Some(event)) = (body["agent"].as_str(), body["event"].as_str())

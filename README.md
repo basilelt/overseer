@@ -176,6 +176,8 @@ on a TCP port on the server.
 - **Side tasks or autonomous agents**: when an agent finds a bug outside its task while working,
   merging or reviewing, it can file it as a new task on the board or fix it itself. Settings →
   Defaults → Agents file what they find as tasks picks which.
+- **Sticky notes on sessions**: click the note icon of a session in the sidebar to leave yourself
+  notes on it, like comments. They are never sent to the agent and stay with the session.
 - **Usage and system monitor**: agent quotas, token usage, CPU and RAM in the title bar.
 - **Real cost per session and task**: what each session cost, from the token counts in its
   transcript, per model with cache reads and writes apart and model switches shown as their own
