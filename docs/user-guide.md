@@ -1076,8 +1076,8 @@ In the app:
   arrows, like in a text editor. Only the cursor's own row is handled; clicks on other rows,
   with a modifier, while scrolled back, on a phone, or in a program that reads the mouse itself
   (tmux with mouse on, vim with `mouse=a`, htop) do nothing. It only works where a line editor
-  reads the input (bash, zsh, fish, the agents): a shell without one, such as `sh` on Debian
-  (dash), would type the arrows, so clicks there do not move the cursor.
+  reads the input with bracketed paste on (bash 5.1+, zsh, fish, Claude Code): a shell without
+  one, such as `sh` on Debian (dash), would type the arrows, so clicks there do nothing.
 
 ### 14.1a Agents
 

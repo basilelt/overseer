@@ -17,6 +17,12 @@ const PATCHES: [string | RegExp, string][] = [
     'this.selectionChangedEmitter.dispose(), this.stopAutoScroll()',
     'this.selectionChangedEmitter.dispose(), this.stopAutoScroll(), this.boundDocumentMouseDownHandler && (document.removeEventListener("mousedown", this.boundDocumentMouseDownHandler), this.boundDocumentMouseDownHandler = null)',
   ],
+  // Copy joins soft-wrapped rows instead of breaking a long command at the right margin. Only rows
+  // on screen report wrapping; scrollback rows always read as unwrapped in this ghostty-web build.
+  [
+    /(\w) >= 0 \? (\w) = \2\.substring\(0, \1\) : \2 = "", (\w) \+= \2, (\w) < (\w) && \(\3 \+= `\n`\);/,
+    'const sb = this.wasmTerm.getScrollbackLength(), wraps = $4 < $5 && $4 + 1 >= sb && this.wasmTerm.isRowWrapped($4 + 1 - sb); wraps || ($1 >= 0 ? $2 = $2.substring(0, $1) : $2 = ""), $3 += $2, $4 < $5 && !wraps && ($3 += `\n`);',
+  ],
 ];
 
 export function patchGhostty(code: string): string {
