@@ -2,15 +2,11 @@
 set -eu
 out=${1:-}
 [ -n "$out" ] || { echo "usage: $0 OUT.aab" >&2; exit 2; }
+. "$(dirname "$0")/android-common.sh"
 root=$(cd "$(dirname "$0")/.." && pwd)
 dir=$root/app/src-tauri/gen/android/app/build/outputs/bundle
-aabs=$(find "$dir" -type f -name "*-release.aab" 2>/dev/null)
-count=$(printf '%s' "$aabs" | grep -c . || true)
-if [ "$count" -ne 1 ]; then
-  echo "::error title=android aab::expected one release AAB under $dir, found $count"
-  printf '%s\n' "$aabs"
-  exit 1
-fi
+find_one "android aab" "release AAB" "$dir" "*-release.aab"
+aabs=$found
 if ! jarsigner -verify "$aabs" | grep -q 'jar verified'; then
   jarsigner -verify -verbose "$aabs" | tail -20
   echo "::error title=android aab::$aabs is not signed"
@@ -19,8 +15,8 @@ fi
 certs=$(keytool -printcert -jarfile "$aabs")
 printf '%s\n' "$certs" | grep -E 'Owner:|SHA256:'
 if [ -n "${ANDROID_CERT_SHA256:-}" ]; then
-  want=$(printf '%s' "$ANDROID_CERT_SHA256" | tr -d ': ' | tr 'A-F' 'a-f')
-  if ! printf '%s\n' "$certs" | tr -d ': ' | tr 'A-F' 'a-f' | grep -q "$want"; then
+  want=$(printf '%s' "$ANDROID_CERT_SHA256" | norm_fp)
+  if ! printf '%s\n' "$certs" | norm_fp | grep -q "$want"; then
     echo "::error title=android aab::AAB not signed by the expected key ($ANDROID_CERT_SHA256)"
     exit 1
   fi
@@ -42,7 +38,4 @@ if printf '%s\n' "$manifest" | grep -q 'androidx.core.content.FileProvider'; the
   echo "::error title=android aab::$aabs declares the APK installer's FileProvider"
   exit 1
 fi
-mkdir -p "$(dirname "$out")"
-cp "$aabs" "$out"
-(cd "$(dirname "$out")" && sha256sum "$(basename "$out")" >"$(basename "$out").sha256")
-ls -l "$out"
+publish "$aabs" "$out"
