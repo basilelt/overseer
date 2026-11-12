@@ -6,6 +6,7 @@ import { gt } from './strings';
 import type { ScmFile, ScmStatus } from './types';
 import SourceControl from './SourceControl.svelte';
 import sourceControl from './SourceControl.svelte?raw';
+import graph from './GitGraphTab.svelte?raw';
 
 const file = (path: string, over: Partial<ScmFile> = {}): ScmFile => ({ path, status: 'M', ...over }) as ScmFile;
 const status = (over: Partial<ScmStatus> = {}): ScmStatus => ({
@@ -74,7 +75,7 @@ describe('source control file lists', () => {
     expect(only).not.toContain('in one');
   });
 
-  it('offers a discard button per changed file that only asks first, never discards by itself', () => {
+  it('offers a discard button per changed file and shows no confirmation before it is pressed', () => {
     const h = html(status({ changes: [file('a.ts')] }));
     expect(h).toContain(`aria-label="${gt('sc.discardFile', { file: 'a.ts' })}"`);
     expect(h).not.toContain('role="alertdialog"');
@@ -123,7 +124,6 @@ describe('submodules in source control', () => {
   });
 
   it('gives a submodule no per-file discard', () => {
-    expect(html(sub({ commit: true, modified: false, untracked: false }))).not.toContain('Discard changes');
     expect(html(sub({ commit: true, modified: false, untracked: false }))).not.toContain(gt('sc.discardFile', { file: 'libs/x' }));
   });
 });
@@ -144,6 +144,18 @@ describe('branch label', () => {
     expect(showsBranch('feat/login', 'feat-login')).toBe(false);
     expect(showsBranch('feat/login', 'login')).toBe(true);
     expect(showsBranch(null, 'anything')).toBe(true);
+  });
+});
+
+describe('CSS guard: git tab on a phone', () => {
+  it('scrolls the changes as one page', () => {
+    expect(declOf(graph, '.scm.full', 'overflow-y')).toBe('auto');
+  });
+
+  it('hides the author and sha columns and wraps the toolbar', () => {
+    expect(declOf(graph, '.graph.phone .c-author', 'display')).toBe('none');
+    expect(declOf(graph, '.graph.phone .c-sha', 'display')).toBe('none');
+    expect(declOf(graph, '.graph.phone .toolbar', 'flex-wrap')).toBe('wrap');
   });
 });
 

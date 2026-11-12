@@ -26,7 +26,7 @@ describe('new session menu button', () => {
     expect(render(NewSessionMenu).body).toMatch(/<button[^>]*\bdisabled/);
   });
 
-  it('keeps the menu out of the startup render, so the list loads only when it opens', () => {
+  it('renders no menu list while closed (the lazy chunk is held by the startup bundle budget test)', () => {
     app.connected = true;
     expect(render(NewSessionMenu).body).not.toContain('role="menu"');
   });

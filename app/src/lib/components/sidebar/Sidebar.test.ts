@@ -60,6 +60,21 @@ describe('Sidebar workspace actions', () => {
   });
 });
 
+describe('Sidebar source control tab', () => {
+  const tab = (h: string, selected: boolean) => h.match(new RegExp(`<button[^>]*role="tab"[^>]*class="[^"]*\\bgit\\b[^"]*"[^>]*aria-selected="${selected}"|<button[^>]*role="tab"[^>]*aria-selected="${selected}"[^>]*class="[^"]*\\bgit\\b`));
+
+  it('sits next to the mode tabs and swaps the filter and tools for source control when selected', () => {
+    const off = html('desktop', 'workspaces');
+    expect(tab(off, false)).not.toBeNull();
+    expect(off).toContain('class="tools');
+    ui.layout = 'desktop';
+    app.sidebarGit = true;
+    const on = render(Sidebar).body;
+    expect(tab(on, true)).not.toBeNull();
+    expect(on).not.toContain('class="tools');
+  });
+});
+
 describe('Sidebar selection bar', () => {
   it('appears only once more than one session is selected', () => {
     app.multi = new Set(['a']);

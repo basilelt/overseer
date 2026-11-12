@@ -3,7 +3,8 @@
   import ChevronDown from '@lucide/svelte/icons/chevron-down';
   import Check from '@lucide/svelte/icons/check';
   import RefreshCw from '@lucide/svelte/icons/refresh-cw';
-  import { agentName, canInstall, nextPickable } from '../../agents';
+  import { agentName, canInstall } from '../../agents';
+  import { nextPickable } from './agent-pick';
   import { t } from '../../i18n.svelte';
   import { app } from '../../state.svelte';
   import type { AgentInfo, DaemonEnv } from '../../types';

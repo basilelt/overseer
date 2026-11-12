@@ -93,11 +93,3 @@ export function sessionsAvailable(agents: AgentInfo[], id: string): boolean {
 }
 
 export const canInstall = (a: AgentInfo): boolean => !a.installed && !!a.installable && !!a.install;
-
-export function nextPickable(agents: AgentInfo[], from: number, dir: number): number {
-  for (let i = 1; i <= agents.length; i++) {
-    const j = (from + dir * i + agents.length * i) % agents.length;
-    if (agents[j].installed || canInstall(agents[j])) return j;
-  }
-  return from;
-}

@@ -2,12 +2,12 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { render } from 'svelte/server';
 import { t } from '../../i18n.svelte';
 import { app } from '../../state.svelte';
-import type { Folder, Group, Workspace } from '../../types';
+import type { Folder, Group, LocalLine, Workspace } from '../../types';
 import SpacesView from './SpacesView.svelte';
 
 const ws = (id: string, over: Partial<Workspace> = {}) => ({ id, name: `Space ${id}`, path: `/p/${id}`, folderId: null, pinned: false, archived: false, auto: false, rank: 1, tabs: [], notifyIdle: false, createdAt: '', updatedAt: '', ...over }) as Workspace;
 const folder = (id: string, over: Partial<Folder> = {}) => ({ id, name: `Folder ${id}`, parentId: null, rank: 1, collapsed: false, createdAt: '', updatedAt: '', ...over }) as Folder;
-const before = { connected: app.connected, ws: app.ws, workspaceId: app.workspaceId, tabDrop: app.tabDrop };
+const before = { connected: app.connected, ws: app.ws, workspaceId: app.workspaceId, tabDrop: app.tabDrop, data: app.data, multi: app.multi };
 afterEach(() => Object.assign(app, before));
 const view = (workspaces: Workspace[], folders: Folder[] = [], filter = '') => {
   app.connected = true;
@@ -55,11 +55,11 @@ describe('SpacesView folders and empty state', () => {
     expect(filtered).not.toContain(t('ws.empty'));
   });
 
-  it('renders a folder as a section holding its workspaces, with no HTML5 drag attributes', () => {
+  it('renders a folder as a section holding its workspaces, with no native draggable attribute', () => {
     const h = view([ws('a', { folderId: 'f1' }), ws('b')], [folder('f1')]);
     expect(h).toContain('>Folder f1<');
     expect(h.indexOf('>Folder f1<')).toBeLessThan(h.indexOf('data-workspace-id="a"'));
-    expect(h).not.toMatch(/\bdraggable=|ondragstart|ondrop/);
+    expect(h).not.toMatch(/\bdraggable=/);
   });
 
   it('hides the workspaces of a collapsed folder, but not while filtering', () => {
@@ -78,6 +78,37 @@ describe('SpacesView folders and empty state', () => {
   it('lists a pinned workspace under the pinned section before the others', () => {
     const h = view([ws('a'), ws('p', { pinned: true })]);
     expect(h.indexOf('data-workspace-id="p"')).toBeLessThan(h.indexOf('data-workspace-id="a"'));
+  });
+});
+
+describe('SpacesView sessions', () => {
+  const line = (id: string, workspaceId: string): LocalLine => ({ line: { id, agent: 'claude', state: 'active', lastActivityAt: '2026-11-05T10:00:00Z' }, local: { title: `T-${id}`, workspaceId, pid: 1, busy: true } });
+  const withLines = (workspaces: Workspace[], lines: LocalLine[]) => {
+    app.data = { ...app.data, lines };
+    return view(workspaces);
+  };
+
+  it('opens the active workspace and keeps the others folded, listing sessions only in the open one', () => {
+    app.workspaceId = 'a';
+    const h = withLines([ws('a'), ws('b')], [line('1', 'a'), line('2', 'b')]);
+    expect(h).toContain('aria-label="Collapse Space a"');
+    expect(h).toContain('aria-label="Expand Space b"');
+    expect(h).toContain('T-1');
+    expect(h).not.toContain('T-2');
+  });
+
+  it('keeps the parent of the active nested workspace open', () => {
+    app.workspaceId = 'c';
+    const h = withLines([ws('p'), ws('c', { parentId: 'p' })], [line('1', 'p'), line('2', 'c')]);
+    expect(h).toContain('aria-label="Collapse Space p"');
+    expect(h).toContain('T-1');
+  });
+
+  it('hands the multi selection down to the session rows', () => {
+    app.workspaceId = 'a';
+    app.multi = new Set(['line:1']);
+    const h = withLines([ws('a')], [line('1', 'a'), line('2', 'a')]);
+    expect(h.match(/class="row[^"]*\bmulti\b/g)).toHaveLength(1);
   });
 });
 

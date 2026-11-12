@@ -37,9 +37,11 @@ describe('WorkspaceFrame', () => {
   });
 
   it('CSS guard: defines the frame and row tokens for both themes', () => {
-    for (const theme of [':root', ":root[data-theme='dark']"]) {
-      for (const token of ['--ws-frame-border', '--ws-frame-bg', '--session-row-bg']) expect(declOf(css, theme, token), `${theme} ${token}`).toBeTruthy();
-    }
+    const dark = ":root[data-theme='dark']";
+    expect(declOf(css, dark, '--ws-frame-border')).toBe('#4a4a55');
+    expect(declOf(css, dark, '--ws-frame-bg')).toBe('#1e1e24');
+    expect(declOf(css, dark, '--session-row-bg')).toBe('#111114');
+    for (const token of ['--ws-frame-border', '--ws-frame-bg', '--session-row-bg']) expect(declOf(css, ':root', token), token).toMatch(/\S/);
   });
 
   it('CSS guard: keeps a workspace header where it sat while folded, so opening it does not shift it', () => {
