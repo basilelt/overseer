@@ -50,6 +50,77 @@ pub struct Store {
     pub default: String,
     pub profiles: Vec<Profile>,
     pub scopes: BTreeMap<String, String>,
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    pub types: BTreeMap<String, String>,
+}
+
+pub const TASK_TYPES: [&str; 5] = ["fix", "feature", "engineering", "refactor", "triage"];
+
+pub fn task_type_from(labels: &[&str]) -> Option<&'static str> {
+    const WORDS: [(&str, &[&str]); 5] = [
+        (
+            "fix",
+            &["bug", "fix", "defect", "regression", "incident", "hotfix"],
+        ),
+        (
+            "refactor",
+            &[
+                "refactor",
+                "migration",
+                "architecture",
+                "tech debt",
+                "tech-debt",
+                "epic",
+            ],
+        ),
+        (
+            "triage",
+            &[
+                "triage",
+                "investigation",
+                "question",
+                "spike",
+                "research",
+                "support",
+            ],
+        ),
+        (
+            "engineering",
+            &[
+                "engineering",
+                "development",
+                "debug",
+                "debugging",
+                "chore",
+                "task",
+                "sub-task",
+                "subtask",
+            ],
+        ),
+        (
+            "feature",
+            &[
+                "feature",
+                "enhancement",
+                "story",
+                "improvement",
+                "new feature",
+            ],
+        ),
+    ];
+    let norm: Vec<String> = labels
+        .iter()
+        .map(|l| {
+            let l = l.trim().to_lowercase();
+            l.rsplit_once(':')
+                .map(|(_, r)| r.trim().to_string())
+                .unwrap_or(l)
+        })
+        .collect();
+    WORDS
+        .iter()
+        .find(|(_, words)| norm.iter().any(|l| words.contains(&l.as_str())))
+        .map(|(t, _)| *t)
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
@@ -140,6 +211,10 @@ pub fn support(a: &Agent) -> Support {
         "opencode" => Support {
             small_model: Some(Via::Env),
             subagents: Some(Via::Env),
+            ..base
+        },
+        "vibe" => Support {
+            model: Some(Via::Env),
             ..base
         },
         "shell" => NO,
@@ -290,12 +365,21 @@ pub fn scoped<'a>(s: &'a Store, cwd: &str) -> Option<&'a str> {
         .map(|(_, id)| id.as_str())
 }
 
-pub fn resolve(s: &Store, explicit: Option<&str>, cwds: &[&str]) -> Res<Option<Profile>> {
+pub fn typed<'a>(s: &'a Store, task_type: Option<&str>) -> Option<&'a str> {
+    let id = s.types.get(task_type?)?.as_str();
+    (id == "none" || find(s, id).is_some()).then_some(id)
+}
+
+pub fn resolve(
+    s: &Store,
+    explicit: Option<&str>,
+    task_type: Option<&str>,
+    cwds: &[&str],
+) -> Res<Option<Profile>> {
     let id = match explicit {
         Some(id) => id,
-        None => cwds
-            .iter()
-            .find_map(|c| scoped(s, c))
+        None => typed(s, task_type)
+            .or_else(|| cwds.iter().find_map(|c| scoped(s, c)))
             .unwrap_or(s.default.as_str()),
     };
     if id.is_empty() || id == "none" {
@@ -380,6 +464,7 @@ pub fn apply(a: &Agent, p: Option<&Profile>, model: &str, effort: &str) -> Appli
                 env.push(("OPENCODE_CONFIG_CONTENT".into(), cfg));
             }
         }
+        "vibe" if !model.is_empty() => env.push(("VIBE_ACTIVE_MODEL".into(), model.clone())),
         _ => {}
     }
     let chip = (p.is_some() || !model.is_empty() || !effort.is_empty()).then(|| Chip {
@@ -528,6 +613,20 @@ pub fn validate(s: &Store) -> Res<()> {
             return Err((400, format!("scope {root}: unknown profile {id}")));
         }
     }
+    for (ty, id) in &s.types {
+        if !TASK_TYPES.contains(&ty.as_str()) {
+            return Err((
+                400,
+                format!(
+                    "unknown task type {ty:?}, expected one of {}",
+                    TASK_TYPES.join(", ")
+                ),
+            ));
+        }
+        if id.is_empty() || !known(id) {
+            return Err((400, format!("task type {ty}: unknown profile {id}")));
+        }
+    }
     Ok(())
 }
 
@@ -552,6 +651,8 @@ pub fn to_json(s: &Store) -> Value {
         "default": s.default,
         "profiles": all(s),
         "scopes": s.scopes,
+        "types": s.types,
+        "taskTypes": TASK_TYPES,
         "support": agents,
     })
 }
@@ -851,7 +952,7 @@ pub fn for_launch(
     effort: &str,
 ) -> Res<Applied> {
     let s = load(state_dir);
-    let p = resolve(&s, explicit, cwds)?;
+    let p = resolve(&s, explicit, None, cwds)?;
     Ok(apply(a, p.as_ref(), model, effort))
 }
 
@@ -861,7 +962,9 @@ pub fn for_task(state_dir: &Path, a: &Agent, t: &crate::tasks::Task) -> Applied 
         .profile
         .as_deref()
         .filter(|id| id.is_empty() || *id == "none" || find(&s, id).is_some());
-    let p = resolve(&s, explicit, &[t.project.as_str()]).ok().flatten();
+    let p = resolve(&s, explicit, t.task_type.as_deref(), &[t.project.as_str()])
+        .ok()
+        .flatten();
     apply(a, p.as_ref(), &t.model, &t.effort)
 }
 
@@ -872,7 +975,7 @@ pub fn for_resume(state_dir: &Path, a: &Agent, cwd: &str) -> Applied {
         cwds.push(r);
     }
     let s = load(state_dir);
-    match resolve(&s, None, &cwds).ok().flatten() {
+    match resolve(&s, None, None, &cwds).ok().flatten() {
         Some(p) => {
             let mut x = apply(a, Some(&p), "", "");
             if let Some(c) = x.chip.as_mut() {
@@ -883,6 +986,18 @@ pub fn for_resume(state_dir: &Path, a: &Agent, cwd: &str) -> Applied {
         }
         None => Applied::default(),
     }
+}
+
+pub fn for_restore(state_dir: &Path, a: &Agent, cwd: &str, saved: Option<&Chip>) -> Applied {
+    let Some(chip) = saved else {
+        return for_resume(state_dir, a, cwd);
+    };
+    let p = Some(chip.id.as_str())
+        .filter(|id| !id.is_empty())
+        .and_then(|id| find(&load(state_dir), id));
+    let mut x = apply(a, p.as_ref(), "", "");
+    x.chip = Some(chip.clone());
+    x
 }
 
 pub fn routes(
@@ -918,6 +1033,10 @@ pub fn routes(
                 if let Some(v) = body.get("scopes") {
                     s.scopes = serde_json::from_value(v.clone())
                         .map_err(|e| (400, format!("scopes: {e}")))?;
+                }
+                if let Some(v) = body.get("types") {
+                    s.types = serde_json::from_value(v.clone())
+                        .map_err(|e| (400, format!("types: {e}")))?;
                 }
                 Ok(())
             })();
@@ -1033,6 +1152,7 @@ mod tests {
                 ("/w/app/sub".to_string(), "mine".to_string()),
                 ("/w/gone".to_string(), "deleted".to_string()),
             ]),
+            types: BTreeMap::new(),
         }
     }
 
@@ -1044,43 +1164,116 @@ mod tests {
     fn precedence_task_over_workspace_over_global() {
         let s = store();
         assert_eq!(
-            id(resolve(&s, None, &["/elsewhere"])).as_deref(),
+            id(resolve(&s, None, None, &["/elsewhere"])).as_deref(),
             Some("balanced")
         );
         assert_eq!(
-            id(resolve(&s, None, &["/w/app"])).as_deref(),
+            id(resolve(&s, None, None, &["/w/app"])).as_deref(),
             Some("economy")
         );
         assert_eq!(
-            id(resolve(&s, None, &["/w/app/x/y"])).as_deref(),
+            id(resolve(&s, None, None, &["/w/app/x/y"])).as_deref(),
             Some("economy")
         );
         assert_eq!(
-            id(resolve(&s, None, &["/w/app/sub/z"])).as_deref(),
+            id(resolve(&s, None, None, &["/w/app/sub/z"])).as_deref(),
             Some("mine")
         );
         assert_eq!(
-            id(resolve(&s, None, &["/w/application"])).as_deref(),
+            id(resolve(&s, None, None, &["/w/application"])).as_deref(),
             Some("balanced")
         );
         assert_eq!(
-            id(resolve(&s, None, &["/tmp/wt", "/w/app"])).as_deref(),
+            id(resolve(&s, None, None, &["/tmp/wt", "/w/app"])).as_deref(),
             Some("economy")
         );
         assert_eq!(
-            id(resolve(&s, Some("max"), &["/w/app"])).as_deref(),
+            id(resolve(&s, Some("max"), None, &["/w/app"])).as_deref(),
             Some("max")
         );
-        assert_eq!(id(resolve(&s, Some("none"), &["/w/app"])), None);
-        assert_eq!(id(resolve(&s, Some(""), &["/w/app"])), None);
-        assert_eq!(id(resolve(&s, None, &["/w/gone"])), None);
-        assert!(resolve(&s, Some("nope"), &["/"]).is_err());
-        assert_eq!(id(resolve(&Store::default(), None, &["/w/app"])), None);
+        assert_eq!(id(resolve(&s, Some("none"), None, &["/w/app"])), None);
+        assert_eq!(id(resolve(&s, Some(""), None, &["/w/app"])), None);
+        assert_eq!(id(resolve(&s, None, None, &["/w/gone"])), None);
+        assert!(resolve(&s, Some("nope"), None, &["/"]).is_err());
+        assert_eq!(
+            id(resolve(&Store::default(), None, None, &["/w/app"])),
+            None
+        );
+    }
+
+    #[test]
+    fn task_type_sits_between_explicit_and_path_scope() {
+        let mut s = store();
+        s.types = BTreeMap::from([
+            ("fix".to_string(), "mine".to_string()),
+            ("triage".to_string(), "none".to_string()),
+            ("refactor".to_string(), "deleted".to_string()),
+        ]);
+        let r = |explicit, ty, cwd| id(resolve(&s, explicit, ty, &[cwd]));
+        assert_eq!(r(None, Some("fix"), "/w/app").as_deref(), Some("mine"));
+        assert_eq!(r(None, Some("fix"), "/elsewhere").as_deref(), Some("mine"));
+        assert_eq!(
+            r(Some("max"), Some("fix"), "/w/app").as_deref(),
+            Some("max")
+        );
+        assert_eq!(r(None, Some("triage"), "/w/app"), None);
+        assert_eq!(
+            r(None, Some("refactor"), "/w/app").as_deref(),
+            Some("economy")
+        );
+        assert_eq!(
+            r(None, Some("feature"), "/w/app").as_deref(),
+            Some("economy")
+        );
+        assert_eq!(
+            r(None, Some("bogus"), "/elsewhere").as_deref(),
+            Some("balanced")
+        );
+        assert_eq!(r(None, None, "/w/app").as_deref(), Some("economy"));
+    }
+
+    #[test]
+    fn task_type_rules_are_validated() {
+        let mut s = store();
+        s.scopes.remove("/w/gone");
+        s.types.insert("migration".into(), "max".into());
+        assert!(validate(&s).unwrap_err().1.contains("unknown task type"));
+        s.types = BTreeMap::from([("fix".to_string(), "deleted".to_string())]);
+        assert_eq!(
+            validate(&s).unwrap_err().1,
+            "task type fix: unknown profile deleted"
+        );
+        s.types = BTreeMap::from([("fix".to_string(), String::new())]);
+        assert!(validate(&s).is_err());
+        s.types = BTreeMap::from([
+            ("fix".to_string(), "mine".to_string()),
+            ("triage".to_string(), "none".to_string()),
+        ]);
+        assert!(validate(&s).is_ok());
+        assert_eq!(to_json(&s)["types"]["fix"], "mine");
+        assert_eq!(to_json(&s)["taskTypes"][2], "engineering");
+    }
+
+    #[test]
+    fn ticket_labels_and_issue_types_map_to_a_task_type() {
+        let t = |l: &[&str]| task_type_from(l);
+        assert_eq!(t(&["Bug"]), Some("fix"));
+        assert_eq!(t(&["type: bug", "p1"]), Some("fix"));
+        assert_eq!(t(&["enhancement"]), Some("feature"));
+        assert_eq!(t(&["Story"]), Some("feature"));
+        assert_eq!(t(&["Task"]), Some("engineering"));
+        assert_eq!(t(&["Development"]), Some("engineering"));
+        assert_eq!(t(&["Epic"]), Some("refactor"));
+        assert_eq!(t(&["tech debt"]), Some("refactor"));
+        assert_eq!(t(&["Spike"]), Some("triage"));
+        assert_eq!(t(&["enhancement", "bug"]), Some("fix"));
+        assert_eq!(t(&["good first issue"]), None);
+        assert_eq!(t(&[]), None);
     }
 
     fn applied(agent: &str, profile: &str, model: &str, effort: &str) -> Applied {
         let s = store();
-        let p = resolve(&s, Some(profile), &[]).unwrap();
+        let p = resolve(&s, Some(profile), None, &[]).unwrap();
         apply(get(agent).unwrap(), p.as_ref(), model, effort)
     }
 
@@ -1089,6 +1282,33 @@ mod tests {
             .iter()
             .map(|(k, v)| (k.as_str(), v.as_str()))
             .collect()
+    }
+
+    #[test]
+    fn restore_keeps_the_saved_chip_and_reapplies_its_profile_env() {
+        let d = std::env::temp_dir().join(format!("sb-profiles-{}-restore", std::process::id()));
+        let claude = get("claude").unwrap();
+        let chip = Chip {
+            id: "economy".into(),
+            name: "Economy".into(),
+            model: "sonnet".into(),
+            effort: "low".into(),
+        };
+        let a = for_restore(&d, claude, "/nowhere", Some(&chip));
+        assert_eq!(a.chip.as_ref(), Some(&chip));
+        assert_eq!(env(&a), env(&applied("claude", "economy", "", "")));
+        let gone = Chip {
+            id: "deleted".into(),
+            ..chip.clone()
+        };
+        let a = for_restore(&d, claude, "/nowhere", Some(&gone));
+        assert_eq!(a.chip, Some(gone), "a deleted profile keeps its chip");
+        assert!(a.env.is_empty());
+        assert_eq!(
+            for_restore(&d, claude, "/nowhere", None),
+            for_resume(&d, claude, "/nowhere"),
+            "no saved chip falls back to the project profile"
+        );
     }
 
     #[test]
@@ -1325,6 +1545,33 @@ mod tests {
         let v: Value = serde_json::from_str(v).unwrap();
         assert_eq!(v["small_model"], "anthropic/claude-haiku-4-5");
         assert_eq!(v["agent"]["review"]["model"], "openai/gpt-5.4-mini");
+    }
+
+    #[test]
+    fn vibe_takes_its_profile_model_from_the_environment() {
+        let p = Profile {
+            id: "v".into(),
+            name: "V".into(),
+            builtin: false,
+            agents: BTreeMap::from([(
+                "vibe".to_string(),
+                AgentCfg {
+                    model: "devstral-small".into(),
+                    effort: "high".into(),
+                    ..Default::default()
+                },
+            )]),
+        };
+        let a = apply(get("vibe").unwrap(), Some(&p), "", "");
+        assert_eq!(
+            a.env,
+            [(
+                "VIBE_ACTIVE_MODEL".to_string(),
+                "devstral-small".to_string()
+            )]
+        );
+        assert!(a.effort.is_empty() && a.extra.is_empty());
+        assert!(apply(get("vibe").unwrap(), None, "", "").env.is_empty());
     }
 
     #[test]

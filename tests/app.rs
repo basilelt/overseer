@@ -1787,7 +1787,10 @@ fn agents_are_detected_and_launched_from_the_table() {
         .collect();
     assert_eq!(
         ids,
-        ["claude", "codex", "gemini", "agy", "opencode", "amp", "copilot", "cursor", "shell"]
+        [
+            "claude", "codex", "gemini", "agy", "opencode", "amp", "copilot", "cursor", "vibe",
+            "shell"
+        ]
     );
     let get = |id: &str| {
         list.as_array()
@@ -1970,7 +1973,8 @@ fn agent_auto_approval_settings_persist_and_control_new_term_argv() {
     let default = app.ok("GET", "/v1/agents/settings", Value::Null);
     assert_eq!(default["autoApprove"]["claude"], true);
     assert_eq!(default["autoApprove"]["codex"], true);
-    assert_eq!(default["autoApprove"].as_object().unwrap().len(), 7);
+    assert_eq!(default["autoApprove"].as_object().unwrap().len(), 8);
+    assert_eq!(default["autoApprove"]["vibe"], true);
 
     let disabled = app.ok(
         "PUT",
@@ -2775,6 +2779,109 @@ fn profiles_apply_at_launch_with_workspace_and_task_precedence() {
         .0,
         400
     );
+}
+
+#[test]
+fn task_type_picks_the_profile_between_explicit_and_workspace() {
+    let app = App::new("profiles-types", json!({"autoConcurrency": 0}));
+    let wt = app.fx.wt.to_string_lossy().into_owned();
+    let p = app.ok("GET", "/v1/profiles", Value::Null);
+    assert_eq!(
+        p["taskTypes"],
+        json!(["fix", "feature", "engineering", "refactor", "triage"])
+    );
+    assert_eq!(p["types"], json!({}));
+    let bad = app.req(
+        "PUT",
+        "/v1/profiles",
+        json!({"types": {"migration": "max"}}),
+    );
+    assert_eq!(bad.0, 400);
+    assert!(bad.1["error"]
+        .as_str()
+        .unwrap()
+        .starts_with("unknown task type \"migration\""));
+    assert_eq!(
+        app.req("PUT", "/v1/profiles", json!({"types": {"fix": "ghost"}}))
+            .0,
+        400
+    );
+    let saved = app.ok(
+        "PUT",
+        "/v1/profiles",
+        json!({
+            "scopes": {wt.clone(): "economy"},
+            "types": {"refactor": "max", "triage": "none"},
+        }),
+    );
+    assert_eq!(saved["types"]["refactor"], "max");
+
+    let refactor = app.ok(
+        "POST",
+        "/v1/tasks",
+        json!({"title": "migrate", "project": wt, "taskType": "refactor"}),
+    );
+    assert_eq!(refactor["taskType"], "refactor");
+    assert_eq!(refactor["effort"], "");
+    let triage = app.ok(
+        "POST",
+        "/v1/tasks",
+        json!({"title": "logs", "project": wt, "taskType": "triage", "agent": "gemini"}),
+    );
+    assert_eq!(triage["effort"], "high");
+    let r = app.req(
+        "POST",
+        "/v1/tasks",
+        json!({"title": "x", "project": wt, "taskType": "chore"}),
+    );
+    assert_eq!(r.0, 400);
+    assert_eq!(
+        r.1["error"],
+        "taskType must be one of fix, feature, engineering, refactor, triage"
+    );
+
+    let start = |id: &str| {
+        let s = app.ok("POST", &format!("/v1/tasks/{id}/start"), json!({}));
+        app.ok(
+            "GET",
+            &format!("/v1/terms/{}", s["termId"].as_str().unwrap()),
+            Value::Null,
+        )
+    };
+    let term = start(refactor["id"].as_str().unwrap());
+    let cmd = strs(&term["cmd"]);
+    assert_eq!(cmd[cmd.len() - 4..], ["--model", "opus", "--effort", "max"]);
+    assert_eq!(term["profile"]["id"], "max");
+
+    let feature = app.ok(
+        "POST",
+        "/v1/tasks",
+        json!({"title": "small", "project": wt}),
+    );
+    let fid = feature["id"].as_str().unwrap();
+    let patched = app.ok(
+        "PATCH",
+        &format!("/v1/tasks/{fid}"),
+        json!({"taskType": "feature", "effort": ""}),
+    );
+    assert_eq!(patched["taskType"], "feature");
+    let term = start(fid);
+    assert_eq!(term["profile"]["id"], "economy");
+
+    let explicit = app.ok(
+        "POST",
+        "/v1/tasks",
+        json!({"title": "pinned", "project": wt, "taskType": "refactor", "profile": "balanced"}),
+    );
+    let term = start(explicit["id"].as_str().unwrap());
+    assert_eq!(term["profile"]["id"], "balanced");
+
+    let cleared = app.ok(
+        "PATCH",
+        &format!("/v1/tasks/{}", triage["id"].as_str().unwrap()),
+        json!({"taskType": null}),
+    );
+    assert!(cleared.get("taskType").is_none());
 }
 
 #[test]
@@ -3885,4 +3992,61 @@ fn two_quick_resumes_of_a_paused_session_press_enter_on_its_stub_once() {
         &format!("/v1/terms/{tid}/kill"),
         json!({"confirm": true}),
     );
+}
+
+// Given a daemon started before an installer created ~/.local/bin
+// When the agent lands there and the app asks for a rescan
+// Then the agent is detected, /v1/env shows the dir and new terms find the agent
+#[test]
+fn rescan_finds_an_agent_installed_into_a_dir_created_after_start() {
+    let app = App::new("rescan-new-dir", json!({}));
+    let cursor = |agents: &Value| {
+        agents
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|a| a["id"] == "cursor")
+            .unwrap()["installed"]
+            .clone()
+    };
+    assert_eq!(
+        cursor(&app.ok("POST", "/v1/agents/rescan", Value::Null)),
+        false
+    );
+    let dir = app.fx.base.join("home/.local/bin");
+    assert!(!dir.exists());
+    std::fs::create_dir_all(&dir).unwrap();
+    let stub = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/stubs/agent");
+    std::fs::copy(stub, dir.join("cursor-agent")).unwrap();
+
+    assert_eq!(
+        cursor(&app.ok("POST", "/v1/agents/rescan", Value::Null)),
+        true
+    );
+    assert_eq!(cursor(&app.ok("GET", "/v1/agents", Value::Null)), true);
+    let dir = dir.to_string_lossy().into_owned();
+    let env = app.ok("GET", "/v1/env", Value::Null);
+    assert!(
+        env["path"].as_str().unwrap().split(':').any(|d| d == dir),
+        "{env}"
+    );
+    let wt = app.fx.wt.to_string_lossy().into_owned();
+    let t = app.ok(
+        "POST",
+        "/v1/terms",
+        json!({"cwd": wt, "cmd": ["cursor-agent"], "cols": 80, "rows": 24}),
+    );
+    let mut ws = app.ws(t["id"].as_str().unwrap());
+    read_until(&mut ws, "cursor-agent ready");
+    send(&mut ws, "exit\n");
+
+    let t = app.ok(
+        "POST",
+        "/v1/tasks",
+        json!({"title": "cur", "description": "", "project": wt, "agent": "cursor"}),
+    );
+    let id = t["id"].as_str().unwrap().to_string();
+    let s = app.ok("POST", &format!("/v1/tasks/{id}/start"), json!({}));
+    let mut ws = app.ws(s["termId"].as_str().unwrap());
+    read_until(&mut ws, "cursor-agent ready");
 }

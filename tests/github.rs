@@ -48,6 +48,7 @@ fn ctx<'a>(base: &Path, probe: &'a Nobody) -> Ctx<'a> {
         claude_dir: base.join("claude"),
         codex_dir: base.join("codex"),
         gemini_dir: base.join("gemini"),
+        vibe_dir: base.join("vibe"),
         state_dir: base.join("state"),
         snapshot: base.join("snapshot.json"),
         now_ms: overseer::procs::now_ms(),

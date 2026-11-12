@@ -1,12 +1,21 @@
 import { describe, expect, it } from 'vitest';
-import { adaptChoice, agentName, canInstall, efforts, hasModel, ordered, pickAgent, sessionsAvailable, taskAgents } from './agents';
+import { adaptChoice, agentName, canInstall, efforts, hasModel, ordered, pickAgent, sessionsAvailable, splitInstalled, taskAgents } from './agents';
 import { MOCK_AGENTS } from './mock';
 
 const by = (id: string) => MOCK_AGENTS.find((a) => a.id === id)!;
 
 describe('agents', () => {
+  it('splits installed agents from missing ones in daemon order', () => {
+    const { installed, missing } = splitInstalled(MOCK_AGENTS);
+    expect(installed.every((a) => a.installed) && missing.every((a) => !a.installed)).toBe(true);
+    expect([...installed, ...missing].map((a) => a.id)).toEqual(ordered(MOCK_AGENTS).map((a) => a.id));
+    expect(missing.length).toBeGreaterThan(0);
+    expect(splitInstalled(MOCK_AGENTS.filter((a) => a.installed)).missing).toEqual([]);
+    expect(splitInstalled(MOCK_AGENTS.map((a) => ({ ...a, installed: false }))).installed).toEqual([]);
+  });
+
   it('lists installed agents first in daemon order, tasks without the shell', () => {
-    expect(ordered(MOCK_AGENTS).map((a) => a.id)).toEqual(['claude', 'codex', 'gemini', 'agy', 'copilot', 'shell', 'opencode', 'amp', 'cursor']);
+    expect(ordered(MOCK_AGENTS).map((a) => a.id)).toEqual(['claude', 'codex', 'gemini', 'agy', 'copilot', 'vibe', 'shell', 'opencode', 'amp', 'cursor']);
     expect(taskAgents(MOCK_AGENTS).map((a) => a.id)).not.toContain('shell');
   });
 
@@ -20,6 +29,7 @@ describe('agents', () => {
   it('names agents from the daemon, then known ids, then the id', () => {
     expect(agentName(MOCK_AGENTS, 'gemini')).toBe('Gemini CLI');
     expect(agentName([], 'cursor')).toBe('Cursor Agent');
+    expect(agentName([], 'vibe')).toBe('Mistral Vibe');
     expect(agentName([], 'mystery')).toBe('mystery');
   });
 

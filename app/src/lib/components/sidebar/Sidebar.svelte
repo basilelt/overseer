@@ -19,6 +19,7 @@
   import SpacesView from './SpacesView.svelte';
   import { preload } from '../../idle';
   import GitBranch from '@lucide/svelte/icons/git-branch';
+  import { ui } from '../../mobile/ui.svelte';
 
   const statesView = preload(() => import('./StatesView.svelte'));
   const gitView = () => import('../../git/SidebarGit.svelte');
@@ -31,6 +32,7 @@
     { id: 'workspaces', label: () => t('ws.title') },
     { id: 'status', label: () => t('ws.byStatus') },
   ];
+  const phone = $derived(ui.layout === 'phone');
   const listed = $derived(app.items.filter((i) => i.kind !== 'shell').length);
   const selection = $derived([...app.multi]);
   const addMenu = () => [
@@ -38,6 +40,23 @@
     { label: t('ws.rescan'), icon: RefreshCw, run: () => rescanFolders() },
   ];
 </script>
+
+{#snippet wsActions()}
+    <button class="icon-btn" title={t('ws.new')} aria-label={t('ws.new')} disabled={!app.connected || !app.wsPersistent} aria-haspopup="menu" onclick={(e) => app.openMenu(e, t('ws.new'), addMenu())}
+      ><Plus size={14} /></button
+    >
+    <button class="icon-btn" title={t('ws.newFolder')} aria-label={t('ws.newFolder')} disabled={!app.connected || !app.wsPersistent} onclick={() => createFolder()}
+      ><FolderPlus size={14} /></button
+    >
+    <button
+      class="icon-btn"
+      class:active={showArchived}
+      title={t('ws.showArchived')}
+      aria-label={t('ws.showArchived')}
+      aria-pressed={showArchived}
+      onclick={() => (showArchived = !showArchived)}><Archive size={14} /></button
+    >
+{/snippet}
 
 <aside class="sidebar" data-tour="workspaces" use:touchContextMenu>
   <header>
@@ -50,29 +69,19 @@
     {#if app.sidebarGit}
       <span></span>
     {:else if app.sidebarMode === 'workspaces'}
-      <button class="icon-btn" title={t('ws.new')} aria-label={t('ws.new')} disabled={!app.connected || !app.wsPersistent} aria-haspopup="menu" onclick={(e) => app.openMenu(e, t('ws.new'), addMenu())}
-        ><Plus size={14} /></button
-      >
-      <button class="icon-btn" title={t('ws.newFolder')} aria-label={t('ws.newFolder')} disabled={!app.connected || !app.wsPersistent} onclick={() => createFolder()}
-        ><FolderPlus size={14} /></button
-      >
-      <button
-        class="icon-btn"
-        class:active={showArchived}
-        title={t('ws.showArchived')}
-        aria-label={t('ws.showArchived')}
-        aria-pressed={showArchived}
-        onclick={() => (showArchived = !showArchived)}><Archive size={14} /></button
-      >
+      {#if !phone}{@render wsActions()}{/if}
     {:else}
       <span class="count faint">{listed}</span>
     {/if}
   </header>
   {#if !app.sidebarGit}
-  <label class="filter">
-    <Search size={13} />
-    <input bind:value={filter} placeholder={app.sidebarMode === 'workspaces' ? t('ws.filter') : t('sidebar.filter')} aria-label={t('sidebar.filter')} />
-  </label>
+  <div class="tools">
+    <label class="filter">
+      <Search size={13} />
+      <input bind:value={filter} placeholder={app.sidebarMode === 'workspaces' ? t('ws.filter') : t('sidebar.filter')} aria-label={t('sidebar.filter')} />
+    </label>
+    {#if phone && app.sidebarMode === 'workspaces'}{@render wsActions()}{/if}
+  </div>
   {#if nudge}
     <div class="nudge" data-tour="organize">
       <WandSparkles size={14} />
@@ -163,6 +172,9 @@
     padding: 0 6px;
     font-variant-numeric: tabular-nums;
   }
+  .tools {
+    display: contents;
+  }
   .filter {
     display: flex;
     align-items: center;
@@ -221,4 +233,39 @@
     font-size: 12px;
     font-weight: 500;
   }
+  :global(:root.phone) header {
+    padding: 10px 12px 8px;
+  }
+  :global(:root.phone) .modes {
+    margin-right: 0;
+    padding: 3px;
+    border-radius: 10px;
+  }
+  :global(:root.phone) .modes button {
+    flex: 1 1 0;
+    height: 40px;
+    border-radius: 8px;
+    font-size: 14px;
+  }
+  :global(:root.phone) .modes button.git {
+    flex: 1 1 0;
+    justify-content: center;
+    gap: 6px;
+  }
+  :global(:root.phone) .tools {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    margin: 0 8px 8px 12px;
+  }
+  :global(:root.phone) .filter {
+    flex: 1;
+    min-width: 0;
+    margin: 0 4px 0 0;
+    border-radius: 10px;
+  }
+  :global(:root.phone) .filter input {
+    padding: 0;
+  }
+
 </style>

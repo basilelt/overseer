@@ -110,6 +110,7 @@ per file with its diff and backup.
 | Gemini CLI (0.26+) | hooks | `~/.gemini/settings.json` | SessionStart, BeforeAgent, AfterAgent, Notification (ToolPermission), SessionEnd |
 | Copilot CLI | hooks | `$COPILOT_HOME/hooks/overseer.json` (`~/.copilot`) | sessionStart, userPromptSubmitted, agentStop, notification, sessionEnd |
 | Cursor Agent | hooks | `~/.cursor/hooks.json` | sessionStart, beforeSubmitPrompt, stop, sessionEnd |
+| Mistral Vibe (3.0+) | hooks | `$VIBE_HOME/hooks.toml` (`~/.vibe`) | session_start, pre_agent and post_agent (main agent only), post_tool, notification (approval_requested, question_asked, turn_completed, turn_failed), session_end |
 | opencode | plugin | `$XDG_CONFIG_HOME/opencode/plugins/overseer.js` | session.status, session.idle, permission.asked/replied, session.error |
 | Amp | plugin | `$XDG_CONFIG_HOME/amp/plugins/overseer.js` | session.start, agent.start, agent.end |
 | Antigravity (`agy`) | terminal activity | none | none |
@@ -121,7 +122,8 @@ those transitions into OS notifications: "<agent> finished in <workspace>" and
 "<agent> needs your input"; clicking one focuses that tab (see 14.4a.1 to tune or mute them). Agents without hooks, and agents whose
 hooks did not fire, fall back to terminal activity: in a daemon terminal, a line is busy while the
 agent keeps writing after you pressed Enter, and its turn ends after 4 s without output. Amp has no
-needs-input event; Cursor Agent fires only some hooks in the CLI.
+needs-input event; Cursor Agent fires only some hooks in the CLI; Mistral Vibe fires no hook
+when you interrupt a turn, so its line stays busy until the next turn ends.
 
 Hooks call `~/.overseer/bin/overseer`, a symlink the daemon points at its own binary on
 every start and hot upgrade, so a server upgrade never breaks them. When the daemon starts and
@@ -131,8 +133,9 @@ backup and validation. Files without Overseer entries are never touched.
 
 Codex runs edited hooks only after you trust them again (open codex and accept the prompt);
 Overseer never edits `config.toml`. Gemini CLI before 0.26 needs hooks enabled in its settings.
-Files that Overseer owns (the Copilot hook file, the opencode and Amp plugins) are refused if a
-file of the same name was not written by Overseer.
+Files that Overseer owns (the Copilot hook file, the Mistral Vibe `hooks.toml`, the opencode and
+Amp plugins) are refused if a file of the same name was not written by Overseer. Mistral Vibe
+before 3.0 used other hook names behind an experimental flag and is not supported by the hooks.
 
 The hook program only appends `{agent, event, at, sessionId, cwd, pid, tmuxPane, termId}` to
 `<state>/spool/<pid>.jsonl`. Prompts and messages are never stored.
@@ -919,7 +922,7 @@ On first launch, once the app is connected (immediately in local mode, after the
 connection on a phone), a welcome card offers **Take the tour** or **Skip**. The tour dims the
 window and highlights the real controls one at a time: host chip, workspaces sidebar, tabs and the
 new-session menu, the Terminal/Chat toggle, the side panel, Tasks, Review, the usage, system and ports
-chips, notifications and hooks, the command palette and Feedback, in 0.25 the Cmd/Ctrl+P palette shortcut, and in 0.27 the demo mode (on the **Demo mode** pill while in the demo, else on the host chip), and in 0.28 the GPU rendering option for terminals, and in 0.29 the clean up of unused worktrees and the import from Switchboard (on its button in Settings, Help, or on the Settings button), and in 0.30 click to move the cursor in a terminal (on the tabs), and in 0.31 the Light and Dark palettes (on Settings, or More on a phone), and in 0.33 the one-click install of skills and plugins (on Settings), and in 0.34 the auto-approval defaults (on Settings, Agents), the Review, Merged and Closed columns (on the Merged column when the board is open, else on the Tasks tab) and the clean removal of everything Overseer added (on Settings, Connection, **Remove**), and in 0.35 one-click in-app updates for every install (on Settings, Updates, else on the Settings button), and in 0.36 subjects inside a workspace (on **+ New subject** in the open workspace, else on the sidebar), and the live review behind the git button (on the git button of a session's tab bar, else on the command palette), and the review map (on List | Map in a review, else on the Review tab), and keeping agents running with the lid closed (on its switch in Settings, Connection, else on the Settings button), and Record a bug (centred, on the command palette), and the Quorum option of a new task (on the Quorum control in the New task dialog, else on the Tasks tab), and installing a missing agent from the app (on the title bar **+**, else on the palette). Steps whose control is not on
+chips, notifications and hooks, the command palette and Feedback, in 0.25 the Cmd/Ctrl+P palette shortcut, and in 0.27 the demo mode (on the **Demo mode** pill while in the demo, else on the host chip), and in 0.28 the GPU rendering option for terminals, and in 0.29 the clean up of unused worktrees and the import from Switchboard (on its button in Settings, Help, or on the Settings button), and in 0.30 click to move the cursor in a terminal (on the tabs), and in 0.31 the Light and Dark palettes (on Settings, or More on a phone), and in 0.33 the one-click install of skills and plugins (on Settings), and in 0.34 the auto-approval defaults (on Settings, Agents), the Review, Merged and Closed columns (on the Merged column when the board is open, else on the Tasks tab) and the clean removal of everything Overseer added (on Settings, Connection, **Remove**), and in 0.35 one-click in-app updates for every install (on Settings, Updates, else on the Settings button), and in 0.36 subjects inside a workspace (on **+ New subject** in the open workspace, else on the sidebar), and the live review behind the git button (on the git button of a session's tab bar, else on the command palette), and the review map (on List | Map in a review, else on the Review tab), and keeping agents running with the lid closed (on its switch in Settings, Connection, else on the Settings button), and Record a bug (centred, on the command palette), and the Quorum option of a new task (on the Quorum control in the New task dialog, else on the Tasks tab), and installing a missing agent from the app (on the title bar **+**, else on the palette), and agents kept inside their project (on **Agents message each other** in Settings, Defaults, else on the Settings button), and Mistral Vibe as a new agent (on the title bar **+**, else on the palette), and the real cost of each session and task (on the cost line of the side panel, else on the side panel), and profiles by task type (on the **Type** field of the New task dialog, else on the Tasks tab). Steps whose control is not on
 screen (no session selected, a feature the server lacks, phone layout) are skipped. On a phone the
 card is a sheet at the bottom (or top, when the control sits low) and points at the bottom
 navigation, the session strip and the menu.
@@ -1082,20 +1085,27 @@ In the app:
 ### 14.1a Agents
 
 `GET /v1/agents` lists the agent CLIs the daemon knows — Claude Code, Codex, Gemini CLI,
-Antigravity (`agy`), opencode, Amp, Copilot CLI, Cursor Agent (`cursor-agent`) and the login
-shell — with `installed` and `version` (from `<bin> --version`, cached a minute), the models and
+Antigravity (`agy`), opencode, Amp, Copilot CLI, Cursor Agent (`cursor-agent`), Mistral Vibe
+(`vibe`) and the login shell — with `installed` and `version` (from `<bin> --version`, cached a minute), the models and
 efforts it maps, and whether it can resume. Start one in a term without writing its argv:
 
 ```
 curl --unix-socket "$S" -X POST -d '{"cwd":"/home/me/src/app","agent":"gemini","model":"gemini-2.5-pro"}' http://unix/v1/terms
 ```
 
-The flags per agent are in `contract/app-daemon.md` §2a. Claude, Codex and Gemini sessions are
-found in their own files (with the activity panel); a term running another agent is a line of
+The flags per agent are in `contract/app-daemon.md` §2a. Claude, Codex, Gemini and Mistral Vibe
+sessions are found in their own files (with the activity panel and the chat view); a term running another agent is a line of
 its own while the term exists, and resuming it continues the agent's latest session in that
 directory (Copilot resumes the exact session: the daemon gives it a session id at start). Only
-Claude and Codex report the end of a turn (hooks): a task on another agent moves to `in_testing`
-when the agent exits or calls the MCP tool `set_task_status`.
+Claude, Codex and Mistral Vibe report the end of a turn (hooks): a task on another agent moves to
+`in_testing` when the agent exits or calls the MCP tool `set_task_status`.
+
+Mistral Vibe 2 sessions are not read: a Vibe 2 started from Overseer runs in its terminal but gets
+no line (no chat, resume or restore); run `vibe update` to get Vibe 3. Mistral Vibe 3 sessions are read from `$VIBE_HOME/logs/session/unified/<id>/` (`meta.json` for
+the folder, title and model, the session store for the chat); a session is live while Vibe holds
+its lease in `logs/session/active/`. Forks (`/branch`) are lines of their own, subagents are not.
+Vibe has no launch flag for the model: a profile sets it with `VIBE_ACTIVE_MODEL`. A task started
+on Vibe gets `--trust`, since its new worktree would otherwise stop at Vibe's trust prompt.
 
 Detection uses the daemon's `PATH`. A daemon started over SSH by the app gets a minimal
 environment, so at start it asks the login shell for the real one (`$SHELL -l -i -c`, 5 s
@@ -1109,7 +1119,7 @@ runs the detection again (`POST /v1/agents/rescan`), for instance after installi
 
 **Auto-approve** in Settings → Agents chooses which supported CLIs Overseer starts with their
 native automatic permission mode. It is on by default for Claude Code, Codex, Gemini CLI,
-Antigravity, opencode, Copilot CLI and Cursor Agent. The settings are stored on the connected
+Antigravity, opencode, Copilot CLI, Cursor Agent and Mistral Vibe (`--auto-approve`). The settings are stored on the connected
 daemon host and apply to new sessions, task agents and feedback agents; changing a setting does
 not change sessions that are already running. Amp currently auto-approves by default unless its
 own permission configuration enables a policy, so it has no Overseer toggle. The switch on the
@@ -1122,9 +1132,9 @@ install runs in a new terminal titled `<tool> · <agent>` that stays open on `Do
 close.`, so the output and any prompt are visible. The picker lists only installed agents the tool
 supports.
 
-| Tool | What it is | Claude Code | Gemini CLI | Codex, opencode, Copilot, Cursor, Amp, Antigravity |
+| Tool | What it is | Claude Code | Gemini CLI | Codex, opencode, Copilot, Cursor, Amp, Antigravity, Mistral Vibe |
 |---|---|---|---|---|
-| RTK | a CLI proxy (binary + hook), not a skill | `rtk init -g --auto-patch` | `rtk init -g --gemini --auto-patch` | `rtk init -g` with `--codex`, `--opencode --auto-patch`, `--copilot`, `--agent cursor`, `--agent antigravity`; no Amp |
+| RTK | a CLI proxy (binary + hook), not a skill | `rtk init -g --auto-patch` | `rtk init -g --gemini --auto-patch` | `rtk init -g` with `--codex`, `--opencode --auto-patch`, `--copilot`, `--agent cursor`, `--agent antigravity`, `--agent vibe`; no Amp |
 | Caveman | a plugin with skills | `claude plugin marketplace add JuliusBrussee/caveman && claude plugin install caveman@caveman` | `gemini extensions install https://github.com/JuliusBrussee/caveman` | `npx -y skills add JuliusBrussee/caveman --skill '*' -g -a <agent> -y` |
 | Ponytail | a plugin with skills | same with `DietrichGebert/ponytail`, `ponytail@ponytail` | same with `DietrichGebert/ponytail` | same with `DietrichGebert/ponytail` |
 
@@ -1161,10 +1171,23 @@ Which profile applies, most specific first:
 
 1. the profile picked for a task (Add Task → **Profile**) or for the next session (**+** menu →
    **Next session**, used once);
-2. the workspace's profile (the longest workspace path containing the session's directory or the
+2. for a task, the profile mapped to its **Type** (see below);
+3. the workspace's profile (the longest workspace path containing the session's directory or the
    task's project);
-3. the default profile (**Settings → Agents & models**); out of the box this is **CLI defaults**,
+4. the default profile (**Settings → Agents & models**); out of the box this is **CLI defaults**,
    so nothing changes until you pick one.
+
+**By task type.** The right model and effort depend more on the kind of work than on the repo,
+so a task can carry a **Type**: **Bug fix**, **Feature**, **Engineering** (everyday work and
+debugging), **Migration / refactor** or **Search / triage**. Under **Agents & models → By task
+type**, map each type to a profile (or to **CLI defaults**); an unmapped type falls through to the
+workspace and default profiles. Nothing is mapped out of the box. A sensible start for Claude,
+after the model guide's advice to pick the model in code by task type: bug fixes and features on
+`sonnet` or `opus` at `medium`, engineering on `opus` at `medium`, migrations on `fable` at
+`medium`, triage on `haiku`. Make those profiles, then map them. A task imported from GitHub or
+GitLab takes its type from its labels (`bug`, `enhancement`, `refactor`, `question`…), and one
+from Jira from its issue type (Bug, Story, Task, Epic, Spike…); you can change it before
+creating the task. A task whose mapped profile was deleted falls back to the workspace one.
 
 A model or effort typed explicitly (task form, API) wins over the profile. The session tab shows
 the profile name, and the activity panel shows it in full (`Balanced · sonnet · effort medium`).
@@ -1181,6 +1204,7 @@ How each CLI gets the values (agent files change only when you explicitly apply 
 | Antigravity | `--model` | `--effort` | — | `model:` tier in `.agents/agents` or `~/.gemini/config/agents`, via **Apply to agent files** | — |
 | Cursor Agent | `--model` | — | — | — | — |
 | Amp | — | `--mode` (max → `ultra`) | — | — | — |
+| Mistral Vibe | `VIBE_ACTIVE_MODEL` (env) | — | — | — | — |
 
 To change a named subagent, set it under **Named subagents**, save, then choose **Apply to agent
 files…**. Gemini CLI definitions come from `~/.gemini/agents` and `<project>/.gemini/agents`;
@@ -1193,10 +1217,23 @@ effort flag, so profiles cannot set Gemini effort.
 Profiles live in the daemon's state dir (`profiles.json`), so the desktop and phone apps share
 them. API: `GET/PUT /v1/profiles`, `GET /v1/profiles/subagents?cwd=`, `POST
 /v1/profiles/apply-files` (dry run unless `"dryRun": false` with the confirmed `files`), and
-`profile` on `POST /v1/terms` and `POST /v1/tasks` (`none` for CLI defaults).
+`profile` on `POST /v1/terms` and `POST /v1/tasks` (`none` for CLI defaults). Task types:
+`types` (`{"fix": "<profile id>"}`) on `PUT /v1/profiles`, the list in `taskTypes` on `GET`,
+and `taskType` on `POST`/`PATCH /v1/tasks` (`null` clears it; `"effort": ""` on `PATCH` clears
+an explicit effort so the profile's applies).
 Resuming a held session keeps its model and effort flags; environment-only values (Claude
 subagent and background models, opencode config) are taken from the profile that applies to
-the session's directory at resume time.
+the session's directory at resume time, without the task type: a resumed task session takes them
+from its workspace or default profile, as it already does for an explicit task profile.
+
+**Claude's built-in Explore subagent** declares `model: inherit`, so it runs on the session's
+model whatever `CLAUDE_CODE_SUBAGENT_MODEL` says, and **Override every subagent**
+(`CLAUDE_CODE_SUBAGENT_MODEL_FORCE=1`) does not change that either: it keeps `inherit` (checked in
+Claude Code 2.1.322). To move it to a cheaper model, add your own `Explore` agent in
+`~/.claude/agents/Explore.md` with `model: haiku`. Claude merges agents by name, and a user or
+project file replaces the built-in one whole, so that file must carry its own description,
+tools and prompt; once it exists, **Named subagents** and **Apply to agent files** manage its
+`model:` like any other.
 
 ### 14.2 Tasks (Kanban)
 
@@ -1267,6 +1304,13 @@ curl --unix-socket "$S" 'http://unix/v1/tasks?status=in_progress,in_testing'
   same files, Overseer messages both agents by itself (`[Overseer] Overlap: task #A ... and
   task #B ... both change: ...`) so they agree who changes what. The same pair is not alerted
   again unless the set of shared files changes.
+- **Agent messaging control**: agents only message tasks of their own project; a message to a
+  task of another project is refused (403, "belongs to another project"), and `list_tasks`
+  lists the agent's own project unless it names another. **Settings → Defaults → Agents
+  message each other** (on by default, `GET`/`PUT /v1/tasks/agent-messaging {"enabled": bool}`)
+  turns agent-to-agent messages off: a task's agent can then still message its own subtasks
+  and its parent (quorum keeps working), your messages and Overseer's own messages still
+  arrive, overlap alerts stop, and the organizer no longer messages agents.
 - **Matrix**: the **Board | Matrix** switch in the Tasks header shows the open tasks (not
   merged or closed, not session tasks) on an Eisenhower matrix: Do first (urgent and important),
   Schedule (important), Delegate (urgent) and Eliminate (neither), plus an Unsorted strip for
@@ -1481,11 +1525,15 @@ are reachable directly. Windows daemons do not detect ports yet.
 The bell in the title bar (Notifications in More on the phone) lists what happened in the
 background on the connected host: an agent needs input, finished or failed, a task reached
 testing, a workspace went idle, ports forwarded or closed, an app or server update, uploads and
-errors. Each entry shows its time, its source and an unread dot; click it to act (open the line,
-open the port in the browser, open the update). Mark all read and Clear sit at the top. The list
-is kept per host in the app (last 200 entries) and survives a reload; a replayed event after a
-reconnect never adds a second entry. The bell counts unread entries; port and upload entries
-arrive already read, so they never light it.
+errors. Each session, task, workspace and port has one entry that shows its latest event: a new
+event replaces the old one, moves it to the top and makes it unread again. When an agent moves its
+task to testing, the "finished" that follows within a minute is folded into that entry (no second
+toast or system notification). Opening a session marks its entry read. Each entry shows its time,
+its source and an unread dot; click it to act (open the line, open the port in the browser, open
+the update). Mark all read and Clear sit at the top. The list is kept per host in the app (last
+100 entries) and survives a reload; a replayed event after a reconnect never adds a second entry,
+and lists saved by older versions are reduced to one entry per session. The bell counts unread
+entries; port and upload entries arrive already read, so they never light it.
 
 Toasts are kept for errors and for direct answers to what you just did (copied, saved, a failed
 forward). In-app events only go to the center, unless Settings > Notifications > "Show toasts for
@@ -1580,8 +1628,22 @@ Clicking it (or "Agent usage" in the palette, or Usage in the phone's More tab) 
 panel: plan gauges per agent with a reset countdown, totals for today, 7 or 30 days (tokens with
 input / output / cache, estimated cost marked ≈, requests, active time), tokens per day, and a
 breakdown by project, session, model or agent; a session row opens that session. "Open in a tab"
-keeps it as a workspace tab. The side panel shows the selected session's tokens, cost and
-requests over the last 30 days.
+keeps it as a workspace tab.
+
+**Cost per session and task.** The side panel shows what the selected session cost, with its
+main model and effort ("≈$1.23 · claude-opus-5-5 · effort high"), and a **Cost** section that
+splits it per model (subagents included, each at its own model's price) into uncached input,
+cache writes, cache reads and output. A switch to another model mid-session is listed as its own
+line with what rebuilding the cache cost, since the new model writes the whole context again. The session tab
+shows the same total, and each task card the total of the task's sessions. Tasks keep that number
+after the transcripts are gone. At the bottom of the Usage panel, **Cost per task** groups the
+tasks by profile (and agent), by ticket or lists each task, with the average cost per finished
+task (in testing, merged or completed) for each profile: run the same kind of work under two
+profiles and compare. The numbers are real token counts from the transcripts (Claude Code,
+Codex, Gemini CLI) priced at API list prices dated in the hint; a model without a known price
+keeps its tokens but adds nothing to the cost (marked "+"), and agents whose logs have no token
+counts show no cost at all rather than an estimate. Subscriptions are not billed per token, so
+read it as what the same work would cost on the API.
 
 Where the numbers come from (contract §7c): Claude Code transcripts, Codex rollouts and Gemini
 CLI sessions (when they record token counts) on the machine the app is connected to, read

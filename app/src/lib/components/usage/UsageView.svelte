@@ -5,6 +5,7 @@
   import { agentName } from '../../agents';
   import AgentGlyph from '../ui/AgentGlyph.svelte';
   import Bars from './Bars.svelte';
+  import TaskCosts from './TaskCosts.svelte';
   import { UsageFeed } from '../../usage/store.svelte';
   import { agentLevel, authNote, countdown, formatCost, formatDuration, formatPct, formatTokens, liveWindows, onCredits, shortDay, windowLevel } from '../../usage/format';
   import { creditsNote, ust } from '../../usage/strings';
@@ -193,6 +194,7 @@
         </table>
       {/if}
     </section>
+    {#if !compact}<TaskCosts />{/if}
   {/if}
 </div>
 

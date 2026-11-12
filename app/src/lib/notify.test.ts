@@ -20,7 +20,7 @@ describe('agent notifications', () => {
     const prev = snap([line('a', 'opencode', { busy: true }), line('b', 'claude', { busy: false }), line('c', 'amp', { busy: true })]);
     const next = snap([line('a', 'opencode', { busy: false }), line('b', 'claude', { busy: false }), line('c', 'amp', { busy: true })]);
     const n = notificationsFor(prev, next, all, () => 'webshop');
-    expect(n).toEqual([{ kind: 'finished', key: 'line:a', title: 'opencode finished in webshop', body: 'T a · webshop' }]);
+    expect(n).toEqual([{ kind: 'finished', key: 'line:a', title: 'opencode finished in webshop', body: 'T a' }]);
     expect(notificationsFor(prev, next, { ...all, notifyFinished: false }, () => 'webshop')).toEqual([]);
   });
 
@@ -36,10 +36,11 @@ describe('agent notifications', () => {
   it('names a renamed session by its custom title', () => {
     // Given a busy session the user renamed
     // When its turn finishes
-    // Then the notification body uses the custom title, not the auto title
+    // Then the notification body uses the custom title, not the auto title, and does not repeat the place already in the title
     const prev = snap([line('a', 'claude', { busy: true, titleOverride: 'Payments' })]);
     const next = snap([line('a', 'claude', { busy: false, titleOverride: 'Payments' })]);
-    expect(notificationsFor(prev, next, all, () => 'webshop')[0].body).toBe('Payments · webshop');
+    expect(notificationsFor(prev, next, all, () => 'webshop')[0].body).toBe('Payments');
+    expect(notificationsFor(prev, next, all, () => 'Payments')[0].body).toBe('');
   });
 
   it('says which agent needs input', () => {

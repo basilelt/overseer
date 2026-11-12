@@ -27,7 +27,7 @@ fn tools() -> Value {
             "type": "object", "properties": properties, "required": required}})
     };
     json!([
-        tool("list_tasks", "List Kanban tasks, optionally filtered by project and status.",
+        tool("list_tasks", "List Kanban tasks, optionally filtered by project and status. The project defaults to your own task's project.",
             json!({"project": s("Absolute path of the project's main worktree root"),
                    "status": s("Status or comma list: pending, auto, in_progress, in_testing, merged, completed")}),
             json!([])),
@@ -37,6 +37,7 @@ fn tools() -> Value {
                    "agent": s("Agent CLI that runs it (claude, codex, gemini, ...). For a quorum orchestrator, one of its workers (default the first)"),
                    "project": s("Absolute path of the project's main worktree root"),
                    "urgent": b("Needs doing soon"), "important": b("Matters for the project's goals"),
+                   "taskType": {"type": "string", "enum": crate::profiles::TASK_TYPES, "description": "Kind of work; picks the agent profile mapped to it"},
                    "dependsOn": deps(),
                    "inheritBranch": b("With exactly one dependency, start from its branch (default true)")}),
             json!(["title"])),
@@ -196,10 +197,20 @@ fn run_tool(name: &str, a: &Value, own: Option<&str>, call: &mut Call) -> Result
     };
     match name {
         "list_tasks" => {
-            let q: Vec<String> = ["project", "status"]
+            let own_project = match (s("project"), own) {
+                (None, Some(o)) => daemon(call, "GET", &format!("/v1/tasks/{}", encode(o)), None)
+                    .ok()
+                    .filter(|t| t["origin"] != "configurator")
+                    .and_then(|t| t["project"].as_str().map(str::to_string)),
+                _ => None,
+            };
+            let mut q: Vec<String> = ["project", "status"]
                 .iter()
                 .filter_map(|k| s(k).map(|v| format!("{k}={}", encode(v))))
                 .collect();
+            if let Some(p) = own_project {
+                q.insert(0, format!("project={}", encode(&p)));
+            }
             let target = match q.is_empty() {
                 true => "/v1/tasks".to_string(),
                 false => format!("/v1/tasks?{}", q.join("&")),
@@ -234,7 +245,7 @@ fn run_tool(name: &str, a: &Value, own: Option<&str>, call: &mut Call) -> Result
                     body[k] = json!(v);
                 }
             }
-            for k in ["agent", "dependsOn", "inheritBranch"] {
+            for k in ["agent", "taskType", "dependsOn", "inheritBranch"] {
                 if !a[k].is_null() {
                     body[k] = a[k].clone();
                 }
@@ -740,6 +751,52 @@ mod tests {
     }
 
     #[test]
+    fn list_tasks_defaults_to_own_project() {
+        let answer = |_: &str, t: &str| match t {
+            "/v1/tasks/OWN" => (200, json!({"id": "OWN", "project": "/home/u/my x"})),
+            _ => (200, json!([])),
+        };
+        let (_, log) = with_fake(
+            tool("list_tasks", json!({"status": "pending"})),
+            Some("OWN"),
+            answer,
+        );
+        assert_eq!(log[0].1, "/v1/tasks/OWN");
+        assert_eq!(
+            log[1].1,
+            "/v1/tasks?project=%2Fhome%2Fu%2Fmy%20x&status=pending"
+        );
+        let (_, log) = with_fake(
+            tool("list_tasks", json!({"project": "/other"})),
+            Some("OWN"),
+            answer,
+        );
+        assert_eq!(log.len(), 1);
+        assert_eq!(log[0].1, "/v1/tasks?project=%2Fother");
+    }
+
+    #[test]
+    fn list_tasks_lists_every_project_for_the_configurator_or_without_own_task() {
+        let (_, log) = with_fake(tool("list_tasks", json!({})), Some("CFG"), |_, t| match t {
+            "/v1/tasks/CFG" => (
+                200,
+                json!({"id": "CFG", "project": "/p", "origin": "configurator"}),
+            ),
+            _ => (200, json!([])),
+        });
+        assert_eq!(log[1].1, "/v1/tasks");
+        let (_, log) = with_fake(
+            tool("list_tasks", json!({})),
+            Some("GONE"),
+            |_, t| match t {
+                "/v1/tasks/GONE" => (404, json!({"error": "no such task"})),
+                _ => (200, json!([])),
+            },
+        );
+        assert_eq!(log[1].1, "/v1/tasks");
+    }
+
+    #[test]
     fn get_task_maps() {
         let (out, log) = with_fake(tool("get_task", json!({"id": "T9"})), None, ok);
         assert_eq!(
@@ -811,11 +868,12 @@ mod tests {
         let (_, log) = with_fake(
             tool(
                 "create_task",
-                json!({"title": "t", "project": "/q", "urgent": true, "important": false}),
+                json!({"title": "t", "project": "/q", "urgent": true, "important": false, "taskType": "fix"}),
             ),
             None,
             ok,
         );
+        assert_eq!(log[0].2.as_ref().unwrap()["taskType"], "fix");
         assert_eq!(log[0].2.as_ref().unwrap()["urgent"], true);
         assert_eq!(log[0].2.as_ref().unwrap()["important"], false);
     }

@@ -47,4 +47,13 @@
     gap: 3px;
     padding: 0 6px 6px 0;
   }
+  :global(:root.phone) .frame {
+    border-radius: 14px;
+  }
+  :global(:root.phone) .head {
+    min-height: var(--touch);
+  }
+  :global(:root.phone) .body {
+    gap: 4px;
+  }
 </style>

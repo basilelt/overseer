@@ -159,6 +159,19 @@ pub static AGENTS: &[Agent] = &[
         ..NONE
     },
     Agent {
+        id: "vibe",
+        name: "Mistral Vibe",
+        bin: "vibe",
+        install: "uv tool install mistral-vibe",
+        sessions: true,
+        turns: true,
+        models: Some(&[]),
+        prompt: Some("--"),
+        resume: Some(&["{flags}", "--resume", "{id}"]),
+        cont: Some(&["--continue"]),
+        ..NONE
+    },
+    Agent {
         id: "shell",
         name: "Shell",
         models: Some(&[]),
@@ -216,6 +229,7 @@ pub fn auto_approve_args(id: &str) -> Option<&'static [&'static str]> {
         "opencode" => Some(&["--auto"]),
         "copilot" => Some(&["--allow-all"]),
         "cursor" => Some(&["--force"]),
+        "vibe" => Some(&["--auto-approve"]),
         _ => None,
     }
 }
@@ -239,6 +253,7 @@ fn approval_overrides(id: &str) -> &'static [&'static str] {
         "opencode" => &["--auto"],
         "copilot" => &["--allow-all", "--allow-all-tools", "--yolo"],
         "cursor" => &["--force", "-f", "--yolo"],
+        "vibe" => &["--auto-approve", "--yolo", "--agent", "--smart-approve"],
         _ => &[],
     }
 }
@@ -464,7 +479,7 @@ pub fn on_path(bin: &str, path: &std::ffi::OsStr, exts: &str) -> Option<std::pat
 
 fn program(bin: &str) -> std::path::PathBuf {
     if cfg!(windows) {
-        let path = std::env::var_os("PATH").unwrap_or_default();
+        let path = std::ffi::OsString::from(crate::shellenv::path());
         let exts = std::env::var("PATHEXT").unwrap_or_else(|_| ".COM;.EXE;.BAT;.CMD".into());
         if let Some(p) = on_path(bin, &path, &exts) {
             return p;
@@ -475,7 +490,9 @@ fn program(bin: &str) -> std::path::PathBuf {
 
 pub fn version(bin: &str) -> Option<String> {
     let o = crate::git::output_within(
-        Command::new(program(bin)).arg("--version"),
+        Command::new(program(bin))
+            .arg("--version")
+            .env("PATH", crate::shellenv::path()),
         Duration::from_secs(5),
     )
     .ok()?;
@@ -515,7 +532,7 @@ fn detect() -> Detected {
 }
 
 pub fn installed() -> Detected {
-    let path = std::env::var("PATH").unwrap_or_default();
+    let path = crate::shellenv::path();
     let mut g = CACHE.lock().unwrap_or_else(|e| e.into_inner());
     if let Some((at, p, d)) = g.as_ref() {
         if *p == path && at.elapsed() < Duration::from_secs(60) {
@@ -545,6 +562,7 @@ pub fn list() -> Value {
 }
 
 pub fn rescan() -> Value {
+    crate::shellenv::refresh();
     *CACHE.lock().unwrap_or_else(|e| e.into_inner()) = None;
     list()
 }

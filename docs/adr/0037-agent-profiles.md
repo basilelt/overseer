@@ -37,7 +37,7 @@ The user's 11 Claude subagents all set `model: opus` in frontmatter, so the plai
   resume), and desktop and phone share it.
 - **Resolution**, most specific first: the task's or session's explicit `profile` (`none` = CLI
   defaults) > the scope whose path is the longest prefix of the session cwd or task project >
-  `default`. The default ships empty, so nothing changes until the user picks a profile. Explicit
+  `default` (a task-type rule now sits after the explicit profile, ADR 0041). The default ships empty, so nothing changes until the user picks a profile. Explicit
   `model`/`effort` in a request still win over the profile. A task whose stored profile was deleted
   falls back to its scope instead of failing to start. Tasks gain a `profile` column. A task
   created with a profile and no explicit effort stores an empty effort, so the profile's effort applies at start.
@@ -57,7 +57,8 @@ The user's 11 Claude subagents all set `model: opus` in frontmatter, so the plai
   on the session tab and in the activity panel. `profiles.changed` tells clients to refetch.
 - The app estimates a relative cost per profile and agent from list prices (2026-10-29), blending
   main (65 %), subagent (30 %) and background (5 %) models with an effort factor, against the CLI
-  defaults. It is labelled an estimate; real usage can replace it once usage tracking lands.
+  defaults. It is labelled an estimate. The real cost per session and task (ADR 0040) is what
+  to compare profiles with once they have run.
 
 ## Rejected
 - Writing `~/.claude/settings.json`, `~/.codex/config.toml` or Codex `-p` profile files: global

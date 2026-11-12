@@ -2583,8 +2583,61 @@ components:
         manualStatus: { type: string, enum: [in_progress, in_testing, merged, completed], description: Status set by hand on a session task, kept while the session state is unchanged }
         badges: { type: array, items: { type: string, enum: [needs_input, paused] } }
         profile: { type: string, description: Agent profile id chosen for this task }
+        cost: { $ref: "#/components/schemas/TaskCost" }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
+    TaskCost:
+      type: object
+      description: "Spend of the task's sessions, snapshot on the task so it outlives the transcripts. Omitted until a session reports token counts."
+      required: [input, cacheWrite, cacheRead, output, cost, partial, sessions]
+      properties:
+        input: { type: integer, description: Uncached input tokens }
+        cacheWrite: { type: integer }
+        cacheRead: { type: integer }
+        output: { type: integer }
+        cost: { type: [number, "null"], description: "USD at API list prices; null when no model is priced" }
+        partial: { type: boolean, description: Some tokens are on a model without a price }
+        sessions: { type: integer }
+        model: { type: [string, "null"], description: Main model of the latest session }
+        effort: { type: [string, "null"] }
+    SessionCost:
+      type: object
+      required: [input, cacheWrite, cacheRead, output, cost, partial, models, switches, pricesAsOf]
+      properties:
+        input: { type: integer, description: Uncached input tokens }
+        cacheWrite: { type: integer }
+        cacheRead: { type: integer }
+        output: { type: integer }
+        cost: { type: [number, "null"], description: "USD at API list prices; null when no model is priced" }
+        partial: { type: boolean }
+        model: { type: [string, "null"], description: Model of the latest main-transcript message }
+        effort: { type: [string, "null"], description: "From the transcript (Codex), else the launch flags" }
+        pricesAsOf: { type: string, description: Date of the price table in the daemon }
+        models:
+          type: array
+          description: Per model, subagents included, most expensive first
+          items:
+            type: object
+            required: [model, input, cacheWrite, cacheRead, output, cost]
+            properties:
+              model: { type: string }
+              input: { type: integer }
+              cacheWrite: { type: integer }
+              cacheRead: { type: integer }
+              output: { type: integer }
+              cost: { type: [number, "null"] }
+        switches:
+          type: array
+          description: "First turn on a new model in the main transcript (at most 50), priced on its cache write and uncached input"
+          items:
+            type: object
+            required: [at, from, to, cacheWrite, cost]
+            properties:
+              at: { type: string, format: date-time }
+              from: { type: string }
+              to: { type: string }
+              cacheWrite: { type: integer }
+              cost: { type: [number, "null"], description: Cost of that first turn }
     TaskMessage:
       type: object
       required: [id, taskId, from, body, createdAt, delivered]
@@ -2647,6 +2700,7 @@ components:
         summary: { type: [string, "null"], description: Latest summary entry (Claude compaction, Gemini chat summary) }
         lastPrompt: { type: [string, "null"], maxLength: 500, description: Latest prompt the agent recorded (Claude last-prompt), cleaned }
         model: { type: [string, "null"], description: Model of the latest assistant message }
+        cost: { $ref: "#/components/schemas/SessionCost" }
         at: { type: string, format: date-time, description: Newest entry time, the next since }
     MemberKey:
       type: string

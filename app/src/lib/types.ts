@@ -126,10 +126,14 @@ export interface ProfileSupport {
   subagentForce?: boolean;
 }
 
+export type TaskType = 'fix' | 'feature' | 'engineering' | 'refactor' | 'triage';
+
 export interface ProfilesStore {
   default: string;
   profiles: Profile[];
   scopes: Record<string, string>;
+  types?: Partial<Record<TaskType, string>>;
+  taskTypes?: TaskType[];
   support: Record<string, ProfileSupport>;
 }
 
@@ -233,6 +237,8 @@ export interface Task {
   manualStatus?: TaskStatus | null;
   badges?: TaskBadge[];
   profile?: string | null;
+  taskType?: TaskType | null;
+  cost?: TaskCost | null;
   quorum?: Quorum | null;
   votes?: TaskVotes | null;
   createdAt: string;
@@ -260,6 +266,7 @@ export interface NewTask {
   ticketKey?: string;
   status?: TaskStatus;
   profile?: string;
+  taskType?: TaskType;
   dependsOn?: string[];
   inheritBranch?: boolean;
   attachments?: { path: string; name?: string }[];
@@ -292,6 +299,7 @@ export interface SourceItem {
   body: string;
   url: string;
   ticketKey?: string | null;
+  taskType?: TaskType | null;
 }
 
 export interface SourceItems {
@@ -329,6 +337,45 @@ export interface Activity {
   editedFiles: string[];
   lastAssistantText: string;
   transcript?: boolean;
+  cost?: SessionCost | null;
+}
+
+export interface TokenSplit {
+  input: number;
+  cacheWrite: number;
+  cacheRead: number;
+  output: number;
+}
+
+export interface ModelCost extends TokenSplit {
+  model: string;
+  cost: number | null;
+}
+
+export interface ModelSwitch {
+  at: string;
+  from: string;
+  to: string;
+  cacheWrite: number;
+  cost: number | null;
+}
+
+export interface SessionCost extends TokenSplit {
+  cost: number | null;
+  partial: boolean;
+  model?: string | null;
+  effort?: string | null;
+  pricesAsOf: string;
+  models: ModelCost[];
+  switches: ModelSwitch[];
+}
+
+export interface TaskCost extends TokenSplit {
+  cost: number | null;
+  partial: boolean;
+  sessions: number;
+  model?: string | null;
+  effort?: string | null;
 }
 
 export interface Diff {

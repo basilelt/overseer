@@ -36,8 +36,8 @@
 </p>
 
 Overseer is a desktop app (Linux, macOS, Windows), a phone and tablet app (Android, iOS) and a small
-daemon. It works with Claude Code, Codex, Gemini CLI, Antigravity, opencode, Amp, Copilot CLI and
-Cursor Agent. Each agent session is a **line**: one agent, in one worktree, on one machine, for
+daemon. It works with Claude Code, Codex, Gemini CLI, Antigravity, opencode, Amp, Copilot CLI, Cursor
+Agent and Mistral Vibe. Each agent session is a **line**: one agent, in one worktree, on one machine, for
 one owner. The daemon owns the terminals, so closing the app, losing Wi-Fi or putting the laptop
 to sleep stops nothing; open the app again and every session is where you left it.
 
@@ -160,16 +160,24 @@ on a TCP port on the server.
 - **Notifications** when an agent needs input or finishes, from agent hooks Overseer can
   install for you.
 - **Agent profiles**: save each CLI's supported model and effort choices, plus named subagent models
-  for Gemini CLI and Antigravity. Apply a profile to new work, scope it to a workspace, and choose
-  when to update the agent files.
+  for Gemini CLI and Antigravity. Apply a profile to new work, scope it to a workspace or to a task
+  type (a bug fix and a migration in the same repo start with different models), and choose when
+  to update the agent files.
 - **Auto-approve defaults per agent**: choose which CLIs Overseer starts in their native
   auto-approval mode, one by one or all at once. The defaults are stored on each connected host and
   apply to new sessions.
 - **Skills and plugins in one click**: install RTK (trims shell output before the agent reads it),
   Caveman (terse replies) or Ponytail (simplest code that works) for Claude Code, Codex, Gemini CLI,
-  opencode, Copilot CLI, Cursor Agent, Amp or Antigravity, from Settings → Agents or the command
+  opencode, Copilot CLI, Cursor Agent, Amp, Antigravity or Mistral Vibe, from Settings → Agents or the command
   palette. The install runs in a terminal you can watch.
+- **Agents stay in their project**: task agents message each other only within the same
+  project, so they coordinate on shared files without spending tokens on unrelated repositories.
+  Settings → Defaults → Agents message each other turns their messages off entirely.
 - **Usage and system monitor**: agent quotas, token usage, CPU and RAM in the title bar.
+- **Real cost per session and task**: what each session cost, from the token counts in its
+  transcript, per model with cache reads and writes apart and model switches shown as their own
+  cost. Tabs and task cards carry the total, and the usage view compares the cost per finished
+  task by profile, ticket or task, so you can see whether a cheaper profile really saves money.
 - **Keep agents running with the lid closed**: an opt-in switch (Settings → Connection) stops the
   laptop running Overseer from sleeping when you close it, on Linux, macOS and Windows, so agents
   finish their work with the network on. It drains the battery, and the switch says so.

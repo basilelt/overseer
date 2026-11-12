@@ -1,5 +1,6 @@
 <script lang="ts" module>
   import { ensureSprite } from '../../icons/sprite';
+  import { formatCost } from '../../usage/format';
 
   ensureSprite();
 </script>
@@ -223,6 +224,7 @@
       {#if status.kind === 'progress'}
         <span class="progress" title="{status.pct}%"><span class="bar"><span class="fill" style:width="{status.pct}%"></span></span><span class="pct mono">{task.progress?.done}/{task.progress?.total}</span></span>
       {/if}
+      {#if task.cost}<span class="cost mono" title={t('cost.task')}>{formatCost(task.cost.cost, task.cost.partial)}</span>{/if}
       {#if !session && task.effort && (findAgent(app.agents, task.agent)?.efforts.length ?? 1)}<span class="effort">{t(`effort.${task.effort}` as Key)}</span>{/if}
       <span class="tail">
       <span class="age faint">{t(age.key, { n: age.n })}</span>
@@ -563,6 +565,11 @@
   .meta .age {
     color: var(--text-3);
     padding-left: 4px;
+  }
+  .cost {
+    flex: none;
+    font-size: 11px;
+    color: var(--text-3);
   }
   .effort {
     flex: none;

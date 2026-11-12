@@ -403,17 +403,17 @@ describe('MockDaemon', () => {
   it('lists every agent with install state and capabilities', async () => {
     const { a } = setup();
     const agents = await a.agents();
-    expect(agents.map((x) => x.id)).toEqual(['claude', 'codex', 'gemini', 'agy', 'opencode', 'amp', 'copilot', 'cursor', 'shell']);
+    expect(agents.map((x) => x.id)).toEqual(['claude', 'codex', 'gemini', 'agy', 'opencode', 'amp', 'copilot', 'cursor', 'vibe', 'shell']);
     expect(agents.filter((x) => !x.installed).map((x) => x.id)).toEqual(['opencode', 'amp', 'cursor']);
     expect(agents.find((x) => x.id === 'amp')!.install).toContain('npm');
     expect(agents.find((x) => x.id === 'gemini')!.efforts).toEqual([]);
     expect(agents.find((x) => x.id === 'agy')!.efforts).toEqual(['low', 'medium', 'high', 'xhigh', 'max']);
-    expect(agents.filter((x) => x.sessions).map((x) => x.id)).toEqual(['claude', 'codex', 'gemini']);
+    expect(agents.filter((x) => x.sessions).map((x) => x.id)).toEqual(['claude', 'codex', 'gemini', 'vibe']);
   });
 
   it('persists per-agent auto-approval defaults and applies them to newly started terms', async () => {
     const { m, a } = setup();
-    expect((await a.agentSettings()).autoApprove).toEqual({ claude: true, codex: true, gemini: true, agy: true, opencode: true, copilot: true, cursor: true });
+    expect((await a.agentSettings()).autoApprove).toEqual({ claude: true, codex: true, gemini: true, agy: true, opencode: true, copilot: true, cursor: true, vibe: true });
     expect((await a.createTerm({ agent: 'codex' })).cmd).toContain('--ask-for-approval');
     expect((await a.setAgentAutoApprove('codex', false)).autoApprove.codex).toBe(false);
     expect((await a.createTerm({ agent: 'codex' })).cmd).not.toContain('--ask-for-approval');
@@ -449,6 +449,20 @@ describe('MockDaemon', () => {
     expect(await a.activity(copilot.line.id)).toMatchObject({ lineId: copilot.line.id, transcript: false, workLog: [], todos: [], editedFiles: [] });
     expect((await a.terms()).some((t) => t.lineId === copilot.line.id && t.agent === 'copilot')).toBe(true);
     expect(await a.activity('ln_06')).toMatchObject({ lineId: 'ln_06', transcript: true });
+  });
+
+  it('gives sessions of agents with token counts a cost, and their tasks the same total', async () => {
+    const { a } = setup();
+    const act = await a.activity('ln_04');
+    expect(act.cost).toMatchObject({ model: 'claude-opus-5-5', partial: false, pricesAsOf: expect.any(String) });
+    expect(act.cost!.models.map((m) => m.model)).toEqual(['claude-opus-5-5', 'claude-haiku-5-5']);
+    expect(act.cost!.cost).toBeCloseTo(act.cost!.models.reduce((s, m) => s + (m.cost ?? 0), 0), 4);
+    const task = (await a.tasks()).find((t) => t.lineId === 'ln_04')!;
+    expect(task.cost).toMatchObject({ cost: act.cost!.cost, sessions: 1, model: 'claude-opus-5-5' });
+    expect((await a.tasks()).filter((t) => t.status === 'pending').every((t) => !t.cost)).toBe(true);
+    const lines = await a.lines();
+    const copilot = lines.find((l) => l.line.agent === 'copilot')!;
+    expect((await a.activity(copilot.line.id)).cost).toBeUndefined();
   });
 
   it('creates projects at the repository root and rejects non repositories', async () => {
@@ -618,6 +632,29 @@ describe('MockDaemon', () => {
     expect(await a.autoOrganize()).toEqual({ enabled: false });
     expect(await a.setAutoOrganize(true)).toEqual({ enabled: true });
     expect(await a.autoOrganize()).toEqual({ enabled: true });
+  });
+
+  it('stores the agent messaging switch, on by default, and refuses a non-boolean', async () => {
+    const { a, m } = setup();
+    expect(await a.agentMessaging()).toEqual({ enabled: true });
+    expect(await a.setAgentMessaging(false)).toEqual({ enabled: false });
+    expect(await a.agentMessaging()).toEqual({ enabled: false });
+    await expect(m.request('PUT', '/v1/tasks/agent-messaging', { enabled: 'no' })).rejects.toMatchObject({ status: 400, message: expect.stringContaining('enabled must be a boolean') });
+  });
+
+  it('keeps agent messages inside a project and honours the switch, like the daemon', async () => {
+    const { a, m } = setup();
+    const mk = (title: string, project: string) => a.createTask({ title, description: '', project, agent: 'claude', model: '' });
+    const [x, y, far] = [await mk('X', '/p'), await mk('Y', '/p'), await mk('Far', '/q')];
+    const send = (to: string, from?: string) => m.request('POST', `/v1/tasks/${to}/messages`, { body: 'hi', ...(from ? { from } : {}) });
+    await expect(send(y.id, x.id)).resolves.toMatchObject({ from: x.id });
+    await expect(send(far.id, x.id)).rejects.toMatchObject({ status: 403, message: expect.stringContaining('another project (/q)') });
+    await a.setAgentMessaging(false);
+    await expect(send(y.id, x.id)).rejects.toMatchObject({ status: 403, message: expect.stringContaining('turned off') });
+    await expect(send(y.id)).resolves.toMatchObject({ from: null });
+    const sub = (await a.tasks()).find((t) => t.parentId)!;
+    await expect(send(sub.id, sub.parentId!)).resolves.toMatchObject({ from: sub.parentId });
+    await expect(send(sub.parentId!, sub.id)).resolves.toMatchObject({ from: sub.id });
   });
 
   it('walks the remote connection phases', async () => {

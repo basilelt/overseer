@@ -26,6 +26,11 @@ describe('tab strip', () => {
     expect(bar).not.toMatch(/\.tabs:hover/);
   });
 
+  it('shows the session cost on its tab, shrinking before the title does', () => {
+    expect(bar).toMatch(/\{#if costOf\(tab\)\}.*<span class="chip cost mono" title=\{t\('cost\.tab'/);
+    expect(rule('.chip.cost')).toMatch(/flex:\s*0 8 auto/);
+  });
+
   it('lays no overlay over the strip on hover', () => {
     expect(bar).not.toMatch(/TabFullTitle|onpointerenter/);
   });
@@ -71,8 +76,7 @@ describe('new tab menu', () => {
 
   it('installs an absent agent from its entry instead of greying it out', () => {
     const menu = actions.slice(actions.indexOf('export function newSessionItems'), actions.indexOf('export function startIn'));
-    expect(menu).toMatch(/disabled: !a\.installed && !canInstall\(a\)/);
-    expect(menu).toMatch(/run: a\.installed \? start\(a\.id\) : install\(a\.id\)/);
+    expect(menu).toMatch(/more: missing\.map\(.*disabled: !canInstall\(a\).*run: install\(a\.id\)/);
     expect(menu).toContain('app.installAgent');
     expect(menu).toContain("label: canInstall(a) ? t('palette.installAgent', { name: a.name }) : a.name");
   });

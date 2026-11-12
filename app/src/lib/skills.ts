@@ -18,6 +18,7 @@ const RTK_FLAGS: Record<string, string> = {
   copilot: '--copilot',
   cursor: '--agent cursor',
   agy: '--agent antigravity',
+  vibe: '--agent vibe',
 };
 
 const SKILLS_CLI: Record<string, string> = {
@@ -27,6 +28,7 @@ const SKILLS_CLI: Record<string, string> = {
   cursor: 'cursor',
   amp: 'amp',
   agy: 'antigravity',
+  vibe: 'mistral-vibe',
 };
 
 const PLUGIN_REPO: Record<Exclude<SkillId, 'rtk'>, string> = {

@@ -1,4 +1,4 @@
-export type StepId = 'host' | 'workspaces' | 'tabs' | 'view' | 'panel' | 'kanban' | 'review' | 'chips' | 'notify' | 'profiles' | 'palette' | 'paletteKey' | 'organize' | 'settings' | 'feedback' | 'demo' | 'gpuTerminal' | 'worktreeCleanup' | 'switchboard' | 'clickCursor' | 'palettes' | 'skills' | 'autoApprove' | 'merged' | 'uninstall' | 'autoUpdate' | 'subjects' | 'sourceControl' | 'reviewMap' | 'lidClosed' | 'recordBug' | 'quorum' | 'installAgent';
+export type StepId = 'host' | 'workspaces' | 'tabs' | 'view' | 'panel' | 'kanban' | 'review' | 'chips' | 'notify' | 'profiles' | 'palette' | 'paletteKey' | 'organize' | 'settings' | 'feedback' | 'demo' | 'gpuTerminal' | 'worktreeCleanup' | 'switchboard' | 'clickCursor' | 'palettes' | 'skills' | 'autoApprove' | 'merged' | 'uninstall' | 'autoUpdate' | 'subjects' | 'sourceControl' | 'reviewMap' | 'lidClosed' | 'recordBug' | 'quorum' | 'installAgent' | 'agentMessaging' | 'mistralVibe' | 'cost' | 'taskType';
 
 export interface Step {
   id: StepId;
@@ -41,6 +41,10 @@ export const STEPS: Step[] = [
   { id: 'recordBug', targets: ['palette'], since: '0.36', center: true },
   { id: 'quorum', targets: ['quorum', 'kanban'], since: '0.36' },
   { id: 'installAgent', targets: ['new-session', 'palette'], since: '0.36' },
+  { id: 'agentMessaging', targets: ['agent-messaging', 'settings'], since: '0.36' },
+  { id: 'mistralVibe', targets: ['new-session', 'palette'], since: '0.36' },
+  { id: 'cost', targets: ['session-cost', 'panel'], since: '0.36' },
+  { id: 'taskType', targets: ['task-type', 'kanban'], since: '0.36' },
 ];
 
 export type Mode = 'full' | 'whatsNew';

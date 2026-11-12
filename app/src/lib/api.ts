@@ -49,6 +49,8 @@ export function api(c: DaemonClient) {
     sendTaskMessage: (id: string, body: string) => c.request<TaskMessage>('POST', `/v1/tasks/${enc(id)}/messages`, { body }),
     autoOrganize: () => c.request<{ enabled: boolean }>('GET', '/v1/tasks/auto-organize'),
     setAutoOrganize: (enabled: boolean) => c.request<{ enabled: boolean }>('PUT', '/v1/tasks/auto-organize', { enabled }),
+    agentMessaging: () => c.request<{ enabled: boolean }>('GET', '/v1/tasks/agent-messaging'),
+    setAgentMessaging: (enabled: boolean) => c.request<{ enabled: boolean }>('PUT', '/v1/tasks/agent-messaging', { enabled }),
     organize: (project?: string) => c.request<{ started: Task[] }>('POST', '/v1/tasks/organize', project ? { project } : {}),
     projects: () => c.request<Project[]>('GET', '/v1/projects'),
     createProject: (path: string) => c.request<Project>('POST', '/v1/projects', { path }),
@@ -72,7 +74,7 @@ export function api(c: DaemonClient) {
     statusline: () => c.request<StatuslineStatus>('GET', '/v1/usage/statusline'),
     setStatusline: (on: boolean) => c.request<StatuslineStatus>('POST', `/v1/usage/statusline/${on ? 'install' : 'uninstall'}`, { dryRun: false }),
     profiles: () => c.request<ProfilesStore>('GET', '/v1/profiles'),
-    saveProfiles: (patch: { default?: string; profiles?: Profile[]; scopes?: Record<string, string> }) => c.request<ProfilesStore>('PUT', '/v1/profiles', patch),
+    saveProfiles: (patch: { default?: string; profiles?: Profile[]; scopes?: Record<string, string>; types?: ProfilesStore['types'] }) => c.request<ProfilesStore>('PUT', '/v1/profiles', patch),
     subagents: (cwd?: string) => c.request<{ subagents: SubagentDef[] }>('GET', `/v1/profiles/subagents${cwd ? `?cwd=${enc(cwd)}` : ''}`),
     applyProfileFiles: (b: { profile: string; cwd?: string; dryRun: boolean; files?: string[] }) => c.request<{ dryRun: boolean; files: FileEdit[] }>('POST', '/v1/profiles/apply-files', b),
     holdPlan: (id: string) =>

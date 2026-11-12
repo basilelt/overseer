@@ -367,6 +367,13 @@ pub fn targets() -> Vec<Target> {
             Format::File,
         ),
         t(
+            "vibe",
+            crate::vibe::home(),
+            "hooks.toml",
+            hooks::VIBE_EVENTS,
+            Format::File,
+        ),
+        t(
             "cursor",
             crate::home().join(".cursor"),
             "hooks.json",
@@ -396,7 +403,7 @@ pub fn available(t: &Target, cli: bool) -> bool {
 
 pub fn mechanism(agent: &str) -> &'static str {
     match agent {
-        "claude" | "codex" | "gemini" | "copilot" | "cursor" => "hooks",
+        "claude" | "codex" | "gemini" | "copilot" | "cursor" | "vibe" => "hooks",
         "opencode" | "amp" => "plugin",
         _ => "polling",
     }
@@ -406,6 +413,7 @@ pub fn note(agent: &str) -> Option<&'static str> {
     Some(match agent {
         "codex" => CODEX_TRUST,
         "amp" => "Amp has no needs-input event: Overseer reports turn start and end only.",
+        "vibe" => "Needs Mistral Vibe 3.0 or later. An interrupted turn fires no hook: the line stays busy until the next turn ends.",
         "cursor" => "Cursor Agent fires only some hooks in the CLI; a missing turn start falls back to terminal activity.",
         "agy" => "No stable hook file for the Antigravity CLI yet: finished turns come from terminal activity.",
         "shell" => return None,
@@ -484,6 +492,22 @@ pub fn plugin_js(agent: &str, bin: &Path, state_dir: &Path) -> String {
     )
 }
 
+pub fn vibe_toml(bin: &Path, state_dir: &Path) -> String {
+    let mut out = String::new();
+    for ev in hooks::VIBE_EVENTS {
+        let main = if matches!(*ev, "pre_agent" | "post_agent") {
+            "match = \"main\"\n"
+        } else {
+            ""
+        };
+        out.push_str(&format!(
+            "[[hooks]]\nname = \"overseer-{ev}\"\ntype = \"{ev}\"\n{main}timeout = 5.0\ncommand = {}\n\n",
+            Value::String(hook_command(bin, state_dir, "vibe", ev))
+        ));
+    }
+    out
+}
+
 pub fn copilot_json(bin: &Path, state_dir: &Path) -> String {
     let mut hooks = Map::new();
     for ev in hooks::COPILOT_EVENTS {
@@ -498,6 +522,7 @@ pub fn copilot_json(bin: &Path, state_dir: &Path) -> String {
 fn owned_text(t: &Target, bin: &Path, state_dir: &Path) -> String {
     match t.agent {
         "copilot" => copilot_json(bin, state_dir),
+        "vibe" => vibe_toml(bin, state_dir),
         a => plugin_js(a, bin, state_dir),
     }
 }
@@ -1343,6 +1368,13 @@ mod tests {
                 hooks::COPILOT_EVENTS,
                 Format::File,
             ),
+            target(
+                &d,
+                "vibe",
+                "vibe/hooks.toml",
+                hooks::VIBE_EVENTS,
+                Format::File,
+            ),
         ];
         let out = go(&ts, Mode::Install, bin, &state);
         assert!(out.iter().all(|o| o.written), "{out:?}");
@@ -1368,6 +1400,13 @@ mod tests {
             .as_str()
             .unwrap()
             .contains("hook copilot agentStop"));
+        let vibe = std::fs::read_to_string(&ts[3].path).unwrap();
+        assert_eq!(vibe.matches("[[hooks]]").count(), hooks::VIBE_EVENTS.len());
+        for ev in hooks::VIBE_EVENTS {
+            assert!(vibe.contains(&format!("type = \"{ev}\"\n")), "{ev}");
+        }
+        assert_eq!(vibe.matches("match = \"main\"").count(), 2);
+        assert!(vibe.contains(r#"hook vibe post_agent \"$PPID\""#) && vibe.contains(MARKER));
         assert!(go(&ts, Mode::Repair, bin, &state)
             .iter()
             .all(|o| !o.changed));

@@ -449,6 +449,24 @@ fn tasks(r: &Request, segs: &[&str], body: &Value, ctx: &Ctx) -> Option<(u16, Va
                     .map(|_| json!({"enabled": on})),
             ),
         },
+        ("GET", ["v1", "tasks", "agent-messaging"]) => res(
+            200,
+            crate::registry::Registry::open(&ctx.state_dir)
+                .map_err(|e| (500, e))
+                .map(|reg| json!({"enabled": crate::task_agents::agent_messaging_enabled(&reg)})),
+        ),
+        ("PUT", ["v1", "tasks", "agent-messaging"]) => match body["enabled"].as_bool() {
+            None => (400, json!({"error": "enabled must be a boolean"})),
+            Some(on) => res(
+                200,
+                crate::registry::Registry::open(&ctx.state_dir)
+                    .map_err(|e| (500, e))
+                    .and_then(|reg| {
+                        crate::task_agents::set_agent_messaging(&reg, on).map_err(|e| (500, e))
+                    })
+                    .map(|_| json!({"enabled": on})),
+            ),
+        },
         ("POST", ["v1", "tasks"]) => res(201, tasks::create(ctx, body).map(|t| t.to_json(st))),
         ("GET", ["v1", "tasks", id]) => res(
             200,
@@ -696,19 +714,28 @@ fn activity(ctx: &Ctx, r: &Request, id: &str) -> (u16, Value) {
             None => return err(400, "since must be an RFC 3339 time"),
         },
     };
-    let a = crate::activity::find_transcript(
+    let path = crate::activity::find_transcript(
         &ctx.claude_dir,
         &ctx.codex_dir,
         &ctx.gemini_dir,
         l.agent,
         &l.session_id,
-    )
-    .and_then(|p| crate::activity::activity(l.agent, &p, since));
+    );
+    let a = path
+        .as_deref()
+        .and_then(|p| crate::activity::activity(l.agent, p, since));
+    let cost = path
+        .as_deref()
+        .and_then(|p| crate::activity::spend(l.agent, p))
+        .map(|s| crate::activity::spend_json(&s, &l.launch_args));
     let transcript = a.is_some();
     let mut a = a.unwrap_or_else(
         || json!({"workLog": [], "todos": [], "editedFiles": [], "lastAssistantText": ""}),
     );
     a["transcript"] = json!(transcript);
+    if let Some(c) = cost {
+        a["cost"] = c;
+    }
     if let Some(t) = &l.title {
         a["title"] = json!(t);
     }
@@ -1351,11 +1378,7 @@ fn watch_transcripts(claude_dir: PathBuf, codex_dir: PathBuf, gemini_dir: PathBu
                     now,
                 );
             }
-            let Some(len) =
-                p.0.as_ref()
-                    .and_then(|p| std::fs::metadata(p).ok())
-                    .map(|m| m.len())
-            else {
+            let Some(len) = p.0.as_deref().and_then(crate::chat::transcript_stamp) else {
                 continue;
             };
             let len = len.wrapping_add(p.0.as_deref().map_or(0, crate::chat::agents_stamp));
