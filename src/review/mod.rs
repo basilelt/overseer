@@ -8,9 +8,10 @@ pub mod symbols;
 pub mod triage;
 pub mod watch;
 
-use crate::board::{decode, publish};
+use crate::board::publish;
 use crate::daemon::{q, Request};
 use crate::registry::{col_at, columns, insert_row, sql, Registry};
+use crate::util::percent_decode;
 use crate::util::{format_rfc3339, ulid};
 use crate::{Ctx, Line};
 use anchor::{capture, locate, Anchor, Found};
@@ -428,7 +429,7 @@ fn local_branch(wt: &str, b: &str) -> Res<String> {
 }
 
 fn target_q(ctx: &Ctx, r: &Request) -> Res<Target> {
-    let d = |k| q(r, k).map(decode);
+    let d = |k| q(r, k).map(percent_decode);
     let mut t = resolve(
         ctx,
         d("worktree").as_deref(),
@@ -1412,7 +1413,7 @@ pub fn routes(r: &Request, segs: &[&str], body: &Value, ctx: &Ctx) -> Option<(u1
                     .query
                     .iter()
                     .filter(|(k, _)| k == "with")
-                    .map(|(_, v)| decode(v))
+                    .map(|(_, v)| percent_decode(v))
                     .collect();
                 map::route(ctx, &t, &with)
             }),

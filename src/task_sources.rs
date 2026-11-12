@@ -52,7 +52,7 @@ pub fn routes(ctx: &Ctx, r: &Request, segs: &[&str], body: &Value) -> Option<(u1
 
 fn project(r: &Request) -> Res<String> {
     q(r, "project")
-        .map(crate::board::decode)
+        .map(crate::util::percent_decode)
         .as_deref()
         .map(str::trim)
         .filter(|p| Path::new(p).is_absolute())

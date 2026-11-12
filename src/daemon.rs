@@ -210,7 +210,7 @@ pub fn header<'a>(r: &'a Request, k: &str) -> Option<&'a str> {
 
 impl Request {
     pub fn param(&self, k: &str) -> Option<String> {
-        q(self, k).map(crate::board::decode)
+        q(self, k).map(crate::util::percent_decode)
     }
 
     pub fn is_true(&self, k: &str) -> bool {

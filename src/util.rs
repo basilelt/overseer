@@ -39,6 +39,30 @@ pub fn percent_encode(s: &str) -> String {
         .collect()
 }
 
+pub fn percent_decode(s: &str) -> String {
+    let b = s.as_bytes();
+    let mut out = Vec::with_capacity(b.len());
+    let mut i = 0;
+    while i < b.len() {
+        match b[i] {
+            b'%' if i + 3 <= b.len() => match s
+                .get(i + 1..i + 3)
+                .and_then(|h| u8::from_str_radix(h, 16).ok())
+            {
+                Some(x) => {
+                    out.push(x);
+                    i += 2;
+                }
+                None => out.push(b'%'),
+            },
+            b'+' => out.push(b' '),
+            c => out.push(c),
+        }
+        i += 1;
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
 pub fn ticket_any(s: &str) -> Option<String> {
     ticket(&s.to_ascii_uppercase())
 }
@@ -286,6 +310,16 @@ mod tests {
     fn percent_encode_keeps_unreserved_and_escapes_the_rest() {
         assert_eq!(percent_encode("aZ09-._~"), "aZ09-._~");
         assert_eq!(percent_encode("a b/é&"), "a%20b%2F%C3%A9%26");
+    }
+
+    #[test]
+    fn percent_decode_inverts_encode_and_reads_plus_as_space() {
+        assert_eq!(percent_decode("a%20b%67"), "a bg");
+        assert_eq!(percent_decode("a+b"), "a b");
+        assert_eq!(percent_decode("100%"), "100%");
+        assert_eq!(percent_decode("%zz%4"), "%zz%4");
+        let s = "a b/é&~";
+        assert_eq!(percent_decode(&percent_encode(s)), s);
     }
 
     #[test]

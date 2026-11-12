@@ -1162,7 +1162,7 @@ pub fn trim_session(l: &Line, ix: &workspaces::Index) -> Value {
 }
 
 fn sessions(ctx: &Ctx, r: &Request) -> Res<Value> {
-    let dec = |k: &str| q(r, k).map(crate::board::decode);
+    let dec = |k: &str| q(r, k).map(crate::util::percent_decode);
     let limit = dec("limit")
         .and_then(|v| v.parse::<usize>().ok())
         .unwrap_or(100)

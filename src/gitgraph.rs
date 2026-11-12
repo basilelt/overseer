@@ -1,6 +1,7 @@
-use crate::board::{decode, publish};
+use crate::board::publish;
 use crate::daemon::{q, res, Request};
 use crate::git::{git, git_out};
+use crate::util::percent_decode;
 use crate::util::{format_rfc3339, ticket};
 use crate::worktrees::{self, valid_sha, Res};
 use crate::Ctx;
@@ -265,7 +266,7 @@ pub fn graph(ctx: &Ctx, path: &str, r: &Request) -> Res<Value> {
         .clamp(1, 2000);
     let skip = q(r, "before")
         .map(|s| {
-            decode(s)
+            percent_decode(s)
                 .parse::<usize>()
                 .map_err(|_| (400, "bad before cursor".to_string()))
         })
@@ -577,9 +578,9 @@ pub fn watch_loop() {
 
 pub fn routes(ctx: &Ctx, r: &Request, segs: &[&str], body: &Value) -> Option<(u16, Value)> {
     Some(match (r.method.as_str(), segs) {
-        ("GET", ["v1", "projects", p, "graph"]) => res(200, graph(ctx, &decode(p), r)),
-        ("GET", ["v1", "projects", p, "commits", sha]) => res(200, commit(&decode(p), sha)),
-        ("POST", ["v1", "projects", p, "branches"]) => res(201, branch(&decode(p), body)),
+        ("GET", ["v1", "projects", p, "graph"]) => res(200, graph(ctx, &percent_decode(p), r)),
+        ("GET", ["v1", "projects", p, "commits", sha]) => res(200, commit(&percent_decode(p), sha)),
+        ("POST", ["v1", "projects", p, "branches"]) => res(201, branch(&percent_decode(p), body)),
         _ => return None,
     })
 }

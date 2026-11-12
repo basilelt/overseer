@@ -185,7 +185,8 @@ pub fn short(path: &Path, home: &Path) -> String {
 }
 
 pub fn receive(dir: &Path, name: Option<&str>, len: u64, body: impl Read) -> Res<Value> {
-    let name = check_name(&crate::board::decode(name.unwrap_or_default())).map_err(|e| (400, e))?;
+    let name =
+        check_name(&crate::util::percent_decode(name.unwrap_or_default())).map_err(|e| (400, e))?;
     let path = store(dir, &name, len, body)?;
     Ok(json!({
         "path": path.to_string_lossy(),
@@ -274,7 +275,7 @@ mod tests {
             assert!(check_name(bad).is_err(), "{bad:?}");
         }
         assert_eq!(
-            check_name(&crate::board::decode("..%2F..%2Fetc%2Fpasswd")),
+            check_name(&crate::util::percent_decode("..%2F..%2Fetc%2Fpasswd")),
             Err("name must be a plain file name".into())
         );
     }

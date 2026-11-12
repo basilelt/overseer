@@ -1,7 +1,8 @@
-use crate::board::{decode, publish};
+use crate::board::publish;
 use crate::daemon::res;
 use crate::git::git_out;
 use crate::git::{git, Git};
+use crate::util::percent_decode;
 use crate::util::{format_rfc3339, ticket};
 use crate::{Ctx, Line};
 use serde_json::{json, Value};
@@ -1159,7 +1160,7 @@ pub fn for_term(ctx: &Ctx, cwd: &str, agent: &str, opt: &Value) -> Res<String> {
 }
 
 pub fn routes(ctx: &Ctx, method: &str, segs: &[&str], body: &Value) -> Option<(u16, Value)> {
-    let id = |s: &str| decode(s);
+    let id = |s: &str| percent_decode(s);
     Some(match (method, segs) {
         ("GET", ["v1", "projects", p, "worktrees"]) => res(200, list(ctx, &id(p))),
         ("POST", ["v1", "worktrees"]) => {

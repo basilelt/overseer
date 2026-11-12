@@ -31,8 +31,8 @@ fn load(ctx: &Ctx, r: &Request) -> Res<(&'static str, Vec<u8>)> {
         return Err((400, "path required".into()));
     }
     let base = q(r, "term")
-        .and_then(|t| term_cwd(&crate::board::decode(t)))
-        .or_else(|| q(r, "line").and_then(|l| line_cwd(ctx, &crate::board::decode(l))));
+        .and_then(|t| term_cwd(&crate::util::percent_decode(t)))
+        .or_else(|| q(r, "line").and_then(|l| line_cwd(ctx, &crate::util::percent_decode(l))));
     let p = resolve(&raw, base.as_deref())?;
     let p = check(&p, MAX)?;
     read(&p, MAX).map(|b| (ctype(&p), b))
@@ -175,7 +175,6 @@ mod tests {
         assert_eq!(resolve("b", Some("/c")).unwrap(), PathBuf::from("/c/b"));
         assert_eq!(resolve("~x", Some("/c")).unwrap(), PathBuf::from("/c/~x"));
         assert_eq!(resolve("b", None).unwrap_err().0, 400);
-        assert_eq!(crate::board::decode("a%20b%67"), "a bg");
     }
 
     #[test]
