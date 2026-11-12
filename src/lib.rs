@@ -34,6 +34,7 @@ pub mod mcp;
 pub mod naming;
 pub mod notes;
 pub mod organize;
+pub mod paths;
 pub mod ports;
 pub mod power;
 pub mod procs;
@@ -318,7 +319,7 @@ pub fn load_config(state_dir: &Path) -> Config {
             .unwrap_or_default(),
         worktree_dir: s("worktreeDir")
             .map(|p| expand(&p))
-            .unwrap_or_else(|| home().join(".overseer/worktrees")),
+            .unwrap_or_else(|| paths::default_worktrees_dir()),
         start_args: strs("startArgs"),
         memory_policy: (v["memoryPolicy"]["enabled"] == true).then(|| {
             v["memoryPolicy"]["thresholdPercent"]

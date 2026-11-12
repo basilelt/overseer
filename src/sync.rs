@@ -558,7 +558,8 @@ fn meminfo() -> Option<(u64, u64)> {
 
 fn creds(state_dir: &Path) -> Option<(String, String)> {
     let v: Value =
-        serde_json::from_slice(&std::fs::read(state_dir.join("sync.json")).ok()?).ok()?;
+        serde_json::from_slice(&std::fs::read(state_dir.join(crate::paths::SYNC_FILE)).ok()?)
+            .ok()?;
     Some((
         v["api"].as_str()?.to_string(),
         v["token"].as_str()?.to_string(),
@@ -587,7 +588,7 @@ pub fn cli_enroll(args: &[String]) -> ExitCode {
         .map_err(|e| e.to_string())
         .and_then(|_| {
             private_file(
-                &state.join("sync.json"),
+                &state.join(crate::paths::SYNC_FILE),
                 json!({ "api": api, "token": token.trim() })
                     .to_string()
                     .as_bytes(),

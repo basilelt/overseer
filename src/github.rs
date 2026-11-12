@@ -313,7 +313,7 @@ pub fn prepare(
     };
     let (root, _) = crate::worktrees::project(&root).map_err(|(c, e)| (c, e, "failed"))?;
     let pull = format!("pull/{number}/head");
-    let branch = format!("review/pr-{number}");
+    let branch = crate::layout::review_branch(number);
     let dir = crate::worktrees::store(ctx, &root).join(crate::worktrees::dir_name(&branch));
     if dir.is_dir() {
         let d = dir.to_string_lossy().into_owned();
@@ -479,7 +479,7 @@ fn run_job(dir: &Path, job: &Value, agent: &'static crate::agents::Agent) -> Res
             prepare(
                 &ctx,
                 "gh",
-                &crate::home().join(".overseer/reviews"),
+                &crate::paths::reviews_dir(),
                 job["local"].as_str().map(String::from),
                 &repo,
                 number,

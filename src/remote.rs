@@ -20,7 +20,8 @@ pub struct User {
 
 pub fn user(state_dir: &Path) -> Option<User> {
     let v: Value =
-        serde_json::from_slice(&std::fs::read(state_dir.join("user.json")).ok()?).ok()?;
+        serde_json::from_slice(&std::fs::read(state_dir.join(crate::paths::USER_FILE)).ok()?)
+            .ok()?;
     Some(User {
         api: v["api"].as_str()?.to_string(),
         token: v["token"].as_str()?.to_string(),
@@ -291,7 +292,7 @@ pub fn cli_login(args: &[String]) -> ExitCode {
     let r = get_ok(&u, "/v1/stations").and_then(|st| {
         mkdir_private(&state).map_err(|e| e.to_string())?;
         private_file(
-            &state.join("user.json"),
+            &state.join(crate::paths::USER_FILE),
             json!({ "api": u.api, "token": u.token })
                 .to_string()
                 .as_bytes(),

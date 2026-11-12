@@ -19,7 +19,7 @@ pub fn shim_path() -> PathBuf {
     } else {
         "overseer"
     };
-    crate::home().join(".overseer/bin").join(name)
+    crate::paths::bin_dir().join(name)
 }
 
 pub fn path_with_shim(path: &str, shim: &Path) -> String {
@@ -418,6 +418,13 @@ const SPECS: &[Spec] = &[
         owned: Some(Owned::Plugin),
     },
 ];
+
+pub fn hook_file(agent: &str) -> Option<(&'static str, &'static [&'static str])> {
+    SPECS
+        .iter()
+        .find(|s| s.agent == agent)
+        .map(|s| (s.file, s.events))
+}
 
 pub fn targets() -> Vec<Target> {
     let config = crate::env_dir("XDG_CONFIG_HOME", ".config");

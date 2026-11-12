@@ -545,7 +545,7 @@ pub fn serve(ctx: &Ctx, r: &Request, s: &mut dyn Write) -> bool {
 }
 
 pub fn url_file(state_dir: &Path) -> PathBuf {
-    state_dir.join("board.json")
+    state_dir.join(crate::paths::BOARD_FILE)
 }
 
 pub fn token() -> Result<String, String> {

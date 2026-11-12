@@ -247,10 +247,7 @@ fn target(body: &Value) -> Result<PathBuf, String> {
         {
             return Err(format!("bad version {v:?}"));
         }
-        crate::home()
-            .join(".overseer/server")
-            .join(v)
-            .join("overseer")
+        crate::paths::server_dir().join(v).join("overseer")
     } else {
         return Err("path or version required".into());
     };

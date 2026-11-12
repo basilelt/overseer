@@ -329,7 +329,7 @@ pub fn builtins() -> Vec<Profile> {
 }
 
 pub fn path(state_dir: &Path) -> PathBuf {
-    state_dir.join("profiles.json")
+    state_dir.join(crate::paths::PROFILES_FILE)
 }
 
 pub fn load(state_dir: &Path) -> Store {

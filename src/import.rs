@@ -18,15 +18,9 @@ UPDATE hook_state SET pid = NULL, pane = NULL
   WHERE (agent, session_id) IN (SELECT agent, session_id FROM old.hook_state);
 UPDATE lines SET held_by_user = 0 WHERE id IN (SELECT id FROM old.lines);
 ";
-const COPY_FILES: &[&str] = &[
-    "profiles.json",
-    "board.json",
-    "user.json",
-    "sync.json",
-    "projects.json",
-];
+const COPY_FILES: &[&str] = &crate::paths::MIGRATED_STATE_FILES;
 const COPY_DIRS: &[&str] = &["stations", "feedback"];
-const COPY_HOME_DIRS: &[&str] = &["u", "tasks", "reviews"];
+const COPY_HOME_DIRS: &[&str] = &crate::paths::MIGRATED_HOME_DIRS;
 
 fn locate(get: &dyn Fn(&str) -> Option<String>, windows: bool, macos: bool) -> PathBuf {
     if let Some(d) = get("SWITCHBOARD_STATE_DIR").filter(|v| !v.is_empty()) {
@@ -601,7 +595,7 @@ fn run_import(state_dir: &Path, dir: &Path) -> Result<Value, String> {
     for d in COPY_HOME_DIRS {
         copy_missing(
             &home.join(".switchboard").join(d),
-            &home.join(".overseer").join(d),
+            &crate::paths::overseer_home().join(d),
         )?;
     }
     let hooks = import_hooks(state_dir);

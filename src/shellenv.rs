@@ -225,7 +225,7 @@ fn newest_node(dir: &Path) -> Option<PathBuf> {
 pub fn fallback_dirs(home: &Path, existing_path: &str) -> Vec<PathBuf> {
     let have: Vec<&str> = existing_path.split(':').collect();
     let mut dirs = vec![
-        home.join(".local/bin"),
+        home.join(crate::paths::USER_BIN),
         home.join(".cargo/bin"),
         home.join(".bun/bin"),
         home.join(".deno/bin"),

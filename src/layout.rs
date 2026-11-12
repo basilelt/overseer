@@ -81,14 +81,27 @@ pub fn patch_checkout_dir(worktree_dir: &Path, repo: &Path, branch: &str) -> Pat
         .join(format!("{}-patch", checkout_slug(branch)))
 }
 
+pub const TASK_BRANCH_PREFIX: &str = "task/";
+pub const SESSION_BRANCH_PREFIX: &str = "sb/";
+pub const REVIEW_BRANCH_PREFIX: &str = "review/pr-";
+pub const OWNED_BRANCH_PREFIXES: [&str; 3] = [
+    SESSION_BRANCH_PREFIX,
+    REVIEW_BRANCH_PREFIX,
+    TASK_BRANCH_PREFIX,
+];
+
+pub fn review_branch(number: impl std::fmt::Display) -> String {
+    format!("{REVIEW_BRANCH_PREFIX}{number}")
+}
+
 pub fn task_branch(number: impl std::fmt::Display, title: &str) -> String {
-    format!("task/{number}-{}", task_slug(title))
+    format!("{TASK_BRANCH_PREFIX}{number}-{}", task_slug(title))
 }
 
 pub fn session_branch_prefix(agent: Option<&str>) -> String {
     match agent {
-        Some(a) => format!("sb/{}/", task_slug(a)),
-        None => "sb/".into(),
+        Some(a) => format!("{SESSION_BRANCH_PREFIX}{}/", task_slug(a)),
+        None => SESSION_BRANCH_PREFIX.into(),
     }
 }
 
@@ -187,6 +200,8 @@ mod tests {
         assert_eq!(task_branch(7, "Fix login"), "task/7-fix-login");
         assert_eq!(session_branch_prefix(Some("Claude")), "sb/claude/");
         assert_eq!(session_branch_prefix(None), "sb/");
+        assert_eq!(review_branch(12), "review/pr-12");
+        assert_eq!(OWNED_BRANCH_PREFIXES, ["sb/", "review/pr-", "task/"]);
         assert_eq!(
             patch_session_name("feature/AS-1.2"),
             "sb-patch-feature-AS-1-2"

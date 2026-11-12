@@ -5,7 +5,6 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 const APP_ID: &str = "io.github.basilelt.overseer";
-const HOME_DIRS: [&str; 5] = ["bin", "server", "u", "tasks", "reviews"];
 
 static PENDING: Mutex<Option<PathBuf>> = Mutex::new(None);
 
@@ -308,7 +307,7 @@ fn owned_dirs(rep: &mut Report, apply: bool) {
 }
 
 fn stores(ctx: &Ctx) -> Vec<PathBuf> {
-    let default = crate::home().join(".overseer/worktrees");
+    let default = crate::paths::default_worktrees_dir();
     let mut v = vec![ctx.config.worktree_dir.clone()];
     let same = |a: &Path, b: &Path| {
         a.canonicalize().unwrap_or(a.into()) == b.canonicalize().unwrap_or(b.into())
@@ -332,7 +331,7 @@ fn subdirs(p: &Path) -> Vec<PathBuf> {
 }
 
 fn owned_branch(b: &str) -> bool {
-    ["sb/", "review/pr-", "task/"]
+    crate::layout::OWNED_BRANCH_PREFIXES
         .iter()
         .any(|p| b.starts_with(p))
 }
@@ -385,10 +384,10 @@ fn worktree_dirs(ctx: &Ctx, rep: &mut Report, apply: bool) -> Vec<PathBuf> {
 }
 
 fn home_dirs(rep: &mut Report, kept_roots: &[PathBuf], apply: bool) {
-    let base = crate::home().join(".overseer");
-    for d in HOME_DIRS {
+    let base = crate::paths::overseer_home();
+    for d in crate::paths::HOME_DIRS {
         let p = base.join(d);
-        if d == "reviews" && kept_roots.iter().any(|r| r.starts_with(&p)) {
+        if d == crate::paths::REVIEWS_DIR && kept_roots.iter().any(|r| r.starts_with(&p)) {
             rep.kept("dir", &p, "holds the repository of a kept worktree");
             continue;
         }
@@ -397,7 +396,7 @@ fn home_dirs(rep: &mut Report, kept_roots: &[PathBuf], apply: bool) {
 }
 
 fn empty_stores(ctx: &Ctx, rep: &mut Report, apply: bool) {
-    let default = crate::home().join(".overseer/worktrees");
+    let default = crate::paths::default_worktrees_dir();
     for store in stores(ctx) {
         let gone = rep.gone();
         if store == default || store.canonicalize().ok() == default.canonicalize().ok() {
@@ -408,7 +407,7 @@ fn empty_stores(ctx: &Ctx, rep: &mut Report, apply: bool) {
             }
         }
     }
-    let base = crate::home().join(".overseer");
+    let base = crate::paths::overseer_home();
     let gone = rep.gone();
     if exists(&base) && !sweep(rep, &base, &gone, apply, false) {
         rep.kept("dir", &base, "holds files Overseer did not create");

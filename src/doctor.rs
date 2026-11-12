@@ -1,6 +1,6 @@
-use crate::install::MARKER;
+use crate::install::{hook_file, MARKER};
 use crate::sys::PermissionsExt;
-use crate::{actions, daemon, home, scan, Ctx};
+use crate::{actions, daemon, scan, Ctx};
 use serde_json::Value;
 use std::path::Path;
 use std::process::Command;
@@ -56,6 +56,10 @@ fn hooks_check(path: &Path, events: &[&str]) -> (usize, usize) {
     (installed, events.len())
 }
 
+fn agent_bin(id: &str) -> &'static str {
+    crate::agents::get(id).map_or("", |a| a.bin)
+}
+
 pub fn run(ctx: &Ctx) -> Vec<Item> {
     let mut out = vec![];
     let mode = std::fs::metadata(&ctx.state_dir).map(|m| m.permissions().mode() & 0o777);
@@ -107,8 +111,9 @@ pub fn run(ctx: &Ctx) -> Vec<Item> {
             ),
         ),
     });
-    let claude_settings = ctx.claude_dir.join("settings.json");
-    let (n, total) = hooks_check(&claude_settings, crate::hooks::CLAUDE_EVENTS);
+    let (claude_file, claude_events) = hook_file("claude").unwrap_or_default();
+    let claude_settings = ctx.claude_dir.join(claude_file);
+    let (n, total) = hooks_check(&claude_settings, claude_events);
     out.push(item(
         if n == total { "ok" } else { "warn" },
         "claude hooks",
@@ -117,9 +122,10 @@ pub fn run(ctx: &Ctx) -> Vec<Item> {
             claude_settings.display()
         ),
     ));
-    let codex_hooks = ctx.codex_dir.join("hooks.json");
+    let (codex_file, codex_events) = hook_file("codex").unwrap_or_default();
+    let codex_hooks = ctx.codex_dir.join(codex_file);
     if ctx.codex_dir.is_dir() {
-        let (n, total) = hooks_check(&codex_hooks, crate::hooks::CODEX_EVENTS);
+        let (n, total) = hooks_check(&codex_hooks, codex_events);
         out.push(item(
             if n == total { "ok" } else { "warn" },
             "codex hooks",
@@ -129,11 +135,11 @@ pub fn run(ctx: &Ctx) -> Vec<Item> {
             ),
         ));
     }
-    out.push(match version("claude") {
+    out.push(match version(agent_bin("claude")) {
         Some(v) => item("ok", "claude", v),
         None => item("warn", "claude", "not on PATH"),
     });
-    out.push(match version("codex") {
+    out.push(match version(agent_bin("codex")) {
         Some(v) => item("ok", "codex", v),
         None => item("warn", "codex", "not runnable on this station"),
     });
@@ -145,7 +151,7 @@ pub fn run(ctx: &Ctx) -> Vec<Item> {
         let v: Value = serde_json::from_slice(&std::fs::read(ctx.state_dir.join(f)).ok()?).ok()?;
         v["api"].as_str().map(str::to_string)
     };
-    out.push(match api("sync.json") {
+    out.push(match api(crate::paths::SYNC_FILE) {
         Some(a) => item("ok", "station enrolment", format!("enrolled with {a}")),
         None => item(
             "skip",
@@ -153,7 +159,7 @@ pub fn run(ctx: &Ctx) -> Vec<Item> {
             "not enrolled (overseer enroll)",
         ),
     });
-    if let Some(a) = api("sync.json").or_else(|| api("user.json")) {
+    if let Some(a) = api(crate::paths::SYNC_FILE).or_else(|| api(crate::paths::USER_FILE)) {
         let probe = crate::remote::User {
             api: a.clone(),
             token: String::new(),
@@ -174,7 +180,7 @@ pub fn run(ctx: &Ctx) -> Vec<Item> {
             "no api configured (enroll or login)",
         ));
     }
-    out.push(match api("user.json") {
+    out.push(match api(crate::paths::USER_FILE) {
         Some(a) => item("ok", "user login", format!("logged in to {a}")),
         None => item("skip", "user login", "not logged in (overseer login)"),
     });
@@ -190,34 +196,7 @@ pub fn run(ctx: &Ctx) -> Vec<Item> {
     if ctx.config.accept_remote_commands {
         out.push(runner(ctx));
     }
-    let bin = home().join(".local/bin");
-    let snap = bin.join("tmux-snapshot");
-    let restore = bin.join("tmux-restore");
-    if snap.exists() || restore.exists() {
-        let patched = |p: &Path| std::fs::read_to_string(p).is_ok_and(|s| s.contains("sb_held"));
-        out.push(if patched(&snap) && patched(&restore) {
-            item("ok", "toolkit", "tmux-snapshot/tmux-restore know @sb_held")
-        } else {
-            item(
-                "warn",
-                "toolkit",
-                "tmux-snapshot/tmux-restore not patched for @sb_held: a held stub comes back as a plain shell after a reboot (still held); see docs/toolkit-patch.md",
-            )
-        });
-    }
-    let idhook = ctx.claude_dir.join("hooks/tmux-claude-id.sh");
-    if idhook.exists() {
-        let s = std::fs::read_to_string(&claude_settings).unwrap_or_default();
-        out.push(if s.contains("tmux-claude-id.sh") {
-            item("ok", "existing hooks", "tmux-claude-id.sh still declared")
-        } else {
-            item(
-                "warn",
-                "existing hooks",
-                "tmux-claude-id.sh exists but is not declared in settings.json",
-            )
-        });
-    }
+    private_tmux_toolkit(ctx, &claude_settings, &mut out);
     out.push(if ctx.snapshot.exists() {
         item(
             "ok",
@@ -275,9 +254,40 @@ pub fn run(ctx: &Ctx) -> Vec<Item> {
     out
 }
 
+fn private_tmux_toolkit(ctx: &Ctx, claude_settings: &Path, out: &mut Vec<Item>) {
+    let bin = crate::paths::user_bin();
+    let snap = bin.join("tmux-snapshot");
+    let restore = bin.join("tmux-restore");
+    if snap.exists() || restore.exists() {
+        let patched = |p: &Path| std::fs::read_to_string(p).is_ok_and(|s| s.contains("sb_held"));
+        out.push(if patched(&snap) && patched(&restore) {
+            item("ok", "toolkit", "tmux-snapshot/tmux-restore know @sb_held")
+        } else {
+            item(
+                "warn",
+                "toolkit",
+                "tmux-snapshot/tmux-restore not patched for @sb_held: a held stub comes back as a plain shell after a reboot (still held); see docs/toolkit-patch.md",
+            )
+        });
+    }
+    let idhook = ctx.claude_dir.join("hooks/tmux-claude-id.sh");
+    if idhook.exists() {
+        let s = std::fs::read_to_string(claude_settings).unwrap_or_default();
+        out.push(if s.contains("tmux-claude-id.sh") {
+            item("ok", "existing hooks", "tmux-claude-id.sh still declared")
+        } else {
+            item(
+                "warn",
+                "existing hooks",
+                "tmux-claude-id.sh exists but is not declared in settings.json",
+            )
+        });
+    }
+}
+
 fn runner(ctx: &Ctx) -> Item {
     let mut missing = vec![];
-    if version("claude").is_none() {
+    if version(agent_bin("claude")).is_none() {
         missing.push("claude not on PATH".to_string());
     }
     if ctx.tmux.as_ref().and_then(|t| t.version()).is_none() {
