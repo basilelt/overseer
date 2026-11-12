@@ -1,4 +1,5 @@
 use crate::agents::Agent;
+use crate::agents::ProfileKind;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::BTreeMap;
@@ -190,8 +191,8 @@ pub fn support(a: &Agent) -> Support {
         effort: a.effort.map(|_| Via::Flag),
         ..NO
     };
-    match a.id {
-        "claude" => Support {
+    match a.profile {
+        ProfileKind::Claude => Support {
             subagent_model: Some(Via::Env),
             small_model: Some(Via::Env),
             subagents: Some(Via::File),
@@ -199,26 +200,26 @@ pub fn support(a: &Agent) -> Support {
             force: true,
             ..base
         },
-        "codex" => Support {
+        ProfileKind::Codex => Support {
             subagent_model: Some(Via::Flag),
             subagent_effort: Some(Via::Flag),
             ..base
         },
-        "gemini" | "agy" => Support {
+        ProfileKind::MarkdownSubagents => Support {
             subagents: Some(Via::File),
             ..base
         },
-        "opencode" => Support {
+        ProfileKind::Opencode => Support {
             small_model: Some(Via::Env),
             subagents: Some(Via::Env),
             ..base
         },
-        "vibe" => Support {
+        ProfileKind::Vibe => Support {
             model: Some(Via::Env),
             ..base
         },
-        "shell" => NO,
-        _ => base,
+        ProfileKind::Shell => NO,
+        ProfileKind::Plain => base,
     }
 }
 
@@ -422,8 +423,8 @@ pub fn apply(a: &Agent, p: Option<&Profile>, model: &str, effort: &str) -> Appli
     let effort = pick(effort, &c.effort, s.effort.is_some());
     let mut env = vec![];
     let mut extra = vec![];
-    match a.id {
-        "claude" => {
+    match a.profile {
+        ProfileKind::Claude => {
             if !c.subagent_model.is_empty() {
                 env.push((
                     "CLAUDE_CODE_SUBAGENT_MODEL".into(),
@@ -440,7 +441,7 @@ pub fn apply(a: &Agent, p: Option<&Profile>, model: &str, effort: &str) -> Appli
                 ));
             }
         }
-        "codex" => {
+        ProfileKind::Codex => {
             if !c.subagent_model.is_empty() {
                 extra.extend([
                     "-c".to_string(),
@@ -459,13 +460,17 @@ pub fn apply(a: &Agent, p: Option<&Profile>, model: &str, effort: &str) -> Appli
                 ]);
             }
         }
-        "opencode" => {
+        ProfileKind::Opencode => {
             if let Some(cfg) = opencode_config(c) {
                 env.push(("OPENCODE_CONFIG_CONTENT".into(), cfg));
             }
         }
-        "vibe" if !model.is_empty() => env.push(("VIBE_ACTIVE_MODEL".into(), model.clone())),
-        _ => {}
+        ProfileKind::Vibe => {
+            if !model.is_empty() {
+                env.push(("VIBE_ACTIVE_MODEL".into(), model.clone()));
+            }
+        }
+        ProfileKind::MarkdownSubagents | ProfileKind::Plain | ProfileKind::Shell => {}
     }
     let chip = (p.is_some() || !model.is_empty() || !effort.is_empty()).then(|| Chip {
         id: p.map(|p| p.id.clone()).unwrap_or_default(),

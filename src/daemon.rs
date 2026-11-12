@@ -839,7 +839,9 @@ fn chat(ctx: &Ctx, r: &Request, id: &str, agent: Option<&str>) -> (u16, Value) {
         None => path.and_then(|p| crate::chat::page(l.agent, &p, query)),
         Some(a) => {
             let page = path
-                .filter(|_| l.agent == "claude")
+                .filter(|_| {
+                    crate::agents::transcript_of(l.agent) == Some(crate::agents::Transcript::Claude)
+                })
                 .and_then(|p| crate::chat::agent_page(&p, a, query));
             if page.is_none() {
                 return err(404, format!("no sub-agent {a} for line {}", l.id));

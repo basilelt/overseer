@@ -191,7 +191,7 @@ pub fn apply(h: &mut HookState, ev: &Value) {
 
 pub fn session_key(agent: &str, ev: &Value) -> Option<String> {
     let term = ev["termId"].as_str().filter(|t| !t.is_empty());
-    let by_session = crate::agents::get(agent).is_some_and(|a| a.sessions);
+    let by_session = crate::agents::get(agent).is_some_and(|a| a.sessions());
     match (ev["sessionId"].as_str(), term) {
         (Some(s), _) if by_session => Some(s.to_string()),
         (_, Some(t)) => Some(term_key(t)),

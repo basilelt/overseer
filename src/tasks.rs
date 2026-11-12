@@ -625,7 +625,7 @@ pub fn create(ctx: &Ctx, b: &Value) -> Res<Task> {
         Some(p) => crate::quorum::child_agent(p, asked)?,
         None => asked,
     }
-    .unwrap_or("claude");
+    .unwrap_or(crate::agents::DEFAULT_ID);
     let quorum = crate::quorum::parse(&b["quorum"], agent)?;
     if quorum.is_some() && parent.is_some() {
         return Err(bad("a subtask cannot run a quorum"));
@@ -1007,7 +1007,7 @@ fn in_place(t: &mut Task) -> String {
 }
 
 pub fn applied(ctx: &Ctx, t: &Task) -> crate::profiles::Applied {
-    let a = crate::agents::get(&t.agent).unwrap_or(&crate::agents::AGENTS[0]);
+    let a = crate::agents::get(&t.agent).unwrap_or(crate::agents::default_agent());
     crate::profiles::for_task(&ctx.state_dir, a, t)
 }
 
@@ -1020,7 +1020,7 @@ pub fn argv(
     auto_approve: bool,
 ) -> Vec<String> {
     let a = crate::agents::get(&t.agent).unwrap_or(&crate::agents::AGENTS[0]);
-    let mut extra: Vec<String> = if a.id == "claude" {
+    let mut extra: Vec<String> = if a.start_args {
         ctx.config.start_args.clone()
     } else {
         vec![]
@@ -1137,19 +1137,19 @@ pub(crate) fn start_with_args(
     }
     let by_flag = agent.prompt.is_some();
     let p = applied(ctx, &t);
-    let injected = match agent.id {
-        "codex" => crate::codex::overseer_mcp(
+    let injected = match agent.mcp {
+        crate::agents::Mcp::Codex => crate::codex::overseer_mcp(
             &crate::actions::self_exe(),
             &ctx.state_dir.to_string_lossy(),
             &t.id,
         ),
-        "claude" => crate::claude::overseer_mcp(
+        crate::agents::Mcp::Claude => crate::claude::overseer_mcp(
             &crate::actions::self_exe(),
             &ctx.state_dir.to_string_lossy(),
             &t.id,
         ),
-        "vibe" => vec!["--trust".to_string()],
-        _ => vec![],
+        crate::agents::Mcp::VibeTrust => vec!["--trust".to_string()],
+        crate::agents::Mcp::None => vec![],
     };
     let mut launch = p.clone();
     launch.extra.extend(injected.iter().cloned());
@@ -1179,7 +1179,7 @@ pub(crate) fn start_with_args(
     flags.extend(p.extra.iter().cloned());
     if auto_approve {
         let mut set = launch.extra.clone();
-        if agent.id == "claude" {
+        if agent.start_args {
             set.extend(ctx.config.start_args.iter().cloned());
         }
         flags.extend(crate::agents::auto_approve_flags(agent.id, &set));

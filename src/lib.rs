@@ -993,17 +993,18 @@ pub fn snapshot_args(path: &Path) -> HashMap<String, Vec<String>> {
 // Stored flags as resume passes them back, repairing rows captured before a fix.
 pub fn resume_flags(agent: &str, flags: &[String]) -> Vec<String> {
     let flags = procs::rejoin_split_json(flags);
-    match agent {
-        "codex" => {
+    let Some(a) = agents::get(agent) else {
+        return flags;
+    };
+    match a.repair {
+        agents::Repair::Codex => {
             let mut flags = codex::launch_flags(&flags);
-            if let Some(a) = agents::get("codex") {
-                let mode = a.mode_flags("", &flags);
-                flags.splice(0..0, mode);
-            }
+            let mode = a.mode_flags("", &flags);
+            flags.splice(0..0, mode);
             flags
         }
-        "claude" => claude::launch_flags(&flags),
-        _ => flags,
+        agents::Repair::Claude => claude::launch_flags(&flags),
+        agents::Repair::None => flags,
     }
 }
 
@@ -1188,10 +1189,12 @@ fn scan_now(ctx: &Ctx) -> Result<Vec<Line>, String> {
     let hook_map = |agent| -> Result<HashMap<String, HookState>, String> {
         Ok(reg.hook_sessions(agent)?.into_iter().collect())
     };
-    let claude_hooks = hook_map("claude")?;
-    let codex_hooks = hook_map("codex")?;
-    let gemini_hooks = hook_map("gemini")?;
-    let vibe_hooks = hook_map("vibe")?;
+    let mut session_hooks: HashMap<&'static str, HashMap<String, HookState>> = HashMap::new();
+    for a in agents::AGENTS.iter().filter(|a| a.sessions()) {
+        session_hooks.insert(a.id, hook_map(a.id)?);
+    }
+    let no_hooks = HashMap::new();
+    let hooks_of = |id: &str| session_hooks.get(id).unwrap_or(&no_hooks);
     let mut term_hooks = HashMap::new();
     for a in agents::AGENTS.iter().filter(|a| a.polled()) {
         for (k, h) in reg.hook_sessions(a.id)? {
@@ -1204,10 +1207,19 @@ fn scan_now(ctx: &Ctx) -> Result<Vec<Line>, String> {
     let panes = ctx.tmux.as_ref().map(|t| t.panes()).unwrap_or_default();
     let mut g = git::Git::default();
     let mut repo_dirs: BTreeSet<(String, String)> = BTreeSet::new();
-    let mut found = claude_found(ctx, &claude_hooks, &reg.divergent("claude")?);
-    found.extend(codex_found(ctx, &codex_hooks));
-    found.extend(gemini_found(ctx, &gemini_hooks));
-    found.extend(vibe_found(ctx, &vibe_hooks));
+    let mut found = vec![];
+    for a in agents::AGENTS.iter().filter(|a| a.sessions()) {
+        let hooks = hooks_of(a.id);
+        match a.transcript {
+            Some(agents::Transcript::Claude) => {
+                found.extend(claude_found(ctx, hooks, &reg.divergent(a.id)?))
+            }
+            Some(agents::Transcript::Codex) => found.extend(codex_found(ctx, hooks)),
+            Some(agents::Transcript::Gemini) => found.extend(gemini_found(ctx, hooks)),
+            Some(agents::Transcript::Vibe) => found.extend(vibe_found(ctx, hooks)),
+            None => {}
+        }
+    }
     found.extend(term_found(&term_hooks, ctx.now_ms));
     let probed: Vec<_> = found
         .into_iter()
@@ -1285,14 +1297,12 @@ fn scan_now(ctx: &Ctx) -> Result<Vec<Line>, String> {
             .as_ref()
             .map(|i| i.top.clone())
             .unwrap_or_else(|| f.cwd.clone());
-        let hook = match f.agent {
-            "claude" => claude_hooks
+        let hook = if agents::get(f.agent).is_some_and(|a| a.sessions()) {
+            hooks_of(f.agent)
                 .get(&f.session_id)
-                .filter(|h| !f.shared || h.pid == pid),
-            "codex" => codex_hooks.get(&f.session_id),
-            "gemini" => gemini_hooks.get(&f.session_id),
-            "vibe" => vibe_hooks.get(&f.session_id),
-            _ => f.hook.as_ref(),
+                .filter(|h| !f.shared || h.pid == pid)
+        } else {
+            f.hook.as_ref()
         }
         .cloned();
         let mut l = Line {
@@ -1342,7 +1352,8 @@ fn scan_now(ctx: &Ctx) -> Result<Vec<Line>, String> {
             session_id: f.session_id,
             ..Default::default()
         };
-        let fallback = (f.agent == "claude")
+        let fallback = agents::get(f.agent)
+            .is_some_and(|a| a.tmux_snapshot)
             .then(|| snap.get(&l.session_id))
             .flatten();
         let alive_args = f.alive.as_ref().map(|a| &a.1);

@@ -1139,7 +1139,7 @@ fn start(ctx: &Ctx, b: &Value) -> Res<Value> {
         ..Default::default()
     };
     tasks::insert(&reg, &mut t, &ctx.config.station_id)?;
-    let claude = agent.id == "claude";
+    let claude = agent.mcp == crate::agents::Mcp::Claude;
     match tasks::start_with(ctx, &t.id, None, true) {
         Ok(started) => Ok(json!({
             "task": started.to_json(&ctx.config.station_id),

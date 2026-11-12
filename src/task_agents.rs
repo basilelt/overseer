@@ -475,7 +475,8 @@ fn organize_one(ctx: &Ctx, reg: &Registry, project: &str) -> Res<Task> {
     if tasks::all(reg).is_ok_and(|all| live_organizer(&all, project)) {
         return Err((409, "an organizer is already running".into()));
     }
-    let claude = crate::agents::get("claude").ok_or_else(|| bad("claude agent unknown"))?;
+    let claude =
+        crate::agents::get(crate::agents::DEFAULT_ID).ok_or_else(|| bad("claude agent unknown"))?;
     if !crate::agents::is_installed(claude) {
         return Err((
             409,
@@ -489,7 +490,7 @@ fn organize_one(ctx: &Ctx, reg: &Registry, project: &str) -> Res<Task> {
         description: organizer_prompt(project, agent_messaging_enabled(reg)),
         project: project.into(),
         status: "pending".into(),
-        agent: "claude".into(),
+        agent: crate::agents::DEFAULT_ID.into(),
         effort: "high".into(),
         origin: Some(ORGANIZER.into()),
         created_ms: now,

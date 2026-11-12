@@ -1644,7 +1644,7 @@ fn evict(cache: &mut Cache, now: i64) {
 }
 
 pub fn supported(agent: &str) -> bool {
-    matches!(agent, "claude" | "codex" | "gemini" | "vibe")
+    crate::agents::transcript_of(agent).is_some()
 }
 
 pub fn page(agent: &str, path: &Path, q: Query) -> Option<Value> {

@@ -308,8 +308,10 @@ fn hooks_cmd(args: &[String]) -> ExitCode {
         if let Some(b) = &o.backup {
             println!("   backup: {}", b.display());
         }
-        if o.agent == "codex" && mode == install::Mode::Install {
-            println!("   {}", install::note("codex").unwrap_or_default());
+        if overseer::agents::get(o.agent).is_some_and(|a| a.retrust_hooks)
+            && mode == install::Mode::Install
+        {
+            println!("   {}", install::note(o.agent).unwrap_or_default());
         }
     }
     code

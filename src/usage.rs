@@ -1,4 +1,5 @@
 use crate::activity::read_lines;
+use crate::agents::Transcript;
 use crate::claude_limits::{outcome, read_creds, Auth, Outcome, Token, ACTIVE_MS, REFRESH_MS};
 use crate::util::{format_rfc3339, parse_rfc3339};
 use rusqlite::{params, Connection, OptionalExtension};
@@ -500,17 +501,25 @@ pub(crate) struct Meter {
 }
 
 impl Meter {
-    pub(crate) fn line(&mut self, agent: &str, line: &[u8]) -> Vec<(String, Tokens, bool)> {
+    pub(crate) fn line(
+        &mut self,
+        kind: Option<Transcript>,
+        line: &[u8],
+    ) -> Vec<(String, Tokens, bool)> {
         let mut b = Batch::default();
-        match agent {
-            "codex" => codex_line(&mut self.c, line, &mut b),
-            "gemini" => {
+        match kind {
+            Some(Transcript::Codex) => codex_line(&mut self.c, line, &mut b),
+            Some(Transcript::Gemini) => {
                 if let Ok(v) = serde_json::from_slice::<Value>(line) {
                     gemini_msg(&mut self.c, &v, &mut b);
                 }
             }
-            _ if !contains(line, "\"usage\"") => return vec![],
-            _ => claude_line(&mut self.c, true, line, &mut b),
+            Some(Transcript::Claude) | Some(Transcript::Vibe) | None => {
+                if !contains(line, "\"usage\"") {
+                    return vec![];
+                }
+                claude_line(&mut self.c, true, line, &mut b)
+            }
         }
         Self::turns(b)
     }
@@ -738,11 +747,11 @@ impl Index {
                 })
                 .map_err(|e| e.to_string())?;
             for (path, agent, session, cwd, sub, cursor) in rows.flatten() {
-                let agent = match agent.as_str() {
-                    "claude" => "claude",
-                    "codex" => "codex",
-                    "gemini" => "gemini",
-                    _ => continue,
+                let Some(agent) = crate::agents::get(&agent)
+                    .filter(|a| a.metered)
+                    .map(|a| a.id)
+                else {
+                    continue;
                 };
                 files.insert(
                     PathBuf::from(path),
@@ -882,14 +891,17 @@ impl Index {
                 return Ok(false);
             };
             let (agent, sub) = (t.agent, t.sub);
-            let end = read_lines(&mut f, c.offset, len, |line| match agent {
-                "codex" => codex_line(&mut c, line, &mut b),
-                "gemini" => {
+            let kind = crate::agents::transcript_of(agent);
+            let end = read_lines(&mut f, c.offset, len, |line| match kind {
+                Some(Transcript::Codex) => codex_line(&mut c, line, &mut b),
+                Some(Transcript::Gemini) => {
                     if let Ok(v) = serde_json::from_slice::<Value>(line) {
                         gemini_msg(&mut c, &v, &mut b);
                     }
                 }
-                _ => claude_line(&mut c, sub, line, &mut b),
+                Some(Transcript::Claude) | Some(Transcript::Vibe) | None => {
+                    claude_line(&mut c, sub, line, &mut b)
+                }
             });
             if let Some(e) = end {
                 c.offset = e;
@@ -1231,12 +1243,13 @@ pub fn query(
         .map(|(d, s)| json!({"day": day_label(*d), "usage": s.json()}))
         .collect();
     let mut agent_names: Vec<String> = seen_agents.into_iter().collect();
-    for a in ["claude", "codex", "gemini"] {
+    for agent in crate::agents::AGENTS.iter().filter(|a| a.metered) {
+        let a = agent.id;
         if !agent_names.iter().any(|x| x == a)
             && (kv_get::<Limits>(conn, &format!("limits.{a}")).is_some()
                 || kv_get::<LimitHit>(conn, &format!("hit.{a}")).is_some()
                 || (q.oauth && kv_get::<Auth>(conn, &format!("oauth.{a}.auth")).is_some())
-                || (a == "claude" && q.tap.is_some()))
+                || (agent.transcript == Some(Transcript::Claude) && q.tap.is_some()))
         {
             agent_names.push(a.to_string());
         }

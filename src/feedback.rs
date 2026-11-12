@@ -174,7 +174,7 @@ pub fn launch(
     let session = agent.session.and_then(|_| crate::runner::uuid().ok());
     let by_flag = agent.prompt.is_some();
     let by_arg = !by_flag && agent.positional_prompt;
-    let extra: &[String] = if agent.id == "claude" {
+    let extra: &[String] = if agent.start_args {
         &ctx.config.start_args
     } else {
         &[]

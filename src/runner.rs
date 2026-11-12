@@ -138,7 +138,7 @@ struct Plan {
 
 fn plan(ctx: &Ctx, line_id: &str, args: &Value) -> Result<Plan, String> {
     let s = |k: &str| args[k].as_str().unwrap_or_default();
-    if s("agent") != "claude" {
+    if s("agent") != crate::agents::DEFAULT_ID {
         return Err(format!(
             "start supports agent claude only, not '{}'",
             s("agent")
@@ -254,7 +254,7 @@ fn launch(ctx: &Ctx, reg: &Registry, line_id: &str, args: &Value, p: &Plan) -> R
     let wt_top = p.path.canonicalize().unwrap_or(p.path.clone());
     let line = Line {
         id: line_id.into(),
-        agent: "claude",
+        agent: crate::agents::DEFAULT_ID,
         session_id: sid.clone(),
         owner: s("owner"),
         station_id: ctx.config.station_id.clone(),
@@ -486,7 +486,7 @@ pub fn patch_local(ctx: &Ctx, l: &Line, print: bool) -> Result<String, String> {
     let top = dir.canonicalize().unwrap_or(dir.clone());
     let line = Line {
         id: id.clone(),
-        agent: "claude",
+        agent: crate::agents::DEFAULT_ID,
         session_id: sid.clone(),
         owner: ctx.config.owner.clone(),
         station_id: ctx.config.station_id.clone(),

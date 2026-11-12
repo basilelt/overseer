@@ -15,6 +15,49 @@ pub enum Install {
     Manual(&'static str),
 }
 
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Transcript {
+    Claude,
+    Codex,
+    Gemini,
+    Vibe,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Mcp {
+    None,
+    Claude,
+    Codex,
+    VibeTrust,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Hooks {
+    Native,
+    Plugin,
+    Polling,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum ProfileKind {
+    Claude,
+    Codex,
+    MarkdownSubagents,
+    Opencode,
+    Vibe,
+    Plain,
+    Shell,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Repair {
+    None,
+    Claude,
+    Codex,
+}
+
+pub const CODEX_TRUST: &str = "Codex runs edited hooks only after you trust them again: open codex and accept the hooks prompt (Overseer never edits config.toml).";
+
 pub struct ConfigDir {
     pub env: Option<&'static str>,
     pub default: &'static str,
@@ -29,10 +72,20 @@ pub struct Agent {
     pub auto_approve: Option<&'static [&'static str]>,
     pub approval_overrides: &'static [&'static str],
     pub effort_levels: &'static [&'static str],
+    pub transcript: Option<Transcript>,
+    pub metered: bool,
+    pub mcp: Mcp,
+    pub hooks: Hooks,
+    pub hook_note: Option<&'static str>,
+    pub retrust_hooks: bool,
+    pub hooks_need_cli: bool,
+    pub profile: ProfileKind,
+    pub repair: Repair,
+    pub start_args: bool,
+    pub tmux_snapshot: bool,
     pub orchestrator: bool,
     pub positional_prompt: bool,
     pub verified: bool,
-    pub sessions: bool,
     pub turns: bool,
     pub resume_verified: bool,
     pub models: Option<&'static [&'static str]>,
@@ -53,10 +106,20 @@ const NONE: Agent = Agent {
     auto_approve: None,
     approval_overrides: &[],
     effort_levels: EFFORTS,
+    transcript: None,
+    metered: false,
+    mcp: Mcp::None,
+    hooks: Hooks::Polling,
+    hook_note: None,
+    retrust_hooks: false,
+    hooks_need_cli: false,
+    profile: ProfileKind::Plain,
+    repair: Repair::None,
+    start_args: false,
+    tmux_snapshot: false,
     orchestrator: false,
     positional_prompt: false,
     verified: true,
-    sessions: false,
     turns: false,
     resume_verified: false,
     models: None,
@@ -71,6 +134,14 @@ const NONE: Agent = Agent {
 pub static AGENTS: &[Agent] = &[
     Agent {
         id: "claude",
+        transcript: Some(Transcript::Claude),
+        metered: true,
+        mcp: Mcp::Claude,
+        hooks: Hooks::Native,
+        profile: ProfileKind::Claude,
+        repair: Repair::Claude,
+        start_args: true,
+        tmux_snapshot: true,
         orchestrator: true,
         positional_prompt: true,
         auto_approve: Some(&["--permission-mode", "auto"]),
@@ -86,7 +157,6 @@ pub static AGENTS: &[Agent] = &[
         name: "Claude Code",
         bin: "claude",
         install: Install::Command("curl -fsSL https://claude.ai/install.sh | bash"),
-        sessions: true,
         turns: true,
         resume_verified: true,
         models: Some(&["opus", "sonnet", "haiku", "fable"]),
@@ -99,6 +169,14 @@ pub static AGENTS: &[Agent] = &[
     },
     Agent {
         id: "codex",
+        transcript: Some(Transcript::Codex),
+        metered: true,
+        mcp: Mcp::Codex,
+        hooks: Hooks::Native,
+        hook_note: Some(CODEX_TRUST),
+        retrust_hooks: true,
+        profile: ProfileKind::Codex,
+        repair: Repair::Codex,
         orchestrator: true,
         positional_prompt: true,
         auto_approve: Some(&["--ask-for-approval", "never"]),
@@ -116,7 +194,6 @@ pub static AGENTS: &[Agent] = &[
         name: "Codex",
         bin: "codex",
         install: Install::Command("npm install -g @openai/codex"),
-        sessions: true,
         turns: true,
         resume_verified: true,
         model_flag: Some("-m"),
@@ -127,6 +204,11 @@ pub static AGENTS: &[Agent] = &[
     },
     Agent {
         id: "gemini",
+        transcript: Some(Transcript::Gemini),
+        metered: true,
+        hooks: Hooks::Native,
+        hooks_need_cli: true,
+        profile: ProfileKind::MarkdownSubagents,
         auto_approve: Some(&["--approval-mode=yolo"]),
         approval_overrides: &["--approval-mode", "--yolo", "-y"],
         config: Some(ConfigDir {
@@ -136,7 +218,6 @@ pub static AGENTS: &[Agent] = &[
         name: "Gemini CLI",
         bin: "gemini",
         install: Install::Command("npm install -g @google/gemini-cli"),
-        sessions: true,
         model_flag: Some("-m"),
         session: Some(&["--session-id", "{}"]),
         prompt: Some("-i"),
@@ -146,6 +227,8 @@ pub static AGENTS: &[Agent] = &[
     },
     Agent {
         id: "agy",
+        hook_note: Some("No stable hook file for the Antigravity CLI yet: finished turns come from terminal activity."),
+        profile: ProfileKind::MarkdownSubagents,
         effort_levels: AGY_EFFORTS,
         auto_approve: Some(&["--mode=auto"]),
         approval_overrides: &["--mode"],
@@ -161,6 +244,8 @@ pub static AGENTS: &[Agent] = &[
     },
     Agent {
         id: "opencode",
+        hooks: Hooks::Plugin,
+        profile: ProfileKind::Opencode,
         auto_approve: Some(&["--auto"]),
         approval_overrides: &["--auto"],
         name: "opencode",
@@ -174,6 +259,8 @@ pub static AGENTS: &[Agent] = &[
     },
     Agent {
         id: "amp",
+        hooks: Hooks::Plugin,
+        hook_note: Some("Amp has no needs-input event: Overseer reports turn start and end only."),
         name: "Amp",
         bin: "amp",
         install: Install::Command("npm install -g --allow-scripts=@ampcode/cli @sourcegraph/amp"),
@@ -185,6 +272,7 @@ pub static AGENTS: &[Agent] = &[
     },
     Agent {
         id: "copilot",
+        hooks: Hooks::Native,
         auto_approve: Some(&["--allow-all"]),
         approval_overrides: &["--allow-all", "--allow-all-tools", "--yolo"],
         config: Some(ConfigDir {
@@ -215,6 +303,9 @@ pub static AGENTS: &[Agent] = &[
     },
     Agent {
         id: "cursor",
+        hooks: Hooks::Native,
+        hook_note: Some("Cursor Agent fires only some hooks in the CLI; a missing turn start falls back to terminal activity."),
+        hooks_need_cli: true,
         auto_approve: Some(&["--force"]),
         approval_overrides: &["--force", "-f", "--yolo"],
         config: Some(ConfigDir {
@@ -232,6 +323,11 @@ pub static AGENTS: &[Agent] = &[
     },
     Agent {
         id: "vibe",
+        transcript: Some(Transcript::Vibe),
+        mcp: Mcp::VibeTrust,
+        hooks: Hooks::Native,
+        hook_note: Some("Needs Mistral Vibe 3.0 or later. An interrupted turn fires no hook: the line stays busy until the next turn ends."),
+        profile: ProfileKind::Vibe,
         auto_approve: Some(&["--auto-approve"]),
         approval_overrides: &["--auto-approve", "--yolo", "--agent", "--smart-approve"],
         config: Some(ConfigDir {
@@ -241,7 +337,6 @@ pub static AGENTS: &[Agent] = &[
         name: "Mistral Vibe",
         bin: "vibe",
         install: Install::Command("uv tool install mistral-vibe"),
-        sessions: true,
         turns: true,
         models: Some(&[]),
         prompt: Some("--"),
@@ -251,6 +346,7 @@ pub static AGENTS: &[Agent] = &[
     },
     Agent {
         id: "shell",
+        profile: ProfileKind::Shell,
         name: "Shell",
         models: Some(&[]),
         ..NONE
@@ -273,6 +369,16 @@ pub const SHELL: &str = "shell";
 
 pub fn is_shell(id: &str) -> bool {
     id == SHELL
+}
+
+pub const DEFAULT_ID: &str = "claude";
+
+pub fn default_agent() -> &'static Agent {
+    get(DEFAULT_ID).unwrap_or(&AGENTS[0])
+}
+
+pub fn transcript_of(id: &str) -> Option<Transcript> {
+    get(id).and_then(|a| a.transcript)
 }
 
 pub fn task_agent(id: &str) -> bool {
@@ -446,12 +552,16 @@ impl Agent {
         !is_shell(self.id)
     }
 
+    pub fn sessions(&self) -> bool {
+        self.transcript.is_some()
+    }
+
     pub fn polled(&self) -> bool {
-        !self.sessions && !self.bin.is_empty()
+        !self.sessions() && !self.bin.is_empty()
     }
 
     pub fn has_ids(&self) -> bool {
-        self.sessions || self.session.is_some()
+        self.sessions() || self.session.is_some()
     }
 
     pub fn resume_argv(&self, session_id: &str, flags: &[String]) -> Option<Vec<String>> {
@@ -474,7 +584,7 @@ impl Agent {
         let mut v = json!({
             "id": self.id, "name": self.name, "installed": version.is_some(),
             "efforts": self.efforts(), "resume": self.resume.is_some() || self.cont.is_some(),
-            "verified": self.verified, "sessions": self.sessions, "turns": self.turns,
+            "verified": self.verified, "sessions": self.sessions(), "turns": self.turns,
         });
         if let Some(ver) = version.filter(|v| !v.is_empty()) {
             v["version"] = json!(ver);
@@ -916,13 +1026,66 @@ mod tests {
             AGENTS.iter().filter(|a| f(a)).map(|a| a.id).collect()
         };
         assert_eq!(ids(|a| !a.coding()), ["shell"]);
-        assert_eq!(ids(|a| a.sessions), ["claude", "codex", "gemini", "vibe"]);
+        assert_eq!(ids(Agent::sessions), ["claude", "codex", "gemini", "vibe"]);
         assert_eq!(
             ids(Agent::polled),
             ["agy", "opencode", "amp", "copilot", "cursor"]
         );
         assert!(is_shell("shell") && !is_shell("claude") && !is_shell("nope"));
         assert!(task_agent("claude") && !task_agent("shell") && !task_agent("nope"));
+    }
+
+    #[test]
+    fn capability_enums_name_every_agent_explicitly() {
+        let t = |id: &str| get(id).unwrap();
+        let kinds: Vec<_> = AGENTS.iter().filter_map(|a| a.transcript).collect();
+        assert_eq!(
+            kinds,
+            [
+                Transcript::Claude,
+                Transcript::Codex,
+                Transcript::Gemini,
+                Transcript::Vibe
+            ]
+        );
+        let metered: Vec<_> = AGENTS.iter().filter(|a| a.metered).map(|a| a.id).collect();
+        assert_eq!(metered, ["claude", "codex", "gemini"]);
+        assert_eq!(t("claude").mcp, Mcp::Claude);
+        assert_eq!(t("codex").mcp, Mcp::Codex);
+        assert_eq!(t("vibe").mcp, Mcp::VibeTrust);
+        assert_eq!(t("gemini").mcp, Mcp::None);
+        assert_eq!(t("claude").repair, Repair::Claude);
+        assert_eq!(t("codex").repair, Repair::Codex);
+        assert_eq!(t("vibe").repair, Repair::None);
+        assert_eq!(t("agy").profile, ProfileKind::MarkdownSubagents);
+        assert_eq!(t("gemini").profile, ProfileKind::MarkdownSubagents);
+        assert_eq!(t("shell").profile, ProfileKind::Shell);
+        assert_eq!(t("copilot").profile, ProfileKind::Plain);
+        let native: Vec<_> = AGENTS
+            .iter()
+            .filter(|a| a.hooks == Hooks::Native)
+            .map(|a| a.id)
+            .collect();
+        assert_eq!(
+            native,
+            ["claude", "codex", "gemini", "copilot", "cursor", "vibe"]
+        );
+        let plugin: Vec<_> = AGENTS
+            .iter()
+            .filter(|a| a.hooks == Hooks::Plugin)
+            .map(|a| a.id)
+            .collect();
+        assert_eq!(plugin, ["opencode", "amp"]);
+        let start: Vec<_> = AGENTS
+            .iter()
+            .filter(|a| a.start_args)
+            .map(|a| a.id)
+            .collect();
+        assert_eq!(start, ["claude"]);
+        assert_eq!(default_agent().id, DEFAULT_ID);
+        assert_eq!(transcript_of("vibe"), Some(Transcript::Vibe));
+        assert_eq!(transcript_of("cursor"), None);
+        assert_eq!(transcript_of("nope"), None);
     }
 
     #[test]

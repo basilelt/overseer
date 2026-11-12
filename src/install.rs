@@ -1,3 +1,4 @@
+use crate::agents::Hooks;
 use crate::hooks;
 use crate::util::shell_quote;
 use serde_json::{json, Map, Value};
@@ -5,8 +6,6 @@ use std::path::{Path, PathBuf};
 
 pub const MARKER: &str = "#overseer-hook";
 pub const OLD_MARKER: &str = "#switchboard-hook";
-
-const CODEX_TRUST: &str = "Codex runs edited hooks only after you trust them again: open codex and accept the hooks prompt (Overseer never edits config.toml).";
 
 pub fn shim_path() -> PathBuf {
     let name = if cfg!(windows) {
@@ -398,28 +397,25 @@ pub fn targets() -> Vec<Target> {
 }
 
 pub fn available(t: &Target, cli: bool) -> bool {
-    cli || (!matches!(t.agent, "cursor" | "gemini") && t.home.is_dir())
+    cli || (!crate::agents::get(t.agent).is_some_and(|a| a.hooks_need_cli) && t.home.is_dir())
 }
 
 pub fn mechanism(agent: &str) -> &'static str {
-    match agent {
-        "claude" | "codex" | "gemini" | "copilot" | "cursor" | "vibe" => "hooks",
-        "opencode" | "amp" => "plugin",
-        _ => "polling",
+    match crate::agents::get(agent).map(|a| a.hooks) {
+        Some(Hooks::Native) => "hooks",
+        Some(Hooks::Plugin) => "plugin",
+        Some(Hooks::Polling) | None => "polling",
     }
 }
 
 pub fn note(agent: &str) -> Option<&'static str> {
-    Some(match agent {
-        "codex" => CODEX_TRUST,
-        "amp" => "Amp has no needs-input event: Overseer reports turn start and end only.",
-        "vibe" => "Needs Mistral Vibe 3.0 or later. An interrupted turn fires no hook: the line stays busy until the next turn ends.",
-        "cursor" => "Cursor Agent fires only some hooks in the CLI; a missing turn start falls back to terminal activity.",
-        "agy" => "No stable hook file for the Antigravity CLI yet: finished turns come from terminal activity.",
-        "shell" => return None,
-        a if mechanism(a) == "polling" => "No hook API: finished turns come from terminal activity.",
-        _ => return None,
-    })
+    const POLLING: &str = "No hook API: finished turns come from terminal activity.";
+    match crate::agents::get(agent) {
+        Some(a) => a
+            .hook_note
+            .or_else(|| (a.coding() && a.hooks == Hooks::Polling).then_some(POLLING)),
+        None => Some(POLLING),
+    }
 }
 
 fn js_str(p: &Path) -> String {
@@ -751,7 +747,9 @@ impl Outcome {
         if let Some(s) = &self.skipped {
             v["skipped"] = json!(s);
         }
-        if let Some(n) = note(self.agent).filter(|_| self.agent == "codex" && self.written) {
+        if let Some(n) = note(self.agent).filter(|_| {
+            crate::agents::get(self.agent).is_some_and(|a| a.retrust_hooks) && self.written
+        }) {
             v["note"] = json!(n);
         }
         v
@@ -992,8 +990,8 @@ pub fn on_daemon_start(state_dir: &Path) {
                 r.bin.display()
             );
         }
-        if o.written && o.agent == "codex" {
-            eprintln!("overseer daemon: {CODEX_TRUST}");
+        if o.written && crate::agents::get(o.agent).is_some_and(|a| a.retrust_hooks) {
+            eprintln!("overseer daemon: {}", crate::agents::CODEX_TRUST);
         }
         if let Some(e) = o.error {
             eprintln!("overseer daemon: hook repair skipped: {e}");
@@ -1003,6 +1001,41 @@ pub fn on_daemon_start(state_dir: &Path) {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn mechanism_and_note_follow_the_descriptor() {
+        let m: Vec<_> = crate::agents::AGENTS
+            .iter()
+            .map(|a| (a.id, mechanism(a.id)))
+            .collect();
+        assert_eq!(
+            m,
+            [
+                ("claude", "hooks"),
+                ("codex", "hooks"),
+                ("gemini", "hooks"),
+                ("agy", "polling"),
+                ("opencode", "plugin"),
+                ("amp", "plugin"),
+                ("copilot", "hooks"),
+                ("cursor", "hooks"),
+                ("vibe", "hooks"),
+                ("shell", "polling"),
+            ]
+        );
+        assert_eq!(note("codex"), Some(crate::agents::CODEX_TRUST));
+        assert!(note("amp").unwrap().starts_with("Amp has no"));
+        assert!(note("agy").unwrap().starts_with("No stable hook file"));
+        for none in ["claude", "gemini", "copilot", "opencode", "shell"] {
+            assert_eq!(note(none), None, "{none}");
+        }
+        assert_eq!(
+            note("unknown"),
+            Some("No hook API: finished turns come from terminal activity.")
+        );
+        assert!(crate::agents::get("codex").unwrap().retrust_hooks);
+        assert!(!crate::agents::get("claude").unwrap().retrust_hooks);
+    }
+
     #[test]
     fn path_with_shim_prepends_the_shim_dir_once() {
         let shim = Path::new("/h/.overseer/bin/overseer");
