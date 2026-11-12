@@ -34,6 +34,7 @@ export interface Settings {
   autoConcurrency: number;
   autoOrganize: boolean;
   agentMessaging: boolean;
+  agentTasks: boolean;
   kanbanView: 'board' | 'matrix';
   recentHosts: HostTarget[];
   serverBinDir: string;
@@ -101,6 +102,7 @@ export const DEFAULT_SETTINGS: Settings = {
   autoConcurrency: 2,
   autoOrganize: false,
   agentMessaging: true,
+  agentTasks: true,
   kanbanView: 'board',
   recentHosts: [],
   serverBinDir: '',

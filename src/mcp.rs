@@ -14,7 +14,7 @@ fn error(id: &Value, code: i64, message: &str) -> Value {
     json!({"jsonrpc": "2.0", "id": id, "error": {"code": code, "message": message}})
 }
 
-fn tools() -> Value {
+fn tools(file_tasks: bool) -> Value {
     let s = |d: &str| json!({"type": "string", "description": d});
     let b = |d: &str| json!({"type": "boolean", "description": d});
     let n = |d: &str| json!({"type": "integer", "minimum": 0, "description": d});
@@ -32,7 +32,8 @@ fn tools() -> Value {
                    "status": s("Status or comma list: pending, auto, in_progress, in_testing, merged, completed")}),
             json!([])),
         tool("get_task", "Get one task by id.", json!({"id": s("Task id")}), json!(["id"])),
-        tool("create_task", "Create a pending task. The project defaults to your own task's project, else the current git repository. A quorum orchestrator's subtasks start on their own.",
+        tool("create_task", &format!("Create a pending task. The project defaults to your own task's project, else the current git repository. A quorum orchestrator's subtasks start on their own.{}",
+            if file_tasks { "" } else { " Do not use it for bugs or improvements you find while working, merging or reviewing: fix them yourself in your own task. Create a task only when the user asks for one or a quorum orchestrator splits its work." }),
             json!({"title": s("Task title"), "description": s("Task description"),
                    "agent": s("Agent CLI that runs it (claude, codex, gemini, ...). For a quorum orchestrator, one of its workers (default the first)"),
                    "project": s("Absolute path of the project's main worktree root"),
@@ -521,6 +522,22 @@ fn call_tool(id: &Value, params: &Value, own: Option<&str>, call: &mut Call) -> 
     reply(id, result)
 }
 
+const ON_FINDINGS_FILE: &str = "When you find a bug or improvement unrelated to your task, create_task it (with urgent and important) instead of fixing it off-scope.";
+const ON_FINDINGS_FIX: &str = "When you find a bug or improvement while working, merging or reviewing, fix it yourself in your own task and branch; do not create_task for it unless the user asks you to.";
+
+fn instructions(file_tasks: bool) -> String {
+    let findings = if file_tasks {
+        ON_FINDINGS_FILE
+    } else {
+        ON_FINDINGS_FIX
+    };
+    format!("Overseer Kanban tasks and code review. Read and create tasks (always pending), report progress on your task with update_task_progress, and call set_task_status with in_testing when your work is ready for review, with merged once you merged its changes, and with in_progress when you resume work on it after review, merge or close. When the reviewer sends comments, list_review_comments shows them and resolve_review_comment answers each one once addressed. {findings} Call find_overlaps before large edits and before moving your task to in_testing; if another task touches the same files, send_message its agent to agree who changes what. Overseer also warns you by message when your task moves to in_testing and overlaps another. Messages from other agents arrive in your input prefixed [Overseer]; reply with send_message. The session configurator reads sessions with list_sessions, get_session_brief, list_projects, list_worktrees and list_layout, and records one plan with propose_organization.")
+}
+
+fn file_tasks(call: &mut Call) -> bool {
+    !matches!(call("GET", "/v1/tasks/agent-tasks", None), Ok((200, v)) if v["enabled"] == false)
+}
+
 pub fn handle(msg: &Value, own_task: Option<&str>, call: &mut Call) -> Option<Value> {
     let id = msg.get("id")?;
     let Some(method) = msg["method"].as_str() else {
@@ -536,11 +553,11 @@ pub fn handle(msg: &Value, own_task: Option<&str>, call: &mut Call) -> Option<Va
                 "protocolVersion": PROTOCOL,
                 "capabilities": {"tools": {"listChanged": false}},
                 "serverInfo": {"name": "overseer", "version": env!("CARGO_PKG_VERSION")},
-                "instructions": "Overseer Kanban tasks and code review. Read and create tasks (always pending), report progress on your task with update_task_progress, and call set_task_status with in_testing when your work is ready for review, with merged once you merged its changes, and with in_progress when you resume work on it after review, merge or close. When the reviewer sends comments, list_review_comments shows them and resolve_review_comment answers each one once addressed. When you find a bug or improvement unrelated to your task, create_task it (with urgent and important) instead of fixing it off-scope. Call find_overlaps before large edits and before moving your task to in_testing; if another task touches the same files, send_message its agent to agree who changes what. Overseer also warns you by message when your task moves to in_testing and overlaps another. Messages from other agents arrive in your input prefixed [Overseer]; reply with send_message. The session configurator reads sessions with list_sessions, get_session_brief, list_projects, list_worktrees and list_layout, and records one plan with propose_organization.",
+                "instructions": instructions(file_tasks(call)),
             }),
         ),
         "ping" => reply(id, json!({})),
-        "tools/list" => reply(id, json!({"tools": tools()})),
+        "tools/list" => reply(id, json!({"tools": tools(file_tasks(call))})),
         "tools/call" => call_tool(id, &msg["params"], own_task, call),
         _ => error(id, -32601, &format!("method not found: {method}")),
     })
@@ -667,7 +684,87 @@ mod tests {
         assert_eq!(out["result"]["protocolVersion"], "2025-06-18");
         assert_eq!(out["result"]["capabilities"]["tools"]["listChanged"], false);
         assert_eq!(out["result"]["serverInfo"]["name"], "overseer");
-        assert!(log.is_empty());
+        assert_eq!(log.len(), 1);
+        assert_eq!(
+            (log[0].0.as_str(), log[0].1.as_str()),
+            ("GET", "/v1/tasks/agent-tasks")
+        );
+    }
+
+    fn init_and_list(answer: impl Fn(&str, &str) -> (u16, Value) + Copy) -> (String, String) {
+        let init = json!({"jsonrpc": "2.0", "id": 0, "method": "initialize", "params": {}});
+        let list = json!({"jsonrpc": "2.0", "id": 1, "method": "tools/list"});
+        let text = with_fake(init, Some("OWN"), answer).0.unwrap()["result"]["instructions"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        let tools = with_fake(list, Some("OWN"), answer).0.unwrap()["result"]["tools"].clone();
+        let create = tools
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|t| t["name"] == "create_task")
+            .unwrap()["description"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        (text, create)
+    }
+
+    #[test]
+    fn agents_file_side_tasks_when_the_switch_is_on() {
+        let (text, create) = init_and_list(|_, _| (200, json!({"enabled": true})));
+        assert!(
+            text.contains("create_task it (with urgent and important)"),
+            "{text}"
+        );
+        assert!(!text.contains("fix it yourself"), "{text}");
+        assert!(!create.contains("Do not use it"), "{create}");
+    }
+
+    #[test]
+    fn agents_fix_findings_themselves_when_the_switch_is_off() {
+        let (text, create) = init_and_list(|_, _| (200, json!({"enabled": false})));
+        assert!(text.contains("fix it yourself in your own task"), "{text}");
+        assert!(!text.contains("create_task it"), "{text}");
+        assert!(text.contains("find_overlaps"), "{text}");
+        assert!(
+            create.contains("Do not use it for bugs or improvements"),
+            "{create}"
+        );
+        assert!(
+            create.contains("quorum orchestrator splits its work"),
+            "{create}"
+        );
+    }
+
+    #[test]
+    fn agents_keep_filing_side_tasks_when_the_daemon_cannot_answer() {
+        let (text, create) = init_and_list(|_, _| (500, json!({"error": "boom"})));
+        assert!(text.contains("create_task it"), "{text}");
+        assert!(!create.contains("Do not use it"), "{create}");
+        let init = json!({"jsonrpc": "2.0", "id": 0, "method": "initialize", "params": {}});
+        let mut call = |_: &str, _: &str, _: Option<&Value>| Err("daemon down".to_string());
+        let out = handle(&init, None, &mut call).unwrap();
+        assert!(out["result"]["instructions"]
+            .as_str()
+            .unwrap()
+            .contains("create_task it"));
+    }
+
+    #[test]
+    fn create_task_still_works_with_the_switch_off() {
+        let (out, log) = with_fake(
+            tool("create_task", json!({"title": "t"})),
+            Some("OWN"),
+            |m, t| match (m, t) {
+                ("GET", "/v1/tasks/agent-tasks") => (200, json!({"enabled": false})),
+                ("GET", _) => (200, json!({"id": "OWN", "project": "/p", "origin": "user"})),
+                _ => (201, json!({"id": "NEW"})),
+            },
+        );
+        assert_eq!(out.unwrap()["result"]["isError"], false);
+        assert_eq!(log.last().unwrap().1, "/v1/tasks");
     }
 
     #[test]

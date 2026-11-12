@@ -172,6 +172,9 @@ on a TCP port on the server.
 - **Agents stay in their project**: task agents message each other only within the same
   project, so they coordinate on shared files without spending tokens on unrelated repositories.
   Settings → Defaults → Agents message each other turns their messages off entirely.
+- **Side tasks or autonomous agents**: when an agent finds a bug outside its task while working,
+  merging or reviewing, it can file it as a new task on the board or fix it itself. Settings →
+  Defaults → Agents file what they find as tasks picks which.
 - **Usage and system monitor**: agent quotas, token usage, CPU and RAM in the title bar.
 - **Keep agents running with the lid closed**: an opt-in switch (Settings → Connection) stops the
   laptop running Overseer from sleeping when you close it, on Linux, macOS and Windows, so agents

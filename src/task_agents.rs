@@ -170,6 +170,16 @@ pub fn set_agent_messaging(reg: &Registry, on: bool) -> Result<(), String> {
     reg.put(AGENT_MESSAGING_KEY, if on { "true" } else { "false" })
 }
 
+const AGENT_TASKS_KEY: &str = "agentTasks";
+
+pub fn agent_tasks_enabled(reg: &Registry) -> bool {
+    !matches!(reg.get(AGENT_TASKS_KEY), Ok(Some(v)) if v == "false")
+}
+
+pub fn set_agent_tasks(reg: &Registry, on: bool) -> Result<(), String> {
+    reg.put(AGENT_TASKS_KEY, if on { "true" } else { "false" })
+}
+
 fn parent_and_child(a: &Task, b: &Task) -> bool {
     a.parent_id.as_deref() == Some(b.id.as_str()) || b.parent_id.as_deref() == Some(a.id.as_str())
 }
@@ -849,6 +859,16 @@ mod tests {
         assert!(!agent_messaging_enabled(&r));
         set_agent_messaging(&r, true).unwrap();
         assert!(agent_messaging_enabled(&r));
+    }
+
+    #[test]
+    fn agent_tasks_is_on_by_default_and_roundtrips() {
+        let r = reg("agent-tasks-flag");
+        assert!(agent_tasks_enabled(&r));
+        set_agent_tasks(&r, false).unwrap();
+        assert!(!agent_tasks_enabled(&r));
+        set_agent_tasks(&r, true).unwrap();
+        assert!(agent_tasks_enabled(&r));
     }
 
     #[test]

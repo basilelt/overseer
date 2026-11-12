@@ -169,6 +169,10 @@
         .agentMessaging()
         .then((r) => saveSettings({ agentMessaging: r.enabled }))
         .catch(() => {});
+      app.api
+        .agentTasks()
+        .then((r) => saveSettings({ agentTasks: r.enabled }))
+        .catch(() => {});
     });
   });
   async function setAgentMessaging(el: HTMLInputElement) {
@@ -176,6 +180,16 @@
     try {
       const r = await app.api.setAgentMessaging(on);
       saveSettings({ agentMessaging: r.enabled });
+    } catch (e) {
+      el.checked = !on;
+      app.notify(String((e as Error)?.message ?? e), 'error');
+    }
+  }
+  async function setAgentTasks(el: HTMLInputElement) {
+    const on = el.checked;
+    try {
+      const r = await app.api.setAgentTasks(on);
+      saveSettings({ agentTasks: r.enabled });
     } catch (e) {
       el.checked = !on;
       app.notify(String((e as Error)?.message ?? e), 'error');
@@ -565,6 +579,12 @@
             <label class="row" class:hit={hit('defaults', 'agentMessaging')}>
               <span>{t('settings.agentMessaging')}<small>{t('settings.agentMessagingHint')}</small></span>
               <input type="checkbox" class="switch" data-tour="agent-messaging" checked={settings.agentMessaging} onchange={(e) => setAgentMessaging(e.currentTarget)} />
+            </label>
+          {/if}
+          {#if row('defaults', 'agentTasks')}
+            <label class="row" class:hit={hit('defaults', 'agentTasks')}>
+              <span>{t('settings.agentTasks')}<small>{t('settings.agentTasksHint')}</small></span>
+              <input type="checkbox" class="switch" data-tour="agent-tasks" checked={settings.agentTasks} onchange={(e) => setAgentTasks(e.currentTarget)} />
             </label>
           {/if}
         </section>

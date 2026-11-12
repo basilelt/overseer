@@ -684,6 +684,7 @@ export class MockDaemon implements DaemonClient {
   tasks: Task[];
   autoOrganize = false;
   agentMessaging = true;
+  agentTasks = true;
   lidPower = { enabled: false, active: false, supported: true, error: null as string | null };
   autoApprove: Record<string, boolean> = Object.fromEntries(Object.keys(AUTO_APPROVE_ARGS).map((id) => [id, true]));
   messages: TaskMessage[];
@@ -855,6 +856,12 @@ export class MockDaemon implements DaemonClient {
     if (method === 'PUT' && path === '/v1/tasks/auto-organize') {
       this.autoOrganize = body?.enabled === true;
       return { enabled: this.autoOrganize };
+    }
+    if (method === 'GET' && path === '/v1/tasks/agent-tasks') return { enabled: this.agentTasks };
+    if (method === 'PUT' && path === '/v1/tasks/agent-tasks') {
+      if (typeof body?.enabled !== 'boolean') throw new DaemonError(400, 'enabled must be a boolean');
+      this.agentTasks = body.enabled;
+      return { enabled: this.agentTasks };
     }
     if (method === 'GET' && path === '/v1/tasks/agent-messaging') return { enabled: this.agentMessaging };
     if (method === 'PUT' && path === '/v1/tasks/agent-messaging') {
