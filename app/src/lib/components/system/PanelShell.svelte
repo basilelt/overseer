@@ -5,8 +5,8 @@
   import Modal from '../ui/Modal.svelte';
   import { app } from '../../state.svelte';
   import { t } from '../../i18n.svelte';
-  import { update, openInFocused } from '../../workspace.svelte';
-  import { newTabKey } from '../../tabs';
+  import { update, openInFocused } from '../../workspace/workspace.svelte';
+  import { newTabKey } from '../../tabs/tabs';
   import { phoneOrMobile } from '../../mobile/phone.svelte';
 
   let {

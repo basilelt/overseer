@@ -11,12 +11,12 @@
   import X from '@lucide/svelte/icons/x';
   import { t } from '../../i18n.svelte';
   import { app } from '../../state.svelte';
-  import { isTauri } from '../../client';
+  import { isTauri } from '../../daemon/client';
   import { boundsOf, nativeBrowser, normalizeUrl } from '../../browser';
-  import { pages } from '../../session-pages.svelte';
-  import type { Page } from '../../session-pages';
-  import { openInFocused, update } from '../../workspace.svelte';
-  import { newTabKey } from '../../tabs';
+  import { pages } from '../../session/session-pages.svelte';
+  import type { Page } from '../../session/session-pages';
+  import { openInFocused, update } from '../../workspace/workspace.svelte';
+  import { newTabKey } from '../../tabs/tabs';
 
   let { sessionKey, phone = false }: { sessionKey: string; phone?: boolean } = $props();
 

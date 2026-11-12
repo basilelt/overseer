@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { render } from 'svelte/server';
-import type { SidebarItem } from '../../grouping';
-import type { WorkspaceGroup } from '../../by-state';
+import type { SidebarItem } from '../../session/grouping';
+import type { WorkspaceGroup } from '../../session/by-state';
 import StateGroups from './StateGroups.svelte';
 import src from './StateGroups.svelte?raw';
 

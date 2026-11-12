@@ -2,7 +2,7 @@
   import Check from '@lucide/svelte/icons/check';
   import Modal from '../ui/Modal.svelte';
   import { app } from '../../state.svelte';
-  import { saveSettings, settings } from '../../settings.svelte';
+  import { saveSettings, settings } from '../../settings/settings.svelte';
   import { t } from '../../i18n.svelte';
   import { PROJECT_SWATCHES } from './project-colors';
 

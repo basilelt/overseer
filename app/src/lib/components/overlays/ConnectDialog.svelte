@@ -13,14 +13,14 @@
   import AuthPrompt from './AuthPrompt.svelte';
   import LocalNetworkPanel from './LocalNetworkPanel.svelte';
   import { t, type Key } from '../../i18n.svelte';
-  import { isMockClient } from '../../client';
+  import { isMockClient } from '../../daemon/client';
   import { app } from '../../state.svelte';
   import { CONNECT_CLOSE_DELAY_MS } from '../../timing';
-  import { saveSettings, settings } from '../../settings.svelte';
-  import { connectHow, preferredChoice, type ConnectHow, type HostChoice } from '../../host-choice';
+  import { saveSettings, settings } from '../../settings/settings.svelte';
+  import { connectHow, preferredChoice, type ConnectHow, type HostChoice } from '../../host/host-choice';
   import { hostKey, openWindow } from '../../window';
   import { isBusy, steps } from '../../conn';
-  import { exitDemo, isDemo, startDemo } from '../../demo';
+  import { exitDemo, isDemo, startDemo } from '../../daemon/demo';
   import { localNetworkView } from '../../localnet';
   import { fuzzy } from '../../fuzzy';
   import type { ConnPhase, HostTarget, SshHost } from '../../types';

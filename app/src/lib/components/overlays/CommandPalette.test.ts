@@ -1,5 +1,5 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
-import { MOCK_AGENTS } from '../../mock';
+import { MOCK_AGENTS } from '../../daemon/mock';
 import type { AgentInfo } from '../../types';
 
 async function rendered(connected: boolean, current?: Record<string, unknown>, all: Record<string, unknown>[] = [], agents: AgentInfo[] = []) {

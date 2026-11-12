@@ -1,6 +1,6 @@
 <script lang="ts">
   import { app } from '../../state.svelte';
-  import { settings } from '../../settings.svelte';
+  import { settings } from '../../settings/settings.svelte';
   import { t, getLocale } from '../../i18n.svelte';
   import { agentName } from '../../agents';
   import AgentGlyph from '../ui/AgentGlyph.svelte';

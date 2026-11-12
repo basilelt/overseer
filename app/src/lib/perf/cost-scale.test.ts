@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { costRows, type CostBy } from '../cost';
+import { costRows, type CostBy } from '../kanban/cost';
 import type { Task } from '../types';
 
 // Work is counted, never timed: every read of a task field.

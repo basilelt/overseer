@@ -1,5 +1,5 @@
 import { untrack } from 'svelte';
-import { DaemonError, type DaemonClient } from '../client';
+import { DaemonError, type DaemonClient } from '../daemon/client';
 import { ui } from '../mobile/ui.svelte';
 import { active, onPresence } from '../presence';
 import type { DaemonEvent } from '../types';

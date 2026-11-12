@@ -15,7 +15,7 @@
   import Segmented from '../components/kanban/Segmented.svelte';
   import AgentGlyph from '../components/ui/AgentGlyph.svelte';
   import { app } from '../state.svelte';
-  import { customColors, resolvedTheme } from '../settings.svelte';
+  import { customColors, resolvedTheme } from '../settings/settings.svelte';
   import { age } from '../time';
   import { gitApi } from './api';
   import CommitDetail from './CommitDetail.svelte';

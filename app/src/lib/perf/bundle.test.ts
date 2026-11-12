@@ -29,7 +29,7 @@ describe('production bundle budget', () => {
     expect(total).toBeLessThan(STARTUP_BUDGET_KB);
     expect([...startup].map((f) => byFile.get(f)!.name).filter((n) => LAZY_ONLY.test(n))).toEqual([]);
     expect([...startup].flatMap((f) => byFile.get(f)!.moduleIds).filter((m) => /\/i18n\/(?!en\.ts)[^/]+\.ts$/.test(m))).toEqual([]);
-    expect([...startup].flatMap((f) => byFile.get(f)!.moduleIds).filter((m) => /\/lib\/feedback\.ts$/.test(m))).toEqual([]);
+    expect([...startup].flatMap((f) => byFile.get(f)!.moduleIds).filter((m) => /\/lib\/feedback\/feedback\.ts$/.test(m))).toEqual([]);
     expect([...startup].flatMap((f) => byFile.get(f)!.moduleIds).filter((m) => /\/review\/threads\.ts$/.test(m))).toEqual([]);
     expect(all.filter((c) => !startup.has(c.fileName)).some((c) => c.moduleIds.some((m) => m.endsWith('/i18n/fr.ts')))).toBe(true);
   });

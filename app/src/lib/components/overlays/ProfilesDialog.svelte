@@ -10,9 +10,9 @@
   import { findAgent, taskAgents } from '../../agents';
   import { t, type Key } from '../../i18n.svelte';
   import { app } from '../../state.svelte';
-  import { settings } from '../../settings.svelte';
-  import { chipLabel, costIndex, formatIndex, NONE, PRICES_AS_OF, TASK_TYPES } from '../../profiles';
-  import { clean, slugId, validateProfile } from '../../profile-edit';
+  import { settings } from '../../settings/settings.svelte';
+  import { chipLabel, costIndex, formatIndex, NONE, PRICES_AS_OF, TASK_TYPES } from '../../profiles/profiles';
+  import { clean, slugId, validateProfile } from '../../profiles/profile-edit';
   import type { AgentInfo, Effort, FileEdit, Profile, ProfileAgent, ProfileSupport, SubagentDef, TaskType } from '../../types';
 
   let { onclose, scope = null }: { onclose: () => void; scope?: string | null } = $props();

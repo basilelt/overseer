@@ -1,6 +1,6 @@
-import * as CMD from '../tauri-commands';
-import { isTauri } from '../client';
-import { isDemo } from '../demo';
+import * as CMD from '../daemon/tauri-commands';
+import { isTauri } from '../daemon/client';
+import { isDemo } from '../daemon/demo';
 import { type Sub, t } from '../i18n.svelte';
 
 export const CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;

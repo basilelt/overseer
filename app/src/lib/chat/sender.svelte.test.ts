@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { MockDaemon } from '../mock';
+import { MockDaemon } from '../daemon/mock';
 import type { BroadcastRequest, BroadcastResponse, LocalLine } from '../types';
 import { ChatSender } from './sender.svelte';
 

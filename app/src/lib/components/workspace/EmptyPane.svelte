@@ -6,10 +6,10 @@
   import Command from '@lucide/svelte/icons/command';
   import { t } from '../../i18n.svelte';
   import { app } from '../../state.svelte';
-  import { settings } from '../../settings.svelte';
-  import { emptyPane } from '../../emptypane';
+  import { settings } from '../../settings/settings.svelte';
+  import { emptyPane } from '../../tabs/emptypane';
   import { shortPath } from '../../dirs';
-  import { hint } from '../../keyboard';
+  import { hint } from '../../commands/keyboard';
   import AgentGlyph from '../ui/AgentGlyph.svelte';
 
   const view = $derived(

@@ -1,7 +1,7 @@
 <script lang="ts">
   import { t } from '../../i18n.svelte';
   import { app } from '../../state.svelte';
-  import { costIndex, formatIndex, NONE, resolveProfile } from '../../profiles';
+  import { costIndex, formatIndex, NONE, resolveProfile } from '../../profiles/profiles';
   import type { TaskType } from '../../types';
 
   let {

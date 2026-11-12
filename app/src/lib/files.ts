@@ -1,5 +1,5 @@
-import type { DaemonClient } from './client';
-import { api } from './api';
+import type { DaemonClient } from './daemon/client';
+import { api } from './daemon/api';
 
 export function isMissingFile(message: string): boolean {
   return /no such file or directory|os error 2\b/i.test(message);

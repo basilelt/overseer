@@ -1,6 +1,6 @@
-import * as CMD from './tauri-commands';
+import * as CMD from './daemon/tauri-commands';
 import { invoke } from '@tauri-apps/api/core';
-import { isTauri } from './client';
+import { isTauri } from './daemon/client';
 import type { InstalledBrowser, LinkRoute } from './links';
 
 class Browsers {

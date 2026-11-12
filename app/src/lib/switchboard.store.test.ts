@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { DaemonError, setClient } from './client';
-import { MockDaemon } from './mock';
+import { DaemonError, setClient } from './daemon/client';
+import { MockDaemon } from './daemon/mock';
 import { app } from './state.svelte';
 import { DISMISS_KEY } from './switchboard';
 import { loadSwitchboard, offerSwitchboard, reloadApp, resetImport, runImport, switchboard, switchboardNever } from './switchboard.svelte';

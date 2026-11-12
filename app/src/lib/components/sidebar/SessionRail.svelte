@@ -2,9 +2,9 @@
   import { app } from '../../state.svelte';
   import { t } from '../../i18n.svelte';
   import { beside } from '../../review/beside.svelte';
-  import { focusPane, update, workspace } from '../../workspace.svelte';
+  import { focusPane, update, workspace } from '../../workspace/workspace.svelte';
   import AgentGlyph from '../ui/AgentGlyph.svelte';
-  import { GROUP_COLOR } from '../../ws-color';
+  import { GROUP_COLOR } from '../../workspace/ws-color';
 
   const items = $derived(app.scopeItems().filter((i) => i.lineId || i.termId));
 

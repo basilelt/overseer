@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { render } from 'svelte/server';
-import { HostLink } from '../../host-link.svelte';
-import { itemsOf, load, watch } from '../../host-watch';
-import { MockDaemon } from '../../mock';
-import { settings } from '../../settings.svelte';
+import { HostLink } from '../../host/host-link.svelte';
+import { itemsOf, load, watch } from '../../host/host-watch';
+import { MockDaemon } from '../../daemon/mock';
+import { settings } from '../../settings/settings.svelte';
 import { app } from '../../state.svelte';
 import HostSections from './HostSections.svelte';
 import sidebarSrc from './Sidebar.svelte?raw';

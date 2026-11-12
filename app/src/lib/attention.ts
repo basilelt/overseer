@@ -1,4 +1,4 @@
-import { newestFirst, type SidebarItem } from './grouping';
+import { newestFirst, type SidebarItem } from './session/grouping';
 import { isAgentItem } from './agents';
 
 export interface AttentionEntry {

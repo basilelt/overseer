@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { render } from 'svelte/server';
-import type { SidebarItem } from '../../grouping';
+import type { SidebarItem } from '../../session/grouping';
 import SessionCard from './SessionCard.svelte';
 
 const html = (over: Partial<SidebarItem>) =>

@@ -10,7 +10,7 @@
   import { onMount, untrack } from 'svelte';
   import { t } from '../../i18n.svelte';
   import { app } from '../../state.svelte';
-  import { needsInputCount } from '../../notify';
+  import { needsInputCount } from '../../notify/notify';
   import { isReviewKey, reviewTitle } from '../../review/open';
   import { MOBILE_TABS, type MobileTab } from '../../mobile/layout';
   import { nextTab, viewForTab, type NavState } from '../../mobile/nav';
@@ -26,7 +26,7 @@
   import { apk, pillLabel } from '../../mobile/apk-update.svelte';
   import { backAction, backHandlers, closeTop, escapeCloses, pushTab, setBackRunner } from '../../mobile/back';
   import { native } from '../../mobile/native';
-  import { diag } from '../../diag.svelte';
+  import { diag } from '../../diag/diag.svelte';
   import { tour } from '../../tour/tour.svelte';
 
   const kanban = () => import('../kanban/KanbanView.svelte');

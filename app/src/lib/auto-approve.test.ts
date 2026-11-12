@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
-import { api } from './api';
+import { api } from './daemon/api';
 import { allState, setAll } from './auto-approve';
-import { MockDaemon } from './mock';
+import { MockDaemon } from './daemon/mock';
 
 const fresh = () => api(new MockDaemon({ live: false, delayMs: 0 }));
 

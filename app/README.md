@@ -38,7 +38,7 @@ sshd containers: a `Match` block, `ProxyJump` via a bastion, `ProxyCommand nc %h
 prompt answered from the app, and exactly one TCP connection on the server side while everything
 is open. Containers, network and image are labelled `overseer-remote-it` and removed after.
 
-The mock (`src/lib/mock.ts`) is used with `VITE_MOCK=1` or whenever the page runs outside Tauri.
+The mock (`src/lib/daemon/mock.ts`) is used with `VITE_MOCK=1` or whenever the page runs outside Tauri.
 It serves the nine agents of `/v1/agents` (claude, codex, gemini, agy, copilot and shell installed;
 opencode, amp and cursor not), 12 lines (some Gemini, Copilot and Antigravity; `/activity` answers
 409 for agents without session files), 14 ranked tasks, projects (`POST /v1/projects` included),

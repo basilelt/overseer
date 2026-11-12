@@ -2,7 +2,7 @@
   import { dismiss } from '../../dismiss';
   import Check from '@lucide/svelte/icons/check';
   import ChevronRight from '@lucide/svelte/icons/chevron-right';
-  import { menuRows, type MenuItem } from '../../menu';
+  import { menuRows, type MenuItem } from '../../commands/menu';
   import AgentGlyph from './AgentGlyph.svelte';
   import { isPhone } from '../../mobile/ui.svelte';
   import { untrack } from 'svelte';

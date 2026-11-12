@@ -15,10 +15,10 @@
   import Modal from '../ui/Modal.svelte';
   import { t } from '../../i18n.svelte';
   import { app } from '../../state.svelte';
-  import { center, runEntry } from '../../notifications.svelte';
-  import type { EntryKind } from '../../notifications';
+  import { center, runEntry } from '../../notify/notifications.svelte';
+  import type { EntryKind } from '../../notify/notifications';
   import { age } from '../../time';
-  import { isTargetMuted, toggleTargetMute } from '../../os-notify';
+  import { isTargetMuted, toggleTargetMute } from '../../notify/os-notify';
 
   let { onclose }: { onclose: () => void } = $props();
 

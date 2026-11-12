@@ -1,4 +1,4 @@
-import { keyToInput } from '../keys';
+import { keyToInput } from '../commands/keys';
 
 export type AccessoryKey = 'esc' | 'tab' | 'ctrl' | 'alt' | 'up' | 'down' | 'left' | 'right' | 'pipe' | 'tilde' | 'slash' | 'dash' | 'newline';
 

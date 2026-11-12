@@ -5,7 +5,7 @@
   import { connLabel, hostChipDot, HOST_WORKING_DOT } from '../../conn-label';
   import { t } from '../../i18n.svelte';
   import { preload } from '../../idle';
-  import { isMockClient } from '../../client';
+  import { isMockClient } from '../../daemon/client';
   import { app } from '../../state.svelte';
 
   let open = $state(false);

@@ -11,13 +11,13 @@
   import FolderGit from '@lucide/svelte/icons/folder-git';
   import LoaderCircle from '@lucide/svelte/icons/loader-circle';
   import { t, type Key } from '../../i18n.svelte';
-  import { cardMeta, isDone, isSession, modelLabel, quadrant, relTime, type CardStatus } from '../../kanban';
+  import { cardMeta, isDone, isSession, modelLabel, quadrant, relTime, type CardStatus } from '../../kanban/kanban';
   import type { Task } from '../../types';
   import { app, projectName } from '../../state.svelte';
   import { CONFIRM_WINDOW_MS } from '../../timing';
   import { agentName, findAgent } from '../../agents';
   import AgentGlyph from '../ui/AgentGlyph.svelte';
-  import { isRunning, isTesting } from '../../task-status';
+  import { isRunning, isTesting } from '../../kanban/task-status';
 
   let {
     task,

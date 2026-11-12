@@ -1,7 +1,7 @@
 import { tick } from 'svelte';
 import { app } from '../state.svelte';
 import { ui, isPhone } from '../mobile/ui.svelte';
-import { feedback } from '../feedback.svelte';
+import { feedback } from '../feedback/feedback.svelte';
 import { tour } from './tour.svelte';
 
 export async function replayTour() {

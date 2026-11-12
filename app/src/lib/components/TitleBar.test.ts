@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { render } from 'svelte/server';
 import TitleBar from './TitleBar.svelte';
-import { hint } from '../keyboard';
+import { hint } from '../commands/keyboard';
 import titleBarSrc from './TitleBar.svelte?raw';
 
 const html = () => render(TitleBar).body;

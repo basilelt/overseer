@@ -4,9 +4,9 @@
   import AgentIcon from '../sidebar/AgentIcon.svelte';
   import { app } from '../../state.svelte';
   import { t } from '../../i18n.svelte';
-  import type { HoldPlan } from '../../api';
-  import { isOff } from '../../grouping';
-  import { targetItems, targetName } from '../../wsactions';
+  import type { HoldPlan } from '../../daemon/api';
+  import { isOff } from '../../session/grouping';
+  import { targetItems, targetName } from '../../workspace/wsactions';
 
   let { onclose }: { onclose: () => void } = $props();
 

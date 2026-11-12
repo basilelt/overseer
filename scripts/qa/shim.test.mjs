@@ -6,7 +6,7 @@ import { dirname, join } from 'node:path';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const src = readFileSync(join(here, 'shim.js'), 'utf8');
-const table = readFileSync(join(here, '../../app/src/lib/tauri-commands.ts'), 'utf8');
+const table = readFileSync(join(here, '../../app/src/lib/daemon/tauri-commands.ts'), 'utf8');
 
 let failed = 0;
 const test = async (name, fn) => {

@@ -5,20 +5,20 @@
   import Play from '@lucide/svelte/icons/play';
   import Settings from '@lucide/svelte/icons/settings';
   import MessageSquarePlus from '@lucide/svelte/icons/message-square-plus';
-  import { feedback, ft } from '../feedback.svelte';
+  import { feedback, ft } from '../feedback/feedback.svelte';
   import { t } from '../i18n.svelte';
-  import { command } from '../commands';
-  import { hint } from '../keyboard';
+  import { command } from '../commands/commands';
+  import { hint } from '../commands/keyboard';
   import { isMac as mac } from '../platform';
   import { app, type View } from '../state.svelte';
-  import { closePaneAt, toggleSplit, update, workspace } from '../workspace.svelte';
+  import { closePaneAt, toggleSplit, update, workspace } from '../workspace/workspace.svelte';
   import HostChip from './titlebar/HostChip.svelte';
   import PortsChip from './ports/PortsChip.svelte';
   import NewSessionMenu from './titlebar/NewSessionMenu.svelte';
   import UpdatePill from './titlebar/UpdatePill.svelte';
-  import { isDemo } from '../demo';
+  import { isDemo } from '../daemon/demo';
   import NotificationBell from './titlebar/NotificationBell.svelte';
-  import { startable } from '../kanban-core';
+  import { startable } from '../kanban/kanban-core';
   import { preload } from '../idle';
 
   const views: { id: View; label: () => string }[] = [

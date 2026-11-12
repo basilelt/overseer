@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { WorkspaceGroup } from '../../by-state';
+  import type { WorkspaceGroup } from '../../session/by-state';
   import { t } from '../../i18n.svelte';
   import SessionRow from './SessionRow.svelte';
   import WorkspaceFrame from './WorkspaceFrame.svelte';

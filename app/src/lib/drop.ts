@@ -1,4 +1,4 @@
-import { isTauri } from './client';
+import { isTauri } from './daemon/client';
 import { isWindowsUA } from './platform';
 
 export interface DropZone {

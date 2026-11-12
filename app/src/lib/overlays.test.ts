@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { normalizeUrl } from './browser';
 import { backoffMs, steps } from './conn';
 import { fuzzy, highlight, rank } from './fuzzy';
-import { needsInputCount, notificationsFor } from './notify';
+import { needsInputCount, notificationsFor } from './notify/notify';
 import type { Snapshot } from './reduce';
 import type { ConnState, LocalLine, Task, Term } from './types';
 

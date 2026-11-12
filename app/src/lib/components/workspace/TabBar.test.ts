@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import bar from './TabBar.svelte?raw';
-import actions from '../../wsactions.ts?raw';
+import actions from '../../workspace/wsactions.ts?raw';
 
 function rule(selector: string): string {
   const style = bar.slice(bar.indexOf('<style'));

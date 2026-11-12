@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { render } from 'svelte/server';
-import type { SpaceNode } from '../../spaces';
+import type { SpaceNode } from '../../workspace/spaces';
 import type { Folder } from '../../types';
-import type { WorkspaceSummary } from '../../workspace-summary';
+import type { WorkspaceSummary } from '../../workspace/workspace-summary';
 import SpaceFolder from './SpaceFolder.svelte';
 import src from './SpaceFolder.svelte?raw';
 

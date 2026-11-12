@@ -1,7 +1,7 @@
 <script lang="ts">
   import { agentName } from '../../agents';
   import { t, type Key } from '../../i18n.svelte';
-  import { isReviewer, tally } from '../../quorum';
+  import { isReviewer, tally } from '../../kanban/quorum';
   import { app } from '../../state.svelte';
   import type { Task } from '../../types';
 

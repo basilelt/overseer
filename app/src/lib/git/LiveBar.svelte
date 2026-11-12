@@ -13,7 +13,7 @@
   import { folder } from '../review/scope';
   import { worktreeChoices } from './worktrees';
   import type { Related } from '../review/types';
-  import type { MenuItem } from '../menu';
+  import type { MenuItem } from '../commands/menu';
   import { gitApi } from './api';
   import { live, liveTarget, sessionTarget } from './live.svelte';
   import { Scm, fileCount, primaryAction, touches } from './scm.svelte';

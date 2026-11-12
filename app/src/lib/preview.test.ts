@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
-import { api } from './api';
-import type { DaemonClient } from './client';
-import { DaemonError } from './client';
-import { MockDaemon } from './mock';
+import { api } from './daemon/api';
+import type { DaemonClient } from './daemon/client';
+import { DaemonError } from './daemon/client';
+import { MockDaemon } from './daemon/mock';
 import { openFile } from './preview';
 import { app } from './state.svelte';
 

@@ -25,8 +25,8 @@
   import Hash from '@lucide/svelte/icons/hash';
   import Plus from '@lucide/svelte/icons/plus';
   import { t } from '../../i18n.svelte';
-  import type { SpaceRow } from '../../spaces';
-  import { workspaceSessions, type WorkspaceSessions } from '../../workspace-sessions';
+  import type { SpaceRow } from '../../workspace/spaces';
+  import { workspaceSessions, type WorkspaceSessions } from '../../workspace/workspace-sessions';
   import SessionRow from './SessionRow.svelte';
   import StatePills from './StatePills.svelte';
   import WorkspaceFrame from './WorkspaceFrame.svelte';

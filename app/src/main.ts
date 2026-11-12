@@ -1,4 +1,4 @@
-import { applyTheme, settings } from './lib/settings.svelte';
+import { applyTheme, settings } from './lib/settings/settings.svelte';
 import '@fontsource/inter/latin-400.css';
 import '@fontsource/inter/latin-500.css';
 import '@fontsource/inter/latin-600.css';

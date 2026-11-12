@@ -2,7 +2,7 @@
   import EthernetPort from '@lucide/svelte/icons/ethernet-port';
   import { t } from '../../i18n.svelte';
   import { app } from '../../state.svelte';
-  import { ports } from '../../ports.svelte';
+  import { ports } from '../../ports/ports.svelte';
 
   const label = $derived(t(ports.chip.forwarded ? 'ports.chipForwarded' : 'ports.chipOpen', { n: ports.chip.n }));
 </script>

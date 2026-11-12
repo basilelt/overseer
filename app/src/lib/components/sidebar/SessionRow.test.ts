@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { render } from 'svelte/server';
-import type { SidebarItem } from '../../grouping';
+import type { SidebarItem } from '../../session/grouping';
 import SessionRow from './SessionRow.svelte';
 import componentSrc from './SessionRow.svelte?raw';
 

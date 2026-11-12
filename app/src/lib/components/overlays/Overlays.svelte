@@ -1,11 +1,11 @@
 <script lang="ts">
   import { app } from '../../state.svelte';
   import { preload } from '../../idle';
-  import { diag } from '../../diag.svelte';
-  import { feedback } from '../../feedback.svelte';
-  import { organizer } from '../../organize.svelte';
+  import { diag } from '../../diag/diag.svelte';
+  import { feedback } from '../../feedback/feedback.svelte';
+  import { organizer } from '../../workspace/organize.svelte';
   import { mainOverlay, parentOverlay, type MainOverlay } from '../../overlay-route';
-  import { rec } from '../../record-state.svelte';
+  import { rec } from '../../record/record-state.svelte';
   import type { Component } from 'svelte';
   import { phoneOrMobile } from '../../mobile/phone.svelte';
 

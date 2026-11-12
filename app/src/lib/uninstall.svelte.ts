@@ -1,4 +1,4 @@
-import { isTauri } from './client';
+import { isTauri } from './daemon/client';
 import { t } from './i18n.svelte';
 import { app } from './state.svelte';
 import type { UninstallReport } from './types';

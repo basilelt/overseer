@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { DaemonError } from '../client';
-import { MockDaemon } from '../mock';
+import { DaemonError } from '../daemon/client';
+import { MockDaemon } from '../daemon/mock';
 import { app } from '../state.svelte';
 import type { DaemonEvent, LocalLine } from '../types';
 import { reviewCounts } from './counts.svelte';

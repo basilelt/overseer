@@ -1,5 +1,5 @@
-import * as CMD from './tauri-commands';
-import { isTauri } from './client';
+import * as CMD from './daemon/tauri-commands';
+import { isTauri } from './daemon/client';
 import type { HostTarget } from './types';
 
 export const MAIN_WINDOW = 'main';

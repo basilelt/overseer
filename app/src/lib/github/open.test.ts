@@ -1,11 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 import type { AgentInfo, Term } from '../types';
 import { app } from '../state.svelte';
-import { settings } from '../settings.svelte';
+import { settings } from '../settings/settings.svelte';
 import { ui } from '../mobile/ui.svelte';
 import { loadBase } from '../review/base';
 import { reviewKey } from '../review/keys';
-import { layoutFromTabs, split, workspace, type Layout } from '../workspace.svelte';
+import { layoutFromTabs, split, workspace, type Layout } from '../workspace/workspace.svelte';
 import { beside, newTerm, openPrReviews, PR_REVIEWS_KEY, startReview, waitStep } from './open.svelte';
 import type { ReviewRequest } from './types';
 

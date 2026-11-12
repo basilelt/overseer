@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { Recording } from '../../record';
+import type { Recording } from '../../record/record';
 
 function clean(html: string): string {
   for (let prev = ''; prev !== html; ) {
@@ -86,7 +86,7 @@ describe('RecordSetup', () => {
 describe('entry points', () => {
   it('lists Record a bug in the palette Actions while idle only', async () => {
     const { render } = await import('svelte/server');
-    const { recorder } = await import('../../record.svelte');
+    const { recorder } = await import('../../record/record.svelte');
     const { default: Palette } = await import('../overlays/CommandPalette.svelte');
     expect(render(Palette, { props: { onclose: () => {} } }).body).toContain('Record a bug');
     recorder.setup();
@@ -98,7 +98,7 @@ describe('entry points', () => {
     const { render: ssr } = await import('svelte/server');
     const { default: More } = await import('../mobile/MobileMore.svelte');
     const row = () => clean(ssr(More, { props: {} }).body).match(/<button class="row[^"]*"([^>]*)>(?:(?!<\/button>)[\s\S])*Record a bug/)?.[1];
-    const { recorder } = await import('../../record.svelte');
+    const { recorder } = await import('../../record/record.svelte');
     expect(row()).not.toContain('disabled');
     recorder.setup();
     expect(row()).toContain('disabled');
@@ -118,7 +118,7 @@ describe('entry points', () => {
 
 describe('feedback sheet with a recording', () => {
   it('shows the recording with its length, action count and a Replay toggle', async () => {
-    const { feedback } = await import('../../feedback.svelte');
+    const { feedback } = await import('../../feedback/feedback.svelte');
     feedback.show({ kind: 'bug', recording: rec() });
     const { render } = await import('svelte/server');
     const { default: Sheet } = await import('../overlays/FeedbackSheet.svelte');
@@ -131,7 +131,7 @@ describe('feedback sheet with a recording', () => {
   });
 
   it('offers to attach the video again when it is not attached yet', async () => {
-    const { feedback } = await import('../../feedback.svelte');
+    const { feedback } = await import('../../feedback/feedback.svelte');
     feedback.show({ kind: 'bug', recording: rec({ video: new Blob(['v'], { type: 'video/webm' }), mime: 'video/webm' }) });
     const { render } = await import('svelte/server');
     const { default: Sheet } = await import('../overlays/FeedbackSheet.svelte');
@@ -141,7 +141,7 @@ describe('feedback sheet with a recording', () => {
   });
 
   it('has nothing to attach for a recording without video', async () => {
-    const { feedback } = await import('../../feedback.svelte');
+    const { feedback } = await import('../../feedback/feedback.svelte');
     feedback.show({ kind: 'bug', recording: rec() });
     const { render } = await import('svelte/server');
     const { default: Sheet } = await import('../overlays/FeedbackSheet.svelte');
@@ -151,7 +151,7 @@ describe('feedback sheet with a recording', () => {
   });
 
   it('shows no recording block for a plain report', async () => {
-    const { feedback } = await import('../../feedback.svelte');
+    const { feedback } = await import('../../feedback/feedback.svelte');
     feedback.show();
     const { render } = await import('svelte/server');
     const { default: Sheet } = await import('../overlays/FeedbackSheet.svelte');

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { findIssueUrl } from '../feedback';
+import { findIssueUrl } from '../feedback/feedback';
 
 const LINEAR = 30;
 

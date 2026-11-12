@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { MockDaemon } from '../mock';
+import { MockDaemon } from '../daemon/mock';
 import { ui } from '../mobile/ui.svelte';
 import { beside } from '../review/beside.svelte';
 import { app } from '../state.svelte';
-import { EMPTY_LAYOUT, allTabs, workspace } from '../workspace.svelte';
+import { EMPTY_LAYOUT, allTabs, workspace } from '../workspace/workspace.svelte';
 import { live, liveOn, liveTarget, sessionTarget } from './live.svelte';
 import { restoreLiveReview, toggleLiveReview } from './live-actions';
 import { primaryAction } from './scm.svelte';

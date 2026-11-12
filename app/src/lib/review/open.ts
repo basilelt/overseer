@@ -1,13 +1,13 @@
 import { app } from '../state.svelte';
-import { isMockClient } from '../client';
-import { allTabs, openInFocused, update, workspace } from '../workspace.svelte';
+import { isMockClient } from '../daemon/client';
+import { allTabs, openInFocused, update, workspace } from '../workspace/workspace.svelte';
 import { isPhone } from '../mobile/ui.svelte';
 import { beside } from './beside.svelte';
 import { closeReviews, follow, openBeside, reviewMode, type ReviewMode } from './pane';
 import { isReviewKey, parseReviewKey, reviewKey, titleOf, worktreeOf } from './keys';
 import type { ScopeOption } from './scope';
 import type { ReviewTarget } from './types';
-import { isTesting } from '../task-status';
+import { isTesting } from '../kanban/task-status';
 
 export { isReviewKey, parseReviewKey, reviewKey };
 

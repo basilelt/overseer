@@ -2,7 +2,7 @@
   import SquareTerminal from '@lucide/svelte/icons/square-terminal';
   import StickyNote from '@lucide/svelte/icons/sticky-note';
   import { notesUi, toggleNotes } from '../../notes.svelte';
-  import type { SidebarItem } from '../../grouping';
+  import type { SidebarItem } from '../../session/grouping';
   import { t } from '../../i18n.svelte';
   import { age } from '../../time';
   import { isShellItem } from '../../agents';

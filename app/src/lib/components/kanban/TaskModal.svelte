@@ -7,19 +7,19 @@
   import ModelField from '../ui/ModelField.svelte';
   import Segmented from './Segmented.svelte';
   import { app } from '../../state.svelte';
-  import { settings } from '../../settings.svelte';
+  import { settings } from '../../settings/settings.svelte';
   import { t, type Key } from '../../i18n.svelte';
   import { findAgent, hasModel, pickAgent, taskAgents } from '../../agents';
-  import { initialChoice, resolveProfile, TASK_TYPES } from '../../profiles';
+  import { initialChoice, resolveProfile, TASK_TYPES } from '../../profiles/profiles';
   import ProfileSelect from '../ui/ProfileSelect.svelte';
   import DepPicker from './DepPicker.svelte';
   import QuorumField from './QuorumField.svelte';
-  import { defaultQuorum, quorumBody } from '../../quorum';
+  import { defaultQuorum, quorumBody } from '../../kanban/quorum';
   import type { Effort, TaskType } from '../../types';
-  import { taskDrafts, type TaskDraft } from '../../task-drafts';
-  import { ft } from '../../feedback.svelte';
+  import { taskDrafts, type TaskDraft } from '../../kanban/task-drafts';
+  import { ft } from '../../feedback/feedback.svelte';
   import { dropZone } from '../../drop';
-  import { uploadBlobs, uploadPaths, type Attachment, type Failure } from '../../task-attachments';
+  import { uploadBlobs, uploadPaths, type Attachment, type Failure } from '../../kanban/task-attachments';
   import { isSubmitChord } from '../../chord';
 
   let { onclose }: { onclose: () => void } = $props();

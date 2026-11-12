@@ -9,18 +9,18 @@
   import { t, type Key } from '../../i18n.svelte';
   import { app } from '../../state.svelte';
   import { highlight, rank, type Match } from '../../fuzzy';
-  import type { GroupId } from '../../grouping';
-  import { PALETTE_GROUP_COLOR, PALETTE_HELD_COLOR } from '../../ws-color';
+  import type { GroupId } from '../../session/grouping';
+  import { PALETTE_GROUP_COLOR, PALETTE_HELD_COLOR } from '../../workspace/ws-color';
   import { canInstall, ordered } from '../../agents';
   import AgentGlyph from '../ui/AgentGlyph.svelte';
   import { isPhone } from '../../mobile/ui.svelte';
   import { phoneOrMobile } from '../../mobile/phone.svelte';
-  import { broadcastTo } from '../../wsactions';
-  import { isGhost } from '../../workspaces';
-  import { command, has } from '../../commands';
-  import { registerMore } from '../../commands-more';
-  import { hint } from '../../keyboard';
-  import { hostName } from '../../hosts';
+  import { broadcastTo } from '../../workspace/wsactions';
+  import { isGhost } from '../../workspace/workspaces';
+  import { command, has } from '../../commands/commands';
+  import { registerMore } from '../../commands/commands-more';
+  import { hint } from '../../commands/keyboard';
+  import { hostName } from '../../host/hosts';
 
   registerMore();
 

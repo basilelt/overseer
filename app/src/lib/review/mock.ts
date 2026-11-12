@@ -1,4 +1,4 @@
-import { DaemonError } from '../client';
+import { DaemonError } from '../daemon/client';
 import type { EventType, LocalLine, Task } from '../types';
 import { lineDiff } from './linediff';
 import { annotate, mockGraph } from './mocktriage';

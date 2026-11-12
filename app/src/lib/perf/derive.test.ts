@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { groupItems, newestFirst, sidebarItems, stableItems } from '../grouping';
+import { groupItems, newestFirst, sidebarItems, stableItems } from '../session/grouping';
 import { getLocale, loadLocale, setLocale, t } from '../i18n.svelte';
-import { MockDaemon } from '../mock';
-import { unplacedCount } from '../organize';
+import { MockDaemon } from '../daemon/mock';
+import { unplacedCount } from '../workspace/organize';
 import { applyEvent, deepEqual, type Snapshot } from '../reduce';
 import type { DaemonEvent, LocalLine, Task, Term, Workspace } from '../types';
-import { aggregate, itemWorkspaces, liveWorkspaces, memberIndex, sameMap } from '../workspaces';
+import { aggregate, itemWorkspaces, liveWorkspaces, memberIndex, sameMap } from '../workspace/workspaces';
 
 const at = '2026-10-29T10:00:00Z';
 const line = (id: string, path: string, over: Partial<LocalLine['line']> = {}): LocalLine => ({

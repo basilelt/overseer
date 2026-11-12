@@ -1,6 +1,6 @@
 <script lang="ts">
   import { untrack } from 'svelte';
-  import { titleEdit } from '../../titles';
+  import { titleEdit } from '../../tabs/titles';
   import { t } from '../../i18n.svelte';
   import { app } from '../../state.svelte';
 

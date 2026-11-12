@@ -2,10 +2,10 @@
   import { untrack } from 'svelte';
   import TriangleAlert from '@lucide/svelte/icons/triangle-alert';
   import { t } from '../../i18n.svelte';
-  import { lid, lidAvailable, loadLid, setLid } from '../../lid.svelte';
-  import { lingerOff } from '../../lifecycle';
-  import { lifecycle, loadLifecycle, patchLifecycle } from '../../lifecycle.svelte';
-  import { toggleAutostart } from '../../lifecycle-switch';
+  import { lid, lidAvailable, loadLid, setLid } from '../../lifecycle/lid.svelte';
+  import { lingerOff } from '../../lifecycle/lifecycle';
+  import { lifecycle, loadLifecycle, patchLifecycle } from '../../lifecycle/lifecycle.svelte';
+  import { toggleAutostart } from '../../lifecycle/lifecycle-switch';
   import { app } from '../../state.svelte';
   import type { AfterReboot } from '../../types';
 

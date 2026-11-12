@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { MockDaemon } from '../mock';
+import { MockDaemon } from '../daemon/mock';
 import { ui } from '../mobile/ui.svelte';
 import { app } from '../state.svelte';
 import type { Task } from '../types';
-import { EMPTY_LAYOUT, allTabs, workspace, type Layout } from '../workspace.svelte';
+import { EMPTY_LAYOUT, allTabs, workspace, type Layout } from '../workspace/workspace.svelte';
 import { beside } from './beside.svelte';
 import {
   closeSideReview,

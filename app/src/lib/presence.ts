@@ -1,4 +1,4 @@
-import { isTauri } from './client';
+import { isTauri } from './daemon/client';
 
 export interface Presence {
   visible: boolean;

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { render } from 'svelte/server';
-import type { SidebarItem } from '../../grouping';
-import { spaces } from '../../spaces';
+import type { SidebarItem } from '../../session/grouping';
+import { spaces } from '../../workspace/spaces';
 import type { Workspace } from '../../types';
 import SpaceBlock from './SpaceBlock.svelte';
 import componentSrc from './SpaceBlock.svelte?raw';

@@ -2,8 +2,8 @@
   import Modal from '../ui/Modal.svelte';
   import { t, type Key } from '../../i18n.svelte';
   import { isMac } from '../../platform';
-  import { settings } from '../../settings.svelte';
-  import { sheetRows } from '../../shortcut-sheet';
+  import { settings } from '../../settings/settings.svelte';
+  import { sheetRows } from '../../commands/shortcut-sheet';
 
   let { onclose }: { onclose: () => void } = $props();
 

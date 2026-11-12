@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { MockDaemon } from '../mock';
+import { MockDaemon } from '../daemon/mock';
 import type { DaemonEvent } from '../types';
 import { gitApi } from './api';
 import { validPath } from './mockScm';

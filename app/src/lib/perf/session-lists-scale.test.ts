@@ -1,13 +1,13 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { attention } from '../attention';
-import { byState } from '../by-state';
-import type { SidebarItem } from '../grouping';
-import type { SessionState } from '../session-state';
+import { byState } from '../session/by-state';
+import type { SidebarItem } from '../session/grouping';
+import type { SessionState } from '../session/session-state';
 import type { Folder, Workspace } from '../types';
-import { folderSpaces, spaceTrail, spaces } from '../spaces';
+import { folderSpaces, spaceTrail, spaces } from '../workspace/spaces';
 import { bucketByTime, timeBucket } from '../time-bucket';
-import { workspaceSessions } from '../workspace-sessions';
-import { workspaceSummary } from '../workspace-summary';
+import { workspaceSessions } from '../workspace/workspace-sessions';
+import { workspaceSummary } from '../workspace/workspace-summary';
 
 // Work is counted, never timed: every read of an item field, and every date parse.
 const STATES: SessionState[] = ['attention', 'running', 'open', 'paused', 'closed'];

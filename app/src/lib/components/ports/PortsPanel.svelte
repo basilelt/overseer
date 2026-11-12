@@ -8,10 +8,10 @@
   import Modal from '../ui/Modal.svelte';
   import { t } from '../../i18n.svelte';
   import { app, projectName } from '../../state.svelte';
-  import { saveSettings, settings } from '../../settings.svelte';
-  import { openExternal, ports } from '../../ports.svelte';
-  import { stopProcess } from '../../ports-kill';
-  import { parseIgnore, parsePort, type PortRow } from '../../ports';
+  import { saveSettings, settings } from '../../settings/settings.svelte';
+  import { openExternal, ports } from '../../ports/ports.svelte';
+  import { stopProcess } from '../../ports/ports-kill';
+  import { parseIgnore, parsePort, type PortRow } from '../../ports/ports';
 
   let { onclose }: { onclose: () => void } = $props();
 

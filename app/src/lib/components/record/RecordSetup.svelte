@@ -2,9 +2,9 @@
   import Circle from '@lucide/svelte/icons/circle';
   import Modal from '../ui/Modal.svelte';
   import { app } from '../../state.svelte';
-  import { feedback } from '../../feedback.svelte';
-  import { canVideo, MAX_MS } from '../../record';
-  import { recorder, rt } from '../../record.svelte';
+  import { feedback } from '../../feedback/feedback.svelte';
+  import { canVideo, MAX_MS } from '../../record/record';
+  import { recorder, rt } from '../../record/record.svelte';
 
   const supported = canVideo();
   const min = MAX_MS / 60_000;

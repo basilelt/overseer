@@ -1,4 +1,4 @@
-import { DaemonError } from '../client';
+import { DaemonError } from '../daemon/client';
 import type { ReviewRequest, ReviewRequests } from './types';
 
 const ago = (h: number) => new Date(Date.now() - h * 3_600_000).toISOString();

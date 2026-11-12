@@ -1,15 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { FALLBACK_AGENTS } from './agents';
-import { DaemonError, setClient } from './client';
+import { DaemonError, setClient } from './daemon/client';
 import { t } from './i18n.svelte';
-import { MOCK_AGENTS, MockDaemon } from './mock';
-import { center } from './notifications.svelte';
+import { MOCK_AGENTS, MockDaemon } from './daemon/mock';
+import { center } from './notify/notifications.svelte';
 import { setPresence } from './presence';
-import { pages } from './session-pages.svelte';
+import { pages } from './session/session-pages.svelte';
 import { ui } from './mobile/ui.svelte';
-import { settings, workspaceFor } from './settings.svelte';
+import { settings, workspaceFor } from './settings/settings.svelte';
 import { app, NO_WORKSPACE, projectName, statusLine } from './state.svelte';
-import { allTabs, closeTabAt, EMPTY_LAYOUT, openInFocused, workspace } from './workspace.svelte';
+import { allTabs, closeTabAt, EMPTY_LAYOUT, openInFocused, workspace } from './workspace/workspace.svelte';
 import type { Activity, ConnState, DaemonEvent, HostTarget, PlatformInfo, Project, SavedHost, Term, Workspace } from './types';
 
 type Handler = (body: unknown) => unknown;
@@ -1269,7 +1269,7 @@ describe('sessions', () => {
   });
 
   it('starts a shell in the same folder when an ended terminal tab is reopened', async () => {
-    const { runShortcut } = await import('./keyboard');
+    const { runShortcut } = await import('./commands/keyboard');
     const cwd = app.data.terms.find((x) => x.id === 'tm_shell1')!.cwd;
     workspace.layout = openInFocused(EMPTY_LAYOUT, 'term:tm_shell1');
     closeTabAt(0, 'term:tm_shell1');
@@ -1280,7 +1280,7 @@ describe('sessions', () => {
   });
 
   it('offers Hide tab and Close for a session tab, and only Close for a non-session tab', async () => {
-    const { tabMenu } = await import('./tab-edits');
+    const { tabMenu } = await import('./tabs/tab-edits');
     const line = app.items.find((i) => i.lineId)!;
     workspace.layout = openInFocused(openInFocused(EMPTY_LAYOUT, line.key), 'browser:x');
     const e = {} as MouseEvent;

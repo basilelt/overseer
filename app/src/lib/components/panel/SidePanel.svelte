@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount, untrack } from 'svelte';
   import { t, type Key } from '../../i18n.svelte';
-  import { chipLabel } from '../../profiles';
+  import { chipLabel } from '../../profiles/profiles';
   import { app } from '../../state.svelte';
   import type { Diff, SessionCost as Cost } from '../../types';
   import AgentGlyph from '../ui/AgentGlyph.svelte';
@@ -22,14 +22,14 @@
   import { reviewApi } from '../../review/api';
   import { changed, changedLabel, changedWorktrees, counts, folder } from '../../review/scope';
   import type { Related } from '../../review/types';
-  import { DaemonError } from '../../client';
+  import { DaemonError } from '../../daemon/client';
   import { age } from '../../time';
-  import { saveSettings, settings } from '../../settings.svelte';
-  import { moveSection, normalizeOrder, type PanelSection } from '../../panelorder';
-  import { diffs, relateds } from '../../panel-cache';
-  import { loadPanel } from '../../panel-load';
+  import { saveSettings, settings } from '../../settings/settings.svelte';
+  import { moveSection, normalizeOrder, type PanelSection } from '../../panel/panelorder';
+  import { diffs, relateds } from '../../panel/panel-cache';
+  import { loadPanel } from '../../panel/panel-load';
   import { hostKey } from '../../window';
-  import { GROUP_COLOR } from '../../ws-color';
+  import { GROUP_COLOR } from '../../workspace/ws-color';
 
   const EFFORTS = new Set(['low', 'medium', 'high', 'xhigh', 'max']);
   const item = $derived(app.selected);

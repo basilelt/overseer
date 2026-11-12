@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { parseReviewKey, reviewKey } from './keys';
-import { tabInfo, TAB_KINDS } from '../tabs';
+import { tabInfo, TAB_KINDS } from '../tabs/tabs';
 
 describe('review tab keys', () => {
   it('round-trips every target and reads legacy review:<lineId> keys', () => {

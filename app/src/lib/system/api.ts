@@ -1,4 +1,4 @@
-import type { DaemonClient } from '../client';
+import type { DaemonClient } from '../daemon/client';
 import type { SysResponse } from './types';
 
 export function systemApi(c: Pick<DaemonClient, 'request'>) {

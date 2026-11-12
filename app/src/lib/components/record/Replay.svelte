@@ -1,6 +1,6 @@
 <script lang="ts">
-  import { activeAt, clock, type Recording } from '../../record';
-  import { rt } from '../../record.svelte';
+  import { activeAt, clock, type Recording } from '../../record/record';
+  import { rt } from '../../record/record.svelte';
 
   let { recording }: { recording: Recording } = $props();
 

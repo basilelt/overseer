@@ -2,7 +2,7 @@
   import Bell from '@lucide/svelte/icons/bell';
   import { t } from '../../i18n.svelte';
   import { app } from '../../state.svelte';
-  import { center } from '../../notifications.svelte';
+  import { center } from '../../notify/notifications.svelte';
 
   const label = $derived(center.unread ? `${t('center.title')} · ${t('center.unreadCount', { n: center.unread })}` : t('center.title'));
 </script>

@@ -4,15 +4,15 @@
   import Modal from '../ui/Modal.svelte';
   import { app, projectName } from '../../state.svelte';
   import { t, type Key } from '../../i18n.svelte';
-  import { flagPatch, isSession, mergeMessage, quadrant, quadrantFlags } from '../../kanban';
+  import { flagPatch, isSession, mergeMessage, quadrant, quadrantFlags } from '../../kanban/kanban';
   import { onDestroy, untrack } from 'svelte';
   import DepPicker from './DepPicker.svelte';
   import QuorumChips from './QuorumChips.svelte';
   import { agentName } from '../../agents';
-  import { fromOverseer } from '../../quorum';
+  import { fromOverseer } from '../../kanban/quorum';
   import type { Task, TaskMessage } from '../../types';
   import { isSubmitChord } from '../../chord';
-  import { isRunning } from '../../task-status';
+  import { isRunning } from '../../kanban/task-status';
 
   let { onclose }: { onclose: () => void } = $props();
 

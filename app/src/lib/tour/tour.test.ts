@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { tour } from './tour.svelte';
-import { saveSettings, settings } from '../settings.svelte';
+import { saveSettings, settings } from '../settings/settings.svelte';
 import { TOUR_VERSION } from './steps';
 
 const all = () => true;

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
-import { DaemonError, type DaemonClient } from './client';
-import { MockDaemon } from './mock';
+import { DaemonError, type DaemonClient } from './daemon/client';
+import { MockDaemon } from './daemon/mock';
 import { addNote, cleanNote, editNote, NOTE_MAX, NOTES_MAX, notesApi, notesOf, removeNote, withNotes } from './notes';
 import type { DaemonEvent, LocalLine, Note } from './types';
 import type { Snapshot } from './reduce';

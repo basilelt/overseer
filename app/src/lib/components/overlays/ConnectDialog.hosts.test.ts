@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { render } from 'svelte/server';
-import { settings } from '../../settings.svelte';
+import { settings } from '../../settings/settings.svelte';
 import { app } from '../../state.svelte';
 import ConnectDialog from './ConnectDialog.svelte';
 import src from './ConnectDialog.svelte?raw';

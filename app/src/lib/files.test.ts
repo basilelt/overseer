@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { DaemonError, type DaemonClient } from './client';
+import { DaemonError, type DaemonClient } from './daemon/client';
 import { isMissingFile, filePath, fileKind, findPaths, mimeOf, saveFile } from './files';
 
 describe('findPaths', () => {

@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { render } from 'svelte/server';
-import { HostLink } from '../../host-link.svelte';
-import { MockDaemon } from '../../mock';
+import { HostLink } from '../../host/host-link.svelte';
+import { MockDaemon } from '../../daemon/mock';
 import { app } from '../../state.svelte';
 import HostChip from './HostChip.svelte';
 import chip from './HostChip.svelte?raw';

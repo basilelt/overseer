@@ -1,5 +1,5 @@
-import { GROUP_STATE, type SidebarItem } from './grouping';
-import type { SessionState } from './session-state';
+import { GROUP_STATE, type SidebarItem } from './session/grouping';
+import type { SessionState } from './session/session-state';
 import type { BroadcastRequest, BroadcastResult } from './types';
 import { isShellItem, isAgentItem } from './agents';
 

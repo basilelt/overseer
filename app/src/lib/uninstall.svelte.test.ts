@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'svelte/server';
-import { DaemonError, setClient } from './client';
-import { MockDaemon } from './mock';
+import { DaemonError, setClient } from './daemon/client';
+import { MockDaemon } from './daemon/mock';
 import { app } from './state.svelte';
 import { applyUninstall, canQuit, planUninstall, quitApp, resetUninstall, uninstall } from './uninstall.svelte';
 import UninstallDialog from './components/overlays/UninstallDialog.svelte';

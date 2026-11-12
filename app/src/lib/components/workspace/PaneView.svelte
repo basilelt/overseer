@@ -9,18 +9,18 @@
   import RotateCcw from '@lucide/svelte/icons/rotate-ccw';
   import SquareTerminal from '@lucide/svelte/icons/square-terminal';
   import { t } from '../../i18n.svelte';
-  import { colorPalette, customColors } from '../../settings.svelte';
+  import { colorPalette, customColors } from '../../settings/settings.svelte';
   import { app } from '../../state.svelte';
-  import { focusPane, update, type Pane } from '../../workspace.svelte';
+  import { focusPane, update, type Pane } from '../../workspace/workspace.svelte';
   import TabBar from './TabBar.svelte';
   import TerminalPane from './TerminalPane.svelte';
   import GitCompare from '@lucide/svelte/icons/git-compare';
-  import { renameTab } from '../../workspace.svelte';
-  import { newTabKey, TAB_KINDS, tabInfo } from '../../tabs';
-  import { paneAction } from '../../workspaces';
+  import { renameTab } from '../../workspace/workspace.svelte';
+  import { newTabKey, TAB_KINDS, tabInfo } from '../../tabs/tabs';
+  import { paneAction } from '../../workspace/workspaces';
   import { modeOf } from '../../chat/viewmode.svelte';
   import { isPhone } from '../../mobile/ui.svelte';
-  import { pages } from '../../session-pages.svelte';
+  import { pages } from '../../session/session-pages.svelte';
   import Boundary from '../ui/Boundary.svelte';
   import { claim, KEEP_TERMS, KEEP_TERMS_PHONE, retain, same, type Claim } from '../../keepalive';
 

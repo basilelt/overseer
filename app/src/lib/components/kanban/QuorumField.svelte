@@ -1,7 +1,7 @@
 <script lang="ts">
   import { t } from '../../i18n.svelte';
   import { agentName, taskAgents } from '../../agents';
-  import { canOrchestrate, toggleReviewer, toggleWorker } from '../../quorum';
+  import { canOrchestrate, toggleReviewer, toggleWorker } from '../../kanban/quorum';
   import type { AgentInfo, Quorum } from '../../types';
 
   let { agents, agent, on, value, onon, onchange }: { agents: AgentInfo[]; agent: string; on: boolean; value: Quorum; onon: (on: boolean) => void; onchange: (q: Quorum) => void } = $props();

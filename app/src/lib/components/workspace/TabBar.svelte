@@ -5,7 +5,7 @@
 </script>
 
 <script lang="ts">
-  import { hostColor, hostName } from '../../hosts';
+  import { hostColor, hostName } from '../../host/hosts';
   import Columns2 from '@lucide/svelte/icons/columns-2';
   import Rows2 from '@lucide/svelte/icons/rows-2';
   import X from '@lucide/svelte/icons/x';
@@ -14,26 +14,26 @@
   import Globe from '@lucide/svelte/icons/globe';
   import GitBranch from '@lucide/svelte/icons/git-branch';
   import Megaphone from '@lucide/svelte/icons/megaphone';
-  import { settings } from '../../settings.svelte';
-  import { tabLabel } from '../../tab-label';
-  import { coarsePointer, focusSession, stripScroll, tabInfo, type TabInfo } from '../../tabs';
-  import { broadcastTo, newSessionItems } from '../../wsactions';
-  import { wsDropTarget } from '../../workspaces';
+  import { settings } from '../../settings/settings.svelte';
+  import { tabLabel } from '../../tabs/tab-label';
+  import { coarsePointer, focusSession, stripScroll, tabInfo, type TabInfo } from '../../tabs/tabs';
+  import { broadcastTo, newSessionItems } from '../../workspace/wsactions';
+  import { wsDropTarget } from '../../workspace/workspaces';
   import { t, type Key } from '../../i18n.svelte';
   import { app, tabLazy } from '../../state.svelte';
   import { CONFIRM_WINDOW_MS } from '../../timing';
   import { whenIdle } from '../../idle';
-  import { closePaneAt, closeTabAt, openInFocused, reorderTab, split, update, type Pane } from '../../workspace.svelte';
+  import { closePaneAt, closeTabAt, openInFocused, reorderTab, split, update, type Pane } from '../../workspace/workspace.svelte';
   import AgentIcon from '../sidebar/AgentIcon.svelte';
   import ReviewBadge from '../review/ReviewBadge.svelte';
   import { itemTarget } from '../../review/open';
   import { liveOn } from '../../git/live.svelte';
   import { chatCapable } from '../../chat/viewmode';
   import ModeToggle from '../chat/ModeToggle.svelte';
-  import { chipLabel, chipShort } from '../../profiles';
+  import { chipLabel, chipShort } from '../../profiles/profiles';
   import { formatCost } from '../../usage/format';
-  import { pages } from '../../session-pages.svelte';
-  import { GROUP_COLOR } from '../../ws-color';
+  import { pages } from '../../session/session-pages.svelte';
+  import { GROUP_COLOR } from '../../workspace/ws-color';
 
   let { pane, index, focused, canClose }: { pane: Pane; index: number; focused: boolean; canClose: boolean } = $props();
 

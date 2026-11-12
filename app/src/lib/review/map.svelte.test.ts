@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { DaemonError } from '../client';
-import { MockDaemon } from '../mock';
+import { DaemonError } from '../daemon/client';
+import { MockDaemon } from '../daemon/mock';
 import { reviewApi, type ReviewApi } from './api';
 import { ReviewMapStore, WEIGHTS, band, fid, heat, heatInk, heatLevel, layout, ranking, reasons, saveView, savedView, score, squarify, step } from './map.svelte';
 import { MOCK_LINKED, MOCK_MISSING, MOCK_SUBMODULE, MOCK_WORKTREE } from './mock';

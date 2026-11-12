@@ -1,6 +1,6 @@
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
-import { setClient } from '../client';
-import { MockDaemon } from '../mock';
+import { setClient } from '../daemon/client';
+import { MockDaemon } from '../daemon/mock';
 import { mergeFetched, touchedKey, type Touched } from '../reduce';
 import { app } from '../state.svelte';
 import type { DaemonEvent, HostTarget } from '../types';

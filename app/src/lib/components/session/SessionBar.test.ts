@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { render } from 'svelte/server';
-import { sessionState } from '../../session-state';
+import { sessionState } from '../../session/session-state';
 import type { LocalLine } from '../../types';
 import SessionBar from './SessionBar.svelte';
 

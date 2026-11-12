@@ -3,13 +3,13 @@
   import ArrowDown from '@lucide/svelte/icons/arrow-down';
   import SquareTerminal from '@lucide/svelte/icons/square-terminal';
   import { onMount, setContext, tick, untrack } from 'svelte';
-  import { DaemonError } from '../../client';
+  import { DaemonError } from '../../daemon/client';
   import { t } from '../../i18n.svelte';
-  import { pausedDays, sessionState, stateDot, type SessionAction } from '../../session-state';
-  import { runSessionAction } from '../../session-action';
+  import { pausedDays, sessionState, stateDot, type SessionAction } from '../../session/session-state';
+  import { runSessionAction } from '../../session/session-action';
   import SessionBar from '../session/SessionBar.svelte';
   import { app } from '../../state.svelte';
-  import type { SidebarItem } from '../../grouping';
+  import type { SidebarItem } from '../../session/grouping';
   import type { Term } from '../../types';
   import { applyEarlier, applyTail, applyUpdate, EMPTY_CHAT, needsFetch, type ChatState } from '../../chat/store';
   import { anchorOf, chats, type Anchor } from '../../chat/cache';

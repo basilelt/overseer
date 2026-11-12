@@ -1,10 +1,10 @@
 <script lang="ts">
-  import type { SidebarItem } from '../../grouping';
+  import type { SidebarItem } from '../../session/grouping';
   import { t } from '../../i18n.svelte';
   import { age } from '../../time';
   import AgentIcon from './AgentIcon.svelte';
   import { isShellItem } from '../../agents';
-  import { GROUP_COLOR, STATE_COLOR } from '../../ws-color';
+  import { GROUP_COLOR, STATE_COLOR } from '../../workspace/ws-color';
 
   let { item, selected, now, onselect }: { item: SidebarItem; selected: boolean; now: number; onselect: (e?: MouseEvent) => void } = $props();
 </script>

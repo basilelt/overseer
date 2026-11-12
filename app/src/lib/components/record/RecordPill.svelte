@@ -4,8 +4,8 @@
   import X from '@lucide/svelte/icons/x';
   import { app } from '../../state.svelte';
   import { ui } from '../../mobile/ui.svelte';
-  import { clock, LOG } from '../../record';
-  import { recorder, rt } from '../../record.svelte';
+  import { clock, LOG } from '../../record/record';
+  import { recorder, rt } from '../../record/record.svelte';
   import { phoneOrMobile } from '../../mobile/phone.svelte';
 
   $effect(() => {

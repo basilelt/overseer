@@ -1,4 +1,4 @@
-import type { DaemonClient } from '../client';
+import type { DaemonClient } from '../daemon/client';
 import type { UsageBy, UsageRange, UsageResponse } from './types';
 
 export function usageApi(c: Pick<DaemonClient, 'request'>) {

@@ -17,8 +17,8 @@ describe('git button', () => {
   });
 
   it('leaves the review modes to the palette', async () => {
-    const { command } = await import('../commands');
-    const { registerMore } = await import('../commands-more');
+    const { command } = await import('../commands/commands');
+    const { registerMore } = await import('../commands/commands-more');
     registerMore();
     expect(command('review-beside').label!()).toBe('Review beside the agent');
     expect(command('review-close').section).toBe('actions');
@@ -37,8 +37,8 @@ describe('git button', () => {
   it('opens the Git tab on phone from More', async () => {
     const { app } = await import('../state.svelte');
     const open = vi.spyOn(app, 'openProjectTab').mockImplementation(() => {});
-    const { command } = await import('../commands');
-    const { registerMore } = await import('../commands-more');
+    const { command } = await import('../commands/commands');
+    const { registerMore } = await import('../commands/commands-more');
     registerMore();
     command('graph').run();
     expect(open).toHaveBeenCalledWith('graph');

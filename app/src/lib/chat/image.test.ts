@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
-import { api } from '../api';
-import type { DaemonClient } from '../client';
-import { MockDaemon } from '../mock';
+import { api } from '../daemon/api';
+import type { DaemonClient } from '../daemon/client';
+import { MockDaemon } from '../daemon/mock';
 import { chatImage } from './image';
 
 const mock = () => new MockDaemon({ live: false, delayMs: 0 });

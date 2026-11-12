@@ -18,11 +18,11 @@
   import AuthPrompt from '../overlays/AuthPrompt.svelte';
   import DeviceKey from './DeviceKey.svelte';
   import { t, type Key } from '../../i18n.svelte';
-  import { isMockClient } from '../../client';
+  import { isMockClient } from '../../daemon/client';
   import { app } from '../../state.svelte';
   import { CONNECT_CLOSE_DELAY_MS } from '../../timing';
   import { isBusy, steps } from '../../conn';
-  import { exitDemo, isDemo, startDemo } from '../../demo';
+  import { exitDemo, isDemo, startDemo } from '../../daemon/demo';
   import { connectHint, describeHost, emptyForm, formFromHost, hostFromForm, type FormError, type HostForm } from '../../mobile/hosts';
   import type { ConnPhase, HostTarget, SavedHost } from '../../types';
 

@@ -3,7 +3,7 @@
   import ChevronRight from '@lucide/svelte/icons/chevron-right';
   import { t } from '../../i18n.svelte';
   import { app } from '../../state.svelte';
-  import { allTabs, workspace } from '../../workspace.svelte';
+  import { allTabs, workspace } from '../../workspace/workspace.svelte';
   import { isReviewKey, openReview, reviewKey, reviewTitle, testingReviews } from '../../review/open';
   import ReviewBadge from '../review/ReviewBadge.svelte';
 

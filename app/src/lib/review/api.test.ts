@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { DaemonClient } from '../client';
+import type { DaemonClient } from '../daemon/client';
 import { reviewApi, targetBody, targetQuery } from './api';
 
 function client() {

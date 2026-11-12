@@ -1,4 +1,4 @@
-import type { DaemonClient } from './client';
+import type { DaemonClient } from './daemon/client';
 import type { Snapshot } from './reduce';
 import type { Note } from './types';
 

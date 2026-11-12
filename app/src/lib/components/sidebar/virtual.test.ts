@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { groupItems, type SidebarItem } from '../../grouping';
+import { groupItems, type SidebarItem } from '../../session/grouping';
 import { CARD_H, flatten, HEADER_H, moveSelection, windowRows } from './virtual';
 import { stateOfGroup } from '../../../test/fixtures';
 

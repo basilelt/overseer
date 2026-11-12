@@ -1,11 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
-import { groupItems, sidebarItems } from '../grouping';
-import * as machine from '../session-state';
+import { groupItems, sidebarItems } from '../session/grouping';
+import * as machine from '../session/session-state';
 import type { LocalLine } from '../types';
-import { aggregate } from '../workspaces';
+import { aggregate } from '../workspace/workspaces';
 
-vi.mock('../session-state', async (orig) => {
-  const actual = await orig<typeof import('../session-state')>();
+vi.mock('../session/session-state', async (orig) => {
+  const actual = await orig<typeof import('../session/session-state')>();
   return { ...actual, sessionState: vi.fn(actual.sessionState) };
 });
 

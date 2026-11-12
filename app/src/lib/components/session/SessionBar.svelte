@@ -5,7 +5,7 @@
   import Play from '@lucide/svelte/icons/play';
   import PhoneOff from '@lucide/svelte/icons/phone-off';
   import { t, type Key } from '../../i18n.svelte';
-  import type { SessionAction, SessionView } from '../../session-state';
+  import type { SessionAction, SessionView } from '../../session/session-state';
 
   let { view, acting = null, confirmClose = false, onact }: { view: SessionView; acting?: SessionAction | null; confirmClose?: boolean; onact: (a: SessionAction) => void } = $props();
 

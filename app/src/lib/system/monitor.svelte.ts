@@ -1,6 +1,6 @@
 import { untrack } from 'svelte';
 import { systemApi } from './api';
-import { DaemonError, type DaemonClient } from '../client';
+import { DaemonError, type DaemonClient } from '../daemon/client';
 import { ui } from '../mobile/ui.svelte';
 import { mergeHistory } from './format';
 import type { SysPoint, SysResponse, SysSample } from './types';

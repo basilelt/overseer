@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { DaemonClient } from '../client';
+import type { DaemonClient } from '../daemon/client';
 import { githubApi } from './api';
 
 const capture = () => {

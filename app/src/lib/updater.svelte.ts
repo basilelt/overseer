@@ -1,6 +1,6 @@
-import * as CMD from './tauri-commands';
-import { isTauri } from './client';
-import { isDemo } from './demo';
+import * as CMD from './daemon/tauri-commands';
+import { isTauri } from './daemon/client';
+import { isDemo } from './daemon/demo';
 import { type Sub, t } from './i18n.svelte';
 
 export type InstallKind = 'bundle' | 'msix';

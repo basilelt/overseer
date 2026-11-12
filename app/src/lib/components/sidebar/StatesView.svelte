@@ -1,14 +1,14 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { attention } from '../../attention';
-  import { byState } from '../../by-state';
+  import { byState } from '../../session/by-state';
   import { t } from '../../i18n.svelte';
-  import { saveSettings, settings } from '../../settings.svelte';
-  import { filterItems, toggleOpen, visibleIds } from '../../spaces';
+  import { saveSettings, settings } from '../../settings/settings.svelte';
+  import { filterItems, toggleOpen, visibleIds } from '../../workspace/spaces';
   import { app } from '../../state.svelte';
   import { TIME_BUCKETS } from '../../time-bucket';
   import { hostKey } from '../../window';
-  import { itemMenuAt, selectSession } from '../../wsactions';
+  import { itemMenuAt, selectSession } from '../../workspace/wsactions';
   import { visibleClock } from '../../visible-clock';
   import AttentionBanner from './AttentionBanner.svelte';
   import StateGroups from './StateGroups.svelte';

@@ -2,34 +2,34 @@ import { activityDelay } from './activity';
 import { FALLBACK_AGENTS, sessionsAvailable } from './agents';
 import { parentOverlay } from './overlay-route';
 import { onPresence, presence } from './presence';
-import { api, type Api } from './api';
-import { DaemonError, getClient, isMockClient, type DaemonClient } from './client';
-import { groupItems, sidebarItems, stableItems, type SidebarItem } from './grouping';
+import { api, type Api } from './daemon/api';
+import { DaemonError, getClient, isMockClient, type DaemonClient } from './daemon/client';
+import { groupItems, sidebarItems, stableItems, type SidebarItem } from './session/grouping';
 import { applyEvent, deepEqual, mergeFetched, touchedKey, type Snapshot, type Touched } from './reduce';
-import { rememberHost, rememberWorkspace, saveSettings, settings, workspaceFor } from './settings.svelte';
+import { rememberHost, rememberWorkspace, saveSettings, settings, workspaceFor } from './settings/settings.svelte';
 import { hostKey, isMainWindow } from './window';
-import type { HostLink, LinkChange } from './host-link.svelte';
+import type { HostLink, LinkChange } from './host/host-link.svelte';
 import { normalizeUrl } from './browser';
-import { pages } from './session-pages.svelte';
-import type { EntryKind } from './notifications';
-import type { Proposal } from './organize';
-import { dispatch, type NoticeInput } from './os-notify';
-import { center } from './notifications.svelte';
+import { pages } from './session/session-pages.svelte';
+import type { EntryKind } from './notify/notifications';
+import type { Proposal } from './workspace/organize';
+import { dispatch, type NoticeInput } from './notify/os-notify';
+import { center } from './notify/notifications.svelte';
 import type { Activity, AgentInfo, ConnState, DaemonEvent, Effort, HostTarget, LocalLine, LocalNetworkReport, ProfilesStore, Project, Term, TaskMessage } from './types';
 import { isNoRoute } from './localnet';
 import { startupTarget } from './conn';
-import { rememberShell } from './closed-tabs';
-import { activeKey, allTabs, EMPTY_LAYOUT, forgetLayouts, onTabClosed, openInFocused, update, workspace } from './workspace.svelte';
-import { newTabKey } from './tabs';
-import { aggregate, applyWsEvent, EMPTY_WS, isGhost, itemWorkspaces, resolveTab, sameMap, synthesize, upsert, within, type Aggregate, type WsData } from './workspaces';
+import { rememberShell } from './tabs/closed-tabs';
+import { activeKey, allTabs, EMPTY_LAYOUT, forgetLayouts, onTabClosed, openInFocused, update, workspace } from './workspace/workspace.svelte';
+import { newTabKey } from './tabs/tabs';
+import { aggregate, applyWsEvent, EMPTY_WS, isGhost, itemWorkspaces, resolveTab, sameMap, synthesize, upsert, within, type Aggregate, type WsData } from './workspace/workspaces';
 import type { Workspace } from './types';
-import type { MenuItem, OpenMenu } from './menu';
+import type { MenuItem, OpenMenu } from './commands/menu';
 import { isWebLink, resolveLink, type LinkFrom, type LinkGesture, type LinkRoute } from './links';
 import { t } from './i18n.svelte';
 import { browsers, openOutside } from './browsers.svelte';
 import { isPhone, ui } from './mobile/ui.svelte';
-import { feedback } from './feedback.svelte';
-import { tap } from './record-state.svelte';
+import { feedback } from './feedback/feedback.svelte';
+import { tap } from './record/record-state.svelte';
 
 export type View = 'agents' | 'kanban' | 'browser';
 export type Overlay = null | 'taskDetail' | 'palette' | 'connect' | 'settings' | 'task' | 'project' | 'review' | 'ports' | 'system' | 'usage' | 'broadcast' | 'holdAll' | 'name' | 'workspaceNew' | 'profiles' | 'shortcuts' | 'file' | 'notifications' | 'closeTab' | 'switchboardImport' | 'uninstall';
@@ -825,7 +825,7 @@ class AppState {
   linkMenu(at: { clientX: number; clientY: number } | undefined, url: string, from?: LinkFrom) {
     const pos = at ?? { clientX: innerWidth / 2 - 100, clientY: innerHeight / 3 };
     const fail = (e: unknown) => this.notify(String((e as Error)?.message ?? e), 'error');
-    void Promise.all([browsers.load(!this.phoneLinks()), import('./linkmenu')]).then(([list, { linkItems }]) =>
+    void Promise.all([browsers.load(!this.phoneLinks()), import('./terminal/linkmenu')]).then(([list, { linkItems }]) =>
       this.openMenu(
         pos,
         url,
@@ -927,13 +927,13 @@ export const app = new AppState();
 onPresence((p) => p.focused && app.reloadWs());
 
 /** Adding, switching and removing the hosts of a window, loaded once a window gets a second host. */
-const hostOps = () => import('./host-ops');
+const hostOps = () => import('./host/host-ops');
 
 /** Tab rename, move and full-title code, kept out of the startup bundle. */
-let tabMod: typeof import('./tab-lazy') | null = null;
+let tabMod: typeof import('./tabs/tab-lazy') | null = null;
 
 export function tabLazy() {
-  return import('./tab-lazy').then((m) => (tabMod = m));
+  return import('./tabs/tab-lazy').then((m) => (tabMod = m));
 }
 
 onTabClosed((key, end) => {

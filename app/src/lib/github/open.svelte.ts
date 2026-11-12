@@ -1,11 +1,11 @@
 import { findAgent, pickAgent } from '../agents';
 import { app } from '../state.svelte';
-import { settings } from '../settings.svelte';
-import { newTabKey } from '../tabs';
+import { settings } from '../settings/settings.svelte';
+import { newTabKey } from '../tabs/tabs';
 import { reviewKey } from '../review/keys';
 import { saveBase } from '../review/base';
 import { ui, isPhone } from '../mobile/ui.svelte';
-import { focusPane, openInFocused, split, update, type Layout } from '../workspace.svelte';
+import { focusPane, openInFocused, split, update, type Layout } from '../workspace/workspace.svelte';
 import { gt } from './strings';
 import { githubApi } from './api';
 import type { ReviewRequest, StartedReview } from './types';
