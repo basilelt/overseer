@@ -37,11 +37,7 @@ pub fn sync(ctx: &Ctx, reg: &Registry, lines: &[Line]) {
     };
     let now = ctx.now_ms;
     let fetch = ctx.config.worktree_fetch;
-    let merged = |t: &Task| {
-        t.branch
-            .as_deref()
-            .is_some_and(|b| crate::worktrees::landed(&t.project, b, fetch))
-    };
+    let merged = |t: &Task| crate::worktrees::branch_landed(t, fetch);
     run(
         reg,
         lines,

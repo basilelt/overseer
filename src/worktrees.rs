@@ -182,6 +182,18 @@ pub fn landed(root: &str, branch: &str, fetch: bool) -> bool {
     hit.is_some_and(|h| h.1)
 }
 
+pub fn branch_landed(t: &crate::tasks::Task, fetch: bool) -> bool {
+    t.branch
+        .as_deref()
+        .is_some_and(|b| landed(&t.project, b, fetch))
+}
+
+pub fn branch_landed_cached(t: &crate::tasks::Task) -> Option<bool> {
+    t.branch
+        .as_deref()
+        .and_then(|b| landed_cached(&t.project, b))
+}
+
 pub fn landed_cached(root: &str, branch: &str) -> Option<bool> {
     LANDED
         .lock()

@@ -462,12 +462,9 @@ pub fn organize_due(tasks: &[Task], project: &str, live_organizer: bool, now_ms:
 }
 
 fn live_organizer(tasks: &[Task], project: &str) -> bool {
-    tasks.iter().any(|t| {
-        t.project == project
-            && is_organizer(t)
-            && t.status == "in_progress"
-            && t.live_term().is_some()
-    })
+    tasks
+        .iter()
+        .any(|t| t.project == project && is_organizer(t) && t.is_running())
 }
 
 fn organize_one(ctx: &Ctx, reg: &Registry, project: &str) -> Res<Task> {

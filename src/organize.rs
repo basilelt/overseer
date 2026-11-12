@@ -33,7 +33,6 @@ const KINDS: &[&str] = &[
     "set_task_status",
     "track",
 ];
-const TASK_STATUSES: &[&str] = &["pending", "in_testing", "merged", "completed"];
 const WHY: &[&str] = &["dirty", "todos", "recent"];
 
 fn sql<T>(r: rusqlite::Result<T>) -> Res<T> {
@@ -244,10 +243,10 @@ pub fn validate(plan: &Value, w: &World) -> Result<Value, Vec<String>> {
                     .find(|t| t.id == id)
                     .ok_or(format!("no task {id}"))?;
                 let st = s("status").unwrap_or("");
-                if !TASK_STATUSES.contains(&st) {
+                if !crate::status::PROPOSAL_SETTABLE.contains(&st) {
                     return Err(format!(
                         "status must be one of {}",
-                        TASK_STATUSES.join(", ")
+                        crate::status::PROPOSAL_SETTABLE.join(", ")
                     ));
                 }
                 n["taskId"] = json!(id);
@@ -690,11 +689,7 @@ pub fn build(ctx: &Ctx) -> Result<Value, (u16, Value)> {
     let folders = workspaces::folders(&reg).map_err(e)?;
     let groups = workspaces::groups(&reg).map_err(e)?;
     let member = |l: &Line| ix.of_line(l).map(|w| w.id.clone());
-    let landed = |t: &Task| {
-        t.branch
-            .as_deref()
-            .and_then(|b| crate::worktrees::landed_cached(&t.project, b))
-    };
+    let landed = |t: &Task| crate::worktrees::branch_landed_cached(t);
     let activity = |l: &Line| {
         crate::activity::find_transcript(
             &ctx.claude_dir,
@@ -1109,11 +1104,10 @@ Call propose_organization exactly once with the whole plan, then reply with a on
 fn start(ctx: &Ctx, b: &Value) -> Res<Value> {
     let agent = crate::feedback::agent_for(b)?;
     let reg = db(ctx)?;
-    if tasks::all(&reg)?.iter().any(|t| {
-        t.origin.as_deref() == Some(CONFIGURATOR)
-            && t.status == "in_progress"
-            && t.live_term().is_some()
-    }) {
+    if tasks::all(&reg)?
+        .iter()
+        .any(|t| t.origin.as_deref() == Some(CONFIGURATOR) && t.is_running())
+    {
         return Err((409, "a session configurator is already running".into()));
     }
     let dir = ctx.state_dir.join("organize");

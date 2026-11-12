@@ -2,6 +2,8 @@ use crate::board::publish;
 use crate::git::git_out;
 use crate::git::Git;
 use crate::registry::Registry;
+use crate::status::{self, COMPLETED, IN_PROGRESS, MERGED, PENDING};
+use crate::task_transition::{self, Origin};
 use crate::term::{self, Spec, Term};
 use crate::util::{format_rfc3339, ticket_any, ulid};
 use crate::{Ctx, Line};
@@ -176,6 +178,10 @@ impl Task {
             .and_then(term::get)
             .filter(|t| !t.exited())
     }
+
+    pub(crate) fn is_running(&self) -> bool {
+        self.status == IN_PROGRESS && self.live_term().is_some()
+    }
 }
 
 const COST_BUSY_MS: i64 = 60_000;
@@ -344,7 +350,7 @@ pub fn get(reg: &Registry, id: &str) -> Res<Task> {
     .ok_or_else(|| (404, format!("no task {id}")))
 }
 
-fn save(ctx: &Ctx, reg: &Registry, t: &mut Task) -> Res<()> {
+pub(crate) fn save(ctx: &Ctx, reg: &Registry, t: &mut Task) -> Res<()> {
     store(reg, t, &ctx.config.station_id)
 }
 
@@ -436,9 +442,7 @@ fn deps_json(d: &[String]) -> Option<String> {
     (!d.is_empty()).then(|| json!(d).to_string())
 }
 
-pub fn is_done(status: &str) -> bool {
-    matches!(status, "merged" | "completed")
-}
+pub use crate::status::is_done;
 
 pub fn blockers<'a>(t: &Task, tasks: &'a [Task]) -> Vec<&'a Task> {
     t.depends_on
@@ -607,7 +611,7 @@ pub fn create(ctx: &Ctx, b: &Value) -> Res<Task> {
         .ok_or_else(|| bad("project required"))?;
     let (project, _) = main_root(&mut Git::default(), path)
         .ok_or_else(|| bad(format!("{path} is not in a git repository")))?;
-    let mut status = pick(b, "status", &["pending", "auto"], "pending")?;
+    let mut status = pick(b, "status", &status::TASK_CREATE_SETTABLE, PENDING)?;
     let reg = db(ctx)?;
     let parent = match &b["parentId"] {
         Value::Null => None,
@@ -799,8 +803,12 @@ pub fn patch(ctx: &Ctx, id: &str, b: &Value) -> Res<Task> {
             "description" => t.description = s()?.to_string(),
             "model" => t.model = s()?.trim().to_string(),
             "status" if t.from_session() => {
-                let s = pick(b, k, &["in_progress", "in_testing", "merged", "completed"], "")
-                    .map_err(|_| bad("a session task follows its session: status must be one of in_progress, in_testing, merged, completed"))?;
+                let s = pick(b, k, &status::SESSION_TASK_SETTABLE, "").map_err(|_| {
+                    bad(format!(
+                        "a session task follows its session: status must be one of {}",
+                        status::SESSION_TASK_SETTABLE.join(", ")
+                    ))
+                })?;
                 t.status = s.into();
                 t.manual_status = Some(s.into());
             }
@@ -813,15 +821,7 @@ pub fn patch(ctx: &Ctx, id: &str, b: &Value) -> Res<Task> {
                 seen_busy(|s| s.remove(&t.id));
             }
             "status" if v == "in_progress" => {}
-            "status" => {
-                t.status = pick(
-                    b,
-                    k,
-                    &["pending", "auto", "in_testing", "merged", "completed"],
-                    "",
-                )?
-                .into()
-            }
+            "status" => t.status = pick(b, k, &status::TASK_PATCH_SETTABLE, "")?.into(),
             "agent" => {
                 t.agent = agent_of(b, k)?
                     .ok_or_else(|| bad("agent must not be null"))?
@@ -844,7 +844,7 @@ pub fn patch(ctx: &Ctx, id: &str, b: &Value) -> Res<Task> {
             "ticketKey" => t.ticket_key = ticket_of(v)?,
             "progress" => t.progress = progress(v)?,
             "quorum" => {
-                if !matches!(was.as_str(), "pending" | "auto") {
+                if !status::is_unstarted(&was) {
                     return Err((
                         409,
                         "the quorum can only change before the task starts".into(),
@@ -858,27 +858,8 @@ pub fn patch(ctx: &Ctx, id: &str, b: &Value) -> Res<Task> {
     if t.quorum.is_some() {
         crate::quorum::check_orchestrator(&t.agent)?;
     }
-    leave_merged(&mut t, &was);
-    if t.status == "completed" && was != "completed" {
-        t.session_state = None;
-    }
-    save(ctx, &reg, &mut t)?;
-    if t.status == "in_testing" && was != "in_testing" {
-        crate::task_agents::spawn_overlap_alert(ctx, &t);
-        crate::quorum::on_ready(ctx, &t);
-    }
+    task_transition::enter(ctx, &reg, &mut t, &was, Origin::Patch)?;
     Ok(t)
-}
-
-fn leave_merged(t: &mut Task, was: &str) {
-    if was == "merged" && t.status != "merged" {
-        if let Some(b) = &t.branch {
-            crate::worktrees::forget_landed(b);
-        }
-        if !t.from_session() && !is_done(&t.status) {
-            t.session_state = None;
-        }
-    }
 }
 
 pub fn delete(ctx: &Ctx, id: &str) -> Res<Value> {
@@ -1289,14 +1270,13 @@ pub fn review(ctx: &Ctx, id: &str, b: &Value) -> Res<Value> {
             t.session_state = Some(REVIEWED.into());
         }
     }
-    leave_merged(&mut t, &was);
     if t.from_session() {
         t.manual_status = Some(t.status.clone());
-        if t.status == "completed" {
+        if t.status == COMPLETED {
             t.session_state = None;
         }
     }
-    save(ctx, &reg, &mut t)?;
+    task_transition::enter(ctx, &reg, &mut t, &was, Origin::Review)?;
     out["task"] = t.to_json(&ctx.config.station_id);
     Ok(out)
 }
@@ -1383,14 +1363,7 @@ pub fn tick(ctx: &Ctx, lines: &[Line]) {
         }
         if changed {
             seen_busy(|s| s.remove(&t.id));
-            let _ = save(ctx, &reg, &mut t);
-            if t.status == "in_testing" {
-                crate::task_agents::spawn_overlap_alert(ctx, &t);
-                crate::quorum::on_ready(ctx, &t);
-            }
-            if t.status == "completed" {
-                crate::quorum::reviewer_ended(ctx, &reg, &t);
-            }
+            let _ = task_transition::enter(ctx, &reg, &mut t, IN_PROGRESS, Origin::Reconcile);
             if turn && one_shot {
                 if let Some(x) = term.as_ref().filter(|x| !x.exited()) {
                     let _ = x.kill();
@@ -1405,14 +1378,10 @@ pub fn tick(ctx: &Ctx, lines: &[Line]) {
                 .line_id
                 .as_deref()
                 .is_some_and(|id| lines.iter().any(|l| l.id == id && l.busy));
-            if !busy
-                && t.branch.as_deref().is_some_and(|b| {
-                    crate::worktrees::landed(&t.project, b, ctx.config.worktree_fetch)
-                })
-            {
-                t.status = "merged".into();
-                t.session_state = Some("merged".into());
-                let _ = save(ctx, &reg, &mut t);
+            if !busy && crate::worktrees::branch_landed(&t, ctx.config.worktree_fetch) {
+                let was = std::mem::replace(&mut t.status, MERGED.into());
+                t.session_state = Some(MERGED.into());
+                let _ = task_transition::enter(ctx, &reg, &mut t, &was, Origin::Landed);
             }
         }
     }
@@ -1430,10 +1399,7 @@ pub fn tick(ctx: &Ctx, lines: &[Line]) {
         let running = tasks
             .iter()
             .filter(|t| {
-                t.status == "in_progress"
-                    && !crate::task_agents::is_organizer(t)
-                    && t.quorum.is_none()
-                    && t.live_term().is_some()
+                t.is_running() && !crate::task_agents::is_organizer(t) && t.quorum.is_none()
             })
             .count();
         if running >= ctx.config.auto_concurrency {
@@ -1452,7 +1418,7 @@ pub fn tick(ctx: &Ctx, lines: &[Line]) {
         };
         if let Err((_, e)) = start(ctx, &next.id, None) {
             let mut n = next.clone();
-            n.status = "pending".into();
+            n.status = PENDING.into();
             n.error = Some(e);
             let _ = save(ctx, &reg, &mut n);
         }
@@ -1845,32 +1811,5 @@ mod tests {
             t.status = s.into();
             assert!(!merge_candidate(&t, now), "{s}");
         }
-    }
-
-    #[test]
-    fn leaving_merged_clears_the_marker_for_every_exit() {
-        for to in ["in_progress", "pending", "in_testing"] {
-            let mut t = Task {
-                status: to.into(),
-                session_state: Some("merged".into()),
-                ..Default::default()
-            };
-            leave_merged(&mut t, "merged");
-            assert_eq!(t.session_state, None, "{to}");
-        }
-        let mut t = Task {
-            status: "completed".into(),
-            session_state: Some("merged".into()),
-            ..Default::default()
-        };
-        leave_merged(&mut t, "merged");
-        assert_eq!(t.session_state.as_deref(), Some("merged"));
-        let mut t = Task {
-            status: "in_progress".into(),
-            session_state: Some("x".into()),
-            ..Default::default()
-        };
-        leave_merged(&mut t, "in_testing");
-        assert_eq!(t.session_state.as_deref(), Some("x"));
     }
 }
