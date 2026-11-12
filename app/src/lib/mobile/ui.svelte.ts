@@ -1,4 +1,5 @@
 import { keyboardInset, layoutFor, mobileUserAgent, phoneParam, type Layout, type MobileTab } from './layout';
+import { userAgent } from '../platform';
 
 export const ui = $state<{ layout: Layout; mobileOs: boolean; forcePhone: boolean; drawer: boolean; tab: MobileTab; panel: boolean }>({
   layout: 'desktop',
@@ -53,7 +54,7 @@ function trackKeyboard(): () => void {
 
 export function startLayout(mobileOs = false): () => void {
   ui.forcePhone = typeof location !== 'undefined' && phoneParam(location.search);
-  ui.mobileOs = mobileOs || (typeof navigator !== 'undefined' && mobileUserAgent(navigator.userAgent));
+  ui.mobileOs = mobileOs || mobileUserAgent(userAgent());
   measure();
   addEventListener('resize', measure);
   const stopKeyboard = trackKeyboard();

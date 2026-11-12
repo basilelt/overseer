@@ -5,8 +5,7 @@
   import Search from '@lucide/svelte/icons/search';
   import ChevronLeft from '@lucide/svelte/icons/chevron-left';
   import ChevronRight from '@lucide/svelte/icons/chevron-right';
-  import { isMac } from '../../keyboard';
-  import { ui } from '../../mobile/ui.svelte';
+  import { isMac } from '../../platform';
   import Modal from '../ui/Modal.svelte';
   import AgentPicker from '../ui/AgentPicker.svelte';
   import ModelField from '../ui/ModelField.svelte';
@@ -42,6 +41,7 @@
   import { apk } from '../../mobile/apk-update.svelte';
   import { en } from '../../i18n/en';
   import { availableCategories, availableSections, categoryCounts, escapeAction, initialCategory, isHit, phonePage, pickCategory, search, SECTIONS, showEntry, showSection, type CategoryId, type Gates, type SectionId } from '../../settings-index';
+  import { phoneOrMobile } from '../../mobile/phone.svelte';
 
   let { onclose }: { onclose: () => void } = $props();
   const apkSettings = __SELF_UPDATE__ ? () => import('../mobile/ApkUpdateSettings.svelte') : null;
@@ -259,7 +259,7 @@
     }
   }
 
-  const phoneLinks = $derived(app.mobile || ui.layout === 'phone');
+  const phoneLinks = $derived(phoneOrMobile());
   const linkValue = $derived(settings.linkTarget === 'browser' && !phoneLinks ? `browser:${settings.linkBrowser}` : settings.linkTarget === 'browser' ? 'default' : settings.linkTarget);
   $effect(() => void browsers.load(!phoneLinks));
   function setLink(v: string) {
@@ -267,7 +267,7 @@
     else saveSettings({ linkTarget: v === 'default' ? 'default' : 'overseer' });
   }
 
-  const phone = $derived(app.mobile || ui.layout === 'phone');
+  const phone = $derived(phoneOrMobile());
   const gates = $derived<Gates>({
     desktop: !phone,
     nonMac: !isMac,
@@ -281,7 +281,7 @@
   });
   const text = (k: Key) => [t(k), en[k]];
   let query = $state('');
-  let cat = $state<CategoryId | null>(untrack(() => (app.mobile || ui.layout === 'phone' ? (app.overlayArg === 'notifications' ? 'notifications' : null) : initialCategory(app.overlayArg))));
+  let cat = $state<CategoryId | null>(untrack(() => (phoneOrMobile() ? (app.overlayArg === 'notifications' ? 'notifications' : null) : initialCategory(app.overlayArg))));
   let searchEl: HTMLInputElement | undefined;
   const result = $derived(query.trim() ? search(query, gates, text) : null);
   const categories = $derived(availableCategories(gates));

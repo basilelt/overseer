@@ -22,6 +22,7 @@
   import { applySlash, commandsFor, enterAction, lineCount, slashMatches, slashQuery, type SendMode, type SlashCommand } from '../../chat/composer';
   import { ChatSender } from '../../chat/sender.svelte';
   import { clearComposerHeight, reportComposerHeight } from '../../chat/composer-height';
+  import { platformName } from '../../platform';
 
   let { lineId, agent, local, phone, history = [], onsent }: { lineId: string; agent: string; local: LineLocal | undefined; phone: boolean; history?: string[]; onsent?: (text: string) => void } = $props();
   let back: Recall = { index: -1, draft: '' };
@@ -41,7 +42,7 @@
   const query = $derived(dismissed ? null : slashQuery(text, caret));
   const matches = $derived<SlashCommand[]>(query === null ? [] : slashMatches(query, commandsFor(agent, custom ?? [])));
   const message = (e: unknown) => String((e as Error)?.message ?? e);
-  const os = typeof navigator !== 'undefined' ? navigator.platform : '';
+  const os = platformName();
   const dictation = $derived(dictationMode(app.os, os, isTauri(), phone));
 
   async function dictate() {

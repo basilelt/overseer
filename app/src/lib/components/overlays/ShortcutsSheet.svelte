@@ -1,7 +1,7 @@
 <script lang="ts">
   import Modal from '../ui/Modal.svelte';
   import { t, type Key } from '../../i18n.svelte';
-  import { isMac } from '../../keyboard';
+  import { isMac } from '../../platform';
   import { settings } from '../../settings.svelte';
   import { sheetRows } from '../../shortcuts';
 

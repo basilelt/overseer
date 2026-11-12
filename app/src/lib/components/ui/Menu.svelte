@@ -3,7 +3,7 @@
   import ChevronRight from '@lucide/svelte/icons/chevron-right';
   import { menuRows, type MenuItem } from '../../menu';
   import AgentGlyph from './AgentGlyph.svelte';
-  import { ui } from '../../mobile/ui.svelte';
+  import { isPhone } from '../../mobile/ui.svelte';
   import { untrack } from 'svelte';
 
   let { items, x, y, label, onclose }: { items: MenuItem[]; x: number; y: number; label: string; onclose: () => void } = $props();
@@ -51,9 +51,9 @@
 
 <svelte:window onpointerdown={(e) => menu && !menu.contains(e.target as Node) && onclose()} onblur={onclose} onkeydown={(e) => e.key === 'Escape' && onclose()} />
 
-{#if ui.layout === 'phone'}<div class="scrim" role="presentation"></div>{/if}
+{#if isPhone()}<div class="scrim" role="presentation"></div>{/if}
 <div class="menu" role="menu" tabindex="-1" aria-label={label} bind:this={menu} style:left="{pos.left}px" style:top="{pos.top}px" onkeydown={onKey}>
-  {#if ui.layout === 'phone' && label}<div class="sheet-title">{label}</div>{/if}
+  {#if isPhone() && label}<div class="sheet-title">{label}</div>{/if}
   {#each rows as { item: it, index, child }, i (i)}
     {#if it.separator}
       <hr />

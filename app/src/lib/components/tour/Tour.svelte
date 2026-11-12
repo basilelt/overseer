@@ -3,11 +3,11 @@
   import { tour, hasTarget } from '../../tour/tour.svelte';
   import { keyAction, placeCard, targetOf, union, type Placement, type Rect, type Step } from '../../tour/steps';
   import { hasKey, tt } from '../../tour/strings';
-  import { ui } from '../../mobile/ui.svelte';
+  import { isPhone } from '../../mobile/ui.svelte';
+  import { modLabel } from '../../platform';
 
-  const mac = typeof navigator !== 'undefined' && /mac/i.test(navigator.platform);
   const PAD = 4;
-  const phone = $derived(ui.layout === 'phone');
+  const phone = $derived(isPhone());
 
   let card: HTMLElement | undefined = $state();
   let primary: HTMLButtonElement | undefined = $state();
@@ -75,7 +75,7 @@
     if (step.id === 'notify' && target === 'settings') return tt('notify.settings');
     const k = `${step.id}.phone`;
     if (phone && hasKey(k)) return tt(k);
-    return tt(`${step.id}.body` as Parameters<typeof tt>[0], { mod: mac ? '⌘' : 'Ctrl' });
+    return tt(`${step.id}.body` as Parameters<typeof tt>[0], { mod: modLabel() });
   }
 
   const last = $derived(tour.index >= tour.steps.length - 1);

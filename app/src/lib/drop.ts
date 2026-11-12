@@ -1,4 +1,5 @@
 import { isTauri } from './client';
+import { isWindowsUA } from './platform';
 
 export interface DropZone {
   el: () => Element | null | undefined;
@@ -33,7 +34,7 @@ let hovered: DropZone | null = null;
 let listening = false;
 
 function at(pos: { x: number; y: number }): DropZone | null {
-  const scaled = dropPoint(pos, /windows/i.test(navigator.userAgent), window.devicePixelRatio);
+  const scaled = dropPoint(pos, isWindowsUA(), window.devicePixelRatio);
   const raw = dropPoint(pos, false, 1);
   return pickZone([...zones], [document.elementFromPoint(scaled.x, scaled.y), document.elementFromPoint(raw.x, raw.y)]);
 }

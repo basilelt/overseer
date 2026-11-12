@@ -28,7 +28,7 @@
   import { replayGuard } from '../../termreplay';
   import { LONG_PRESS_MS, movedTooFar, pinchFontSize, touchDistance } from '../../mobile/gestures';
   import { canResize, fitTo, isAgentTerm, shouldReassert, sizedElsewhere } from '../../mobile/termsize';
-  import { ui } from '../../mobile/ui.svelte';
+  import { ui, isPhone } from '../../mobile/ui.svelte';
   import { isNativeAndroid, native } from '../../mobile/native';
   import { colorPalette, customColors, resolvedTheme, saveSettings, settings } from '../../settings.svelte';
   import { app } from '../../state.svelte';
@@ -106,7 +106,7 @@
   let unseen = $state(false);
   let writing = false;
 
-  const phone = $derived(ui.layout === 'phone');
+  const phone = $derived(isPhone());
   const fixed = $derived(phone && !!info && !canResize('phone', isAgentTerm(info)));
   const hint = $derived(sizedElsewhere(info, mine, phone ? 'phone' : 'desktop'));
   const fontSize = $derived(phone ? (settings.phoneFontSize ?? 12) : settings.fontSize);

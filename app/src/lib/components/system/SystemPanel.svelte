@@ -4,14 +4,14 @@
   import Modal from '../ui/Modal.svelte';
   import { app } from '../../state.svelte';
   import { t } from '../../i18n.svelte';
-  import { ui } from '../../mobile/ui.svelte';
   import { st } from '../../system/strings';
   import { update, openInFocused } from '../../workspace.svelte';
   import { newTabKey } from '../../tabs';
   import SystemView from './SystemView.svelte';
+  import { phoneOrMobile } from '../../mobile/phone.svelte';
 
   let { onclose }: { onclose: () => void } = $props();
-  const phone = $derived(app.mobile || ui.layout === 'phone');
+  const phone = $derived(phoneOrMobile());
 
   function inTab() {
     const key = newTabKey('system', 'host');
