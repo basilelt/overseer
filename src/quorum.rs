@@ -7,7 +7,6 @@ use std::sync::Mutex;
 
 pub const REVIEWER: &str = "reviewer";
 pub const PREFIX: &str = "Quorum: ";
-pub const ORCHESTRATORS: [&str; 2] = ["claude", "codex"];
 const MAX_REASON: usize = 2000;
 const NO_VOTE: &str = "ended without voting";
 static LOCK: Mutex<()> = Mutex::new(());
@@ -55,7 +54,7 @@ pub fn parse(v: &Value, orchestrator: &str) -> Res<Option<Value>> {
 }
 
 pub fn check_orchestrator(agent: &str) -> Res<()> {
-    if ORCHESTRATORS.contains(&agent) {
+    if crate::agents::get(agent).is_some_and(|a| a.orchestrator) {
         Ok(())
     } else {
         Err(bad("the quorum orchestrator must be claude or codex"))

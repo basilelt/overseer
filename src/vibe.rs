@@ -14,7 +14,7 @@ const MAX_DOC: u64 = 64 << 20;
 const MAX_META: u64 = 4 << 20;
 
 pub fn home() -> PathBuf {
-    crate::env_dir("VIBE_HOME", ".vibe")
+    crate::agents::config_dir("vibe")
 }
 
 pub fn root(home: &Path) -> PathBuf {

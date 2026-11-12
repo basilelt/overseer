@@ -17,7 +17,6 @@ const IMAGE_MAX: u64 = 10 * 1024 * 1024;
 const VIDEO_MAX: u64 = 100 * 1024 * 1024;
 const IMAGES: [&str; 6] = ["png", "jpg", "jpeg", "gif", "webp", "svg"];
 const VIDEOS: [&str; 3] = ["mp4", "mov", "webm"];
-const POSITIONAL: [&str; 2] = ["claude", "codex"];
 
 pub fn routes(ctx: &Ctx, method: &str, segs: &[&str], body: &Value) -> Option<(u16, Value)> {
     let r = match (method, segs) {
@@ -174,7 +173,7 @@ pub fn launch(
     let (cols, rows) = crate::term::size(b).map_err(bad)?.unwrap_or((120, 32));
     let session = agent.session.and_then(|_| crate::runner::uuid().ok());
     let by_flag = agent.prompt.is_some();
-    let by_arg = !by_flag && POSITIONAL.contains(&agent.id);
+    let by_arg = !by_flag && agent.positional_prompt;
     let extra: &[String] = if agent.id == "claude" {
         &ctx.config.start_args
     } else {
@@ -532,9 +531,13 @@ mod tests {
 
     #[test]
     fn passes_the_prompt_as_the_initial_argument() {
-        for id in POSITIONAL {
-            let a = crate::agents::get(id).unwrap();
-            assert!(a.prompt.is_none(), "{id} has a prompt flag now");
+        let positional: Vec<_> = crate::agents::AGENTS
+            .iter()
+            .filter(|a| a.positional_prompt)
+            .collect();
+        assert_eq!(positional.len(), 2);
+        for a in positional {
+            assert!(a.prompt.is_none(), "{} has a prompt flag now", a.id);
         }
         let cmd = vec!["claude".to_string(), "--model".into(), "opus".into()];
         assert_eq!(

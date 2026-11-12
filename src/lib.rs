@@ -372,10 +372,10 @@ impl<'a> Ctx<'a> {
     pub fn from_env(probe: &'a dyn Probe) -> Ctx<'a> {
         let state_dir = default_state_dir();
         Ctx {
-            claude_dir: env_dir("CLAUDE_CONFIG_DIR", ".claude"),
-            codex_dir: env_dir("CODEX_HOME", ".codex"),
-            gemini_dir: home().join(".gemini"),
-            vibe_dir: vibe::home(),
+            claude_dir: agents::config_dir("claude"),
+            codex_dir: agents::config_dir("codex"),
+            gemini_dir: agents::config_dir("gemini"),
+            vibe_dir: agents::config_dir("vibe"),
             snapshot: std::env::var_os("OVERSEER_TMUX_SNAPSHOT")
                 .filter(|v| !v.is_empty())
                 .map(PathBuf::from)

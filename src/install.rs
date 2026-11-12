@@ -337,14 +337,14 @@ pub fn targets() -> Vec<Target> {
     vec![
         t(
             "claude",
-            env_dir("CLAUDE_CONFIG_DIR", ".claude"),
+            crate::agents::config_dir("claude"),
             "settings.json",
             hooks::CLAUDE_EVENTS,
             Format::Groups(5),
         ),
         t(
             "codex",
-            env_dir("CODEX_HOME", ".codex"),
+            crate::agents::config_dir("codex"),
             "hooks.json",
             hooks::CODEX_EVENTS,
             Format::GroupsWithOverrides {
@@ -354,28 +354,28 @@ pub fn targets() -> Vec<Target> {
         ),
         t(
             "gemini",
-            crate::home().join(".gemini"),
+            crate::agents::config_dir("gemini"),
             "settings.json",
             hooks::GEMINI_EVENTS,
             Format::Groups(5000),
         ),
         t(
             "copilot",
-            env_dir("COPILOT_HOME", ".copilot"),
+            crate::agents::config_dir("copilot"),
             "hooks/overseer.json",
             hooks::COPILOT_EVENTS,
             Format::File,
         ),
         t(
             "vibe",
-            crate::vibe::home(),
+            crate::agents::config_dir("vibe"),
             "hooks.toml",
             hooks::VIBE_EVENTS,
             Format::File,
         ),
         t(
             "cursor",
-            crate::home().join(".cursor"),
+            crate::agents::config_dir("cursor"),
             "hooks.json",
             hooks::CURSOR_EVENTS,
             Format::Flat,

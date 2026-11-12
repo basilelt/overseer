@@ -139,7 +139,7 @@ pub fn original_marker(cmd: &str, marker: &str) -> Option<Option<String>> {
 }
 
 pub fn settings_path() -> PathBuf {
-    crate::env_dir("CLAUDE_CONFIG_DIR", ".claude").join("settings.json")
+    crate::agents::config_dir("claude").join("settings.json")
 }
 
 pub struct Plan {

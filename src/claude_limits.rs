@@ -69,7 +69,8 @@ pub fn read_creds(claude_dir: &Path) -> Option<Creds> {
 
 /// Claude Code keeps the keychain login under one fixed name only for `~/.claude`.
 fn keychain_applies(claude_dir: &Path) -> bool {
-    claude_dir == crate::home().join(".claude")
+    crate::agents::get("claude").and_then(|a| a.default_config_dir())
+        == Some(claude_dir.to_path_buf())
 }
 
 #[cfg(target_os = "macos")]

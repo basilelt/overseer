@@ -9,11 +9,28 @@ pub const AGY_EFFORTS: &[&str] = &["low", "medium", "high", "xhigh", "max"];
 type Argv = &'static [&'static str];
 type Renames = &'static [(&'static str, &'static str)];
 
+pub enum Install {
+    None,
+    Command(&'static str),
+    Manual(&'static str),
+}
+
+pub struct ConfigDir {
+    pub env: Option<&'static str>,
+    pub default: &'static str,
+}
+
 pub struct Agent {
     pub id: &'static str,
     pub name: &'static str,
     pub bin: &'static str,
-    pub install: &'static str,
+    pub install: Install,
+    pub config: Option<ConfigDir>,
+    pub auto_approve: Option<&'static [&'static str]>,
+    pub approval_overrides: &'static [&'static str],
+    pub effort_levels: &'static [&'static str],
+    pub orchestrator: bool,
+    pub positional_prompt: bool,
     pub verified: bool,
     pub sessions: bool,
     pub turns: bool,
@@ -31,7 +48,13 @@ const NONE: Agent = Agent {
     id: "",
     name: "",
     bin: "",
-    install: "",
+    install: Install::None,
+    config: None,
+    auto_approve: None,
+    approval_overrides: &[],
+    effort_levels: EFFORTS,
+    orchestrator: false,
+    positional_prompt: false,
     verified: true,
     sessions: false,
     turns: false,
@@ -48,9 +71,21 @@ const NONE: Agent = Agent {
 pub static AGENTS: &[Agent] = &[
     Agent {
         id: "claude",
+        orchestrator: true,
+        positional_prompt: true,
+        auto_approve: Some(&["--permission-mode", "auto"]),
+        approval_overrides: &[
+            "--permission-mode",
+            "--dangerously-skip-permissions",
+            "--allow-dangerously-skip-permissions",
+        ],
+        config: Some(ConfigDir {
+            env: Some("CLAUDE_CONFIG_DIR"),
+            default: ".claude",
+        }),
         name: "Claude Code",
         bin: "claude",
-        install: "curl -fsSL https://claude.ai/install.sh | bash",
+        install: Install::Command("curl -fsSL https://claude.ai/install.sh | bash"),
         sessions: true,
         turns: true,
         resume_verified: true,
@@ -64,9 +99,23 @@ pub static AGENTS: &[Agent] = &[
     },
     Agent {
         id: "codex",
+        orchestrator: true,
+        positional_prompt: true,
+        auto_approve: Some(&["--ask-for-approval", "never"]),
+        approval_overrides: &[
+            "--ask-for-approval",
+            "-a",
+            "--full-auto",
+            "--yolo",
+            "--dangerously-bypass-approvals-and-sandbox",
+        ],
+        config: Some(ConfigDir {
+            env: Some("CODEX_HOME"),
+            default: ".codex",
+        }),
         name: "Codex",
         bin: "codex",
-        install: "npm install -g @openai/codex",
+        install: Install::Command("npm install -g @openai/codex"),
         sessions: true,
         turns: true,
         resume_verified: true,
@@ -78,9 +127,15 @@ pub static AGENTS: &[Agent] = &[
     },
     Agent {
         id: "gemini",
+        auto_approve: Some(&["--approval-mode=yolo"]),
+        approval_overrides: &["--approval-mode", "--yolo", "-y"],
+        config: Some(ConfigDir {
+            env: None,
+            default: ".gemini",
+        }),
         name: "Gemini CLI",
         bin: "gemini",
-        install: "npm install -g @google/gemini-cli",
+        install: Install::Command("npm install -g @google/gemini-cli"),
         sessions: true,
         model_flag: Some("-m"),
         session: Some(&["--session-id", "{}"]),
@@ -91,9 +146,12 @@ pub static AGENTS: &[Agent] = &[
     },
     Agent {
         id: "agy",
+        effort_levels: AGY_EFFORTS,
+        auto_approve: Some(&["--mode=auto"]),
+        approval_overrides: &["--mode"],
         name: "Antigravity",
         bin: "agy",
-        install: "see https://antigravity.google/download",
+        install: Install::Manual("see https://antigravity.google/download"),
         model_flag: Some("--model"),
         effort: Some((&["--effort", "{}"], &[])),
         prompt: Some("-i"),
@@ -103,9 +161,11 @@ pub static AGENTS: &[Agent] = &[
     },
     Agent {
         id: "opencode",
+        auto_approve: Some(&["--auto"]),
+        approval_overrides: &["--auto"],
         name: "opencode",
         bin: "opencode",
-        install: "npm install -g --allow-scripts=opencode-ai opencode-ai",
+        install: Install::Command("npm install -g --allow-scripts=opencode-ai opencode-ai"),
         model_flag: Some("-m"),
         prompt: Some("--prompt"),
         resume: Some(&["{flags}", "--session", "{id}"]),
@@ -116,7 +176,7 @@ pub static AGENTS: &[Agent] = &[
         id: "amp",
         name: "Amp",
         bin: "amp",
-        install: "npm install -g --allow-scripts=@ampcode/cli @sourcegraph/amp",
+        install: Install::Command("npm install -g --allow-scripts=@ampcode/cli @sourcegraph/amp"),
         models: Some(&[]),
         effort: Some((&["--mode", "{}"], &[("max", "ultra")])),
         resume: Some(&["threads", "continue", "{id}"]),
@@ -125,9 +185,15 @@ pub static AGENTS: &[Agent] = &[
     },
     Agent {
         id: "copilot",
+        auto_approve: Some(&["--allow-all"]),
+        approval_overrides: &["--allow-all", "--allow-all-tools", "--yolo"],
+        config: Some(ConfigDir {
+            env: Some("COPILOT_HOME"),
+            default: ".copilot",
+        }),
         name: "Copilot CLI",
         bin: "copilot",
-        install: "npm install -g @github/copilot",
+        install: Install::Command("npm install -g @github/copilot"),
         resume_verified: true,
         models: Some(&[
             "claude-sonnet-4.6",
@@ -149,9 +215,15 @@ pub static AGENTS: &[Agent] = &[
     },
     Agent {
         id: "cursor",
+        auto_approve: Some(&["--force"]),
+        approval_overrides: &["--force", "-f", "--yolo"],
+        config: Some(ConfigDir {
+            env: None,
+            default: ".cursor",
+        }),
         name: "Cursor Agent",
         bin: "cursor-agent",
-        install: "curl https://cursor.com/install -fsS | bash",
+        install: Install::Command("curl https://cursor.com/install -fsS | bash"),
         verified: false,
         model_flag: Some("--model"),
         resume: Some(&["{flags}", "--resume", "{id}"]),
@@ -160,9 +232,15 @@ pub static AGENTS: &[Agent] = &[
     },
     Agent {
         id: "vibe",
+        auto_approve: Some(&["--auto-approve"]),
+        approval_overrides: &["--auto-approve", "--yolo", "--agent", "--smart-approve"],
+        config: Some(ConfigDir {
+            env: Some("VIBE_HOME"),
+            default: ".vibe",
+        }),
         name: "Mistral Vibe",
         bin: "vibe",
-        install: "uv tool install mistral-vibe",
+        install: Install::Command("uv tool install mistral-vibe"),
         sessions: true,
         turns: true,
         models: Some(&[]),
@@ -185,6 +263,10 @@ pub fn get(id: &str) -> Option<&'static Agent> {
 
 pub fn id_of(id: &str) -> &'static str {
     get(id).map(|a| a.id).unwrap_or("other")
+}
+
+pub fn config_dir(id: &str) -> std::path::PathBuf {
+    get(id).and_then(Agent::config_dir).unwrap_or_default()
 }
 
 pub fn task_agent(id: &str) -> bool {
@@ -217,52 +299,15 @@ pub struct Launch<'a> {
 
 const AUTO_APPROVE_KEY: &str = "agent.autoApprove.";
 
-/// CLI-native auto-approval flags for agents that expose a launch-time mode.
-/// Amp currently auto-approves by default unless the user's Amp permission
-/// configuration opts into a policy, so it needs no launch flag.
 pub fn auto_approve_args(id: &str) -> Option<&'static [&'static str]> {
-    match id {
-        "claude" => Some(&["--permission-mode", "auto"]),
-        "codex" => Some(&["--ask-for-approval", "never"]),
-        "gemini" => Some(&["--approval-mode=yolo"]),
-        "agy" => Some(&["--mode=auto"]),
-        "opencode" => Some(&["--auto"]),
-        "copilot" => Some(&["--allow-all"]),
-        "cursor" => Some(&["--force"]),
-        "vibe" => Some(&["--auto-approve"]),
-        _ => None,
-    }
-}
-
-fn approval_overrides(id: &str) -> &'static [&'static str] {
-    match id {
-        "claude" => &[
-            "--permission-mode",
-            "--dangerously-skip-permissions",
-            "--allow-dangerously-skip-permissions",
-        ],
-        "codex" => &[
-            "--ask-for-approval",
-            "-a",
-            "--full-auto",
-            "--yolo",
-            "--dangerously-bypass-approvals-and-sandbox",
-        ],
-        "gemini" => &["--approval-mode", "--yolo", "-y"],
-        "agy" => &["--mode"],
-        "opencode" => &["--auto"],
-        "copilot" => &["--allow-all", "--allow-all-tools", "--yolo"],
-        "cursor" => &["--force", "-f", "--yolo"],
-        "vibe" => &["--auto-approve", "--yolo", "--agent", "--smart-approve"],
-        _ => &[],
-    }
+    get(id)?.auto_approve
 }
 
 pub fn auto_approve_flags(id: &str, extra: &[String]) -> Vec<String> {
     let Some(flags) = auto_approve_args(id) else {
         return vec![];
     };
-    let overrides = approval_overrides(id);
+    let overrides = get(id).map_or(&[][..], |a| a.approval_overrides);
     let set = extra.iter().any(|arg| {
         let name = arg.split_once('=').map_or(arg.as_str(), |(n, _)| n);
         overrides.contains(&name)
@@ -321,22 +366,26 @@ impl Agent {
 
     pub fn efforts(&self) -> &'static [&'static str] {
         if self.effort.is_some() {
-            if self.id == "agy" {
-                AGY_EFFORTS
-            } else {
-                EFFORTS
-            }
+            self.effort_levels
         } else {
             &[]
         }
     }
 
     pub fn valid_efforts(&self) -> &'static [&'static str] {
-        if self.effort.is_some() {
-            self.efforts()
-        } else {
-            EFFORTS
-        }
+        self.effort_levels
+    }
+
+    pub fn config_dir(&self) -> Option<std::path::PathBuf> {
+        let c = self.config.as_ref()?;
+        Some(match c.env {
+            Some(var) => crate::env_dir(var, c.default),
+            None => crate::home().join(c.default),
+        })
+    }
+
+    pub fn default_config_dir(&self) -> Option<std::path::PathBuf> {
+        Some(crate::home().join(self.config.as_ref()?.default))
     }
 
     pub fn flags(&self, model: &str, effort: &str) -> Vec<String> {
@@ -419,8 +468,9 @@ impl Agent {
         if let Some(m) = self.models {
             v["models"] = json!(m);
         }
-        if !self.install.is_empty() {
-            v["install"] = json!(self.install);
+        match self.install {
+            Install::None => {}
+            Install::Command(t) | Install::Manual(t) => v["install"] = json!(t),
         }
         if cfg!(unix) && self.install_cmd().is_some() {
             v["installable"] = json!(true);
@@ -429,7 +479,10 @@ impl Agent {
     }
 
     pub fn install_cmd(&self) -> Option<&'static str> {
-        Some(self.install).filter(|c| !c.is_empty() && !c.starts_with("see "))
+        match self.install {
+            Install::Command(c) => Some(c),
+            Install::None | Install::Manual(_) => None,
+        }
     }
 }
 
@@ -820,6 +873,39 @@ mod tests {
         assert_eq!(
             redact(&argv, a, Some("do it")),
             s(&["gemini", "-i", "<prompt>"])
+        );
+    }
+
+    #[test]
+    fn descriptor_tables_match_the_per_agent_behaviour() {
+        let ids = |f: fn(&Agent) -> bool| -> Vec<&str> {
+            AGENTS.iter().filter(|a| f(a)).map(|a| a.id).collect()
+        };
+        assert_eq!(ids(|a| a.orchestrator), ["claude", "codex"]);
+        assert_eq!(ids(|a| a.positional_prompt), ["claude", "codex"]);
+        assert_eq!(
+            ids(|a| a.auto_approve.is_some()),
+            ["claude", "codex", "gemini", "agy", "opencode", "copilot", "cursor", "vibe"]
+        );
+        assert_eq!(get("agy").unwrap().efforts(), AGY_EFFORTS);
+        assert_eq!(get("claude").unwrap().efforts(), EFFORTS);
+        assert!(get("opencode").unwrap().efforts().is_empty());
+        assert_eq!(get("opencode").unwrap().valid_efforts(), EFFORTS);
+        assert_eq!(get("agy").unwrap().valid_efforts(), AGY_EFFORTS);
+        assert!(matches!(get("agy").unwrap().install, Install::Manual(_)));
+        assert!(get("shell").unwrap().install_cmd().is_none());
+    }
+
+    #[test]
+    fn config_dirs_come_from_the_descriptor() {
+        for id in ["claude", "codex", "gemini", "copilot", "vibe", "cursor"] {
+            assert!(config_dir(id).starts_with(crate::home()), "{id}");
+        }
+        assert!(config_dir("gemini").ends_with(".gemini"));
+        assert!(config_dir("opencode").as_os_str().is_empty());
+        assert_eq!(
+            get("claude").unwrap().default_config_dir(),
+            Some(crate::home().join(".claude"))
         );
     }
 
