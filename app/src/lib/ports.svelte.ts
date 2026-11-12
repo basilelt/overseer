@@ -46,7 +46,7 @@ export function startPorts(app: typeof App): () => void {
       if (!session) return;
       const host = session;
       let prev: PortsState | null = null;
-      return untrack(() => app.client)!.watchPorts((s) => {
+      return untrack(() => app.requireClient()).watchPorts((s) => {
         ports.state = s;
         announce(app, host, forwardNotices(s), prev ? closedForwards(prev, s) : []);
         prev = s;

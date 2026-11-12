@@ -105,3 +105,33 @@ describe('getClient', () => {
     expect(await getClient()).toBe(await getClient());
   });
 });
+
+describe('mockSelected and isMockClient', () => {
+  it('selects the real daemon only in the native app outside the demo', async () => {
+    expect((await fresh()).mockSelected()).toBe(false);
+  });
+
+  it('selects the mock in a plain browser', async () => {
+    vi.stubGlobal('window', {});
+    expect((await fresh()).mockSelected()).toBe(true);
+  });
+
+  it('selects the mock in the demo, even natively', async () => {
+    store.set(DEMO_KEY, '1');
+    expect((await fresh()).mockSelected()).toBe(true);
+  });
+
+  it('selects the mock for a VITE_MOCK build', async () => {
+    vi.stubEnv('VITE_MOCK', '1');
+    expect((await fresh()).mockSelected()).toBe(true);
+    vi.unstubAllEnvs();
+  });
+
+  it('recognises the mock client by its kind', async () => {
+    const { isMockClient } = await fresh();
+    expect(isMockClient({ kind: 'mock' })).toBe(true);
+    expect(isMockClient({ kind: 'tauri' })).toBe(false);
+    expect(isMockClient(null)).toBe(false);
+    expect(isMockClient(undefined)).toBe(false);
+  });
+});

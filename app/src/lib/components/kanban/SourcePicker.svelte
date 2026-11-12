@@ -11,7 +11,7 @@
 
   let { project, onpick }: { project: string; onpick: (fill: ReturnType<typeof fillFrom>) => void } = $props();
 
-  const api = sourcesApi(app.client!);
+  const api = sourcesApi(app.requireClient());
   let data = $state<SourceItems | null>(null);
   let loading = $state(false);
   let error = $state('');

@@ -181,7 +181,7 @@
       for (const p of paths) {
         const name = basename(p);
         try {
-          done.push(await app.client!.uploadFile(p, ({ sent, total }) => total > PROGRESS_FROM && app.progress(t('upload.progress', { name }), sent / total)));
+          done.push(await app.requireClient().uploadFile(p, ({ sent, total }) => total > PROGRESS_FROM && app.progress(t('upload.progress', { name }), sent / total)));
         } catch (e) {
           failure = t('upload.failed', { name, error: message(e) });
         }
@@ -200,7 +200,7 @@
       for (const f of files) {
         const name = f.name || 'paste.png';
         try {
-          saved.push(await app.client!.savePaste(name, new Uint8Array(await f.arrayBuffer())));
+          saved.push(await app.requireClient().savePaste(name, new Uint8Array(await f.arrayBuffer())));
         } catch (e) {
           return app.notify(t('upload.pasteFailed', { name, error: message(e) }), 'error');
         }
@@ -314,7 +314,7 @@
         };
         applyFont();
         link = termLink({
-          open: (onData, onClose) => app.client!.attachTerm(termId, onData, onClose),
+          open: (onData, onClose) => app.requireClient().attachTerm(termId, onData, onClose),
           reset: () => {
             if (term) resetViewport(term);
             scrolledBack = false;

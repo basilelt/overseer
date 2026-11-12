@@ -49,14 +49,14 @@
     const paths: string[] = [];
     for (const f of files) {
       if (f.size > MAX_UPLOAD) throw new Error(t('upload.tooLarge', { name: f.name }));
-      paths.push(await app.client!.savePaste(f.name || 'paste.png', new Uint8Array(await f.arrayBuffer())));
+      paths.push(await app.requireClient().savePaste(f.name || 'paste.png', new Uint8Array(await f.arrayBuffer())));
     }
     if (!paths.length) {
       const clip = await native.clipboardImage();
       if (clip) paths.push(clip);
     }
     const done: string[] = [];
-    for (const p of paths) done.push((await app.client!.uploadFile(p)).path);
+    for (const p of paths) done.push((await app.requireClient().uploadFile(p)).path);
     return done;
   }
 

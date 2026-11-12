@@ -2,7 +2,7 @@ import { activityDelay } from './activity';
 import { FALLBACK_AGENTS, sessionsAvailable } from './agents';
 import { onPresence, presence } from './presence';
 import { api, type Api } from './api';
-import { DaemonError, getClient, type DaemonClient } from './client';
+import { DaemonError, getClient, isMockClient, type DaemonClient } from './client';
 import { groupItems, sidebarItems, stableItems, type SidebarItem } from './grouping';
 import { applyEvent, deepEqual, mergeFetched, touchedKey, type Snapshot, type Touched } from './reduce';
 import { rememberHost, rememberWorkspace, saveSettings, settings, workspaceFor } from './settings.svelte';
@@ -148,9 +148,13 @@ class AppState {
   /** @internal */
   touched: Touched = new Map();
 
-  get api(): Api {
+  requireClient(): DaemonClient {
     if (!this.client) throw new Error('not connected');
-    return api(this.client);
+    return this.client;
+  }
+
+  get api(): Api {
+    return api(this.requireClient());
   }
 
   async init() {
@@ -167,7 +171,7 @@ class AppState {
       lastDirect: settings.lastDirect,
       explicitlyDisconnected: settings.explicitlyDisconnected,
       savedHosts: hosts,
-      mock: this.client.kind === 'mock',
+      mock: isMockClient(this.client),
       secondary: !isMainWindow(),
     });
     if (!target) {

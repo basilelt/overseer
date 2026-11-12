@@ -1,8 +1,15 @@
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 import { api } from './api';
 import { DAEMON_ERRORS, MockDaemon } from './mock';
+
+interface Fs {
+  readFileSync(path: URL, enc: 'utf8'): string;
+}
+let fs: Fs;
+beforeAll(async () => {
+  const name: string = 'node:fs';
+  fs = await import(/* @vite-ignore */ name);
+});
 
 const setup = () => {
   const m = new MockDaemon({ live: false, delayMs: 0 });
@@ -15,7 +22,7 @@ describe('the strings the mock copies from the daemon', () => {
   it.each(Object.entries(DAEMON_ERRORS))('%s is still written in the Rust source', (_k, e) => {
     const text = typeof e.text === 'function' ? e.text('{id}') : e.text;
     const needle = literal(text);
-    const files = e.source.split(', ').map((f) => readFileSync(resolve(process.cwd(), '..', f), 'utf8'));
+    const files = e.source.split(', ').map((f) => fs.readFileSync(new URL(`../../../${f}`, import.meta.url), 'utf8'));
     expect(files.some((src) => src.includes(needle))).toBe(true);
   });
 });

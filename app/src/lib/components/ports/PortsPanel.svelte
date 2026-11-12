@@ -38,7 +38,7 @@
     }
     busy = true;
     try {
-      await app.client!.forwardPort(remotePort, localPort);
+      await app.requireClient().forwardPort(remotePort, localPort);
       remoteInput = localInput = '';
     } catch (e) {
       error = msg(e);
@@ -49,7 +49,7 @@
 
   async function stop(row: PortRow) {
     try {
-      await app.client!.unforwardPort(row.port);
+      await app.requireClient().unforwardPort(row.port);
     } catch (e) {
       app.notify(msg(e), 'error');
     }

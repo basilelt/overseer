@@ -18,6 +18,7 @@
   import AuthPrompt from '../overlays/AuthPrompt.svelte';
   import DeviceKey from './DeviceKey.svelte';
   import { t, type Key } from '../../i18n.svelte';
+  import { isMockClient } from '../../client';
   import { app } from '../../state.svelte';
   import { isBusy, steps } from '../../conn';
   import { exitDemo, isDemo, startDemo } from '../../demo';
@@ -68,9 +69,9 @@
   const hint = $derived(app.conn.phase === 'error' ? connectHint(app.conn.error) : null);
   const current = $derived(app.conn.target.kind === 'direct' ? app.conn.target.host : undefined);
   const editing = $derived(hosts.find((h) => h.id === form.id) ?? null);
-  const canClose = $derived(app.connected || app.client?.kind === 'mock');
+  const canClose = $derived(app.connected || isMockClient(app.client));
   const demo = isDemo();
-  const canDemo = $derived(!demo && !!app.client && app.client.kind !== 'mock');
+  const canDemo = $derived(!demo && !!app.client && !isMockClient(app.client));
 
   function go(next: Screen) {
     back = screen === 'form' ? 'list' : screen;

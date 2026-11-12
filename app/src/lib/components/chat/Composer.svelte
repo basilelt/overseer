@@ -218,7 +218,7 @@
       const name = basename(p);
       try {
         let big = false;
-        const r = await app.client!.uploadFile(p, ({ sent, total }) => total > PROGRESS_FROM && ((big = true), app.progress(t('upload.progress', { name }), sent / total)));
+        const r = await app.requireClient().uploadFile(p, ({ sent, total }) => total > PROGRESS_FROM && ((big = true), app.progress(t('upload.progress', { name }), sent / total)));
         requirePath(r?.path);
         done.push(r);
         if (big) app.notice({ kind: 'upload', title: t('upload.done', { name, path: uploadedPath(r) }) });
@@ -238,7 +238,7 @@
     for (const f of files) {
       const name = f.name || 'paste.png';
       try {
-        saved.push(await savePasted(app.client!, name, new Uint8Array(await f.arrayBuffer())));
+        saved.push(await savePasted(app.requireClient(), name, new Uint8Array(await f.arrayBuffer())));
       } catch (e) {
         return app.notify(t('upload.pasteFailed', { name, error: message(e) }), 'error');
       }

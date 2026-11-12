@@ -441,6 +441,17 @@ describe('refresh', () => {
     }
   });
 
+  it('hands out the connected client, or refuses with the standard error', () => {
+    const client = app.client;
+    expect(app.requireClient()).toBe(client);
+    app.client = null;
+    try {
+      expect(() => app.requireClient()).toThrow('not connected');
+    } finally {
+      app.client = client;
+    }
+  });
+
   it('builds workspaces from projects when the daemon has no workspaces API', async () => {
     m.override['GET /v1/workspaces'] = fail(404);
     await app.connect(local);

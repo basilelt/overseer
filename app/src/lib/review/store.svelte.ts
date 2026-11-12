@@ -86,8 +86,7 @@ export class ReviewStore {
   }
 
   get api(): ReviewApi {
-    if (!app.client) throw new Error('not connected');
-    return reviewApi(app.client);
+    return reviewApi(app.requireClient());
   }
 
   get worktree(): string | null {

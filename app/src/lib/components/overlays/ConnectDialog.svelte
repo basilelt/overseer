@@ -13,6 +13,7 @@
   import AuthPrompt from './AuthPrompt.svelte';
   import LocalNetworkPanel from './LocalNetworkPanel.svelte';
   import { t, type Key } from '../../i18n.svelte';
+  import { isMockClient } from '../../client';
   import { app } from '../../state.svelte';
   import { saveSettings, settings } from '../../settings.svelte';
   import { connectHow, preferredChoice, type ConnectHow, type HostChoice } from '../../host-choice';
@@ -26,7 +27,7 @@
   let { onclose }: { onclose: () => void } = $props();
 
   const demo = isDemo();
-  const canDemo = $derived(!demo && !!app.client && app.client.kind !== 'mock');
+  const canDemo = $derived(!demo && !!app.client && !isMockClient(app.client));
 
   interface Row {
     key: string;

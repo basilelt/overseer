@@ -5,6 +5,7 @@
   import { connLabel } from '../../conn-label';
   import { t } from '../../i18n.svelte';
   import { preload } from '../../idle';
+  import { isMockClient } from '../../client';
   import { app } from '../../state.svelte';
   import type { ConnPhase } from '../../types';
 
@@ -27,7 +28,7 @@
   const many = $derived(app.hosts.length > 1);
   const label = $derived(many ? t('hosts.count', { n: app.hosts.length }) : conn.target.kind === 'local' ? t('host.local') : conn.target.label);
   const phaseText = $derived(connLabel(conn));
-  const tip = $derived([phaseText, conn.error, app.client?.kind === 'mock' ? t('conn.mock') : ''].filter(Boolean).join(' · '));
+  const tip = $derived([phaseText, conn.error, isMockClient(app.client) ? t('conn.mock') : ''].filter(Boolean).join(' · '));
 
 </script>
 

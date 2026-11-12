@@ -68,8 +68,7 @@ export function whenTerm(title: string, known: Set<string>, then: (t: Term) => v
 }
 
 export async function startReview(pr: ReviewRequest): Promise<StartedReview | null> {
-  const client = app.client;
-  if (!client) throw new Error('not connected');
+  const client = app.requireClient();
   const agentId = pickAgent(app.agents, settings.defaultAgent);
   const agent = findAgent(app.agents, agentId);
   const same = agentId === settings.defaultAgent;

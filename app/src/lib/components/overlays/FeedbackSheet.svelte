@@ -12,6 +12,7 @@
   import { rt } from '../../record.svelte';
   import Modal from '../ui/Modal.svelte';
   import { api } from '../../api';
+  import { feedbackApi } from '../../feedback-api';
   import { app } from '../../state.svelte';
   import { isTauri, DaemonError } from '../../client';
   import { settings } from '../../settings.svelte';
@@ -199,7 +200,7 @@
     try {
       const cwd = findClone(app.projects, repo);
       const same = agentId === settings.defaultAgent;
-      const res = await api(client).startFeedback({
+      const res = await feedbackApi(client).startFeedback({
         agent: agentId,
         model: same ? settings.defaultModel || undefined : undefined,
         effort: same && agent.efforts?.includes(settings.defaultEffort) ? settings.defaultEffort : undefined,
@@ -229,7 +230,7 @@
     if (!client) return;
     busy = true;
     try {
-      const res = await api(client).directFeedback({ repo, title: fullTitle, body: sentBody, labels: labelsFor(kind), attachments });
+      const res = await feedbackApi(client).directFeedback({ repo, title: fullTitle, body: sentBody, labels: labelsFor(kind), attachments });
       feedback.showResult({ url: res.url, comment: false });
       if (res.attachWarning) app.notify(ft('attachPartial', { error: res.attachWarning }), 'error');
     } catch (e) {

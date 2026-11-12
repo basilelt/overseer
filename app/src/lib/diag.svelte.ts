@@ -1,4 +1,4 @@
-import { requestApi } from './api';
+import { api } from './api';
 import * as CMD from './tauri-commands';
 import { isTauri, DaemonError, type DaemonClient } from './client';
 import { type Sub, t } from './i18n.svelte';
@@ -32,7 +32,7 @@ export const diagBackend = {
 export async function fetchServerLog(client: DaemonClient | null, connected: boolean, tail = 300): Promise<ServerLog> {
   if (!client || !connected) return { status: 'offline' };
   try {
-    return { status: 'ok', tail: await requestApi(client).logs(tail) };
+    return { status: 'ok', tail: await api(client).logs(tail) };
   } catch (e) {
     if (e instanceof DaemonError && (e.status === 404 || e.status === 405)) return { status: 'unsupported' };
     return { status: 'error', message: errorText(e).message };

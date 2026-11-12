@@ -60,6 +60,14 @@ export function isTauri(): boolean {
   return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
 }
 
+export function mockSelected(): boolean {
+  return isDemo() || import.meta.env.VITE_MOCK === '1' || !isTauri();
+}
+
+export function isMockClient(c: Pick<DaemonClient, 'kind'> | null | undefined): boolean {
+  return c?.kind === 'mock';
+}
+
 let current: DaemonClient | undefined;
 
 async function demoClient(): Promise<DaemonClient> {
@@ -77,8 +85,7 @@ async function demoClient(): Promise<DaemonClient> {
 export async function getClient(): Promise<DaemonClient> {
   if (current) return current;
   if (isDemo()) return (current = await demoClient());
-  const mock = import.meta.env.VITE_MOCK === '1' || !isTauri();
-  current = mock ? new (await import('./mock')).MockDaemon() : new (await import('./tauri-client')).TauriDaemon();
+  current = mockSelected() ? new (await import('./mock')).MockDaemon() : new (await import('./tauri-client')).TauriDaemon();
   return current;
 }
 

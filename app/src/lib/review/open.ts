@@ -1,4 +1,5 @@
 import { app } from '../state.svelte';
+import { isMockClient } from '../client';
 import { allTabs, openInFocused, update, workspace } from '../workspace.svelte';
 import { isPhone } from '../mobile/ui.svelte';
 import { beside } from './beside.svelte';
@@ -111,7 +112,7 @@ export function reviewTargetFor(item: { lineId?: string; taskId?: string } | nul
 
 export function openReviewFromHash() {
   const hash = globalThis.location?.hash ?? '';
-  if (app.client?.kind !== 'mock' || !hash.startsWith('#review')) return;
+  if (!isMockClient(app.client) || !hash.startsWith('#review')) return;
   const target = hash.startsWith('#review=') ? parseReviewKey(decodeURIComponent(hash.slice(8))) : hash === '#review' ? reviewTargetFor(null) : null;
   if (hash === '#review-beside') {
     app.panelOpen = false;
