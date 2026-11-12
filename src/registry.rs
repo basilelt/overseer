@@ -207,6 +207,63 @@ const ADDED_COLUMNS: &[(&str, &str, &str)] = &[
     ("tasks", "task_type", "TEXT"),
 ];
 
+pub const fn col(cols: &[&str], name: &str) -> usize {
+    let mut i = 0;
+    while i < cols.len() {
+        let (a, b) = (cols[i].as_bytes(), name.as_bytes());
+        if a.len() == b.len() {
+            let mut j = 0;
+            while j < a.len() && a[j] == b[j] {
+                j += 1;
+            }
+            if j == a.len() {
+                return i;
+            }
+        }
+        i += 1;
+    }
+    panic!("unknown column")
+}
+
+macro_rules! columns {
+    ($list:ident, $select:ident = $first:ident $(, $c:ident)* $(,)?) => {
+        const $list: &[&str] = &[stringify!($first) $(, stringify!($c))*];
+        const $select: &str = concat!(stringify!($first) $(, ", ", stringify!($c))*);
+    };
+}
+
+macro_rules! col_at {
+    ($list:ident, $name:literal) => {
+        const { $crate::registry::col($list, $name) }
+    };
+}
+
+macro_rules! insert_row {
+    ($conn:expr, $verb:literal, $table:literal, $tail:literal; $first:ident = $fv:expr $(, $c:ident = $v:expr)* $(,)?) => {
+        $conn.execute(
+            concat!($verb, " ", $table, " (", stringify!($first) $(, ", ", stringify!($c))*,
+                ") VALUES (:", stringify!($first) $(, ", :", stringify!($c))*, ")", $tail),
+            &[(concat!(":", stringify!($first)), &$fv as &dyn rusqlite::ToSql)
+                $(, (concat!(":", stringify!($c)), &$v as &dyn rusqlite::ToSql))*],
+        )
+    };
+}
+
+macro_rules! update_row {
+    ($conn:expr, $table:literal, $key:ident = $kv:expr; $first:ident = $fv:expr $(, $c:ident = $v:expr)* $(,)?) => {
+        $conn.execute(
+            concat!("UPDATE ", $table, " SET ", stringify!($first), " = :", stringify!($first)
+                $(, ", ", stringify!($c), " = :", stringify!($c))*,
+                " WHERE ", stringify!($key), " = :", stringify!($key)),
+            &[(concat!(":", stringify!($key)), &$kv as &dyn rusqlite::ToSql),
+                (concat!(":", stringify!($first)), &$fv as &dyn rusqlite::ToSql)
+                $(, (concat!(":", stringify!($c)), &$v as &dyn rusqlite::ToSql))*],
+        )
+    };
+}
+
+pub(crate) use {col_at, columns, insert_row, update_row};
+
 pub fn sql<T>(r: rusqlite::Result<T>) -> Result<T, (u16, String)> {
     r.map_err(|e| (500, e.to_string()))
 }
@@ -889,5 +946,42 @@ mod tests {
         drop(reg);
         assert!(Registry::open(&dir).is_ok());
         std::fs::remove_dir_all(dir).unwrap();
+    }
+}
+
+#[cfg(test)]
+mod column_tests {
+    use super::*;
+
+    columns!(COLUMNS, SELECT = id, name, rank);
+
+    #[test]
+    fn column_list_select_and_positions_come_from_one_list() {
+        assert_eq!(SELECT, "id, name, rank");
+        assert_eq!(col_at!(COLUMNS, "id"), 0);
+        assert_eq!(col_at!(COLUMNS, "rank"), 2);
+        assert_eq!(col(COLUMNS, "name"), 1);
+    }
+
+    #[test]
+    fn insert_and_update_bind_each_column_by_name() {
+        let c = Connection::open_in_memory().unwrap();
+        c.execute_batch("CREATE TABLE t (id TEXT PRIMARY KEY, name TEXT, rank REAL)")
+            .unwrap();
+        let n =
+            insert_row!(c, "INSERT INTO", "t", ""; rank = 2.5, id = "a", name = Some("x")).unwrap();
+        assert_eq!(n, 1);
+        let dup = insert_row!(c, "INSERT INTO", "t", " ON CONFLICT DO NOTHING"; id = "a", name = "y", rank = 1.0).unwrap();
+        assert_eq!(dup, 0);
+        update_row!(c, "t", id = "a"; name = None::<String>, rank = 9.0).unwrap();
+        let got: (Option<String>, f64) = c
+            .query_row(&format!("SELECT {SELECT} FROM t"), [], |r| {
+                Ok((
+                    r.get(col_at!(COLUMNS, "name"))?,
+                    r.get(col_at!(COLUMNS, "rank"))?,
+                ))
+            })
+            .unwrap();
+        assert_eq!(got, (None, 9.0));
     }
 }

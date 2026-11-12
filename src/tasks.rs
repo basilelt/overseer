@@ -1,7 +1,7 @@
 use crate::board::publish;
 use crate::git::git_out;
 use crate::git::Git;
-use crate::registry::{db, sql, Registry};
+use crate::registry::{col_at, columns, db, insert_row, sql, update_row, Registry};
 use crate::status::{self, COMPLETED, IN_PROGRESS, MERGED, PENDING};
 use crate::task_transition::{self, Origin};
 use crate::term::{self, Spec, Term};
@@ -15,7 +15,44 @@ use std::sync::{Arc, Mutex};
 
 pub(crate) type Res<T> = Result<T, (u16, String)>;
 
-const COLS: &str = "id, number, title, description, project, status, agent, model, effort, ticket_key, line_id, term_id, branch, worktree_path, progress, error, started_ms, created_ms, updated_ms, rank, origin, manual_status, session_state, badge, profile, title_source, urgent, important, parent_id, depends_on, inherit_branch, quorum, votes, cost, task_type";
+columns!(
+    COLUMNS,
+    COLS = id,
+    number,
+    title,
+    description,
+    project,
+    status,
+    agent,
+    model,
+    effort,
+    ticket_key,
+    line_id,
+    term_id,
+    branch,
+    worktree_path,
+    progress,
+    error,
+    started_ms,
+    created_ms,
+    updated_ms,
+    rank,
+    origin,
+    manual_status,
+    session_state,
+    badge,
+    profile,
+    title_source,
+    urgent,
+    important,
+    parent_id,
+    depends_on,
+    inherit_branch,
+    quorum,
+    votes,
+    cost,
+    task_type
+);
 
 pub const TITLE_USER: &str = "user";
 pub const TITLE_AUTO: &str = "auto";
@@ -62,49 +99,57 @@ pub struct Task {
     pub task_type: Option<String>,
 }
 
+macro_rules! at {
+    ($n:literal) => {
+        col_at!(COLUMNS, $n)
+    };
+}
+
 fn row(r: &Row) -> rusqlite::Result<Task> {
-    let created: i64 = r.get(17)?;
+    let created: i64 = r.get(at!("created_ms"))?;
     Ok(Task {
-        id: r.get(0)?,
-        number: r.get(1)?,
-        title: r.get(2)?,
-        description: r.get(3)?,
-        project: r.get(4)?,
-        status: r.get(5)?,
-        agent: r.get(6)?,
-        model: r.get(7)?,
-        effort: r.get(8)?,
-        ticket_key: r.get(9)?,
-        line_id: r.get(10)?,
-        term_id: r.get(11)?,
-        branch: r.get(12)?,
-        worktree_path: r.get(13)?,
+        id: r.get(at!("id"))?,
+        number: r.get(at!("number"))?,
+        title: r.get(at!("title"))?,
+        description: r.get(at!("description"))?,
+        project: r.get(at!("project"))?,
+        status: r.get(at!("status"))?,
+        agent: r.get(at!("agent"))?,
+        model: r.get(at!("model"))?,
+        effort: r.get(at!("effort"))?,
+        ticket_key: r.get(at!("ticket_key"))?,
+        line_id: r.get(at!("line_id"))?,
+        term_id: r.get(at!("term_id"))?,
+        branch: r.get(at!("branch"))?,
+        worktree_path: r.get(at!("worktree_path"))?,
         progress: r
-            .get::<_, Option<String>>(14)?
+            .get::<_, Option<String>>(at!("progress"))?
             .and_then(|s| serde_json::from_str(&s).ok()),
-        error: r.get(15)?,
-        started_ms: r.get(16)?,
+        error: r.get(at!("error"))?,
+        started_ms: r.get(at!("started_ms"))?,
         created_ms: created,
-        updated_ms: r.get(18)?,
-        rank: r.get::<_, Option<f64>>(19)?.unwrap_or(created as f64),
-        origin: r.get(20)?,
-        manual_status: r.get(21)?,
-        session_state: r.get(22)?,
-        badge: r.get(23)?,
-        profile: r.get(24)?,
-        title_source: r.get(25)?,
-        urgent: r.get(26)?,
-        important: r.get(27)?,
-        parent_id: r.get(28)?,
+        updated_ms: r.get(at!("updated_ms"))?,
+        rank: r
+            .get::<_, Option<f64>>(at!("rank"))?
+            .unwrap_or(created as f64),
+        origin: r.get(at!("origin"))?,
+        manual_status: r.get(at!("manual_status"))?,
+        session_state: r.get(at!("session_state"))?,
+        badge: r.get(at!("badge"))?,
+        profile: r.get(at!("profile"))?,
+        title_source: r.get(at!("title_source"))?,
+        urgent: r.get(at!("urgent"))?,
+        important: r.get(at!("important"))?,
+        parent_id: r.get(at!("parent_id"))?,
         depends_on: r
-            .get::<_, Option<String>>(29)?
+            .get::<_, Option<String>>(at!("depends_on"))?
             .and_then(|s| serde_json::from_str(&s).ok())
             .unwrap_or_default(),
-        inherit_branch: r.get(30)?,
-        quorum: json_col(r, 31)?,
-        votes: json_col(r, 32)?,
-        cost: json_col(r, 33)?,
-        task_type: r.get(34)?,
+        inherit_branch: r.get(at!("inherit_branch"))?,
+        quorum: json_col(r, at!("quorum"))?,
+        votes: json_col(r, at!("votes"))?,
+        cost: json_col(r, at!("cost"))?,
+        task_type: r.get(at!("task_type"))?,
     })
 }
 
@@ -348,43 +393,36 @@ pub(crate) fn save(ctx: &Ctx, reg: &Registry, t: &mut Task) -> Res<()> {
 
 pub(crate) fn store(reg: &Registry, t: &mut Task, station: &str) -> Res<()> {
     t.updated_ms = crate::procs::now_ms();
-    sql(reg.conn.execute(
-        "UPDATE tasks SET title = ?2, description = ?3, status = ?4, agent = ?5, model = ?6, effort = ?7,
-           ticket_key = ?8, line_id = ?9, term_id = ?10, branch = ?11, worktree_path = ?12, progress = ?13,
-           error = ?14, started_ms = ?15, updated_ms = ?16, rank = ?17, manual_status = ?18,
-           session_state = ?19, badge = ?20, profile = ?21, title_source = ?22, urgent = ?23, important = ?24,
-           depends_on = ?25, inherit_branch = ?26, quorum = ?27, votes = ?28, task_type = ?29 WHERE id = ?1",
-        params![
-            t.id,
-            t.title,
-            t.description,
-            t.status,
-            t.agent,
-            t.model,
-            t.effort,
-            t.ticket_key,
-            t.line_id,
-            t.term_id,
-            t.branch,
-            t.worktree_path,
-            t.progress.as_ref().map(Value::to_string),
-            t.error,
-            t.started_ms,
-            t.updated_ms,
-            t.rank,
-            t.manual_status,
-            t.session_state,
-            t.badge,
-            t.profile,
-            t.title_source,
-            t.urgent,
-            t.important,
-            deps_json(&t.depends_on),
-            t.inherit_branch,
-            t.quorum.as_ref().map(Value::to_string),
-            t.votes.as_ref().map(Value::to_string),
-            t.task_type,
-        ],
+    sql(update_row!(
+        reg.conn, "tasks", id = t.id;
+        title = t.title,
+        description = t.description,
+        status = t.status,
+        agent = t.agent,
+        model = t.model,
+        effort = t.effort,
+        ticket_key = t.ticket_key,
+        line_id = t.line_id,
+        term_id = t.term_id,
+        branch = t.branch,
+        worktree_path = t.worktree_path,
+        progress = t.progress.as_ref().map(Value::to_string),
+        error = t.error,
+        started_ms = t.started_ms,
+        updated_ms = t.updated_ms,
+        rank = t.rank,
+        manual_status = t.manual_status,
+        session_state = t.session_state,
+        badge = t.badge,
+        profile = t.profile,
+        title_source = t.title_source,
+        urgent = t.urgent,
+        important = t.important,
+        depends_on = deps_json(&t.depends_on),
+        inherit_branch = t.inherit_branch,
+        quorum = t.quorum.as_ref().map(Value::to_string),
+        votes = t.votes.as_ref().map(Value::to_string),
+        task_type = t.task_type,
     ))?;
     publish("task.updated", json!({"task": t.to_json(station)}));
     Ok(())
@@ -708,43 +746,38 @@ pub(crate) fn insert(reg: &Registry, t: &mut Task, station: &str) -> Res<bool> {
         [&t.project],
         |r| r.get(0),
     ))?;
-    let n = sql(tx.execute(
-        "INSERT INTO tasks (id, number, title, description, project, status, agent, model, effort, ticket_key,
-           line_id, branch, worktree_path, progress, created_ms, updated_ms, rank, origin, session_state, badge, profile, title_source, urgent, important, parent_id, depends_on, inherit_branch, quorum, votes, task_type)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29, ?30)
-         ON CONFLICT DO NOTHING",
-        params![
-            t.id,
-            t.number,
-            t.title,
-            t.description,
-            t.project,
-            t.status,
-            t.agent,
-            t.model,
-            t.effort,
-            t.ticket_key,
-            t.line_id,
-            t.branch,
-            t.worktree_path,
-            t.progress.as_ref().map(Value::to_string),
-            t.created_ms,
-            t.updated_ms,
-            t.rank,
-            t.origin,
-            t.session_state,
-            t.badge,
-            t.profile,
-            t.title_source,
-            t.urgent,
-            t.important,
-            t.parent_id,
-            deps_json(&t.depends_on),
-            t.inherit_branch,
-            t.quorum.as_ref().map(Value::to_string),
-            t.votes.as_ref().map(Value::to_string),
-            t.task_type,
-        ],
+    let n = sql(insert_row!(
+        tx, "INSERT INTO", "tasks", " ON CONFLICT DO NOTHING";
+        id = t.id,
+        number = t.number,
+        title = t.title,
+        description = t.description,
+        project = t.project,
+        status = t.status,
+        agent = t.agent,
+        model = t.model,
+        effort = t.effort,
+        ticket_key = t.ticket_key,
+        line_id = t.line_id,
+        branch = t.branch,
+        worktree_path = t.worktree_path,
+        progress = t.progress.as_ref().map(Value::to_string),
+        created_ms = t.created_ms,
+        updated_ms = t.updated_ms,
+        rank = t.rank,
+        origin = t.origin,
+        session_state = t.session_state,
+        badge = t.badge,
+        profile = t.profile,
+        title_source = t.title_source,
+        urgent = t.urgent,
+        important = t.important,
+        parent_id = t.parent_id,
+        depends_on = deps_json(&t.depends_on),
+        inherit_branch = t.inherit_branch,
+        quorum = t.quorum.as_ref().map(Value::to_string),
+        votes = t.votes.as_ref().map(Value::to_string),
+        task_type = t.task_type,
     ))?;
     if n == 0 {
         return Ok(false);
