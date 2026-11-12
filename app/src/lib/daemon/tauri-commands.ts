@@ -73,3 +73,4 @@ export const mobileClipboardImage = 'mobile_clipboard_image';
 
 export const clipboardWriteText = 'plugin:clipboard-manager|write_text';
 export const clipboardReadText = 'plugin:clipboard-manager|read_text';
+export const clipboardReadImage = 'plugin:clipboard-manager|read_image';

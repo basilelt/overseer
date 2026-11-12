@@ -42,7 +42,7 @@ describe('Tauri command table', () => {
   });
 
   it('keeps plugin commands out of the handler table', () => {
-    expect(plugin).toHaveLength(2);
+    expect(plugin).toHaveLength(3);
     expect(plugin.every((n) => !registered.has(n))).toBe(true);
   });
 

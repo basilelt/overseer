@@ -37,6 +37,7 @@
   import { pathRanges } from '../../terminal/termlinks';
   import { scheduler, type PaintTarget } from '../../terminal/termrender';
   import { finishSelectionOnInterruption, routeCopies } from '../../terminal/selection-copy';
+  import { readClip } from '../../terminal/clipboard';
   import { guardAutoScroll } from '../../terminal/selection-scroll';
   import { settle } from '../../settle';
   import { openFile } from '../../preview';
@@ -511,13 +512,13 @@
 
   async function paste() {
     if (await pasteImage()) return;
-    try {
-      const text = (await app.client?.pasteText()) ?? '';
-      if (!text) return app.notify(t('mobile.term.pasteFailed'));
-      write(term?.hasBracketedPaste() ? `\x1b[200~${text}\x1b[201~` : text);
-    } catch {
-      app.notify(t('mobile.term.pasteFailed'));
-    }
+    const clip = await readClip({
+      text: async () => (await app.client?.pasteText()) ?? '',
+      image: async () => (await import('../../terminal/clipboard-image')).clipboardImage(),
+    });
+    if (clip.kind === 'text') write(term?.hasBracketedPaste() ? `\x1b[200~${clip.text}\x1b[201~` : clip.text);
+    else if (clip.kind === 'image') pickFiles?.([clip.file]);
+    else app.notify(t('mobile.term.pasteFailed'));
   }
 
   let finding = $state(false);

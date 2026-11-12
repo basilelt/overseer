@@ -126,6 +126,7 @@
     app_platform: () => { const os = new URLSearchParams(location.search).get('qaos'); return os ? { os, mobile: os === 'android' || os === 'ios' } : { os: 'linux', mobile: false }; },
     'plugin:clipboard-manager|write_text': (a) => { window.__qaClip = a.text; return null; },
     'plugin:clipboard-manager|read_text': () => window.__qaClip ?? '',
+    'plugin:clipboard-manager|read_image': () => { throw 'content not available'; },
     browsers_list: () => [{ id: 'qa-browser', name: 'QA Browser' }],
     browser_open_with: (a) => { (window.__qaOpened ??= []).push({ via: a.id, url: a.url }); return null; },
     open_external: (a) => { (window.__qaOpened ??= []).push({ via: 'system', url: a.url }); return null; },
