@@ -12,7 +12,7 @@
   import { app } from '../../state.svelte';
   import { settings } from '../../settings/settings.svelte';
   import { chipLabel, costIndex, formatIndex, NONE, PRICES_AS_OF, TASK_TYPES } from '../../profiles/profiles';
-  import { clean, slugId, validateProfile } from '../../profiles/profile-edit';
+  import { clean, savePayload, slugId, validateProfile } from '../../profiles/profile-edit';
   import type { AgentInfo, Effort, FileEdit, Profile, ProfileAgent, ProfileSupport, SubagentDef, TaskType } from '../../types';
 
   let { onclose, scope = null }: { onclose: () => void; scope?: string | null } = $props();
@@ -89,15 +89,7 @@
     if (!store || allErrors.length) return;
     busy = true;
     try {
-      const profiles = draft.map((p) => ({ id: p.id, name: p.name.trim(), agents: Object.fromEntries(Object.entries(p.agents).map(([k, v]) => [k, clean(v)])) }));
-      const ids = new Set([...store.profiles.filter((p) => p.builtin).map((p) => p.id), ...profiles.map((p) => p.id)]);
-      const known = (id: string) => !id || id === NONE || ids.has(id);
-      await app.saveProfiles({
-        profiles,
-        default: known(store.default) ? store.default : '',
-        scopes: Object.fromEntries(Object.entries(store.scopes).filter(([, id]) => known(id))),
-        types: Object.fromEntries(Object.entries(store.types ?? {}).filter(([, id]) => known(id))),
-      });
+      await app.saveProfiles(savePayload(store, draft));
       app.notify(t('profile.saved'));
     } catch (e) {
       app.notify(String((e as Error)?.message ?? e), 'error');

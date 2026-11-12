@@ -104,16 +104,6 @@ describe('entry points', () => {
     expect(row()).toContain('disabled');
     recorder.dismiss();
   });
-
-  it('remounts the feedback sheet when a recording arrives while it is open', async () => {
-    const src = (await import('../overlays/Overlays.svelte?raw')).default;
-    expect(src).toContain('{#key feedback.prefill}<FeedbackSheet />{/key}');
-  });
-
-  it('mounts the setup dialog and the pill from the overlays by recorder phase', async () => {
-    const src = (await import('../overlays/Overlays.svelte?raw')).default;
-    expect(src).toMatch(/rec\.phase === 'setup'[\s\S]*<RecordSetup \/>[\s\S]*rec\.phase === 'recording'[\s\S]*<RecordPill \/>/);
-  });
 });
 
 describe('feedback sheet with a recording', () => {

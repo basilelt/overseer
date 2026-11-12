@@ -1,5 +1,5 @@
 import { NONE } from './profiles';
-import type { AgentInfo, Profile, ProfileAgent, ProfileSupport } from '../types';
+import type { AgentInfo, Profile, ProfileAgent, ProfilesStore, ProfileSupport } from '../types';
 
 const MODEL_RE = /^[A-Za-z0-9._:/[\]@-]{0,128}$/;
 const NAME_RE = /^[A-Za-z0-9._-]{1,64}$/;
@@ -71,4 +71,16 @@ export function validateProfile(p: Profile, support: Record<string, ProfileSuppo
     }
   }
   return errs;
+}
+
+export function savePayload(store: ProfilesStore, draft: Profile[]): Pick<ProfilesStore, 'profiles' | 'default' | 'scopes' | 'types'> {
+  const profiles = draft.map((p) => ({ id: p.id, name: p.name.trim(), agents: Object.fromEntries(Object.entries(p.agents).map(([k, v]) => [k, clean(v)])) }));
+  const ids = new Set([...store.profiles.filter((p) => p.builtin).map((p) => p.id), ...profiles.map((p) => p.id)]);
+  const known = (id: string) => !id || id === NONE || ids.has(id);
+  return {
+    profiles,
+    default: known(store.default) ? store.default : '',
+    scopes: Object.fromEntries(Object.entries(store.scopes).filter(([, id]) => known(id))),
+    types: Object.fromEntries(Object.entries(store.types ?? {}).filter(([, id]) => known(id))),
+  };
 }

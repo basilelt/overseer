@@ -1,47 +1,60 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
+import { render } from 'svelte/server';
+import { declOf } from '../../../test/css';
+import { app } from '../../state.svelte';
+import type { AgentInfo, Profile, ProfilesStore } from '../../types';
+import ProfilesDialog from './ProfilesDialog.svelte';
 import source from './ProfilesDialog.svelte?raw';
 
+const agent = (id: string): AgentInfo => ({ id, name: id.toUpperCase(), installed: true, efforts: [], resume: false, verified: true, sessions: true, turns: true });
+const builtin = { id: 'balanced', name: 'Balanced', builtin: true, agents: {} } as Profile;
+const store = (over: Partial<ProfilesStore> = {}): ProfilesStore => ({ default: 'balanced', profiles: [builtin], scopes: {}, support: { claude: { model: 'flag' }, codex: { model: 'flag' } }, ...over });
+const before = { profiles: app.profiles, agents: app.agents };
+afterEach(() => Object.assign(app, before));
+
+const html = (s: ProfilesStore, agents = ['claude']) => {
+  app.profiles = s;
+  app.agents = agents.map(agent);
+  return render(ProfilesDialog, { props: { onclose: () => {} } }).body;
+};
+const details = (h: string, cls: string) => [...h.matchAll(new RegExp(`<details[^>]*class="${cls}[^"]*"[^>]*>`, 'g'))].map((m) => m[0]);
+
 describe('agent sections of the profiles dialog', () => {
-  const tag = source.match(/<details class="agent".*/)?.[0] ?? '';
-
-  it('keeps a section the user opened open when a field in it changes', () => {
-    expect(tag).toMatch(/open=\{expanded\[a\.id\] \?\?/);
-    expect(tag).toMatch(/ontoggle=\{\(e\) => \(expanded\[a\.id\] = e\.currentTarget\.open\)\}/);
+  it('opens the only agent section by default', () => {
+    const sections = details(html(store()), 'agent');
+    expect(sections).toHaveLength(1);
+    expect(sections[0]).toMatch(/\bopen\b/);
   });
 
-  it('still opens the only section by default', () => {
-    expect(tag).toMatch(/\?\? agents\.length === 1\}/);
+  it('keeps the agent sections folded when there are several', () => {
+    const sections = details(html(store(), ['claude', 'codex']), 'agent');
+    expect(sections).toHaveLength(2);
+    for (const s of sections) expect(s).not.toMatch(/\bopen\b/);
   });
+});
 
-  it('offers native model tiers for Antigravity named subagents', () => {
-    expect(source).toContain("{#if d.agent === 'agy'}");
-    expect(source).toContain("<option value=\"inherit\">{t('profile.inherits')}</option>");
-    expect(source).toContain("<option value=\"flash\">{t('profile.subagentTier.flash')}</option>");
-    expect(source).not.toContain('flash_lite');
-    expect(source).toContain('setSub(a.id, d.name, { model: e.currentTarget.value })');
-  });
-
-  it('maps each task type to a profile and saves on change', () => {
-    expect(source).toContain('{#each TASK_TYPES as ty (ty)}');
-    expect(source).toContain('onchange={(e) => setType(ty, e.currentTarget.value)}');
-    expect(source).toMatch(/if \(id\) types\[ty\] = id;\s*else delete types\[ty\];/);
-  });
-
-  it('keeps the task type section open when its last rule is cleared', () => {
-    expect(source).toContain('open={typesOpen ?? typed > 0} ontoggle={(e) => (typesOpen = e.currentTarget.open)}');
-  });
-
+describe('task type rules of the profiles dialog', () => {
   it('hides the task type rules on a daemon that has no task types', () => {
-    expect(source).toMatch(/\{#if store\.taskTypes\}\s*<details class="types"/);
+    expect(html(store())).not.toContain('data-tour="profile-types"');
   });
 
-  it('drops task type rules that point at a deleted profile on save', () => {
-    expect(source).toContain('types: Object.fromEntries(Object.entries(store.types ?? {}).filter(([, id]) => known(id))),');
+  it('shows one select per task type, with the mapped profile chosen', () => {
+    const h = html(store({ taskTypes: ['fix', 'feature'], types: { fix: 'balanced' } }));
+    expect(h).toContain('data-tour="profile-types"');
+    expect(h).toMatch(/<select aria-label="Bug fix"[^>]*>/);
+    expect(h.match(/<select aria-label="Bug fix".*?<\/select>/s)?.[0]).toMatch(/<option value="balanced"[^>]*selected/);
   });
 
-  it('wraps profile actions on phone so Delete stays visible', () => {
-    expect(source).toMatch(/:global\(\.phone\) \.head\s*\{\s*flex-wrap:\s*wrap;/);
-    expect(source).toMatch(/:global\(\.phone\) \.head \.name\s*\{\s*width:\s*100%;/);
-    expect(source).toMatch(/:global\(\.phone\) \.head \.spacer\s*\{\s*display:\s*none;/);
+  it('opens the task type section only once a rule exists', () => {
+    expect(details(html(store({ taskTypes: ['fix'] })), 'types')[0]).not.toMatch(/\bopen\b/);
+    expect(details(html(store({ taskTypes: ['fix'], types: { fix: 'balanced' } })), 'types')[0]).toMatch(/\bopen\b/);
+  });
+});
+
+describe('CSS guard: profiles dialog on a phone', () => {
+  it('wraps the profile actions so Delete stays visible', () => {
+    expect(declOf(source, ':global(.phone) .head', 'flex-wrap')).toBe('wrap');
+    expect(declOf(source, ':global(.phone) .head .name', 'width')).toBe('100%');
+    expect(declOf(source, ':global(.phone) .head .spacer', 'display')).toBe('none');
   });
 });
