@@ -1435,6 +1435,43 @@ fn scan_now(ctx: &Ctx) -> Result<Vec<Line>, String> {
 
 pub const RECENT_MS: i64 = 7 * 24 * 3600 * 1000;
 
+#[derive(Default)]
+pub struct LineFilter {
+    all: bool,
+    ticket: Option<String>,
+    repo: Option<String>,
+    state: Option<String>,
+}
+
+impl LineFilter {
+    pub fn new(
+        all: bool,
+        ticket: Option<&str>,
+        repo: Option<&str>,
+        state: Option<&str>,
+    ) -> LineFilter {
+        LineFilter {
+            all,
+            ticket: ticket.map(|t| util::ticket(t).unwrap_or_else(|| t.to_ascii_uppercase())),
+            repo: repo.map(str::to_ascii_lowercase),
+            state: state.map(str::to_string),
+        }
+    }
+
+    pub fn matches(&self, l: &Line, now_ms: i64) -> bool {
+        (self.all || l.recent(now_ms))
+            && self
+                .ticket
+                .as_ref()
+                .is_none_or(|t| l.ticket.as_ref() == Some(t))
+            && self
+                .repo
+                .as_ref()
+                .is_none_or(|r| l.repo.to_ascii_lowercase().contains(r.as_str()))
+            && self.state.as_ref().is_none_or(|s| l.state == *s)
+    }
+}
+
 impl Line {
     pub fn registry_key(&self) -> &str {
         if self.key.is_empty() {

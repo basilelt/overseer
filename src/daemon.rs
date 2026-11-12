@@ -968,19 +968,15 @@ pub fn handle(ctx: &Ctx, r: &Request) -> (u16, Value) {
         },
         ("GET", ["v1", "lines"]) => match crate::current_lines(ctx) {
             Ok(lines) => {
-                let all = q(r, "all") == Some("true");
-                let tk = q(r, "ticketKey").and_then(ticket);
-                let repo = q(r, "repo").map(str::to_ascii_lowercase);
-                let state = q(r, "state");
+                let filter = crate::LineFilter::new(
+                    q(r, "all") == Some("true"),
+                    q(r, "ticketKey"),
+                    q(r, "repo"),
+                    q(r, "state"),
+                );
                 let v: Vec<Value> = lines
                     .iter()
-                    .filter(|l| all || l.recent(ctx.now_ms))
-                    .filter(|l| tk.is_none() || l.ticket == tk)
-                    .filter(|l| {
-                        repo.as_ref()
-                            .is_none_or(|x| l.repo.to_ascii_lowercase().contains(x))
-                    })
-                    .filter(|l| state.is_none_or(|s| l.state == s))
+                    .filter(|l| filter.matches(l, ctx.now_ms))
                     .map(|l| l.to_json())
                     .collect();
                 (200, Value::Array(v))
@@ -1868,6 +1864,26 @@ pub fn call(method: &str, target: &str, body: Option<&Value>) -> Result<(u16, Va
 mod tests {
     use super::*;
 
+    const PINNED: [(&str, &str, bool); 17] = [
+        ("POST", "/v1/lines/x/hold", false),
+        ("DELETE", "/v1/lines/x/hold", false),
+        ("POST", "/v1/lines/x/close", false),
+        ("POST", "/v1/lines/x/resume", false),
+        ("POST", "/v1/lines/x/link", false),
+        ("PUT", "/v1/lines/x/pin", true),
+        ("PUT", "/v1/lines/x/title", true),
+        ("PUT", "/v1/lines/x/workspace", true),
+        ("POST", "/v1/terms", false),
+        ("POST", "/v1/terms/x/kill", false),
+        ("PUT", "/v1/terms/x/title", true),
+        ("PUT", "/v1/terms/x/workspace", true),
+        ("DELETE", "/v1/terms/x", false),
+        ("DELETE", "/v1/workspaces/w", false),
+        ("POST", "/v1/tasks/t/start", false),
+        ("POST", "/v1/tasks/organize", false),
+        ("POST", "/v1/import/switchboard", false),
+    ];
+
     #[test]
     fn windows_daemon_gets_a_hidden_console_its_children_inherit() {
         assert_ne!(WINDOWS_DETACH_FLAGS & 0x0800_0000, 0);
@@ -1969,24 +1985,15 @@ mod tests {
 
     #[test]
     fn successful_writes_ask_for_a_rescan() {
-        assert!(changes_lines("POST", "/v1/lines/x/hold", 200));
-        assert!(changes_lines("POST", "/v1/terms", 201));
-        assert!(changes_lines("PUT", "/v1/lines/x/pin", 200));
-        assert!(changes_lines("PUT", "/v1/lines/x/title", 200));
-        assert!(changes_lines("PUT", "/v1/lines/x/workspace", 200));
-        assert!(changes_lines("PUT", "/v1/terms/x/title", 200));
-        assert!(changes_lines("PUT", "/v1/terms/x/workspace", 200));
-        assert!(settles_lines("PUT", "/v1/lines/x/pin"));
-        assert!(settles_lines("PUT", "/v1/terms/x/title"));
-        assert!(!settles_lines("POST", "/v1/terms"));
-        assert!(!settles_lines("PUT", "/v1/lines/x/hold"));
-        assert!(changes_lines("DELETE", "/v1/workspaces/w", 200));
-        assert!(!changes_lines("POST", "/v1/terms", 400));
+        assert!(changes_lines("POST", "/v1/terms", 400) == false);
         assert!(!changes_lines("GET", "/v1/lines", 200));
         assert!(!changes_lines("POST", "/v1/hook-events", 202));
         assert!(!changes_lines("POST", "/v1/terms/t1/resize", 200));
         assert!(!changes_lines("POST", "/v1/lines/x/keys", 200));
-        assert!(changes_lines("POST", "/v1/tasks/t/start", 200));
+        for (m, p, settles) in PINNED {
+            assert!(changes_lines(m, p, 200), "{m} {p}");
+            assert_eq!(settles_lines(m, p), settles, "{m} {p}");
+        }
     }
 
     #[test]
