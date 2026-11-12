@@ -590,3 +590,27 @@ mod claude_argv_tests {
         let _ = std::fs::remove_dir_all(dir);
     }
 }
+
+#[cfg(test)]
+mod slug_tests {
+    use super::slug;
+
+    #[test]
+    fn keeps_dots_and_underscores_and_trims_edges() {
+        let table = [
+            ("feature/AS-77_x", "feature-AS-77_x"),
+            ("a..b", "a..b"),
+            ("-lead-and-trail-", "lead-and-trail"),
+            ("..hidden.", "hidden"),
+            ("a//b  c", "a--b--c"),
+            ("Été", "t"),
+            ("é", ""),
+            ("", ""),
+            ("---", ""),
+            ("my_repo.git", "my_repo.git"),
+        ];
+        for (i, o) in table {
+            assert_eq!(slug(i), o, "{i:?}");
+        }
+    }
+}
