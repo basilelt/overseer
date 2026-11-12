@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { eventTarget } from '../../test/fake-events';
 
 const KEY = 'overseer.settings';
 
@@ -15,12 +16,12 @@ function storage(initial: Record<string, string> = {}) {
 
 async function load(store: ReturnType<typeof storage>) {
   vi.resetModules();
-  const listeners = new Map<string, (e: Event) => void>();
+  const listeners = eventTarget();
   vi.stubGlobal('localStorage', store);
   vi.stubGlobal('matchMedia', () => ({ matches: true, addEventListener: () => {} }));
-  vi.stubGlobal('addEventListener', (type: string, fn: (e: Event) => void) => listeners.set(type, fn));
+  vi.stubGlobal('addEventListener', listeners.addEventListener);
   const mod = await import('./settings.svelte');
-  const storageEvent = (key: string, newValue: string | null) => listeners.get('storage')?.({ key, newValue } as unknown as Event);
+  const storageEvent = (key: string, newValue: string | null) => listeners.fire('storage', { key, newValue });
   return { ...mod, storageEvent };
 }
 

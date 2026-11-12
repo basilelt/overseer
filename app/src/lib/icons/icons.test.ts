@@ -14,17 +14,25 @@ beforeAll(async () => {
 const lucide = (name: string) => new URL(`../../../node_modules/@lucide/svelte/dist/icons/${name}.svelte`, import.meta.url);
 const components = new URL('../components/', import.meta.url);
 
-const escape = (v: string) => v.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+type Node = [string, Record<string, string>];
 
-function lucideMarkup(name: string): string {
+function lucideNodes(name: string): Node[] {
   const src = fs.readFileSync(lucide(name), 'utf8');
-  const data = JSON.parse(/__iconData = (\{.*?\});\n/.exec(src)![1]) as { node: [string, Record<string, string>][] };
-  return data.node.map(([tag, attrs]) => `<${tag} ${Object.entries(attrs).map(([k, v]) => `${k}="${escape(String(v))}"`).join(' ')}/>`).join('');
+  return (JSON.parse(/__iconData = (\{.*?\});\n/.exec(src)![1]) as { node: Node[] }).node.map(([tag, attrs]) => [tag, Object.fromEntries(Object.entries(attrs).map(([k, v]) => [k, String(v)]))]);
+}
+
+function spriteNodes(body: string): Node[] {
+  const unescape = (v: string) => v.replace(/&quot;/g, '"').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
+  return [...body.matchAll(/<([a-z]+)((?:\s+[\w-]+="[^"]*")*)\s*\/>/g)].map((m) => [m[1], Object.fromEntries([...m[2].matchAll(/([\w-]+)="([^"]*)"/g)].map((a) => [a[1], unescape(a[2])]))]);
 }
 
 describe('icon sprite', () => {
   it('matches the installed lucide icon data', () => {
-    for (const [name, body] of Object.entries(ICONS)) expect(body, name).toBe(lucideMarkup(name));
+    for (const [name, body] of Object.entries(ICONS)) expect(spriteNodes(body), name).toEqual(lucideNodes(name));
+  });
+
+  it('reads real shapes from a sprite body, so the lucide comparison is not vacuous', () => {
+    expect(spriteNodes(ICONS.play)).toEqual([['path', { d: 'M5 5a2 2 0 0 1 3.008-1.728l11.997 6.998a2 2 0 0 1 .003 3.458l-12 7A2 2 0 0 1 5 19z' }]]);
   });
 
   it('declares one symbol per icon', () => {

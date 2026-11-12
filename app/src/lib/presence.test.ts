@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { eventTarget } from '../test/fake-events';
 
 type Mod = typeof import('./presence');
 
@@ -15,18 +16,18 @@ vi.mock('@tauri-apps/api/window', () => ({
 
 function fakeDom(visible = true, focused = true) {
   const classes = new Set<string>();
-  const doc = new Map<string, () => void>();
-  const win = new Map<string, () => void>();
+  const doc = eventTarget();
+  const win = eventTarget();
   const document = {
     visibilityState: visible ? 'visible' : 'hidden',
     hasFocus: () => focused,
     documentElement: { classList: { toggle: (c: string, on: boolean) => (on ? classes.add(c) : classes.delete(c)) } },
-    addEventListener: (t: string, fn: () => void) => doc.set(t, fn),
-    removeEventListener: (t: string, fn: () => void) => doc.get(t) === fn && doc.delete(t),
+    addEventListener: doc.addEventListener,
+    removeEventListener: doc.removeEventListener,
   };
   const window = {
-    addEventListener: (t: string, fn: () => void) => win.set(t, fn),
-    removeEventListener: (t: string, fn: () => void) => win.get(t) === fn && win.delete(t),
+    addEventListener: win.addEventListener,
+    removeEventListener: win.removeEventListener,
   };
   return { classes, doc, win, document, window };
 }
@@ -96,14 +97,14 @@ describe('presence', () => {
     const stop = p.startPresence();
     expect(p.presence()).toEqual({ visible: false, focused: false });
     dom.document.visibilityState = 'visible';
-    dom.doc.get('visibilitychange')!();
+    dom.doc.fire('visibilitychange');
     expect(p.presence().visible).toBe(true);
-    dom.win.get('focus')!();
+    dom.win.fire('focus');
     expect(p.active()).toBe(true);
-    dom.win.get('blur')!();
+    dom.win.fire('blur');
     expect(p.presence().focused).toBe(false);
     stop();
-    expect(dom.doc.size + dom.win.size).toBe(0);
+    expect(dom.doc.count() + dom.win.count()).toBe(0);
   });
 
   it('stays inactive while idle whatever the window focus, until idle ends', () => {
@@ -114,12 +115,12 @@ describe('presence', () => {
     p.setIdle(true);
     expect(p.presence().focused).toBe(false);
     expect([...dom.classes]).toEqual(['inactive']);
-    dom.win.get('blur')!();
-    dom.win.get('focus')!();
+    dom.win.fire('blur');
+    dom.win.fire('focus');
     expect(p.presence().focused).toBe(false);
     p.setIdle(false);
     expect(p.active()).toBe(true);
-    dom.win.get('blur')!();
+    dom.win.fire('blur');
     p.setIdle(true);
     p.setIdle(false);
     expect(p.presence().focused).toBe(false);
@@ -150,6 +151,6 @@ describe('presence', () => {
     stop();
     await Promise.resolve();
     expect(focusChanged.off).not.toHaveBeenCalled();
-    expect(dom.doc.size + dom.win.size).toBe(0);
+    expect(dom.doc.count() + dom.win.count()).toBe(0);
   });
 });

@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { eventTarget } from '../../test/fake-events';
 import { addEntry, loadEntries, MAX_ENTRIES, storageKey, SUPERSEDE_MS, type Entry } from './notifications';
 import { center, NotificationCenter, runEntry, startCenter } from './notifications.svelte';
 import { app } from '../state.svelte';
@@ -259,12 +260,12 @@ describe('runEntry', () => {
 });
 
 describe('startCenter', () => {
-  const listeners = new Map<string, (e: unknown) => void>();
+  const listeners = eventTarget();
 
   beforeEach(() => {
     listeners.clear();
-    vi.stubGlobal('addEventListener', (t: string, fn: (e: unknown) => void) => listeners.set(t, fn));
-    vi.stubGlobal('removeEventListener', (t: string, fn: (e: unknown) => void) => listeners.get(t) === fn && listeners.delete(t));
+    vi.stubGlobal('addEventListener', listeners.addEventListener);
+    vi.stubGlobal('removeEventListener', listeners.removeEventListener);
   });
 
   afterEach(() => {
@@ -277,12 +278,12 @@ describe('startCenter', () => {
     center.clear();
     const stale = [entry({ id: 'stale' })];
     center.entries = stale;
-    listeners.get('storage')!({ key: storageKey('ssh:other') });
+    listeners.fire('storage', { key: storageKey('ssh:other') });
     expect(center.entries).toBe(stale);
-    listeners.get('storage')!({ key: storageKey('ssh:center-box') });
+    listeners.fire('storage', { key: storageKey('ssh:center-box') });
     expect(center.entries).toEqual([]);
     center.entries = stale;
-    listeners.get('storage')!({ key: null });
+    listeners.fire('storage', { key: null });
     expect(center.entries).toEqual([]);
     stop();
     expect(listeners.has('storage')).toBe(false);

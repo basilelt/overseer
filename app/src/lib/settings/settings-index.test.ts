@@ -67,8 +67,10 @@ describe('normalize and matches', () => {
 });
 
 describe('categories and sections', () => {
-  it('lists every category when everything is available', () => {
-    expect(availableCategories(all).map((c) => c.id)).toEqual(CATEGORIES.map((c) => c.id));
+  it('keeps a category exactly when everything is available and a section belongs to it', () => {
+    const ids = availableCategories(all).map((c) => c.id);
+    expect(new Set(ids)).toEqual(new Set(SECTIONS.map((s) => s.category)));
+    expect(ids).toHaveLength(CATEGORIES.length);
   });
 
   it('drops gated sections and categories left empty', () => {

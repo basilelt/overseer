@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { eventTarget } from '../../test/fake-events';
 import { DEMO_KEY } from '../daemon/demo';
 import { center } from './notifications.svelte';
 import { DEFAULT_KINDS, DEFAULT_QUIET, FOCUS_FALLBACK_MS } from './notify-prefs';
@@ -214,7 +215,7 @@ describe('system notifications', () => {
   let focused = true;
   let tap: Tap | null = null;
   let storage = memoryStorage();
-  const listeners = new Map<string, () => void>();
+  const listeners = eventTarget();
   const unregister = vi.fn(async () => {});
 
   const tauri = () => vi.stubGlobal('window', { __TAURI_INTERNALS__: {} });
@@ -244,8 +245,8 @@ describe('system notifications', () => {
     center.clear();
     vi.stubGlobal('document', { hasFocus: () => focused });
     vi.stubGlobal('localStorage', storage);
-    vi.stubGlobal('addEventListener', (type: string, fn: () => void) => listeners.set(type, fn));
-    vi.stubGlobal('removeEventListener', (type: string, fn: () => void) => listeners.get(type) === fn && listeners.delete(type));
+    vi.stubGlobal('addEventListener', listeners.addEventListener);
+    vi.stubGlobal('removeEventListener', listeners.removeEventListener);
     Object.assign(settings, {
       notifyKinds: { ...DEFAULT_KINDS },
       notifyQuiet: { ...DEFAULT_QUIET },
@@ -443,9 +444,9 @@ describe('system notifications', () => {
       const stop = await started(app);
       await sendOs(app, note);
       now.mockReturnValue(1_000 + FOCUS_FALLBACK_MS - 1);
-      listeners.get('focus')!();
+      listeners.fire('focus');
       expect(app.select).toHaveBeenCalledWith('line:f');
-      listeners.get('focus')!();
+      listeners.fire('focus');
       expect(app.select).toHaveBeenCalledTimes(1);
       stop();
       expect(listeners.has('focus')).toBe(false);
@@ -459,7 +460,7 @@ describe('system notifications', () => {
       await started(app);
       await sendOs(app, note);
       now.mockReturnValue(1_000 + FOCUS_FALLBACK_MS);
-      listeners.get('focus')!();
+      listeners.fire('focus');
       expect(app.select).not.toHaveBeenCalled();
     });
 
@@ -468,10 +469,10 @@ describe('system notifications', () => {
       const app = appOn('linux');
       await started(app);
       await sendOs(app, note);
-      listeners.get('focus')!();
+      listeners.fire('focus');
       focused = false;
       await sendOs(appOn('macos'), note);
-      listeners.get('focus')!();
+      listeners.fire('focus');
       expect(app.select).not.toHaveBeenCalled();
     });
 
@@ -482,7 +483,7 @@ describe('system notifications', () => {
       await started(app);
       await sendOs(app, note);
       tap!({ notification: { id: osId({ key: 'line:f', title: 'done' }), extra: { key: 'line:f' } } });
-      listeners.get('focus')!();
+      listeners.fire('focus');
       await vi.waitFor(() => expect(app.select).toHaveBeenCalledTimes(1));
     });
   });

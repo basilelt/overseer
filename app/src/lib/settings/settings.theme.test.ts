@@ -1,12 +1,13 @@
 import { describe, expect, it, vi } from 'vitest';
+import { eventTarget } from '../../test/fake-events';
 
 async function load(systemDark: boolean) {
   vi.resetModules();
-  const listeners = new Map<string, (e: Event) => void>();
+  const listeners = eventTarget();
   vi.stubGlobal('matchMedia', () => ({ matches: systemDark, addEventListener: () => {} }));
-  vi.stubGlobal('addEventListener', (type: string, fn: (e: Event) => void) => listeners.set(type, fn));
+  vi.stubGlobal('addEventListener', listeners.addEventListener);
   const mod = { ...(await import('./settings.svelte')), ...(await import('../theme/theme-edit.svelte')) };
-  const systemTheme = (dark: boolean) => listeners.get('overseer:system-theme')?.({ detail: { dark } } as unknown as Event);
+  const systemTheme = (dark: boolean) => listeners.fire('overseer:system-theme', { detail: { dark } });
   return { ...mod, systemTheme };
 }
 

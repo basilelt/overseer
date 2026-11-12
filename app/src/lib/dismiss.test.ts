@@ -1,22 +1,19 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { eventTarget } from '../test/fake-events';
 import { dismiss, type DismissOptions } from './dismiss';
 
-const handlers = new Map<string, (e: any) => void>();
-const win = {
-  addEventListener: (type: string, fn: (e: any) => void) => void handlers.set(type, fn),
-  removeEventListener: (type: string) => void handlers.delete(type),
-};
+const win = eventTarget();
 
 const inside = {} as HTMLElement;
 const node = { contains: (t: unknown) => t === inside } as unknown as HTMLElement;
 
 function pointerdown(target: unknown = {}) {
-  handlers.get('pointerdown')?.({ target });
+  win.fire('pointerdown', { target });
 }
 
 function keydown(key: string) {
   const stop = vi.fn();
-  handlers.get('keydown')?.({ key, stopPropagation: stop });
+  win.fire('keydown', { key, stopPropagation: stop });
   return stop;
 }
 

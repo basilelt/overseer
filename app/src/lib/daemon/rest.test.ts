@@ -3,24 +3,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const idle = vi.hoisted(() => ({ calls: [] as boolean[] }));
 vi.mock('../presence', () => ({ setIdle: (on: boolean) => idle.calls.push(on) }));
 
+import { eventTarget } from '../../test/fake-events';
 import { IDLE_MS, startRest } from './rest';
 
-function fakeWindow() {
-  const on = new Map<string, () => void>();
-  return {
-    on,
-    addEventListener: (t: string, fn: () => void) => on.set(t, fn),
-    removeEventListener: (t: string, fn: () => void) => on.get(t) === fn && on.delete(t),
-  };
-}
-
 describe('rest', () => {
-  let win: ReturnType<typeof fakeWindow>;
+  let win: ReturnType<typeof eventTarget>;
 
   beforeEach(() => {
     vi.useFakeTimers();
     idle.calls = [];
-    win = fakeWindow();
+    win = eventTarget();
     vi.stubGlobal('window', win);
   });
 
@@ -41,7 +33,7 @@ describe('rest', () => {
   it('pushes the deadline back on input without one timer per event', () => {
     const stop = startRest();
     vi.advanceTimersByTime(IDLE_MS - 1000);
-    for (let i = 0; i < 50; i++) win.on.get('pointermove')!();
+    for (let i = 0; i < 50; i++) win.fire('pointermove');
     expect(vi.getTimerCount()).toBe(1);
     vi.advanceTimersByTime(IDLE_MS - 1000);
     expect(idle.calls).toEqual([]);
@@ -54,7 +46,7 @@ describe('rest', () => {
     const stop = startRest();
     for (const t of ['keydown', 'pointerdown', 'wheel', 'focus']) {
       vi.advanceTimersByTime(IDLE_MS);
-      win.on.get(t)!();
+      win.fire(t);
     }
     expect(idle.calls).toEqual([true, false, true, false, true, false, true, false]);
     expect(vi.getTimerCount()).toBe(1);
@@ -67,6 +59,6 @@ describe('rest', () => {
     stop();
     expect(idle.calls).toEqual([true, false]);
     expect(vi.getTimerCount()).toBe(0);
-    expect(win.on.size).toBe(0);
+    expect(win.count()).toBe(0);
   });
 });

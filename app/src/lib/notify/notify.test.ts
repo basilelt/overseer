@@ -449,3 +449,42 @@ describe('startNotifications', () => {
     expect(listeners.size).toBe(0);
   });
 });
+
+describe('notificationsFor on snapshots', () => {
+  const line = (id: string, needsInput: boolean): LocalLine => ({
+    line: { id, agent: 'claude', state: 'active', lastActivityAt: '' },
+    local: { needsInput, title: `T ${id}` },
+  });
+  const snap = (p: Partial<Snapshot>): Snapshot => ({ lines: [], terms: [], tasks: [], activity: {}, ...p });
+
+  it('notices new needs-input lines only', () => {
+    const prev = snap({ lines: [line('a', true), line('b', false)] });
+    const next = snap({ lines: [line('a', true), line('b', true)] });
+    const n = notificationsFor(prev, next, all);
+    expect(n).toMatchObject([{ kind: 'needsInput', key: 'line:b' }]);
+    expect(n[0].title).toContain('Claude Code');
+    expect(n[0].body).toContain('T b');
+    expect(notificationsFor(prev, next, { ...all, notifyNeedsInput: false })).toEqual([]);
+    expect(needsInputCount(next)).toBe(2);
+  });
+
+  it('notices tasks reaching testing', () => {
+    const task = { id: 't', number: 7, title: 'X', status: 'in_progress', lineId: 'a' } as Task;
+    const n = notificationsFor(snap({ tasks: [task] }), snap({ tasks: [{ ...task, status: 'in_testing' }] }), all);
+    expect(n).toMatchObject([{ kind: 'taskTesting', key: 'line:a' }]);
+    expect(n[0].title).toContain('7');
+  });
+
+  it('notices finished and failed terms of lines or tasks', () => {
+    const term = (id: string, extra: Partial<Term>) => ({ id, title: id, cmd: [], exited: false, ...extra }) as Term;
+    const prev = snap({ terms: [term('a', { lineId: 'l' }), term('b', { taskId: 't' }), term('c', {})] });
+    const next = snap({
+      terms: [term('a', { lineId: 'l', exited: true, exitCode: 0 }), term('b', { taskId: 't', exited: true, exitCode: 1 }), term('c', { exited: true, exitCode: 0 })],
+    });
+    expect(notificationsFor(prev, next, all).map((n) => [n.kind, n.key])).toEqual([
+      ['finished', 'line:l'],
+      ['failed', 'term:b'],
+    ]);
+    expect(notificationsFor(prev, next, { ...all, notifyFailed: false }).map((n) => n.kind)).toEqual(['finished']);
+  });
+});
