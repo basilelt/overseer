@@ -841,7 +841,10 @@ write access to the repository to attach files.
 Palette > **Record a bug** (phone: More > Record a bug) records what you do while you show a
 problem. The setup dialog offers **Record the screen too** where the webview can capture the
 screen (`getDisplayMedia` and `MediaRecorder`; a browser asks which screen or window to share);
-elsewhere, such as iOS and Android, only the action log is recorded. While it runs, a red pill at
+elsewhere, such as iOS and Android, only the action log is recorded. If the webview rejects the
+request, Overseer asks once more in the plain form; if the screen still cannot be captured (the
+desktop app on Linux, for one), the recording goes on with the action log only and says so. Declining
+the share prompt cancels the recording as before. While it runs, a red pill at
 the bottom shows the time and the number of actions, with **Stop** and a discard button. The log
 has the start, clicks (the control's label, never a field's content), shortcuts (Ctrl/Cmd/Alt
 combinations, Escape, function keys, arrows), "typed in <field>" once per field without the text,

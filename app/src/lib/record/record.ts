@@ -102,6 +102,29 @@ export function extFor(mime: string): string {
   return mime.startsWith('video/mp4') ? 'mp4' : 'webm';
 }
 
+const CONSTRAINT_ERRORS = ['OverconstrainedError', 'TypeError', 'NotSupportedError'];
+const REFUSAL_ERRORS = ['NotAllowedError', 'AbortError', 'SecurityError'];
+
+export function isConstraintError(e: unknown): boolean {
+  const { name = '', message = '' } = (e ?? {}) as { name?: string; message?: string };
+  return CONSTRAINT_ERRORS.includes(name) || /constraint/i.test(message);
+}
+
+export function isRefusal(e: unknown): boolean {
+  return REFUSAL_ERRORS.includes((e as { name?: string } | null)?.name ?? '');
+}
+
+type GetDisplay = (options: DisplayMediaStreamOptions) => Promise<MediaStream>;
+
+export async function requestDisplay(get: GetDisplay): Promise<MediaStream> {
+  try {
+    return await get({ video: { frameRate: FRAME_RATE }, audio: false, preferCurrentTab: true, selfBrowserSurface: 'include' } as DisplayMediaStreamOptions);
+  } catch (e) {
+    if (!isConstraintError(e)) throw e;
+    return get({ video: true });
+  }
+}
+
 export function canVideo(g: typeof globalThis = globalThis): boolean {
   const md = (g.navigator as Navigator | undefined)?.mediaDevices;
   return typeof md?.getDisplayMedia === 'function' && typeof (g as { MediaRecorder?: unknown }).MediaRecorder === 'function';

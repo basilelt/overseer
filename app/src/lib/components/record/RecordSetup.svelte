@@ -12,8 +12,12 @@
   let video = $state(supported);
 
   function start() {
+    const wantVideo = supported && video;
     recorder
-      .start({ video: supported && video, onDone: (recording) => feedback.show({ kind: 'bug', recording }) })
+      .start({ video: wantVideo, onDone: (recording) => feedback.show({ kind: 'bug', recording }) })
+      .then((withVideo) => {
+        if (wantVideo && !withVideo) app.notify(rt('noVideo'));
+      })
       .catch((e) => app.notify(rt('denied', { error: String((e as Error)?.message ?? e) }), 'error'));
   }
 

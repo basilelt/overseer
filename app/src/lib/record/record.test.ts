@@ -1,5 +1,5 @@
 import { describe as group, expect, it } from 'vitest';
-import { activeAt, canVideo, clock, describe, extFor, fileName, formatLog, isField, pickMime, shortcut, type RecEvent } from './record';
+import { activeAt, canVideo, clock, describe, extFor, fileName, formatLog, isConstraintError, isField, isRefusal, pickMime, shortcut, type RecEvent } from './record';
 import { el } from '../../test/fake-dom';
 import { formatCombo } from '../commands/shortcuts';
 
@@ -180,5 +180,31 @@ group('media helpers', () => {
     expect(canVideo({ navigator: { mediaDevices: {} }, MediaRecorder: class {} } as unknown as typeof globalThis)).toBe(false);
     expect(canVideo({ navigator: { mediaDevices: { getDisplayMedia: () => {} } } } as unknown as typeof globalThis)).toBe(false);
     expect(canVideo({} as typeof globalThis)).toBe(false);
+  });
+});
+
+group('display capture errors', () => {
+  const named = (name: string, message = '') => Object.assign(new Error(message), { name });
+
+  it('treats constraint, type and unsupported errors as a reason to retry plainly', () => {
+    expect(isConstraintError(named('OverconstrainedError'))).toBe(true);
+    expect(isConstraintError(named('TypeError'))).toBe(true);
+    expect(isConstraintError(named('NotSupportedError'))).toBe(true);
+    expect(isConstraintError(named('Error', 'Invalid constraint'))).toBe(true);
+  });
+
+  it('does not retry a refusal, a missing source or a non-error', () => {
+    expect(isConstraintError(named('NotAllowedError', 'Permission denied'))).toBe(false);
+    expect(isConstraintError(named('NotFoundError'))).toBe(false);
+    expect(isConstraintError(undefined)).toBe(false);
+    expect(isConstraintError(null)).toBe(false);
+  });
+
+  it('recognises the user declining the share prompt', () => {
+    expect(isRefusal(named('NotAllowedError'))).toBe(true);
+    expect(isRefusal(named('AbortError'))).toBe(true);
+    expect(isRefusal(named('OverconstrainedError'))).toBe(false);
+    expect(isRefusal(null)).toBe(false);
+    expect(isRefusal('x')).toBe(false);
   });
 });

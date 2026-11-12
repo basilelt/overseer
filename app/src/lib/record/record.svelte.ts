@@ -1,5 +1,5 @@
 import { type Sub, t } from '../i18n.svelte';
-import { describe, FRAME_RATE, isField, LOG, MAX_EVENTS, MAX_MS, pickMime, shortcut, VIDEO_BPS, type EventKind, type RecEvent, type Recording } from './record';
+import { describe, isField, isRefusal, LOG, MAX_EVENTS, MAX_MS, pickMime, requestDisplay, shortcut, VIDEO_BPS, type EventKind, type RecEvent, type Recording } from './record';
 
 import { rec, setupRecording, tap, type Phase } from './record-state.svelte';
 
@@ -54,8 +54,8 @@ class Recorder {
     this.count = this.events.length;
   }
 
-  async start(opts: StartOpts): Promise<void> {
-    if (this.phase !== 'idle' && this.phase !== 'setup') return;
+  async start(opts: StartOpts): Promise<boolean> {
+    if (this.phase !== 'idle' && this.phase !== 'setup') return false;
     this.phase = 'starting';
     this.onDone = opts.onDone;
     this.finishing = false;
@@ -64,9 +64,11 @@ class Recorder {
         await this.startVideo();
       } catch (e) {
         this.dropVideo();
-        this.phase = 'idle';
-        this.onDone = null;
-        throw e;
+        if (isRefusal(e)) {
+          this.phase = 'idle';
+          this.onDone = null;
+          throw e;
+        }
       }
     }
     this.events = [];
@@ -78,10 +80,11 @@ class Recorder {
     tap.note = (kind, text) => this.note(kind, text);
     this.note('start', this.media ? LOG.startedVideo : LOG.started);
     this.listen();
+    return !!this.media;
   }
 
   private async startVideo() {
-    const stream = await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: FRAME_RATE }, audio: false, preferCurrentTab: true, selfBrowserSurface: 'include' } as DisplayMediaStreamOptions);
+    const stream = await requestDisplay((o) => navigator.mediaDevices.getDisplayMedia(o));
     this.stream = stream;
     this.mime = pickMime((m) => MediaRecorder.isTypeSupported(m));
     const media = new MediaRecorder(stream, { ...(this.mime ? { mimeType: this.mime } : {}), videoBitsPerSecond: VIDEO_BPS });

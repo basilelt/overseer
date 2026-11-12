@@ -42,10 +42,13 @@ class FakeMediaRecorder extends EventTarget {
   }
 }
 
-function stubMedia(fail?: Error) {
+const named = (name: string, message = name) => Object.assign(new Error(message), { name });
+
+function stubMedia(fail?: Error | ((options: unknown) => Error | undefined)) {
   const track = new FakeTrack();
-  const getDisplayMedia = vi.fn(async () => {
-    if (fail) throw fail;
+  const getDisplayMedia = vi.fn(async (options: unknown) => {
+    const err = typeof fail === 'function' ? fail(options) : fail;
+    if (err) throw err;
     return { getVideoTracks: () => [track], getTracks: () => [track] };
   });
   vi.stubGlobal('navigator', { mediaDevices: { getDisplayMedia } });
@@ -68,9 +71,11 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
+let started = false;
+
 async function recording(video = false) {
   const done = vi.fn<(r: Recording) => void>();
-  await recorder.start({ video, onDone: done });
+  started = await recorder.start({ video, onDone: done });
   return done;
 }
 
@@ -246,10 +251,59 @@ describe('screen video', () => {
   });
 
   it('goes back to idle and rethrows when the share is refused', async () => {
-    stubMedia(new Error('Permission denied'));
+    const { getDisplayMedia } = stubMedia(named('NotAllowedError', 'Permission denied'));
     await expect(recording(true)).rejects.toThrow('Permission denied');
+    expect(getDisplayMedia).toHaveBeenCalledOnce();
     expect(recorder.phase).toBe('idle');
     expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('retries once with the plain request when the constraints are rejected', async () => {
+    const { getDisplayMedia } = stubMedia((o) => ((o as { video: unknown }).video === true ? undefined : named('OverconstrainedError', 'Invalid constraint')));
+    await recording(true);
+    expect(getDisplayMedia).toHaveBeenCalledTimes(2);
+    expect(getDisplayMedia.mock.calls[1][0]).toEqual({ video: true });
+    expect(started).toBe(true);
+    const rec = await recorder.stop();
+    expect(rec?.events[0].text).toBe('Recording started with screen video');
+  });
+
+  it.each([['OverconstrainedError'], ['TypeError'], ['NotSupportedError']])('retries the plain request after a %s', async (name) => {
+    const { getDisplayMedia } = stubMedia((o) => ((o as { video: unknown }).video === true ? undefined : named(name)));
+    await recording(true);
+    expect(getDisplayMedia).toHaveBeenCalledTimes(2);
+    expect(started).toBe(true);
+  });
+
+  it('keeps the refusal when the user declines the plain retry', async () => {
+    const { getDisplayMedia } = stubMedia((o) => ((o as { video: unknown }).video === true ? named('NotAllowedError', 'Permission denied') : named('OverconstrainedError', 'Invalid constraint')));
+    await expect(recording(true)).rejects.toThrow('Permission denied');
+    expect(getDisplayMedia).toHaveBeenCalledTimes(2);
+    expect(recorder.phase).toBe('idle');
+  });
+
+  it('records the action log only when capture cannot start even plainly', async () => {
+    const { getDisplayMedia } = stubMedia(named('OverconstrainedError', 'Invalid constraint'));
+    await recording(true);
+    expect(getDisplayMedia).toHaveBeenCalledTimes(2);
+    expect(started).toBe(false);
+    expect(recorder.phase).toBe('recording');
+    const rec = await recorder.stop();
+    expect(rec?.video).toBeNull();
+    expect(rec?.events[0].text).toBe('Recording started');
+  });
+
+  it('records the action log only when no screen can be captured', async () => {
+    const { getDisplayMedia } = stubMedia(named('NotFoundError', 'No source'));
+    await recording(true);
+    expect(getDisplayMedia).toHaveBeenCalledOnce();
+    expect(started).toBe(false);
+    expect(recorder.phase).toBe('recording');
+  });
+
+  it('reports no screen video when none was asked for', async () => {
+    await recording(false);
+    expect(started).toBe(false);
   });
 
   it('stops the screen share on cancel', async () => {
