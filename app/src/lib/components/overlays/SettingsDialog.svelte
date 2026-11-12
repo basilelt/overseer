@@ -43,7 +43,7 @@
   import { en } from '../../i18n/en';
   import { availableCategories, availableSections, categoryCounts, escapeAction, initialCategory, isHit, phonePage, pickCategory, search, SECTIONS, showEntry, showSection, type CategoryId, type Gates, type SectionId } from '../../settings/settings-index';
   import { phoneOrMobile } from '../../mobile/phone.svelte';
-  import { clampFinite } from '../../clamp';
+  import { clampFinite, commitNumber } from '../../clamp';
   import { FONT_SIZE_MAX, FONT_SIZE_MIN } from '../../terminal/terminal-font';
 
   let { onclose }: { onclose: () => void } = $props();
@@ -438,19 +438,19 @@
           {#if row('terminal', 'fontSize')}
             <label class="row" class:hit={hit('terminal', 'fontSize')}>
               <span>{t('settings.fontSize')}</span>
-              <input type="number" min={FONT_SIZE_MIN} max={FONT_SIZE_MAX} value={settings.fontSize} onchange={(e) => saveSettings({ fontSize: clampFinite(e.currentTarget.valueAsNumber, FONT_SIZE_MIN, FONT_SIZE_MAX) })} />
+              <input type="number" min={FONT_SIZE_MIN} max={FONT_SIZE_MAX} value={settings.fontSize} onchange={(e) => commitNumber(e.currentTarget, (v) => clampFinite(v, FONT_SIZE_MIN, FONT_SIZE_MAX), (fontSize) => saveSettings({ fontSize }))} />
             </label>
           {/if}
           {#if row('terminal', 'lineHeight')}
             <label class="row" class:hit={hit('terminal', 'lineHeight')}>
               <span>{t('settings.lineHeight')}</span>
-              <input type="number" min="1" max="2" step="0.05" value={settings.lineHeight} onchange={(e) => saveSettings({ lineHeight: clampLineHeight(e.currentTarget.valueAsNumber) })} />
+              <input type="number" min="1" max="2" step="0.05" value={settings.lineHeight} onchange={(e) => commitNumber(e.currentTarget, clampLineHeight, (lineHeight) => saveSettings({ lineHeight }))} />
             </label>
           {/if}
           {#if row('terminal', 'scrollback')}
             <label class="row" class:hit={hit('terminal', 'scrollback')}>
               <span>{t('settings.scrollback')}<small>{t('settings.scrollbackHint')}</small></span>
-              <input type="number" min={MIN_SCROLLBACK_LINES} max={MAX_SCROLLBACK_LINES} step="1000" value={settings.scrollbackLines} onchange={(e) => saveSettings({ scrollbackLines: clampScrollback(e.currentTarget.valueAsNumber) })} />
+              <input type="number" min={MIN_SCROLLBACK_LINES} max={MAX_SCROLLBACK_LINES} step="1000" value={settings.scrollbackLines} onchange={(e) => commitNumber(e.currentTarget, clampScrollback, (scrollbackLines) => saveSettings({ scrollbackLines }))} />
             </label>
           {/if}
           {#if row('terminal', 'gpuTerminal')}
@@ -568,7 +568,7 @@
           {#if row('defaults', 'autoConcurrency')}
             <label class="row" class:hit={hit('defaults', 'autoConcurrency')}>
               <span>{t('settings.autoConcurrency')}<small>{t('settings.autoConcurrencyHint')}</small></span>
-              <input type="number" min="1" max="16" value={settings.autoConcurrency} onchange={(e) => saveSettings({ autoConcurrency: clampFinite(e.currentTarget.valueAsNumber, 1, 16) })} />
+              <input type="number" min="1" max="16" value={settings.autoConcurrency} onchange={(e) => commitNumber(e.currentTarget, (v) => clampFinite(v, 1, 16), (autoConcurrency) => saveSettings({ autoConcurrency }))} />
             </label>
           {/if}
           {#if row('defaults', 'autoOrganize')}
