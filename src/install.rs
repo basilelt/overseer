@@ -1,5 +1,6 @@
 use crate::agents::Hooks;
 use crate::hooks;
+use crate::legacy;
 use crate::util::shell_quote;
 use serde_json::{json, Map, Value};
 use std::path::{Path, PathBuf};
@@ -11,7 +12,6 @@ pub const SESSION_END_TIMEOUT_SECS: u64 = 3;
 pub const fn millis(secs: u64) -> u64 {
     secs * 1000
 }
-pub const OLD_MARKER: &str = "#switchboard-hook";
 
 pub fn shim_path() -> PathBuf {
     let name = if cfg!(windows) {
@@ -213,7 +213,7 @@ pub fn unmerge_marker(existing: &Value, marker: &str) -> Value {
     root
 }
 
-fn commands(v: &Value) -> Vec<String> {
+pub(crate) fn commands(v: &Value) -> Vec<String> {
     let entries = v["hooks"]
         .as_object()
         .into_iter()
@@ -230,21 +230,10 @@ fn commands(v: &Value) -> Vec<String> {
     out
 }
 
-fn hook_binary(cmd: &str) -> Option<&str> {
+pub(crate) fn hook_binary(cmd: &str) -> Option<&str> {
     cmd.split_whitespace()
         .find(|w| !w.contains('='))
         .map(|w| w.trim_matches(['\'', '"']))
-}
-
-fn orphaned_switchboard(v: &Value) -> bool {
-    let old: Vec<String> = commands(v)
-        .into_iter()
-        .filter(|c| c.contains(OLD_MARKER))
-        .collect();
-    !old.is_empty()
-        && old
-            .iter()
-            .all(|c| hook_binary(c).is_some_and(|b| !Path::new(b).exists()))
 }
 
 pub fn validate(original: &Value, written: &[u8], expect_ours: &[String]) -> Result<(), String> {
@@ -253,10 +242,10 @@ pub fn validate(original: &Value, written: &[u8], expect_ours: &[String]) -> Res
         return Err("top level or .hooks is not an object".into());
     }
     let after = commands(&v);
-    let orphaned = orphaned_switchboard(original);
+    let orphaned = legacy::orphaned_hooks(original);
     for c in commands(original)
         .into_iter()
-        .filter(|c| !c.contains(MARKER) && !(orphaned && c.contains(OLD_MARKER)))
+        .filter(|c| !c.contains(MARKER) && !(orphaned && c.contains(legacy::HOOK_MARKER)))
     {
         if !after.contains(&c) {
             return Err("an existing hook would be lost".into());
@@ -652,8 +641,8 @@ pub fn plan(t: &Target, uninstall: bool, bin: &Path, state_dir: &Path) -> Result
         ));
     }
     let mut base = before.clone().unwrap_or_else(|| json!({}));
-    if !uninstall && orphaned_switchboard(&base) {
-        base = unmerge_marker(&base, OLD_MARKER);
+    if !uninstall && legacy::orphaned_hooks(&base) {
+        base = unmerge_marker(&base, legacy::HOOK_MARKER);
     }
     let cmd = |ev: &str| hook_command(bin, state_dir, t.agent, ev);
     let after = match (uninstall, t.format) {
@@ -1269,8 +1258,9 @@ mod tests {
     fn switchboard_hooks(bin: &Path) -> Value {
         let cmd = |event: &str| {
             format!(
-                "SWITCHBOARD_STATE_DIR=/s {} hook codex {event} \"$PPID\" 2>/dev/null||:;echo {{}};{OLD_MARKER}",
-                bin.display()
+                "SWITCHBOARD_STATE_DIR=/s {} hook codex {event} \"$PPID\" 2>/dev/null||:;echo {{}};{}",
+                bin.display(),
+                legacy::HOOK_MARKER
             )
         };
         let mut v = merge_groups(&json!({}), hooks::CODEX_EVENTS, cmd, 5);
@@ -1303,7 +1293,7 @@ mod tests {
         assert!(out[0].error.is_none(), "{:?}", out[0].error);
 
         let text = std::fs::read_to_string(&codex.path).unwrap();
-        assert!(!text.contains(OLD_MARKER));
+        assert!(!text.contains(legacy::HOOK_MARKER));
         let after = read(&codex.path);
         let end = after["hooks"]["SessionEnd"].as_array().unwrap();
         assert_eq!(end.len(), 2);
@@ -1324,7 +1314,7 @@ mod tests {
             planned.after["hooks"]["SessionEnd"][0]["hooks"][0]["timeout"],
             5
         );
-        assert!(planned.after_text.contains(OLD_MARKER));
+        assert!(planned.after_text.contains(legacy::HOOK_MARKER));
     }
 
     #[test]
