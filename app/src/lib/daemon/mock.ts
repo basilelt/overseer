@@ -73,15 +73,15 @@ const REPOS: Record<string, { path: string; repo: string }> = {
 const repoPath = (name: string) => REPOS[name].path;
 
 export const DAEMON_ERRORS = {
-  noTerm: { source: 'src/daemon.rs, src/workspaces.rs', text: (id: string) => `no term ${id}` },
-  termStillRunning: { source: 'src/daemon.rs', text: 'term is still running; kill it first' },
-  termExited: { source: 'src/daemon.rs', text: 'term has exited' },
-  killNeedsConfirm: { source: 'src/daemon.rs, src/ports.rs', text: 'kill needs {"confirm":true}' },
-  termSize: { source: 'src/term.rs', text: 'cols and rows must be integers in 1..=1000' },
-  termSizeRequired: { source: 'src/daemon.rs', text: 'cols and rows required' },
-  shellInQuorum: { source: 'src/quorum.rs', text: 'shell cannot join a quorum' },
-  quorumOrchestrator: { source: 'src/quorum.rs', text: 'the quorum orchestrator must be claude or codex' },
-  sessionTaskStatus: { source: 'src/tasks.rs', text: 'a session task follows its session: status must be one of in_progress, in_testing, merged, completed' },
+  noTerm: { text: (id: string) => `no term ${id}` },
+  termStillRunning: { text: 'term is still running; kill it first' },
+  termExited: { text: 'term has exited' },
+  killNeedsConfirm: { text: 'kill needs {"confirm":true}' },
+  termSize: { text: 'cols and rows must be integers in 1..=1000' },
+  termSizeRequired: { text: 'cols and rows required' },
+  shellInQuorum: { text: 'shell cannot join a quorum' },
+  quorumOrchestrator: { text: 'the quorum orchestrator must be claude or codex' },
+  sessionTaskStatus: { text: 'a session task follows its session: status must be one of in_progress, in_testing, merged, completed' },
 } as const;
 
 const ALL_EFFORTS = ['low', 'medium', 'high', 'max'] as const;

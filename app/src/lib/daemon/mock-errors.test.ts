@@ -16,14 +16,43 @@ const setup = () => {
   return { m, a: api(m) };
 };
 
-const literal = (text: string) => text.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+const goldenFile = (): Record<string, { status: number; message: string }> =>
+  JSON.parse(fs.readFileSync(new URL('../../../../tests/golden/daemon_errors.json', import.meta.url), 'utf8'));
 
-describe('the strings the mock copies from the daemon', () => {
-  it.each(Object.entries(DAEMON_ERRORS))('%s is still written in the Rust source', (_k, e) => {
+const sessionTask = async (a: ReturnType<typeof api>) => (await a.tasks()).find((t) => t.origin === 'session')!;
+const quorumBase = { title: 'Q', description: '', project: '/p', model: '' };
+
+const triggers: Record<string, (m: MockDaemon, a: ReturnType<typeof api>) => Promise<unknown>> = {
+  noTerm: (m) => m.request('POST', '/v1/terms/nope/kill', { confirm: true }),
+  termStillRunning: (m) => m.request('DELETE', '/v1/terms/tm_shell1'),
+  termExited: async (m) => {
+    await m.request('POST', '/v1/terms/tm_shell1/kill', { confirm: true });
+    return m.request('POST', '/v1/terms/tm_shell1/kill', { confirm: true });
+  },
+  killNeedsConfirm: (m) => m.request('POST', '/v1/terms/tm_shell1/kill', {}),
+  termSize: (m) => m.request('POST', '/v1/terms/tm_shell1/resize', { cols: 0, rows: 20 }),
+  termSizeRequired: (m) => m.request('POST', '/v1/terms/tm_shell1/resize', {}),
+  shellInQuorum: (_m, a) => a.createTask({ ...quorumBase, agent: 'claude', quorum: { workers: ['shell'], reviewers: ['codex'] } } as never),
+  quorumOrchestrator: (_m, a) => a.createTask({ ...quorumBase, agent: 'gemini', quorum: { workers: ['claude'], reviewers: ['codex'] } } as never),
+  sessionTaskStatus: async (_m, a) => a.patchTask((await sessionTask(a)).id, { status: 'pending' }),
+};
+
+describe('the mock daemon matches tests/golden/daemon_errors.json, which the real daemon is tested against', () => {
+  it('lists the same entries as the golden', () => {
+    expect(Object.keys(DAEMON_ERRORS).sort()).toEqual(Object.keys(goldenFile()).sort());
+    expect(Object.keys(triggers).sort()).toEqual(Object.keys(goldenFile()).sort());
+  });
+
+  it.each(Object.keys(DAEMON_ERRORS))('%s has the golden text', (key) => {
+    const e = DAEMON_ERRORS[key as keyof typeof DAEMON_ERRORS];
     const text = typeof e.text === 'function' ? e.text('{id}') : e.text;
-    const needle = literal(text);
-    const files = e.source.split(', ').map((f) => fs.readFileSync(new URL(`../../../../${f}`, import.meta.url), 'utf8'));
-    expect(files.some((src) => src.includes(needle))).toBe(true);
+    expect(text).toBe(goldenFile()[key].message);
+  });
+
+  it.each(Object.keys(DAEMON_ERRORS))('%s is returned with the golden status and message', async (key) => {
+    const { m, a } = setup();
+    const g = goldenFile()[key];
+    await expect(triggers[key](m, a)).rejects.toMatchObject({ status: g.status, message: g.message.replace('{id}', 'nope') });
   });
 });
 
