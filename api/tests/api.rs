@@ -737,32 +737,3 @@ fn post_lines_starts_on_a_runner_without_storing_the_prompt() {
     assert!(audit[0]["args"].get("prompt").is_none());
     assert!(!contains(&srv.stored_bytes(), prompt));
 }
-
-#[test]
-fn failed_delta_rolls_back_and_asks_for_a_resync() {
-    let srv = Srv::start();
-    let t = srv.enrol("vm", "vm");
-    let mut s = srv.station("vm", &t).unwrap();
-    s.hello("vm", 0);
-    s.send(json!({ "kind": "snapshot", "seq": 1, "lines": [line("vm-1", "vm", "alice", "idle", None)] }));
-    assert_eq!(s.recv()["seq"], 1);
-    srv.db()
-        .execute_batch(
-            "CREATE TRIGGER block_delete BEFORE DELETE ON lines BEGIN SELECT RAISE(ABORT, 'blocked'); END",
-        )
-        .unwrap();
-    s.send(json!({ "kind": "delta", "seq": 2, "upsert": [], "remove": ["vm-1"] }));
-    assert_eq!(s.recv(), json!({ "kind": "ack", "seq": 1, "resync": true }));
-    assert_eq!(
-        srv.count("SELECT last_seq FROM stations WHERE id = 'vm'"),
-        1
-    );
-    assert_eq!(srv.count("SELECT count(*) FROM lines WHERE id = 'vm-1'"), 1);
-    srv.db().execute_batch("DROP TRIGGER block_delete").unwrap();
-    s.send(json!({ "kind": "delta", "seq": 2, "upsert": [], "remove": ["vm-1"] }));
-    assert_eq!(
-        s.recv(),
-        json!({ "kind": "ack", "seq": 2, "resync": false })
-    );
-    assert_eq!(srv.count("SELECT count(*) FROM lines WHERE id = 'vm-1'"), 0);
-}

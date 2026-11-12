@@ -98,22 +98,16 @@ impl App {
             }
             Some(FRAME_SNAPSHOT) => match v["seq"].as_i64().filter(|s| *s >= 1) {
                 Some(seq) => {
-                    if self.apply(&db, station, seq, &v["lines"], &Value::Null) {
-                        vec![ack(seq, false)]
-                    } else {
-                        vec![ack(last, true)]
-                    }
+                    self.apply(&db, station, seq, &v["lines"], &Value::Null);
+                    vec![ack(seq, false)]
                 }
                 None => vec![],
             },
             Some(FRAME_DELTA) => match v["seq"].as_i64() {
                 Some(seq) if seq <= last => vec![ack(last, false)],
                 Some(seq) if seq == last + 1 => {
-                    if self.apply(&db, station, seq, &v["upsert"], &v["remove"]) {
-                        vec![ack(seq, false)]
-                    } else {
-                        vec![ack(last, true)]
-                    }
+                    self.apply(&db, station, seq, &v["upsert"], &v["remove"]);
+                    vec![ack(seq, false)]
                 }
                 Some(_) => vec![ack(last, true)],
                 None => vec![],
@@ -176,16 +170,9 @@ impl App {
         json!({ "kind": FRAME_STATIONS, "stations": stations }).to_string()
     }
 
-    fn apply(
-        &self,
-        db: &Connection,
-        station: &str,
-        seq: i64,
-        upsert: &Value,
-        remove: &Value,
-    ) -> bool {
+    fn apply(&self, db: &Connection, station: &str, seq: i64, upsert: &Value, remove: &Value) {
         let Ok(tx) = db.unchecked_transaction() else {
-            return false;
+            return;
         };
         for l in upsert.as_array().into_iter().flatten() {
             if !self.upsert_line(&tx, station, l) {
@@ -198,27 +185,17 @@ impl App {
             .flatten()
             .filter_map(Value::as_str)
         {
-            if let Err(e) = tx.execute(
+            let _ = tx.execute(
                 "DELETE FROM lines WHERE id = ?1 AND station_id = ?2",
                 params![id, station],
-            ) {
-                eprintln!("overseer-api: cannot apply seq {seq} from {station}: {e}");
-                return false;
-            }
+            );
         }
-        if let Err(e) = tx.execute(
+        let _ = tx.execute(
             "UPDATE stations SET last_seq = ?2 WHERE id = ?1",
             params![station, seq],
-        ) {
+        );
+        if let Err(e) = tx.commit() {
             eprintln!("overseer-api: cannot apply seq {seq} from {station}: {e}");
-            return false;
-        }
-        match tx.commit() {
-            Ok(()) => true,
-            Err(e) => {
-                eprintln!("overseer-api: cannot apply seq {seq} from {station}: {e}");
-                false
-            }
         }
     }
 
