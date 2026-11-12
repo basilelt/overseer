@@ -66,3 +66,63 @@ describe('pressTimer', () => {
     expect(() => press.move(100, 100)).not.toThrow();
   });
 });
+
+describe('a long press that opens a sheet', () => {
+  const ev = (type: string, detail = 1) => Object.assign(new Event(type, { cancelable: true }), { detail });
+
+  function sheet() {
+    vi.useFakeTimers();
+    const root = new EventTarget();
+    const row = vi.fn();
+    const press = pressTimer(LONG_PRESS_MS, { swallow: true, target: root });
+    return { root, row, press, open: (ms: number) => (press.start(0, 0, () => root.addEventListener('click', row)), vi.advanceTimersByTime(ms)) };
+  }
+
+  it('ignores the click of the finger lifting afterwards, however long the hold', () => {
+    const { root, row, open } = sheet();
+    open(LONG_PRESS_MS + 5000);
+    root.dispatchEvent(ev('pointerup'));
+    root.dispatchEvent(ev('click'));
+    expect(row).not.toHaveBeenCalled();
+  });
+
+  it('accepts a tap that starts with a new pointerdown', () => {
+    const { root, row, open } = sheet();
+    open(LONG_PRESS_MS);
+    root.dispatchEvent(ev('pointerup'));
+    root.dispatchEvent(ev('click'));
+    root.dispatchEvent(ev('pointerdown'));
+    root.dispatchEvent(ev('pointerup'));
+    root.dispatchEvent(ev('click'));
+    expect(row).toHaveBeenCalledOnce();
+  });
+
+  it('accepts a tap even when the lift produced no click at all', () => {
+    const { root, row, open } = sheet();
+    open(LONG_PRESS_MS);
+    root.dispatchEvent(ev('pointerup'));
+    root.dispatchEvent(ev('pointerdown'));
+    root.dispatchEvent(ev('click'));
+    expect(row).toHaveBeenCalledOnce();
+  });
+
+  it('lets a keyboard activation through', () => {
+    const { root, row, open } = sheet();
+    open(LONG_PRESS_MS);
+    root.dispatchEvent(ev('click', 0));
+    expect(row).toHaveBeenCalledOnce();
+  });
+
+  it('swallows nothing when the hold is cancelled or swallowing is not asked for', () => {
+    const { root, row, press } = sheet();
+    root.addEventListener('click', row);
+    press.start(0, 0, () => {});
+    vi.advanceTimersByTime(LONG_PRESS_MS - 1);
+    press.cancel();
+    root.dispatchEvent(ev('click'));
+    pressTimer(LONG_PRESS_MS).start(0, 0, () => {});
+    vi.advanceTimersByTime(LONG_PRESS_MS);
+    root.dispatchEvent(ev('click'));
+    expect(row).toHaveBeenCalledTimes(2);
+  });
+});

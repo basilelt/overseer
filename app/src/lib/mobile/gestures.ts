@@ -14,7 +14,23 @@ export function movedTooFar(dx: number, dy: number, tolerance = MOVE_TOLERANCE_P
   return Math.hypot(dx, dy) > tolerance;
 }
 
-export function pressTimer(ms: number) {
+function swallowRelease(target: EventTarget) {
+  const ctl = new AbortController();
+  const opts = { capture: true, signal: ctl.signal };
+  target.addEventListener(
+    'click',
+    (e) => {
+      if ((e as MouseEvent).detail === 0) return;
+      ctl.abort();
+      e.preventDefault();
+      e.stopImmediatePropagation();
+    },
+    opts,
+  );
+  target.addEventListener('pointerdown', () => ctl.abort(), opts);
+}
+
+export function pressTimer(ms: number, opts: { swallow?: boolean; target?: EventTarget } = {}) {
   let timer: ReturnType<typeof setTimeout> | undefined;
   let ox = NaN;
   let oy = NaN;
@@ -29,6 +45,8 @@ export function pressTimer(ms: number) {
       oy = y;
       timer = setTimeout(() => {
         ox = NaN;
+        const target = opts.target ?? (typeof window === 'undefined' ? undefined : window);
+        if (opts.swallow && target) swallowRelease(target);
         onFire();
       }, ms);
     },

@@ -1,7 +1,7 @@
 import { LONG_PRESS_MS, pressTimer } from './gestures';
 
 export function longPress(node: HTMLElement, onLong: (e: PointerEvent) => void) {
-  const press = pressTimer(LONG_PRESS_MS);
+  const press = pressTimer(LONG_PRESS_MS, { swallow: true });
   let fired = false;
   const down = (e: PointerEvent) => {
     fired = false;

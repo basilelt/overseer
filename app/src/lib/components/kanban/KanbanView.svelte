@@ -82,7 +82,7 @@
   let sheetId = $state<string | null>(null);
   const sheetTask = $derived(sheetId ? app.data.tasks.find((x) => x.id === sheetId) : undefined);
   const sheetColumn = $derived(sheetTask ? (cols.find((c) => c.status === sheetTask.status)?.tasks ?? []) : []);
-  const press = pressTimer(LONG_PRESS_MS);
+  const press = pressTimer(LONG_PRESS_MS, { swallow: true });
   let touch: { x: number; y: number } | null = null;
   let chipEls = $state<Record<string, HTMLElement | undefined>>({});
 
@@ -95,8 +95,6 @@
     press.cancel();
     const id = task.id;
     press.start(e.clientX, e.clientY, () => {
-      suppressClick = true;
-      setTimeout(() => (suppressClick = false), 400);
       globalThis.navigator?.vibrate?.(10);
       sheetId = id;
     });
