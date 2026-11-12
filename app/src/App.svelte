@@ -33,6 +33,8 @@
   import { phoneOrMobile } from './lib/mobile/phone.svelte';
   import { diag, startDiagnostics } from './lib/diag/diag.svelte';
   import { feedback } from './lib/feedback/feedback.svelte';
+  import { escapeTarget } from './lib/overlay-route';
+  import { rec } from './lib/record/record-state.svelte';
   import { tour } from './lib/tour/tour.svelte';
   import { isNativeAndroid, native, setNativeOs } from './lib/mobile/native';
   import { closeTop, runBack } from './lib/mobile/back';
@@ -148,10 +150,11 @@
     } else if (mod && e.key === ',') {
       e.preventDefault();
       command('settings').run();
-    } else if (e.key === 'Escape' && diag.mode) {
-      diag.close();
-    } else if (e.key === 'Escape' && app.overlay) {
-      app.closeOverlay();
+    } else {
+      const top = escapeTarget({ key: e.key, defaultPrevented: e.defaultPrevented, feedback: feedback.open, recording: rec.phase !== 'idle', diag: !!diag.mode, overlay: !!app.overlay });
+      if (top === 'feedback') feedback.close();
+      else if (top === 'diag') diag.close();
+      else if (top === 'overlay') app.closeOverlay();
     }
   }
   const connBanner = preload(() => import('./lib/components/ui/ConnBanner.svelte'), 1000);

@@ -1,5 +1,32 @@
 import { describe, expect, it } from 'vitest';
-import { mainOverlay, parentOverlay } from './overlay-route';
+import { escapeTarget, mainOverlay, parentOverlay, type EscapeState } from './overlay-route';
+
+describe('escapeTarget', () => {
+  const idle: EscapeState = { key: 'Escape', defaultPrevented: false, feedback: false, recording: false, diag: false, overlay: false };
+
+  it('closes the feedback sheet, which sits above every other dialog', () => {
+    expect(escapeTarget({ ...idle, feedback: true, overlay: true, diag: true })).toBe('feedback');
+  });
+
+  it('leaves the sheet open when a popover inside it already took the key', () => {
+    expect(escapeTarget({ ...idle, feedback: true, defaultPrevented: true })).toBeNull();
+    expect(escapeTarget({ ...idle, feedback: true, overlay: true, defaultPrevented: true })).toBe('overlay');
+  });
+
+  it('leaves the sheet to the recording flow while one is being set up or running', () => {
+    expect(escapeTarget({ ...idle, feedback: true, recording: true })).toBeNull();
+  });
+
+  it('closes the logs dialog before an overlay, and an overlay when nothing else is open', () => {
+    expect(escapeTarget({ ...idle, diag: true, overlay: true })).toBe('diag');
+    expect(escapeTarget({ ...idle, overlay: true })).toBe('overlay');
+    expect(escapeTarget(idle)).toBeNull();
+  });
+
+  it('ignores other keys', () => {
+    expect(escapeTarget({ ...idle, key: 'Enter', feedback: true, overlay: true })).toBeNull();
+  });
+});
 
 describe('parentOverlay', () => {
   it('returns the uninstall dialog to settings', () => {
