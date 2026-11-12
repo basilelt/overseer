@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { connLabel, hostChipDot, HOST_WORKING_DOT } from './conn-label';
-import { phoneHostDot } from './mobile/hosts';
+import * as hosts from './mobile/hosts';
 
 describe('host dot colours', () => {
   it('shows every connecting phase as working on the desktop chip', () => {
@@ -9,12 +9,11 @@ describe('host dot colours', () => {
     expect(hostChipDot('connected')).toBe('var(--st-input)');
     expect(hostChipDot('error')).toBe('var(--st-failed)');
   });
+});
 
-  it('shows only connected and error as coloured on the phone', () => {
-    expect(phoneHostDot('connected')).toBe('var(--st-input)');
-    expect(phoneHostDot('error')).toBe('var(--st-failed)');
-    expect(phoneHostDot('connecting')).toBe('var(--st-held)');
-    expect(phoneHostDot('reconnecting')).toBe('var(--st-held)');
+describe('host dot home', () => {
+  it('has no phone-specific mapping next to the host form helpers', () => {
+    expect(hosts).not.toHaveProperty('phoneHostDot');
   });
 });
 

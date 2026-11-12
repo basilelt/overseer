@@ -27,8 +27,7 @@
   import { gt } from '../../github/strings';
   import { dt } from '../../diag/diag.svelte';
   import type { Component } from 'svelte';
-  import { connLabel } from '../../conn-label';
-  import { phoneHostDot } from '../../mobile/hosts';
+  import { connLabel, hostChipDot, HOST_WORKING_DOT } from '../../conn-label';
   import { t } from '../../i18n.svelte';
   import { saveSettings, settings } from '../../settings/settings.svelte';
   import type { ThemePref } from '../../theme/theme';
@@ -61,6 +60,7 @@
 <script lang="ts">
   const conn = $derived(app.conn);
   const phase = $derived(connLabel(conn));
+  const hostDot = $derived(hostChipDot(conn.phase));
   const host = $derived(conn.target.kind === 'local' ? t('host.local') : conn.target.label || t('mobile.more.notConnected'));
   let confirmRestart = $state(false);
   let restarting = $state(false);
@@ -94,7 +94,7 @@
         <span class="title">{host}</span>
         <span class="sub faint">{conn.resolved ?? phase}{conn.version && conn.phase === 'connected' ? ` · v${conn.version}` : ''}</span>
       </span>
-      <span class="dot" style:background={phoneHostDot(conn.phase)}></span>
+      <span class="dot" class:pulse={hostDot === HOST_WORKING_DOT} style:background={hostDot}></span>
     </div>
     <button class="row" onclick={() => app.open('connect')}><ArrowLeftRight size={18} /><span class="label">{t('mobile.more.switchHost')}</span><ChevronRight size={16} /></button>
     <button class="row" onclick={() => app.open('connect', 'devicekey')}><KeyRound size={18} /><span class="label">{t('mobile.more.deviceKey')}</span><ChevronRight size={16} /></button>
