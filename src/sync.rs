@@ -13,7 +13,7 @@ use tungstenite::client::IntoClientRequest;
 use tungstenite::{HandshakeError, Message, WebSocket};
 
 pub const HEARTBEAT: Duration = Duration::from_secs(15);
-const TERMINAL: [&str; 3] = ["succeeded", "refused", "failed"];
+use crate::wire::*;
 
 pub trait Transport {
     fn send(&mut self, v: &Value) -> Result<(), String>;
@@ -156,7 +156,7 @@ pub fn complete(
     reason: Option<&str>,
     now_ms: i64,
 ) -> Result<(), String> {
-    if !safe_id(id) || !TERMINAL.contains(&status) {
+    if !safe_id(id) || !STATUS_TERMINAL.contains(&status) {
         return Err("invalid command id or status".into());
     }
     mkdir_private(&done(state_dir)).map_err(|e| e.to_string())?;
@@ -240,7 +240,7 @@ impl Client {
             return Ok(None);
         }
         let seq = self.meta("next_seq", 1);
-        let frame = json!({ "kind": "delta", "seq": seq, "upsert": upsert });
+        let frame = json!({ "kind": FRAME_DELTA, "seq": seq, "upsert": upsert });
         let tx = self.db.unchecked_transaction().map_err(|e| e.to_string())?;
         let run = || -> rusqlite::Result<()> {
             tx.execute(
@@ -298,7 +298,7 @@ impl Client {
             .map_err(|e| e.to_string())?;
         self.set_meta("next_seq", next + 1)?;
         Ok(vec![
-            json!({ "kind": "snapshot", "seq": next, "lines": lines }),
+            json!({ "kind": FRAME_SNAPSHOT, "seq": next, "lines": lines }),
         ])
     }
 
@@ -317,9 +317,9 @@ impl Client {
             o.remove("args");
         }
         if !safe_id(id) {
-            echo["status"] = json!("refused");
+            echo["status"] = json!(STATUS_REFUSED);
             echo["reason"] = json!("invalid command id");
-            return Ok(json!({ "kind": "command_result", "command": echo }));
+            return Ok(json!({ "kind": FRAME_COMMAND_RESULT, "command": echo }));
         }
         let fresh = self
             .db
@@ -336,8 +336,8 @@ impl Client {
                 cmd.to_string().as_bytes(),
             )?;
         }
-        echo["status"] = json!("delivered");
-        Ok(json!({ "kind": "command_result", "command": echo }))
+        echo["status"] = json!(STATUS_DELIVERED);
+        Ok(json!({ "kind": FRAME_COMMAND_RESULT, "command": echo }))
     }
 
     pub fn results(&self) -> Vec<(String, Value)> {
@@ -372,7 +372,7 @@ impl Client {
             }
             out.push((
                 id.to_string(),
-                json!({ "kind": "command_result", "command": c }),
+                json!({ "kind": FRAME_COMMAND_RESULT, "command": c }),
             ));
         }
         out
@@ -388,16 +388,18 @@ impl Client {
 
     pub fn handle(&self, v: &Value, now_ms: i64) -> Result<Vec<Value>, String> {
         match v["kind"].as_str() {
-            Some("ack") => {
+            Some(FRAME_ACK) => {
                 let seq = v["seq"].as_i64().unwrap_or(0);
-                if v["resync"] == true {
+                if v[FRAME_RESYNC] == true {
                     self.frames_after(seq, true)
                 } else {
                     self.on_ack(seq).map(|_| vec![])
                 }
             }
-            Some("command") => Ok(vec![self.receive(&v["command"], now_ms)?]),
-            Some("stations") => write_stations(&self.state_dir, &self.station, v).map(|_| vec![]),
+            Some(FRAME_COMMAND) => Ok(vec![self.receive(&v["command"], now_ms)?]),
+            Some(FRAME_STATIONS) => {
+                write_stations(&self.state_dir, &self.station, v).map(|_| vec![])
+            }
             _ => Ok(vec![]),
         }
     }
@@ -422,7 +424,7 @@ impl Client {
         now_ms: i64,
     ) -> Result<(), String> {
         t.send(&json!({
-            "kind": "hello", "stationId": self.station, "daemonVersion": version,
+            "kind": FRAME_HELLO, "stationId": self.station, "daemonVersion": version,
             "lastAckedSeq": self.acked(),
         }))?;
         let deadline = Instant::now() + Duration::from_secs(10);
@@ -432,7 +434,7 @@ impl Client {
                 return Err("no ack from the api".into());
             }
             match t.recv(left)? {
-                Some(v) if v["kind"] == "ack" => break v,
+                Some(v) if v["kind"] == FRAME_ACK => break v,
                 Some(v) => self
                     .handle(&v, now_ms)?
                     .iter()
@@ -440,7 +442,8 @@ impl Client {
                 None => {}
             }
         };
-        let frames = self.frames_after(ack["seq"].as_i64().unwrap_or(0), ack["resync"] == true)?;
+        let frames =
+            self.frames_after(ack["seq"].as_i64().unwrap_or(0), ack[FRAME_RESYNC] == true)?;
         frames.iter().try_for_each(|f| t.send(f))?;
         self.conn = Some(t);
         Ok(())
@@ -485,7 +488,7 @@ impl Client {
                     Some(v) => {
                         let replies = c.handle(&v, now_ms)?;
                         c.send_all(&replies)?;
-                        if v["kind"] == "command" {
+                        if v["kind"] == FRAME_COMMAND {
                             return Ok(());
                         }
                     }
@@ -498,7 +501,7 @@ impl Client {
 
     pub fn heartbeat(&self, lines: &[Value]) -> Value {
         let mut h = json!({
-            "kind": "heartbeat",
+            "kind": FRAME_HEARTBEAT,
             "seq": self.acked(),
             "activeCount": lines.iter().filter(|l| l["state"] == "active").count(),
         });

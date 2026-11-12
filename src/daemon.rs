@@ -1,5 +1,6 @@
 use crate::actions;
 use crate::procs::{now_ms, System};
+use crate::wire::{CMD_CLOSE, CMD_HOLD, CMD_LINK, CMD_RESUME};
 use crate::{scan, Ctx};
 use serde_json::{json, Value};
 use std::io::{BufRead, BufReader, ErrorKind, Read, Write};
@@ -8,7 +9,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::time::Duration;
 
-pub const PROTOCOL: u32 = 1;
+pub use crate::wire::PROTOCOL;
 
 pub trait Stream: Read + Write + Send {
     fn set_read_timeout(&self, d: Option<Duration>) -> std::io::Result<()>;
@@ -963,7 +964,7 @@ pub fn handle(ctx: &Ctx, r: &Request) -> (u16, Value) {
             return resume_term(ctx, r, id, &body);
         }
     }
-    if let ("POST", ["v1", "lines", id, kind @ ("hold" | "close" | "resume" | "link")]) =
+    if let ("POST", ["v1", "lines", id, kind @ (CMD_HOLD | CMD_CLOSE | CMD_RESUME | CMD_LINK)]) =
         (r.method.as_str(), segs.as_slice())
     {
         if let Some((station, online, seen)) = crate::board::remote_station(ctx, id) {
@@ -977,8 +978,8 @@ pub fn handle(ctx: &Ctx, r: &Request) -> (u16, Value) {
                     ),
                 );
             }
-            let mut args = json!({ "dryRun": *kind != "link" && dry_run(r) });
-            if *kind == "link" {
+            let mut args = json!({ "dryRun": *kind != CMD_LINK && dry_run(r) });
+            if *kind == CMD_LINK {
                 let Some(k) = body["ticketKey"].as_str() else {
                     return err(400, "ticketKey required");
                 };

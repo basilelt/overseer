@@ -114,7 +114,7 @@ impl Report {
 
     pub fn outcome(&self) -> (&'static str, Option<String>) {
         if self.error.is_some() {
-            return ("failed", self.error.clone());
+            return (crate::wire::STATUS_FAILED, self.error.clone());
         }
         if !self.ok() {
             let failed: Vec<String> = self
@@ -123,9 +123,9 @@ impl Report {
                 .filter(|c| !c.ok)
                 .map(|c| format!("{}: {}", c.name, c.detail))
                 .collect();
-            return ("refused", Some(failed.join("; ")));
+            return (crate::wire::STATUS_REFUSED, Some(failed.join("; ")));
         }
-        ("succeeded", Some(self.action.to_string()))
+        (crate::wire::STATUS_SUCCEEDED, Some(self.action.to_string()))
     }
 
     pub fn to_json(&self) -> Value {

@@ -30,6 +30,7 @@ expect "root markdown runs nothing" "" README.md
 expect "issue template runs nothing" "" .github/ISSUE_TEMPLATE/bug.yml
 expect "nested markdown runs nothing" "" sub/notes.md
 expect "daemon source" "rust app windows " src/main.rs
+expect "wire vocabulary shared by the daemon and the relay" "rust app windows " contract/wire.rs
 expect "app source" "app " app/src/main.ts
 expect "tauri source" "app android " app/src-tauri/src/lib.rs
 expect "setup action is wide" "rust app windows android actionlint store_guard tap ci_scripts " .github/actions/setup/action.yml

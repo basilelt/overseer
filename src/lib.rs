@@ -404,13 +404,13 @@ pub fn line_state(
     idle_after_ms: i64,
 ) -> (&'static str, Option<&'static str>) {
     if archived {
-        ("hung-up", None)
+        (wire::STATE_HUNG_UP, None)
     } else if !alive {
-        ("held", Some("lost"))
+        (wire::STATE_HELD, Some("lost"))
     } else if busy || now_ms - activity_ms <= idle_after_ms {
-        ("active", None)
+        (wire::STATE_ACTIVE, None)
     } else {
-        ("idle", None)
+        (wire::STATE_IDLE, None)
     }
 }
 
@@ -420,8 +420,8 @@ pub fn apply_marks(
     closed: bool,
 ) -> (&'static str, Option<&'static str>) {
     match state {
-        ("held", _) if closed => ("hung-up", None),
-        ("held", _) if held_by_user => ("held", Some("user")),
+        (wire::STATE_HELD, _) if closed => (wire::STATE_HUNG_UP, None),
+        (wire::STATE_HELD, _) if held_by_user => (wire::STATE_HELD, Some("user")),
         s => s,
     }
 }
@@ -1431,6 +1431,10 @@ fn scan_now(ctx: &Ctx) -> Result<Vec<Line>, String> {
     remember_trees(wrote);
     lines.sort_by_key(|l| -l.last_activity_ms);
     Ok(lines)
+}
+
+pub mod wire {
+    include!("../contract/wire.rs");
 }
 
 pub const RECENT_MS: i64 = 7 * 24 * 3600 * 1000;

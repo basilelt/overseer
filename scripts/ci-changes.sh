@@ -23,7 +23,7 @@ else
       .github/workflows/ci.yml | .github/actions/* | scripts/ci-*.sh | Makefile) wide=true ;;
     esac
     case $f in
-      src/* | api/* | tests/* | board/* | Cargo.toml | Cargo.lock | build.rs) rust=true app=true windows=true ;;
+      src/* | api/* | tests/* | board/* | contract/wire.rs | Cargo.toml | Cargo.lock | build.rs) rust=true app=true windows=true ;;
     esac
     case $f in
       app/src-tauri/gen/* | app/fastlane/*) ;;
