@@ -6,6 +6,7 @@ export interface TermModes {
   alt: boolean;
   alternateScroll: boolean;
   appCursor: boolean;
+  lineEditor: boolean;
 }
 
 const TRACKING = [1000, 1002, 1003] as const;
@@ -56,6 +57,7 @@ export class ModeTracker {
       alt: s.has(1049) || s.has(1047) || s.has(47),
       alternateScroll: !this.alternateScrollOff,
       appCursor: s.has(1),
+      lineEditor: s.has(2004),
     };
   }
 }
@@ -128,7 +130,7 @@ export function cellAt(clientX: number, clientY: number, rect: { left: number; t
 }
 
 export function clickMove(col: number, row: number, cursor: { x: number; y: number }, widthAt: (x: number) => number, m: TermModes): string | null {
-  if (m.tracking || row !== cursor.y || col === cursor.x) return null;
+  if (m.tracking || !m.lineEditor || row !== cursor.y || col === cursor.x) return null;
   const from = Math.min(col, cursor.x);
   const to = Math.max(col, cursor.x);
   let n = 0;

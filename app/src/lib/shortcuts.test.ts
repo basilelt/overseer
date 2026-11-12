@@ -126,6 +126,17 @@ describe('shortcut resolver', () => {
     expect(resolveShortcut(ev('W', 'KeyW', { meta: true, shift: true }), mac)).toBeNull();
   });
 
+  it('pastes with Shift+Insert and copies with Ctrl+Insert in a terminal, instead of sending the Insert key to the shell', () => {
+    expect(resolveShortcut(ev('Insert', 'Insert', { shift: true }), linuxTerm)).toEqual({ id: 'paste' });
+    expect(resolveShortcut(ev('Insert', 'Insert', { ctrl: true }), linuxTerm)).toEqual({ id: 'copy' });
+    expect(resolveShortcut(ev('Insert', 'Insert', { shift: true }), linux)).toBeNull();
+    expect(resolveShortcut(ev('Insert', 'Insert', { ctrl: true }), linux)).toBeNull();
+    expect(resolveShortcut(ev('Insert', 'Insert'), linuxTerm)).toBeNull();
+    expect(resolveShortcut(ev('Insert', 'Insert', { ctrl: true, shift: true }), linuxTerm)).toBeNull();
+    expect(resolveShortcut(ev('Insert', 'Insert', { shift: true, alt: true }), linuxTerm)).toBeNull();
+    expect(resolveShortcut(ev('Insert', 'Insert', { shift: true }), { ...mac, inTerminal: true })).toBeNull();
+  });
+
   it('moves focus between panes with Mod+Alt+arrows', () => {
     expect(resolveShortcut(ev('ArrowLeft', 'ArrowLeft', { meta: true, alt: true }), mac)).toEqual({ id: 'focusLeft' });
     expect(resolveShortcut(ev('ArrowDown', 'ArrowDown', { ctrl: true, alt: true }), linuxTerm)).toEqual({ id: 'focusDown' });
@@ -172,5 +183,9 @@ describe('shortcut labels', () => {
       { label: 'Ctrl+Shift+F', outsideTerminal: false },
       { label: 'Ctrl+F', outsideTerminal: true },
     ]);
+    const paste = sheetRows({ mac: false, ctrlWClosesTab: true })
+      .flatMap((s) => s.rows)
+      .find((r) => r.id === 'paste');
+    expect(paste?.keys.map((k) => k.label)).toEqual(['Ctrl+Shift+V', 'Shift+Insert']);
   });
 });

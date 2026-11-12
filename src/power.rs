@@ -8,6 +8,7 @@ use std::time::Duration;
 
 const KEY: &str = "keepAwakeLidClosed";
 const SAVED: &str = "keepAwakeLidSaved";
+const ERROR: &str = "keepAwakeLidError";
 pub const UNSUPPORTED: &str =
     "keeping agents running with the lid closed is not supported on this system";
 
@@ -49,7 +50,6 @@ impl Drop for Inhibitor {
 }
 
 static HELD: Mutex<Option<Inhibitor>> = Mutex::new(None);
-static LAST_ERROR: Mutex<Option<String>> = Mutex::new(None);
 
 pub fn enabled(reg: &Registry) -> bool {
     matches!(reg.get(KEY), Ok(Some(v)) if v == "true")
@@ -210,8 +210,14 @@ pub fn apply(os: Os, run: Run, reg: &Registry, on: bool) -> Result<(), String> {
     }
 }
 
-fn set_error(e: Option<String>) {
-    *LAST_ERROR.lock().unwrap_or_else(|e| e.into_inner()) = e;
+fn set_error(reg: &Registry, e: Option<&str>) {
+    if let Err(err) = reg.put(ERROR, e.unwrap_or("")) {
+        crate::dlog::line("warn", &format!("keep awake with the lid closed: {err}"));
+    }
+}
+
+fn last_error(reg: &Registry) -> Option<String> {
+    reg.get(ERROR).ok().flatten().filter(|e| !e.is_empty())
 }
 
 pub fn status(os: Os, run: Run, reg: &Registry) -> Value {
@@ -219,7 +225,7 @@ pub fn status(os: Os, run: Run, reg: &Registry) -> Value {
         "enabled": enabled(reg),
         "active": active(os, run),
         "supported": os != Os::Other,
-        "error": LAST_ERROR.lock().unwrap_or_else(|e| e.into_inner()).clone(),
+        "error": last_error(reg),
     })
 }
 
@@ -229,32 +235,29 @@ pub fn set(os: Os, run: Run, reg: &Registry, on: bool) -> Result<Value, (u16, St
     }
     match apply(os, run, reg, on) {
         Ok(()) => {
-            set_error(None);
+            set_error(reg, None);
             reg.put(KEY, if on { "true" } else { "false" })
                 .map_err(|e| (500, e))?;
             Ok(status(os, run, reg))
         }
         Err(e) => {
-            set_error(Some(e.clone()));
+            set_error(reg, Some(&e));
             Err((500, e))
         }
     }
 }
 
 pub fn on_start(state_dir: &Path) {
-    let os = Os::current();
-    if os != Os::Linux {
-        return;
-    }
     let Ok(reg) = Registry::open(state_dir) else {
         return;
     };
-    if !enabled(&reg) {
+    set_error(&reg, None);
+    if Os::current() != Os::Linux || !enabled(&reg) {
         return;
     }
     if let Err(e) = linux_apply(true) {
         crate::dlog::line("warn", &format!("keep awake with the lid closed: {e}"));
-        set_error(Some(e));
+        set_error(&reg, Some(&e));
     }
 }
 
@@ -485,6 +488,39 @@ mod tests {
         assert_eq!(v["enabled"], true);
         assert_eq!(v["active"], true);
         assert_eq!(v["error"], Value::Null);
+    }
+
+    #[test]
+    fn concurrent_states_each_see_their_own_error() {
+        use std::sync::mpsc::channel;
+        let (cleared, on_cleared) = channel::<()>();
+        let (refused_set, on_refused) = channel::<()>();
+        std::thread::scope(|s| {
+            let mac = s.spawn(move || {
+                let r = reg();
+                let run = |c: &str, _: &[&str]| {
+                    if c == "pmset" {
+                        let _ = cleared.send(());
+                        let _ = on_refused.recv();
+                        return Ok(" SleepDisabled\t\t1\n".to_string());
+                    }
+                    Ok(String::new())
+                };
+                set(Os::Mac, &run, &r, true).unwrap()
+            });
+            let refused = s.spawn(move || {
+                let r = reg();
+                let run = |_: &str, _: &[&str]| Err("Access is denied.".to_string());
+                on_cleared.recv().unwrap();
+                set(Os::Windows, &run, &r, true).unwrap_err();
+                refused_set.send(()).unwrap();
+                status(Os::Windows, &run, &r)
+            });
+            let v = mac.join().unwrap();
+            assert_eq!(v["active"], true);
+            assert_eq!(v["error"], Value::Null);
+            assert_eq!(refused.join().unwrap()["error"], "Access is denied.");
+        });
     }
 
     #[test]
