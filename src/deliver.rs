@@ -1,3 +1,4 @@
+use crate::agents;
 use crate::procs::now_ms;
 use crate::term::{self, Term};
 use crate::tmux::Tmux;
@@ -7,6 +8,15 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
 pub const SILENCE_MS: i64 = 1500;
+pub const PASTE_SETTLE: Duration = Duration::from_millis(300);
+const ANSWER_GAP: Duration = Duration::from_millis(200);
+const CONFIRM_POLL: Duration = Duration::from_millis(200);
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum StartupPrompt {
+    AnswerForUser,
+    WaitForUser,
+}
 
 #[derive(Clone)]
 pub enum Channel {
@@ -103,14 +113,20 @@ pub fn not_idle(
 
 pub fn send(ch: &Channel, text: &str, tmux: Option<&Tmux>, buffer: &str) -> Result<(), String> {
     match ch {
-        Channel::Term(t) => term::paste(t, text).map_err(|e| e.to_string()),
+        Channel::Term(t) => paste(t, text).map_err(|e| e.to_string()),
         Channel::Pane(p) => {
             let tmux = tmux.ok_or("tmux is not available")?;
             insert(ch, text, Some(tmux), buffer)?;
-            std::thread::sleep(Duration::from_millis(300));
+            std::thread::sleep(PASTE_SETTLE);
             tmux.ok(&["send-keys", "-t", p, "Enter"])
         }
     }
+}
+
+pub fn paste(t: &Term, text: &str) -> std::io::Result<()> {
+    term::insert(t, text)?;
+    std::thread::sleep(PASTE_SETTLE);
+    t.input(b"\r")
 }
 
 pub fn insert(ch: &Channel, text: &str, tmux: Option<&Tmux>, buffer: &str) -> Result<(), String> {
@@ -142,7 +158,7 @@ fn settle(t: &Term, limit: Duration, poll: Duration) -> bool {
     true
 }
 
-fn trust_answer(screen: &[u8]) -> Option<&'static [u8]> {
+fn trust_answer(screen: &[u8], prompt: &agents::StartupPrompt) -> Option<&'static [u8]> {
     let s = String::from_utf8_lossy(screen);
     let mut plain = String::with_capacity(s.len());
     let mut it = s.chars().peekable();
@@ -157,30 +173,50 @@ fn trust_answer(screen: &[u8]) -> Option<&'static [u8]> {
             (c, _) => plain.push(c),
         }
     }
-    let at = plain.rfind("Itrustthisfolder")?;
-    let cursor = plain[..at].rfind('❯')?;
+    let at = plain.rfind(prompt.marker)?;
+    let cursor = plain[..at].rfind(prompt.cursor)?;
     match plain[cursor..]
-        .trim_start_matches(['❯', '.', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9'])
-        .starts_with("Yes")
+        .trim_start_matches([
+            prompt.cursor,
+            '.',
+            '0',
+            '1',
+            '2',
+            '3',
+            '4',
+            '5',
+            '6',
+            '7',
+            '8',
+            '9',
+        ])
+        .starts_with(prompt.accept_label)
     {
-        true => Some(b"\r"),
-        false => Some(b"\x1b[B\r"),
+        true => Some(prompt.accept),
+        false => Some(prompt.select_then_accept),
     }
 }
 
-pub fn when_started(t: &Term, text: &str, own_dir: bool) {
+fn startup_answer(screen: &[u8]) -> Option<&'static [u8]> {
+    agents::AGENTS
+        .iter()
+        .filter_map(|a| a.startup_prompt.as_ref())
+        .find_map(|p| trust_answer(screen, p))
+}
+
+pub fn when_started(t: &Term, text: &str, startup: StartupPrompt) {
     if !settle(t, Duration::from_secs(30), Duration::from_millis(100)) {
         return;
     }
-    if let Some(keys) = trust_answer(&t.screen()) {
+    if let Some(keys) = startup_answer(&t.screen()) {
         let mark = t.written();
-        let (limit, poll) = match own_dir {
-            true => (30, 100),
-            false => (86_400, 1000),
+        let (limit, poll) = match startup {
+            StartupPrompt::AnswerForUser => (30, 100),
+            StartupPrompt::WaitForUser => (86_400, 1000),
         };
-        if own_dir {
+        if startup == StartupPrompt::AnswerForUser {
             let _ = t.input(&keys[..keys.len() - 1]);
-            std::thread::sleep(Duration::from_millis(200));
+            std::thread::sleep(ANSWER_GAP);
             let _ = t.input(b"\r");
         }
         let begin = Instant::now();
@@ -194,13 +230,7 @@ pub fn when_started(t: &Term, text: &str, own_dir: bool) {
             return;
         }
     }
-    submit(
-        t,
-        text,
-        READY_WAIT,
-        Duration::from_millis(200),
-        CONFIRM_AFTER,
-    );
+    submit(t, text, READY_WAIT, CONFIRM_POLL, CONFIRM_AFTER);
 }
 
 const READY_WAIT: Duration = Duration::from_secs(5);
@@ -238,7 +268,7 @@ fn holds(typed: &str, text: &str) -> bool {
 // is never answered by mistake.
 fn submit(t: &Term, text: &str, ready_wait: Duration, poll: Duration, confirm: Duration) {
     let ready = empty_prompt(t, ready_wait, poll);
-    if t.exited() || term::paste(t, text).is_err() {
+    if t.exited() || paste(t, text).is_err() {
         return;
     }
     let watch = match ready {
@@ -323,10 +353,10 @@ mod tests {
     #[test]
     fn answers_the_claude_trust_dialog_with_yes() {
         let no_first = b"\x1b[2GQuick\x1b[8Gsafety check\r\n\x1b[2G\x1b[38;2;177;185;249m\xe2\x9d\xaf\x1b[4GNo,\x1b[8Gexit\x1b[39m\r\r\n\x1b[4GYes,\x1b[9GI\x1b[11Gtrust\x1b[17Gthis\x1b[22Gfolder\r\n\x1b]11;?\x07";
-        assert_eq!(trust_answer(no_first), Some(&b"\x1b[B\r"[..]));
+        assert_eq!(startup_answer(no_first), Some(&b"\x1b[B\r"[..]));
         let yes_first = "❯ 1. Yes, I trust this folder\r\n  2. No, exit".as_bytes();
-        assert_eq!(trust_answer(yes_first), Some(&b"\r"[..]));
-        assert_eq!(trust_answer("❯ hello, I trust you".as_bytes()), None);
+        assert_eq!(startup_answer(yes_first), Some(&b"\r"[..]));
+        assert_eq!(startup_answer("❯ hello, I trust you".as_bytes()), None);
     }
 
     fn unsent(screen: &str, text: &str) -> bool {

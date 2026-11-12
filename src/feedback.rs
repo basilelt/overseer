@@ -214,7 +214,9 @@ pub fn launch(
     .map_err(|e| (409, e))?;
     let json = term.to_json();
     if !by_flag && !by_arg {
-        std::thread::spawn(move || crate::deliver::when_started(&term, &prompt, false));
+        std::thread::spawn(move || {
+            crate::deliver::when_started(&term, &prompt, crate::deliver::StartupPrompt::WaitForUser)
+        });
     }
     Ok(json)
 }

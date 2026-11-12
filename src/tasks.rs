@@ -1223,9 +1223,12 @@ pub(crate) fn start_with_args(
         }
         text.push_str(&crate::task_agents::backlog(&late));
     }
-    let own_dir = t.origin.as_deref() == Some(crate::task_agents::CONFIGURATOR);
+    let startup = match t.origin.as_deref() == Some(crate::task_agents::CONFIGURATOR) {
+        true => crate::deliver::StartupPrompt::AnswerForUser,
+        false => crate::deliver::StartupPrompt::WaitForUser,
+    };
     if !text.is_empty() {
-        std::thread::spawn(move || crate::deliver::when_started(&term, &text, own_dir));
+        std::thread::spawn(move || crate::deliver::when_started(&term, &text, startup));
     }
     Ok(t)
 }

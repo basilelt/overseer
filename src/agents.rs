@@ -58,6 +58,14 @@ pub enum Repair {
 
 pub const CODEX_TRUST: &str = "Codex runs edited hooks only after you trust them again: open codex and accept the hooks prompt (Overseer never edits config.toml).";
 
+pub struct StartupPrompt {
+    pub marker: &'static str,
+    pub cursor: char,
+    pub accept_label: &'static str,
+    pub accept: &'static [u8],
+    pub select_then_accept: &'static [u8],
+}
+
 pub struct ConfigDir {
     pub env: Option<&'static str>,
     pub default: &'static str,
@@ -95,6 +103,7 @@ pub struct Agent {
     pub prompt: Option<&'static str>,
     pub resume: Option<&'static [&'static str]>,
     pub cont: Option<&'static [&'static str]>,
+    pub startup_prompt: Option<StartupPrompt>,
 }
 
 const NONE: Agent = Agent {
@@ -129,11 +138,19 @@ const NONE: Agent = Agent {
     prompt: None,
     resume: None,
     cont: None,
+    startup_prompt: None,
 };
 
 pub static AGENTS: &[Agent] = &[
     Agent {
         id: "claude",
+        startup_prompt: Some(StartupPrompt {
+            marker: "Itrustthisfolder",
+            cursor: '❯',
+            accept_label: "Yes",
+            accept: b"\r",
+            select_then_accept: b"\x1b[B\r",
+        }),
         transcript: Some(Transcript::Claude),
         metered: true,
         mcp: Mcp::Claude,

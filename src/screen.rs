@@ -8,7 +8,6 @@ pub const TAIL: usize = 256 << 10;
 const MAX_KEYS: usize = 32;
 const KEY_GAP: Duration = Duration::from_millis(40);
 const MAX_TEXT: usize = 64 << 10;
-const TEXT_SETTLE: Duration = Duration::from_millis(300);
 
 #[derive(Clone, Copy, PartialEq, Debug)]
 struct Cell {
@@ -531,7 +530,7 @@ pub fn keys_route(ctx: &Ctx, id: &str, body: &Value) -> (u16, Value) {
         if let Err(e) = crate::deliver::insert(&ch, text, ctx.tmux.as_ref(), &buffer) {
             return err(409, e);
         }
-        std::thread::sleep(TEXT_SETTLE);
+        std::thread::sleep(crate::deliver::PASTE_SETTLE);
     }
     (
         200,

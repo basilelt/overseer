@@ -1296,12 +1296,6 @@ pub fn insert(t: &Term, text: &str) -> std::io::Result<()> {
     t.input(body.as_bytes())
 }
 
-pub fn paste(t: &Term, text: &str) -> std::io::Result<()> {
-    insert(t, text)?;
-    std::thread::sleep(Duration::from_millis(300));
-    t.input(b"\r")
-}
-
 pub fn ws(id: &str, req: &Request, mut s: impl Stream) {
     let Some(t) = get(id) else {
         return respond_raw(
