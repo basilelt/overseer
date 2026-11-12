@@ -7,6 +7,7 @@ import { saveSettings } from '../settings/settings.svelte';
 import { app } from '../state.svelte';
 import { EMPTY_LAYOUT, openInFocused, workspace } from '../workspace/workspace.svelte';
 import type { ConnState, HostTarget, Lifecycle } from '../types';
+import { quietMock } from '../../test/quiet-mock';
 
 const ssh: HostTarget = { kind: 'ssh', host: 'workstation', label: 'workstation' };
 const hosts = [
@@ -125,7 +126,7 @@ describe('keep the server running', () => {
   });
 
   it('round-trips through the mock daemon', async () => {
-    const m = new MockDaemon({ live: false, delayMs: 0 });
+    const m = quietMock();
     const on = await m.request<Lifecycle>('PATCH', '/v1/lifecycle', { autostart: true, afterReboot: 'shells' });
     expect(on.autostart.enabled).toBe(true);
     expect(on.afterReboot).toBe('shells');

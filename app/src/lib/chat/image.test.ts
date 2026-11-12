@@ -1,10 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
 import { api } from '../daemon/api';
 import type { DaemonClient } from '../daemon/client';
-import { MockDaemon } from '../daemon/mock';
 import { chatImage } from './image';
+import { quietMock } from '../../test/quiet-mock';
 
-const mock = () => new MockDaemon({ live: false, delayMs: 0 });
+const mock = () => quietMock();
 
 describe('chatImage', () => {
   it('builds the route with the encoded line id, offset and index', async () => {

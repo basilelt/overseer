@@ -1,11 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
 import { DaemonError, type DaemonClient } from './daemon/client';
-import { MockDaemon } from './daemon/mock';
 import { addNote, cleanNote, editNote, NOTE_MAX, NOTES_MAX, notesApi, notesOf, removeNote, withNotes } from './notes';
 import type { DaemonEvent, LocalLine, Note } from './types';
 import type { Snapshot } from './reduce';
+import { quietMock } from '../test/quiet-mock';
 
-const mock = () => new MockDaemon({ live: false, delayMs: 0 });
+const mock = () => quietMock();
 
 async function host(client: DaemonClient | null = mock()) {
   const lines: LocalLine[] = client ? await client.request<LocalLine[]>('GET', '/v1/lines') : [{ line: { id: 'ln_01' } as LocalLine['line'] }];

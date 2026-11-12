@@ -4,6 +4,7 @@ import { closedForwards, forwardNotices, parseIgnore, parsePort, portChip, portC
 import { announce } from './ports.svelte';
 import { addEntry, type Entry, type EntryInput } from '../notify/notifications';
 import type { ConnState, Forward, Port, PortsState } from '../types';
+import { quietMock } from '../../test/quiet-mock';
 
 const port = (n: number, extra: Partial<Port> = {}): Port => ({
   port: n,
@@ -144,7 +145,7 @@ describe('MockDaemon ports and prompts', () => {
   const ssh = (host: string) => ({ kind: 'ssh' as const, host, label: host });
 
   it('auto-forwards detected ports on a remote host and reports them as added', async () => {
-    const m = new MockDaemon({ live: false, delayMs: 0 });
+    const m = quietMock();
     await m.connect(ssh('devbox'), () => {});
     const states: PortsState[] = [];
     const stop = m.watchPorts((s) => states.push(s));
@@ -157,7 +158,7 @@ describe('MockDaemon ports and prompts', () => {
   });
 
   it('forwards manually, rejects duplicates and does not re-forward a stopped port', async () => {
-    const m = new MockDaemon({ live: false, delayMs: 0 });
+    const m = quietMock();
     await m.connect(ssh('devbox'), () => {});
     const f = await m.forwardPort(8000, 18000);
     expect(f).toMatchObject({ remotePort: 8000, localPort: 18000, source: 'manual', url: 'http://localhost:18000' });
@@ -169,7 +170,7 @@ describe('MockDaemon ports and prompts', () => {
   });
 
   it('stops only the pid listed for a port, like the daemon', async () => {
-    const m = new MockDaemon({ live: false, delayMs: 0 });
+    const m = quietMock();
     await m.connect({ kind: 'local', label: 'Local' }, () => {});
     const states: PortsState[] = [];
     const stop = m.watchPorts((s) => states.push(s));
@@ -186,7 +187,7 @@ describe('MockDaemon ports and prompts', () => {
   });
 
   it('keeps local mode without forwards', async () => {
-    const m = new MockDaemon({ live: false, delayMs: 0 });
+    const m = quietMock();
     await m.connect({ kind: 'local', label: 'Local' }, () => {});
     const states: PortsState[] = [];
     m.watchPorts((s) => states.push(s))();
@@ -196,7 +197,7 @@ describe('MockDaemon ports and prompts', () => {
   });
 
   it('suspends on a host key prompt until answered', async () => {
-    const m = new MockDaemon({ live: false, delayMs: 0 });
+    const m = quietMock();
     const seen: ConnState[] = [];
     const done = m.connect(ssh('hostkey-box'), (s) => seen.push(s));
     await vi.waitFor(() => expect(seen.at(-1)?.prompt).toBeDefined());
@@ -210,7 +211,7 @@ describe('MockDaemon ports and prompts', () => {
   });
 
   it('fails the connection when a prompt is cancelled', async () => {
-    const m = new MockDaemon({ live: false, delayMs: 0 });
+    const m = quietMock();
     const seen: ConnState[] = [];
     const done = m.connect(ssh('hostkey-box'), (s) => seen.push(s));
     await vi.waitFor(() => expect(seen.at(-1)?.prompt).toBeDefined());

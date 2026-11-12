@@ -1,10 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanExits } from './autoclose';
-import { setClient } from '../daemon/client';
 import { MockDaemon } from '../daemon/mock';
 import { app } from '../state.svelte';
 import type { Term } from '../types';
 import { allTabs, EMPTY_LAYOUT, workspace } from '../workspace/workspace.svelte';
+import { connectMock } from '../../test/connect-mock';
+import { quietMock } from '../../test/quiet-mock';
 
 const term = (over: Partial<Term> = {}): Term => ({ id: 'tm_a', pid: 1, cwd: '/', cmd: ['zsh'], title: 'zsh', cols: 80, rows: 24, createdAt: '', exited: false, ...over });
 
@@ -48,9 +49,7 @@ describe('closing exited terminals', () => {
   let id: string;
 
   beforeEach(async () => {
-    m = new MockDaemon({ live: false, delayMs: 0 });
-    setClient(m);
-    await app.connect({ kind: 'local', label: 'Local' });
+    m = await connectMock(quietMock());
     id = app.data.terms.find((t) => !t.lineId && !t.taskId && !t.exited)!.id;
     workspace.layout = { ...EMPTY_LAYOUT, panes: [{ tabs: ['other', `term:${id}`], active: `term:${id}` }] };
     app.selectedKey = `term:${id}`;

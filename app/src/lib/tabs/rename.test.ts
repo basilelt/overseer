@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { DaemonError, setClient } from '../daemon/client';
-import { LOCAL_TARGET } from '../conn';
+import { DaemonError } from '../daemon/client';
 import { MockDaemon } from '../daemon/mock';
+import { connectMock } from '../../test/connect-mock';
 import { app, tabLazy } from '../state.svelte';
 import type { LocalLine } from '../types';
 import { itemMenu } from '../workspace/wsactions';
@@ -21,11 +21,8 @@ describe('renameItem', () => {
   let m: Flaky;
 
   beforeEach(async () => {
-    m = new Flaky({ live: false, delayMs: 0 });
-    setClient(m);
-    app.client = null;
     app.toast = null;
-    await app.connect(LOCAL_TARGET);
+    m = await connectMock(new Flaky({ live: false, delayMs: 0 }));
     // The tab bar preloads the rename code when idle; the app is past that point here.
     await tabLazy();
   });

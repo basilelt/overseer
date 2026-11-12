@@ -7,6 +7,7 @@ import { applyUninstall, canQuit, planUninstall, quitApp, resetUninstall, uninst
 import UninstallDialog from './components/overlays/UninstallDialog.svelte';
 import ServerSettings from './components/overlays/ServerSettings.svelte';
 import type { ConnState, HostTarget, UninstallReport } from './types';
+import { quietMock } from '../test/quiet-mock';
 
 class Daemon extends MockDaemon {
   calls: { path: string; body: unknown }[] = [];
@@ -30,7 +31,7 @@ const clean = () => Object.assign(uninstall, { phase: 'idle', report: null, erro
 
 describe('MockDaemon uninstall route', () => {
   it('stays a dry run unless dryRun is exactly false', async () => {
-    const m = new MockDaemon({ live: false, delayMs: 0 });
+    const m = quietMock();
     for (const body of [undefined, {}, { dryRun: true }, { dryRun: 'false' }, { dryRun: 0 }]) {
       expect((await m.request<UninstallReport>('POST', '/v1/uninstall', body)).dryRun).toBe(true);
     }
@@ -38,7 +39,7 @@ describe('MockDaemon uninstall route', () => {
   });
 
   it('lists removed items and what it keeps with a reason', async () => {
-    const m = new MockDaemon({ live: false, delayMs: 0 });
+    const m = quietMock();
     const r = await m.request<UninstallReport>('POST', '/v1/uninstall', {});
     expect(r.removed.map((i) => i.kind)).toContain('hook');
     expect(r.kept[0]).toMatchObject({ kind: 'worktree', reason: expect.any(String) });

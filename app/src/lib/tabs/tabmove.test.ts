@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { DaemonError, setClient } from '../daemon/client';
-import { LOCAL_TARGET } from '../conn';
+import { DaemonError } from '../daemon/client';
 import { MockDaemon } from '../daemon/mock';
+import { connectMock } from '../../test/connect-mock';
 import { app } from '../state.svelte';
 import { allTabs, EMPTY_LAYOUT, openInFocused, workspace } from '../workspace/workspace.svelte';
 
@@ -18,10 +18,8 @@ describe('moving a session to another workspace', () => {
   let m: Flaky;
 
   beforeEach(async () => {
-    m = new Flaky({ live: false, delayMs: 0 });
-    setClient(m);
     await app.init();
-    await app.connect(LOCAL_TARGET);
+    m = await connectMock(new Flaky({ live: false, delayMs: 0 }));
   });
 
   function setup(pick: (key: string) => boolean) {

@@ -6,6 +6,7 @@ import { unplacedCount } from '../workspace/organize';
 import { applyEvent, deepEqual, type Snapshot } from '../reduce';
 import type { DaemonEvent, LocalLine, Task, Term, Workspace } from '../types';
 import { aggregate, itemWorkspaces, liveWorkspaces, memberIndex, sameMap } from '../workspace/workspaces';
+import { quietMock } from '../../test/quiet-mock';
 
 const at = '2026-10-29T10:00:00Z';
 const line = (id: string, path: string, over: Partial<LocalLine['line']> = {}): LocalLine => ({
@@ -121,7 +122,7 @@ describe('lazy French dictionary', () => {
 describe('mock load flags', () => {
   it('scales lines, terms and tasks', async () => {
     const m = new MockDaemon({ live: false, delayMs: 0, scale: 300 });
-    const base = new MockDaemon({ live: false, delayMs: 0 });
+    const base = quietMock();
     expect(m.lines.length - base.lines.length).toBe(300);
     expect(m.tasks.length - base.tasks.length).toBe(300);
     expect(m.terms.length).toBeGreaterThan(base.terms.length + 200);

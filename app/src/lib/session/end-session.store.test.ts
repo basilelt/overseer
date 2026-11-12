@@ -1,9 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { setClient } from '../daemon/client';
 import { MockDaemon } from '../daemon/mock';
 import { app } from '../state.svelte';
 import { allTabs, closeTabAt, EMPTY_LAYOUT, workspace } from '../workspace/workspace.svelte';
 import { flush } from '../../test/flush';
+import { connectMock } from '../../test/connect-mock';
+import { quietMock } from '../../test/quiet-mock';
 
 describe('ending a shell from its tab', () => {
   let m: MockDaemon;
@@ -11,10 +12,7 @@ describe('ending a shell from its tab', () => {
   let key: string;
 
   beforeEach(async () => {
-    m = new MockDaemon({ live: false, delayMs: 0 });
-    setClient(m);
-    (app as unknown as { client: unknown }).client = null;
-    await app.connect({ kind: 'local', label: 'Local' });
+    m = await connectMock(quietMock());
     id = app.data.terms.find((t) => !t.lineId && !t.taskId && !t.exited)!.id;
     key = `term:${id}`;
     workspace.layout = { ...EMPTY_LAYOUT, panes: [{ tabs: [key], active: key }] };

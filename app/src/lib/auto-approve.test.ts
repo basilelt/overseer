@@ -1,9 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
 import { api } from './daemon/api';
 import { allState, setAll } from './auto-approve';
-import { MockDaemon } from './daemon/mock';
+import { quietMock } from '../test/quiet-mock';
 
-const fresh = () => api(new MockDaemon({ live: false, delayMs: 0 }));
+const fresh = () => api(quietMock());
 
 describe('allState', () => {
   it('is on when every listed agent auto-approves', () => {

@@ -3,7 +3,35 @@ import { build, type Rolldown } from 'vite';
 
 const ENTRY_BUDGET_KB = 340;
 const STARTUP_BUDGET_KB = 530;
-const LAZY_ONLY = /^(hljs|hljs-core|mock|ReviewView|ReviewTab|KanbanView|StatesView|ProfileSelect|ConnBanner|ChatView|MobileShell|MobileConnect|SettingsDialog|GraphTabKind|ProfilesDialog|CommandPalette|NewSessionList|Menu|DemoPill|HostMenu|UpdateDialog|ApkUpdateSheet|ApkUpdateHost|apk-update\.svelte|SidePanel|UsageChip|SystemChip)$/;
+const LAZY_ONLY = [
+  'hljs',
+  'hljs-core',
+  'mock',
+  'ReviewView',
+  'ReviewTab',
+  'KanbanView',
+  'StatesView',
+  'ProfileSelect',
+  'ConnBanner',
+  'ChatView',
+  'MobileShell',
+  'MobileConnect',
+  'SettingsDialog',
+  'GraphTabKind',
+  'ProfilesDialog',
+  'CommandPalette',
+  'NewSessionList',
+  'Menu',
+  'DemoPill',
+  'HostMenu',
+  'UpdateDialog',
+  'ApkUpdateSheet',
+  'ApkUpdateHost',
+  'apk-update\.svelte',
+  'SidePanel',
+  'UsageChip',
+  'SystemChip',
+];
 
 async function chunks(): Promise<Rolldown.OutputChunk[]> {
   const out = await build({ configFile: 'vite.config.ts', mode: 'production', logLevel: 'silent', build: { write: false, reportCompressedSize: false } });
@@ -27,10 +55,14 @@ describe('production bundle budget', () => {
     const total = [...startup].reduce((s, f) => s + kb(byFile.get(f)!), 0);
     expect(kb(entry)).toBeLessThan(ENTRY_BUDGET_KB);
     expect(total).toBeLessThan(STARTUP_BUDGET_KB);
-    expect([...startup].map((f) => byFile.get(f)!.name).filter((n) => LAZY_ONLY.test(n))).toEqual([]);
-    expect([...startup].flatMap((f) => byFile.get(f)!.moduleIds).filter((m) => /\/i18n\/(?!en\.ts)[^/]+\.ts$/.test(m))).toEqual([]);
-    expect([...startup].flatMap((f) => byFile.get(f)!.moduleIds).filter((m) => /\/lib\/feedback\/feedback\.ts$/.test(m))).toEqual([]);
-    expect([...startup].flatMap((f) => byFile.get(f)!.moduleIds).filter((m) => /\/review\/threads\.ts$/.test(m))).toEqual([]);
+    expect(LAZY_ONLY.filter((n) => !all.some((c) => c.name === n))).toEqual([]);
+    expect([...startup].map((f) => byFile.get(f)!.name).filter((n) => LAZY_ONLY.includes(n))).toEqual([]);
+    const startupIds = [...startup].flatMap((f) => byFile.get(f)!.moduleIds);
+    const allIds = all.flatMap((c) => c.moduleIds);
+    for (const lazyModule of [/\/i18n\/(?!en\.ts)[^/]+\.ts$/, /\/lib\/feedback\/feedback\.ts$/, /\/review\/threads\.ts$/]) {
+      expect(allIds.some((m) => lazyModule.test(m)), `${lazyModule} matches a module of the build`).toBe(true);
+      expect(startupIds.filter((m) => lazyModule.test(m))).toEqual([]);
+    }
     expect(all.filter((c) => !startup.has(c.fileName)).some((c) => c.moduleIds.some((m) => m.endsWith('/i18n/fr.ts')))).toBe(true);
   });
 });

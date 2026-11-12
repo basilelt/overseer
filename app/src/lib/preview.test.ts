@@ -5,6 +5,7 @@ import { DaemonError } from './daemon/client';
 import { MockDaemon } from './daemon/mock';
 import { openFile } from './preview';
 import { app } from './state.svelte';
+import { quietMock } from '../test/quiet-mock';
 
 describe('openFile', () => {
   it('opens the file overlay with the path and term', () => {
@@ -35,7 +36,7 @@ describe('fileBytes', () => {
 });
 
 describe('MockDaemon.fetchBytes', () => {
-  const a = api(new MockDaemon({ live: false, delayMs: 0 }));
+  const a = api(quietMock());
   const text = async (p: string) => new TextDecoder().decode(await a.fileBytes({ path: p }));
 
   it('serves bytes for images, markdown and text', async () => {

@@ -5,9 +5,10 @@ import { applyEvent, type Snapshot } from '../reduce';
 import { tabApi } from '../tabs/tab-edits';
 import { sourcesApi } from '../kanban/task-sources';
 import type { ConnPhase, DaemonEvent } from '../types';
+import { quietMock } from '../../test/quiet-mock';
 
 function setup() {
-  const m = new MockDaemon({ live: false, delayMs: 0 });
+  const m = quietMock();
   const events: DaemonEvent[] = [];
   m.subscribe((e) => events.push(e));
   return { m, a: { ...api(m), ...tabApi(m) }, events };

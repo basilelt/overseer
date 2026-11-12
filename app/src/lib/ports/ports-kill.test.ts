@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
-import { MockDaemon } from '../daemon/mock';
 import { stopProcess } from './ports-kill';
 import type { DaemonClient } from '../daemon/client';
+import { quietMock } from '../../test/quiet-mock';
 
 describe('stopProcess', () => {
   const row = { port: 5173, pid: 4242, process: 'node', detected: true, forwarded: false };
@@ -16,7 +16,7 @@ describe('stopProcess', () => {
   });
 
   it('stops a detected port on the mock daemon without an error', async () => {
-    const m = new MockDaemon({ live: false, delayMs: 0 });
+    const m = quietMock();
     await m.connect({ kind: 'local', label: 'Local' }, () => {});
     const p = m.detected[0];
     const notify = vi.fn();

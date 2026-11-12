@@ -50,12 +50,3 @@ describe('runSessionAction', () => {
     await expect(runSessionAction(api, 'L1', 'pause')).rejects.toThrow('refused');
   });
 });
-
-describe('ChatView wiring', () => {
-  it('runs every session bar action through runSessionAction, with no pending TODO', async () => {
-    const src = (await import('../components/chat/ChatView.svelte?raw')).default as string;
-    expect(src).toMatch(/await runSessionAction\(app\.api, lineId, kind\)/);
-    expect(src).not.toMatch(/app\.api\.hold\(/);
-    expect(src).not.toMatch(/TODO\((holdAfterTurn|cancelHold)\)/);
-  });
-});

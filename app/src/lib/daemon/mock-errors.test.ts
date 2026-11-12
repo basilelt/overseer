@@ -1,6 +1,7 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import { api } from './api';
 import { DAEMON_ERRORS, MockDaemon } from './mock';
+import { quietMock } from '../../test/quiet-mock';
 
 interface Fs {
   readFileSync(path: URL, enc: 'utf8'): string;
@@ -12,7 +13,7 @@ beforeAll(async () => {
 });
 
 const setup = () => {
-  const m = new MockDaemon({ live: false, delayMs: 0 });
+  const m = quietMock();
   return { m, a: api(m) };
 };
 

@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DEMO_KEY, DEMO_PREFIX, enterDemo, exitDemo, installDemoStorage, isDemo, scopedStorage, startDemo, uninstallDemoStorage } from './demo';
+import { quietMock } from '../../test/quiet-mock';
 
 class MemStorage implements Storage {
   private m = new Map<string, string>();
@@ -231,7 +232,7 @@ describe('isolation of the demo from real data', () => {
     rememberHost({ kind: 'ssh', host: 'gpu', label: 'gpu' });
     saveSettings({ theme: 'light', explicitlyDisconnected: true });
     const { MockDaemon } = await import('./mock');
-    const mock = new MockDaemon({ live: false, delayMs: 0 });
+    const mock = quietMock();
     await mock.saveHost({ id: '', label: 'Lab', host: 'lab.example.com', port: 22, user: 'demo', auth: 'key', rememberPassword: false });
     expect(JSON.parse(globalThis.localStorage.getItem('overseer.settings')!).theme).toBe('light');
     expect(real.getItem('overseer.settings')).toBe(before['overseer.settings']);

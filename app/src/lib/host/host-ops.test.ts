@@ -7,6 +7,7 @@ import { settings } from '../settings/settings.svelte';
 import { app } from '../state.svelte';
 import type { ConnState, DaemonEvent, HostTarget } from '../types';
 import { EMPTY_LAYOUT, workspace } from '../workspace/workspace.svelte';
+import { quietMock } from '../../test/quiet-mock';
 
 class Daemon extends MockDaemon {
   connects: HostTarget[] = [];
@@ -225,7 +226,7 @@ describe('extra hosts', () => {
     const order: string[] = [];
     const { newHostClient } = await import('./host-client');
     vi.mocked(newHostClient).mockImplementationOnce(async () => {
-      const d = new MockDaemon({ live: false, delayMs: 0 });
+      const d = quietMock();
       d.configurePorts = async (s) => void order.push(`ports ${s.autoForward}`);
       d.connect = async (target, onState) => {
         order.push('connect');
@@ -241,7 +242,7 @@ describe('extra hosts', () => {
     let ask: ((s: ConnState) => void) | null = null;
     const { newHostClient } = await import('./host-client');
     vi.mocked(newHostClient).mockImplementationOnce(async () => {
-      const d = new MockDaemon({ live: false, delayMs: 0 });
+      const d = quietMock();
       d.connect = (target, onState) => {
         ask = onState;
         return new Promise(() => {});
