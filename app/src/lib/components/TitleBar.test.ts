@@ -31,4 +31,13 @@ describe('TitleBar', () => {
     expect(titleBarSrc).not.toContain('AgentAvatars');
     expect(Object.keys(import.meta.glob('./titlebar/AgentAvatars.svelte'))).toHaveLength(0);
   });
+
+  it('loads the usage and system chips after startup, on idle, to keep the startup bundle small', () => {
+    // Given the title bar source
+    // When it is read
+    // Then both chips come from preloaded dynamic imports, not static ones
+    expect(titleBarSrc).toContain("const usageChip = preload(() => import('./usage/UsageChip.svelte'));");
+    expect(titleBarSrc).toContain("const systemChip = preload(() => import('./system/SystemChip.svelte'));");
+    expect(titleBarSrc).not.toMatch(/import (UsageChip|SystemChip) from/);
+  });
 });
