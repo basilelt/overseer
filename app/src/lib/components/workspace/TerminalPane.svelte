@@ -26,7 +26,7 @@
   import { attachRetryMs } from '../../conn';
   import { termLink, type TermLink } from '../../termlink';
   import { replayGuard } from '../../termreplay';
-  import { LONG_PRESS_MS, movedTooFar, pinchFontSize, touchDistance } from '../../mobile/gestures';
+  import { LONG_PRESS_MS, pinchFontSize, pressTimer, touchDistance } from '../../mobile/gestures';
   import { canResize, fitTo, isAgentTerm, shouldReassert, sizedElsewhere } from '../../mobile/termsize';
   import { ui, isPhone } from '../../mobile/ui.svelte';
   import { isNativeAndroid, native } from '../../mobile/native';
@@ -39,9 +39,7 @@
   import { guardAutoScroll } from '../../selection-scroll';
   import { settle } from '../../settle';
   import { openFile } from '../../preview';
-  import type { UploadResult } from '../../types';
-  import { bracketed, insertText, planDrop, planPaste, PROGRESS_FROM, uploadedPath, type Refusal } from '../../uploads';
-  import { basename } from '../../paths';
+  import { bracketed, clipboardFiles, fileInfos, insertText, planDrop, planPaste, refusalMessage, savePasteAll, uploadedPath, uploadList, type Refusal } from '../../uploads';
   const accessoryBar = () => import('../mobile/AccessoryBar.svelte');
 
   let { termId, focused }: { termId: string; focused: boolean } = $props();
@@ -173,20 +171,15 @@
       }
       term?.focus();
     };
-    const refuse = (r: Refusal) => app.notify(t(r.reason === 'folder' ? 'upload.folder' : 'upload.tooLarge', { name: r.name }), 'error');
+    const refuse = (r: Refusal) => app.notify(refusalMessage(r), 'error');
 
     const uploadAll = async (paths: string[]): Promise<string[]> => {
-      const done: UploadResult[] = [];
-      let failure: string | null = null;
-      for (const p of paths) {
-        const name = basename(p);
-        try {
-          done.push(await app.requireClient().uploadFile(p, ({ sent, total }) => total > PROGRESS_FROM && app.progress(t('upload.progress', { name }), sent / total)));
-        } catch (e) {
-          failure = t('upload.failed', { name, error: message(e) });
-        }
-      }
-      if (failure) app.notify(failure, 'error', undefined, 'upload');
+      const failures: string[] = [];
+      const done = await uploadList((p, onProgress) => app.requireClient().uploadFile(p, onProgress), paths, {
+        progress: (name, fraction) => app.progress(t('upload.progress', { name }), fraction),
+        fail: (name, e) => void failures.push(t('upload.failed', { name, error: message(e) })),
+      });
+      if (failures.length) app.notify(failures[failures.length - 1], 'error', undefined, 'upload');
       else if (done.length) {
         const text = done.length === 1 ? t('upload.done', { name: done[0].name, path: done[0].short ?? done[0].path }) : t('upload.doneMany', { n: done.length });
         app.notice({ kind: 'upload', title: text, quiet: true, toast: false });
@@ -196,16 +189,8 @@
     };
 
     const pasteFiles = async (files: File[]) => {
-      const saved: string[] = [];
-      for (const f of files) {
-        const name = f.name || 'paste.png';
-        try {
-          saved.push(await app.requireClient().savePaste(name, new Uint8Array(await f.arrayBuffer())));
-        } catch (e) {
-          return app.notify(t('upload.pasteFailed', { name, error: message(e) }), 'error');
-        }
-      }
-      send(insertText(await uploadAll(saved)));
+      const saved = await savePasteAll(files, (name, bytes) => app.requireClient().savePaste(name, bytes), (name, e) => app.notify(t('upload.pasteFailed', { name, error: message(e) }), 'error'));
+      if (saved) send(insertText(await uploadAll(saved)));
     };
 
     pastePath = async (path: string) => send(insertText(remote ? await uploadAll([path]) : [path]));
@@ -213,19 +198,14 @@
     const onPaste = (e: ClipboardEvent) => {
       const dt = e.clipboardData;
       if (!dt || !io) return;
-      const files = Array.from(dt.files);
-      if (!files.length)
-        for (const item of Array.from(dt.items)) {
-          const f = item.kind === 'file' ? item.getAsFile() : null;
-          if (f) files.push(f);
-        }
+      const files = clipboardFiles(dt);
       if (!files.length && !dt.getData('text/plain') && isNativeAndroid()) {
         e.preventDefault();
         e.stopImmediatePropagation();
         void pasteImage();
         return;
       }
-      const plan = planPaste({ text: dt.getData('text/plain'), files: files.map((f) => ({ name: f.name, type: f.type, size: f.size })) }, remote);
+      const plan = planPaste({ text: dt.getData('text/plain'), files: fileInfos(files) }, remote);
       if (plan.kind === 'native') return;
       e.preventDefault();
       e.stopImmediatePropagation();
@@ -248,7 +228,7 @@
 
     pickFiles = (files: File[]) => {
       if (!files.length) return;
-      const plan = planPaste({ text: '', files: files.map((f) => ({ name: f.name, type: f.type, size: f.size })) }, remote);
+      const plan = planPaste({ text: '', files: fileInfos(files) }, remote);
       if (plan.kind === 'reject') return refuse(plan);
       if (plan.kind === 'save') void pasteFiles(files);
     };
@@ -443,14 +423,10 @@
 
   function touchGestures(): () => void {
     let pinch: { distance: number; size: number; live: number } | null = null;
-    let press: { x: number; y: number; timer: ReturnType<typeof setTimeout> } | null = null;
-    const cancelPress = () => {
-      if (press) clearTimeout(press.timer);
-      press = null;
-    };
+    const press = pressTimer(LONG_PRESS_MS);
     const start = (e: TouchEvent) => {
       if (!phone) return;
-      cancelPress();
+      press.cancel();
       if (e.touches.length === 2) {
         pinch = { distance: touchDistance(e.touches[0], e.touches[1]), size: fontSize, live: fontSize };
         return;
@@ -460,23 +436,21 @@
       const box = el.getBoundingClientRect();
       const at = { x: tch.clientX - box.left, y: tch.clientY - box.top };
       copyAt = null;
-      const timer = setTimeout(() => {
+      press.start(tch.clientX, tch.clientY, () => {
         copyAt = at;
-        press = null;
-      }, LONG_PRESS_MS);
-      press = { x: tch.clientX, y: tch.clientY, timer };
+      });
     };
     const move = (e: TouchEvent) => {
       if (pinch && e.touches.length === 2) {
         e.preventDefault();
         pinch.live = pinchFontSize(pinch.size, pinch.distance, touchDistance(e.touches[0], e.touches[1]));
         if (term && term.options.fontSize !== pinch.live) term.options.fontSize = pinch.live;
-      } else if (press && e.touches.length === 1 && movedTooFar(e.touches[0].clientX - press.x, e.touches[0].clientY - press.y)) {
-        cancelPress();
+      } else if (e.touches.length === 1) {
+        press.move(e.touches[0].clientX, e.touches[0].clientY);
       }
     };
     const end = (e: TouchEvent) => {
-      cancelPress();
+      press.cancel();
       if (pinch && e.touches.length < 2) {
         const size = pinch.live;
         pinch = null;
@@ -489,7 +463,7 @@
     el.addEventListener('touchend', end, { passive: true });
     el.addEventListener('touchcancel', end, { passive: true });
     return () => {
-      cancelPress();
+      press.cancel();
       el.removeEventListener('touchstart', start);
       el.removeEventListener('touchmove', move);
       el.removeEventListener('touchend', end);

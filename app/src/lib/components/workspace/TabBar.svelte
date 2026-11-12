@@ -6,8 +6,6 @@
 
 <script lang="ts">
   import { hostColor, hostName } from '../../hosts';
-  import { ust } from '../../usage/strings';
-  import { gt } from '../../github/strings';
   import Columns2 from '@lucide/svelte/icons/columns-2';
   import Rows2 from '@lucide/svelte/icons/rows-2';
   import X from '@lucide/svelte/icons/x';
@@ -16,9 +14,8 @@
   import Globe from '@lucide/svelte/icons/globe';
   import GitBranch from '@lucide/svelte/icons/git-branch';
   import Megaphone from '@lucide/svelte/icons/megaphone';
-  import { st } from '../../system/strings';
   import { settings } from '../../settings.svelte';
-  import { projectName } from '../../state.svelte';
+  import { tabLabel } from '../../tab-label';
   import { coarsePointer, focusSession, stripScroll, tabInfo, type TabInfo } from '../../tabs';
   import { broadcastTo, newSessionItems } from '../../wsactions';
   import { wsDropTarget } from '../../workspaces';
@@ -29,7 +26,7 @@
   import { closePaneAt, closeTabAt, openInFocused, reorderTab, split, update, type Pane } from '../../workspace.svelte';
   import AgentIcon from '../sidebar/AgentIcon.svelte';
   import ReviewBadge from '../review/ReviewBadge.svelte';
-  import { itemTarget, reviewTitle } from '../../review/open';
+  import { itemTarget } from '../../review/open';
   import { liveOn } from '../../git/live.svelte';
   import { chatCapable } from '../../chat/viewmode';
   import ModeToggle from '../chat/ModeToggle.svelte';
@@ -82,23 +79,7 @@
   const costOf = (tab: TabInfo) => (tab.item?.lineId ? app.data.activity[tab.item.lineId]?.cost : undefined);
   const effortLabel = (e: string) => t('profile.effortOf', { effort: t(`effort.${e}` as Key).toLowerCase() });
 
-  function label(tab: TabInfo): string {
-    if (tab.item) return tab.item.title;
-    if (tab.kind === 'browser') {
-      try {
-        return tab.arg ? new URL(tab.arg).host || tab.arg : t('tabs.browser');
-      } catch {
-        return tab.arg || t('tabs.browser');
-      }
-    }
-    if (tab.kind === 'review') return t('tabs.review', { title: reviewTitle(tab.key) ?? tab.arg });
-    if (tab.kind === 'graph') return t('tabs.graphOf', { name: projectName(app.projects, tab.arg) });
-    if (tab.kind === 'worktrees') return t('tabs.worktreesOf', { name: projectName(app.projects, tab.arg) });
-    if (tab.kind === 'system') return st('title');
-    if (tab.kind === 'usage') return ust('title');
-    if (tab.kind === 'prs') return gt('title');
-    return tab.key;
-  }
+  const label = (tab: TabInfo) => tabLabel(tab, { browserHost: true });
 
   function openAdd(e?: MouseEvent) {
     const r = plus?.getBoundingClientRect();

@@ -16,15 +16,14 @@
   import { dictationHintKey, dictationMode, startDictation } from '../../dictation';
   import { t } from '../../i18n.svelte';
   import { app } from '../../state.svelte';
-  import type { CustomCommand, LineLocal, UploadResult } from '../../types';
-  import { insertText, planDrop, planPaste, PROGRESS_FROM, uploadedPath, type Refusal } from '../../uploads';
+  import type { CustomCommand, LineLocal } from '../../types';
+  import { clipboardFiles, fileInfos, insertText, planDrop, planPaste, refusalMessage, savePasteAll, uploadedPath, uploadList, type Refusal } from '../../uploads';
   import { requirePath, savePasted } from '../../task-attachments';
   import { applySlash, commandsFor, enterAction, lineCount, slashMatches, slashQuery, type SendMode, type SlashCommand } from '../../chat/composer';
   import { ChatSender } from '../../chat/sender.svelte';
   import { clearComposerHeight, reportComposerHeight } from '../../chat/composer-height';
   import { platformName } from '../../platform';
   import { KEY_DRAFTS_CHAT } from '../../storage';
-  import { basename } from '../../paths';
 
   let { lineId, agent, local, phone, history = [], onsent }: { lineId: string; agent: string; local: LineLocal | undefined; phone: boolean; history?: string[]; onsent?: (text: string) => void } = $props();
   let back: Recall = { index: -1, draft: '' };
@@ -210,39 +209,27 @@
     if (!text.startsWith('/')) dismissed = false;
   }
 
-  const refuse = (r: Refusal) => app.notify(t(r.reason === 'folder' ? 'upload.folder' : 'upload.tooLarge', { name: r.name }), 'error');
+  const refuse = (r: Refusal) => app.notify(refusalMessage(r), 'error');
 
   async function uploadAll(paths: string[]): Promise<string[]> {
-    const done: UploadResult[] = [];
-    for (const p of paths) {
-      const name = basename(p);
-      try {
-        let big = false;
-        const r = await app.requireClient().uploadFile(p, ({ sent, total }) => total > PROGRESS_FROM && ((big = true), app.progress(t('upload.progress', { name }), sent / total)));
-        requirePath(r?.path);
-        done.push(r);
-        if (big) app.notice({ kind: 'upload', title: t('upload.done', { name, path: uploadedPath(r) }) });
-      } catch (e) {
-        app.notify(t('upload.failed', { name, error: message(e) }), 'error', undefined, 'upload');
-      }
-    }
+    const done = await uploadList((p, onProgress) => app.requireClient().uploadFile(p, onProgress), paths, {
+      progress: (name, fraction) => app.progress(t('upload.progress', { name }), fraction),
+      validate: (r) => void requirePath(r?.path),
+      done: (name, r, large) => {
+        if (large) app.notice({ kind: 'upload', title: t('upload.done', { name, path: uploadedPath(r) }) });
+      },
+      fail: (name, e) => app.notify(t('upload.failed', { name, error: message(e) }), 'error', undefined, 'upload'),
+    });
     return done.map(uploadedPath);
   }
 
   async function addFiles(files: File[]) {
     if (!files.length) return;
-    const plan = planPaste({ text: '', files: files.map((f) => ({ name: f.name, type: f.type, size: f.size })) }, remote);
+    const plan = planPaste({ text: '', files: fileInfos(files) }, remote);
     if (plan.kind === 'reject') return refuse(plan);
     if (plan.kind !== 'save') return;
-    const saved: string[] = [];
-    for (const f of files) {
-      const name = f.name || 'paste.png';
-      try {
-        saved.push(await savePasted(app.requireClient(), name, new Uint8Array(await f.arrayBuffer())));
-      } catch (e) {
-        return app.notify(t('upload.pasteFailed', { name, error: message(e) }), 'error');
-      }
-    }
+    const saved = await savePasteAll(files, (name, bytes) => savePasted(app.requireClient(), name, bytes), (name, e) => app.notify(t('upload.pasteFailed', { name, error: message(e) }), 'error'));
+    if (!saved) return;
     const paths = await uploadAll(saved);
     if (paths.length) insert(insertText(paths));
   }
@@ -250,12 +237,7 @@
   function onpaste(e: ClipboardEvent) {
     const dt = e.clipboardData;
     if (!dt) return;
-    const files = Array.from(dt.files);
-    if (!files.length)
-      for (const item of Array.from(dt.items)) {
-        const f = item.kind === 'file' ? item.getAsFile() : null;
-        if (f) files.push(f);
-      }
+    const files = clipboardFiles(dt);
     if (!files.length) return;
     e.preventDefault();
     void addFiles(files);

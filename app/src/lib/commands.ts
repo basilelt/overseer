@@ -28,17 +28,18 @@ export interface Command {
 
 export type CommandDef = Omit<Command, 'available'> & Partial<Pick<Command, 'available'>>;
 
-function activate(key: string) {
+export function selectTabKey(key: string) {
   if (key.startsWith('line:') || key.startsWith('term:')) app.select(key);
   else app.selectedKey = key;
 }
 
 let lastClose = 0;
 
-export function closeTabKey(key: string, end: boolean) {
+export function closeTabKey(key: string, end: boolean, keepOtherSelection = false) {
   closeTabAt(workspace.layout.focused, key, end);
+  if (keepOtherSelection && app.selectedKey !== key) return;
   const next = activeKey(workspace.layout);
-  if (next) activate(next);
+  if (next) selectTabKey(next);
   else app.selectedKey = null;
 }
 
@@ -74,7 +75,7 @@ function reopenClosed() {
     return;
   }
   update((l) => openInFocused(l, key));
-  activate(key);
+  selectTabKey(key);
   const item = app.items.find((i) => i.key === key);
   if (!item?.lineId || item.termId) return;
   if (!lineActions(item, app.data.lines.find((l) => l.line.id === item.lineId)).includes('attach')) return;
@@ -86,7 +87,7 @@ function focusDir(dir: Direction) {
   if (to === null) return;
   update((l) => focusPane(l, to));
   const key = activeKey(workspace.layout);
-  if (key) activate(key);
+  if (key) selectTabKey(key);
 }
 
 function newTab() {
@@ -129,7 +130,7 @@ function split(dir: 'horizontal' | 'vertical') {
 function tabStep(step: { type: 'index'; index: number } | { type: 'next' } | { type: 'prev' }) {
   const l = workspace.layout;
   const key = applyShortcut(activeTabs(l), activeKey(l), step);
-  if (key) activate(key);
+  if (key) selectTabKey(key);
 }
 
 const always = () => true;

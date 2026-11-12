@@ -38,6 +38,7 @@ vi.mock('@tauri-apps/api/menu', () => ({
 }));
 
 import { allowed, answerCloseTab, closeTabKey, hint, isMac, newWindow, runShortcut, startShortcuts } from './keyboard';
+import { selectTabKey } from './commands';
 import { rememberShell } from './closed-tabs';
 import { ui } from './mobile/ui.svelte';
 import { DEFAULT_SETTINGS, settings } from './settings.svelte';
@@ -341,6 +342,28 @@ describe('runShortcut: tabs', () => {
     runShortcut({ id: 'closeTab' });
     expect(workspace.layout.panes[0].tabs).toEqual([]);
     expect(app.selectedKey).toBeNull();
+  });
+
+  it('keeps the selection when a chip other than the selected one is closed', () => {
+    setLayout(layoutFromTabs(['browser:a', 'browser:b'], 'browser:a'));
+    app.selectedKey = 'browser:a';
+    closeTabKey('browser:b', true, true);
+    expect(workspace.layout.panes[0].tabs).toEqual(['browser:a']);
+    expect(app.selectedKey).toBe('browser:a');
+  });
+
+  it('moves the selection to the neighbour when the selected chip is closed', () => {
+    setLayout(layoutFromTabs(['browser:a', 'browser:b'], 'browser:a'));
+    app.selectedKey = 'browser:a';
+    closeTabKey('browser:a', true, true);
+    expect(app.selectedKey).toBe('browser:b');
+  });
+
+  it('selects sessions through the app and other tabs by key', () => {
+    selectTabKey('line:x');
+    expect(app.select).toHaveBeenCalledWith('line:x');
+    selectTabKey('browser:z');
+    expect(app.selectedKey).toBe('browser:z');
   });
 
   it('ignores a second close within 150 ms so a key repeat does not close two tabs', () => {

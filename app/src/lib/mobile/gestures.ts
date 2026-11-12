@@ -16,6 +16,31 @@ export function movedTooFar(dx: number, dy: number, tolerance = MOVE_TOLERANCE_P
   return Math.hypot(dx, dy) > tolerance;
 }
 
+export function pressTimer(ms: number) {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let origin: { x: number; y: number } | null = null;
+  const cancel = () => {
+    clearTimeout(timer);
+    timer = undefined;
+    origin = null;
+  };
+  return {
+    start(x: number, y: number, onFire: () => void) {
+      cancel();
+      origin = { x, y };
+      timer = setTimeout(() => {
+        timer = undefined;
+        origin = null;
+        onFire();
+      }, ms);
+    },
+    move(x: number, y: number) {
+      if (origin && movedTooFar(x - origin.x, y - origin.y)) cancel();
+    },
+    cancel,
+  };
+}
+
 export function pinchFontSize(start: number, startDistance: number, distance: number, min = PINCH_FONT_MIN, max = PINCH_FONT_MAX): number {
   if (startDistance <= 0 || distance <= 0) return start;
   const next = Math.round(start * (distance / startDistance));

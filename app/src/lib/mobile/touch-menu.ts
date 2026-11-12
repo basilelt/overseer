@@ -1,26 +1,22 @@
-import { movedTooFar, TOUCH_MENU_MS } from './gestures';
+import { pressTimer, TOUCH_MENU_MS } from './gestures';
 
 export function touchContextMenu(node: HTMLElement) {
-  let timer: ReturnType<typeof setTimeout> | undefined;
+  const press = pressTimer(TOUCH_MENU_MS);
   let fired = false;
-  let x = 0;
-  let y = 0;
-  const cancel = () => clearTimeout(timer);
+  const cancel = () => press.cancel();
   const on: Record<string, (e: any) => void> = {
     pointerdown(e: PointerEvent) {
       fired = false;
       cancel();
       if (e.pointerType !== 'touch') return;
-      x = e.clientX;
-      y = e.clientY;
-      const target = e.target;
-      timer = setTimeout(() => {
+      const { clientX, clientY, target } = e;
+      press.start(clientX, clientY, () => {
         fired = true;
-        target?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: x, clientY: y }));
-      }, TOUCH_MENU_MS);
+        target?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX, clientY }));
+      });
     },
     pointermove(e: PointerEvent) {
-      if (movedTooFar(e.clientX - x, e.clientY - y)) cancel();
+      press.move(e.clientX, e.clientY);
     },
     pointerup: cancel,
     pointercancel: cancel,

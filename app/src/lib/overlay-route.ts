@@ -24,9 +24,11 @@ export type MainOverlay =
 
 const PLAIN = new Set<string>(['palette', 'settings', 'task', 'taskDetail', 'project', 'review', 'broadcast', 'holdAll', 'name', 'workspaceNew', 'profiles', 'ports', 'system', 'usage', 'notifications', 'switchboardImport', 'uninstall']);
 
-const PARENT = new Map<string, MainOverlay>([['uninstall', 'settings']]);
+type Opened = Exclude<MainOverlay, 'mobileConnect'>;
 
-export function parentOverlay(o: string | null): MainOverlay | null {
+const PARENT = new Map<string, Opened>([['uninstall', 'settings']]);
+
+export function parentOverlay(o: string | null): Opened | null {
   return (o && PARENT.get(o)) || null;
 }
 

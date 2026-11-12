@@ -26,7 +26,7 @@
   import ArrowDownToLine from '@lucide/svelte/icons/arrow-down-to-line';
   import ArrowRight from '@lucide/svelte/icons/arrow-right';
   import { isPhone } from '../../mobile/ui.svelte';
-  import { LONG_PRESS_MS, movedTooFar, swipeDirection } from '../../mobile/gestures';
+  import { LONG_PRESS_MS, pressTimer, swipeDirection } from '../../mobile/gestures';
   import { columnAfterSwipe } from '../../mobile/layout';
   import { edgeMoves, edgeRank, initialColumn, moveChoices, type Edge } from '../../mobile/kanbanPhone';
   import { tick, untrack } from 'svelte';
@@ -82,7 +82,7 @@
   let sheetId = $state<string | null>(null);
   const sheetTask = $derived(sheetId ? app.data.tasks.find((x) => x.id === sheetId) : undefined);
   const sheetColumn = $derived(sheetTask ? (cols.find((c) => c.status === sheetTask.status)?.tasks ?? []) : []);
-  let press: { id: string; x: number; y: number; timer: ReturnType<typeof setTimeout> } | null = null;
+  const press = pressTimer(LONG_PRESS_MS);
   let touch: { x: number; y: number } | null = null;
   let chipEls = $state<Record<string, HTMLElement | undefined>>({});
 
@@ -90,27 +90,16 @@
     if (phone && phoneCol) chipEls[phoneCol.status]?.scrollIntoView({ block: 'nearest', inline: 'center', behavior: 'smooth' });
   });
 
-  function cancelPress() {
-    if (press) clearTimeout(press.timer);
-    press = null;
-  }
-
   function onPhoneDown(e: PointerEvent, task: Task) {
     if ((e.target as HTMLElement).closest('button')) return;
-    cancelPress();
+    press.cancel();
     const id = task.id;
-    press = {
-      id,
-      x: e.clientX,
-      y: e.clientY,
-      timer: setTimeout(() => {
-        press = null;
-        suppressClick = true;
-        setTimeout(() => (suppressClick = false), 400);
-        globalThis.navigator?.vibrate?.(10);
-        sheetId = id;
-      }, LONG_PRESS_MS),
-    };
+    press.start(e.clientX, e.clientY, () => {
+      suppressClick = true;
+      setTimeout(() => (suppressClick = false), 400);
+      globalThis.navigator?.vibrate?.(10);
+      sheetId = id;
+    });
   }
 
   function onTouchStart(e: TouchEvent) {
@@ -124,7 +113,7 @@
     const d = swipeDirection(p.clientX - touch.x, p.clientY - touch.y);
     touch = null;
     if (d) {
-      cancelPress();
+      press.cancel();
       colIndex = columnAfterSwipe(colIndex, cols.length, d);
     }
   }
@@ -377,7 +366,7 @@
   const loop = frameLoop(settle);
 
   function onPointerMove(e: PointerEvent) {
-    if (press && movedTooFar(e.clientX - press.x, e.clientY - press.y)) cancelPress();
+    press.move(e.clientX, e.clientY);
     if (pending && !drag) {
       if (Math.hypot(e.clientX - pending.x, e.clientY - pending.y) < 5) return;
       const r = pending.el.getBoundingClientRect();
@@ -391,7 +380,7 @@
   }
 
   function onPointerUp() {
-    cancelPress();
+    press.cancel();
     pending = null;
     loop.cancel();
     if (!drag) return;

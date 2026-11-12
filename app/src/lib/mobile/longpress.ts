@@ -1,27 +1,17 @@
-import { CHIP_PRESS_MS, movedTooFar } from './gestures';
+import { CHIP_PRESS_MS, pressTimer } from './gestures';
 
 export function longPress(node: HTMLElement, onLong: (e: PointerEvent) => void) {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  let start: PointerEvent | null = null;
+  const press = pressTimer(CHIP_PRESS_MS);
   let fired = false;
-  const cancel = () => {
-    clearTimeout(timer);
-    timer = undefined;
-    start = null;
-  };
   const down = (e: PointerEvent) => {
     fired = false;
-    cancel();
-    start = e;
-    timer = setTimeout(() => {
-      timer = undefined;
+    press.start(e.clientX, e.clientY, () => {
       fired = true;
-      if (start) onLong(start);
-    }, CHIP_PRESS_MS);
+      onLong(e);
+    });
   };
-  const move = (e: PointerEvent) => {
-    if (start && movedTooFar(e.clientX - start.clientX, e.clientY - start.clientY)) cancel();
-  };
+  const move = (e: PointerEvent) => press.move(e.clientX, e.clientY);
+  const cancel = () => press.cancel();
   const click = (e: MouseEvent) => {
     if (!fired) return;
     fired = false;
