@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { MOCK_AGENTS } from '../../mock';
 import type { AgentInfo } from '../../types';
 
@@ -23,6 +23,10 @@ function section(html: string, name: string): string {
   const next = html.indexOf('class="section"', at);
   return html.slice(at, next < 0 ? undefined : next);
 }
+
+beforeAll(async () => {
+  await Promise.all([import('svelte/server'), import('./CommandPalette.svelte')]);
+}, 60_000);
 
 afterEach(() => vi.restoreAllMocks());
 
