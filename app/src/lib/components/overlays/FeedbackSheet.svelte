@@ -11,6 +11,7 @@
   import { fileName, formatLog } from '../../record';
   import { rt } from '../../record.svelte';
   import Modal from '../ui/Modal.svelte';
+  import { api } from '../../api';
   import { app } from '../../state.svelte';
   import { isTauri, DaemonError } from '../../client';
   import { settings } from '../../settings.svelte';
@@ -62,7 +63,7 @@
     const client = app.client;
     const [info, version, appTail, server] = await Promise.all([
       diagBackend.info().catch(() => null),
-      client && app.connected ? client.request<{ version?: string; os?: string; arch?: string }>('GET', '/v1/version').catch(() => null) : Promise.resolve(null),
+      client && app.connected ? api(client).version().catch(() => null) : Promise.resolve(null),
       prefill?.crash ? Promise.resolve({ lines: prefill.crash.appLog }) : diagBackend.tail(APP_LINES).catch(() => ({ lines: [] as string[] })),
       fetchServerLog(client, app.connected, SERVER_LINES),
     ]);
@@ -198,7 +199,7 @@
     try {
       const cwd = findClone(app.projects, repo);
       const same = agentId === settings.defaultAgent;
-      const res = await client.request<{ term: Term }>('POST', '/v1/feedback/start', {
+      const res = await api(client).startFeedback({
         agent: agentId,
         model: same ? settings.defaultModel || undefined : undefined,
         effort: same && agent.efforts?.includes(settings.defaultEffort) ? settings.defaultEffort : undefined,
@@ -228,7 +229,7 @@
     if (!client) return;
     busy = true;
     try {
-      const res = await client.request<{ url: string; attachWarning?: string }>('POST', '/v1/feedback/direct', { repo, title: fullTitle, body: sentBody, labels: labelsFor(kind), attachments });
+      const res = await api(client).directFeedback({ repo, title: fullTitle, body: sentBody, labels: labelsFor(kind), attachments });
       feedback.showResult({ url: res.url, comment: false });
       if (res.attachWarning) app.notify(ft('attachPartial', { error: res.attachWarning }), 'error');
     } catch (e) {

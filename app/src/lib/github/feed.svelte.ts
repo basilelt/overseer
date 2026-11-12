@@ -1,4 +1,5 @@
 import { ghError } from './format';
+import { githubApi } from './api';
 import type { ReviewRequests } from './types';
 
 export const FOCUS_REFRESH_MS = 60_000;
@@ -29,7 +30,7 @@ export class ReviewFeed {
     const gen = ++this.gen;
     this.loading = true;
     try {
-      const data = await client.request<ReviewRequests>('GET', `/v1/github/review-requests${refresh ? '?refresh=1' : ''}`);
+      const data = await githubApi(client).reviewRequests(refresh);
       if (gen !== this.gen) return null;
       this.data = data;
       this.error = null;

@@ -3,7 +3,8 @@ import { DaemonError, type DaemonClient } from '../client';
 import { ui } from '../mobile/ui.svelte';
 import { active, onPresence } from '../presence';
 import type { DaemonEvent } from '../types';
-import { tzOffset, usagePath } from './format';
+import { requestApi } from '../api';
+import { tzOffset } from './format';
 import type { UsageBy, UsageRange, UsageResponse } from './types';
 
 type Client = Pick<DaemonClient, 'request'>;
@@ -150,7 +151,7 @@ export class UsageFeed {
     this.dirty = false;
     this.loading = true;
     try {
-      const r = await this.client.request<UsageResponse>('GET', usagePath(q.range, q.by, this.tz(), q.line, q.claudeLimits));
+      const r = await requestApi(this.client).usage(q.range, q.by, this.tz(), q.line, q.claudeLimits);
       if (gen !== this.generation) return;
       this.data = r;
       this.fetchedAt = this.now();

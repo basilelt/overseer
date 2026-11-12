@@ -7,6 +7,7 @@ import { saveBase } from '../review/base';
 import { ui, isPhone } from '../mobile/ui.svelte';
 import { focusPane, openInFocused, split, update, type Layout } from '../workspace.svelte';
 import { gt } from './strings';
+import { githubApi } from './api';
 import type { ReviewRequest, StartedReview } from './types';
 import type { Term } from '../types';
 import { hostKey } from '../window';
@@ -74,7 +75,7 @@ export async function startReview(pr: ReviewRequest): Promise<StartedReview | nu
   const same = agentId === settings.defaultAgent;
   const [owner, name] = pr.repo.split('/');
   const known = new Set(app.data.terms.map((t) => t.id));
-  const res = await client.request<StartedReview | { pending: true; title: string }>('POST', `/v1/github/review-requests/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/${pr.number}/review`, {
+  const res = await githubApi(client).startReview(owner, name, pr.number, {
     agent: agentId,
     model: same ? settings.defaultModel || undefined : undefined,
     effort: same && agent?.efforts?.includes(settings.defaultEffort) ? settings.defaultEffort : undefined,

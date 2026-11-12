@@ -14,6 +14,7 @@
   import { startCenter } from './lib/notifications.svelte';
   import { followReview, openReviewFromHash } from './lib/review/open';
   import { liveOn } from './lib/git/live.svelte';
+  import { api } from './lib/api';
   import { isTauri } from './lib/client';
   import { themeReport } from './lib/terminal';
   import { colorPalette, customColors, resolvedTheme, saveSettings, setSystemDark, settings } from './lib/settings.svelte';
@@ -52,7 +53,7 @@
   $effect(() => {
     const theme = resolvedTheme();
     const report = themeReport(theme, customColors(), colorPalette());
-    if (app.connected && app.conn.phase === 'connected') app.client?.request('POST', '/v1/theme', report).catch(() => {});
+    if (app.connected && app.conn.phase === 'connected') app.client && api(app.client).reportTheme(report).catch(() => {});
   });
 
   $effect(() => {

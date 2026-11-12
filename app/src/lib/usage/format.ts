@@ -9,14 +9,6 @@ export function tzOffset(d: Date = new Date()): number {
   return -d.getTimezoneOffset();
 }
 
-export function usagePath(range: UsageRange, by: UsageBy, tz: number, line?: string, claudeLimits = false): string {
-  const q = new URLSearchParams({ range, by, tzOffset: String(tz) });
-  if (line) q.set('line', line);
-  if (claudeLimits) q.set('claudeLimits', '1');
-  return `/v1/usage?${q}`;
-}
-
-
 export function formatTokens(n: number | null | undefined): string {
   if (n == null || !Number.isFinite(n)) return '—';
   const a = Math.abs(n);

@@ -1,9 +1,30 @@
 import { DaemonError, type DaemonClient } from './client';
-import type { StatuslineStatus } from './usage/types';
+import type { StatuslineStatus, UsageBy, UsageRange, UsageResponse } from './usage/types';
+import type { LogTail } from './diag';
+import type { SysResponse } from './system/types';
 import type { DirListing } from './dirs';
 import type { Activity, LidPower, AgentInfo, BroadcastRequest, ChatPage, CustomCommand, ScreenText, BroadcastResponse, DaemonEnv, Diff, DiscoverResult, FileEdit, Folder, Group, HooksRun, HooksStatus, SwitchboardResult, SwitchboardStatus, LocalLine, NewTask, NewTerm, Profile, ProfilesStore, Project, Status, SubagentDef, Task, TaskMessage, Term, Version, Workspace, Lifecycle, LifecyclePatch, UninstallReport } from './types';
 
 const enc = encodeURIComponent;
+
+export function usagePath(range: UsageRange, by: UsageBy, tz: number, line?: string, claudeLimits = false): string {
+  const q = new URLSearchParams({ range, by, tzOffset: String(tz) });
+  if (line) q.set('line', line);
+  if (claudeLimits) q.set('claudeLimits', '1');
+  return `/v1/usage?${q}`;
+}
+
+export function requestApi(c: Pick<DaemonClient, 'request'>) {
+  return {
+    logs: (tail: number) => c.request<LogTail>('GET', `/v1/logs?tail=${tail}`),
+    system: (since: number | null) => c.request<SysResponse>('GET', since == null ? '/v1/system' : `/v1/system?since=${since}`),
+    usage: (range: UsageRange, by: UsageBy, tz: number, line?: string, claudeLimits = false) => c.request<UsageResponse>('GET', usagePath(range, by, tz, line, claudeLimits)),
+    reportTheme: (report: unknown) => c.request('POST', '/v1/theme', report),
+    killPort: (port: number, pid: number) => c.request('POST', `/v1/ports/${port}/kill`, { pid, confirm: true }),
+    startFeedback: (body: object) => c.request<{ term: Term }>('POST', '/v1/feedback/start', body),
+    directFeedback: (body: object) => c.request<{ url: string; attachWarning?: string }>('POST', '/v1/feedback/direct', body),
+  };
+}
 
 export function api(c: DaemonClient) {
   return {
@@ -105,6 +126,7 @@ export function api(c: DaemonClient) {
     deleteGroup: (id: string) => c.request('DELETE', `/v1/groups/${enc(id)}`),
     broadcast: (b: BroadcastRequest) => c.request<BroadcastResponse>('POST', '/v1/broadcast', b),
     dirs: (path = '', hidden = false) => c.request<DirListing>('GET', `/v1/fs/dirs?${new URLSearchParams(hidden ? { path, hidden: '1' } : { path })}`),
+    ...requestApi(c),
     fileBytes: (q: Record<string, string>) => c.fetchBytes(`/v1/file?${new URLSearchParams(q)}`),
   };
 }
