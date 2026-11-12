@@ -1,4 +1,4 @@
-import { closeActive, command, runShortcut } from './commands';
+import { answerCloseTab, closeActive, command, runShortcut } from './commands';
 import { ui } from '../mobile/ui.svelte';
 import { phoneOrMobile } from '../mobile/phone.svelte';
 import { isMac, isTauri } from '../platform';
@@ -7,6 +7,9 @@ import { accelerator, resolveShortcut, shortcutLabel, type ShortcutId } from './
 import { app } from '../state.svelte';
 import { tour } from '../tour/tour.svelte';
 import { windowLabel } from '../window';
+
+// CloseTabDialog is lazy: importing commands from it directly splits commands out of the startup chunk.
+export { answerCloseTab };
 
 const GLOBAL = new Set<ShortcutId>(['palette', 'settings', 'shortcuts', 'kanban', 'toggleSidebar', 'sourceControl', 'togglePanel', 'newWorkspace', 'reconnect', 'fontUp', 'fontDown', 'fontReset', 'newWindow', 'closeWindow']);
 const WITH_OVERLAY = new Set<ShortcutId>(['palette', 'settings', 'shortcuts']);
