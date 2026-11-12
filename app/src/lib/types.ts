@@ -412,8 +412,6 @@ export interface Version {
   protocol?: number;
 }
 
-export const PROTOCOL = 1;
-
 export type EventType =
   | 'line.created'
   | 'line.updated'
