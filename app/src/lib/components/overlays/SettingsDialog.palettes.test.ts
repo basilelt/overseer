@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 async function rendered(stored: Record<string, unknown>) {
   vi.resetModules();
@@ -9,6 +9,10 @@ async function rendered(stored: Record<string, unknown>) {
 }
 
 const select = (html: string, label: string) => html.match(new RegExp(`<select[^>]*aria-label="${label}"[^>]*>(.*?)</select>`))![1];
+
+beforeAll(async () => {
+  await Promise.all([import('svelte/server'), import('./SettingsDialog.svelte')]);
+}, 60_000);
 
 afterEach(() => vi.unstubAllGlobals());
 

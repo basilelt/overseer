@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 async function rendered(arg: string | null) {
   vi.resetModules();
@@ -9,6 +9,10 @@ async function rendered(arg: string | null) {
   const { default: Dialog } = await import('./SettingsDialog.svelte');
   return render(Dialog, { props: { onclose: () => {} } }).body;
 }
+
+beforeAll(async () => {
+  await Promise.all([import('svelte/server'), import('./SettingsDialog.svelte')]);
+}, 60_000);
 
 afterEach(() => vi.unstubAllGlobals());
 
