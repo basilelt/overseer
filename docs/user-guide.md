@@ -1053,8 +1053,8 @@ In the app:
   ```
 
   (bash and fish do this by default or ignore it; Overseer never edits your dotfiles.)
-- **Images and files**: paste an image (Cmd/Ctrl+V with a screenshot on the clipboard) or drop
-  files on a terminal. The app uploads them to the daemon (`POST /v1/uploads`, 50 MB per file)
+- **Images and files**: paste an image (Cmd+V, or Ctrl+Shift+V on Linux and Windows, with a screenshot
+  on the clipboard; right-click a terminal for Copy and Paste) or drop files on a terminal. The app uploads them to the daemon (`POST /v1/uploads`, 50 MB per file)
   which stores each one as `~/.overseer/u/<6-character id>.<ext>` (mode `0600`, deleted after 7
   days), then types the path followed by a space as a bracketed paste when the program asked for
   it. Other files are typed short, `~/.overseer/u/a1b2c3.pdf`; images keep their absolute path

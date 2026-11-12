@@ -37,6 +37,8 @@
   import { pathRanges } from '../../terminal/termlinks';
   import { scheduler, type PaintTarget } from '../../terminal/termrender';
   import { finishSelectionOnInterruption, routeCopies } from '../../terminal/selection-copy';
+  import { hint as keyHint } from '../../commands/keyboard';
+  import { termMenuItems } from '../../terminal/termmenu';
   import { readClip } from '../../terminal/clipboard';
   import { guardAutoScroll } from '../../terminal/selection-scroll';
   import { settle } from '../../settle';
@@ -521,6 +523,22 @@
     else app.notify(t('mobile.term.pasteFailed'));
   }
 
+  function onTermMenu(e: MouseEvent) {
+    if (phone) return;
+    e.preventDefault();
+    const tm = term;
+    app.openMenu(
+      e,
+      '',
+      termMenuItems({
+        hasSelection: !!tm?.hasSelection(),
+        copy: () => void (tm && app.client?.copyText(tm.getSelection()).catch(() => {})),
+        paste: () => void paste(),
+        hint: keyHint,
+      }),
+    );
+  }
+
   let finding = $state(false);
   let findQuery = $state('');
   let findMiss = $state(false);
@@ -632,7 +650,7 @@
 </script>
 
 <div class="pane" class:phone class:fixed bind:this={pane}>
-  <div class="term" data-terminal data-term-id={termId} bind:this={el}></div>
+  <div class="term" data-terminal data-term-id={termId} bind:this={el} oncontextmenu={onTermMenu} role="presentation"></div>
   {#if finding}
     <div class="find" class:miss={findMiss} role="search">
       <input bind:value={findQuery} oninput={() => ((hit = null), (findMiss = false))} onkeydown={onFindKey} placeholder={t('term.find')} aria-label={t('term.find')} spellcheck="false" />
