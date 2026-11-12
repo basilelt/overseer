@@ -26,9 +26,11 @@ app-dev: app/node_modules
 	$(APP) tauri dev
 
 VERSION = $(shell scripts/version.sh)
-LINUX_SERVERS = linux-x86_64:x86_64-unknown-linux-musl linux-aarch64:aarch64-unknown-linux-musl
-DARWIN_SERVERS = darwin-x86_64:x86_64-apple-darwin darwin-aarch64:aarch64-apple-darwin
-WINDOWS = x86_64-pc-windows-msvc
+platform = $(shell . scripts/platforms.sh && echo $$$(1))
+LINUX_SERVERS = $(call platform,LINUX_SERVERS)
+DARWIN_SERVERS = $(call platform,DARWIN_SERVERS)
+LINUX_X64 = $(call platform,LINUX_X64)
+WINDOWS = $(call platform,WINDOWS_X64)
 
 dist-darwin:
 	mkdir -p dist
@@ -45,8 +47,8 @@ dist-cross:
 	  cargo zigbuild --locked --release --target $$t && \
 	  cp target/$$t/release/overseer dist/overseer-$(VERSION)-$$t || exit 1; \
 	done
-	cargo zigbuild --locked --release $(API) --target x86_64-unknown-linux-musl
-	cp target/x86_64-unknown-linux-musl/release/overseer-api dist/overseer-api-$(VERSION)-x86_64-unknown-linux-musl
+	cargo zigbuild --locked --release $(API) --target $(LINUX_X64)
+	cp target/$(LINUX_X64)/release/overseer-api dist/overseer-api-$(VERSION)-$(LINUX_X64)
 	cargo xwin build --locked --release --target $(WINDOWS)
 	cp target/$(WINDOWS)/release/overseer.exe dist/overseer-$(VERSION)-$(WINDOWS).exe
 
@@ -59,10 +61,10 @@ app-server: dist
 app-build: app/node_modules app-server
 	$(APP) tauri build
 
-REMOTE_BIN = dist/overseer-$(VERSION)-x86_64-unknown-linux-musl
+REMOTE_BIN = dist/overseer-$(VERSION)-$(LINUX_X64)
 
 test-remote:
-	DIST_TARGETS=x86_64-unknown-linux-musl scripts/dist.sh
+	DIST_TARGETS=$(LINUX_X64) scripts/dist.sh
 	cargo build --offline --bin overseer
 	OVERSEER_DOCKER_TESTS=1 OVERSEER_REMOTE_BIN=$(CURDIR)/$(REMOTE_BIN) OVERSEER_BIN=$(CURDIR)/target/debug/overseer \
 	  cargo test --manifest-path app/src-tauri/Cargo.toml --lib remote_it -- --nocapture --test-threads=1

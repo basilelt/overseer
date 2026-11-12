@@ -1,0 +1,9 @@
+LINUX_X64=x86_64-unknown-linux-musl
+LINUX_ARM64=aarch64-unknown-linux-musl
+DARWIN_X64=x86_64-apple-darwin
+DARWIN_ARM64=aarch64-apple-darwin
+WINDOWS_X64=x86_64-pc-windows-msvc
+WINDOWS_ARM64=aarch64-pc-windows-msvc
+LINUX_SERVERS="linux-x86_64:$LINUX_X64 linux-aarch64:$LINUX_ARM64"
+DARWIN_SERVERS="darwin-x86_64:$DARWIN_X64 darwin-aarch64:$DARWIN_ARM64"
+WINDOWS_SERVERS="windows-x86_64:$WINDOWS_X64 windows-aarch64:$WINDOWS_ARM64"
