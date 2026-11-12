@@ -8,7 +8,7 @@
   import { t } from '../../i18n.svelte';
   import { app } from '../../state.svelte';
   import { tabLabel } from '../../tabs/tab-label';
-  import { closeTabKey, selectTabKey } from '../../commands/commands';
+  import { closeTabKey, command, selectTabKey } from '../../commands/commands';
   import { tabInfo, type TabInfo } from '../../tabs/tabs';
   import { activeTabs, workspace } from '../../workspace/workspace.svelte';
   import { longPress } from '../../mobile/longpress';
@@ -82,7 +82,7 @@
       {#if inChat}<SquareTerminal size={18} />{:else}<MessageSquare size={18} />{/if}
     </button>
   {/if}
-  <button class="icon-btn side" data-tour="new-session" aria-label={t('mobile.shell.newSession')} disabled={!app.connected} onclick={() => app.open('palette')}><Plus size={18} /></button>
+  <button class="icon-btn side" data-tour="new-session" aria-label={t('mobile.shell.newSession')} disabled={!app.connected} onclick={() => command('palette').run()}><Plus size={18} /></button>
   <button class="icon-btn side" data-tour="panel" class:active={ui.panel} aria-label={t('mobile.shell.activity')} aria-pressed={ui.panel} disabled={!canPanel} onclick={() => (ui.panel = !ui.panel)}
     ><PanelRight size={18} /></button
   >

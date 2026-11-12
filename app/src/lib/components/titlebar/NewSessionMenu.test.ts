@@ -41,8 +41,9 @@ describe('installing from the new session menu', () => {
   });
 
   it('marks the + that starts sessions on desktop and on the phone for the tour', async () => {
-    const chips = (await import('../mobile/MobileChips.svelte?raw')).default;
+    const { render } = await import('svelte/server');
+    const { default: MobileChips } = await import('../mobile/MobileChips.svelte');
     expect(button).toContain('<div class="wrap" data-tour="new-session"');
-    expect(chips).toMatch(/data-tour="new-session"[^>]*onclick=\{\(\) => app\.open\('palette'\)\}/);
+    expect(render(MobileChips).body).toContain('data-tour="new-session"');
   });
 });

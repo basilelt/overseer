@@ -52,7 +52,7 @@
       onclick={() => (workspace.layout.panes.length > 1 ? closePaneAt(1) : update(toggleSplit))}><Columns2 size={15} /></button
     >
     <NewSessionMenu />
-    <button class="icon-btn" data-tour="palette" title={`${t('title.palette')} (${hint('palette')})`} aria-label={t('title.palette')} onclick={() => app.open('palette')}
+    <button class="icon-btn" data-tour="palette" title={`${t('title.palette')} (${hint('palette')})`} aria-label={t('title.palette')} onclick={() => command('palette').run()}
       ><Search size={15} /></button
     >
   </div>
@@ -81,7 +81,7 @@
   >
   <NotificationBell />
   <button class="icon-btn" data-tour="feedback" title={ft('title')} aria-label={ft('title')} onclick={() => feedback.show()}><MessageSquarePlus size={15} /></button>
-  <button class="icon-btn" data-tour="settings" title={t('title.settings')} aria-label={t('title.settings')} onclick={() => app.open('settings')}
+  <button class="icon-btn" data-tour="settings" title={t('title.settings')} aria-label={t('title.settings')} onclick={() => command('settings').run()}
     ><Settings size={15} /></button
   >
 </header>
