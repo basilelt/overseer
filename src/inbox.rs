@@ -118,17 +118,7 @@ pub fn process(ctx: &Ctx) -> Vec<Outcome> {
 fn report(r: Result<Report, String>) -> (&'static str, Option<String>) {
     match r {
         Err(e) => ("refused", Some(e)),
-        Ok(r) if r.error.is_some() => ("failed", r.error),
-        Ok(r) if !r.ok() => {
-            let failed: Vec<String> = r
-                .checks
-                .iter()
-                .filter(|c| !c.ok)
-                .map(|c| format!("{}: {}", c.name, c.detail))
-                .collect();
-            ("refused", Some(failed.join("; ")))
-        }
-        Ok(r) => ("succeeded", Some(r.action.to_string())),
+        Ok(r) => r.outcome(),
     }
 }
 

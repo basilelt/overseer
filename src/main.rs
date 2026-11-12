@@ -237,11 +237,7 @@ fn report(r: &actions::Report, verb: &str, json: bool, apply: bool) -> ExitCode 
         };
         println!("{verb} {}{mode}\n{}", r.line_id, r.text());
     }
-    if r.ok() {
-        ExitCode::SUCCESS
-    } else {
-        ExitCode::from(3)
-    }
+    ExitCode::from(r.exit_code())
 }
 
 fn hooks_cmd(args: &[String]) -> ExitCode {

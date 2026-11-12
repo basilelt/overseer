@@ -1055,7 +1055,7 @@ pub fn handle(ctx: &Ctx, r: &Request) -> (u16, Value) {
                 actions::hold(ctx, id, !dry_run(r))
             };
             match held {
-                Ok(rep) => (if rep.ok() { 200 } else { 409 }, rep.to_json()),
+                Ok(rep) => (rep.http_status(), rep.to_json()),
                 Err(e) => err(404, e),
             }
         }
@@ -1069,7 +1069,7 @@ pub fn handle(ctx: &Ctx, r: &Request) -> (u16, Value) {
         ("POST", ["v1", "lines", id, "close"]) => {
             mark(Effect::Rescan);
             match actions::close(ctx, id, !dry_run(r), r.is_true("shell"), r.is_true("force")) {
-                Ok(rep) => (if rep.ok() { 200 } else { 409 }, rep.to_json()),
+                Ok(rep) => (rep.http_status(), rep.to_json()),
                 Err(e) => err(404, e),
             }
         }

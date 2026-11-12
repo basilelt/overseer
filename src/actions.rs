@@ -96,6 +96,38 @@ impl Report {
         self.error.is_none() && (self.pending || self.checks.iter().all(|c| c.ok))
     }
 
+    pub fn http_status(&self) -> u16 {
+        if self.ok() {
+            200
+        } else {
+            409
+        }
+    }
+
+    pub fn exit_code(&self) -> u8 {
+        if self.ok() {
+            0
+        } else {
+            3
+        }
+    }
+
+    pub fn outcome(&self) -> (&'static str, Option<String>) {
+        if self.error.is_some() {
+            return ("failed", self.error.clone());
+        }
+        if !self.ok() {
+            let failed: Vec<String> = self
+                .checks
+                .iter()
+                .filter(|c| !c.ok)
+                .map(|c| format!("{}: {}", c.name, c.detail))
+                .collect();
+            return ("refused", Some(failed.join("; ")));
+        }
+        ("succeeded", Some(self.action.to_string()))
+    }
+
     pub fn to_json(&self) -> Value {
         let mut v = json!({
             "lineId": self.line_id,
@@ -1258,6 +1290,36 @@ pub fn status_line(v: &Value) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn report(ok: bool, error: Option<&str>, pending: bool) -> Report {
+        Report {
+            line_id: "l".into(),
+            checks: vec![crate::hold::Check {
+                name: "idle",
+                ok,
+                detail: "busy".into(),
+            }],
+            action: "hold",
+            steps: vec![],
+            error: error.map(String::from),
+            pending,
+        }
+    }
+
+    #[test]
+    fn a_report_maps_to_one_status_exit_code_and_command_outcome() {
+        let done = report(true, None, false);
+        assert_eq!((done.http_status(), done.exit_code()), (200, 0));
+        assert_eq!(done.outcome(), ("succeeded", Some("hold".into())));
+        let refused = report(false, None, false);
+        assert_eq!((refused.http_status(), refused.exit_code()), (409, 3));
+        assert_eq!(refused.outcome(), ("refused", Some("idle: busy".into())));
+        let queued = report(false, None, true);
+        assert_eq!((queued.http_status(), queued.exit_code()), (200, 0));
+        let failed = report(true, Some("boom"), false);
+        assert_eq!((failed.http_status(), failed.exit_code()), (409, 3));
+        assert_eq!(failed.outcome(), ("failed", Some("boom".into())));
+    }
 
     fn line(id: &str, sid: &str) -> Line {
         Line {
