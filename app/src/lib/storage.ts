@@ -16,6 +16,7 @@ export const KEY_FEEDBACK_REPORTED = 'sb.feedback.reported';
 export const KEY_DRAFTS_CHAT = 'overseer.drafts.chat';
 export const KEY_DRAFTS_REVIEW = 'overseer.drafts.review';
 export const KEY_DRAFTS_TASK = 'overseer.drafts.task';
+export const KEY_DRAFTS_FEEDBACK = 'overseer.drafts.feedback';
 export const KEY_DEMO = 'overseer.demo';
 export const KEY_DEMO_PREFIX = 'overseer.demo:';
 export const KEY_MOCK_IMPORTED = 'overseer.mockImported';

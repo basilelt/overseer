@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { KEY_SETTINGS, KEY_KNOWN_TABS, KEY_SESSION_PAGES, KEY_LIVE_REVIEW, KEY_SWITCHBOARD_IMPORT, KEY_NOTIFY_ASKED, KEY_NOTIFIED, KEY_NOTIFICATIONS_PREFIX, KEY_RENDERER, KEY_REVIEW_MODE, KEY_REVIEW_AUTO_REFRESH, KEY_REVIEW_VIEW, KEY_REVIEW_BASE, KEY_CHAT_MODES, KEY_FEEDBACK_REPORTED, KEY_DRAFTS_CHAT, KEY_DRAFTS_REVIEW, KEY_DRAFTS_TASK, KEY_DEMO, KEY_DEMO_PREFIX, KEY_MOCK_IMPORTED, localStore, readItem, readJson, removeItem, writeItem, writeJson } from './storage';
+import { KEY_SETTINGS, KEY_KNOWN_TABS, KEY_SESSION_PAGES, KEY_LIVE_REVIEW, KEY_SWITCHBOARD_IMPORT, KEY_NOTIFY_ASKED, KEY_NOTIFIED, KEY_NOTIFICATIONS_PREFIX, KEY_RENDERER, KEY_REVIEW_MODE, KEY_REVIEW_AUTO_REFRESH, KEY_REVIEW_VIEW, KEY_REVIEW_BASE, KEY_CHAT_MODES, KEY_FEEDBACK_REPORTED, KEY_DRAFTS_CHAT, KEY_DRAFTS_REVIEW, KEY_DRAFTS_TASK, KEY_DRAFTS_FEEDBACK, KEY_DEMO, KEY_DEMO_PREFIX, KEY_MOCK_IMPORTED, localStore, readItem, readJson, removeItem, writeItem, writeJson } from './storage';
 
 function memoryStorage() {
   const m = new Map<string, string>();
@@ -44,6 +44,7 @@ describe('storage helper', () => {
       draftsChat: KEY_DRAFTS_CHAT,
       draftsReview: KEY_DRAFTS_REVIEW,
       draftsTask: KEY_DRAFTS_TASK,
+      draftsFeedback: KEY_DRAFTS_FEEDBACK,
       demo: KEY_DEMO,
       demoPrefix: KEY_DEMO_PREFIX,
       mockImported: KEY_MOCK_IMPORTED,
@@ -66,6 +67,7 @@ describe('storage helper', () => {
       draftsChat: 'overseer.drafts.chat',
       draftsReview: 'overseer.drafts.review',
       draftsTask: 'overseer.drafts.task',
+      draftsFeedback: 'overseer.drafts.feedback',
       demo: 'overseer.demo',
       demoPrefix: 'overseer.demo:',
       mockImported: 'overseer.mockImported',

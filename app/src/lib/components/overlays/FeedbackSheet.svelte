@@ -22,6 +22,7 @@
   import { openExternal } from '../../ports/ports.svelte';
   import { diagBackend, fetchServerLog } from '../../diag/diag.svelte';
   import { feedback, ft, type Result } from '../../feedback/feedback.svelte';
+  import { DRAFT_ID, feedbackDrafts, initialForm, ownsText } from '../../feedback/draft';
   import { APP_LINES, attachProblem, ATTACH_ACCEPT, VIDEO_FREE_MAX, buildBody, clock, buildDiagnostics, buildPrompt, DEFAULT_REPO, findClone, issueTitle, labelsFor, newIssueUrl, SERVER_LINES, validate, wantsDiagnostics, type Kind } from '../../feedback/feedback';
   import type { Term } from '../../types';
   import { basename } from '../../paths';
@@ -33,11 +34,12 @@
   const canAgent = $derived(app.connected && !!agent?.installed && isAgentId(agent.id));
   const host = $derived(app.conn.target.kind === 'local' ? 'local' : app.conn.target.label || app.conn.target.kind);
 
-  let kind = $state<Kind>(prefill?.kind ?? 'bug');
-  let title = $state(prefill?.title ?? '');
-  let description = $state(prefill?.description ?? '');
+  const initial = initialForm(prefill, feedbackDrafts.get(DRAFT_ID));
+  let kind = $state<Kind>(initial.kind);
+  let title = $state(initial.title);
+  let description = $state(initial.description);
   let attachments = $state<{ name: string; path: string }[]>([]);
-  let includeDiag = $state(wantsDiagnostics(prefill?.kind ?? 'bug'));
+  let includeDiag = $state(wantsDiagnostics(initial.kind));
   let investigate = $state(false);
   let showPreview = $state(false);
   let diagText = $state<string | null>(null);
@@ -58,6 +60,11 @@
   const fullTitle = $derived(issueTitle(form));
   const kinds: Kind[] = ['bug', 'idea', 'other'];
   const placeholder = $derived(ft(kind === 'bug' ? 'descriptionBug' : kind === 'idea' ? 'descriptionIdea' : 'descriptionOther'));
+
+  $effect(() => {
+    const d = { kind, title, description };
+    if (ownsText(prefill) && !feedback.result) feedbackDrafts.set(DRAFT_ID, d);
+  });
 
   const msg = (e: unknown) => String((e as Error)?.message ?? e);
 
@@ -215,6 +222,7 @@
       const term = res.term;
       app.followSession(term);
       void feedback.watch(client, term.id, found);
+      feedbackDrafts.delete(DRAFT_ID);
       feedback.close();
       app.notify(ft('started', { agent: agent.name }));
     } catch (e) {
@@ -232,6 +240,7 @@
     busy = true;
     try {
       const res = await feedbackApi(client).directFeedback({ repo, title: fullTitle, body: sentBody, labels: labelsFor(kind), attachments });
+      feedbackDrafts.delete(DRAFT_ID);
       feedback.showResult({ url: res.url, comment: false });
       if (res.attachWarning) app.notify(ft('attachPartial', { error: res.attachWarning }), 'error');
     } catch (e) {

@@ -1,5 +1,6 @@
 <script lang="ts">
   import Circle from '@lucide/svelte/icons/circle';
+  import { onMount } from 'svelte';
   import Modal from '../ui/Modal.svelte';
   import { app } from '../../state.svelte';
   import { feedback } from '../../feedback/feedback.svelte';
@@ -17,6 +18,8 @@
   }
 
   const close = () => recorder.dismiss();
+
+  onMount(() => feedback.close());
 </script>
 
 <svelte:window onkeydown={(e) => e.key === 'Escape' && close()} />
