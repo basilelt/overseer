@@ -32,6 +32,7 @@
   import { chatCapable } from '../../chat/viewmode';
   import ModeToggle from '../chat/ModeToggle.svelte';
   import { chipLabel, chipShort } from '../../profiles';
+  import { formatCost } from '../../usage/format';
   import { pages } from '../../session-pages.svelte';
 
   let { pane, index, focused, canClose }: { pane: Pane; index: number; focused: boolean; canClose: boolean } = $props();
@@ -75,6 +76,7 @@
   });
 
   const chipOf = (tab: TabInfo) => (tab.item?.termId ? app.data.terms.find((x) => x.id === tab.item!.termId)?.profile : undefined);
+  const costOf = (tab: TabInfo) => (tab.item?.lineId ? app.data.activity[tab.item.lineId]?.cost : undefined);
   const effortLabel = (e: string) => t('profile.effortOf', { effort: t(`effort.${e}` as Key).toLowerCase() });
 
   function label(tab: TabInfo): string {
@@ -286,6 +288,7 @@
           {/if}
         </span>
         {#if chipOf(tab)}{@const chip = chipOf(tab)}<span class="chip mono" title={chipLabel(chip, effortLabel)}>{chipShort(chip)}</span>{/if}
+        {#if costOf(tab)}{@const c = costOf(tab)!}<span class="chip cost mono" title={t('cost.tab', { cost: formatCost(c.cost, c.partial) })}>{formatCost(c.cost, c.partial).replace('≈', '')}</span>{/if}
         <ReviewBadge tabKey={key} />
         <span class="slot"><span class="num faint">{i < 9 ? i + 1 : ''}</span><button class="x" aria-label={t('common.close')} onclick={(e) => close(e, key)}><svg class="i" width="12" height="12" aria-hidden="true"><use href="#sbi-x" /></svg></button></span>
       </div>
@@ -452,6 +455,9 @@
   /* While renaming, the input takes the title's place. */
   .label:has(:global(.name-input)) > .name {
     display: none;
+  }
+  .chip.cost {
+    flex: 0 8 auto;
   }
   .chip {
     flex: 0 6 auto;

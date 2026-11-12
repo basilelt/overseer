@@ -729,19 +729,28 @@ fn activity(ctx: &Ctx, r: &Request, id: &str) -> (u16, Value) {
             None => return err(400, "since must be an RFC 3339 time"),
         },
     };
-    let a = crate::activity::find_transcript(
+    let path = crate::activity::find_transcript(
         &ctx.claude_dir,
         &ctx.codex_dir,
         &ctx.gemini_dir,
         l.agent,
         &l.session_id,
-    )
-    .and_then(|p| crate::activity::activity(l.agent, &p, since));
+    );
+    let a = path
+        .as_deref()
+        .and_then(|p| crate::activity::activity(l.agent, p, since));
+    let cost = path
+        .as_deref()
+        .and_then(|p| crate::activity::spend(l.agent, p))
+        .map(|s| crate::activity::spend_json(&s, &l.launch_args));
     let transcript = a.is_some();
     let mut a = a.unwrap_or_else(
         || json!({"workLog": [], "todos": [], "editedFiles": [], "lastAssistantText": ""}),
     );
     a["transcript"] = json!(transcript);
+    if let Some(c) = cost {
+        a["cost"] = c;
+    }
     if let Some(t) = &l.title {
         a["title"] = json!(t);
     }

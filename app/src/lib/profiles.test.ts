@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { MOCK_AGENTS, MOCK_PROFILES, MockDaemon } from './mock';
-import { chipLabel, chipShort, clean, costIndex, effectiveId, formatIndex, initialChoice, priceOf, resolveProfile, scoped, slugId, validateProfile } from './profiles';
-import type { Profile, ProfilesStore, Term } from './types';
+import { chipLabel, chipShort, clean, costIndex, effectiveId, formatIndex, initialChoice, priceOf, resolveProfile, scoped, slugId, TASK_TYPES, typed, validateProfile } from './profiles';
+import type { Profile, ProfilesStore, Task, Term } from './types';
 
 const store = (over: Partial<ProfilesStore> = {}): ProfilesStore => ({
   ...structuredClone(MOCK_PROFILES),
@@ -24,6 +24,24 @@ describe('profile resolution', () => {
     expect(effectiveId(s, { explicit: 'none', cwd: '/w/app' })).toBe('');
     expect(effectiveId(store({ default: '' }), { cwd: '/x' })).toBe('');
     expect(scoped(s, undefined)).toBeUndefined();
+  });
+
+  it('puts the task type between the explicit profile and the workspace', () => {
+    const s = store({ types: { fix: 'lean', triage: 'none', refactor: 'deleted' } });
+    expect(effectiveId(s, { taskType: 'fix', cwd: '/w/app' })).toBe('lean');
+    expect(effectiveId(s, { taskType: 'fix', cwd: '/elsewhere' })).toBe('lean');
+    expect(effectiveId(s, { explicit: 'max', taskType: 'fix', cwd: '/w/app' })).toBe('max');
+    expect(effectiveId(s, { taskType: 'triage', cwd: '/w/app' })).toBe('');
+    expect(effectiveId(s, { taskType: 'refactor', cwd: '/w/app' })).toBe('economy');
+    expect(effectiveId(s, { taskType: 'feature', cwd: '/w/app' })).toBe('economy');
+    expect(effectiveId(s, { taskType: null, cwd: '/w/app' })).toBe('economy');
+    expect(typed(store(), 'fix')).toBeUndefined();
+  });
+
+  it('keeps the task type when an explicit profile is stale', () => {
+    const s = store({ types: { fix: 'lean' } });
+    expect(resolveProfile(s, { explicit: 'ghost', taskType: 'fix', cwd: '/w/app' })?.id).toBe('lean');
+    expect(resolveProfile(s, { taskType: 'triage', cwd: '/w/app' })?.id).toBe('economy');
   });
 
   it('ignores stale ids and falls back to the scope', () => {
@@ -122,6 +140,33 @@ describe('mock daemon applies profiles like the daemon', () => {
     const plain = await d.request<Term>('POST', '/v1/terms', { agent: 'claude', cwd: '/elsewhere' });
     expect(plain.cmd).toEqual(['claude', '--permission-mode', 'auto']);
     await expect(d.request('POST', '/v1/terms', { agent: 'claude', profile: 'ghost' })).rejects.toThrow(/unknown profile/);
+  });
+
+  it('validates task type rules with the daemon errors', async () => {
+    const d = new MockDaemon();
+    expect(TASK_TYPES).toEqual(['fix', 'feature', 'engineering', 'refactor', 'triage']);
+    await expect(d.request('PUT', '/v1/profiles', { types: { migration: 'max' } })).rejects.toThrow('unknown task type "migration", expected one of fix, feature, engineering, refactor, triage');
+    await expect(d.request('PUT', '/v1/profiles', { types: { fix: 'ghost' } })).rejects.toThrow('task type fix: unknown profile ghost');
+    await expect(d.request('PUT', '/v1/profiles', { types: { fix: '' } })).rejects.toThrow('task type fix: unknown profile');
+    const s = await d.request<ProfilesStore>('PUT', '/v1/profiles', { types: { refactor: 'max', triage: 'none' } });
+    expect(s.types).toEqual({ refactor: 'max', triage: 'none' });
+  });
+
+  it('stores the task type, lets its profile fill the effort and clears it on patch', async () => {
+    const d = new MockDaemon();
+    await d.request('PUT', '/v1/profiles', { types: { refactor: 'max' } });
+    const t = await d.request<Task>('POST', '/v1/tasks', { title: 'migrate', description: '', project: '/w/app', agent: 'claude', model: '', taskType: 'refactor' });
+    expect(t.taskType).toBe('refactor');
+    expect(t.effort).toBe('');
+    const plain = await d.request<Task>('POST', '/v1/tasks', { title: 'x', description: '', project: '/w/app', agent: 'claude', model: '' });
+    expect(plain.effort).toBe('high');
+    expect(plain.taskType).toBeUndefined();
+    await expect(d.request('POST', '/v1/tasks', { title: 'x', description: '', project: '/w/app', agent: 'claude', model: '', taskType: 'chore' })).rejects.toThrow('taskType must be one of fix, feature, engineering, refactor, triage');
+    const typedTask = await d.request<Task>('PATCH', `/v1/tasks/${plain.id}`, { taskType: 'fix' });
+    expect(typedTask.taskType).toBe('fix');
+    const cleared = await d.request<Task>('PATCH', `/v1/tasks/${plain.id}`, { taskType: null });
+    expect(cleared.taskType).toBeUndefined();
+    await expect(d.request('PATCH', `/v1/tasks/${plain.id}`, { taskType: 'chore' })).rejects.toThrow(/taskType must be one of/);
   });
 
   it('previews then applies subagent file edits per confirmed file', async () => {

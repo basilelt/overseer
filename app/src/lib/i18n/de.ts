@@ -1474,8 +1474,6 @@ export const dict: Partial<Dict> = {
   'usage.unavailable': 'Dieser Server liefert keine Agent-Nutzung. Aktualisiere ihn auf die neueste Version.',
   'usage.paused': 'Pausiert, solange das Fenster im Hintergrund ist',
   'usage.chip': 'Agent-Nutzung heute. Nutzungsbereich öffnen',
-  'usage.sessionLine': '{tokens} Tokens · {cost} · {n} Anfragen',
-  'usage.last30': 'letzte 30 Tage',
   'usage.untitled': 'Sitzung {id}',
   'tour.welcomeTitle': 'Willkommen bei Overseer',
   'tour.welcomeBody': 'Führe deine Coding-Agents nebeneinander aus und behalte sie im Blick, auf diesem Rechner oder per SSH auf einem Server, mit Terminals, Aufgaben und Reviews an einem Ort.',

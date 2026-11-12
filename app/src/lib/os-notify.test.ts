@@ -65,7 +65,10 @@ describe('dispatch', () => {
       notifyMuted: {},
     });
   });
-  afterEach(() => vi.unstubAllGlobals());
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
 
   it('records in-app events and toasts them when toasts are on', () => {
     const app = fakeApp();
@@ -91,15 +94,53 @@ describe('dispatch', () => {
     dispatch(app, { id: '2', kind: 'finished', title: 'b', action: { kind: 'line', key: 'line:b' } }, show);
     dispatch(app, { id: '3', kind: 'allIdle', title: 'idle', target: 'w:ws1' }, show);
     expect(center.entries.map((e) => [e.id, e.read])).toEqual([
-      ['3', true],
-      ['2', true],
-      ['1', true],
+      ['w:ws1', true],
+      ['line:b', true],
+      ['line:a', true],
     ]);
     expect(show).not.toHaveBeenCalled();
     expect(center.entries[0]).not.toHaveProperty('target');
     settings.notifyMuted = { 'ssh:other': ['line:c'] };
     dispatch(app, { id: '4', kind: 'finished', title: 'c', action: { kind: 'line', key: 'line:c' } }, show);
     expect(center.entries[0].read).toBe(false);
+  });
+
+  it('keeps one row per session, newest event first, unread again on each new event', () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    const app = fakeApp();
+    for (let i = 0; i < 3; i++) {
+      vi.setSystemTime(i * 600_000);
+      dispatch(app, { id: `t${i}`, kind: 'taskTesting', title: 'Task #116 is ready for testing', action: { kind: 'line', key: 'line:a' } }, show);
+      dispatch(app, { id: `f${i}`, kind: 'finished', title: 'Claude Code finished in overseer', action: { kind: 'line', key: 'line:a' } }, show);
+      dispatch(app, { id: `i${i}`, kind: 'allIdle', title: 'All agents in overseer are idle', target: 'w:ws1' }, show);
+      center.markAllRead();
+    }
+    vi.setSystemTime(3 * 600_000);
+    dispatch(app, { id: 'f9', kind: 'finished', title: 'Claude Code finished in overseer', action: { kind: 'line', key: 'line:a' } }, show);
+    expect(center.entries.map((e) => [e.id, e.kind, e.read])).toEqual([
+      ['line:a', 'finished', false],
+      ['w:ws1', 'allIdle', true],
+    ]);
+    expect(center.unread).toBe(1);
+    vi.useRealTimers();
+  });
+
+  it('folds a finished turn into the testing notice just before it, without a second toast', () => {
+    settings.notifyKinds = { ...DEFAULT_KINDS, finished: 'app' };
+    const app = fakeApp();
+    dispatch(app, { id: 't', kind: 'taskTesting', title: 'Task #1 is ready for testing', action: { kind: 'line', key: 'line:a' } }, show);
+    expect(dispatch(app, { id: 'f', kind: 'finished', title: 'Claude finished', action: { kind: 'line', key: 'line:a' } }, show)).toBe(false);
+    expect(center.entries.map((e) => e.kind)).toEqual(['taskTesting']);
+    expect(show).toHaveBeenCalledTimes(1);
+  });
+
+  it('lets a testing notice replace the finished turn just before it', () => {
+    settings.notifyKinds = { ...DEFAULT_KINDS, finished: 'app' };
+    const app = fakeApp();
+    dispatch(app, { id: 'f', kind: 'finished', title: 'Claude finished', action: { kind: 'line', key: 'line:a' } }, show);
+    expect(dispatch(app, { id: 't', kind: 'taskTesting', title: 'Task #1 is ready for testing', action: { kind: 'line', key: 'line:a' } }, show)).toBe(true);
+    expect(center.entries.map((e) => e.kind)).toEqual(['taskTesting']);
+    expect(show).toHaveBeenCalledTimes(2);
   });
 
   it('leaves the session on screen alone', () => {
@@ -561,7 +602,7 @@ describe('system notifications', () => {
       await vi.waitFor(() => expect(plug.sendNotification).toHaveBeenCalled());
       await new Promise((r) => setTimeout(r, 0));
       expect(plug.sendNotification).toHaveBeenCalledTimes(1);
-      expect(center.entries.map((e) => e.id)).toEqual(['cd-2', 'cd-1']);
+      expect(center.entries.map((e) => [e.id, e.title])).toEqual([['line:cooldown', 'a again']]);
     });
 
     it('toasts instead when sending fails', async () => {

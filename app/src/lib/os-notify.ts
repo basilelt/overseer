@@ -236,7 +236,8 @@ export function dispatch(app: AppLike, input: NoticeInput, show: (text: string, 
     now: new Date(),
   });
   if (r === 'off') return false;
-  if (!center.add(r === 'silent' ? { ...entry, quiet: true } : entry)) return false;
+  const row = { ...entry, coalesce: entry.coalesce ?? target, quiet: entry.quiet || r === 'silent' };
+  if (!center.add(row)) return false;
   const fallback = () => {
     if (toast ?? settings.notifyBackgroundToasts) show(entry.title, entry.kind === 'failed' || entry.kind === 'error' ? 'error' : 'info', action);
   };

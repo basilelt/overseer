@@ -21,4 +21,9 @@ describe('task sources', () => {
     expect(fillFrom(jira)).toEqual({ title: 'Fix login', description: 'AS-12', ticketKey: 'AS-12' });
     expect(fillFrom({ ...jira, ticketKey: null }).ticketKey).toBe('');
   });
+
+  it('carries the task type read from the ticket', () => {
+    expect(fillFrom({ ...jira, taskType: 'fix' }).taskType).toBe('fix');
+    expect(fillFrom({ ...jira, taskType: null })).not.toHaveProperty('taskType');
+  });
 });

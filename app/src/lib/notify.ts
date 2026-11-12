@@ -95,11 +95,12 @@ export function notificationsFor(prev: Snapshot, next: Snapshot, prefs: Prefs, p
       const agent = agentName([], l.line.agent);
       const place = placeOf(l);
       const title = place ? t('notify.agentFinished', { agent, place }) : t('notify.agentDone', { agent });
-      out.push({ kind: 'finished', key: `line:${l.line.id}`, title, body: describe(l, place) });
+      out.push({ kind: 'finished', key: `line:${l.line.id}`, title, body: lineTitle(l) === place ? '' : lineTitle(l) });
     }
     for (const { item: task, before } of changes(prev.tasks, next.tasks, byOwnId)) {
       if (task.status !== 'in_testing' || before?.status === 'in_testing') continue;
-      out.push({ kind: 'taskTesting', key: task.lineId ? `line:${task.lineId}` : null, title: t('notify.taskTesting', { n: task.number }), body: task.title });
+      const key = task.lineId ? `line:${task.lineId}` : null;
+      out.push({ kind: 'taskTesting', key, title: t('notify.taskTesting', { n: task.number }), body: task.title, target: key ?? `task:${task.id}` });
     }
   }
   for (const { item: term, before } of changes(prev.terms, next.terms, byOwnId)) {

@@ -6,13 +6,13 @@ use crate::util::{format_rfc3339, ticket_any, ulid};
 use crate::{Ctx, Line};
 use rusqlite::{params, OptionalExtension, Row};
 use serde_json::{json, Value};
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 
 pub(crate) type Res<T> = Result<T, (u16, String)>;
 
-const COLS: &str = "id, number, title, description, project, status, agent, model, effort, ticket_key, line_id, term_id, branch, worktree_path, progress, error, started_ms, created_ms, updated_ms, rank, origin, manual_status, session_state, badge, profile, title_source, urgent, important, parent_id, depends_on, inherit_branch, quorum, votes";
+const COLS: &str = "id, number, title, description, project, status, agent, model, effort, ticket_key, line_id, term_id, branch, worktree_path, progress, error, started_ms, created_ms, updated_ms, rank, origin, manual_status, session_state, badge, profile, title_source, urgent, important, parent_id, depends_on, inherit_branch, quorum, votes, cost, task_type";
 
 pub const TITLE_USER: &str = "user";
 pub const TITLE_AUTO: &str = "auto";
@@ -55,6 +55,8 @@ pub struct Task {
     pub inherit_branch: Option<bool>,
     pub quorum: Option<Value>,
     pub votes: Option<Value>,
+    pub cost: Option<Value>,
+    pub task_type: Option<String>,
 }
 
 fn row(r: &Row) -> rusqlite::Result<Task> {
@@ -98,6 +100,8 @@ fn row(r: &Row) -> rusqlite::Result<Task> {
         inherit_branch: r.get(30)?,
         quorum: json_col(r, 31)?,
         votes: json_col(r, 32)?,
+        cost: json_col(r, 33)?,
+        task_type: r.get(34)?,
     })
 }
 
@@ -125,6 +129,7 @@ impl Task {
             ("error", &self.error),
             ("manualStatus", &self.manual_status),
             ("profile", &self.profile),
+            ("taskType", &self.task_type),
         ] {
             if let Some(x) = val {
                 v[k] = json!(x);
@@ -154,6 +159,9 @@ impl Task {
         if let Some(b) = &self.badge {
             v["badges"] = json!([b]);
         }
+        if let Some(c) = self.cost.as_ref().and_then(cost_total) {
+            v["cost"] = c;
+        }
         v
     }
 
@@ -166,6 +174,140 @@ impl Task {
             .as_deref()
             .and_then(term::get)
             .filter(|t| !t.exited())
+    }
+}
+
+const COST_BUSY_MS: i64 = 60_000;
+const COST_PER_TICK: usize = 8;
+
+static COST_SEEN: Mutex<Option<HashMap<String, (i64, i64)>>> = Mutex::new(None);
+
+fn cost_due(seen: Option<(i64, i64)>, activity_ms: i64, busy: bool, now: i64) -> bool {
+    match seen {
+        None => true,
+        Some((a, _)) if a == activity_ms => false,
+        Some((_, at)) => !busy || now - at >= COST_BUSY_MS,
+    }
+}
+
+fn cost_total(c: &Value) -> Option<Value> {
+    let sessions = c["sessions"].as_object().filter(|m| !m.is_empty())?;
+    let mut out = json!({"input": 0, "cacheWrite": 0, "cacheRead": 0, "output": 0, "cost": null, "partial": false, "sessions": sessions.len()});
+    let mut latest = i64::MIN;
+    for s in sessions.values() {
+        for k in ["input", "cacheWrite", "cacheRead", "output"] {
+            out[k] = json!(out[k].as_u64().unwrap_or(0) + s[k].as_u64().unwrap_or(0));
+        }
+        if let Some(x) = s["cost"].as_f64() {
+            let sum = out["cost"].as_f64().unwrap_or(0.0) + x;
+            out["cost"] = json!((sum * 10_000.0).round() / 10_000.0);
+        }
+        if s["partial"] == true {
+            out["partial"] = json!(true);
+        }
+        let at = s["at"].as_i64().unwrap_or(0);
+        if at >= latest {
+            latest = at;
+            out["model"] = s["model"].clone();
+            out["effort"] = s["effort"].clone();
+        }
+    }
+    Some(out)
+}
+
+fn track_cost(ctx: &Ctx, reg: &Registry, lines: &[Line]) {
+    let Ok(tasks) = all(reg) else { return };
+    let now = crate::procs::now_ms();
+    let mut budget = COST_PER_TICK;
+    let mut seen = COST_SEEN.lock().unwrap_or_else(|e| e.into_inner());
+    let seen = seen.get_or_insert_with(HashMap::new);
+    let live: HashSet<String> = tasks.iter().map(|t| t.id.clone()).collect();
+    seen.retain(|k, _| k.split_once(' ').is_some_and(|(id, _)| live.contains(id)));
+    for t in tasks {
+        let Some(l) = t
+            .line_id
+            .as_deref()
+            .and_then(|id| lines.iter().find(|l| l.id == id))
+        else {
+            continue;
+        };
+        if l.session_id.is_empty() {
+            continue;
+        }
+        let key = format!("{}:{}", l.agent, l.session_id);
+        let mark = format!("{} {key}", t.id);
+        if !cost_due(seen.get(&mark).copied(), l.last_activity_ms, l.busy, now) || budget == 0 {
+            continue;
+        }
+        budget -= 1;
+        seen.insert(mark, (l.last_activity_ms, now));
+        let Some(spend) = crate::activity::find_transcript(
+            &ctx.claude_dir,
+            &ctx.codex_dir,
+            &ctx.gemini_dir,
+            l.agent,
+            &l.session_id,
+        )
+        .and_then(|p| crate::activity::spend(l.agent, &p)) else {
+            continue;
+        };
+        let full = crate::activity::spend_json(&spend, &l.launch_args);
+        let mut cost = t.cost.clone().unwrap_or_else(|| json!({"sessions": {}}));
+        if !cost["sessions"].is_object() {
+            cost["sessions"] = json!({});
+        }
+        let old = cost["sessions"][&key].clone();
+        let mut snap = json!({"at": now.max(l.last_activity_ms)});
+        for k in [
+            "model",
+            "effort",
+            "cost",
+            "partial",
+            "input",
+            "cacheWrite",
+            "cacheRead",
+            "output",
+        ] {
+            snap[k] = full[k].clone();
+        }
+        if snap["effort"].is_null() {
+            snap["effort"] = match &old["effort"] {
+                Value::Null if !t.effort.is_empty() => json!(t.effort),
+                e => e.clone(),
+            };
+        }
+        if [
+            "model",
+            "effort",
+            "cost",
+            "partial",
+            "input",
+            "cacheWrite",
+            "cacheRead",
+            "output",
+        ]
+        .iter()
+        .all(|k| old[k] == snap[k])
+        {
+            continue;
+        }
+        cost["sessions"][&key] = snap;
+        if reg
+            .conn
+            .execute(
+                "UPDATE tasks SET cost = ?2 WHERE id = ?1",
+                params![t.id, cost.to_string()],
+            )
+            .is_err()
+        {
+            continue;
+        }
+        let mut t = t;
+        t.cost = Some(cost);
+        publish(
+            "task.updated",
+            json!({"task": t.to_json(&ctx.config.station_id)}),
+        );
     }
 }
 
@@ -212,7 +354,7 @@ pub(crate) fn store(reg: &Registry, t: &mut Task, station: &str) -> Res<()> {
            ticket_key = ?8, line_id = ?9, term_id = ?10, branch = ?11, worktree_path = ?12, progress = ?13,
            error = ?14, started_ms = ?15, updated_ms = ?16, rank = ?17, manual_status = ?18,
            session_state = ?19, badge = ?20, profile = ?21, title_source = ?22, urgent = ?23, important = ?24,
-           depends_on = ?25, inherit_branch = ?26, quorum = ?27, votes = ?28 WHERE id = ?1",
+           depends_on = ?25, inherit_branch = ?26, quorum = ?27, votes = ?28, task_type = ?29 WHERE id = ?1",
         params![
             t.id,
             t.title,
@@ -242,6 +384,7 @@ pub(crate) fn store(reg: &Registry, t: &mut Task, station: &str) -> Res<()> {
             t.inherit_branch,
             t.quorum.as_ref().map(Value::to_string),
             t.votes.as_ref().map(Value::to_string),
+            t.task_type,
         ],
     ))?;
     publish("task.updated", json!({"task": t.to_json(station)}));
@@ -395,6 +538,20 @@ fn ticket_of(v: &Value) -> Res<Option<String>> {
     }
 }
 
+fn task_type_of(v: &Value) -> Res<Option<String>> {
+    match v {
+        Value::Null => Ok(None),
+        Value::String(s) if s.is_empty() => Ok(None),
+        Value::String(s) if crate::profiles::TASK_TYPES.contains(&s.as_str()) => {
+            Ok(Some(s.clone()))
+        }
+        _ => Err(bad(format!(
+            "taskType must be one of {}",
+            crate::profiles::TASK_TYPES.join(", ")
+        ))),
+    }
+}
+
 fn profile_of(ctx: &Ctx, v: &Value) -> Res<Option<String>> {
     match v {
         Value::Null => Ok(None),
@@ -476,11 +633,17 @@ pub fn create(ctx: &Ctx, b: &Value) -> Res<Task> {
         status = "auto";
     }
     let profile = profile_of(ctx, &b["profile"])?;
+    let task_type = task_type_of(&b["taskType"])?;
     let profiled = {
         let s = crate::profiles::load(&ctx.state_dir);
-        crate::profiles::resolve(&s, profile.as_deref(), &[project.as_str()])
-            .map_err(|(_, e)| bad(e))?
-            .is_some_and(|p| p.agents.get(agent).is_some_and(|c| !c.effort.is_empty()))
+        crate::profiles::resolve(
+            &s,
+            profile.as_deref(),
+            task_type.as_deref(),
+            &[project.as_str()],
+        )
+        .map_err(|(_, e)| bad(e))?
+        .is_some_and(|p| p.agents.get(agent).is_some_and(|c| !c.effort.is_empty()))
     };
     let levels = crate::agents::get(agent)
         .map(|a| a.valid_efforts())
@@ -506,6 +669,7 @@ pub fn create(ctx: &Ctx, b: &Value) -> Res<Task> {
         effort: effort.into(),
         ticket_key: ticket_of(&b["ticketKey"])?,
         profile,
+        task_type,
         origin: (origin != "user").then(|| origin.to_string()),
         urgent: flag_of("urgent", &b["urgent"])?,
         important: flag_of("important", &b["important"])?,
@@ -549,8 +713,8 @@ pub(crate) fn insert(reg: &Registry, t: &mut Task, station: &str) -> Res<bool> {
     ))?;
     let n = sql(tx.execute(
         "INSERT INTO tasks (id, number, title, description, project, status, agent, model, effort, ticket_key,
-           line_id, branch, worktree_path, progress, created_ms, updated_ms, rank, origin, session_state, badge, profile, title_source, urgent, important, parent_id, depends_on, inherit_branch, quorum, votes)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29)
+           line_id, branch, worktree_path, progress, created_ms, updated_ms, rank, origin, session_state, badge, profile, title_source, urgent, important, parent_id, depends_on, inherit_branch, quorum, votes, task_type)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29, ?30)
          ON CONFLICT DO NOTHING",
         params![
             t.id,
@@ -582,6 +746,7 @@ pub(crate) fn insert(reg: &Registry, t: &mut Task, station: &str) -> Res<bool> {
             t.inherit_branch,
             t.quorum.as_ref().map(Value::to_string),
             t.votes.as_ref().map(Value::to_string),
+            t.task_type,
         ],
     ))?;
     if n == 0 {
@@ -666,6 +831,7 @@ pub fn patch(ctx: &Ctx, id: &str, b: &Value) -> Res<Task> {
             "important" => t.important = flag_of(k, v)?,
             "inheritBranch" => t.inherit_branch = flag_of(k, v)?,
             "dependsOn" => t.depends_on = deps_of(&reg, id, &t.project, v)?,
+            "effort" if v == "" => t.effort.clear(),
             "effort" => {
                 let levels = crate::agents::get(&effort_agent)
                     .map(|a| a.valid_efforts())
@@ -673,6 +839,7 @@ pub fn patch(ctx: &Ctx, id: &str, b: &Value) -> Res<Task> {
                 t.effort = pick(b, k, levels, "")?.into();
             }
             "profile" => t.profile = profile_of(ctx, v)?,
+            "taskType" => t.task_type = task_type_of(v)?,
             "ticketKey" => t.ticket_key = ticket_of(v)?,
             "progress" => t.progress = progress(v)?,
             "quorum" => {
@@ -1001,8 +1168,7 @@ pub(crate) fn start_with_args(
         .rev()
         .find(|(k, _)| k == "PATH")
         .map(|(_, v)| v.clone())
-        .or_else(|| std::env::var("PATH").ok())
-        .unwrap_or_default();
+        .unwrap_or_else(crate::shellenv::path);
     env.retain(|(k, _)| k != "PATH");
     env.push((
         "PATH".into(),
@@ -1267,6 +1433,7 @@ pub fn tick(ctx: &Ctx, lines: &[Line]) {
     if let Ok(_g) = START.try_lock() {
         crate::session_tasks::sync(ctx, &reg, lines);
     }
+    track_cost(ctx, &reg, lines);
     if ctx.config.auto_organize || crate::task_agents::auto_organize_enabled(&reg) {
         crate::task_agents::auto_organize(ctx, &reg);
     }
@@ -1501,6 +1668,42 @@ mod tests {
         let _ = std::fs::remove_dir_all(&base);
     }
     use super::*;
+
+    #[test]
+    fn cost_is_recomputed_only_when_the_session_moved() {
+        assert!(cost_due(None, 5, false, 0));
+        assert!(!cost_due(Some((5, 0)), 5, false, 10));
+        assert!(!cost_due(Some((5, 0)), 5, true, 10 * COST_BUSY_MS));
+        assert!(cost_due(Some((5, 0)), 6, false, 1));
+        assert!(!cost_due(Some((5, 0)), 6, true, COST_BUSY_MS - 1));
+        assert!(cost_due(Some((5, 0)), 6, true, COST_BUSY_MS));
+    }
+
+    #[test]
+    fn task_cost_sums_its_sessions_and_takes_the_latest_model() {
+        let c = json!({"sessions": {
+            "claude:a": {"at": 1, "model": "claude-opus-5-5", "effort": "high", "cost": 1.25, "partial": false,
+                         "input": 1, "cacheWrite": 2, "cacheRead": 3, "output": 4},
+            "codex:b": {"at": 2, "model": "gpt-6", "effort": "low", "cost": null, "partial": true,
+                        "input": 10, "cacheWrite": 0, "cacheRead": 30, "output": 40}
+        }});
+        let t = cost_total(&c).unwrap();
+        assert_eq!(t["input"], 11);
+        assert_eq!(t["cacheRead"], 33);
+        assert_eq!(t["output"], 44);
+        assert_eq!(t["cost"], 1.25);
+        assert_eq!(t["partial"], true);
+        assert_eq!(t["model"], "gpt-6");
+        assert_eq!(t["effort"], "low");
+        assert_eq!(t["sessions"], 2);
+        assert_eq!(cost_total(&json!({"sessions": {}})), None);
+        let task = Task {
+            cost: Some(c),
+            ..Task::default()
+        };
+        assert_eq!(task.to_json("s")["cost"]["sessions"], 2);
+        assert!(Task::default().to_json("s").get("cost").is_none());
+    }
 
     #[test]
     fn slugs() {

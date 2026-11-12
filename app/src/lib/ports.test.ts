@@ -126,7 +126,7 @@ describe('announce', () => {
     announce(app, 'ssh:other', [fwd(3000)], []);
     expect(list).toHaveLength(2);
     expect(list.every((e) => e.read)).toBe(true);
-    expect(list.find((e) => e.id === 'port:ssh:dev:3000')).toMatchObject({ kind: 'portClosed', count: 8 });
+    expect(list.find((e) => e.id === 'port:ssh:dev:3000')).toMatchObject({ kind: 'portClosed', read: true });
     expect(app.notice.mock.calls[0][0]).toMatchObject({ kind: 'portForwarded', quiet: true, action: { kind: 'url', url: 'http://localhost:3000' } });
     app.notice.mock.calls[0][1]!.run();
     expect(app.openUrl).toHaveBeenCalledWith('http://localhost:3000', { termId: undefined });

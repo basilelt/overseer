@@ -160,8 +160,9 @@ on a TCP port on the server.
 - **Notifications** when an agent needs input or finishes, from agent hooks Overseer can
   install for you.
 - **Agent profiles**: save each CLI's supported model and effort choices, plus named subagent models
-  for Gemini CLI and Antigravity. Apply a profile to new work, scope it to a workspace, and choose
-  when to update the agent files.
+  for Gemini CLI and Antigravity. Apply a profile to new work, scope it to a workspace or to a task
+  type (a bug fix and a migration in the same repo start with different models), and choose when
+  to update the agent files.
 - **Auto-approve defaults per agent**: choose which CLIs Overseer starts in their native
   auto-approval mode, one by one or all at once. The defaults are stored on each connected host and
   apply to new sessions.
@@ -176,6 +177,10 @@ on a TCP port on the server.
   merging or reviewing, it can file it as a new task on the board or fix it itself. Settings →
   Defaults → Agents file what they find as tasks picks which.
 - **Usage and system monitor**: agent quotas, token usage, CPU and RAM in the title bar.
+- **Real cost per session and task**: what each session cost, from the token counts in its
+  transcript, per model with cache reads and writes apart and model switches shown as their own
+  cost. Tabs and task cards carry the total, and the usage view compares the cost per finished
+  task by profile, ticket or task, so you can see whether a cheaper profile really saves money.
 - **Keep agents running with the lid closed**: an opt-in switch (Settings → Connection) stops the
   laptop running Overseer from sleeping when you close it, on Linux, macOS and Windows, so agents
   finish their work with the network on. It drains the battery, and the switch says so.
