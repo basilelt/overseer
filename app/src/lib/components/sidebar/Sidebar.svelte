@@ -22,6 +22,8 @@
   import { ui } from '../../mobile/ui.svelte';
 
   const statesView = preload(() => import('./StatesView.svelte'));
+  // Only windows showing several hosts need it.
+  const hostSections = () => import('./HostSections.svelte');
   const gitView = () => import('../../git/SidebarGit.svelte');
 
   const unplaced = $derived(app.connected && app.wsPersistent ? unplacedCount(app.data.lines, app.ws.workspaces, app.projects, app.data.tasks) : 0);
@@ -93,6 +95,8 @@
   {/if}
   {#if app.sidebarGit}
     {#await gitView() then { default: SidebarGit }}<SidebarGit />{/await}
+  {:else if app.hosts.length > 1}
+    {#await hostSections() then { default: HostSections }}<HostSections {filter} {showArchived} />{/await}
   {:else if app.sidebarMode === 'workspaces'}
     <SpacesView {filter} {showArchived} />
   {:else}

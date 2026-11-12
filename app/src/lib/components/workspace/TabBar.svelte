@@ -5,6 +5,7 @@
 </script>
 
 <script lang="ts">
+  import { hostColor, hostName } from '../../hosts';
   import { ust } from '../../usage/strings';
   import { gt } from '../../github/strings';
   import Columns2 from '@lucide/svelte/icons/columns-2';
@@ -243,6 +244,8 @@
     if (Extra) editing = edit;
     else void loadExtra().then(() => (editing = edit));
   }
+  // Several hosts in this window: every tab says which one it runs on.
+  const hostTag = $derived(app.hosts.length > 1 && settings.hostTabColor && app.link ? { name: hostName(app.link.target), color: hostColor(app.link.key) } : null);
 </script>
 
 <svelte:window onpointermove={tabMove} onpointerup={tabUp} onpointercancel={tabUp} />
@@ -269,6 +272,7 @@
         onpointerdown={(e) => tabDown(e, key)}
         ondblclick={(e) => startEdit(e, tab)}
       >
+        {#if hostTag}<span class="host mono" style:--host={hostTag.color}>{hostTag.name}</span>{/if}
         {#if tab.item}
           <AgentIcon kind={tab.item.kind} size={12} />
           <span class="dot" style:background={GROUP_COLOR[tab.item.group]}></span>
@@ -413,6 +417,19 @@
   .tab.active,
   .tab:has(:global(.name-input)) {
     max-width: none;
+  }
+  .host {
+    flex: none;
+    max-width: 64px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    padding: 1px 5px;
+    border-radius: 4px;
+    font-size: 10.5px;
+    color: var(--text);
+    background: color-mix(in srgb, var(--host) 22%, transparent);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--host) 45%, transparent);
   }
   .tab.active {
     background: var(--bg);

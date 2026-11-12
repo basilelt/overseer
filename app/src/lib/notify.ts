@@ -227,6 +227,22 @@ export function startNotifications(app: typeof App): () => void {
     Date.now,
     () => Math.min(MAX_COOLDOWN_S, Math.max(0, settings.notifyCooldown)) * 1000,
   );
+  const total = () => needsInputCount(app.data) + app.others.reduce((n, l) => n + needsInputCount(l.data), 0);
+  const badge = () => {
+    const count = total();
+    if (count !== lastCount) {
+      lastCount = count;
+      setBadge(count);
+    }
+  };
+  // Background hosts of the window: same rules, their own settle and cooldown, named after their host.
+  const gates = new Map<string, Gate>();
+  let stopped = false;
+  app.onOther = (l, prev, next, e) => {
+    badge();
+    // Loaded with the hosts code, which a window with a background host has already loaded.
+    void import('./host-ops').then((m) => !stopped && m.pushHost(app, gates, l, prev, next, e));
+  };
   const unwatch = app.onChange((prev, next, e: DaemonEvent) => {
     if (prev.lines === next.lines && prev.terms === next.terms && prev.tasks === next.tasks) return;
     const at = e?.at || e?.id || String(Date.now());
@@ -236,15 +252,14 @@ export function startNotifications(app: typeof App): () => void {
       gate.push({ kind: 'allIdle', key: null, title: t('notify.allIdle', { name: name ?? '' }), body: '', target: k }, at);
     }
     idle = now;
-    const count = needsInputCount(next);
-    if (count !== lastCount) {
-      lastCount = count;
-      setBadge(count);
-    }
+    badge();
     for (const n of notificationsFor(prev, next, prefsOf(settings), placeOf)) gate.push(n, at);
   });
   return () => {
     unwatch();
+    app.onOther = null;
+    stopped = true;
+    for (const g of gates.values()) g.stop();
     gate.stop();
     untap();
   };

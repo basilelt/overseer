@@ -24,7 +24,8 @@
   };
 
   const conn = $derived(app.conn);
-  const label = $derived(conn.target.kind === 'local' ? t('host.local') : conn.target.label);
+  const many = $derived(app.hosts.length > 1);
+  const label = $derived(many ? t('hosts.count', { n: app.hosts.length }) : conn.target.kind === 'local' ? t('host.local') : conn.target.label);
   const phaseText = $derived(connLabel(conn));
   const tip = $derived([phaseText, conn.error, app.client?.kind === 'mock' ? t('conn.mock') : ''].filter(Boolean).join(' · '));
 
@@ -35,6 +36,7 @@
 <div class="wrap" data-tour="host">
   <button
     class="chip"
+    data-tour="hosts"
     title={tip}
     aria-haspopup="menu"
     aria-expanded={open}
@@ -79,6 +81,12 @@
     white-space: nowrap;
     color: var(--text);
     font-weight: 500;
+  }
+  .dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    flex: none;
   }
   .pulse {
     animation: pulse 1.2s ease-in-out 6;

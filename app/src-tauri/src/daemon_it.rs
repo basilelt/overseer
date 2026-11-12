@@ -88,6 +88,7 @@ fn git(dir: &Path, args: &[&str]) {
 
 #[tokio::test]
 async fn app_talks_to_a_real_daemon() {
+    let _env = crate::TEST_ENV.lock().await;
     let Some(bin) = daemon_binary() else {
         eprintln!("skipped: build the daemon (cargo build at the repo root) or set OVERSEER_BIN");
         return;
@@ -219,4 +220,79 @@ async fn app_talks_to_a_real_daemon() {
         (Some(true), Some(100)),
         "{after}"
     );
+}
+
+#[tokio::test]
+async fn one_window_reaches_two_daemons_through_its_slots() {
+    let _env = crate::TEST_ENV.lock().await;
+    let Some(bin) = daemon_binary() else {
+        eprintln!("skipped: build the daemon (cargo build at the repo root) or set OVERSEER_BIN");
+        return;
+    };
+    let start = |name: &str| {
+        let root = std::env::temp_dir().join(format!("sbit-{name}-{}", std::process::id()));
+        std::fs::create_dir_all(root.join("home")).unwrap();
+        let d = Daemon {
+            root,
+            bin: bin.clone(),
+        };
+        d.run(&["daemon", "--detach"]);
+        d
+    };
+    let (a, b) = (start("slot-a"), start("slot-b"));
+    let state = crate::commands::AppState::default();
+    let main = state.window(&crate::commands::conn_key("main", None));
+    let extra = state.window(&crate::commands::conn_key("main", Some("h1")));
+    main.conn.use_conn(DaemonConn::Local(a.root.join("d.sock")));
+    extra
+        .conn
+        .use_conn(DaemonConn::Local(b.root.join("d.sock")));
+
+    let wait = Duration::from_secs(5);
+    let cwd = a.root.join("home");
+    let body = json!({"cwd": cwd, "cmd": ["sh", "-c", "sleep 30"], "cols": 80, "rows": 24})
+        .to_string()
+        .into_bytes();
+    let made = main
+        .conn
+        .request("POST", "/v1/terms", Some(&body), wait)
+        .await
+        .unwrap();
+    assert_eq!(
+        made.head.status,
+        201,
+        "{}",
+        String::from_utf8_lossy(&made.body)
+    );
+    let id = json_body(&made.body)["id"].as_str().unwrap().to_string();
+    let ids = |raw: &[u8]| -> Vec<String> {
+        json_body(raw)
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|t| t["id"].as_str().unwrap_or("").to_string())
+            .collect()
+    };
+    let on_a = main
+        .conn
+        .request("GET", "/v1/terms", None, wait)
+        .await
+        .unwrap();
+    let on_b = extra
+        .conn
+        .request("GET", "/v1/terms", None, wait)
+        .await
+        .unwrap();
+    assert!(ids(&on_a.body).contains(&id));
+    assert!(!ids(&on_b.body).contains(&id));
+
+    state.drop_slot("main", "h1");
+    assert!(extra.conn.current().is_none());
+    assert!(main.conn.current().is_some());
+    let again = state.window(&crate::commands::conn_key("main", Some("h1")));
+    again
+        .conn
+        .use_conn(DaemonConn::Local(b.root.join("d.sock")));
+    state.close("main");
+    assert!(main.conn.current().is_none() && again.conn.current().is_none());
 }

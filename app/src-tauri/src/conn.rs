@@ -186,6 +186,11 @@ impl Default for ConnManager {
 }
 
 impl ConnManager {
+    #[cfg(test)]
+    pub fn use_conn(&self, c: DaemonConn) {
+        self.tx.send_replace(Some(Arc::new(c)));
+    }
+
     pub fn current(&self) -> Option<Arc<DaemonConn>> {
         self.tx.borrow().clone()
     }
@@ -960,8 +965,6 @@ mod tests {
         assert!(m.current_within(Duration::from_millis(20)).await.is_none());
     }
 
-    static ENV: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
-
     async fn serve_version(path: &Path) {
         use tokio::io::{AsyncReadExt, AsyncWriteExt};
         let l = tokio::net::UnixListener::bind(path).unwrap();
@@ -983,7 +986,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_local_daemon_that_comes_back_after_the_spawn_failed_is_reconnected_without_retry() {
-        let _g = ENV.lock().await;
+        let _g = crate::TEST_ENV.lock().await;
         let dir = std::env::temp_dir().join(format!("ov-watch-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();

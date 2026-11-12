@@ -1,6 +1,6 @@
 import type { SidebarItem } from './grouping';
 import { STATE_URGENCY } from './session-state';
-import type { ConnState, Folder, Workspace } from './types';
+import type { Folder, Workspace } from './types';
 import { byRank, isGhost, type WsData } from './workspaces';
 import { workspaceSummary, type WorkspaceSummary } from './workspace-summary';
 
@@ -193,20 +193,6 @@ export function spaceTrail(data: WsData): (workspaceId: string | null | undefine
     }
     return names.join(' › ');
   };
-}
-
-export interface SpaceHost {
-  name: string;
-  phase: ConnState['phase'];
-  attempt?: number;
-  version?: string;
-}
-
-// The host chip of a remote connection (ssh or direct URL); a local daemon shows none.
-export function hostFor(conn: Pick<ConnState, 'target' | 'phase' | 'attempt' | 'version'>): SpaceHost | undefined {
-  const { target } = conn;
-  if (target.kind === 'local') return undefined;
-  return { name: target.host ?? target.label, phase: conn.phase, attempt: conn.attempt, version: conn.version };
 }
 
 // The saved expanded list after toggling id: unset starts from the fallback; ids of gone workspaces are dropped,

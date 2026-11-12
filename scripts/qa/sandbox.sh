@@ -70,7 +70,7 @@ start)
       && GIT_CONFIG_GLOBAL=/dev/null git -c user.name=qa -c user.email=qa@example.com add -A \
       && GIT_CONFIG_GLOBAL=/dev/null git -c user.name=qa -c user.email=qa@example.com commit -qm init)
   fi
-  sed "s/__QA_PORT__/$PORT/" "$R/scripts/qa/shim.js" > "$D/shim.js"
+  sed -e "s/__QA_PORT__/$PORT/" -e "s/__QA_SLOT_PORT__/${QA_SLOT_PORT:-__QA_SLOT_PORT__}/" "$R/scripts/qa/shim.js" > "$D/shim.js"
   env -i PATH="$daemon_path" HOME="$D/home" SHELL="${QA_SHELL:-/bin/sh}" TERM=xterm-256color LANG=C.UTF-8 \
     XDG_RUNTIME_DIR="$D/run" CLAUDE_CONFIG_DIR="$D/home/.claude" CODEX_HOME="$D/home/.codex" \
     OVERSEER_STATE_DIR="$D/state" OVERSEER_TMUX_SOCKET="$D/tmux.sock" OVERSEER_LOGIN_ENV=0 \

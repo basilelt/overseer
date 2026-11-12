@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { SidebarItem } from './grouping';
-import { filterItems, folderSpaces, hostFor, openOnPick, spaceTrail, spaces, toggleOpen, visibleIds, type SpaceNode } from './spaces';
+import { filterItems, folderSpaces, openOnPick, spaceTrail, spaces, toggleOpen, visibleIds, type SpaceNode } from './spaces';
 import { NO_WORKSPACE } from './state.svelte';
 import type { Folder, Workspace } from './types';
 
@@ -136,18 +136,6 @@ describe('spaces', () => {
     // Then it is hidden, then shown
     expect(spaces([ws('b', 'Billing')], [], new Map(), 'zzz').empty).toEqual([]);
     expect(spaces([ws('b', 'Billing')], [], new Map(), 'bill').empty).toHaveLength(1);
-  });
-
-  it('hostFor: nothing for local, a chip target for ssh and direct', () => {
-    // Given the three connection kinds
-    // When the host is derived
-    // Then only remote ones yield a name, with the connection status
-    const base = { phase: 'connected' as const, attempt: 2, version: '1.0' };
-    expect(hostFor({ ...base, target: { kind: 'local', label: 'Local' } })).toBeUndefined();
-    expect(hostFor({ ...base, target: { kind: 'ssh', host: 'devbox', label: 'Dev' } })).toEqual({ name: 'devbox', phase: 'connected', attempt: 2, version: '1.0' });
-    expect(hostFor({ ...base, target: { kind: 'ssh', label: 'Dev' } })!.name).toBe('Dev');
-    expect(hostFor({ ...base, target: { kind: 'direct', host: 'daemon.example', label: 'https://daemon.example' } })!.name).toBe('daemon.example');
-    expect(hostFor({ ...base, target: { kind: 'direct', label: 'https://x' } })!.name).toBe('https://x');
   });
 
   it('toggleOpen: toggles an id, falls back to the current workspace and prunes gone ones', () => {

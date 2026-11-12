@@ -65,8 +65,8 @@ describe('workspace drawer on a phone', () => {
     expect(phoneRule(statesView, '.bucket')).toMatch(/flex: none;/);
   });
 
-  it('drops the connection state from session rows, which the top bar already shows', () => {
-    expect(phoneRule(sessionRow, '.hst')).toMatch(/display: none;/);
+  it('shows no connection state on session rows, which the top bar already shows', () => {
+    expect(sessionRow).not.toMatch(/class="(host|hst)"|\.hst \{/);
   });
 
   it('opens a wider drawer', () => {

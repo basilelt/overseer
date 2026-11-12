@@ -2,7 +2,7 @@ import type { KV } from './notify';
 
 export type EntryKind = 'needsInput' | 'taskTesting' | 'finished' | 'failed' | 'allIdle' | 'portForwarded' | 'portClosed' | 'update' | 'upload' | 'error';
 
-export type EntryAction = { kind: 'line'; key: string } | { kind: 'url'; url: string } | { kind: 'update' };
+export type EntryAction = { kind: 'line'; key: string; host?: string } | { kind: 'url'; url: string } | { kind: 'update' };
 
 export interface Entry {
   id: string;

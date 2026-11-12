@@ -27,7 +27,7 @@ describe('StatesView wiring', () => {
     // Then intervals are toggles persisted under statesOpen[hostKey]
     expect(src).toMatch(/aria-expanded=\{/);
     expect(src).toMatch(/saveSettings\(\{ statesOpen: \{ \.\.\.settings\.statesOpen, \[hostKey\(app\.conn\.target\)\]: toggleOpen\(/);
-    expect(src).toContain('hostFor(app.conn)');
+    expect(src).not.toContain('hostFor');
   });
 
   it('skips empty sections and tells a filter without match from an empty list', () => {

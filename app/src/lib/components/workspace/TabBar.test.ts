@@ -81,3 +81,11 @@ describe('new tab menu', () => {
     expect(menu).toContain("label: canInstall(a) ? t('palette.installAgent', { name: a.name }) : a.name");
   });
 });
+
+describe('TabBar host tag', () => {
+  it('names the host on every tab only when the window shows several hosts and the setting is on', () => {
+    expect(bar).toContain('app.hosts.length > 1 && settings.hostTabColor && app.link ? { name: hostName(app.link.target), color: hostColor(app.link.key) } : null');
+    expect(bar).toMatch(/\{#if hostTag\}<span class="host mono" style:--host=\{hostTag\.color\}/);
+    expect(rule('.host')).toContain('max-width: 64px');
+  });
+});

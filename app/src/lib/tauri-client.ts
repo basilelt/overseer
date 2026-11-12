@@ -10,8 +10,15 @@ interface RawResponse {
 export class TauriDaemon implements DaemonClient {
   readonly kind = 'tauri' as const;
 
+  /** Extra hosts of a window each get a slot: their own connection beside the window's own. */
+  constructor(readonly slot: string | null = null) {}
+
+  private s<T extends object>(args: T): T & { slot?: string } {
+    return this.slot ? { ...args, slot: this.slot } : args;
+  }
+
   async request<T>(method: string, path: string, body?: unknown): Promise<T> {
-    const res = await invoke<RawResponse>('daemon_request', { method, path, body: body ?? null });
+    const res = await invoke<RawResponse>('daemon_request', this.s({ method, path, body: body ?? null }));
     if (res.status >= 400) {
       const msg = typeof res.body === 'object' && res.body && 'error' in res.body ? String(res.body.error) : `HTTP ${res.status}`;
       throw new DaemonError(res.status, msg, res.body);
@@ -23,7 +30,7 @@ export class TauriDaemon implements DaemonClient {
     try {
       const onData = new Channel<ArrayBuffer | number[]>();
       const data = new Promise<ArrayBuffer>((resolve) => (onData.onmessage = (m) => resolve(m instanceof ArrayBuffer ? m : Uint8Array.from(m).buffer)));
-      await invoke('daemon_bytes', { path, onData });
+      await invoke('daemon_bytes', this.s({ path, onData }));
       return await data;
     } catch (e) {
       if (typeof e === 'object' && e && 'error' in e) throw new DaemonError(Number((e as { status?: number }).status ?? 0), String(e.error), e);
@@ -34,9 +41,9 @@ export class TauriDaemon implements DaemonClient {
   subscribe(onEvent: (e: DaemonEvent) => void): () => void {
     const channel = new Channel<DaemonEvent>();
     channel.onmessage = onEvent;
-    const id = invoke<number>('daemon_events', { onEvent: channel });
+    const id = invoke<number>('daemon_events', this.s({ onEvent: channel }));
     return () => {
-      id.then((sub) => invoke('daemon_events_stop', { sub })).catch(() => {});
+      id.then((sub) => invoke('daemon_events_stop', this.s({ sub }))).catch(() => {});
     };
   }
 
@@ -47,23 +54,27 @@ export class TauriDaemon implements DaemonClient {
       else if (Array.isArray(m) && m.length === 0) onClose?.();
       else onData(Uint8Array.from(m));
     };
-    const attach = await invoke<number>('term_attach', { termId, onData: channel });
+    const attach = await invoke<number>('term_attach', this.s({ termId, onData: channel }));
     return {
-      write: (data) => void invoke('term_write', { attach, data }).catch(() => {}),
-      resize: (cols, rows) => void invoke('term_resize', { attach, cols, rows }).catch(() => {}),
-      background: (on) => void invoke('term_background', { attach, background: on }).catch(() => {}),
-      close: () => void invoke('term_detach', { attach }).catch(() => {}),
+      write: (data) => void invoke('term_write', this.s({ attach, data })).catch(() => {}),
+      resize: (cols, rows) => void invoke('term_resize', this.s({ attach, cols, rows })).catch(() => {}),
+      background: (on) => void invoke('term_background', this.s({ attach, background: on })).catch(() => {}),
+      close: () => void invoke('term_detach', this.s({ attach })).catch(() => {}),
     };
   }
 
   async connect(target: HostTarget, onState: (s: ConnState) => void, opts: ConnectOptions = {}): Promise<void> {
     const channel = new Channel<ConnState>();
     channel.onmessage = onState;
-    await invoke('conn_connect', { target, onState: channel, serverBinDir: opts.serverBinDir ?? null });
+    await invoke('conn_connect', this.s({ target, onState: channel, serverBinDir: opts.serverBinDir ?? null }));
+  }
+
+  async dropSlots(): Promise<void> {
+    await invoke('conn_drop_slots');
   }
 
   async disconnect(): Promise<void> {
-    await invoke('conn_disconnect');
+    await (this.slot ? invoke('conn_disconnect', { slot: this.slot }) : invoke('conn_disconnect'));
   }
 
   sshHosts(): Promise<SshHost[]> {
@@ -73,26 +84,26 @@ export class TauriDaemon implements DaemonClient {
   watchPorts(onState: (s: PortsState) => void): () => void {
     const channel = new Channel<PortsState>();
     channel.onmessage = onState;
-    const id = invoke<number>('ports_watch', { onState: channel });
+    const id = invoke<number>('ports_watch', this.s({ onState: channel }));
     return () => {
-      id.then((sub) => invoke('ports_watch_stop', { sub })).catch(() => {});
+      id.then((sub) => invoke('ports_watch_stop', this.s({ sub }))).catch(() => {});
     };
   }
 
   async configurePorts(settings: PortSettings): Promise<void> {
-    await invoke('ports_configure', { settings });
+    await invoke('ports_configure', this.s({ settings }));
   }
 
   forwardPort(remotePort: number, localPort: number | null = null): Promise<Forward> {
-    return invoke<Forward>('ports_forward', { remotePort, localPort });
+    return invoke<Forward>('ports_forward', this.s({ remotePort, localPort }));
   }
 
   async unforwardPort(remotePort: number): Promise<void> {
-    await invoke('ports_unforward', { remotePort });
+    await invoke('ports_unforward', this.s({ remotePort }));
   }
 
   async answerPrompt(id: number, answer: string | null): Promise<void> {
-    await invoke('conn_answer', { id, answer });
+    await invoke('conn_answer', this.s({ id, answer }));
   }
 
   localNetworkStatus(host: string | null = null): Promise<LocalNetworkReport> {
@@ -108,11 +119,11 @@ export class TauriDaemon implements DaemonClient {
   }
 
   async wake(): Promise<void> {
-    await invoke('conn_wake');
+    await (this.slot ? invoke('conn_wake', { slot: this.slot }) : invoke('conn_wake'));
   }
 
   async restartServer(): Promise<void> {
-    await invoke('conn_restart_server');
+    await (this.slot ? invoke('conn_restart_server', { slot: this.slot }) : invoke('conn_restart_server'));
   }
 
   deviceKey(): Promise<DeviceKey> {
@@ -146,7 +157,7 @@ export class TauriDaemon implements DaemonClient {
   uploadFile(path: string, onProgress?: (p: UploadProgress) => void): Promise<UploadResult> {
     const channel = new Channel<UploadProgress>();
     channel.onmessage = (p) => onProgress?.(p);
-    return invoke<UploadResult>('upload_file', { path, onProgress: channel });
+    return invoke<UploadResult>('upload_file', this.s({ path, onProgress: channel }));
   }
 
   savePaste(name: string, bytes: Uint8Array): Promise<string> {

@@ -95,21 +95,73 @@ impl AppState {
     }
 
     pub fn close(&self, label: &str) {
-        let w = self.windows.lock().unwrap().remove(label);
-        if let Some(w) = w {
+        let prefix = format!("{label}{SLOT_SEP}");
+        let gone: Vec<Arc<WindowConn>> = {
+            let mut windows = self.windows.lock().unwrap();
+            let keys: Vec<String> = windows
+                .keys()
+                .filter(|k| *k == label || k.starts_with(&prefix))
+                .cloned()
+                .collect();
+            keys.iter().filter_map(|k| windows.remove(k)).collect()
+        };
+        if !gone.is_empty() {
             crate::diag::info(
                 "conn",
-                format!("window {label} closed, dropping its connection"),
+                format!(
+                    "window {label} closed, dropping {} connection(s)",
+                    gone.len()
+                ),
             );
+        }
+        for w in gone {
+            w.shutdown();
+        }
+    }
+
+    /// Drops every extra host connection of a window, keeping its own.
+    pub fn drop_slots(&self, label: &str) {
+        let prefix = format!("{label}{SLOT_SEP}");
+        let gone: Vec<Arc<WindowConn>> = {
+            let mut windows = self.windows.lock().unwrap();
+            let keys: Vec<String> = windows
+                .keys()
+                .filter(|k| k.starts_with(&prefix))
+                .cloned()
+                .collect();
+            keys.iter().filter_map(|k| windows.remove(k)).collect()
+        };
+        for w in gone {
+            w.shutdown();
+        }
+    }
+
+    pub fn drop_slot(&self, label: &str, slot: &str) {
+        let w = self
+            .windows
+            .lock()
+            .unwrap()
+            .remove(&conn_key(label, Some(slot)));
+        if let Some(w) = w {
             w.shutdown();
         }
     }
 }
 
+const SLOT_SEP: char = '\u{1f}';
+
+/// One connection per window, plus one per extra host a window shows (its slot).
+pub fn conn_key(label: &str, slot: Option<&str>) -> String {
+    match slot.filter(|s| !s.is_empty()) {
+        Some(s) => format!("{label}{SLOT_SEP}{s}"),
+        None => label.to_string(),
+    }
+}
+
 const RECONNECT_WAIT: Duration = Duration::from_secs(60);
 
-fn win(state: &AppState, window: &Window) -> Arc<WindowConn> {
-    state.window(window.label())
+fn win(state: &AppState, window: &Window, slot: &Option<String>) -> Arc<WindowConn> {
+    state.window(&conn_key(window.label(), slot.as_deref()))
 }
 
 #[derive(Serialize)]
@@ -122,6 +174,7 @@ pub struct RawResponse {
 pub async fn daemon_request(
     window: Window,
     state: State<'_, AppState>,
+    slot: Option<String>,
     method: String,
     path: String,
     body: Option<Value>,
@@ -140,7 +193,7 @@ pub async fn daemon_request(
     let bytes = body
         .filter(|b| !b.is_null())
         .map(|b| b.to_string().into_bytes());
-    let res = win(&state, &window)
+    let res = win(&state, &window, &slot)
         .conn
         .request(
             &method.to_ascii_uppercase(),
@@ -177,6 +230,7 @@ impl From<&str> for BytesError {
 pub async fn daemon_bytes(
     window: Window,
     state: State<'_, AppState>,
+    slot: Option<String>,
     path: String,
     on_data: Channel<InvokeResponseBody>,
 ) -> Result<(), BytesError> {
@@ -187,7 +241,7 @@ pub async fn daemon_bytes(
         format!("daemon_bytes GET {}", crate::diag::strip_query(&path)),
         Duration::MAX,
     );
-    let conn = win(&state, &window)
+    let conn = win(&state, &window, &slot)
         .conn
         .current_within(RECONNECT_WAIT)
         .await
@@ -225,6 +279,7 @@ pub struct UploadProgress {
 pub async fn upload_file(
     window: Window,
     state: State<'_, AppState>,
+    slot: Option<String>,
     path: String,
     on_progress: Channel<UploadProgress>,
 ) -> Result<Value, String> {
@@ -242,7 +297,7 @@ pub async fn upload_file(
         .file_name()
         .map(|n| n.to_string_lossy().into_owned())
         .unwrap_or_else(|| "file".into());
-    let conn = win(&state, &window)
+    let conn = win(&state, &window, &slot)
         .conn
         .current_within(RECONNECT_WAIT)
         .await
@@ -399,9 +454,14 @@ fn paste_name(raw: &str) -> String {
 }
 
 #[tauri::command]
-pub fn daemon_events(window: Window, state: State<'_, AppState>, on_event: Channel<Value>) -> u32 {
+pub fn daemon_events(
+    window: Window,
+    state: State<'_, AppState>,
+    slot: Option<String>,
+    on_event: Channel<Value>,
+) -> u32 {
     let id = state.id();
-    let w = win(&state, &window);
+    let w = win(&state, &window, &slot);
     let mgr = w.conn.clone();
     let task = spawn(async move {
         let mut parser = SseParser::default();
@@ -431,8 +491,18 @@ async fn stream_events(
 }
 
 #[tauri::command]
-pub fn daemon_events_stop(window: Window, state: State<'_, AppState>, sub: u32) {
-    if let Some(t) = win(&state, &window).subs.lock().unwrap().remove(&sub) {
+pub fn daemon_events_stop(
+    window: Window,
+    state: State<'_, AppState>,
+    slot: Option<String>,
+    sub: u32,
+) {
+    if let Some(t) = win(&state, &window, &slot)
+        .subs
+        .lock()
+        .unwrap()
+        .remove(&sub)
+    {
         t.abort();
     }
 }
@@ -441,12 +511,13 @@ pub fn daemon_events_stop(window: Window, state: State<'_, AppState>, sub: u32) 
 pub async fn term_attach(
     window: Window,
     state: State<'_, AppState>,
+    slot: Option<String>,
     term_id: String,
     on_data: Channel<InvokeResponseBody>,
 ) -> Result<u32, String> {
     let _t = crate::diag::track(format!("term_attach {term_id}"), crate::diag::SLOW_COMMAND);
     let id = state.id();
-    let res = attach(win(&state, &window), id, &term_id, on_data).await;
+    let res = attach(win(&state, &window, &slot), id, &term_id, on_data).await;
     match &res {
         Ok(id) => crate::diag::info("term", format!("attached {term_id} as #{id}")),
         Err(e) => crate::diag::warn("term", format!("attach {term_id} failed: {e}")),
@@ -490,9 +561,10 @@ async fn attach(
 fn term_sender(
     state: &AppState,
     window: &Window,
+    slot: &Option<String>,
     attach: u32,
 ) -> Result<mpsc::Sender<TermInput>, String> {
-    win(state, window)
+    win(state, window, slot)
         .terms
         .lock()
         .unwrap()
@@ -505,10 +577,11 @@ fn term_sender(
 pub async fn term_write(
     window: Window,
     state: State<'_, AppState>,
+    slot: Option<String>,
     attach: u32,
     data: String,
 ) -> Result<(), String> {
-    term_sender(&state, &window, attach)?
+    term_sender(&state, &window, &slot, attach)?
         .send(TermInput::Data(data))
         .await
         .map_err(|_| "terminal closed".into())
@@ -518,11 +591,12 @@ pub async fn term_write(
 pub async fn term_resize(
     window: Window,
     state: State<'_, AppState>,
+    slot: Option<String>,
     attach: u32,
     cols: u16,
     rows: u16,
 ) -> Result<(), String> {
-    term_sender(&state, &window, attach)?
+    term_sender(&state, &window, &slot, attach)?
         .send(TermInput::Resize(cols, rows))
         .await
         .map_err(|_| "terminal closed".into())
@@ -532,19 +606,24 @@ pub async fn term_resize(
 pub async fn term_background(
     window: Window,
     state: State<'_, AppState>,
+    slot: Option<String>,
     attach: u32,
     background: bool,
 ) -> Result<(), String> {
-    term_sender(&state, &window, attach)?
+    term_sender(&state, &window, &slot, attach)?
         .send(TermInput::Background(background))
         .await
         .map_err(|_| "terminal closed".into())
 }
 
 #[tauri::command]
-pub fn term_detach(window: Window, state: State<'_, AppState>, attach: u32) {
+pub fn term_detach(window: Window, state: State<'_, AppState>, slot: Option<String>, attach: u32) {
     crate::diag::info("term", format!("detach #{attach}"));
-    win(&state, &window).terms.lock().unwrap().remove(&attach);
+    win(&state, &window, &slot)
+        .terms
+        .lock()
+        .unwrap()
+        .remove(&attach);
 }
 
 #[tauri::command]
@@ -552,6 +631,7 @@ pub async fn conn_connect(
     app: AppHandle,
     window: Window,
     state: State<'_, AppState>,
+    slot: Option<String>,
     target: Target,
     on_state: Channel<ConnState>,
     server_bin_dir: Option<String>,
@@ -573,8 +653,10 @@ pub async fn conn_connect(
         let _ = on_state.send(s);
     });
     #[cfg(desktop)]
-    let _ = window.set_title(&window_title(&target));
-    let w = win(&state, &window);
+    if slot.is_none() {
+        let _ = window.set_title(&window_title(&target));
+    }
+    let w = win(&state, &window, &slot);
     w.ports.reset();
     w.ports.ensure_tracking();
     let _t = crate::diag::track(
@@ -602,42 +684,63 @@ pub fn window_title(target: &Target) -> String {
 }
 
 #[tauri::command]
-pub fn conn_disconnect(window: Window, state: State<'_, AppState>) {
-    let w = win(&state, &window);
+pub fn conn_disconnect(window: Window, state: State<'_, AppState>, slot: Option<String>) {
+    if let Some(s) = slot.as_deref().filter(|s| !s.is_empty()) {
+        state.drop_slot(window.label(), s);
+        return;
+    }
+    let w = win(&state, &window, &slot);
     w.conn.disconnect();
     w.ports.reset();
     w.terms.lock().unwrap().clear();
 }
 
+/// A reloaded page starts its slots again: the ones of the previous page are dropped first.
 #[tauri::command]
-pub fn conn_wake(window: Window, state: State<'_, AppState>) {
-    win(&state, &window).conn.wake();
+pub fn conn_drop_slots(window: Window, state: State<'_, AppState>) {
+    state.drop_slots(window.label());
 }
 
 #[tauri::command]
-pub async fn conn_restart_server(window: Window, state: State<'_, AppState>) -> Result<(), String> {
+pub fn conn_wake(window: Window, state: State<'_, AppState>, slot: Option<String>) {
+    win(&state, &window, &slot).conn.wake();
+}
+
+#[tauri::command]
+pub async fn conn_restart_server(
+    window: Window,
+    state: State<'_, AppState>,
+    slot: Option<String>,
+) -> Result<(), String> {
     crate::diag::info("conn", "server restart requested");
     let _t = crate::diag::track("conn_restart_server", Duration::MAX);
-    let w = win(&state, &window);
+    let w = win(&state, &window, &slot);
     w.terms.lock().unwrap().clear();
     w.conn.restart_server().await
 }
 
 #[tauri::command]
-pub fn conn_answer(window: Window, state: State<'_, AppState>, id: u32, answer: Option<String>) {
+pub fn conn_answer(
+    window: Window,
+    state: State<'_, AppState>,
+    slot: Option<String>,
+    id: u32,
+    answer: Option<String>,
+) {
     let cancelled = answer.is_none();
     crate::askpass::answer(id, answer);
-    win(&state, &window).conn.clear_prompt(cancelled);
+    win(&state, &window, &slot).conn.clear_prompt(cancelled);
 }
 
 #[tauri::command]
 pub fn ports_watch(
     window: Window,
     state: State<'_, AppState>,
+    slot: Option<String>,
     on_state: Channel<PortsState>,
 ) -> u32 {
     let id = state.id();
-    let w = win(&state, &window);
+    let w = win(&state, &window, &slot);
     w.ports.ensure_tracking();
     w.ports.watch(
         id,
@@ -649,17 +752,23 @@ pub fn ports_watch(
 }
 
 #[tauri::command]
-pub fn ports_watch_stop(window: Window, state: State<'_, AppState>, sub: u32) {
-    win(&state, &window).ports.unwatch(sub);
+pub fn ports_watch_stop(
+    window: Window,
+    state: State<'_, AppState>,
+    slot: Option<String>,
+    sub: u32,
+) {
+    win(&state, &window, &slot).ports.unwatch(sub);
 }
 
 #[tauri::command]
 pub async fn ports_configure(
     window: Window,
     state: State<'_, AppState>,
+    slot: Option<String>,
     settings: PortSettings,
 ) -> Result<(), String> {
-    win(&state, &window).ports.configure(settings).await;
+    win(&state, &window, &slot).ports.configure(settings).await;
     Ok(())
 }
 
@@ -667,6 +776,7 @@ pub async fn ports_configure(
 pub async fn ports_forward(
     window: Window,
     state: State<'_, AppState>,
+    slot: Option<String>,
     remote_port: u16,
     local_port: Option<u16>,
 ) -> Result<Forward, String> {
@@ -674,15 +784,20 @@ pub async fn ports_forward(
         format!("ports_forward {remote_port}"),
         crate::diag::SLOW_COMMAND,
     );
-    win(&state, &window)
+    win(&state, &window, &slot)
         .ports
         .forward(remote_port, local_port, "manual")
         .await
 }
 
 #[tauri::command]
-pub fn ports_unforward(window: Window, state: State<'_, AppState>, remote_port: u16) {
-    win(&state, &window).ports.unforward(remote_port);
+pub fn ports_unforward(
+    window: Window,
+    state: State<'_, AppState>,
+    slot: Option<String>,
+    remote_port: u16,
+) {
+    win(&state, &window, &slot).ports.unforward(remote_port);
 }
 
 #[cfg(desktop)]
@@ -767,6 +882,65 @@ mod tests {
         assert!(finished(&late_abort).await);
         assert!(!Arc::ptr_eq(&other, &s.window("w-2")));
         s.close("missing");
+    }
+
+    #[test]
+    fn a_slot_is_its_own_connection_in_the_same_window() {
+        use super::conn_key;
+        assert_eq!(conn_key("main", None), "main");
+        assert_eq!(conn_key("main", Some("")), "main");
+        let s = AppState::default();
+        let main = s.window(&conn_key("main", None));
+        let prod = s.window(&conn_key("main", Some("ssh:prod")));
+        assert!(!Arc::ptr_eq(&main, &prod));
+        assert!(!Arc::ptr_eq(&main.conn, &prod.conn));
+        assert!(Arc::ptr_eq(
+            &prod,
+            &s.window(&conn_key("main", Some("ssh:prod")))
+        ));
+    }
+
+    #[test]
+    fn dropping_a_slot_keeps_the_window_and_its_other_hosts() {
+        use super::conn_key;
+        let s = AppState::default();
+        let main = s.window("main");
+        let prod = s.window(&conn_key("main", Some("ssh:prod")));
+        let gpu = s.window(&conn_key("main", Some("ssh:gpu")));
+        s.drop_slot("main", "ssh:prod");
+        assert!(prod.is_closed());
+        assert!(!main.is_closed() && !gpu.is_closed());
+        assert!(!Arc::ptr_eq(
+            &prod,
+            &s.window(&conn_key("main", Some("ssh:prod")))
+        ));
+        s.drop_slot("main", "missing");
+    }
+
+    #[test]
+    fn dropping_the_slots_keeps_the_window_connection() {
+        use super::conn_key;
+        let s = AppState::default();
+        let main = s.window("main");
+        let prod = s.window(&conn_key("main", Some("h1")));
+        let other = s.window(&conn_key("w-2", Some("h1")));
+        s.drop_slots("main");
+        assert!(prod.is_closed());
+        assert!(!main.is_closed() && !other.is_closed());
+        assert!(Arc::ptr_eq(&main, &s.window("main")));
+    }
+
+    #[test]
+    fn closing_a_window_drops_every_slot_but_not_other_windows() {
+        use super::conn_key;
+        let s = AppState::default();
+        let main = s.window("main");
+        let prod = s.window(&conn_key("main", Some("ssh:prod")));
+        let other = s.window("main-2");
+        let other_slot = s.window(&conn_key("w-2", Some("ssh:prod")));
+        s.close("main");
+        assert!(main.is_closed() && prod.is_closed());
+        assert!(!other.is_closed() && !other_slot.is_closed());
     }
 
     #[test]
