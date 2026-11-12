@@ -42,6 +42,8 @@
   import { en } from '../../i18n/en';
   import { availableCategories, availableSections, categoryCounts, escapeAction, initialCategory, isHit, phonePage, pickCategory, search, SECTIONS, showEntry, showSection, type CategoryId, type Gates, type SectionId } from '../../settings-index';
   import { phoneOrMobile } from '../../mobile/phone.svelte';
+  import { clampFinite } from '../../clamp';
+  import { FONT_SIZE_MAX, FONT_SIZE_MIN } from '../../terminal-font';
 
   let { onclose }: { onclose: () => void } = $props();
   const apkSettings = __SELF_UPDATE__ ? () => import('../mobile/ApkUpdateSettings.svelte') : null;
@@ -311,7 +313,6 @@
     searchEl?.focus();
   }
 
-  const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, Number.isFinite(v) ? v : lo));
 </script>
 
 <Modal title={t('settings.title')} {onclose} width={780}>
@@ -436,7 +437,7 @@
           {#if row('terminal', 'fontSize')}
             <label class="row" class:hit={hit('terminal', 'fontSize')}>
               <span>{t('settings.fontSize')}</span>
-              <input type="number" min="9" max="24" value={settings.fontSize} onchange={(e) => saveSettings({ fontSize: clamp(e.currentTarget.valueAsNumber, 9, 24) })} />
+              <input type="number" min={FONT_SIZE_MIN} max={FONT_SIZE_MAX} value={settings.fontSize} onchange={(e) => saveSettings({ fontSize: clampFinite(e.currentTarget.valueAsNumber, FONT_SIZE_MIN, FONT_SIZE_MAX) })} />
             </label>
           {/if}
           {#if row('terminal', 'lineHeight')}
@@ -566,7 +567,7 @@
           {#if row('defaults', 'autoConcurrency')}
             <label class="row" class:hit={hit('defaults', 'autoConcurrency')}>
               <span>{t('settings.autoConcurrency')}<small>{t('settings.autoConcurrencyHint')}</small></span>
-              <input type="number" min="1" max="16" value={settings.autoConcurrency} onchange={(e) => saveSettings({ autoConcurrency: clamp(e.currentTarget.valueAsNumber, 1, 16) })} />
+              <input type="number" min="1" max="16" value={settings.autoConcurrency} onchange={(e) => saveSettings({ autoConcurrency: clampFinite(e.currentTarget.valueAsNumber, 1, 16) })} />
             </label>
           {/if}
           {#if row('defaults', 'autoOrganize')}

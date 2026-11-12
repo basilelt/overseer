@@ -1,3 +1,5 @@
+import { clamp } from './clamp';
+
 export const DEFAULT_SCROLLBACK_LINES = 10_000;
 export const MIN_SCROLLBACK_LINES = 1_000;
 export const MAX_SCROLLBACK_LINES = 50_000;
@@ -9,7 +11,7 @@ export const BYTES_PER_LINE = 1600;
 
 export function clampScrollback(lines: number): number {
   if (!Number.isFinite(lines)) return DEFAULT_SCROLLBACK_LINES;
-  return Math.min(MAX_SCROLLBACK_LINES, Math.max(MIN_SCROLLBACK_LINES, Math.round(lines)));
+  return clamp(Math.round(lines), MIN_SCROLLBACK_LINES, MAX_SCROLLBACK_LINES);
 }
 
 export function scrollbackBytes(lines: number): number {

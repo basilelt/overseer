@@ -1,4 +1,4 @@
-export const LONG_PRESS_MS = 500;
+import { CHIP_PRESS_MS, movedTooFar } from './gestures';
 
 export function longPress(node: HTMLElement, onLong: (e: PointerEvent) => void) {
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -17,10 +17,10 @@ export function longPress(node: HTMLElement, onLong: (e: PointerEvent) => void) 
       timer = undefined;
       fired = true;
       if (start) onLong(start);
-    }, LONG_PRESS_MS);
+    }, CHIP_PRESS_MS);
   };
   const move = (e: PointerEvent) => {
-    if (start && Math.hypot(e.clientX - start.clientX, e.clientY - start.clientY) > 10) cancel();
+    if (start && movedTooFar(e.clientX - start.clientX, e.clientY - start.clientY)) cancel();
   };
   const click = (e: MouseEvent) => {
     if (!fired) return;

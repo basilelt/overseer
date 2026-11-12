@@ -1,4 +1,4 @@
-export const TOUCH_MENU_MS = 500;
+import { movedTooFar, TOUCH_MENU_MS } from './gestures';
 
 export function touchContextMenu(node: HTMLElement) {
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -20,7 +20,7 @@ export function touchContextMenu(node: HTMLElement) {
       }, TOUCH_MENU_MS);
     },
     pointermove(e: PointerEvent) {
-      if (Math.hypot(e.clientX - x, e.clientY - y) > 10) cancel();
+      if (movedTooFar(e.clientX - x, e.clientY - y)) cancel();
     },
     pointerup: cancel,
     pointercancel: cancel,

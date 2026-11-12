@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { TOUCH_MENU_MS, touchContextMenu } from './touch-menu';
+import { TOUCH_MENU_MS } from './gestures';
+import { touchContextMenu } from './touch-menu';
 
 class FakeMouseEvent extends Event {
   clientX: number;

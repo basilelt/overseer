@@ -1,3 +1,5 @@
+import { clamp } from './clamp';
+
 export const BUNDLED_FONT = 'JetBrains Mono';
 export const SYMBOLS_FONT = 'Symbols Nerd Font Mono';
 export const FONT_SUGGESTIONS = ['MesloLGS NF', 'JetBrainsMono Nerd Font', 'FiraCode Nerd Font', 'Hack Nerd Font', 'SF Mono', 'Menlo'];
@@ -34,7 +36,7 @@ export function fontChain(custom: string): string {
 }
 
 export function clampLineHeight(v: number): number {
-  return Number.isFinite(v) ? Math.min(2, Math.max(1, Math.round(v * 20) / 20)) : 1;
+  return Number.isFinite(v) ? clamp(Math.round(v * 20) / 20, 1, 2) : 1;
 }
 
 export function lineMetrics(m: { width: number; height: number; baseline: number }, lineHeight: number) {

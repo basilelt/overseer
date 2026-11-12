@@ -1,3 +1,5 @@
+import { clamp } from './clamp';
+
 export interface Bounds {
   min: number;
   max: number;
@@ -9,7 +11,7 @@ export const PANEL: Bounds = { min: 260, max: 760, initial: 340 };
 
 export function clampWidth(w: number | undefined, b: Bounds): number {
   if (typeof w !== 'number' || !Number.isFinite(w)) return b.initial;
-  return Math.round(Math.min(b.max, Math.max(b.min, w)));
+  return Math.round(clamp(w, b.min, b.max));
 }
 
 export function dragWidth(start: number, dx: number, side: 'left' | 'right', b: Bounds): number {

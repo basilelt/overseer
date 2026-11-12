@@ -1,4 +1,9 @@
+import { clamp } from '../clamp';
+import { PINCH_FONT_MAX, PINCH_FONT_MIN } from '../terminal-font';
+
 export const LONG_PRESS_MS = 450;
+export const CHIP_PRESS_MS = 500;
+export const TOUCH_MENU_MS = 500;
 export const SWIPE_MIN_PX = 56;
 export const MOVE_TOLERANCE_PX = 10;
 
@@ -11,13 +16,10 @@ export function movedTooFar(dx: number, dy: number, tolerance = MOVE_TOLERANCE_P
   return Math.hypot(dx, dy) > tolerance;
 }
 
-export const FONT_MIN = 8;
-export const FONT_MAX = 28;
-
-export function pinchFontSize(start: number, startDistance: number, distance: number, min = FONT_MIN, max = FONT_MAX): number {
+export function pinchFontSize(start: number, startDistance: number, distance: number, min = PINCH_FONT_MIN, max = PINCH_FONT_MAX): number {
   if (startDistance <= 0 || distance <= 0) return start;
   const next = Math.round(start * (distance / startDistance));
-  return Math.max(min, Math.min(max, next));
+  return clamp(next, min, max);
 }
 
 export function touchDistance(a: { clientX: number; clientY: number }, b: { clientX: number; clientY: number }): number {
