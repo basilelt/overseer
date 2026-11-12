@@ -1,6 +1,6 @@
 mod common;
 
-use common::{bin, wait, wait_for, App};
+use common::{bin, strs, wait, wait_for, App};
 use serde_json::{json, Value};
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -95,14 +95,6 @@ fn vibe_line(app: &App, sid: &str) -> Option<Value> {
         .iter()
         .find(|l| l["line"]["agent"] == "vibe" && l["line"]["agentSessionId"] == sid)
         .cloned()
-}
-
-fn strs(v: &Value) -> Vec<String> {
-    v.as_array()
-        .unwrap()
-        .iter()
-        .map(|a| a.as_str().unwrap().to_string())
-        .collect()
 }
 
 #[test]

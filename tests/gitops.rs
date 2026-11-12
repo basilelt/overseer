@@ -1,6 +1,6 @@
 mod common;
 
-use common::{git, Fx, Reap};
+use common::{git, js, Fx, Reap};
 use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
 
@@ -14,10 +14,6 @@ fn enc(s: &str) -> String {
         }
     }
     out
-}
-
-fn js(s: &str) -> Value {
-    serde_json::from_str(s).unwrap_or(Value::Null)
 }
 
 struct G {

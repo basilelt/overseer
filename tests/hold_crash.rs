@@ -1,18 +1,8 @@
 mod common;
 
-use common::{read_until, send, wait, wait_for, App};
+use common::{line_json, read_until, send, wait, wait_for, App};
 use serde_json::{json, Value};
 use std::time::Duration;
-
-fn line_json(app: &App, line: &str) -> Value {
-    app.ok("GET", "/v1/lines?all=true", Value::Null)
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|l| l["line"]["id"] == line)
-        .cloned()
-        .unwrap()
-}
 
 #[test]
 fn a_pending_hold_survives_a_daemon_crash_and_applies_when_the_turn_ends() {

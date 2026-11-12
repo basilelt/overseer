@@ -1,6 +1,6 @@
 mod common;
 
-use common::{exchange, git, wait, Fx};
+use common::{enc, exchange, git, js, wait, Fx};
 use serde_json::Value;
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::UnixStream;
@@ -11,10 +11,6 @@ use std::time::{Duration, Instant};
 
 fn now_ms() -> i64 {
     overseer::util::now_ms()
-}
-
-fn js(s: &str) -> Value {
-    serde_json::from_str(s).unwrap_or(Value::Null)
 }
 
 fn sse_client(sock: &Path, tx: mpsc::Sender<String>) {
@@ -374,7 +370,7 @@ fn line_notes_are_added_edited_removed_and_survive_a_restart() {
     let lines = js(&fx.req("GET", "/v1/lines", "").1);
     let id = lines[0]["line"]["id"].as_str().unwrap().to_string();
     assert_eq!(lines[0]["local"]["notes"], serde_json::json!([]));
-    let path = format!("/v1/lines/{}/notes", urlenc(&id));
+    let path = format!("/v1/lines/{}/notes", enc(&id));
     let (code, v) = fx.req("POST", &path, "{}");
     assert_eq!(
         (code, js(&v)["error"].clone()),
@@ -412,7 +408,7 @@ fn line_notes_are_added_edited_removed_and_survive_a_restart() {
             .clone()
     };
     wait(|| notes(&fx)[0]["id"] == note.as_str());
-    let one = format!("{path}/{}", urlenc(&note));
+    let one = format!("{path}/{}", enc(&note));
     let (code, v) = fx.req("PUT", &one, r#"{"text":"ask about CI"}"#);
     assert_eq!(
         (code, js(&v)["note"]["text"].clone()),
@@ -433,17 +429,6 @@ fn line_notes_are_added_edited_removed_and_survive_a_restart() {
     assert_eq!(js(&v)["notes"].as_array().unwrap().len(), 1);
     assert_eq!(fx.req("DELETE", &one, "").0, 404);
     drop(d);
-}
-
-fn urlenc(s: &str) -> String {
-    s.bytes()
-        .map(|b| match b {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
-                (b as char).to_string()
-            }
-            _ => format!("%{b:02X}"),
-        })
-        .collect()
 }
 
 #[test]

@@ -1,6 +1,6 @@
 mod common;
 
-use common::{bin, output, read_until, send, wait, wait_for, App, Fx};
+use common::{bin, enc, line_json, output, read_until, send, strs, wait, wait_for, App, Fx};
 use serde_json::{json, Value};
 use std::io::ErrorKind;
 use std::os::unix::net::UnixStream;
@@ -952,16 +952,6 @@ fn claude_term(app: &App, cmd: Value, sid: &str) -> (String, String) {
     (tid, line)
 }
 
-fn line_json(app: &App, line: &str) -> Value {
-    app.ok("GET", "/v1/lines?all=true", Value::Null)
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|l| l["line"]["id"] == line)
-        .cloned()
-        .unwrap()
-}
-
 #[test]
 fn holding_a_busy_line_after_the_turn_waits_for_the_turn_to_end() {
     let sid = "dddddddd-0000-4000-8000-000000000001";
@@ -1819,14 +1809,6 @@ fn line_of(app: &App, term: &str) -> Option<Value> {
         .cloned()
 }
 
-fn strs(v: &Value) -> Vec<String> {
-    v.as_array()
-        .unwrap()
-        .iter()
-        .map(|a| a.as_str().unwrap().to_string())
-        .collect()
-}
-
 #[test]
 fn agents_are_detected_and_launched_from_the_table() {
     let app = App::new("agents", json!({"autoConcurrency": 0}));
@@ -2343,17 +2325,6 @@ fn task_rank_and_added_projects() {
         paths.contains(&o.as_str()) && paths.contains(&wt.as_str()),
         "{all}"
     );
-}
-
-fn enc(s: &str) -> String {
-    s.bytes()
-        .map(|b| match b {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'.' | b'_' | b'~' => {
-                (b as char).to_string()
-            }
-            _ => format!("%{b:02X}"),
-        })
-        .collect()
 }
 
 #[test]
