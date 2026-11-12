@@ -1556,19 +1556,19 @@ fn claude_limits_due(idx: &Index, tap: Option<&Limits>) -> bool {
     }
 }
 
-pub fn api(r: &crate::daemon::Request, lines: &[crate::Line]) -> (u16, Value) {
+pub fn api(r: &crate::http::Request, lines: &[crate::Line]) -> (u16, Value) {
     let now = crate::procs::now_ms();
-    let Some(range) = Range::parse(crate::daemon::q(r, "range")) else {
+    let Some(range) = Range::parse(crate::http::q(r, "range")) else {
         return (400, json!({"error": "range must be today, 7d or 30d"}));
     };
-    let by = crate::daemon::q(r, "by").unwrap_or("agent");
+    let by = crate::http::q(r, "by").unwrap_or("agent");
     if !matches!(by, "agent" | "project" | "model" | "session") {
         return (
             400,
             json!({"error": "by must be agent, project, model or session"}),
         );
     }
-    let tz = match crate::daemon::q(r, "tzOffset").map(|s| s.parse::<i64>()) {
+    let tz = match crate::http::q(r, "tzOffset").map(|s| s.parse::<i64>()) {
         None => 0,
         Some(Ok(m)) if (-14 * 60..=14 * 60).contains(&m) => m,
         _ => {
@@ -1578,7 +1578,7 @@ pub fn api(r: &crate::daemon::Request, lines: &[crate::Line]) -> (u16, Value) {
             )
         }
     };
-    let wanted = crate::daemon::q(r, "line");
+    let wanted = crate::http::q(r, "line");
     let session = match wanted {
         None => None,
         Some(id) => match lines.iter().find(|l| l.id == id) {
@@ -2257,7 +2257,7 @@ mod tests {
             );
         }
         init(&d, d.join("claude"), d.join("codex"), d.join("gemini"));
-        let req = |q: &[(&str, &str)]| crate::daemon::Request {
+        let req = |q: &[(&str, &str)]| crate::http::Request {
             method: "GET".into(),
             path: "/v1/usage".into(),
             query: q

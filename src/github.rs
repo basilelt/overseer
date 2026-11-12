@@ -1,5 +1,5 @@
-use crate::daemon::Request;
 use crate::exec::RunError;
+use crate::http::Request;
 use crate::Ctx;
 use serde_json::{json, Value};
 use std::path::{Path, PathBuf};

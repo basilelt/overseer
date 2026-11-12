@@ -1,6 +1,6 @@
 use crate::actions::{find_line, log_action};
-use crate::daemon::{dry_run, q, respond_raw, Request};
 use crate::git::git_out;
+use crate::http::{dry_run, q, respond_raw, Request};
 use crate::sys::OpenOptionsExt;
 use crate::util::{format_rfc3339, parse_rfc3339};
 use crate::{scan, Ctx, Line, RECENT_MS};

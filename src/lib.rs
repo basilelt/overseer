@@ -26,6 +26,7 @@ pub mod github;
 pub mod gitops;
 pub mod hold;
 pub mod hooks;
+pub mod http;
 pub mod import;
 pub mod inbox;
 pub mod install;

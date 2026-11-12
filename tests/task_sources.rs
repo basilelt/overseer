@@ -1,6 +1,6 @@
 mod common;
 
-use overseer::daemon::Request;
+use overseer::http::Request;
 use overseer::procs::{Probe, ProcInfo};
 use overseer::{Config, Ctx};
 use serde_json::{json, Value};

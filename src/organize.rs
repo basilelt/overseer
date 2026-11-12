@@ -1,5 +1,5 @@
 use crate::board::publish;
-use crate::daemon::{q, Request};
+use crate::http::{q, Request};
 use crate::registry::{self, sql, Registry};
 use crate::task_agents::CONFIGURATOR;
 use crate::tasks::{self, Task};

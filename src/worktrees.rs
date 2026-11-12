@@ -1,7 +1,7 @@
 use crate::board::publish;
-use crate::daemon::res;
 use crate::git::git_out;
 use crate::git::{git, Git};
+use crate::http::res;
 use crate::util::percent_decode;
 use crate::util::{format_rfc3339, ticket};
 use crate::{Ctx, Line};

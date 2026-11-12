@@ -1007,7 +1007,7 @@ pub fn for_restore(state_dir: &Path, a: &Agent, cwd: &str, saved: Option<&Chip>)
 
 pub fn routes(
     ctx: &crate::Ctx,
-    r: &crate::daemon::Request,
+    r: &crate::http::Request,
     segs: &[&str],
     body: &Value,
 ) -> Option<(u16, Value)> {

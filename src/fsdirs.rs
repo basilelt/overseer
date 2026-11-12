@@ -1,4 +1,4 @@
-use crate::daemon::{respond_raw, Request};
+use crate::http::{respond_raw, Request};
 use serde_json::{json, Value};
 use std::io::Write;
 use std::path::PathBuf;

@@ -9,7 +9,7 @@ pub mod triage;
 pub mod watch;
 
 use crate::board::publish;
-use crate::daemon::{q, Request};
+use crate::http::{q, Request};
 use crate::registry::{col_at, columns, insert_row, sql, Registry};
 use crate::util::percent_decode;
 use crate::util::{format_rfc3339, ulid};

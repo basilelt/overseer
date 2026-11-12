@@ -263,7 +263,7 @@ pub use unix::*;
 #[cfg(unix)]
 mod unix {
     use super::*;
-    use crate::daemon::{respond, Request};
+    use crate::http::{respond, Request};
     use std::io::Write;
     use std::os::fd::{FromRawFd, OwnedFd};
     use std::os::unix::net::UnixListener;
