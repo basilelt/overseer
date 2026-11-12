@@ -10,7 +10,7 @@
   import { app } from '../../state.svelte';
   import { highlight, rank, type Match } from '../../fuzzy';
   import type { GroupId } from '../../session/grouping';
-  import { PALETTE_GROUP_COLOR, PALETTE_HELD_COLOR } from '../../workspace/ws-color';
+  import { GROUP_COLOR, STATE_COLOR } from '../../workspace/ws-color';
   import { canInstall, ordered } from '../../agents';
   import AgentGlyph from '../ui/AgentGlyph.svelte';
   import { isPhone } from '../../mobile/ui.svelte';
@@ -193,7 +193,7 @@
           </span>
           {#if item.keys}<kbd class="keys">{item.keys}</kbd>{/if}
           {#if item.hint}
-            <span class="hint"><span class="dot" style:background={item.group ? PALETTE_GROUP_COLOR[item.group] : PALETTE_HELD_COLOR}></span>{item.hint}</span>
+            <span class="hint"><span class="dot" style:background={item.group ? GROUP_COLOR[item.group] : STATE_COLOR.closed}></span>{item.hint}</span>
           {/if}
         </li>
       {:else}
