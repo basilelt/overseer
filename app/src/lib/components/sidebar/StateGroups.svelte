@@ -37,6 +37,7 @@
 <style>
   .gname {
     display: block;
-    padding: 0;
+    padding: 0 5px;
+    line-height: 28px;
   }
 </style>

@@ -24,8 +24,7 @@
     display: flex;
     align-items: center;
     gap: 8px;
-    min-height: 30px;
-    padding: 0 8px;
+    padding: 3px;
   }
   .name {
     flex: 1;
@@ -45,7 +44,7 @@
     display: flex;
     flex-direction: column;
     gap: 3px;
-    padding: 0 6px 6px 0;
+    padding: 0 3px 3px;
   }
   :global(:root.phone) .frame {
     border-radius: 14px;
