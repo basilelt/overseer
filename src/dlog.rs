@@ -2,7 +2,7 @@ use serde_json::{json, Value};
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 pub const FILE: &str = "daemon.log";
 pub const MAX_BYTES: u64 = 5 * 1024 * 1024;
@@ -28,9 +28,50 @@ pub fn stamp(ms: i64) -> String {
 pub fn line(level: &str, msg: &str) {
     eprintln!(
         "{} {} {msg}",
-        stamp(crate::procs::now_ms()),
+        stamp(crate::util::now_ms()),
         level.to_ascii_uppercase()
     );
+}
+
+const SUPERVISE_MAX_BACKOFF: Duration = Duration::from_secs(60);
+const SUPERVISE_HEALTHY: Duration = Duration::from_secs(300);
+
+pub fn supervise<F>(name: &'static str, f: F) -> bool
+where
+    F: Fn() + Send + 'static,
+{
+    supervise_with(name, Duration::from_secs(1), f)
+}
+
+pub fn supervise_with<F>(name: &'static str, first: Duration, f: F) -> bool
+where
+    F: Fn() + Send + 'static,
+{
+    std::thread::Builder::new()
+        .name(name.into())
+        .spawn(move || {
+            let mut backoff = first;
+            loop {
+                let began = Instant::now();
+                let Err(p) = std::panic::catch_unwind(std::panic::AssertUnwindSafe(&f)) else {
+                    return;
+                };
+                if began.elapsed() >= SUPERVISE_HEALTHY {
+                    backoff = first;
+                }
+                line(
+                    "error",
+                    &format!(
+                        "overseer daemon: {name} thread panicked ({}); restarting in {} ms",
+                        crate::util::panic_text(p.as_ref()),
+                        backoff.as_millis()
+                    ),
+                );
+                std::thread::sleep(backoff);
+                backoff = (backoff * 2).min(SUPERVISE_MAX_BACKOFF);
+            }
+        })
+        .is_ok()
 }
 
 fn rotated(dir: &Path, i: usize) -> PathBuf {
@@ -302,6 +343,29 @@ fn prefixed(s: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn supervised_threads_restart_after_a_panic_and_stop_when_done() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::sync::Arc;
+        let runs = Arc::new(AtomicUsize::new(0));
+        let (tx, rx) = std::sync::mpsc::channel();
+        let r = runs.clone();
+        assert!(supervise_with(
+            "sb-test-sup",
+            Duration::from_millis(5),
+            move || {
+                let n = r.fetch_add(1, Ordering::SeqCst) + 1;
+                if n < 3 {
+                    panic!("boom {n}");
+                }
+                let _ = tx.send(n);
+            }
+        ));
+        assert_eq!(rx.recv_timeout(Duration::from_secs(5)), Ok(3));
+        std::thread::sleep(Duration::from_millis(50));
+        assert_eq!(runs.load(Ordering::SeqCst), 3);
+    }
 
     fn dir(name: &str) -> PathBuf {
         let d = std::env::temp_dir().join(format!("sb-dlog-{}-{name}", std::process::id()));

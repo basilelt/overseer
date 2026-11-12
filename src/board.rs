@@ -574,7 +574,7 @@ pub fn serve_http(addr: &str, state_dir: &Path) -> Result<String, String> {
         .open(&f)
         .and_then(|mut w| w.write_all(json!({"url": url}).to_string().as_bytes()))
         .map_err(|e| format!("{}: {e}", f.display()))?;
-    crate::util::supervise("board", move || {
+    crate::dlog::supervise("board", move || {
         for st in l.incoming() {
             match st {
                 Ok(st) => {

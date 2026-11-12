@@ -1,5 +1,3 @@
-use std::time::{Duration, Instant};
-
 pub const SHELL_FALLBACK: &str = r#"exec "${SHELL:-/bin/sh}""#;
 
 pub fn safe_session_id(id: &str) -> bool {
@@ -241,52 +239,11 @@ pub fn ulid(ms: i64) -> String {
         .collect()
 }
 
-const SUPERVISE_MAX_BACKOFF: Duration = Duration::from_secs(60);
-const SUPERVISE_HEALTHY: Duration = Duration::from_secs(300);
-
 pub fn panic_text(p: &(dyn std::any::Any + Send)) -> String {
     p.downcast_ref::<&str>()
         .map(|s| s.to_string())
         .or_else(|| p.downcast_ref::<String>().cloned())
         .unwrap_or_else(|| "unknown panic".into())
-}
-
-pub fn supervise<F>(name: &'static str, f: F) -> bool
-where
-    F: Fn() + Send + 'static,
-{
-    supervise_with(name, Duration::from_secs(1), f)
-}
-
-pub fn supervise_with<F>(name: &'static str, first: Duration, f: F) -> bool
-where
-    F: Fn() + Send + 'static,
-{
-    std::thread::Builder::new()
-        .name(name.into())
-        .spawn(move || {
-            let mut backoff = first;
-            loop {
-                let began = Instant::now();
-                let Err(p) = std::panic::catch_unwind(std::panic::AssertUnwindSafe(&f)) else {
-                    return;
-                };
-                if began.elapsed() >= SUPERVISE_HEALTHY {
-                    backoff = first;
-                }
-                crate::dlog::line(
-                    "error",
-                    &format!(
-                        "overseer daemon: {name} thread panicked ({}); restarting in {} ms",
-                        panic_text(p.as_ref()),
-                        backoff.as_millis()
-                    ),
-                );
-                std::thread::sleep(backoff);
-                backoff = (backoff * 2).min(SUPERVISE_MAX_BACKOFF);
-            }
-        })
-        .is_ok()
 }
 
 #[cfg(test)]
@@ -323,26 +280,7 @@ mod tests {
     }
 
     #[test]
-    fn supervised_threads_restart_after_a_panic_and_stop_when_done() {
-        use std::sync::atomic::{AtomicUsize, Ordering};
-        use std::sync::Arc;
-        let runs = Arc::new(AtomicUsize::new(0));
-        let (tx, rx) = std::sync::mpsc::channel();
-        let r = runs.clone();
-        assert!(supervise_with(
-            "sb-test-sup",
-            Duration::from_millis(5),
-            move || {
-                let n = r.fetch_add(1, Ordering::SeqCst) + 1;
-                if n < 3 {
-                    panic!("boom {n}");
-                }
-                let _ = tx.send(n);
-            }
-        ));
-        assert_eq!(rx.recv_timeout(Duration::from_secs(5)), Ok(3));
-        std::thread::sleep(Duration::from_millis(50));
-        assert_eq!(runs.load(Ordering::SeqCst), 3);
+    fn panic_text_reads_str_string_and_other_payloads() {
         assert_eq!(panic_text(&"x"), "x");
         assert_eq!(panic_text(&String::from("y")), "y");
         assert_eq!(panic_text(&5u8), "unknown panic");

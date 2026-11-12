@@ -1458,7 +1458,7 @@ fn demand(now: i64, oauth: bool) -> Option<(PathBuf, bool)> {
         s.indexing = true;
         let dirs = s.dirs.take()?;
         let db = s.db.clone();
-        if !crate::util::supervise("usage", move || worker(db.clone(), dirs.clone())) {
+        if !crate::dlog::supervise("usage", move || worker(db.clone(), dirs.clone())) {
             return None;
         }
     } else if stale {

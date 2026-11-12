@@ -1271,7 +1271,7 @@ fn listen(path: &Path, adopt: Option<i32>) -> Result<(), String> {
         None => bind(path)?,
     };
     crate::upgrade::set_listener(l.as_raw_fd());
-    crate::util::supervise("listener", move || {
+    crate::dlog::supervise("listener", move || {
         for s in l.incoming() {
             match s {
                 Ok(s) => {
@@ -1294,7 +1294,7 @@ fn listen(path: &Path, adopt: Option<i32>) -> Result<(), String> {
     let tok = crate::board::token()?;
     let info = json!({"addr": addr.to_string(), "token": tok, "pid": std::process::id()});
     std::fs::write(path, info.to_string()).map_err(|e| format!("{}: {e}", path.display()))?;
-    crate::util::supervise("listener", move || {
+    crate::dlog::supervise("listener", move || {
         for s in l.incoming() {
             match s {
                 Ok(s) => {
@@ -1451,18 +1451,18 @@ pub fn run(
     );
     crate::usage::init(&state_dir, cd.clone(), xd.clone(), gd.clone());
     crate::github::resume_pending(&state_dir);
-    crate::util::supervise("transcripts", move || {
+    crate::dlog::supervise("transcripts", move || {
         watch_transcripts(cd.clone(), xd.clone(), gd.clone())
     });
-    crate::util::supervise("gitgraph", crate::gitgraph::watch_loop);
+    crate::dlog::supervise("gitgraph", crate::gitgraph::watch_loop);
     let sd = state_dir.clone();
-    crate::util::supervise("review-watch", move || {
+    crate::dlog::supervise("review-watch", move || {
         crate::review::watch::run(sd.clone())
     });
-    crate::util::supervise("ports", crate::ports::watch);
+    crate::dlog::supervise("ports", crate::ports::watch);
     if !once {
         let ld = state_dir.clone();
-        crate::util::supervise("log-rotate", move || {
+        crate::dlog::supervise("log-rotate", move || {
             crate::dlog::rotate_forever(ld.clone())
         });
     }
