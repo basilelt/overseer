@@ -75,7 +75,7 @@ that predate it answer `404`.
   "verified":true,"sessions":true,"turns":true,"install":"curl -fsSL https://claude.ai/install.sh | bash","installable":true}]
 ```
 
-- `id` ∈ `claude | codex | gemini | agy | opencode | amp | copilot | cursor | shell`. `shell` is
+- `id` ∈ `claude | codex | gemini | agy | opencode | amp | copilot | cursor | vibe | shell`. `shell` is
   the login shell (`$SHELL`); it is never a task agent.
 - `installed`: the binary is on the daemon's `PATH` and `<bin> --version` exits 0 within 5 s
   (results cached 60 s); `version` is the first line it printed. A broken wrapper reports
@@ -104,7 +104,7 @@ setting in the daemon registry and returns the full map. New sessions started by
 these defaults, including task and feedback launches. Existing sessions keep their launch mode.
 Supported flags are Claude Code `--permission-mode auto`, Codex `--sandbox danger-full-access
 --ask-for-approval never`, Gemini CLI `--approval-mode=yolo`, Antigravity `--mode=auto`, opencode
-`--auto`, Copilot CLI `--allow-all`, and Cursor Agent `--force`. Amp currently auto-approves by
+`--auto`, Copilot CLI `--allow-all`, Cursor Agent `--force`, and Mistral Vibe `--auto-approve`. Amp currently auto-approves by
 default unless its own permission configuration enables a policy, so Amp is not in the map.
 400 when either required field is missing or the agent has no launch-time control.
 
@@ -138,10 +138,12 @@ overrides them.
 | amp | `amp` | — | `--mode` (`ultra`) | — | typed | `amp threads continue --last` |
 | copilot | `copilot` | `--model` | `--effort` (`xhigh`) | `--resume=<uuid>` | `-i <prompt>` | `--resume=<id>` |
 | cursor | `cursor-agent` | `--model` | — | — | typed | `cursor-agent resume` |
+| vibe | `vibe` | `VIBE_ACTIVE_MODEL` (profiles only) | — | — | `-- <prompt>` | `--resume <id>` |
 
 `cursor` is unverified (no binary on the development machine). "typed" = the prompt is pasted
 into the PTY as described in §5; with a prompt flag it goes in argv instead, and `Term.cmd`
-shows `<prompt>` in its place. Claude and Codex keep the paste: their argv is read back from
+shows `<prompt>` in its place. `vibe` takes the prompt as its positional argument after `--`,
+and a task launch adds `--trust` (a new worktree would stop at Vibe's trust prompt). Claude and Codex keep the paste: their argv is read back from
 `/proc` to build resume commands, so a prompt in argv would be replayed on resume.
 
 ## 3. Terminals
@@ -354,7 +356,7 @@ timeout is 30 s).
   attach; only an explicit Resume omits it.
 - Agent sessions started from the app in a term (`POST /v1/terms` with `agent` or `cmd:
   ["claude", …]`) become lines through the usual discovery (Claude transcripts, Codex rollouts,
-  Gemini chats, hooks) and are linked by pid as above. Starting `claude` with `--session-id
+  Gemini chats, Mistral Vibe session stores, hooks) and are linked by pid as above. Starting `claude` with `--session-id
   <uuid>` makes the line appear sooner.
 - A term running another agent (`sessions: false` in §2a) is itself a line: `agent` = the agent
   id, `agentSessionId` = the session id given at start (copilot) or the term id, `cwd` the term's,
@@ -562,7 +564,11 @@ directory or not in a git repository.
 - Parsed from the Claude transcript (`tool_use`/`tool_result`, the last `TodoWrite`), the
   Codex rollout (`function_call`/`custom_tool_call` + outputs, the last `update_plan`) or the
   Gemini chat (`~/.gemini/tmp/<project>/chats/session-*.json[l]`: `toolCalls` with their
-  `status`, the last `write_todos`). Other agents have no activity (409).
+  `status`, the last `write_todos`) or the Mistral Vibe 3 session store
+  (`$VIBE_HOME/logs/session/unified/<id>/`: the published projection's chunks, then the
+  `projection_delta`, `projection_advanced` and `session_relocated` records of the current journal
+  segment; `effect` entries with `state.status`, the last `vibe.todo` write; a bash exit code other
+  than 0 is `failed`). Other agents have no activity (409).
 - `kind`: `edit` (Edit, MultiEdit, Write, NotebookEdit, apply_patch, write_file, replace),
   `bash` (Bash, shell, exec_command, run_shell_command), `read` (Read, read_file,
   list_directory), `search` (Grep, Glob, WebSearch, glob, search_file_content,
@@ -582,7 +588,7 @@ directory or not in a git repository.
 ## 6b. Chat view (ADR 0036)
 
 `GET /v1/lines/{id}/chat[?after=<cursor>|before=<seq>][&limit=<n>]` → 200 · 400 bad query ·
-404 unknown line · 409 agent without a chat parser (anything but `claude`, `codex`, `gemini`)
+404 unknown line · 409 agent without a chat parser (anything but `claude`, `codex`, `gemini`, `vibe`)
 or no transcript yet.
 
 ```json
@@ -615,6 +621,13 @@ or no transcript yet.
   `id`. `before=<seq>`: up to `limit` entries before that `seq` ("load earlier"). `reset: true`
   means the client must drop what it has (transcript truncated or rewritten, cursor from an
   earlier daemon or chat cache) and the entries are a fresh tail.
+- Mistral Vibe: the chat is the store's public history (`message` user/assistant, `effect` tools
+  with `file_system.*`, `vibe.todo`, subagent `agents.spawn` as `task`, `checkpoint` compaction as a
+  notice, `error`). The daemon replays the published chunks once, then reads only new records of
+  the journal segment; a `remove_entry`, `set_history_entries`, `projection_advanced` or a new
+  generation whose history is not an extension of the shown one answers `reset: true`. `model`
+  comes from `meta.json` (`config.active_model`), then from `model_change` checkpoints. Images are
+  not counted (`images` absent).
 - The daemon parses incrementally from the last byte offset (complete lines only), keeps at
   most 2000 entries per chat and at most 8 chats (subagent transcripts are evicted first), and
   forgets a chat nobody read for 15 minutes.
@@ -1177,7 +1190,8 @@ when it changes. No schema change.
   an object.
 - Flags were checked against `--help` of claude 2.1.289, codex 0.165.0, gemini 0.66.0, agy
   1.1.0, opencode 1.19.5, amp 0.0.1793260836 and copilot 1.0.48 (2026-10-29); cursor-agent is
-  unverified. Resume by id for Gemini (`--resume <uuid>`) is unverified: its help documents
+  unverified. Mistral Vibe was checked against the 3.1.2 source (CLI help, hook payloads, session
+  store writers) without a live 3.x session (2026-11-11); its resume by id is marked unverified. Resume by id for Gemini (`--resume <uuid>`) is unverified: its help documents
   `latest` or an index.
 - Workspaces (§6a): `DELETE` leaves a tombstone for every workspace, not only `auto` ones; a
   broadcast to a workspace targets its alive lines and its terms without a line, not its held

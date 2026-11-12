@@ -10,6 +10,7 @@ export const AUTO_APPROVE_ARGS: Record<string, string[]> = {
   opencode: ['--auto'],
   copilot: ['--allow-all'],
   cursor: ['--force'],
+  vibe: ['--auto-approve'],
 };
 
 const NAMES: Record<string, string> = {
@@ -21,6 +22,7 @@ const NAMES: Record<string, string> = {
   amp: 'Amp',
   copilot: 'Copilot CLI',
   cursor: 'Cursor Agent',
+  vibe: 'Mistral Vibe',
   shell: 'Shell',
 };
 

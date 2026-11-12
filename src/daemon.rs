@@ -1366,11 +1366,7 @@ fn watch_transcripts(claude_dir: PathBuf, codex_dir: PathBuf, gemini_dir: PathBu
                     now,
                 );
             }
-            let Some(len) =
-                p.0.as_ref()
-                    .and_then(|p| std::fs::metadata(p).ok())
-                    .map(|m| m.len())
-            else {
+            let Some(len) = p.0.as_deref().and_then(crate::chat::transcript_stamp) else {
                 continue;
             };
             let len = len.wrapping_add(p.0.as_deref().map_or(0, crate::chat::agents_stamp));

@@ -82,6 +82,7 @@ export const MOCK_AGENTS: AgentInfo[] = [
   { id: 'amp', name: 'Amp', installed: false, models: [], efforts: [...ALL_EFFORTS], resume: true, verified: true, install: 'npm install -g --allow-scripts=@ampcode/cli @sourcegraph/amp', installable: true, sessions: false, turns: false },
   { id: 'copilot', name: 'Copilot CLI', installed: true, version: '0.0.354', efforts: [...ALL_EFFORTS], resume: true, verified: true, sessions: false, turns: false },
   { id: 'cursor', name: 'Cursor Agent', installed: false, efforts: [], resume: true, verified: false, install: 'curl https://cursor.com/install -fsS | bash', installable: true, sessions: false, turns: false },
+  { id: 'vibe', name: 'Mistral Vibe', installed: true, version: 'vibe 3.1.2', models: [], efforts: [], resume: true, verified: true, install: 'uv tool install mistral-vibe', sessions: true, turns: true },
   { id: 'shell', name: 'Shell', installed: true, models: [], efforts: [], resume: false, verified: true, sessions: false, turns: false },
 ];
 
@@ -130,6 +131,7 @@ export const MOCK_PROFILES: ProfilesStore = {
     amp: { effort: 'flag' },
     copilot: { model: 'flag', effort: 'flag' },
     cursor: { model: 'flag' },
+    vibe: { model: 'env' },
   },
 };
 
@@ -889,7 +891,7 @@ export class MockDaemon implements DaemonClient {
   private chatRoute(id: string, action: string, q: URLSearchParams, body: any): unknown {
     const l = this.findLine(id);
     if (action === 'chat') {
-      if (!['claude', 'codex', 'gemini'].includes(l.line.agent)) throw new DaemonError(409, `no chat parser for ${l.line.agent}`);
+      if (!['claude', 'codex', 'gemini', 'vibe'].includes(l.line.agent)) throw new DaemonError(409, `no chat parser for ${l.line.agent}`);
       return chatPage(id, l.line.agent, this.chatOf(id), q);
     }
     if (action === 'screen') return mockScreen(id);
@@ -2405,6 +2407,7 @@ function mockHooks(): HooksStatus {
       row('gemini', 'Gemini CLI', 'hooks', false, '/home/dev/.gemini/settings.json'),
       row('opencode', 'opencode', 'plugin', true, '/home/dev/.config/opencode/plugins/overseer.js'),
       row('agy', 'Antigravity', 'polling', false, undefined, 'No stable hook file for the Antigravity CLI yet'),
+      row('vibe', 'Mistral Vibe', 'hooks', false, '/home/dev/.vibe/hooks.toml', 'Needs Mistral Vibe 3.0 or later. An interrupted turn fires no hook: the line stays busy until the next turn ends.'),
     ],
   };
 }

@@ -142,6 +142,10 @@ pub fn support(a: &Agent) -> Support {
             subagents: Some(Via::Env),
             ..base
         },
+        "vibe" => Support {
+            model: Some(Via::Env),
+            ..base
+        },
         "shell" => NO,
         _ => base,
     }
@@ -380,6 +384,7 @@ pub fn apply(a: &Agent, p: Option<&Profile>, model: &str, effort: &str) -> Appli
                 env.push(("OPENCODE_CONFIG_CONTENT".into(), cfg));
             }
         }
+        "vibe" if !model.is_empty() => env.push(("VIBE_ACTIVE_MODEL".into(), model.clone())),
         _ => {}
     }
     let chip = (p.is_some() || !model.is_empty() || !effort.is_empty()).then(|| Chip {
@@ -1364,6 +1369,33 @@ mod tests {
         let v: Value = serde_json::from_str(v).unwrap();
         assert_eq!(v["small_model"], "anthropic/claude-haiku-4-5");
         assert_eq!(v["agent"]["review"]["model"], "openai/gpt-5.4-mini");
+    }
+
+    #[test]
+    fn vibe_takes_its_profile_model_from_the_environment() {
+        let p = Profile {
+            id: "v".into(),
+            name: "V".into(),
+            builtin: false,
+            agents: BTreeMap::from([(
+                "vibe".to_string(),
+                AgentCfg {
+                    model: "devstral-small".into(),
+                    effort: "high".into(),
+                    ..Default::default()
+                },
+            )]),
+        };
+        let a = apply(get("vibe").unwrap(), Some(&p), "", "");
+        assert_eq!(
+            a.env,
+            [(
+                "VIBE_ACTIVE_MODEL".to_string(),
+                "devstral-small".to_string()
+            )]
+        );
+        assert!(a.effort.is_empty() && a.extra.is_empty());
+        assert!(apply(get("vibe").unwrap(), None, "", "").env.is_empty());
     }
 
     #[test]

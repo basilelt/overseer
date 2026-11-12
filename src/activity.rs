@@ -72,6 +72,7 @@ pub fn find_transcript(
         "claude" => claude_dir,
         "codex" => codex_dir,
         "gemini" => gemini_dir,
+        "vibe" => return crate::vibe::find(&crate::vibe::home(), session_id),
         _ => return None,
     };
     let key = (base.join(agent), session_id.to_string());
@@ -190,6 +191,18 @@ pub fn touched(agent: &str, path: &Path) -> (Vec<String>, Vec<String>) {
 }
 
 fn with_state<R>(agent: &str, path: &Path, f: impl FnOnce(&State) -> R) -> Option<R> {
+    if path.is_dir() {
+        let stamp = crate::vibe::stamp(path);
+        let mut cache = cache().lock().unwrap_or_else(|e| e.into_inner());
+        if cache.get(path).is_none_or(|s| s.0 != stamp) {
+            let mut st = State::default();
+            for e in crate::vibe::entries(path)? {
+                st.vibe(&e);
+            }
+            cache.insert(path.to_path_buf(), (stamp, st));
+        }
+        return cache.get(path).map(|s| f(&s.1));
+    }
     let mut file = std::fs::File::open(path).ok()?;
     let len = file.metadata().ok()?.len();
     let mut cache = cache().lock().unwrap_or_else(|e| e.into_inner());
@@ -409,6 +422,90 @@ impl State {
             _ => return,
         }
         self.done.insert(id.to_string());
+    }
+
+    fn vibe(&mut self, v: &Value) {
+        let ts = v["createdAt"].as_i64().unwrap_or(self.last_ts);
+        self.last_ts = self.last_ts.max(ts);
+        let id = v["id"].as_str().unwrap_or("");
+        match v["type"].as_str() {
+            Some("message") => {
+                let t: Vec<&str> = v["content"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .filter_map(|c| c["text"].as_str())
+                    .collect();
+                let t = t.join("\n");
+                match v["role"].as_str() {
+                    Some("user") => {
+                        self.prompt(&t);
+                        if !t.trim().is_empty() {
+                            self.last_prompt = Some(trunc(&t, 500));
+                        }
+                    }
+                    Some("assistant") => self.text(&t),
+                    _ => {}
+                }
+            }
+            Some("checkpoint") if v["kind"] == "model_change" => {
+                keep(&mut self.model, &v["details"]["model"])
+            }
+            Some("effect") if !id.is_empty() && !self.done.contains(id) => {
+                let d = &v["detail"];
+                let name = d["toolName"].as_str().unwrap_or("");
+                let input = &d["input"];
+                let s = |k: &str| input[k].as_str().filter(|x| !x.is_empty());
+                let (kind, label, path) = match name {
+                    "vibe.todo" => {
+                        if input["action"] == "write" {
+                            self.todos = todos(&input["todos"], "content");
+                        }
+                        self.done.insert(id.to_string());
+                        return;
+                    }
+                    "file_system.edit"
+                    | "file_system.write_file"
+                    | "file_system.search_replace" => {
+                        let p = s("file_path").or(s("path"));
+                        let verb = if name.ends_with("write_file") {
+                            "Write"
+                        } else {
+                            "Edit"
+                        };
+                        ("edit", format!("{verb} {}", base(p.unwrap_or(""))), p)
+                    }
+                    "file_system.bash" => {
+                        let cmd = s("command").unwrap_or("");
+                        self.shell(cmd);
+                        self.test_call(id, cmd);
+                        ("bash", trunc(cmd, 120), None)
+                    }
+                    "file_system.read_file" => {
+                        let p = s("path").or(s("file_path"));
+                        ("read", format!("Read {}", base(p.unwrap_or(""))), p)
+                    }
+                    _ => (
+                        "other",
+                        trunc(d["display"]["summary"].as_str().unwrap_or(name), 120),
+                        None,
+                    ),
+                };
+                self.push(id, id.into(), kind, label, path.map(str::to_string), ts);
+                let st = &v["state"];
+                let code = st["output"]["structuredContent"]["returncode"]
+                    .as_i64()
+                    .unwrap_or(0);
+                let at = v["updatedAt"].as_i64().unwrap_or(ts);
+                match st["status"].as_str() {
+                    Some("completed") => self.finish(id, code != 0, at),
+                    Some("failed" | "skipped") => self.finish(id, true, at),
+                    _ => return,
+                }
+                self.done.insert(id.to_string());
+            }
+            _ => {}
+        }
     }
 
     fn prompt(&mut self, s: &str) {
