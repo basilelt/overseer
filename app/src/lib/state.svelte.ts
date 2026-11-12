@@ -27,7 +27,7 @@ import type { MenuItem, OpenMenu } from './commands/menu';
 import { isWebLink, resolveLink, type LinkFrom, type LinkGesture, type LinkRoute } from './links';
 import { t } from './i18n.svelte';
 import { browsers, openOutside } from './browsers.svelte';
-import { isPhone, ui } from './mobile/ui.svelte';
+import { isPhone, isPhoneOr, ui } from './mobile/ui.svelte';
 import { feedback } from './feedback/feedback.svelte';
 import { tap } from './record/record-state.svelte';
 
@@ -747,7 +747,7 @@ class AppState {
     if (!p) return;
     const key = newTabKey(kind, p);
     this.view = 'agents';
-    if (ui.layout === 'phone') ui.tab = 'agents';
+    if (isPhone()) ui.tab = 'agents';
     update((l) => openInFocused(l, key));
     this.selectedKey = key;
   }
@@ -826,7 +826,7 @@ class AppState {
   }
 
   private phoneLinks(): boolean {
-    return this.mobile || isPhone();
+    return isPhoneOr(this.mobile);
   }
 
   notify(text: string, kind: 'info' | 'error' = 'info', action?: ToastAction, entry: EntryKind = 'error') {

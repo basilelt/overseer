@@ -29,7 +29,8 @@
   import { command } from './lib/commands/commands';
   import { startShortcuts } from './lib/commands/keyboard';
   import { startTextDefaults } from './lib/terminal/textinput';
-  import { onResume, startLayout, ui } from './lib/mobile/ui.svelte';
+  import { isPhone, onResume, startLayout, ui } from './lib/mobile/ui.svelte';
+  import { phoneOrMobile } from './lib/mobile/phone.svelte';
   import { diag, startDiagnostics } from './lib/diag/diag.svelte';
   import { feedback } from './lib/feedback/feedback.svelte';
   import { tour } from './lib/tour/tour.svelte';
@@ -69,7 +70,7 @@
   const live = $derived(liveOn());
 
   $effect(() => {
-    tour.setReady(ui.layout !== 'phone');
+    tour.setReady(!isPhone());
   });
   $effect(() => {
     if (tour.ready && app.connected && switchboard.checked && !app.overlay && !feedback.open && !diag.mode && !ui.drawer && tour.pending()) tour.offer();
@@ -140,7 +141,7 @@
 
   function onKey(e: KeyboardEvent) {
     if (tour.phase) return;
-    const mod = (e.metaKey || e.ctrlKey) && (app.mobile || ui.layout === 'phone');
+    const mod = (e.metaKey || e.ctrlKey) && phoneOrMobile();
     if (mod && e.key.toLowerCase() === 'k') {
       e.preventDefault();
       command('palette').toggle?.();
@@ -158,7 +159,7 @@
 
 <svelte:window onkeydown={onKey} oncontextmenu={onLinkMenu} />
 
-{#if ui.layout === 'phone'}
+{#if isPhone()}
   <Boundary name="mobile">{#await mobileShell() then { default: MobileShell }}<MobileShell />{/await}</Boundary>
 {:else}
 <div class="shell">

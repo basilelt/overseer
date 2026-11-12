@@ -14,6 +14,10 @@ export function isPhone(): boolean {
   return ui.layout === 'phone';
 }
 
+export function isPhoneOr(mobile: boolean): boolean {
+  return mobile || isPhone();
+}
+
 function measure() {
   const width = globalThis.innerWidth ?? 0;
   ui.layout = layoutFor({ width, forcePhone: ui.forcePhone, mobileOs: ui.mobileOs });
