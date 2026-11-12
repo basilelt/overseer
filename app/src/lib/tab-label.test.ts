@@ -32,6 +32,20 @@ describe('tabLabel', () => {
     expect(tabLabel(tab('usage', 'host'), { browserHost: true })).toBe('Usage');
   });
 
+  it('names graph, worktree and review tabs after their project or target', () => {
+    expect(tabLabel(tab('graph', '/work/repo'), { browserHost: true })).toContain('repo');
+    expect(tabLabel(tab('worktrees', '/work/repo'), { browserHost: false })).toContain('repo');
+    expect(tabLabel(tab('review', 'main'), { browserHost: true })).toContain('main');
+  });
+
+  it('names the pull requests tab', () => {
+    expect(tabLabel(tab('prs', 'host'), { browserHost: true })).not.toBe('prs:host');
+  });
+
+  it('uses the whole address when the host is empty', () => {
+    expect(tabLabel(tab('browser', 'file:///tmp/a.html'), { browserHost: true })).toBe('file:///tmp/a.html');
+  });
+
   it('falls back to the key for an unknown kind', () => {
     expect(tabLabel(tab('shell', '', 'weird:1'), { browserHost: true })).toBe('weird:1');
   });
