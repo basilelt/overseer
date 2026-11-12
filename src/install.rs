@@ -5,6 +5,12 @@ use serde_json::{json, Map, Value};
 use std::path::{Path, PathBuf};
 
 pub const MARKER: &str = "#overseer-hook";
+pub const HOOK_TIMEOUT_SECS: u64 = 5;
+pub const SESSION_END_TIMEOUT_SECS: u64 = 3;
+
+pub const fn millis(secs: u64) -> u64 {
+    secs * 1000
+}
 pub const OLD_MARKER: &str = "#switchboard-hook";
 
 pub fn shim_path() -> PathBuf {
@@ -134,7 +140,7 @@ fn merge_with(
 }
 
 pub fn merge(existing: &Value, events: &[&str], command: impl Fn(&str) -> String) -> Value {
-    merge_groups(existing, events, command, 5)
+    merge_groups(existing, events, command, HOOK_TIMEOUT_SECS)
 }
 
 pub fn merge_groups(
@@ -322,78 +328,115 @@ pub struct Target {
     pub home: PathBuf,
 }
 
+#[derive(Clone, Copy)]
+enum Owned {
+    CopilotJson,
+    VibeToml,
+    Plugin,
+}
+
+enum Root {
+    Agent,
+    XdgConfig(&'static str),
+}
+
+struct Spec {
+    agent: &'static str,
+    root: Root,
+    file: &'static str,
+    events: &'static [&'static str],
+    format: Format,
+    owned: Option<Owned>,
+}
+
+const SPECS: &[Spec] = &[
+    Spec {
+        agent: "claude",
+        root: Root::Agent,
+        file: "settings.json",
+        events: hooks::CLAUDE_EVENTS,
+        format: Format::Groups(HOOK_TIMEOUT_SECS),
+        owned: None,
+    },
+    Spec {
+        agent: "codex",
+        root: Root::Agent,
+        file: "hooks.json",
+        events: hooks::CODEX_EVENTS,
+        format: Format::GroupsWithOverrides {
+            default: HOOK_TIMEOUT_SECS,
+            overrides: &[("SessionEnd", SESSION_END_TIMEOUT_SECS)],
+        },
+        owned: None,
+    },
+    Spec {
+        agent: "gemini",
+        root: Root::Agent,
+        file: "settings.json",
+        events: hooks::GEMINI_EVENTS,
+        format: Format::Groups(millis(HOOK_TIMEOUT_SECS)),
+        owned: None,
+    },
+    Spec {
+        agent: "copilot",
+        root: Root::Agent,
+        file: "hooks/overseer.json",
+        events: hooks::COPILOT_EVENTS,
+        format: Format::File,
+        owned: Some(Owned::CopilotJson),
+    },
+    Spec {
+        agent: "vibe",
+        root: Root::Agent,
+        file: "hooks.toml",
+        events: hooks::VIBE_EVENTS,
+        format: Format::File,
+        owned: Some(Owned::VibeToml),
+    },
+    Spec {
+        agent: "cursor",
+        root: Root::Agent,
+        file: "hooks.json",
+        events: hooks::CURSOR_EVENTS,
+        format: Format::Flat,
+        owned: None,
+    },
+    Spec {
+        agent: "opencode",
+        root: Root::XdgConfig("opencode"),
+        file: "plugins/overseer.js",
+        events: &[],
+        format: Format::File,
+        owned: Some(Owned::Plugin),
+    },
+    Spec {
+        agent: "amp",
+        root: Root::XdgConfig("amp"),
+        file: "plugins/overseer.js",
+        events: &[],
+        format: Format::File,
+        owned: Some(Owned::Plugin),
+    },
+];
+
 pub fn targets() -> Vec<Target> {
-    const NONE: &[&str] = &[];
-    let env_dir = crate::env_dir;
-    let config = env_dir("XDG_CONFIG_HOME", ".config");
-    let t = |agent, home: PathBuf, file: &str, events, format| Target {
-        agent,
-        path: home.join(file),
-        events,
-        format,
-        home,
-    };
-    vec![
-        t(
-            "claude",
-            crate::agents::config_dir("claude"),
-            "settings.json",
-            hooks::CLAUDE_EVENTS,
-            Format::Groups(5),
-        ),
-        t(
-            "codex",
-            crate::agents::config_dir("codex"),
-            "hooks.json",
-            hooks::CODEX_EVENTS,
-            Format::GroupsWithOverrides {
-                default: 5,
-                overrides: &[("SessionEnd", 3)],
-            },
-        ),
-        t(
-            "gemini",
-            crate::agents::config_dir("gemini"),
-            "settings.json",
-            hooks::GEMINI_EVENTS,
-            Format::Groups(5000),
-        ),
-        t(
-            "copilot",
-            crate::agents::config_dir("copilot"),
-            "hooks/overseer.json",
-            hooks::COPILOT_EVENTS,
-            Format::File,
-        ),
-        t(
-            "vibe",
-            crate::agents::config_dir("vibe"),
-            "hooks.toml",
-            hooks::VIBE_EVENTS,
-            Format::File,
-        ),
-        t(
-            "cursor",
-            crate::agents::config_dir("cursor"),
-            "hooks.json",
-            hooks::CURSOR_EVENTS,
-            Format::Flat,
-        ),
-        t(
-            "opencode",
-            config.join("opencode"),
-            "plugins/overseer.js",
-            NONE,
-            Format::File,
-        ),
-        t(
-            "amp",
-            config.join("amp"),
-            "plugins/overseer.js",
-            NONE,
-            Format::File,
-        ),
-    ]
+    let config = crate::env_dir("XDG_CONFIG_HOME", ".config");
+    SPECS
+        .iter()
+        .map(|s| {
+            let home = match s.root {
+                Root::Agent => crate::agents::config_dir(s.agent),
+                Root::XdgConfig(dir) => config.join(dir),
+            };
+            Target {
+                agent: s.agent,
+                path: home.join(s.file),
+                events: s.events,
+                format: s.format,
+                home,
+            }
+        })
+        .collect()
 }
 
 pub fn available(t: &Target, cli: bool) -> bool {
@@ -422,11 +465,10 @@ fn js_str(p: &Path) -> String {
     Value::String(p.to_string_lossy().into_owned()).to_string()
 }
 
-const JS_SEND: &str = r##"import { spawn } from "node:child_process";
+const JS_IMPORT: &str = r##"import { spawn } from "node:child_process";
+"##;
 
-const MARKER = "#overseer-hook";
-
-function send(event, session) {
+const JS_SEND: &str = r##"function send(event, session) {
   try {
     const child = spawn(BIN, ["hook", AGENT, event, String(process.pid)], {
       env: { ...process.env, OVERSEER_STATE_DIR: STATE },
@@ -481,45 +523,50 @@ pub fn plugin_js(agent: &str, bin: &Path, state_dir: &Path) -> String {
         OPENCODE_EVENTS
     };
     format!(
-        "const BIN = {};\nconst STATE = {};\nconst AGENT = {};\n{JS_SEND}{events}",
+        "const BIN = {};\nconst STATE = {};\nconst AGENT = {};\n{JS_IMPORT}\nconst MARKER = \"{MARKER}\";\n\n{JS_SEND}{events}",
         js_str(bin),
         js_str(state_dir),
         Value::String(agent.into()),
     )
 }
 
-pub fn vibe_toml(bin: &Path, state_dir: &Path) -> String {
+pub fn vibe_toml(bin: &Path, state_dir: &Path, events: &[&str]) -> String {
     let mut out = String::new();
-    for ev in hooks::VIBE_EVENTS {
-        let main = if matches!(*ev, "pre_agent" | "post_agent") {
+    for ev in events {
+        let main = if hooks::VIBE_MAIN_ONLY.contains(ev) {
             "match = \"main\"\n"
         } else {
             ""
         };
         out.push_str(&format!(
-            "[[hooks]]\nname = \"overseer-{ev}\"\ntype = \"{ev}\"\n{main}timeout = 5.0\ncommand = {}\n\n",
+            "[[hooks]]\nname = \"overseer-{ev}\"\ntype = \"{ev}\"\n{main}timeout = {HOOK_TIMEOUT_SECS}.0\ncommand = {}\n\n",
             Value::String(hook_command(bin, state_dir, "vibe", ev))
         ));
     }
     out
 }
 
-pub fn copilot_json(bin: &Path, state_dir: &Path) -> String {
+pub fn copilot_json(bin: &Path, state_dir: &Path, events: &[&str]) -> String {
     let mut hooks = Map::new();
-    for ev in hooks::COPILOT_EVENTS {
+    for ev in events {
         hooks.insert(
             ev.to_string(),
-            json!([{ "type": "command", "bash": hook_command(bin, state_dir, "copilot", ev), "timeoutSec": 5 }]),
+            json!([{ "type": "command", "bash": hook_command(bin, state_dir, "copilot", ev), "timeoutSec": HOOK_TIMEOUT_SECS }]),
         );
     }
     pretty(&json!({ "version": 1, "hooks": hooks }))
 }
 
 fn owned_text(t: &Target, bin: &Path, state_dir: &Path) -> String {
-    match t.agent {
-        "copilot" => copilot_json(bin, state_dir),
-        "vibe" => vibe_toml(bin, state_dir),
-        a => plugin_js(a, bin, state_dir),
+    let kind = SPECS
+        .iter()
+        .find(|s| s.agent == t.agent)
+        .and_then(|s| s.owned)
+        .unwrap_or(Owned::Plugin);
+    match kind {
+        Owned::CopilotJson => copilot_json(bin, state_dir, t.events),
+        Owned::VibeToml => vibe_toml(bin, state_dir, t.events),
+        Owned::Plugin => plugin_js(t.agent, bin, state_dir),
     }
 }
 

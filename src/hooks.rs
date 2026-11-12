@@ -58,6 +58,8 @@ pub const VIBE_EVENTS: &[&str] = &[
     "session_end",
 ];
 
+pub const VIBE_MAIN_ONLY: &[&str] = &["pre_agent", "post_agent"];
+
 pub const CURSOR_EVENTS: &[&str] = &["sessionStart", "beforeSubmitPrompt", "stop", "sessionEnd"];
 
 const MAX_STDIN: u64 = 1 << 20;
