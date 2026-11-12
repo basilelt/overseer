@@ -1,20 +1,8 @@
 mod common;
 
-use common::{git, js, Fx, Reap};
+use common::{enc_uri_component, git, js, Fx, Reap};
 use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
-
-fn enc(s: &str) -> String {
-    let mut out = String::new();
-    for b in s.bytes() {
-        if b.is_ascii_alphanumeric() || b"-_.!~*'()".contains(&b) {
-            out.push(b as char);
-        } else {
-            out.push_str(&format!("%{b:02X}"));
-        }
-    }
-    out
-}
 
 struct G {
     fx: Fx,
@@ -86,9 +74,11 @@ impl G {
     }
 
     fn status_of(&self, wt: &str) -> (u16, Value) {
-        let (c, b) = self
-            .fx
-            .req("GET", &format!("/v1/git/status?worktree={}", enc(wt)), "");
+        let (c, b) = self.fx.req(
+            "GET",
+            &format!("/v1/git/status?worktree={}", enc_uri_component(wt)),
+            "",
+        );
         (c, js(&b))
     }
 

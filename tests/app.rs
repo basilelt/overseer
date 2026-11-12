@@ -1,6 +1,7 @@
 mod common;
 
-use common::{bin, enc, line_json, output, read_until, send, strs, wait, wait_for, App, Fx};
+use common::{bin, line_json, output, read_until, send, strs, wait, wait_for, App, Fx};
+use overseer::util::percent_encode as enc;
 use serde_json::{json, Value};
 use std::io::ErrorKind;
 use std::os::unix::net::UnixStream;

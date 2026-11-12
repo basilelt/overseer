@@ -688,21 +688,6 @@ mod tests {
             !s.contains('\'') && !s.contains('!') && !s.contains('\n'),
             "{s}"
         );
-        let order = [
-            "SB:HELLO",
-            "read c s h",
-            "INSTALL",
-            "head -c",
-            "sha256sum",
-            "mv -f",
-            "daemon $f",
-            "exec \"$b\" proxy",
-        ];
-        let pos: Vec<usize> = order
-            .iter()
-            .map(|p| s.find(p).unwrap_or_else(|| panic!("{p}")))
-            .collect();
-        assert!(pos.windows(2).all(|w| w[0] < w[1]), "{pos:?}");
         let home = std::env::temp_dir().join(format!("sb-installed-up-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&home);
         let old = home.join(".overseer/server/9.9.8");

@@ -1,6 +1,7 @@
 mod common;
 
-use common::{enc, exchange, git, js, wait, Fx};
+use common::{exchange, git, js, wait, Fx};
+use overseer::util::percent_encode as enc;
 use serde_json::Value;
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::UnixStream;

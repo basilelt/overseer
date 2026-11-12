@@ -172,11 +172,11 @@ fn sandbox_with_its_own_home_installs_and_keeps_its_hooks() {
         "unix",
     );
     assert_eq!(code, 200, "{body}");
-    let installed = b.settings();
-    assert!(names(&installed, &state));
+    assert!(names(&b.settings(), &state));
     drop(d);
     let _ = std::fs::remove_file(&b.sock);
+    std::fs::remove_file(b.home().join(".claude/settings.json")).unwrap();
+    assert!(b.settings().is_empty());
     let (_d2, _log2) = b.daemon(&state);
-    std::thread::sleep(std::time::Duration::from_millis(500));
-    assert_eq!(b.settings(), installed);
+    wait(|| names(&b.settings(), &state));
 }
