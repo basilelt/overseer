@@ -8,7 +8,8 @@
   import { feedback, ft } from '../feedback.svelte';
   import { t } from '../i18n.svelte';
   import { command } from '../commands';
-  import { hint, isMac as mac } from '../keyboard';
+  import { hint } from '../keyboard';
+  import { isMac as mac } from '../platform';
   import { app, type View } from '../state.svelte';
   import { closePaneAt, toggleSplit, update, workspace } from '../workspace.svelte';
   import HostChip from './titlebar/HostChip.svelte';

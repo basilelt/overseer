@@ -1,6 +1,8 @@
 import { isTauri } from './client';
 import { answerCloseTab, closeActive, closeTabKey, command, newWindow, runShortcut } from './commands';
 import { ui } from './mobile/ui.svelte';
+import { phoneOrMobile } from './mobile/phone.svelte';
+import { isMac } from './platform';
 import { settings } from './settings.svelte';
 import { accelerator, resolveShortcut, shortcutLabel, type ShortcutId } from './shortcuts';
 import { app } from './state.svelte';
@@ -9,7 +11,7 @@ import { windowLabel } from './window';
 
 export { answerCloseTab, closeTabKey, newWindow, runShortcut };
 
-export const isMac = typeof navigator !== 'undefined' && /mac/i.test(navigator.platform);
+export { isMac };
 
 const GLOBAL = new Set<ShortcutId>(['palette', 'settings', 'shortcuts', 'kanban', 'toggleSidebar', 'sourceControl', 'togglePanel', 'newWorkspace', 'reconnect', 'fontUp', 'fontDown', 'fontReset', 'newWindow', 'closeWindow']);
 const WITH_OVERLAY = new Set<ShortcutId>(['palette', 'settings', 'shortcuts']);
@@ -30,7 +32,7 @@ function inTerminal(e: Event): boolean {
 }
 
 function onKey(e: KeyboardEvent) {
-  if (e.isComposing || app.mobile || ui.layout === 'phone' || tour.phase) return;
+  if (e.isComposing || phoneOrMobile() || tour.phase) return;
   const s = resolveShortcut(e, { mac: isMac, ctrlWClosesTab: settings.ctrlWClosesTab, inTerminal: inTerminal(e) });
   if (!s) return;
   if (!allowed(s.id)) {

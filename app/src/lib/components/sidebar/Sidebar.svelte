@@ -20,7 +20,7 @@
   import SpacesView from './SpacesView.svelte';
   import { preload } from '../../idle';
   import GitBranch from '@lucide/svelte/icons/git-branch';
-  import { ui } from '../../mobile/ui.svelte';
+  import { isPhone } from '../../mobile/ui.svelte';
   import { notesUi } from '../../notes.svelte';
 
   const statesView = preload(() => import('./StatesView.svelte'));
@@ -37,7 +37,7 @@
     { id: 'workspaces', label: () => t('ws.title') },
     { id: 'status', label: () => t('ws.byStatus') },
   ];
-  const phone = $derived(ui.layout === 'phone');
+  const phone = $derived(isPhone());
   const listed = $derived(app.items.filter((i) => i.kind !== 'shell').length);
   const selection = $derived([...app.multi]);
   const addMenu = () => [

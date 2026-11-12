@@ -26,7 +26,7 @@ import type { MenuItem, OpenMenu } from './menu';
 import { isWebLink, resolveLink, type LinkFrom, type LinkGesture, type LinkRoute } from './links';
 import { t } from './i18n.svelte';
 import { browsers, openOutside } from './browsers.svelte';
-import { ui } from './mobile/ui.svelte';
+import { isPhone, ui } from './mobile/ui.svelte';
 import { feedback } from './feedback.svelte';
 import { tap } from './record-state.svelte';
 
@@ -834,7 +834,7 @@ class AppState {
   }
 
   private phoneLinks(): boolean {
-    return this.mobile || ui.layout === 'phone';
+    return this.mobile || isPhone();
   }
 
   notify(text: string, kind: 'info' | 'error' = 'info', action?: ToastAction, entry: EntryKind = 'error') {

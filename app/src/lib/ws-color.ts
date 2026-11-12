@@ -20,6 +20,18 @@ export const GROUP_COLOR: Record<GroupId, string> = {
   stopped: 'var(--state-closed)',
 };
 
+export const PALETTE_HELD_COLOR = 'var(--st-held)';
+
+export const PALETTE_GROUP_COLOR: Record<GroupId, string> = {
+  needs_input: 'var(--st-input)',
+  needs_testing: 'var(--st-testing)',
+  running: 'var(--st-working)',
+  pushed: PALETTE_HELD_COLOR,
+  ready: PALETTE_HELD_COLOR,
+  paused: 'var(--st-paused)',
+  stopped: PALETTE_HELD_COLOR,
+};
+
 const { pushed: _pushed, ...WORKSPACE_COLORS } = GROUP_COLOR;
 
 export const WS_COLOR: Record<WsState, string> = WORKSPACE_COLORS;

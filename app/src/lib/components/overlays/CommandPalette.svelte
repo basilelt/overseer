@@ -10,9 +10,11 @@
   import { app } from '../../state.svelte';
   import { highlight, rank, type Match } from '../../fuzzy';
   import type { GroupId } from '../../grouping';
+  import { PALETTE_GROUP_COLOR, PALETTE_HELD_COLOR } from '../../ws-color';
   import { canInstall, ordered } from '../../agents';
   import AgentGlyph from '../ui/AgentGlyph.svelte';
-  import { ui } from '../../mobile/ui.svelte';
+  import { isPhone } from '../../mobile/ui.svelte';
+  import { phoneOrMobile } from '../../mobile/phone.svelte';
   import { broadcastTo } from '../../wsactions';
   import { isGhost } from '../../workspaces';
   import { command, has } from '../../commands';
@@ -37,7 +39,7 @@
   }
 
   const connected = app.connected;
-  const desktop = !app.mobile && ui.layout !== 'phone';
+  const desktop = !phoneOrMobile();
   const UNHINTED = new Set(['source-control']);
 
   const entry = (id: string): Cmd => {
@@ -169,7 +171,7 @@
         aria-activedescendant={results.length ? `palette-${active}` : undefined}
       />
       <kbd>esc</kbd>
-      {#if ui.layout === 'phone'}<button class="icon-btn" aria-label={t('common.close')} onclick={onclose}><X size={18} /></button>{/if}
+      {#if isPhone()}<button class="icon-btn" aria-label={t('common.close')} onclick={onclose}><X size={18} /></button>{/if}
     </label>
     <ul id="palette-list" role="listbox" bind:this={list}>
       {#each results as { item, match }, i (item.id)}
@@ -192,7 +194,7 @@
           </span>
           {#if item.keys}<kbd class="keys">{item.keys}</kbd>{/if}
           {#if item.hint}
-            <span class="hint"><span class="dot" style:background="var(--st-{item.group === 'needs_input' ? 'input' : item.group === 'running' ? 'working' : item.group === 'needs_testing' ? 'testing' : item.group === 'paused' ? 'paused' : 'held'})"></span>{item.hint}</span>
+            <span class="hint"><span class="dot" style:background={item.group ? PALETTE_GROUP_COLOR[item.group] : PALETTE_HELD_COLOR}></span>{item.hint}</span>
           {/if}
         </li>
       {:else}
