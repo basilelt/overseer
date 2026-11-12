@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { dismiss } from '../../dismiss';
   import ChevronDown from '@lucide/svelte/icons/chevron-down';
   import Check from '@lucide/svelte/icons/check';
   import RefreshCw from '@lucide/svelte/icons/refresh-cw';
@@ -104,9 +105,9 @@
   });
 </script>
 
-<svelte:window onpointerdown={(e) => open && !root.contains(e.target as Node) && (open = false)} onresize={() => open && place()} />
+<svelte:window onresize={() => open && place()} />
 
-<div class="picker" bind:this={root}>
+<div class="picker" bind:this={root} use:dismiss={{ active: open, onclose: () => (open = false) }}>
   <button
     type="button"
     class="trigger"

@@ -70,8 +70,8 @@ describe('NotesPopover', () => {
     expect(src).toMatch(/onblur=\{\(\) => save\(n\.id\)\}/);
     expect(src).toContain('isSubmitChord(e)');
     expect(src).toMatch(/onkeydown=\{\(e\) => onKey\(e, add\)\}/);
-    expect(src).toContain("e.key === 'Escape'");
-    expect(src).toMatch(/!box\.contains\(el\) && !el\?\.closest\?\.\(`\[data-notes=/);
+    expect(src).toContain("use:dismiss={{ onclose: closeNotes, escape: 'stop', keep: trigger }}");
+    expect(src).toMatch(/el\?\.closest\?\.\(`\[data-notes=/);
     expect(src).toMatch(/onclick=\{\(\) => removeNote\(app, lineId, n\.id\)\}/);
   });
 

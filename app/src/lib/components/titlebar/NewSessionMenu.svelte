@@ -3,6 +3,7 @@
   import { t } from '../../i18n.svelte';
   import { app } from '../../state.svelte';
   import { preload } from '../../idle';
+  import { dismiss } from '../../dismiss';
 
   const list = preload(() => import('./NewSessionList.svelte'));
 
@@ -15,9 +16,7 @@
   }
 </script>
 
-<svelte:window onpointerdown={(e) => open && !root.contains(e.target as Node) && (open = false)} />
-
-<div class="wrap" data-tour="new-session" bind:this={root}>
+<div class="wrap" data-tour="new-session" bind:this={root} use:dismiss={{ active: open, onclose: () => (open = false) }}>
   <button
     class="icon-btn"
     class:active={open}

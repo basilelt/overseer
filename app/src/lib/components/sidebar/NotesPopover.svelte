@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { dismiss } from '../../dismiss';
   import StickyNote from '@lucide/svelte/icons/sticky-note';
   import Trash2 from '@lucide/svelte/icons/trash-2';
   import X from '@lucide/svelte/icons/x';
@@ -77,16 +78,11 @@
     }
   }
 
-  function outside(e: PointerEvent) {
-    const el = e.target as Element | null;
-    if (box && !box.contains(el) && !el?.closest?.(`[data-notes="${CSS.escape(lineId)}"]`)) closeNotes();
-  }
+  const trigger = (el: Element | null) => !!el?.closest?.(`[data-notes="${CSS.escape(lineId)}"]`);
 </script>
 
-<svelte:window onpointerdown={outside} onkeydown={(e) => e.key === 'Escape' && (e.stopPropagation(), closeNotes())} />
-
 {#if phone}<div class="scrim" role="presentation"></div>{/if}
-<div class="notes" role="dialog" aria-label={t('notes.title')} bind:this={box} style:left="{pos.left}px" style:top="{pos.top}px">
+<div class="notes" role="dialog" aria-label={t('notes.title')} bind:this={box} use:dismiss={{ onclose: closeNotes, escape: 'stop', keep: trigger }} style:left="{pos.left}px" style:top="{pos.top}px">
   <header>
     <StickyNote size={14} />
     <span class="ttl">{t('notes.title')}</span>

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { dismiss } from '../../dismiss';
   import Check from '@lucide/svelte/icons/check';
   import ChevronRight from '@lucide/svelte/icons/chevron-right';
   import { menuRows, type MenuItem } from '../../menu';
@@ -49,10 +50,10 @@
   }
 </script>
 
-<svelte:window onpointerdown={(e) => menu && !menu.contains(e.target as Node) && onclose()} onblur={onclose} onkeydown={(e) => e.key === 'Escape' && onclose()} />
+<svelte:window onblur={onclose} />
 
 {#if isPhone()}<div class="scrim" role="presentation"></div>{/if}
-<div class="menu" role="menu" tabindex="-1" aria-label={label} bind:this={menu} style:left="{pos.left}px" style:top="{pos.top}px" onkeydown={onKey}>
+<div class="menu" role="menu" tabindex="-1" aria-label={label} bind:this={menu} use:dismiss={{ onclose, escape: true }} style:left="{pos.left}px" style:top="{pos.top}px" onkeydown={onKey}>
   {#if isPhone() && label}<div class="sheet-title">{label}</div>{/if}
   {#each rows as { item: it, index, child }, i (i)}
     {#if it.separator}
