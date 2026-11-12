@@ -1,5 +1,5 @@
 import { clamp } from '../clamp';
-import { PINCH_FONT_MAX, PINCH_FONT_MIN } from '../terminal/terminal-font';
+import { FONT_SIZE_MAX, FONT_SIZE_MIN } from '../terminal/terminal-font';
 
 export const LONG_PRESS_MS = 500;
 export const SWIPE_MIN_PX = 56;
@@ -39,7 +39,7 @@ export function pressTimer(ms: number) {
   };
 }
 
-export function pinchFontSize(start: number, startDistance: number, distance: number, min = PINCH_FONT_MIN, max = PINCH_FONT_MAX): number {
+export function pinchFontSize(start: number, startDistance: number, distance: number, min = FONT_SIZE_MIN, max = FONT_SIZE_MAX): number {
   if (startDistance <= 0 || distance <= 0) return start;
   const next = Math.round(start * (distance / startDistance));
   return clamp(next, min, max);

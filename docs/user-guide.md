@@ -1065,7 +1065,7 @@ In the app:
   "~/.overseer/u/a1b2c3.png", "name", "size"}`.
 - **Font**: Settings → Terminal → Font family takes any installed font by name (suggestions:
   MesloLGS NF, JetBrainsMono Nerd Font, FiraCode Nerd Font, Hack Nerd Font, SF Mono, Menlo;
-  several comma-separated), with the font size and the line height (1–2). The default is the
+  several comma-separated), with the font size (8–28) and the line height (1–2). The default is the
   bundled JetBrains Mono. The bundled "Symbols Nerd Font Mono" (Nerd Fonts 3.5.1, MIT, 1.2 MB
   woff2) always ends the chain, so Nerd Font and powerline icons of oh-my-zsh, powerlevel10k or
   starship prompts render with any font.
