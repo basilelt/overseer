@@ -94,7 +94,7 @@ fn path_of(l: &Line) -> &str {
 
 pub fn eligible(l: &Line, now_ms: i64, days: i64) -> bool {
     days > 0
-        && l.state != "hung-up"
+        && l.state != crate::wire::STATE_HUNG_UP
         && !l.duplicate
         && !l.volatile
         && !l.cwd_missing
@@ -104,14 +104,14 @@ pub fn eligible(l: &Line, now_ms: i64, days: i64) -> bool {
 
 pub fn session_state(l: &Line, worked: bool) -> &'static str {
     match l.state {
-        "hung-up" => "closed",
-        "held" if l.held_reason == Some("user") => "held",
-        "held" => "lost",
+        crate::wire::STATE_HUNG_UP => "closed",
+        crate::wire::STATE_HELD if l.held_reason == Some("user") => "held",
+        crate::wire::STATE_HELD => "lost",
         _ if l.needs_input => "input",
         _ if l.busy => "busy",
         _ if !worked => "fresh",
         _ if l.busy_known => "done",
-        "active" => "busy",
+        crate::wire::STATE_ACTIVE => "busy",
         _ => "done",
     }
 }

@@ -503,7 +503,7 @@ impl Client {
         let mut h = json!({
             "kind": FRAME_HEARTBEAT,
             "seq": self.acked(),
-            "activeCount": lines.iter().filter(|l| l["state"] == "active").count(),
+            "activeCount": lines.iter().filter(|l| l["state"] == crate::wire::STATE_ACTIVE).count(),
         });
         if let Some((used, total)) = meminfo() {
             h["memUsedBytes"] = json!(used);

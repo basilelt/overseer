@@ -17,7 +17,7 @@ type Outcome = (&'static str, Option<String>);
 const READY_CHECKS: [&str; 4] = ["alive", "inTmux", "atPrompt", "inputEmpty"];
 
 fn refused(e: impl Into<String>) -> Outcome {
-    ("refused", Some(e.into()))
+    (crate::wire::STATUS_REFUSED, Some(e.into()))
 }
 
 pub fn uuid() -> Result<String, String> {
@@ -164,7 +164,7 @@ pub fn start(ctx: &Ctx, line_id: &str, args: &Value, dry: bool) -> Outcome {
     }
     let reg = match Registry::open(&ctx.state_dir) {
         Ok(r) => r,
-        Err(e) => return ("failed", Some(e)),
+        Err(e) => return (crate::wire::STATUS_FAILED, Some(e)),
     };
     let known: Option<String> = reg
         .conn
@@ -175,7 +175,10 @@ pub fn start(ctx: &Ctx, line_id: &str, args: &Value, dry: bool) -> Outcome {
         )
         .ok();
     if let Some(w) = known {
-        return ("succeeded", Some(format!("already started in {w}")));
+        return (
+            crate::wire::STATUS_SUCCEEDED,
+            Some(format!("already started in {w}")),
+        );
     }
     let p = match plan(ctx, line_id, args) {
         Ok(p) => p,
@@ -188,19 +191,25 @@ pub fn start(ctx: &Ctx, line_id: &str, args: &Value, dry: bool) -> Outcome {
         p.session
     );
     if dry {
-        return ("succeeded", Some(format!("would start {what}")));
+        return (
+            crate::wire::STATUS_SUCCEEDED,
+            Some(format!("would start {what}")),
+        );
     }
     let r = launch(ctx, &reg, line_id, args, &p);
     log_action(
         ctx,
         &json!({
-            "action": "start", "lineId": line_id, "worktree": p.path, "branch": p.branch,
+            "action": crate::wire::CMD_START, "lineId": line_id, "worktree": p.path, "branch": p.branch,
             "session": p.session, "error": r.as_ref().err(),
         }),
     );
     match r {
-        Ok(()) => ("succeeded", Some(format!("started {what}"))),
-        Err(e) => ("failed", Some(e)),
+        Ok(()) => (
+            crate::wire::STATUS_SUCCEEDED,
+            Some(format!("started {what}")),
+        ),
+        Err(e) => (crate::wire::STATUS_FAILED, Some(e)),
     }
 }
 
@@ -284,7 +293,7 @@ pub fn relaunch(ctx: &Ctx, line_id: &str, message: &str, dry: bool) -> Outcome {
     }
     let lines = match scan(ctx) {
         Ok(l) => l,
-        Err(e) => return ("failed", Some(e)),
+        Err(e) => return (crate::wire::STATUS_FAILED, Some(e)),
     };
     let Ok(l) = find_line(&lines, line_id) else {
         return refused(format!("line {line_id} is not on this station"));
@@ -302,7 +311,7 @@ pub fn relaunch(ctx: &Ctx, line_id: &str, message: &str, dry: bool) -> Outcome {
         let pane = l.pane.clone().unwrap_or_default();
         if dry {
             return (
-                "succeeded",
+                crate::wire::STATUS_SUCCEEDED,
                 Some(format!("would send the message to {pane}")),
             );
         }
@@ -312,7 +321,7 @@ pub fn relaunch(ctx: &Ctx, line_id: &str, message: &str, dry: bool) -> Outcome {
             return actions::resume_plan(ctx, &lines, l, Launch::Detached)
                 .map(|p| {
                     (
-                        "succeeded",
+                        crate::wire::STATUS_SUCCEEDED,
                         Some(format!(
                             "would resume in {} and send the message",
                             p.r#where
@@ -333,11 +342,11 @@ pub fn relaunch(ctx: &Ctx, line_id: &str, message: &str, dry: bool) -> Outcome {
     };
     log_action(
         ctx,
-        &json!({"action": "relaunch", "lineId": l.id, "error": r.as_ref().err()}),
+        &json!({"action": crate::wire::CMD_RELAUNCH, "lineId": l.id, "error": r.as_ref().err()}),
     );
     match r {
-        Ok(m) => ("succeeded", Some(m)),
-        Err(e) => ("failed", Some(e)),
+        Ok(m) => (crate::wire::STATUS_SUCCEEDED, Some(m)),
+        Err(e) => (crate::wire::STATUS_FAILED, Some(e)),
     }
 }
 
@@ -373,7 +382,9 @@ pub fn pick(ctx: &Ctx, key: &str) -> Result<Line, String> {
             }
         }
     }
-    all.retain(|l| l.ticket.as_deref() == Some(key.as_str()) && l.state != "hung-up");
+    all.retain(|l| {
+        l.ticket.as_deref() == Some(key.as_str()) && l.state != crate::wire::STATE_HUNG_UP
+    });
     all.sort_by_key(|l| (l.owner == ctx.config.owner, -l.last_activity_ms));
     all.into_iter()
         .next()

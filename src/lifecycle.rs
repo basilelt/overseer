@@ -405,7 +405,11 @@ mod tests {
             session_id: sid.into(),
             term_id: Some(term.into()),
             pid: alive.then_some(42),
-            state: if alive { "active" } else { "idle" },
+            state: if alive {
+                crate::wire::STATE_ACTIVE
+            } else {
+                crate::wire::STATE_IDLE
+            },
             launch_args: vec!["--model".into(), "opus".into()],
             ..Default::default()
         }

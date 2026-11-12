@@ -256,7 +256,7 @@ fn terminate(_pid: u32, t: &std::sync::Arc<crate::term::Term>) -> bool {
 
 fn record_held(ctx: &Ctx, reg: &Registry, l: &Line, pid: u32) -> Result<(), String> {
     reg.set_mark(&l.id, "held_by_user", Some(&pid.to_string()))?;
-    reg.set_mark(&l.id, "state", Some("held"))?;
+    reg.set_mark(&l.id, "state", Some(crate::wire::STATE_HELD))?;
     reg.set_mark(&l.id, "held_at", Some(&format_rfc3339(ctx.now_ms)))?;
     reg.set_mark(&l.id, "hold_pending", None)
 }
@@ -860,7 +860,7 @@ pub(crate) fn close_line(
         if apply {
             let reg = Registry::open(&ctx.state_dir)?;
             reg.set_mark(&l.id, "closed_at", Some(&format_rfc3339(ctx.now_ms)))?;
-            reg.set_mark(&l.id, "state", Some("hung-up"))?;
+            reg.set_mark(&l.id, "state", Some(crate::wire::STATE_HUNG_UP))?;
             for t in pending_terms(l) {
                 if t.kill().is_ok() {
                     r.steps.push(format!("closed held term {}", t.info().id));

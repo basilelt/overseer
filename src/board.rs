@@ -132,7 +132,8 @@ fn yard_url(ctx: &Ctx) -> Option<String> {
 fn entries(ctx: &Ctx, lines: &[Line], all: bool) -> (Vec<Value>, Vec<Value>) {
     let now = ctx.now_ms;
     let local: Vec<&Line> = lines.iter().filter(|l| all || l.recent(now)).collect();
-    let count = |it: &mut dyn Iterator<Item = &str>| it.filter(|s| *s == "active").count();
+    let count =
+        |it: &mut dyn Iterator<Item = &str>| it.filter(|s| *s == crate::wire::STATE_ACTIVE).count();
     let mut sts = vec![json!({
         "stationId": ctx.config.station_id, "local": true, "online": true,
         "lastSeenAt": format_rfc3339(now),
@@ -183,7 +184,7 @@ fn entries(ctx: &Ctx, lines: &[Line], all: bool) -> (Vec<Value>, Vec<Value>) {
                 .as_str()
                 .and_then(parse_rfc3339)
                 .unwrap_or(0);
-            if !all && l["state"] != "active" && now - at > RECENT_MS {
+            if !all && l["state"] != crate::wire::STATE_ACTIVE && now - at > RECENT_MS {
                 continue;
             }
             l["stationId"] = json!(s.id);
@@ -230,7 +231,7 @@ pub fn observe(ctx: &Ctx, lines: &[Line]) {
                         "line.state_changed",
                         json!({"line": l, "local": local, "from": s, "to": state}),
                     );
-                    if state == "hung-up" {
+                    if state == crate::wire::STATE_HUNG_UP {
                         publish("line.hung_up", json!({"line": l}));
                     }
                 }
@@ -411,7 +412,7 @@ fn change(ctx: &Ctx, r: &Request, id: &str, kind: &str) -> Result<Value, (u16, S
     if kind == "commit" && message.is_empty() {
         return Err((400, "message required".into()));
     }
-    if l.busy || l.state == "active" {
+    if l.busy || l.state == crate::wire::STATE_ACTIVE {
         return Err((
             409,
             format!(

@@ -32,7 +32,12 @@ fn check(target: &str, lines: &[Line]) -> Check {
             let Some(l) = lines.iter().find(|l| l.id == id) else {
                 return Check::Refused("unknown line");
             };
-            if !l.alive() || matches!(l.state, "held" | "hung-up") {
+            if !l.alive()
+                || matches!(
+                    l.state,
+                    crate::wire::STATE_HELD | crate::wire::STATE_HUNG_UP
+                )
+            {
                 return Check::Refused("not running");
             }
             match deliver::channel(l) {

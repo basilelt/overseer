@@ -153,7 +153,7 @@ mod tests {
         let l = crate::Line {
             id: "l1".into(),
             agent: "claude",
-            state: "idle",
+            state: crate::wire::STATE_IDLE,
             notes: vec![json!({"id": "n", "text": "private", "createdAt": "", "updatedAt": ""})],
             ..Default::default()
         };
