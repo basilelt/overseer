@@ -596,7 +596,6 @@ const WS_SEEDS: [string, string, string, string | null, boolean, boolean, boolea
   ['ws_thesis', 'thesis', `${HOME}/Documents/thesis`, 'f_alice', false, false, true],
 ];
 
-// Nested workspaces of webshop: a sub-folder whose sessions start at the repo root, and a checked-out submodule.
 const NESTED_SEEDS: [string, string, string, string, string | null, boolean][] = [
   ['ws_webshop_invoicing', 'Invoicing', `${repoPath('webshop')}/services/invoicing`, 'ws_webshop', repoPath('webshop'), false],
   ['ws_webshop_design', 'design-system', `${repoPath('webshop')}/vendor/design-system`, 'ws_webshop', null, true],
@@ -1047,7 +1046,6 @@ export class MockDaemon implements DaemonClient {
     this.emit('line.updated', { line: p.line, local: p.local });
   }
 
-  /** The daemon's hold predicates the mock can evaluate, with its details. */
   private holdChecks(l: LocalLine): Record<string, { ok: boolean; detail?: string }> {
     const alive = l.line.state !== 'held' && l.line.state !== 'hung-up';
     const check = (ok: boolean, detail: string) => (ok ? { ok } : { ok, detail });

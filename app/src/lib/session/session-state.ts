@@ -1,12 +1,10 @@
 import type { Key } from '../i18n.svelte';
 import type { LocalLine } from '../types';
 
-// The one place that says what state an agent session is in and what the user may do with it.
 // A hung-up line is not a state: it is hidden from the lists, and when one is still open in a tab its view is
 // `closed` with `ended` set, every action off.
 export type SessionState = 'running' | 'attention' | 'open' | 'paused' | 'closed';
 
-// Most urgent first: how a workspace or a list ranks its sessions.
 export const STATE_URGENCY: readonly SessionState[] = ['attention', 'running', 'open', 'paused', 'closed'];
 
 export const SESSION_ACTIONS = ['interrupt', 'pause', 'cancelPause', 'resume', 'close'] as const;
@@ -18,14 +16,12 @@ export interface ActionGate {
   reason?: WhyKey;
 }
 
-// What a running session is doing beyond its turn: a queued pause, or subagents still working.
 export type SubLabel = { key: 'session.state.pause_pending' } | { key: 'session.subagents' | 'session.subagentsOne'; n: number };
 
 export interface SessionView {
   state: SessionState;
   label: Extract<Key, `session.state.${string}`> | 'session.ended';
   sub?: SubLabel;
-  // The line was hung up: shown only while its tab is still open.
   ended?: true;
   // Resumed, but the agent has not reported its session yet: it may be waiting on a prompt in its terminal.
   starting?: true;
@@ -43,11 +39,9 @@ function stateOf(l: LocalLine, termId: string | null | undefined): SessionState 
   if (line.state === 'held') return local?.heldReason === 'user' ? 'paused' : 'closed';
   if (local?.pid == null && !local?.termId && !termId) return 'closed';
   if (local?.needsInput) return 'attention';
-  // Subagents keep a parent working even between its own turns.
   return local?.busy || local?.holdPending || (local?.subagents ?? 0) > 0 ? 'running' : 'open';
 }
 
-// Why a session that is not mid-turn cannot be interrupted, in the words of the state it shows.
 function idleWhy(local: LocalLine['local']): WhyKey {
   if ((local?.subagents ?? 0) > 0 && !local?.needsInput) return 'session.why.subagents';
   return local?.holdPending && !local.needsInput ? 'session.why.pausePending' : 'session.why.notBusy';
@@ -104,13 +98,11 @@ export function sessionState(l: LocalLine, termId?: string | null): SessionView 
 
 const DOT = { attention: 'input', running: 'busy', open: 'idle', paused: 'paused', closed: 'off' } as const;
 
-// The header dot class, derived from the same view as the label so the two never disagree.
 export function stateDot(view: SessionView | null): 'input' | 'busy' | 'idle' | 'paused' | 'off' | 'ended' {
   if (!view) return 'off';
   return view.ended ? 'ended' : DOT[view.state];
 }
 
-// Whole days a session has been paused, or null when it is under a day or the time is unknown.
 export function pausedDays(since: string | undefined, now: number): number | null {
   const at = since ? Date.parse(since) : NaN;
   const days = Math.floor((now - at) / 86_400_000);

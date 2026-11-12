@@ -123,7 +123,6 @@ describe('spaces', () => {
 });
 
 const fo = (id: string, name: string, parentId: string | null = null, over: Partial<Folder> = {}) => ({ id, name, parentId, rank: 1, collapsed: false, ...over }) as Folder;
-// One token per node: kind, depth, then the folder name, the row id or the empty chips.
 const shape = (nodes: SpaceNode[]) =>
   nodes.map((n) => (n.type === 'folder' ? `F${n.depth}:${n.folder?.name ?? '*'}` : n.type === 'space' ? `W${n.depth}:${n.row.id}` : `E${n.depth}:${n.workspaces.map((w) => w.id).join(',')}`));
 const tree = (workspaces: Workspace[], folders: Folder[], keys: [string, string, SidebarItem['state']?][], filter = '') => {

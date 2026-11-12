@@ -5,7 +5,6 @@ import { WsDrag, type DragDeps } from './ws-drag.svelte';
 const w = (id: string, rank: number, extra: Partial<Workspace> = {}) => ({ id, name: id, rank, pinned: false, archived: false, folderId: null, ...extra }) as Workspace;
 const f = (id: string, rank: number, extra: Partial<Folder> = {}) => ({ id, name: id, rank, parentId: null, collapsed: false, ...extra }) as Folder;
 
-// A fake element under the pointer: data-drop attributes and a 100x100 box at the origin.
 const at = (dataset: Record<string, string>) => {
   const el = { dataset, getBoundingClientRect: () => ({ top: 0, height: 100, left: 0, width: 100 }), closest: () => el };
   return el as unknown as Element;

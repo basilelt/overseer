@@ -11,33 +11,25 @@ export interface SpaceRow {
   name: string | null;
   workspace: Workspace | null;
   items: SidebarItem[];
-  /** Its own sessions plus those of its nested workspaces. */
   summary: WorkspaceSummary;
-  /** Nested workspaces (sub-folders, submodules, subjects), listed inside its block even without a session. */
   children?: SpaceRow[];
 }
 
 export interface Spaces {
   rows: SpaceRow[];
-  /** Workspaces without a session: folded into one line of chips. */
   empty: Workspace[];
 }
 
 const isVisible = (w: Workspace, showArchived = false) => !isGhost(w) && (showArchived || !w.archived);
 
-// The workspaces a session can be listed under; any other falls to the unassigned.
 export const visibleIds = (workspaces: Workspace[]): Set<string> => new Set(workspaces.filter((w) => isVisible(w)).map((w) => w.id));
 
-// Keeps the sessions whose title or workspace name contains the filter.
 export function filterItems(items: SidebarItem[], wsName: (key: string) => string, filter: string): SidebarItem[] {
   const q = filter.trim().toLowerCase();
   if (!q) return items;
   return items.filter((i) => i.title.toLowerCase().includes(q) || wsName(i.key).toLowerCase().includes(q));
 }
 
-// Mode "Espaces": one pass over the items, then the workspaces with sessions (pinned first) and the empty ones.
-// Sessions whose workspace is hidden (archived unless showArchived, ghost, unknown) fall to the "other" row.
-// A nested workspace is listed inside its parent's row, and hidden with it.
 export function spaces(workspaces: Workspace[], items: SidebarItem[], wsOf: ReadonlyMap<string, string>, filter: string, showArchived = false): Spaces {
   const q = filter.trim().toLowerCase();
   const order = (a: Workspace, b: Workspace) => Number(b.pinned) - Number(a.pinned) || a.rank - b.rank || a.name.localeCompare(b.name);
@@ -54,7 +46,6 @@ export function spaces(workspaces: Workspace[], items: SidebarItem[], wsOf: Read
     const w = wsOf.get(it.key);
     push(by, w !== undefined && visible.has(w) ? w : '', it);
   }
-  // A name or path match keeps every session; a title match keeps only the sessions that match.
   const named = (w: Workspace | null) => !!w && [w.name, w.path, w.cwd].some((x) => x?.toLowerCase().includes(q));
   const narrow = (w: Workspace | null, mine: SidebarItem[], parentNamed = false) => (!q || parentNamed || named(w) ? mine : mine.filter((i) => i.title.toLowerCase().includes(q)));
   const rows: SpaceRow[] = [];
@@ -72,7 +63,6 @@ export function spaces(workspaces: Workspace[], items: SidebarItem[], wsOf: Read
       if (q && !cmine.length && !(wNamed || named(c))) continue;
       children.push({ id: c.id, name: c.name, workspace: c, items: cmine, summary: workspaceSummary(cmine) });
     }
-    // A workspace with subjects stays a block so they can be seen and started in, even with no session yet.
     const busy = mine.length || children.length;
     if (busy) {
       const row: SpaceRow = { id: w.id, name: w.name, workspace: w, items: mine, summary: sum([workspaceSummary(mine), ...children.map((c) => c.summary)]) };
@@ -93,7 +83,6 @@ export type SpaceNode =
 
 interface Agg {
   summary: WorkspaceSummary;
-  /** Workspaces listed in the subtree, busy or empty. */
   spaces: number;
 }
 
@@ -113,15 +102,12 @@ function sum(parts: WorkspaceSummary[]): WorkspaceSummary {
   return { total, counts, urgent: STATE_URGENCY.find((s) => counts[s] > 0) ?? null };
 }
 
-// Mode "Espaces" with folders: files the rows of spaces() into the folder tree, as one flat list to render.
-// Pinned workspaces leave their folder for a pinned section; a filter drops the folders without a match and opens the rest.
 export function folderSpaces(view: Spaces, folders: Folder[], filter: string): SpaceNode[] {
   const q = filter.trim() !== '';
   const known = new Set(folders.map((f) => f.id));
   const kids = new Map<string | null, Folder[]>();
   for (const f of folders) push(kids, f.parentId && f.parentId !== f.id && known.has(f.parentId) ? f.parentId : null, f);
   for (const list of kids.values()) list.sort(byRank);
-  // Folders caught in a parent cycle are never reached: their workspaces fall to the root.
   const reach = new Set<string>();
   const stack = [...(kids.get(null) ?? [])];
   for (let f = stack.pop(); f; f = stack.pop()) {
@@ -177,7 +163,6 @@ export function folderSpaces(view: Spaces, folders: Folder[], filter: string): S
   return out;
 }
 
-// The attention banner's path to a workspace: its folder chain, its parent, then its name.
 export function spaceTrail(data: WsData): (workspaceId: string | null | undefined) => string | undefined {
   const ws = new Map(data.workspaces.map((w) => [w.id, w]));
   const fs = new Map(data.folders.map((f) => [f.id, f]));

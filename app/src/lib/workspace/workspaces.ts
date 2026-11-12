@@ -39,7 +39,6 @@ const prefixIndexes = new WeakMap<Workspace[], PrefixIndex>();
 function prefixIndex(workspaces: Workspace[]): PrefixIndex {
   let ix = prefixIndexes.get(workspaces);
   if (!ix) {
-    // A subject has no directory, so it never matches by path.
     ix = { roots: workspaces.filter((w) => w.path != null).map((w) => ({ w, dir: w.path!.replace(/\/+$/, '') || '/' })), hits: new Map() };
     prefixIndexes.set(workspaces, ix);
   }
@@ -176,7 +175,6 @@ export function aggregate(items: SidebarItem[]): Aggregate {
   return { state, counts, agents, status, statusKey: top?.key, at };
 }
 
-// The two most urgent states of a workspace, so paused or stopped sessions never read as idle.
 export function summaryParts(agg: Aggregate | undefined): { state: WsState; count: number }[] {
   const parts = agg ? WS_STATE_ORDER.filter((s) => agg.counts[s] > 0).map((s) => ({ state: s, count: agg.counts[s] })) : [];
   return parts.length ? parts.slice(0, 2) : [{ state: 'ready', count: 0 }];

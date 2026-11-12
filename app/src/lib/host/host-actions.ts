@@ -16,7 +16,6 @@ export function toggleFold(key: string) {
   saveSettings({ hostsFolded: toggled(settings.hostsFolded, key) });
 }
 
-/** Runs a session's click from a background host: that host comes into the main area first. */
 export async function openOnHost(key: string, run: () => void) {
   if (app.link?.key !== key) await app.switchHost(key);
   run();

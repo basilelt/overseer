@@ -14,7 +14,6 @@ export function timeBucket(at: string | null | undefined, now: number): TimeBuck
   return t >= new Date(y, m, day - ((d.getDay() + 6) % 7)).getTime() ? 'thisWeek' : 'older';
 }
 
-// Non-empty buckets in display order; rows keep their relative order inside a bucket.
 export function bucketByTime<T extends { at: string }>(rows: T[], now: number): { bucket: TimeBucket; items: T[] }[] {
   const by = new Map<TimeBucket, T[]>();
   for (const r of rows) {

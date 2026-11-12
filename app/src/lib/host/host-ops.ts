@@ -18,7 +18,6 @@ function register(app: App, link: HostLink) {
   (app.linkOf ??= new WeakMap()).set(link.client, link);
 }
 
-/** The window's own connection becomes a link once a second host joins. */
 function wrapFirst(app: App) {
   if (app.link || !app.client) return;
   const l = new HostLink(app.conn.target, app.client);
@@ -155,7 +154,6 @@ function follow(app: App, link: HostLink) {
   link.onPrompt = () => app.notify(t('hosts.needsAnswer', { host: hostName(link.target) }), 'info', { label: t('hosts.answer'), run: () => void app.switchHost(link.key) });
 }
 
-/** Notifications of a background host of the window: same rules, its own settle and cooldown, named after it. */
 export function pushHost(app: App, gates: Map<string, Gate>, l: HostLink, prev: Snapshot, next: Snapshot, e: DaemonEvent | undefined) {
   if (prev.lines === next.lines && prev.terms === next.terms && prev.tasks === next.tasks) return;
   let g = gates.get(l.key);
@@ -191,7 +189,6 @@ export function saveHosts(app: App) {
   saveSettings({ windowHosts: list.length < 2 ? [] : list });
 }
 
-/** Hosts to bring back at launch beside the first one, without duplicates. */
 export function restoreHosts(saved: HostTarget[] | undefined, first: HostTarget): HostTarget[] {
   const seen = new Set([hostKey(first)]);
   const out: HostTarget[] = [];
@@ -205,12 +202,10 @@ export function restoreHosts(saved: HostTarget[] | undefined, first: HostTarget)
   return out;
 }
 
-/** Brings back, in the background, the other hosts the main window showed. */
 export function restore(app: App, saved: HostTarget[], first: HostTarget) {
   for (const h of restoreHosts(saved, first)) void addHost(app, h, false);
 }
 
-/** Shows the active host in the main area once it is connected. */
 export async function attach(app: App) {
   if (!app.client) return;
   app.connected = true;

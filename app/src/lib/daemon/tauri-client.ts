@@ -11,7 +11,6 @@ interface RawResponse {
 export class TauriDaemon implements DaemonClient {
   readonly kind = 'tauri' as const;
 
-  /** Extra hosts of a window each get a slot: their own connection beside the window's own. */
   constructor(readonly slot: string | null = null) {}
 
   private s<T extends object>(args?: T): (T & { slot?: string }) | undefined {

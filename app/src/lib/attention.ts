@@ -12,7 +12,6 @@ export interface AttentionEntry {
   at: string;
 }
 
-// The banner list: sessions waiting for the user, most recent first. wsOf maps an item key to its workspace id.
 export function attention(items: SidebarItem[], wsOf: ReadonlyMap<string, string>): AttentionEntry[] {
   return items
     .filter((i) => i.state === 'attention' && isAgentItem(i))

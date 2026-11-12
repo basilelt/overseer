@@ -56,9 +56,7 @@ export interface Settings {
   keepRunningOffered?: string[];
   sidebarMode?: 'workspaces' | 'status';
   sidebarGit?: boolean;
-  /** Expanded workspaces, per host. */
   spacesOpen?: Record<string, string[]>;
-  /** Opened closed-intervals of the by-state view, per host. */
   statesOpen?: Record<string, string[]>;
   workspaceId?: string;
   workspaceByHost?: Record<string, string>;
@@ -82,17 +80,12 @@ export interface Settings {
   lightPreset: string;
   darkPreset: string;
   customPresets: CustomPreset[];
-  /** One window per host (as before) or every host in one window. */
   hostWindows: HostWindows;
-  /** Ask "this window or a new one" when connecting to a host. */
   hostAsk: boolean;
-  /** The answer remembered per host key. */
   hostChoice: Record<string, HostChoice>;
   hostTabColor: boolean;
   hostReconnect: boolean;
-  /** The hosts of the main window, reconnected at launch. */
   windowHosts?: HostTarget[];
-  /** Host sections folded in the sidebar. */
   hostsFolded?: string[];
 }
 

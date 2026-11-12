@@ -9,7 +9,6 @@ export function cleanTitle(raw: string): string | null {
   return Array.from(one).slice(0, TITLE_MAX).join('').trimEnd() || null;
 }
 
-/** What committing an inline title edit means: a new title, null to clear, undefined for no change. */
 export function titleEdit(item: Pick<SidebarItem, 'title' | 'renamed'>, draft: string): string | null | undefined {
   const next = cleanTitle(draft);
   if (!item.renamed) return next && next !== item.title ? next : undefined;

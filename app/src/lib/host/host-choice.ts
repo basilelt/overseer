@@ -13,11 +13,8 @@ export interface HostPrefs {
 }
 
 export interface WindowHosts {
-  /** The host the main area shows, connected or not. */
   active: string;
-  /** Every host of the window, the active one included. */
   keys: string[];
-  /** The active host is reachable, so adding one keeps something on screen. */
   live: boolean;
 }
 
@@ -33,7 +30,6 @@ export function connectHow(p: HostPrefs, target: Pick<HostTarget, 'kind' | 'host
   return p.hostWindows === 'shared' || w.keys.length > 1 ? 'add' : 'replace';
 }
 
-/** The button the "ask" step puts first. */
 export function preferredChoice(p: Pick<HostPrefs, 'hostWindows'>): HostChoice {
   return p.hostWindows === 'shared' ? 'add' : 'window';
 }

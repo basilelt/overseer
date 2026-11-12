@@ -22,7 +22,6 @@ export function hostKey(t: Pick<HostTarget, 'kind' | 'host'>): string {
 
 let opened = 1;
 
-/** Opens another window, connected to `target` when given. */
 export async function openWindow(target?: HostTarget): Promise<void> {
   if (isTauri()) {
     const { invoke } = await import('@tauri-apps/api/core');

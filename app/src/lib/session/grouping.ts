@@ -26,10 +26,8 @@ export interface SidebarItem {
   key: string;
   kind: ItemKind;
   group: GroupId;
-  /** The process state shown on the row; the group may be a task or PR bucket on top of it. */
   state: SessionState;
   title: string;
-  /** The title is the user's custom one, not the auto title. */
   renamed?: boolean;
   goal?: string;
   status?: string;
@@ -37,7 +35,6 @@ export interface SidebarItem {
   lineId?: string;
   termId?: string;
   taskId?: string;
-  /** How many sticky notes the session carries. */
   notes?: number;
 }
 
@@ -46,7 +43,6 @@ export interface Group {
   items: SidebarItem[];
 }
 
-// needs_testing and pushed sit on top of the process state; paused and stopped lines are never urgent.
 export function lineGroup(l: LocalLine, testing: boolean, termId?: string | null): GroupId | null {
   if (isEnded(l)) return null;
   const state = sessionState(l, termId).state;
@@ -60,7 +56,6 @@ export function lineGroup(l: LocalLine, testing: boolean, termId?: string | null
   return base;
 }
 
-/** The session has no live process: paused on purpose or stopped. */
 export const isOff = (i: Pick<SidebarItem, 'group'>): boolean => i.group === 'paused' || i.group === 'stopped';
 
 function lineTitle(l: LocalLine): string {

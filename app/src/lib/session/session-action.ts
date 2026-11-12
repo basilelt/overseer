@@ -15,7 +15,6 @@ export interface ActionResult {
   dropChat?: true;
 }
 
-/** One session action on the daemon; errors propagate so the view can show them. */
 export async function runSessionAction(api: ActionApi, id: string, kind: SessionAction): Promise<ActionResult> {
   switch (kind) {
     case 'interrupt':

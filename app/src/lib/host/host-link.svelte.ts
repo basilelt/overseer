@@ -8,25 +8,17 @@ export const EMPTY_SNAPSHOT: Snapshot = { lines: [], terms: [], tasks: [], activ
 
 export type LinkChange = (link: HostLink, prev: Snapshot, next: Snapshot, e: DaemonEvent) => void;
 
-/**
- * One host of a window. The active one feeds the app store; the others stay connected and keep a
- * light snapshot (sessions, workspaces) from their event stream, filled by `host-watch.ts`.
- */
 export class HostLink {
   conn = $state<ConnState>({ phase: 'idle', target: { kind: 'local', label: 'Local' } });
   data = $state.raw<Snapshot>(EMPTY_SNAPSHOT);
   ws = $state.raw<WsData>(EMPTY_WS);
   projects = $state.raw<Project[]>([]);
-  /** Connected once since added: requests can go through, even while it reconnects. */
   ready = $state(false);
   watching = $state(false);
 
-  /** Set by the app while this host is the active one. */
   listener: ((s: ConnState, prev: ConnState) => void) | null = null;
   onChange: LinkChange | null = null;
-  /** A background host asks for a password, passphrase or host key answer. */
   onPrompt: (() => void) | null = null;
-  /** Set while watched: stops the event stream, and reloads after a reconnect. */
   off: (() => void) | null = null;
   reload: (() => void) | null = null;
 

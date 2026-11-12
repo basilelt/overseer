@@ -111,7 +111,6 @@ export function groupPicker(keys: string[]): MenuItem[] {
   ];
 }
 
-// The menu of the tab strip "+", also opened from a nested workspace's "+": agents, then the shell.
 export function newSessionItems(): MenuItem[] {
   const start = (id: string) => () => app.newSession(id).catch(fail);
   const install = (id: string) => () => app.installAgent(id).catch(fail);
@@ -128,7 +127,6 @@ export function newSessionItems(): MenuItem[] {
   ];
 }
 
-// The "+" of a nested workspace: selects it, then offers the new-session menu with where sessions start.
 export function startIn(e: { clientX: number; clientY: number }, w: Workspace) {
   app.selectWorkspace(w.id);
   const dir = w.cwd ?? w.path;
@@ -345,7 +343,6 @@ export function itemMenu(key: string): MenuItem[] {
   ];
 }
 
-// Click on a session row: Ctrl/Meta/Shift toggles it in the multi-selection, a plain click opens it alone.
 export function selectSession(key: string, e?: MouseEvent) {
   if (e && (e.metaKey || e.ctrlKey || e.shiftKey)) {
     const next = new Set(app.multi);

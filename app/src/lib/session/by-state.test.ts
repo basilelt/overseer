@@ -3,7 +3,6 @@ import { byState } from './by-state';
 import type { SidebarItem } from './grouping';
 import { stateOfGroup } from '../../test/fixtures';
 
-// Friday 2026-11-06, 14:30 local.
 const now = new Date(2026, 10, 6, 14, 30).getTime();
 const day = (d: number, h = 12) => new Date(2026, 10, d, h).toISOString();
 

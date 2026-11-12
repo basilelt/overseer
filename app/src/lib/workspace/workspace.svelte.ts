@@ -141,7 +141,6 @@ export function switchLayout(from: string, to: string, init: () => Layout) {
   layoutId = to;
 }
 
-/** Layouts of the workspaces not on screen, by layout id. */
 export const savedLayouts: Map<string, Layout> = saved;
 
 export function forgetLayouts() {

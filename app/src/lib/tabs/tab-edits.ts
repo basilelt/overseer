@@ -40,7 +40,6 @@ export function assignWorkspace<S extends Pick<Snapshot, 'lines' | 'terms'>>(sna
   return snap;
 }
 
-// Moves a tab out of the current layout into the saved layout of `to` (if any); returns the undo.
 export function moveTabTo(key: string, to: string): () => void {
   update((l) => dropKey(l, key));
   const target = saved.get(to);
@@ -66,7 +65,6 @@ export function moveMenu(app: App, key: string): MenuItem[] {
   }));
 }
 
-/** Set (or clear with null/blank) the custom title of a session or plain terminal; optimistic, reverted on failure. */
 export async function renameItem(app: App, key: string, raw: string | null) {
   const item = app.items.find((i) => i.key === key);
   const title = raw === null ? null : cleanTitle(raw);

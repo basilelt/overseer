@@ -60,13 +60,10 @@ function withAdded(terms: Term[], added: Map<string, Term>): Term[] {
 
 class AppState {
   client = $state.raw<DaemonClient | null>(null);
-  /** The host the main area shows. */
   link = $state.raw<HostLink | null>(null);
-  /** The other hosts of this window, followed in the background for their sidebar sections. */
   others = $state.raw<HostLink[]>([]);
   /** @internal */
   hostOrder = $state.raw<string[]>([]);
-  // Sections keep the order hosts joined the window, whichever is active.
   hosts = $derived(this.link ? [this.link, ...this.others].sort((a, b) => this.hostOrder.indexOf(a.key) - this.hostOrder.indexOf(b.key)) : this.others);
   /** @internal */
   attachOnReady = false;
@@ -206,7 +203,6 @@ class AppState {
     }
   }
 
-  /** `add` keeps the hosts already in the window and shows the target beside them. */
   async connect(target: HostTarget, how: 'replace' | 'add' = 'replace') {
     const key = hostKey(target);
     if (key !== hostKey(this.conn.target) && (this.others.some((l) => l.key === key) || (how === 'add' && (this.connected || this.others.length)))) {
@@ -230,7 +226,6 @@ class AppState {
     this.conn = { phase: 'connecting', target };
     if (target.kind === 'ssh') await this.askLocalNetwork(target.host);
     try {
-      // A window with several hosts gives each client a link that takes its state; otherwise it is ours.
       const onState = (st: ConnState) => {
         const l = this.linkOf?.get(c);
         if (l) l.onState(st);
@@ -280,7 +275,6 @@ class AppState {
     await this.client?.disconnect();
   }
 
-  /** Forgets everything the main area showed of the active host; its connection is left alone. */
   /** @internal */
   resetHost() {
     this.data = EMPTY;
@@ -296,29 +290,24 @@ class AppState {
     workspace.layout = EMPTY_LAYOUT;
   }
 
-  /** Shows one more host in this window, in the background or as the active one. */
   addHost(target: HostTarget, activate: boolean): Promise<void> {
     return hostOps().then((m) => m.addHost(this, target, activate));
   }
 
-  /** Makes another host of this window the active one, keeping the current one connected. */
   switchHost(key: string): Promise<void> {
     return hostOps().then((m) => m.switchHost(this, key));
   }
 
-  /** Disconnects one host of this window; the sessions on it keep running. */
   removeHost(key: string): Promise<void> {
     return hostOps().then((m) => m.removeHost(this, key));
   }
 
-  /** Opens a window of its own for one host of this window, then lets go of it here. */
   moveToWindow(key: string): Promise<void> {
     return hostOps().then((m) => m.moveToWindow(this, key));
   }
 
 
 
-  /** Session changes on the background hosts of this window (notifications). */
   onOther: LinkChange | null = null;
 
 
@@ -525,9 +514,7 @@ class AppState {
     }
   }
 
-  /** Set (or clear with null/blank) the custom title of a session or plain terminal; optimistic, reverted on failure. */
   renameItem(key: string, raw: string | null): Promise<void> {
-    // Once loaded (tabs preload it when idle) the optimistic update stays synchronous.
     return tabMod ? tabMod.renameItem(this, key, raw) : tabLazy().then((m) => m.renameItem(this, key, raw));
   }
 

@@ -237,7 +237,6 @@ export function startNotifications(app: typeof App): () => void {
       setBadge(count);
     }
   };
-  // Background hosts of the window: same rules, their own settle and cooldown, named after their host.
   const gates = new Map<string, Gate>();
   let stopped = false;
   app.onOther = (l, prev, next, e) => {

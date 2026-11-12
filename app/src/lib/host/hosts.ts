@@ -4,7 +4,6 @@ import type { HostTarget } from '../types';
 // Lane 5 is reddish and would read as an error next to a status dot.
 const LANES = 4;
 
-/** Local keeps the "ready" green; every SSH host gets one of the lane colours, the same each launch. */
 export function hostColor(key: string): string {
   if (key === 'local') return 'var(--st-input)';
   let h = 0;

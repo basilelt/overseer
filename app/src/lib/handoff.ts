@@ -10,7 +10,6 @@ function asTarget(v: unknown): HostTarget | null {
   return null;
 }
 
-/** The host this window was opened for, if any. */
 export async function takeHandoff(search: string = globalThis.location?.search ?? ''): Promise<HostTarget | null> {
   if (isTauri()) {
     try {

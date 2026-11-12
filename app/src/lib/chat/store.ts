@@ -8,7 +8,6 @@ export interface ChatState {
   more: boolean;
   model: string | null;
   loaded: boolean;
-  // The newest entries were dropped to read further back; only a fresh tail repairs the window.
   cut?: boolean;
 }
 
@@ -33,7 +32,6 @@ export function applyTail(s: ChatState, p: ChatPage, keep = KEEP): ChatState {
   return { entries: c.entries, cursor: p.cursor, more: p.more || c.dropped, model: p.model ?? s.model, loaded: true, cut: false };
 }
 
-// A followed window drops its oldest entries; a scrolled-up one keeps what the user reads and drops the newest instead.
 export function applyUpdate(s: ChatState, p: ChatPage, keep = KEEP, following = true): ChatState {
   if (p.reset) return applyTail(s, p, keep);
   const last = s.entries.at(-1)?.seq ?? Infinity;

@@ -1,4 +1,3 @@
-// One formatter for every entry: building one per toLocaleTimeString call costs on each tab switch.
 let fmt: Intl.DateTimeFormat | null = null;
 
 export function hhmm(at: string): string {

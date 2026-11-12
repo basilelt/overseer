@@ -64,7 +64,6 @@ export function startPorts(app: typeof App): () => void {
       if (!app.connected) ports.state = EMPTY_PORTS;
     });
 
-    // The other hosts of the window follow the same port settings.
     $effect(() => {
       const c = JSON.parse(config);
       for (const l of app.others) untrack(() => l.client.configurePorts(c).catch(() => {}));

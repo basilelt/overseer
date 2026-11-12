@@ -6,7 +6,6 @@ import { applyEvent, type Snapshot } from '../reduce';
 import type { DaemonEvent, Project } from '../types';
 import { applyWsEvent, EMPTY_WS, itemWorkspaces, type WsData } from '../workspace/workspaces';
 
-/** Starts following a background host, from what the app last showed of it. */
 export function watch(link: HostLink, seed?: { data: Snapshot; ws: WsData; projects: Project[] }) {
   if (link.watching) return;
   if (seed) {
@@ -57,7 +56,6 @@ export async function load(link: HostLink) {
   if (w) link.ws = w;
 }
 
-/** The sidebar items of a background host and the workspace of each. */
 export function itemsOf(link: HostLink): { items: SidebarItem[]; itemWs: Map<string, string> } {
   if (!link.watching) return { items: [], itemWs: new Map() };
   const items = sidebarItems(link.data.lines, link.data.terms, link.data.tasks, {});

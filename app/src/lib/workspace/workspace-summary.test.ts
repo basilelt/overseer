@@ -18,7 +18,6 @@ describe('workspaceSummary', () => {
   it('ranks attention above running above open above paused above closed', () => {
     const order: SessionState[] = ['attention', 'running', 'open', 'paused', 'closed'];
     for (let i = 0; i < order.length; i++) {
-      // Every state from i down is present, so the most urgent one is order[i].
       expect(workspaceSummary(order.slice(i).map((s) => it_(s))).urgent).toBe(order[i]);
     }
   });

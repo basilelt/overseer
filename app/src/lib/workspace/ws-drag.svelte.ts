@@ -5,7 +5,6 @@ import type { Folder, Workspace } from '../types';
 import { savedLayouts, update } from './workspace.svelte';
 import { folderDropRefusal, planFolderDrop, planWorkspaceDrop, resolveTab, type DropPos, type DropTarget, type WsData } from './workspaces';
 
-/** A session row of the same workspace: dropping there reorders its tabs. */
 export type SessionTarget = { type: 'session'; id: string; pos: 'before' | 'after' };
 
 export interface DragDeps {
@@ -16,12 +15,10 @@ export interface DragDeps {
   patchFolder: (id: string, patch: Partial<Folder>) => Promise<unknown>;
   moveSession: (key: string, workspaceId: string) => Promise<unknown>;
   canMove: (key: string) => boolean;
-  /** Puts the tab of session `key` before or after the one of `anchor`, in workspace `zone`. */
   reorder: (zone: string, key: string, anchor: string, pos: 'before' | 'after') => void;
   refuse: (reason: Key) => void;
 }
 
-// Folder moves show at once and roll back with a notice when the daemon refuses.
 async function patchFolder(id: string, patch: Partial<Folder>) {
   const prev = app.ws;
   app.ws = { ...prev, folders: prev.folders.map((f) => (f.id === id ? { ...f, ...patch } : f)) };
@@ -34,7 +31,6 @@ async function patchFolder(id: string, patch: Partial<Folder>) {
   }
 }
 
-// The workspace on screen moves its live tab; one off screen moves its cached layout and its saved tabs.
 function reorder(zone: string, key: string, anchor: string, pos: 'before' | 'after') {
   if (app.sidebarMode === 'workspaces' && zone === app.workspaceId) return update((l) => moveTab(l, key, anchor, pos));
   const lk = layoutKeyOf(zone);
@@ -63,7 +59,6 @@ const appDeps = (): DragDeps => ({
 export class WsDrag {
   over = $state<DropTarget | SessionTarget | null>(null);
   dragging = $state(false);
-  /** What is being dragged, once the drag is under way. */
   kind = $state<'workspace' | 'folder' | 'session' | null>(null);
   /** True for the click that follows a drag, so releasing over a header does not select or fold it. */
   suppressed = false;
@@ -74,7 +69,6 @@ export class WsDrag {
     this.#deps = deps;
   }
 
-  /** `zone` is the workspace a dragged session is listed in. */
   start = (e: PointerEvent, kind: 'workspace' | 'folder' | 'session', id: string, zone?: string) => {
     if (e.button !== 0 || (kind !== 'session' && !this.#deps.persistent())) return;
     this.#drag = { kind, id, zone, x: e.clientX, y: e.clientY, active: false };
@@ -145,7 +139,6 @@ export class WsDrag {
     }
   };
 
-  /** The pointer was taken over (system gesture): drop nothing. */
   cancel = () => {
     this.#drag = null;
     this.dragging = false;
@@ -153,6 +146,5 @@ export class WsDrag {
     this.over = null;
   };
 
-  /** Where the dragged item would land relative to this workspace or folder, for the drop marker. */
   posOf = (type: 'workspace' | 'folder' | 'session', id: string): DropPos | null => (this.over && this.over.type === type && this.over.id === id ? this.over.pos : null);
 }

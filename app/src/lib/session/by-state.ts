@@ -3,10 +3,8 @@ import { bucketByTime, type TimeBucket } from '../time-bucket';
 import { isAgentItem } from '../agents';
 
 export interface WorkspaceGroup {
-  /** null for the sessions outside any workspace ("Autres sessions"), always listed last. */
   workspaceId: string | null;
   items: SidebarItem[];
-  /** The most recent activity in the group, which orders the groups. */
   at: string;
 }
 
@@ -31,9 +29,6 @@ function groupByWorkspace(items: SidebarItem[], wsOf: ReadonlyMap<string, string
   return [...by.values()].sort((a, b) => (a.workspaceId === null ? 1 : 0) - (b.workspaceId === null ? 1 : 0) || newestFirst(a, b));
 }
 
-// Mode "Par état": running, open, paused sections of workspace groups, then closed sessions by interval.
-// Sessions requiring attention are left out (the banner lists them) and plain shells are not sessions.
-// visible: the workspaces that are shown; a session of any other one is grouped with the unassigned.
 export function byState(items: SidebarItem[], wsOf: ReadonlyMap<string, string>, now: number, visible?: ReadonlySet<string>): StateSection[] {
   const sorted = items.filter((i) => isAgentItem(i)).sort(newestFirst);
   const live = LIVE.map((state) => {
