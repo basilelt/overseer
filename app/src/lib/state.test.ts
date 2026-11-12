@@ -297,6 +297,13 @@ describe('connecting', () => {
     expect(settings.explicitlyDisconnected).toBe(true);
   });
 
+  it('tells the workspace view to rebuild its layout from the saved tabs after disconnect', async () => {
+    await connect();
+    const before = workspace.epoch;
+    await app.disconnect();
+    expect(workspace.epoch).toBeGreaterThan(before);
+  });
+
   it('stops listening to daemon events after disconnect', async () => {
     await connect();
     const seen = vi.fn();

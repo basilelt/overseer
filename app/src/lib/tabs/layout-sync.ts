@@ -33,6 +33,11 @@ export function restoreLayout(rec: KnownTabs | null, items: SidebarItem[], fallb
   return arrangePanes(layoutFromTabs(tabs, active && tabs.includes(active) ? active : fallback), rec, items);
 }
 
+export function staleAfterReset(stale: Set<string>, seen: number, epoch: number, current: string): number {
+  if (epoch !== seen) stale.add(current);
+  return epoch;
+}
+
 export function savedActive(rec: KnownTabs | null, layout: Layout, items: SidebarItem[]): string | null {
   const active = rec?.active ? resolveTab(rec.active, items) : null;
   return active && allTabs(layout).includes(active) ? active : null;

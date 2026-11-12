@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { SidebarItem } from '../session/grouping';
 import { loadKnown, saveKnown } from './known-tabs';
-import { arrangePanes, layoutShape, reconcileLayout, restoreLayout, savedActive } from './layout-sync';
+import { arrangePanes, layoutShape, reconcileLayout, restoreLayout, savedActive, staleAfterReset } from './layout-sync';
 import { rememberTerms } from './tabs';
 import type { Term } from '../types';
 import { layoutFromTabs } from '../workspace/workspace.svelte';
@@ -137,5 +137,17 @@ describe('restoring a split after a reload', () => {
     vi.stubGlobal('localStorage', memoryStorage());
     saveKnown('local', '#status', { known: [], tabs: ['line:a', 'line:b'], active: 'line:a', shape: split });
     expect(loadKnown('local', '#status')?.shape).toEqual(split);
+  });
+});
+
+describe('staleAfterReset', () => {
+  it('marks the shown layout stale once when the layouts were forgotten', () => {
+    const stale = new Set<string>();
+    const seen = staleAfterReset(stale, 0, 1, 'ws1');
+    expect([...stale]).toEqual(['ws1']);
+    expect(seen).toBe(1);
+    stale.delete('ws1');
+    expect(staleAfterReset(stale, seen, 1, 'ws1')).toBe(1);
+    expect(stale.size).toBe(0);
   });
 });

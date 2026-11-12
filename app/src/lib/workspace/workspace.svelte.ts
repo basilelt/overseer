@@ -84,7 +84,7 @@ export function dropKey(l: Layout, key: string): Layout {
   return out;
 }
 
-export const workspace = $state<{ layout: Layout }>({ layout: EMPTY_LAYOUT });
+export const workspace = $state<{ layout: Layout; epoch: number }>({ layout: EMPTY_LAYOUT, epoch: 0 });
 
 export function update(fn: (l: Layout) => Layout) {
   workspace.layout = fn(workspace.layout);
@@ -147,6 +147,7 @@ export function forgetLayouts() {
   saved.clear();
   closed.clear();
   closedShells.clear();
+  workspace.epoch++;
 }
 
 let tabClosed: ((key: string, end: boolean) => void) | null = null;

@@ -11,7 +11,7 @@
   import { aggregate, resolveTab, workspaceTabs } from '../../workspace/workspaces';
   import { rememberTerms } from '../../tabs/tabs';
   import { releaseCapturedPointer } from '../../pointer-drag';
-  import { arrangePanes, layoutShape, reconcileLayout, restoreLayout, savedActive } from '../../tabs/layout-sync';
+  import { arrangePanes, layoutShape, reconcileLayout, restoreLayout, savedActive, staleAfterReset } from '../../tabs/layout-sync';
   import PaneView from './PaneView.svelte';
 
   let root: HTMLDivElement;
@@ -24,6 +24,7 @@
   );
   const loaded = $derived(app.connected && app.synced && app.data.lines.length + app.data.terms.length > 0);
   let current = '#status';
+  let seenEpoch = workspace.epoch;
   const stale = new Set<string>(['#status']);
   const localTabs = new Map<string, string>();
   const knownBy = new Map<string, Set<string> | undefined>();
@@ -64,7 +65,9 @@
     const items = app.items;
     const ws = app.currentWorkspace;
     const ready = loaded;
+    const epoch = workspace.epoch;
     untrack(() => {
+      seenEpoch = staleAfterReset(stale, seenEpoch, epoch, current);
       if (key !== current) {
         switchLayout(current, key, () => build(key, ws, mem, items, ready));
         current = key;
