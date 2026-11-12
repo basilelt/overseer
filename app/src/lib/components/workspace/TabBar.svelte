@@ -21,7 +21,7 @@
   import { wsDropTarget } from '../../workspace/workspaces';
   import { t, type Key } from '../../i18n.svelte';
   import { app, tabLazy } from '../../state.svelte';
-  import { CONFIRM_WINDOW_MS } from '../../timing';
+  import { armedConfirm } from '../../armed-confirm.svelte';
   import { whenIdle } from '../../idle';
   import { closePaneAt, closeTabAt, openInFocused, reorderTab, split, update, type Pane } from '../../workspace/workspace.svelte';
   import AgentIcon from '../sidebar/AgentIcon.svelte';
@@ -176,25 +176,17 @@
   const term = $derived(activeItem?.termId ? app.data.terms.find((x) => x.id === activeItem.termId) : undefined);
   const killable = $derived(!!term && !term.exited);
 
-  let confirming = $state(false);
+  const confirm = armedConfirm();
   let killing = $state(false);
-  let confirmTimer: ReturnType<typeof setTimeout> | undefined;
 
   $effect(() => {
     term?.id;
-    confirming = false;
-    clearTimeout(confirmTimer);
+    confirm.reset();
   });
 
   async function kill() {
     if (!term || !killable) return;
-    if (!confirming) {
-      confirming = true;
-      confirmTimer = setTimeout(() => (confirming = false), CONFIRM_WINDOW_MS);
-      return;
-    }
-    clearTimeout(confirmTimer);
-    confirming = false;
+    if (!confirm.press()) return;
     killing = true;
     try {
       await app.api.killTerm(term.id);
@@ -305,14 +297,14 @@
     {#if term}
       <button
         class="icon-btn kill"
-        class:confirm={confirming}
+        class:confirm={confirm.armed}
         disabled={!killable || killing}
-        title={!killable ? t('term.killExited') : confirming ? t('term.killConfirm') : t('term.kill')}
-        aria-label={confirming ? t('term.killConfirm') : t('term.kill')}
+        title={!killable ? t('term.killExited') : confirm.armed ? t('term.killConfirm') : t('term.kill')}
+        aria-label={confirm.armed ? t('term.killConfirm') : t('term.kill')}
         onclick={kill}
-        onblur={() => (confirming = false)}
+        onblur={confirm.reset}
       >
-        <OctagonX size={14} />{#if confirming}<span>{t('term.killConfirmShort')}</span>{/if}
+        <OctagonX size={14} />{#if confirm.armed}<span>{t('term.killConfirmShort')}</span>{/if}
       </button>
     {/if}
     <button class="icon-btn" title={t('term.splitRight')} aria-label={t('term.splitRight')} onclick={() => update((l) => split(l, 'horizontal'))}

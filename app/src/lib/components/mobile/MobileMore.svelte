@@ -35,6 +35,7 @@
   import { command } from '../../commands/commands';
   import { registerMore, type CommandId } from '../../commands/commands-more';
   import { apk, at, pillLabel } from '../../mobile/apk-update.svelte';
+  import { armedConfirm } from '../../armed-confirm.svelte';
   import RotateCw from '@lucide/svelte/icons/rotate-cw';
 
   registerMore();
@@ -61,11 +62,11 @@
   const phase = $derived(connLabel(conn));
   const hostDot = $derived(hostChipDot(conn.phase));
   const host = $derived(conn.target.kind === 'local' ? t('host.local') : conn.target.label || t('mobile.more.notConnected'));
-  let confirmRestart = $state(false);
+  const confirmRestart = armedConfirm();
   let restarting = $state(false);
 
   async function restart() {
-    if (!confirmRestart) return void (confirmRestart = true);
+    if (!confirmRestart.press()) return;
     restarting = true;
     try {
       await app.restartServer();
@@ -73,7 +74,6 @@
       app.notify(String((e as Error)?.message ?? e), 'error');
     }
     restarting = false;
-    confirmRestart = false;
   }
 
   const themes: { id: ThemePref; label: () => string }[] = [
@@ -98,9 +98,9 @@
     <button class="row" onclick={() => app.open('connect')}><ArrowLeftRight size={18} /><span class="label">{t('mobile.more.switchHost')}</span><ChevronRight size={16} /></button>
     <button class="row" onclick={() => app.open('connect', 'devicekey')}><KeyRound size={18} /><span class="label">{t('mobile.more.deviceKey')}</span><ChevronRight size={16} /></button>
     {#if app.connected && conn.server}
-      <button class="row" class:danger={confirmRestart} disabled={restarting} onclick={restart}
+      <button class="row" class:danger={confirmRestart.armed} disabled={restarting} onclick={restart}
         ><RotateCw size={18} /><span class="text"
-          ><span class="label">{t(confirmRestart ? 'server.restartConfirm' : 'server.restartTo', { version: conn.server.installed })}</span><span class="sub faint wrap"
+          ><span class="label">{t(confirmRestart.armed ? 'server.restartConfirm' : 'server.restartTo', { version: conn.server.installed })}</span><span class="sub faint wrap"
             >{t(conn.server.terms === 0 ? 'server.updateIdle' : conn.server.terms === 1 ? 'server.updateOne' : 'server.update', { version: conn.server.installed, n: conn.server.terms })}</span
           ></span
         ></button

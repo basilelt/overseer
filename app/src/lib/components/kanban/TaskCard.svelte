@@ -14,7 +14,7 @@
   import { cardMeta, isSession, modelLabel, quadrant, relTime, type CardStatus } from '../../kanban/kanban';
   import type { Task } from '../../types';
   import { app, projectName } from '../../state.svelte';
-  import { CONFIRM_WINDOW_MS } from '../../timing';
+  import { armedConfirm } from '../../armed-confirm.svelte';
   import { agentName, findAgent } from '../../agents';
   import AgentGlyph from '../ui/AgentGlyph.svelte';
   import { isDone, isPending, isRunning, isTesting, isUnstarted } from '../../kanban/task-status';
@@ -65,11 +65,10 @@
     onkeydown?: (e: KeyboardEvent) => void;
   } = $props();
 
-  let confirming = $state(false);
+  const confirm = armedConfirm();
   let editing = $state(false);
   let draft = $state('');
   let openTimer: ReturnType<typeof setTimeout> | undefined;
-  let confirmTimer: ReturnType<typeof setTimeout> | undefined;
 
   const age = $derived(relTime(task.updatedAt));
   const session = $derived(isSession(task));
@@ -111,14 +110,7 @@
 
   function askDelete(e: MouseEvent) {
     e.stopPropagation();
-    if (confirming) {
-      clearTimeout(confirmTimer);
-      confirming = false;
-      ondelete?.();
-      return;
-    }
-    confirming = true;
-    confirmTimer = setTimeout(() => (confirming = false), CONFIRM_WINDOW_MS);
+    if (confirm.press()) ondelete?.();
   }
 
   function act(fn?: () => void) {
@@ -258,12 +250,12 @@
           {#if !session}
             <button
               class="act del"
-              class:confirm={confirming}
-              title={confirming ? t('kanban.deleteConfirm', { n: task.number }) : t('common.delete')}
-              aria-label={confirming ? t('kanban.deleteConfirm', { n: task.number }) : t('common.delete')}
+              class:confirm={confirm.armed}
+              title={confirm.armed ? t('kanban.deleteConfirm', { n: task.number }) : t('common.delete')}
+              aria-label={confirm.armed ? t('kanban.deleteConfirm', { n: task.number }) : t('common.delete')}
               onclick={askDelete}
             >
-              <svg class="i" width="13" height="13" aria-hidden="true"><use href="#sbi-trash" /></svg>{#if confirming}<span>{t('common.confirm')}</span>{/if}
+              <svg class="i" width="13" height="13" aria-hidden="true"><use href="#sbi-trash" /></svg>{#if confirm.armed}<span>{t('common.confirm')}</span>{/if}
             </button>
           {/if}
           {#if onmore}

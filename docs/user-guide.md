@@ -1852,7 +1852,8 @@ Stopped: no live agent process, resumable); the toggle is at the top of the side
   workspace folder. Views (browser, **Review changes**, Git graph, worktrees, System, Usage, PR reviews)
   open from the **Views** section of the command palette (Cmd/Ctrl+P). The palette and the phone
   **More** sheet list only the commands that can run now: a command that needs a connection (or a
-  project, or no recording in progress) is hidden, not greyed out. Drag tabs
+  project, or no recording in progress) is hidden, not greyed out. A destructive button (end a terminal, delete a task, restart the server
+  from the phone **More** sheet) arms on the first press and acts on a second press within 3 seconds. Drag tabs
   to reorder (the sidebar follows), middle-click or `×` to close (this ends the agent or shell; right-click > **Hide tab
   (keep running)** only hides it), split right or down. The
   order is saved in the daemon, so it comes back on another machine.
