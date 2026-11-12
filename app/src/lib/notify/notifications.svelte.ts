@@ -5,6 +5,7 @@ import { t } from '../i18n.svelte';
 import type { app as App } from '../state.svelte';
 import { updater, ut } from '../updater.svelte';
 import { hostKey } from '../window';
+import { localStore } from '../storage';
 
 export class NotificationCenter {
   entries = $state.raw<Entry[]>([]);
@@ -12,7 +13,7 @@ export class NotificationCenter {
   private host = '';
 
   constructor(
-    private store: KV | undefined = globalThis.localStorage,
+    private store: KV | undefined = localStore(),
     private now: () => number = () => Date.now(),
   ) {}
 

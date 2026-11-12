@@ -1,4 +1,4 @@
-import { KEY_DEMO, KEY_DEMO_PREFIX } from '../storage';
+import { KEY_DEMO, KEY_DEMO_PREFIX, localStore } from '../storage';
 
 export const DEMO_KEY = KEY_DEMO;
 export const DEMO_PREFIX = KEY_DEMO_PREFIX;
@@ -7,7 +7,7 @@ let real: Storage | undefined;
 
 function storage(): Storage | undefined {
   try {
-    return real ?? globalThis.localStorage;
+    return real ?? localStore();
   } catch {}
 }
 

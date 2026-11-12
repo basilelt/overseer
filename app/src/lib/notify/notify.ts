@@ -8,7 +8,7 @@ import type { DaemonEvent, LocalLine } from '../types';
 import { allIdle } from '../workspace/workspaces';
 import { MAX_COOLDOWN_S } from './notify-prefs';
 import { startOs } from './os-notify';
-import { KEY_NOTIFIED } from '../storage';
+import { KEY_NOTIFIED, localStore } from '../storage';
 import { isTesting } from '../kanban/task-status';
 
 export type NoticeKind = 'needsInput' | 'taskTesting' | 'finished' | 'failed' | 'allIdle';
@@ -225,7 +225,7 @@ export function startNotifications(app: typeof App): () => void {
   const gate = notifyGate(
     (n, id) => app.notice({ id, kind: n.kind, title: n.title, body: n.body || undefined, action: n.key ? { kind: 'line', key: n.key } : undefined, target: n.target ?? n.key ?? undefined }),
     (n) => stillDue(app.data, n),
-    globalThis.localStorage,
+    localStore(),
     Date.now,
     () => Math.min(MAX_COOLDOWN_S, Math.max(0, settings.notifyCooldown)) * 1000,
   );

@@ -11,6 +11,7 @@ import { rememberHost, saveSettings, settings } from '../settings/settings.svelt
 import type { app as AppState } from '../state.svelte';
 import type { DaemonEvent, HostTarget, LocalLine } from '../types';
 import { hostKey, isMainWindow, openWindow } from '../window';
+import { localStore } from '../storage';
 
 type App = typeof AppState;
 
@@ -169,7 +170,7 @@ export function pushHost(app: App, gates: Map<string, Gate>, l: HostLink, prev: 
           target: n.target ?? n.key ?? undefined,
         }),
       (n) => stillDue(l.data, n),
-      globalThis.localStorage,
+      localStore(),
       Date.now,
       () => Math.min(MAX_COOLDOWN_S, Math.max(0, settings.notifyCooldown)) * 1000,
     );

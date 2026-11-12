@@ -1,3 +1,5 @@
+import { localStore } from './storage';
+
 export interface DraftStorage {
   getItem(k: string): string | null;
   setItem(k: string, v: string): void;
@@ -23,14 +25,6 @@ function hookPageHide() {
   document.addEventListener('visibilitychange', () => document.visibilityState === 'hidden' && flush());
 }
 
-const storageOf = (): DraftStorage | null => {
-  try {
-    return globalThis.localStorage ?? null;
-  } catch {
-    return null;
-  }
-};
-
 export class Drafts<T = string> {
   private map: Map<string, T> | null = null;
   private timer: unknown = null;
@@ -48,7 +42,7 @@ export class Drafts<T = string> {
     this.max = opts.max ?? 50;
     this.maxLength = opts.maxLength ?? 20_000;
     this.delay = opts.delay ?? 400;
-    this.storage = opts.storage === undefined ? storageOf() : opts.storage;
+    this.storage = opts.storage === undefined ? (localStore() ?? null) : opts.storage;
     this.timers = opts.timers ?? { set: (fn, ms) => setTimeout(fn, ms), clear: (id) => clearTimeout(id as ReturnType<typeof setTimeout>) };
     all.add(this as Drafts<unknown>);
     hookPageHide();

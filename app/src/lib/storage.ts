@@ -20,17 +20,17 @@ export const KEY_DEMO = 'overseer.demo';
 export const KEY_DEMO_PREFIX = 'overseer.demo:';
 export const KEY_MOCK_IMPORTED = 'overseer.mockImported';
 
-function store(): Storage | null {
+export function localStore(): Storage | undefined {
   try {
-    return globalThis.localStorage ?? null;
+    return globalThis.localStorage ?? undefined;
   } catch {
-    return null;
+    return undefined;
   }
 }
 
 export function readItem(key: string): string | null {
   try {
-    return store()?.getItem(key) ?? null;
+    return localStore()?.getItem(key) ?? null;
   } catch {
     return null;
   }
@@ -38,7 +38,7 @@ export function readItem(key: string): string | null {
 
 export function writeItem(key: string, value: string): boolean {
   try {
-    const s = store();
+    const s = localStore();
     if (!s) return false;
     s.setItem(key, value);
     return true;
@@ -49,7 +49,7 @@ export function writeItem(key: string, value: string): boolean {
 
 export function removeItem(key: string): boolean {
   try {
-    const s = store();
+    const s = localStore();
     if (!s) return false;
     s.removeItem(key);
     return true;
