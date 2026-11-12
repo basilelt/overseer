@@ -742,8 +742,15 @@ mod tests {
 
     #[test]
     fn app_data_covers_the_tauri_identifier() {
+        let conf = std::fs::read_to_string(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("app/src-tauri/tauri.conf.json"),
+        )
+        .unwrap();
+        let conf: serde_json::Value = serde_json::from_str(&conf).unwrap();
+        let id = conf["identifier"].as_str().unwrap();
+        assert_eq!(APP_ID, id);
         let p = app_data_paths();
         assert!(!p.is_empty());
-        assert!(p.iter().all(|p| p.to_string_lossy().contains(APP_ID)));
+        assert!(p.iter().all(|p| p.to_string_lossy().contains(id)));
     }
 }

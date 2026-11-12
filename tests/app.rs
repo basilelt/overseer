@@ -3017,11 +3017,9 @@ fn profiles_list_and_apply_gemini_and_antigravity_subagent_models_over_http() {
         "/v1/profiles/apply-files",
         json!({"profile": "google-agents", "cwd": wt, "dryRun": false, "files": files}),
     );
-    assert!(applied["files"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .all(|f| f["written"] == true));
+    let written = applied["files"].as_array().unwrap();
+    assert!(!written.is_empty(), "{applied}");
+    assert!(written.iter().all(|f| f["written"] == true));
     for file in applied["files"].as_array().unwrap() {
         let backup = file["backup"].as_str().unwrap();
         let previous = std::fs::read_to_string(backup).unwrap();
@@ -3355,6 +3353,7 @@ fn organize_routes_build_record_and_apply_proposals() {
     assert_eq!(r["results"][0]["status"], "done", "{r}");
     assert_eq!(r["results"][1]["status"], "done", "{r}");
     let again = app.ok("POST", &apply, json!({"actionIds": ["a1", "a2"]}));
+    assert_eq!(again["results"].as_array().unwrap().len(), 2, "{again}");
     assert!(
         again["results"]
             .as_array()

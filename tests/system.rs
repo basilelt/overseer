@@ -44,6 +44,14 @@ fn system_snapshot_history_agents_and_stream() {
         .unwrap()
         .iter()
         .all(|p| p["t"].as_i64().unwrap() > last));
+    let all = app.ok("GET", "/v1/system?since=0", serde_json::Value::Null);
+    let times: Vec<i64> = all["history"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|p| p["t"].as_i64().unwrap())
+        .collect();
+    assert!(times.contains(&last), "{times:?}");
 
     let mut s = UnixStream::connect(&app.fx.sock).unwrap();
     s.set_read_timeout(Some(Duration::from_millis(200)))

@@ -162,7 +162,7 @@ fn sandbox_with_its_own_home_installs_and_keeps_its_hooks() {
     let b = Sbx::new("sandbox");
     let state = b.other_state();
     assert!(b.settings().is_empty());
-    let (d, log) = b.daemon(&state);
+    let (d, _log) = b.daemon(&state);
     wait(|| b.shim().exists());
     let (code, body) = exchange(
         UnixStream::connect(&b.sock).unwrap(),
@@ -172,17 +172,11 @@ fn sandbox_with_its_own_home_installs_and_keeps_its_hooks() {
         "unix",
     );
     assert_eq!(code, 200, "{body}");
-    assert!(names(&b.settings(), &state));
+    let installed = b.settings();
+    assert!(names(&installed, &state));
     drop(d);
     let _ = std::fs::remove_file(&b.sock);
-    let (_d2, log2) = b.daemon(&state);
-    let _ = wait_quiet(&log2);
-    assert!(names(&b.settings(), &state));
-    let text = std::fs::read_to_string(&log).unwrap() + &std::fs::read_to_string(&log2).unwrap();
-    assert!(!text.contains("not repairing hooks"), "{text}");
-}
-
-fn wait_quiet(_log: &Path) -> bool {
+    let (_d2, _log2) = b.daemon(&state);
     std::thread::sleep(std::time::Duration::from_millis(500));
-    true
+    assert_eq!(b.settings(), installed);
 }

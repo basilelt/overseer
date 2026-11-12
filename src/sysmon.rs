@@ -1471,16 +1471,15 @@ map auto_home            0         0         0   100%    /System/Volumes/Data/ho
     }
 
     #[test]
+    #[cfg(target_os = "linux")]
     fn live_sample_on_this_machine() {
         let mut s = platform();
         s.sample(now_ms());
         std::thread::sleep(Duration::from_millis(50));
         let (v, pt) = s.sample(now_ms());
-        if cfg!(target_os = "linux") {
-            assert_eq!(v["supported"], true);
-            assert!(pt.mem_total > 0);
-            assert!(pt.cpu.is_some());
-            assert!(!v["top"]["mem"].as_array().unwrap().is_empty());
-        }
+        assert_eq!(v["supported"], true);
+        assert!(pt.mem_total > 0);
+        assert!(pt.cpu.is_some());
+        assert!(!v["top"]["mem"].as_array().unwrap().is_empty());
     }
 }

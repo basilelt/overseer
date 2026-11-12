@@ -228,11 +228,9 @@ fn board_actions_on_another_station_go_through_the_api() {
     assert_eq!((code, v["ticketKey"].as_str()), (200, Some("AS-9")), "{v}");
     assert_eq!(t.line(SID)["line"]["ticketKey"], "AS-9");
     let (_, audit) = api.http("GET", &format!("/v1/lines/{id}/commands"), ADMIN, None);
-    assert!(audit
-        .as_array()
-        .unwrap()
-        .iter()
-        .all(|c| c["requestedBy"] == "bob"));
+    let audit = audit.as_array().unwrap();
+    assert!(!audit.is_empty(), "{audit:?}");
+    assert!(audit.iter().all(|c| c["requestedBy"] == "bob"));
 
     let mut stale = file.clone();
     stale["lastSeenAt"] = json!("2020-01-01T00:00:00Z");

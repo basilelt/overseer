@@ -115,7 +115,27 @@ fn hold_refuses_each_unsafe_case() {
     assert_eq!((code, v["action"].as_str()), (0, Some("would-hold")));
     assert_eq!(t.line(SID)["line"]["state"], "active");
     let log = std::fs::read_to_string(t.base.join("state/actions.log")).unwrap();
-    assert!(log.lines().count() >= 7 && log.contains("would-hold"));
+    let logged: Vec<(String, Vec<String>)> = log
+        .lines()
+        .map(|l| {
+            let r: Value = serde_json::from_str(l).unwrap();
+            let failed = T::failed(&r["result"]);
+            (r["result"]["action"].as_str().unwrap().to_string(), failed)
+        })
+        .collect();
+    let refused = |p: &str| ("none".to_string(), vec![p.to_string()]);
+    assert_eq!(
+        logged,
+        vec![
+            refused("inputEmpty"),
+            refused("atPrompt"),
+            refused("noToolRunning"),
+            refused("noToolRunning"),
+            refused("notPinned"),
+            refused("notNeedsInput"),
+            ("would-hold".to_string(), vec![]),
+        ]
+    );
 }
 
 #[test]

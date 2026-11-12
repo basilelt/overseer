@@ -604,14 +604,12 @@ mod tests {
             .map(|p| s.find(p).unwrap_or_else(|| panic!("{p}")))
             .collect();
         assert!(pos.windows(2).all(|w| w[0] < w[1]), "{pos:?}");
-        assert_eq!(
-            remote_command("1.0.0", true),
-            format!("exec sh -c '{}'", bootstrap_script("1.0.0", true))
-        );
+        let c = remote_command("1.0.0", true);
+        assert!(c.starts_with("exec sh -c 'v=1.0.0; d=") && c.ends_with("exec \"$b\" proxy'"));
     }
 
     #[test]
-    #[should_panic]
+    #[should_panic(expected = "assertion failed: version")]
     fn bootstrap_rejects_odd_versions() {
         bootstrap_script("1.0; rm -rf ~", false);
     }
@@ -911,7 +909,7 @@ mod tests {
         assert_eq!(res.unwrap().as_deref(), Some(SERVER_VERSION));
         assert_eq!(
             line,
-            format!("INSTALL 4 {}\nstub", install::sha256_hex(b"stub"))
+            "INSTALL 4 725c546b990dd1b41f3d5791b37c3c0edcb1f08cf150bdae32a73dfd166e02d7\nstub"
         );
         assert_eq!(
             steps,

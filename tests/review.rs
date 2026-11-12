@@ -301,16 +301,15 @@ fn live_review_comments_reach_the_agent_and_come_back() {
         "{text}"
     );
     assert!(text.ends_with("Overall: Nearly there."));
-    assert!(sub["threads"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .all(|t| t["status"] == "sent"
-            && t["comments"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .all(|c| c["pending"] == false)));
+    let threads = sub["threads"].as_array().unwrap();
+    assert!(!threads.is_empty(), "{sub}");
+    assert!(threads.iter().all(|t| t["status"] == "sent"
+        && !t["comments"].as_array().unwrap().is_empty()
+        && t["comments"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|c| c["pending"] == false)));
     assert_eq!(
         app.req("DELETE", &format!("/v1/review/comments/{id2}"), Value::Null)
             .0,
