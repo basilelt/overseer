@@ -14,6 +14,7 @@
   import { cardMeta, isDone, isSession, modelLabel, quadrant, relTime, type CardStatus } from '../../kanban';
   import type { Task } from '../../types';
   import { app, projectName } from '../../state.svelte';
+  import { CONFIRM_WINDOW_MS } from '../../timing';
   import { agentName, findAgent } from '../../agents';
   import AgentGlyph from '../ui/AgentGlyph.svelte';
   import { isRunning, isTesting } from '../../task-status';
@@ -117,7 +118,7 @@
       return;
     }
     confirming = true;
-    confirmTimer = setTimeout(() => (confirming = false), 3000);
+    confirmTimer = setTimeout(() => (confirming = false), CONFIRM_WINDOW_MS);
   }
 
   function act(fn?: () => void) {

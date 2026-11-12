@@ -15,6 +15,7 @@
   import { t, type Key } from '../../i18n.svelte';
   import { isMockClient } from '../../client';
   import { app } from '../../state.svelte';
+  import { CONNECT_CLOSE_DELAY_MS } from '../../timing';
   import { saveSettings, settings } from '../../settings.svelte';
   import { connectHow, preferredChoice, type ConnectHow, type HostChoice } from '../../host-choice';
   import { hostKey, openWindow } from '../../window';
@@ -85,7 +86,7 @@
 
   $effect(() => {
     if (!started || !mine || app.conn.phase !== 'connected') return;
-    const id = setTimeout(onclose, 600);
+    const id = setTimeout(onclose, CONNECT_CLOSE_DELAY_MS);
     return () => clearTimeout(id);
   });
 

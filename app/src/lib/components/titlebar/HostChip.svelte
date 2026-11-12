@@ -2,27 +2,14 @@
   import ChevronDown from '@lucide/svelte/icons/chevron-down';
   import Monitor from '@lucide/svelte/icons/monitor';
   import Server from '@lucide/svelte/icons/server';
-  import { connLabel } from '../../conn-label';
+  import { connLabel, HOST_CHIP_DOT } from '../../conn-label';
   import { t } from '../../i18n.svelte';
   import { preload } from '../../idle';
   import { isMockClient } from '../../client';
   import { app } from '../../state.svelte';
-  import type { ConnPhase } from '../../types';
 
   let open = $state(false);
   const menu = preload(() => import('./HostMenu.svelte'));
-
-  const PHASE_COLOR: Record<ConnPhase, string> = {
-    idle: 'var(--st-held)',
-    connecting: 'var(--st-working)',
-    checking: 'var(--st-working)',
-    downloading: 'var(--st-working)',
-    installing: 'var(--st-working)',
-    starting: 'var(--st-working)',
-    reconnecting: 'var(--st-working)',
-    connected: 'var(--st-input)',
-    error: 'var(--st-failed)',
-  };
 
   const conn = $derived(app.conn);
   const many = $derived(app.hosts.length > 1);
@@ -48,7 +35,7 @@
   >
     {#if conn.target.kind === 'local'}<Monitor size={13} />{:else}<Server size={13} />{/if}
     <span class="label">{label}</span>
-    <span class="dot" class:pulse={PHASE_COLOR[conn.phase] === 'var(--st-working)'} style:background={PHASE_COLOR[conn.phase]}></span>
+    <span class="dot" class:pulse={HOST_CHIP_DOT[conn.phase] === 'var(--st-working)'} style:background={HOST_CHIP_DOT[conn.phase]}></span>
     <ChevronDown size={12} />
   </button>
   {#if open}

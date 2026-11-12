@@ -24,6 +24,7 @@
   import { wsDropTarget } from '../../workspaces';
   import { t, type Key } from '../../i18n.svelte';
   import { app, tabLazy } from '../../state.svelte';
+  import { CONFIRM_WINDOW_MS } from '../../timing';
   import { whenIdle } from '../../idle';
   import { closePaneAt, closeTabAt, openInFocused, reorderTab, split, update, type Pane } from '../../workspace.svelte';
   import AgentIcon from '../sidebar/AgentIcon.svelte';
@@ -208,7 +209,7 @@
     if (!term || !killable) return;
     if (!confirming) {
       confirming = true;
-      confirmTimer = setTimeout(() => (confirming = false), 3000);
+      confirmTimer = setTimeout(() => (confirming = false), CONFIRM_WINDOW_MS);
       return;
     }
     clearTimeout(confirmTimer);

@@ -27,7 +27,7 @@
   import { gt } from '../../github/strings';
   import { dt } from '../../diag.svelte';
   import type { Component } from 'svelte';
-  import { connLabel } from '../../conn-label';
+  import { connLabel, phoneHostDot } from '../../conn-label';
   import { t } from '../../i18n.svelte';
   import { saveSettings, settings, type ThemePref } from '../../settings.svelte';
   import { app } from '../../state.svelte';
@@ -92,7 +92,7 @@
         <span class="title">{host}</span>
         <span class="sub faint">{conn.resolved ?? phase}{conn.version && conn.phase === 'connected' ? ` · v${conn.version}` : ''}</span>
       </span>
-      <span class="dot" style:background={conn.phase === 'connected' ? 'var(--st-input)' : conn.phase === 'error' ? 'var(--st-failed)' : 'var(--st-held)'}></span>
+      <span class="dot" style:background={phoneHostDot(conn.phase)}></span>
     </div>
     <button class="row" onclick={() => app.open('connect')}><ArrowLeftRight size={18} /><span class="label">{t('mobile.more.switchHost')}</span><ChevronRight size={16} /></button>
     <button class="row" onclick={() => app.open('connect', 'devicekey')}><KeyRound size={18} /><span class="label">{t('mobile.more.deviceKey')}</span><ChevronRight size={16} /></button>

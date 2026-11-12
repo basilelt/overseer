@@ -20,6 +20,7 @@
   import { t, type Key } from '../../i18n.svelte';
   import { isMockClient } from '../../client';
   import { app } from '../../state.svelte';
+  import { CONNECT_CLOSE_DELAY_MS } from '../../timing';
   import { isBusy, steps } from '../../conn';
   import { exitDemo, isDemo, startDemo } from '../../demo';
   import { connectHint, describeHost, emptyForm, formFromHost, hostFromForm, type FormError, type HostForm } from '../../mobile/hosts';
@@ -60,7 +61,7 @@
 
   $effect(() => {
     if (screen !== 'progress' || app.conn.phase !== 'connected') return;
-    const id = setTimeout(onclose, 600);
+    const id = setTimeout(onclose, CONNECT_CLOSE_DELAY_MS);
     return () => clearTimeout(id);
   });
 
