@@ -1265,7 +1265,9 @@ pub fn query(
             json!({
                 "agent": a,
                 "today": today,
-                "limits": limits_json(conn, a, q.now, q.oauth, q.tap.as_ref().filter(|_| a == "claude")),
+                "limits": limits_json(conn, a, q.now, q.oauth, q.tap
+                    .as_ref()
+                    .filter(|_| crate::agents::get(a).is_some_and(|x| x.oauth_limits))),
             })
         })
         .collect();

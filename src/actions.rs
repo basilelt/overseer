@@ -1172,9 +1172,9 @@ pub fn status(ctx: &Ctx, lines: &[Line]) -> Value {
         "version": env!("CARGO_PKG_VERSION"),
         "apiConnected": false,
         "outboxPending": 0,
-        "activeCount": count("active"),
-        "idleCount": count("idle"),
-        "heldCount": count("held"),
+        "activeCount": count(crate::wire::STATE_ACTIVE),
+        "idleCount": count(crate::wire::STATE_IDLE),
+        "heldCount": count(crate::wire::STATE_HELD),
         "aliveCount": lines.iter().filter(|l| l.alive()).count(),
         "orphans": lines.iter().filter(|l| l.orphan).map(|l| l.id.clone()).collect::<Vec<_>>(),
         "duplicates": lines.iter().filter(|l| l.duplicate).map(|l| l.id.clone()).collect::<Vec<_>>(),
@@ -1200,7 +1200,7 @@ pub fn memory_policy(ctx: &Ctx, lines: &[Line], st: &Value, threshold: f64) -> V
     let over = used.is_some_and(|u| u > threshold);
     let mut idle: Vec<&Line> = lines
         .iter()
-        .filter(|l| over && l.state == "idle" && l.alive())
+        .filter(|l| over && l.state == crate::wire::STATE_IDLE && l.alive())
         .collect();
     idle.sort_by_key(|l| l.last_activity_ms);
     let candidates: Vec<Value> = idle

@@ -665,7 +665,7 @@ pub fn create(ctx: &Ctx, b: &Value) -> Res<Task> {
         return Err(bad("a subtask cannot run a quorum"));
     }
     if parent.as_ref().is_some_and(|p| p.quorum.is_some()) {
-        status = "auto";
+        status = status::AUTO;
     }
     let profile = profile_of(ctx, &b["profile"])?;
     let task_type = task_type_of(&b["taskType"])?;
@@ -837,15 +837,15 @@ pub fn patch(ctx: &Ctx, id: &str, b: &Value) -> Res<Task> {
                 t.status = s.into();
                 t.manual_status = Some(s.into());
             }
-            "status" if v == "in_progress" && t.status != "in_progress" => {
+            "status" if v == status::IN_PROGRESS && t.status != status::IN_PROGRESS => {
                 if t.live_term().is_none() {
                     return Err(bad("use POST /v1/tasks/{id}/start to start a task"));
                 }
-                t.status = "in_progress".into();
+                t.status = status::IN_PROGRESS.into();
                 t.started_ms = Some(crate::procs::now_ms());
                 seen_busy(|s| s.remove(&t.id));
             }
-            "status" if v == "in_progress" => {}
+            "status" if v == status::IN_PROGRESS => {}
             "status" => t.status = pick(b, k, &status::TASK_PATCH_SETTABLE, "")?.into(),
             "agent" => {
                 t.agent = agent_of(b, k)?
@@ -1192,7 +1192,7 @@ pub(crate) fn start_with_args(
     })
     .map_err(|e| (409, e))?;
     t.term_id = Some(term.info().id);
-    t.status = "in_progress".into();
+    t.status = status::IN_PROGRESS.into();
     t.error = None;
     t.session_state = None;
     t.started_ms = Some(crate::procs::now_ms());
@@ -1242,7 +1242,7 @@ pub fn review(ctx: &Ctx, id: &str, b: &Value) -> Res<Value> {
                     "a session task takes feedback in its session tab".into(),
                 ));
             }
-            t.status = "in_progress".into();
+            t.status = status::IN_PROGRESS.into();
         }
         "approve" => {
             if let Some(text) = pr_followup(b["merge"] == true, b["approvePr"] == true) {
@@ -1255,7 +1255,7 @@ pub fn review(ctx: &Ctx, id: &str, b: &Value) -> Res<Value> {
                 crate::deliver::send(&crate::deliver::Channel::Term(term), &text, None, "")
                     .map_err(|e| (500, e))?;
             }
-            t.status = "completed".into();
+            t.status = COMPLETED.into();
             t.session_state = Some(REVIEWED.into());
         }
         "reject" => match (t.live_term(), message) {
@@ -1264,14 +1264,14 @@ pub fn review(ctx: &Ctx, id: &str, b: &Value) -> Res<Value> {
                     crate::deliver::send(&crate::deliver::Channel::Term(term), m, None, "")
                         .map_err(|e| (500, e))?;
                 }
-                t.status = "in_progress".into();
+                t.status = status::IN_PROGRESS.into();
                 t.started_ms = Some(crate::procs::now_ms());
                 seen_busy(|s| s.remove(&t.id));
             }
             (None, Some(_)) => {
                 return Err((409, "the agent is not running; start the task again".into()))
             }
-            (None, None) => t.status = "pending".into(),
+            (None, None) => t.status = PENDING.into(),
         },
         _ => {
             let wt = t
@@ -1291,7 +1291,7 @@ pub fn review(ctx: &Ctx, id: &str, b: &Value) -> Res<Value> {
                 .and_then(|_| git_out(&wt, &["rev-parse", "HEAD"]))
                 .map_err(|e| (409, e))?;
             out["commit"] = json!(sha.trim());
-            t.status = "completed".into();
+            t.status = COMPLETED.into();
             t.session_state = Some(REVIEWED.into());
         }
     }
@@ -1324,8 +1324,8 @@ const REVIEW_MERGE_WINDOW_MS: i64 = 6 * 3_600_000;
 fn merge_candidate(t: &Task, now: i64) -> bool {
     !t.from_session()
         && match t.status.as_str() {
-            "in_testing" => true,
-            "completed" => {
+            status::IN_TESTING => true,
+            COMPLETED => {
                 t.session_state.as_deref() == Some(REVIEWED)
                     && now - t.updated_ms < REVIEW_MERGE_WINDOW_MS
                     && t.worktree_path
@@ -1345,7 +1345,7 @@ pub fn tick(ctx: &Ctx, lines: &[Line]) {
     };
     for mut t in tasks
         .into_iter()
-        .filter(|t| t.status == "in_progress" && !t.from_session())
+        .filter(|t| t.status == status::IN_PROGRESS && !t.from_session())
     {
         let term = t.term_id.as_deref().and_then(term::get);
         let mut changed = false;
@@ -1377,7 +1377,11 @@ pub fn tick(ctx: &Ctx, lines: &[Line]) {
             _ => None,
         };
         let one_shot = crate::task_agents::is_organizer(&t) || crate::quorum::is_reviewer(&t);
-        let done = if one_shot { "completed" } else { "in_testing" };
+        let done = if one_shot {
+            COMPLETED
+        } else {
+            status::IN_TESTING
+        };
         if let Some(err) = ended {
             t.status = done.into();
             t.error = err;
@@ -1432,7 +1436,9 @@ pub fn tick(ctx: &Ctx, lines: &[Line]) {
         }
         let Some(next) = tasks
             .iter()
-            .filter(|t| t.status == "auto" && !t.from_session() && blockers(t, &tasks).is_empty())
+            .filter(|t| {
+                t.status == status::AUTO && !t.from_session() && blockers(t, &tasks).is_empty()
+            })
             .min_by(|a, b| {
                 (a.rank, a.created_ms)
                     .partial_cmp(&(b.rank, b.created_ms))

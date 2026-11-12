@@ -357,7 +357,7 @@ pub fn deterministic(i: &Input) -> Value {
         reasons: Map::new(),
     };
     let local = |l: &Line| l.station_id.is_empty() || l.station_id == i.station;
-    let live = |l: &&Line| l.state != "hung-up" && !l.duplicate;
+    let live = |l: &&Line| l.state != crate::wire::STATE_HUNG_UP && !l.duplicate;
     let repo_root = |l: &Line| {
         let path = if l.worktree_path.is_empty() {
             &l.cwd
@@ -533,7 +533,7 @@ fn pick_up(i: &Input) -> Vec<Value> {
         .lines
         .iter()
         .filter(|l| {
-            l.state != "hung-up"
+            l.state != crate::wire::STATE_HUNG_UP
                 && !l.duplicate
                 && !l.busy
                 && !l.cwd_missing
@@ -953,7 +953,7 @@ pub fn run_action(
             }
             let l = line().ok_or(format!("no line {}", s("lineId")))?;
             if k == "close" {
-                if l.state == "hung-up" {
+                if l.state == crate::wire::STATE_HUNG_UP {
                     return Ok(skipped("already closed"));
                 }
                 if l.busy || l.needs_input {
@@ -961,7 +961,7 @@ pub fn run_action(
                 }
                 ops.close(l)?;
             } else {
-                if l.held_reason.is_some() || l.state == "held" {
+                if l.held_reason.is_some() || l.state == crate::wire::STATE_HELD {
                     return Ok(skipped("already held"));
                 }
                 if !l.alive() {

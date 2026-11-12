@@ -1,5 +1,6 @@
 use crate::registry::db;
 use crate::registry::Registry;
+use crate::status;
 use crate::tasks::{self, bad, Res, Task};
 use crate::util::ulid;
 use crate::Ctx;
@@ -178,7 +179,7 @@ fn stop_reviewers(ctx: &Ctx, reg: &Registry, worker: &str) {
         if let Some(term) = r.live_term() {
             let _ = term.kill();
         }
-        r.status = "completed".into();
+        r.status = status::COMPLETED.into();
         let _ = tasks::store(reg, &mut r, &ctx.config.station_id);
     }
 }
@@ -228,7 +229,7 @@ pub fn on_ready(ctx: &Ctx, worker: &Task) {
             title: format!("Review #{} (round {round})", w.number),
             description: reviewer_prompt(&root, &w, round, &base),
             project: w.project.clone(),
-            status: "auto".into(),
+            status: status::AUTO.into(),
             agent: agent.clone(),
             effort: effort_for(agent).into(),
             origin: Some(REVIEWER.into()),
@@ -332,8 +333,8 @@ fn record(
     state["votes"] = json!(votes);
     state["outcome"] = json!(decided);
     let round = state["round"].as_u64().unwrap_or(1);
-    if decided == Some("rejected") && w.status == "in_testing" && w.live_term().is_some() {
-        w.status = "in_progress".into();
+    if decided == Some("rejected") && w.status == status::IN_TESTING && w.live_term().is_some() {
+        w.status = status::IN_PROGRESS.into();
         w.started_ms = Some(crate::procs::now_ms());
     }
     tasks::store(reg, &mut w, &ctx.config.station_id)?;
@@ -406,7 +407,7 @@ pub fn reviewer_ended(ctx: &Ctx, reg: &Registry, r: &Task) {
         return;
     }
     let mut open = r.clone();
-    open.status = "in_progress".into();
+    open.status = status::IN_PROGRESS.into();
     let _ = record(ctx, reg, w, &open, false, NO_VOTE);
 }
 

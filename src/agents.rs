@@ -118,6 +118,10 @@ pub struct Agent {
     pub effort_levels: &'static [&'static str],
     pub transcript: Option<Transcript>,
     pub process: Option<Process>,
+    pub subagent_models: Option<&'static [&'static str]>,
+    pub subagent_effort: bool,
+    pub oauth_limits: bool,
+    pub embedded_daemon: bool,
     pub metered: bool,
     pub mcp: Mcp,
     pub hooks: Hooks,
@@ -154,6 +158,10 @@ const NONE: Agent = Agent {
     effort_levels: EFFORTS,
     transcript: None,
     process: None,
+    subagent_models: None,
+    subagent_effort: false,
+    oauth_limits: false,
+    embedded_daemon: false,
     metered: false,
     mcp: Mcp::None,
     hooks: Hooks::Polling,
@@ -191,6 +199,8 @@ pub static AGENTS: &[Agent] = &[
         }),
         transcript: Some(Transcript::Claude),
         process: Some(Process::ArgContains("claude")),
+        subagent_effort: true,
+        oauth_limits: true,
         metered: true,
         mcp: Mcp::Claude,
         hooks: Hooks::Native,
@@ -260,6 +270,7 @@ pub static AGENTS: &[Agent] = &[
         effort: Some((&["-c", "model_reasoning_effort={}"], &[("max", "xhigh")])),
         resume: Some(&["resume", "{flags}", "{id}"]),
         cont: Some(&["resume", "--last"]),
+        embedded_daemon: true,
         ..NONE
     },
     Agent {
@@ -291,6 +302,7 @@ pub static AGENTS: &[Agent] = &[
     },
     Agent {
         id: "agy",
+        subagent_models: Some(&["inherit", "flash", "pro"]),
         hook_note: Some("No stable hook file for the Antigravity CLI yet: finished turns come from terminal activity."),
         profile: ProfileKind::MarkdownSubagents,
         effort_levels: AGY_EFFORTS,
@@ -594,7 +606,7 @@ impl Agent {
     }
 
     pub fn mode_flags(&self, effort: &str, extra: &[String]) -> Vec<String> {
-        let needs_embedded = self.id == "codex"
+        let needs_embedded = self.embedded_daemon
             && (!effort.is_empty()
                 || extra
                     .iter()

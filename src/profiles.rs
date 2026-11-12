@@ -587,9 +587,9 @@ pub fn validate(s: &Store) -> Res<()> {
                     return Err((400, format!("{what}: invalid subagent name {name:?}")));
                 }
                 check_model(&sub.model, &what)?;
-                if agent == "agy"
-                    && !sub.model.is_empty()
-                    && !["inherit", "flash", "pro"].contains(&sub.model.as_str())
+                if !sub.model.is_empty()
+                    && a.subagent_models
+                        .is_some_and(|ok| !ok.contains(&sub.model.as_str()))
                 {
                     return Err((
                         400,
@@ -909,7 +909,7 @@ pub fn plan_files(defs: &[SubagentDef], c: &AgentCfg) -> Vec<FileEdit> {
         let mut after = text.clone();
         let mut changes = vec![];
         let mut fields = vec![("model", &sub.model, &d.model)];
-        if d.agent == "claude" {
+        if crate::agents::get(d.agent).is_some_and(|a| a.subagent_effort) {
             fields.push(("effort", &sub.effort, &d.effort));
         }
         for (key, want, have) in fields {
