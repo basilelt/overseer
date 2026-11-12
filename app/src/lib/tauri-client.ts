@@ -1,4 +1,4 @@
-import { CMD, PLUGIN_CMD } from './tauri-commands';
+import * as CMD from './tauri-commands';
 import { Channel, invoke } from '@tauri-apps/api/core';
 import { DaemonError, type ConnectOptions, type DaemonClient, type TermIO } from './client';
 import type { ConnState, DaemonEvent, DeviceKey, Forward, HostTarget, LocalNetworkReport, PlatformInfo, PortSettings, PortsState, SavedHost, SshHost, UploadProgress, UploadResult } from './types';
@@ -148,11 +148,11 @@ export class TauriDaemon implements DaemonClient {
   }
 
   async copyText(text: string): Promise<void> {
-    await invoke(PLUGIN_CMD.clipboardWrite, { text });
+    await invoke(CMD.clipboardWriteText, { text });
   }
 
   pasteText(): Promise<string> {
-    return invoke<string>(PLUGIN_CMD.clipboardRead);
+    return invoke<string>(CMD.clipboardReadText);
   }
 
   uploadFile(path: string, onProgress?: (p: UploadProgress) => void): Promise<UploadResult> {

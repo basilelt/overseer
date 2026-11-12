@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { CMD } from './lib/tauri-commands';
+  import * as CMD from './lib/tauri-commands';
   import { onMount, untrack } from 'svelte';
   import { app } from './lib/state.svelte';
   import TitleBar from './lib/components/TitleBar.svelte';

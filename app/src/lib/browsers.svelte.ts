@@ -1,4 +1,4 @@
-import { CMD } from './tauri-commands';
+import * as CMD from './tauri-commands';
 import { invoke } from '@tauri-apps/api/core';
 import { isTauri } from './client';
 import type { InstalledBrowser, LinkRoute } from './links';

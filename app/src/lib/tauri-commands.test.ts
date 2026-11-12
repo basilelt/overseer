@@ -3,7 +3,7 @@ import libRs from '../../src-tauri/src/lib.rs?raw';
 import connRs from '../../src-tauri/src/conn.rs?raw';
 import sshRs from '../../src-tauri/src/ssh.rs?raw';
 import typesTs from './types.ts?raw';
-import { CMD, PLUGIN_CMD } from './tauri-commands';
+import * as commands from './tauri-commands';
 
 const NOT_CALLED_BY_FRONTEND: string[] = [];
 
@@ -14,7 +14,9 @@ function handlerLists(src: string): string[][] {
 const lists = handlerLists(libRs);
 const [desktop, mobile] = lists;
 const registered = new Set(lists.flat());
-const table = new Set<string>(Object.values(CMD));
+const all = Object.values(commands) as string[];
+const plugin = all.filter((n) => n.startsWith('plugin:'));
+const table = new Set<string>(all.filter((n) => !n.startsWith('plugin:')));
 
 describe('Tauri command table', () => {
   it('parses the desktop and the mobile handler lists', () => {
@@ -24,7 +26,7 @@ describe('Tauri command table', () => {
   });
 
   it('has unique names', () => {
-    expect(table.size).toBe(Object.keys(CMD).length);
+    expect(new Set(all).size).toBe(all.length);
   });
 
   it('only names commands registered in a handler list', () => {
@@ -40,7 +42,8 @@ describe('Tauri command table', () => {
   });
 
   it('keeps plugin commands out of the handler table', () => {
-    for (const n of Object.values(PLUGIN_CMD)) expect(n.startsWith('plugin:')).toBe(true);
+    expect(plugin).toHaveLength(2);
+    expect(plugin.every((n) => !registered.has(n))).toBe(true);
   });
 
   it('knows which commands exist on one platform only', () => {

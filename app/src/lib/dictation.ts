@@ -1,4 +1,4 @@
-import { CMD } from './tauri-commands';
+import * as CMD from './tauri-commands';
 export type DictationMode = 'native' | 'hint' | null;
 
 export function dictationMode(os: string, platform: string, tauri: boolean, phone: boolean): DictationMode {

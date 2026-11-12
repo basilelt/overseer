@@ -1,4 +1,4 @@
-import { CMD } from './tauri-commands';
+import * as CMD from './tauri-commands';
 import { isTauri, DaemonError, type DaemonClient } from './client';
 import { type Sub, t } from './i18n.svelte';
 import { errorText, forwardWarning, Limiter, type DiagInfo, type LogTail, type PreviousSession, type ServerLog } from './diag';

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { CMD } from '../../tauri-commands';
+  import * as CMD from '../../tauri-commands';
   import { t, type Key } from '../../i18n.svelte';
   import { app } from '../../state.svelte';
   import { diagnostics, terminalCommand, unstableIdentity, type LocalNetworkView } from '../../localnet';

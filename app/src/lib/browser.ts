@@ -1,4 +1,4 @@
-import { CMD } from './tauri-commands';
+import * as CMD from './tauri-commands';
 import { Channel, invoke } from '@tauri-apps/api/core';
 
 export interface NavEvent {

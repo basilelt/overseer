@@ -1,4 +1,4 @@
-import { CMD, PLUGIN_CMD } from './tauri-commands';
+import * as CMD from './tauri-commands';
 import type { ConnState, DaemonEvent, DeviceKey, Forward, HostTarget, LocalNetworkReport, PlatformInfo, PortSettings, PortsState, SavedHost, SshHost, UploadProgress, UploadResult } from './types';
 import { isDemo } from './demo';
 
@@ -68,8 +68,8 @@ async function demoClient(): Promise<DaemonClient> {
   const { invoke } = await import('@tauri-apps/api/core');
   const platform = await invoke<PlatformInfo>(CMD.appPlatform).catch(() => undefined);
   const m = new MockDaemon({ platform });
-  m.copyText = async (text) => void (await invoke(PLUGIN_CMD.clipboardWrite, { text }));
-  m.pasteText = () => invoke<string>(PLUGIN_CMD.clipboardRead);
+  m.copyText = async (text) => void (await invoke(CMD.clipboardWriteText, { text }));
+  m.pasteText = () => invoke<string>(CMD.clipboardReadText);
   m.saveDownload = (name, bytes) => invoke<string>(CMD.saveDownload, bytes, { headers: { 'x-name': encodeURIComponent(name) } });
   return m;
 }

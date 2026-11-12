@@ -1,4 +1,4 @@
-import { CMD } from './tauri-commands';
+import * as CMD from './tauri-commands';
 import { isTauri } from './client';
 import type { HostTarget } from './types';
 

@@ -1,79 +1,75 @@
-export const CMD = {
-  daemonRequest: 'daemon_request',
-  daemonBytes: 'daemon_bytes',
-  daemonEvents: 'daemon_events',
-  daemonEventsStop: 'daemon_events_stop',
-  termAttach: 'term_attach',
-  termWrite: 'term_write',
-  termResize: 'term_resize',
-  termBackground: 'term_background',
-  termDetach: 'term_detach',
-  connConnect: 'conn_connect',
-  connDisconnect: 'conn_disconnect',
-  connAnswer: 'conn_answer',
-  connDropSlots: 'conn_drop_slots',
-  connWake: 'conn_wake',
-  connRestartServer: 'conn_restart_server',
-  sshHosts: 'ssh_hosts',
-  portsWatch: 'ports_watch',
-  portsWatchStop: 'ports_watch_stop',
-  portsConfigure: 'ports_configure',
-  portsForward: 'ports_forward',
-  portsUnforward: 'ports_unforward',
-  uploadFile: 'upload_file',
-  savePaste: 'save_paste',
-  saveDownload: 'save_download',
-  browserOpen: 'browser_open',
-  browserBounds: 'browser_bounds',
-  browserNavigate: 'browser_navigate',
-  browserBack: 'browser_back',
-  browserForward: 'browser_forward',
-  browserReload: 'browser_reload',
-  browserHide: 'browser_hide',
-  browserShow: 'browser_show',
-  browserClose: 'browser_close',
-  browserPagesReset: 'browser_pages_reset',
-  openExternal: 'open_external',
-  browsersList: 'browsers_list',
-  browserOpenWith: 'browser_open_with',
-  windowNew: 'window_new',
-  windowHandoff: 'window_handoff',
-  updateStatus: 'update_status',
-  updateCheck: 'update_check',
-  updateInstall: 'update_install',
-  updateRelaunch: 'update_relaunch',
-  localNetworkStatus: 'local_network_status',
-  openLocalNetworkSettings: 'open_local_network_settings',
-  appPlatform: 'app_platform',
-  directDeviceKey: 'direct_device_key',
-  directHosts: 'direct_hosts',
-  directHostSave: 'direct_host_save',
-  directHostDelete: 'direct_host_delete',
-  directHostForgetKey: 'direct_host_forget_key',
-  diagLog: 'diag_log',
-  diagPong: 'diag_pong',
-  diagVisibility: 'diag_visibility',
-  diagSessionEnd: 'diag_session_end',
-  diagPrevious: 'diag_previous',
-  diagDismiss: 'diag_dismiss',
-  diagTail: 'diag_tail',
-  diagInfo: 'diag_info',
-  diagSave: 'diag_save',
-  diagOpenDir: 'diag_open_dir',
-  startDictation: 'start_dictation',
-  openNotificationSettings: 'open_notification_settings',
-  apkUpdateStatus: 'apk_update_status',
-  apkUpdateCheck: 'apk_update_check',
-  apkUpdateDownload: 'apk_update_download',
-  apkUpdateInstall: 'apk_update_install',
-  apkUpdateAllowInstall: 'apk_update_allow_install',
-  mobileMinimize: 'mobile_minimize',
-  mobileSystemDark: 'mobile_system_dark',
-  mobileSystemBars: 'mobile_system_bars',
-  mobileClipboardImage: 'mobile_clipboard_image',
-} as const;
+export const daemonRequest = 'daemon_request';
+export const daemonBytes = 'daemon_bytes';
+export const daemonEvents = 'daemon_events';
+export const daemonEventsStop = 'daemon_events_stop';
+export const termAttach = 'term_attach';
+export const termWrite = 'term_write';
+export const termResize = 'term_resize';
+export const termBackground = 'term_background';
+export const termDetach = 'term_detach';
+export const connConnect = 'conn_connect';
+export const connDisconnect = 'conn_disconnect';
+export const connAnswer = 'conn_answer';
+export const connDropSlots = 'conn_drop_slots';
+export const connWake = 'conn_wake';
+export const connRestartServer = 'conn_restart_server';
+export const sshHosts = 'ssh_hosts';
+export const portsWatch = 'ports_watch';
+export const portsWatchStop = 'ports_watch_stop';
+export const portsConfigure = 'ports_configure';
+export const portsForward = 'ports_forward';
+export const portsUnforward = 'ports_unforward';
+export const uploadFile = 'upload_file';
+export const savePaste = 'save_paste';
+export const saveDownload = 'save_download';
+export const browserOpen = 'browser_open';
+export const browserBounds = 'browser_bounds';
+export const browserNavigate = 'browser_navigate';
+export const browserBack = 'browser_back';
+export const browserForward = 'browser_forward';
+export const browserReload = 'browser_reload';
+export const browserHide = 'browser_hide';
+export const browserShow = 'browser_show';
+export const browserClose = 'browser_close';
+export const browserPagesReset = 'browser_pages_reset';
+export const openExternal = 'open_external';
+export const browsersList = 'browsers_list';
+export const browserOpenWith = 'browser_open_with';
+export const windowNew = 'window_new';
+export const windowHandoff = 'window_handoff';
+export const updateStatus = 'update_status';
+export const updateCheck = 'update_check';
+export const updateInstall = 'update_install';
+export const updateRelaunch = 'update_relaunch';
+export const localNetworkStatus = 'local_network_status';
+export const openLocalNetworkSettings = 'open_local_network_settings';
+export const appPlatform = 'app_platform';
+export const directDeviceKey = 'direct_device_key';
+export const directHosts = 'direct_hosts';
+export const directHostSave = 'direct_host_save';
+export const directHostDelete = 'direct_host_delete';
+export const directHostForgetKey = 'direct_host_forget_key';
+export const diagLog = 'diag_log';
+export const diagPong = 'diag_pong';
+export const diagVisibility = 'diag_visibility';
+export const diagSessionEnd = 'diag_session_end';
+export const diagPrevious = 'diag_previous';
+export const diagDismiss = 'diag_dismiss';
+export const diagTail = 'diag_tail';
+export const diagInfo = 'diag_info';
+export const diagSave = 'diag_save';
+export const diagOpenDir = 'diag_open_dir';
+export const startDictation = 'start_dictation';
+export const openNotificationSettings = 'open_notification_settings';
+export const apkUpdateStatus = 'apk_update_status';
+export const apkUpdateCheck = 'apk_update_check';
+export const apkUpdateDownload = 'apk_update_download';
+export const apkUpdateInstall = 'apk_update_install';
+export const apkUpdateAllowInstall = 'apk_update_allow_install';
+export const mobileMinimize = 'mobile_minimize';
+export const mobileSystemDark = 'mobile_system_dark';
+export const mobileSystemBars = 'mobile_system_bars';
+export const mobileClipboardImage = 'mobile_clipboard_image';
 
-export const PLUGIN_CMD = {
-  clipboardWrite: 'plugin:clipboard-manager|write_text',
-  clipboardRead: 'plugin:clipboard-manager|read_text',
-} as const;
+export const clipboardWriteText = 'plugin:clipboard-manager|write_text';
+export const clipboardReadText = 'plugin:clipboard-manager|read_text';

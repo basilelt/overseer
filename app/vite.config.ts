@@ -55,6 +55,7 @@ export default defineConfig({
     chunkSizeWarningLimit: 900,
     reportCompressedSize: true,
     rolldownOptions: {
+      optimization: { inlineConst: true },
       output: {
         codeSplitting: {
           // Keeps rolldown's CJS interop runtime out of the lazy hljs chunk, which the entry would otherwise modulepreload.
