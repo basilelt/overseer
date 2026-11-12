@@ -8,10 +8,11 @@
   import Users from '@lucide/svelte/icons/users';
   import X from '@lucide/svelte/icons/x';
   import { t } from '../../i18n.svelte';
+  import { command } from '../../commands';
   import { hint } from '../../keyboard';
   import { touchContextMenu } from '../../mobile/touch-menu';
   import { app, type SidebarMode } from '../../state.svelte';
-  import { broadcastTo, createFolder, groupPicker, rescanFolders } from '../../wsactions';
+  import { broadcastTo, groupPicker } from '../../wsactions';
   import WandSparkles from '@lucide/svelte/icons/wand-sparkles';
   import { saveSettings, settings } from '../../settings.svelte';
   import { organizer } from '../../organize.svelte';
@@ -40,16 +41,16 @@
   const listed = $derived(app.items.filter((i) => i.kind !== 'shell').length);
   const selection = $derived([...app.multi]);
   const addMenu = () => [
-    { label: t('ws.new'), icon: Plus, run: () => app.open('workspaceNew') },
-    { label: t('ws.rescan'), icon: RefreshCw, run: () => rescanFolders() },
+    { label: t('ws.new'), icon: Plus, run: () => command('ws-new').run() },
+    { label: t('ws.rescan'), icon: RefreshCw, run: () => command('rescan-folders').run() },
   ];
 </script>
 
 {#snippet wsActions()}
-    <button class="icon-btn" title={t('ws.new')} aria-label={t('ws.new')} disabled={!app.connected || !app.wsPersistent} aria-haspopup="menu" onclick={(e) => app.openMenu(e, t('ws.new'), addMenu())}
+    <button class="icon-btn" title={t('ws.new')} aria-label={t('ws.new')} disabled={!command('ws-new').available()} aria-haspopup="menu" onclick={(e) => app.openMenu(e, t('ws.new'), addMenu())}
       ><Plus size={14} /></button
     >
-    <button class="icon-btn" title={t('ws.newFolder')} aria-label={t('ws.newFolder')} disabled={!app.connected || !app.wsPersistent} onclick={() => createFolder()}
+    <button class="icon-btn" title={t('ws.newFolder')} aria-label={t('ws.newFolder')} disabled={!command('folder-new').available()} onclick={() => command('folder-new').run()}
       ><FolderPlus size={14} /></button
     >
     <button

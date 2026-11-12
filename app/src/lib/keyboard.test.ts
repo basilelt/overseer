@@ -765,6 +765,11 @@ describe('on macOS', () => {
     expect(ws.workspace.layout.panes[0].tabs).toEqual(['browser:a', 'browser:b']);
     close.action();
     expect(ws.workspace.layout.panes[0].tabs).toEqual(['browser:b']);
+    expect(file.items.map((i: { text: string; accelerator: string }) => [i.text, i.accelerator])).toEqual([
+      ['New Window', 'CmdOrCtrl+Alt+N'],
+      ['Close Tab', 'CmdOrCtrl+W'],
+      ['Close Window', 'CmdOrCtrl+Shift+W'],
+    ]);
     file.items.find((i: { text: string }) => i.text === 'New Window').action();
     await flush();
     expect(openWindow).toHaveBeenCalled();

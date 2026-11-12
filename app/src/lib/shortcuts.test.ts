@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { eventKey, formatCombo, resolveShortcut, sheetRows, shortcutLabel, type KeyEventLike } from './shortcuts';
+import { accelerator, eventKey, formatCombo, resolveShortcut, sheetRows, shortcutLabel, type KeyEventLike } from './shortcuts';
 
 const ev = (key: string, code: string, mods: { meta?: boolean; ctrl?: boolean; shift?: boolean; alt?: boolean } = {}): KeyEventLike => ({
   key,
@@ -187,5 +187,17 @@ describe('shortcut labels', () => {
       .flatMap((s) => s.rows)
       .find((r) => r.id === 'paste');
     expect(paste?.keys.map((k) => k.label)).toEqual(['Ctrl+Shift+V', 'Shift+Insert']);
+  });
+});
+
+describe('accelerator', () => {
+  it('writes the mac accelerator of the combos the native menu shows', () => {
+    expect(accelerator('newWindow')).toBe('CmdOrCtrl+Alt+N');
+    expect(accelerator('closeTab')).toBe('CmdOrCtrl+W');
+    expect(accelerator('closeWindow')).toBe('CmdOrCtrl+Shift+W');
+  });
+
+  it('is empty for a shortcut that has no binding', () => {
+    expect(accelerator('unknown' as never)).toBe('');
   });
 });

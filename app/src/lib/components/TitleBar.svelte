@@ -7,7 +7,8 @@
   import MessageSquarePlus from '@lucide/svelte/icons/message-square-plus';
   import { feedback, ft } from '../feedback.svelte';
   import { t } from '../i18n.svelte';
-  import { hint } from '../keyboard';
+  import { command } from '../commands';
+  import { hint, isMac as mac } from '../keyboard';
   import { app, type View } from '../state.svelte';
   import { closePaneAt, toggleSplit, update, workspace } from '../workspace.svelte';
   import HostChip from './titlebar/HostChip.svelte';
@@ -19,7 +20,6 @@
   import { startable } from '../kanban-core';
   import { preload } from '../idle';
 
-  const mac = typeof navigator !== 'undefined' && /mac/i.test(navigator.platform);
   const views: { id: View; label: () => string }[] = [
     { id: 'agents', label: () => t('title.agents') },
     { id: 'kanban', label: () => t('title.kanban') },
@@ -76,7 +76,7 @@
     class:active={app.panelOpen}
     title={t('title.panel')}
     aria-label={t('title.panel')}
-    onclick={() => (app.panelOpen = !app.panelOpen)}><PanelRight size={15} /></button
+    onclick={() => command('panel').run()}><PanelRight size={15} /></button
   >
   <NotificationBell />
   <button class="icon-btn" data-tour="feedback" title={ft('title')} aria-label={ft('title')} onclick={() => feedback.show()}><MessageSquarePlus size={15} /></button>

@@ -24,6 +24,7 @@
   import { isMainWindow } from './lib/window';
   import { startPresence } from './lib/presence';
   import { startRest } from './lib/rest';
+  import { command } from './lib/commands';
   import { startShortcuts } from './lib/keyboard';
   import { startTextDefaults } from './lib/textinput';
   import { onResume, startLayout, ui } from './lib/mobile/ui.svelte';
@@ -140,10 +141,10 @@
     const mod = (e.metaKey || e.ctrlKey) && (app.mobile || ui.layout === 'phone');
     if (mod && e.key.toLowerCase() === 'k') {
       e.preventDefault();
-      app.open(app.overlay === 'palette' ? null : 'palette');
+      command('palette').toggle?.();
     } else if (mod && e.key === ',') {
       e.preventDefault();
-      app.open('settings');
+      command('settings').run();
     } else if (e.key === 'Escape' && diag.mode) {
       diag.close();
     } else if (e.key === 'Escape' && app.overlay) {

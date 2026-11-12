@@ -172,6 +172,12 @@ export function shortcutLabel(id: ShortcutId, opts: ShortcutOptions): string {
   return c ? formatCombo(c, opts.mac) : '';
 }
 
+export function accelerator(id: ShortcutId): string {
+  const c = bindings({ mac: true, ctrlWClosesTab: false }).find((b) => b.id === id)?.combos[0];
+  if (!c) return '';
+  return ['CmdOrCtrl', c.alt ? 'Alt' : '', c.shift ? 'Shift' : '', c.key.toUpperCase()].filter(Boolean).join('+');
+}
+
 export interface SheetRow {
   id: ShortcutId;
   keys: { label: string; outsideTerminal: boolean }[];

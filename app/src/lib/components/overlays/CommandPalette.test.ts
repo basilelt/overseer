@@ -70,4 +70,19 @@ describe('command palette views', () => {
     expect(actions).not.toContain('New Amp session');
     expect(await rendered(false, undefined, [], MOCK_AGENTS)).not.toContain('Install Amp');
   });
+
+  it('shows the shortcut of a listed command, but none for source control', async () => {
+    const body = await rendered(true);
+    const row = (label: string) => body.match(new RegExp(`<li[^>]*role="option"[^>]*>(?:(?!</li>)[\\s\\S])*${label}(?:(?!</li>)[\\s\\S])*</li>`))?.[0] ?? '';
+    expect(row('Open tasks board')).toContain('Ctrl+Shift+K');
+    expect(row('Toggle sidebar')).toContain('Ctrl+Shift+B');
+    expect(row('Show or hide source control in the sidebar')).not.toContain('class="keys');
+    expect(row('Show or hide source control in the sidebar')).not.toBe('');
+  });
+
+  it('keeps the entries of a disconnected palette to the ones that need no host', async () => {
+    const body = await rendered(false);
+    for (const label of ['Open browser', 'Toggle theme', 'Show logs', 'Keyboard shortcuts']) expect(body).toContain(label);
+    for (const label of ['Disconnect', 'Ports: show forwarded ports', 'Organize my sessions', 'New workspace from a folder']) expect(body).not.toContain(label);
+  });
 });

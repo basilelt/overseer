@@ -1,8 +1,6 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import app from '../../App.svelte?raw';
 import bar from '../components/workspace/TabBar.svelte?raw';
-import palette from '../components/overlays/CommandPalette.svelte?raw';
-import more from '../components/mobile/MobileMore.svelte?raw';
 import graph from './GitGraphTab.svelte?raw';
 import liveBar from './LiveBar.svelte?raw';
 import rail from '../components/sidebar/SessionRail.svelte?raw';
@@ -18,11 +16,14 @@ describe('git button', () => {
     expect(bar).not.toMatch(/reviewMenu|review\.beside|review\.asTab|setReviewMode/);
   });
 
-  it('leaves the review modes to the palette', () => {
-    expect(palette).toMatch(/view\('review-beside', 'review\.beside'/);
-    expect(palette).toMatch(/action\('review-close', 'review\.close'/);
-    expect(palette).toMatch(/action\('live-review', 'palette\.toggleLiveReview', GitGraph, \(\) => toggleLiveReview\(\)\)/);
-    expect(palette).toMatch(/view\('graph', 'palette\.openGit'/);
+  it('leaves the review modes to the palette', async () => {
+    const { command } = await import('../commands');
+    const { registerMore } = await import('../commands-more');
+    registerMore();
+    expect(command('review-beside').label()).toBe('Review beside the agent');
+    expect(command('review-close').section).toBe('actions');
+    expect(command('live-review').label()).toBe('Open or close the live review');
+    expect(command('graph').section).toBe('views');
   });
 
   it('swaps the sidebar for the session rail, hides the side panel and adds the git bar, all loaded only when used', () => {
@@ -33,9 +34,17 @@ describe('git button', () => {
     expect(app).not.toMatch(/GitPanel/);
   });
 
-  it('opens the Git tab on phone from More', () => {
-    expect(more).toMatch(/icon: GitBranch, label: \(\) => t\('tabs\.gitGraph'\), run: \(\) => app\.openProjectTab\('graph'\)/);
+  it('opens the Git tab on phone from More', async () => {
+    const { app } = await import('../state.svelte');
+    const open = vi.spyOn(app, 'openProjectTab').mockImplementation(() => {});
+    const { command } = await import('../commands');
+    const { registerMore } = await import('../commands-more');
+    registerMore();
+    command('graph').run();
+    expect(open).toHaveBeenCalledWith('graph');
+    open.mockRestore();
   });
+
 });
 
 describe('sidebar git tab', () => {

@@ -1,71 +1,26 @@
 <script lang="ts">
-  import { toggleLiveReview } from '../../git/live-actions';
-  import Gauge from '@lucide/svelte/icons/gauge';
-  import { ust } from '../../usage/strings';
-  import GitPullRequestArrow from '@lucide/svelte/icons/git-pull-request-arrow';
-  import { gt } from '../../github/strings';
-  import { openPrReviews } from '../../github/open.svelte';
   import type { Component } from 'svelte';
   import Search from '@lucide/svelte/icons/search';
-  import Unplug from '@lucide/svelte/icons/unplug';
-  import KanbanSquare from '@lucide/svelte/icons/square-kanban';
-  import AppWindow from '@lucide/svelte/icons/app-window';
-  import GitGraph from '@lucide/svelte/icons/git-graph';
-  import FolderTree from '@lucide/svelte/icons/folder-tree';
-  import LayoutGrid from '@lucide/svelte/icons/layout-grid';
-  import Globe from '@lucide/svelte/icons/globe';
   import Server from '@lucide/svelte/icons/server';
-  import SunMoon from '@lucide/svelte/icons/sun-moon';
-  import PanelRight from '@lucide/svelte/icons/panel-right';
-  import Puzzle from '@lucide/svelte/icons/puzzle';
-  import Settings from '@lucide/svelte/icons/settings';
-  import Columns2 from '@lucide/svelte/icons/columns-2';
-  import Rows2 from '@lucide/svelte/icons/rows-2';
-  import EthernetPort from '@lucide/svelte/icons/ethernet-port';
-  import RefreshCw from '@lucide/svelte/icons/refresh-cw';
-  import Activity from '@lucide/svelte/icons/activity';
-  import { st } from '../../system/strings';
-  import ScrollText from '@lucide/svelte/icons/scroll-text';
-  import MessageSquarePlus from '@lucide/svelte/icons/message-square-plus';
-  import Compass from '@lucide/svelte/icons/compass';
-  import Clapperboard from '@lucide/svelte/icons/clapperboard';
-  import { recorder, rt } from '../../record.svelte';
-  import WandSparkles from '@lucide/svelte/icons/wand-sparkles';
-  import { organizer } from '../../organize.svelte';
-  import { tt } from '../../tour/strings';
-  import { replayTour } from '../../tour/replay';
-  import { feedback, ft } from '../../feedback.svelte';
-  import { diag, dt } from '../../diag.svelte';
-  import { updater, ut } from '../../updater.svelte';
-  import { apk, at } from '../../mobile/apk-update.svelte';
+  import FolderTree from '@lucide/svelte/icons/folder-tree';
+  import Megaphone from '@lucide/svelte/icons/megaphone';
+  import Box from '@lucide/svelte/icons/box';
+  import X from '@lucide/svelte/icons/x';
   import { t, type Key } from '../../i18n.svelte';
   import { app } from '../../state.svelte';
-  import { saveSettings, settings, type ThemePref } from '../../settings.svelte';
   import { highlight, rank, type Match } from '../../fuzzy';
   import type { GroupId } from '../../grouping';
   import { canInstall, ordered } from '../../agents';
   import AgentGlyph from '../ui/AgentGlyph.svelte';
-  import FolderPlus from '@lucide/svelte/icons/folder-plus';
-  import Megaphone from '@lucide/svelte/icons/megaphone';
-  import Pause from '@lucide/svelte/icons/pause';
-  import Play from '@lucide/svelte/icons/play';
-  import Users from '@lucide/svelte/icons/users';
-  import Box from '@lucide/svelte/icons/box';
-  import X from '@lucide/svelte/icons/x';
   import { ui } from '../../mobile/ui.svelte';
-  import GitPullRequest from '@lucide/svelte/icons/git-pull-request';
-  import { closeSideReview, openReview, openReviewBeside, reviewTargetFor } from '../../review/open';
-  import { beside } from '../../review/beside.svelte';
-  import { broadcastTo, createFolder, createGroup, holdAll, rescanFolders } from '../../wsactions';
+  import { broadcastTo } from '../../wsactions';
   import { isGhost } from '../../workspaces';
-  import Keyboard from '@lucide/svelte/icons/keyboard';
-  import PanelLeft from '@lucide/svelte/icons/panel-left';
-  import Plus from '@lucide/svelte/icons/plus';
-  import X2 from '@lucide/svelte/icons/square-x';
-  import Undo2 from '@lucide/svelte/icons/undo-2';
-  import { hint, newWindow, runShortcut } from '../../keyboard';
+  import { command, has } from '../../commands';
+  import { registerMore } from '../../commands-more';
+  import { hint } from '../../keyboard';
   import { hostName } from '../../hosts';
-  import type { ShortcutId } from '../../shortcuts';
+
+  registerMore();
 
   let { onclose }: { onclose: () => void } = $props();
 
@@ -81,14 +36,25 @@
     run: () => unknown;
   }
 
-  const split = (dir: 'horizontal' | 'vertical') => {
-    app.view = 'agents';
-    window.dispatchEvent(new CustomEvent('sb:split', { detail: dir }));
-  };
-  const nextTheme: Record<ThemePref, ThemePref> = { auto: 'light', light: 'dark', dark: 'auto' };
-  const action = (id: string, key: Key, icon: Cmd['icon'], run: () => unknown): Cmd => ({ id, label: t(key), icon, section: 'actions', run });
-  const view = (id: string, key: Key, icon: Cmd['icon'], run: () => unknown): Cmd => ({ ...action(id, key, icon, run), section: 'views' });
   const connected = app.connected;
+  const desktop = !app.mobile && ui.layout !== 'phone';
+  const UNHINTED = new Set(['source-control']);
+
+  const entry = (id: string): Cmd => {
+    const c = command(id);
+    return {
+      id: c.id,
+      label: c.label(),
+      icon: c.icon,
+      section: c.section,
+      keys: desktop && c.shortcut && !UNHINTED.has(c.id) ? hint(c.shortcut) || undefined : undefined,
+      run: () => {
+        if (c.agentsView) app.view = 'agents';
+        return c.run();
+      },
+    };
+  };
+  const listed = (...ids: string[]): Cmd[] => ids.filter((id) => has(id) && command(id).available()).map(entry);
 
   const sessionActions: Cmd[] = connected
     ? [
@@ -101,113 +67,42 @@
       ]
     : [];
 
-  const reviewChanges = (side = false) => {
-    const target = reviewTargetFor(app.selected);
-    if (target) (side ? openReviewBeside : openReview)(target);
-    else app.notify(t('review.noLine'), 'error');
-  };
-  const desktop = !app.mobile && ui.layout !== 'phone';
   // The current workspace, or the parent of the current nested one, takes new subjects.
   const subjectParent = $derived.by(() => {
     const w = app.currentWorkspace;
     const top = w?.parentId ? app.ws.workspaces.find((p) => p.id === w.parentId) : w;
     return top && top.path && top.kind !== 'subject' && !top.parentId ? top : undefined;
   });
-  const KEYED: Record<string, ShortcutId> = {
-    kanban: 'kanban',
-    panel: 'togglePanel',
-    'split-right': 'splitRight',
-    'split-down': 'splitDown',
-    settings: 'settings',
-    'ws-new': 'newWorkspace',
-    'new-window': 'newWindow',
-    sidebar: 'toggleSidebar',
-    shortcuts: 'shortcuts',
-    'tab-new': 'newTab',
-    'tab-close': 'closeTab',
-    'tab-reopen': 'reopenTab',
-  };
-  const tabAction = (id: string, key: Key, icon: Cmd['icon'], sc: ShortcutId): Cmd =>
-    action(id, key, icon, () => {
-      app.view = 'agents';
-      runShortcut({ id: sc });
-    });
-  const desktopActions: Cmd[] = desktop
-    ? [
-        action('shortcuts', 'palette.shortcuts', Keyboard, () => app.open('shortcuts')),
-        action('new-window', 'palette.newWindow', AppWindow, () => newWindow()),
-        action('sidebar', 'palette.toggleSidebar', PanelLeft, () => (app.sidebarOpen = !app.sidebarOpen)),
-        ...(app.view === 'agents' ? [tabAction('tab-new', 'palette.newTab', Plus, 'newTab'), tabAction('tab-close', 'palette.closeTab', X2, 'closeTab'), tabAction('tab-reopen', 'palette.reopenTab', Undo2, 'reopenTab')] : []),
-      ]
-    : [];
-  const views: Cmd[] = [
-    ...(connected ? [view('review', 'review.palette', GitPullRequest, () => reviewChanges()), view('review-beside', 'review.beside', GitPullRequest, () => reviewChanges(true))] : []),
-    view('browser', 'palette.openBrowser', Globe, () => (app.view = 'browser')),
-    view('graph', 'palette.openGit', GitGraph, () => app.openProjectTab('graph')),
-    view('worktrees', 'palette.openWorktrees', FolderTree, () => app.openProjectTab('worktrees')),
-    ...(connected ? [{ id: 'system', label: st('open'), icon: Activity, section: 'views', run: () => app.open('system') } as Cmd] : []),
-    ...(connected ? [{ id: 'usage', label: ust('open'), icon: Gauge, section: 'views', run: () => app.open('usage') } as Cmd] : []),
-    ...(connected ? [{ id: 'prs', label: gt('open'), icon: GitPullRequestArrow, section: 'views', run: () => openPrReviews() } as Cmd] : []),
-  ];
-  const actions: Cmd[] = ([
-    ...(beside.key ? [action('review-close', 'review.close', GitPullRequest, () => closeSideReview())] : []),
+  const subjectAction = (): Cmd[] =>
+    connected && app.wsPersistent && subjectParent
+      ? [{ id: 'subject-new', label: t('palette.newSubject'), icon: FolderTree, section: 'actions', run: () => app.open('workspaceNew', subjectParent.id) }]
+      : [];
+  const views: Cmd[] = listed('review', 'review-beside', 'browser', 'graph', 'worktrees', 'system', 'usage', 'prs');
+  const actions: Cmd[] = [
+    ...listed('review-close'),
     ...sessionActions,
-    action('kanban', 'palette.openKanban', KanbanSquare, () => (app.view = 'kanban')),
-    action('agents', 'palette.openAgents', LayoutGrid, () => (app.view = 'agents')),
-    action('connect', connected ? 'palette.switchHost' : 'palette.connectHost', Server, () => app.open('connect')),
-    ...((connected || app.hosts.length > 1) && desktop ? [action('add-host', 'palette.addHost', Server, () => app.open('connect', 'add'))] : []),
-    ...app.others.map((l) => ({ id: `host:${l.key}`, label: t('palette.showHost', { name: hostName(l.target) }), icon: Server, section: 'actions', run: () => app.switchHost(l.key) }) as Cmd),
-    ...(connected ? [action('disconnect', 'palette.disconnect', Unplug, () => app.disconnect())] : []),
-    action('theme', 'palette.toggleTheme', SunMoon, () => saveSettings({ theme: nextTheme[settings.theme] })),
-    action('panel', 'palette.togglePanel', PanelRight, () => (app.panelOpen = !app.panelOpen)),
-    action('live-review', 'palette.toggleLiveReview', GitGraph, () => toggleLiveReview()),
-    action('source-control', 'palette.sourceControl', GitGraph, () => app.toggleSourceControl()),
-    action('split-right', 'palette.splitRight', Columns2, () => split('horizontal')),
-    action('split-down', 'palette.splitDown', Rows2, () => split('vertical')),
-    action('settings', 'palette.settings', Settings, () => app.open('settings')),
-    ...(connected ? [action('skills', 'palette.skills', Puzzle, () => app.open('settings', 'skills'))] : []),
-    { id: 'logs', label: dt('show'), icon: ScrollText, section: 'actions', run: () => diag.open('live') },
-    { id: 'feedback', label: ft('title'), icon: MessageSquarePlus, section: 'actions', run: () => feedback.show() },
-    ...(recorder.phase === 'idle' ? [{ id: 'record', label: rt('palette'), icon: Clapperboard, section: 'actions', run: () => recorder.setup() } as Cmd] : []),
-    { id: 'tour', label: tt('palette'), icon: Compass, section: 'actions', run: () => replayTour() },
-    ...(connected ? [{ id: 'organize', label: t('org.palette'), icon: WandSparkles, section: 'actions', run: () => organizer.show() } as Cmd] : []),
-    ...(connected && app.wsPersistent
-      ? [action('ws-new', 'palette.newWorkspace', FolderTree, () => app.open('workspaceNew')), action('folder-new', 'palette.newFolder', FolderPlus, () => createFolder())]
-      : []),
-    ...(connected ? [action('rescan-folders', 'palette.rescanFolders', RefreshCw, () => rescanFolders())] : []),
-    ...(connected && app.wsPersistent && subjectParent ? [action('subject-new', 'palette.newSubject', FolderTree, () => app.open('workspaceNew', subjectParent.id))] : []),
-    ...(connected && app.currentWorkspace
-      ? [
-          action('ws-broadcast', 'palette.broadcastWorkspace', Megaphone, () => broadcastTo({ kind: 'workspace', id: app.workspaceId })),
-          action('ws-hold', 'palette.holdWorkspace', Pause, () => holdAll({ kind: 'workspace', id: app.workspaceId }, 'hold')),
-          action('ws-resume', 'palette.resumeWorkspace', Play, () => holdAll({ kind: 'workspace', id: app.workspaceId }, 'resume')),
-        ]
-      : []),
-    ...(connected && app.multi.size
-      ? [
-          action('group-new', 'palette.groupFromSelection', Users, () => createGroup([...app.multi])),
-          action('sel-broadcast', 'palette.broadcastSelection', Megaphone, () => broadcastTo({ kind: 'items', keys: [...app.multi] })),
-        ]
-      : []),
-    ...app.ws.groups.map((g) => ({ id: `group-bc-${g.id}`, label: t('palette.broadcastGroup', { name: g.name }), icon: Megaphone, section: 'actions' as const, run: () => broadcastTo({ kind: 'group', id: g.id }) })),
+    ...listed('kanban', 'agents', 'connect'),
+    ...(desktop ? listed('add-host') : []),
+    ...app.others.map((l): Cmd => ({ id: `host:${l.key}`, label: t('palette.showHost', { name: hostName(l.target) }), icon: Server, section: 'actions', run: () => app.switchHost(l.key) })),
+    ...listed('disconnect', 'theme', 'panel', 'live-review', 'source-control', 'split-right', 'split-down', 'settings', 'skills', 'logs', 'feedback', 'record', 'tour', 'organize', 'ws-new', 'folder-new', 'rescan-folders'),
+    ...subjectAction(),
+    ...listed('ws-broadcast', 'ws-hold', 'ws-resume', 'group-new', 'sel-broadcast'),
+    ...app.ws.groups.map((g): Cmd => ({ id: `group-bc-${g.id}`, label: t('palette.broadcastGroup', { name: g.name }), icon: Megaphone, section: 'actions', run: () => broadcastTo({ kind: 'group', id: g.id }) })),
     ...app.ws.workspaces
       .filter((w) => !w.archived && !isGhost(w))
-      .map((w) => ({
+      .map((w): Cmd => ({
         id: `ws-${w.id}`,
         label: t('palette.goWorkspace', { name: w.name }),
         icon: Box,
-        section: 'actions' as const,
+        section: 'actions',
         run: () => {
           if (app.sidebarMode !== 'workspaces') app.setSidebarMode('workspaces');
           app.selectWorkspace(w.id);
         },
       })),
-    ...(connected ? [action('ports', 'palette.ports', EthernetPort, () => app.open('ports'))] : []),
-    ...(connected && app.conn.target.kind !== 'local' ? [action('forward-port', 'palette.forwardPort', EthernetPort, () => app.open('ports', 'forward'))] : []),
-    ...(updater.enabled && !app.mobile ? [{ id: 'updates', label: ut('check'), icon: RefreshCw, section: 'actions' as const, run: () => updater.check(true) }] : []),
-    ...(__SELF_UPDATE__ && apk.enabled && apk.updates ? [{ id: 'apk-updates', label: at('check'), icon: RefreshCw, section: 'actions' as const, run: () => apk.check(true) }] : []),
-    ...desktopActions,
-  ] as Cmd[]).map((c) => (desktop && KEYED[c.id] ? { ...c, keys: hint(KEYED[c.id]) || undefined } : c));
+    ...listed('ports', 'forward-port', 'updates', 'apk-updates'),
+    ...(desktop ? listed('shortcuts', 'new-window', 'sidebar', ...(app.view === 'agents' ? ['tab-new', 'tab-close', 'tab-reopen'] : [])) : []),
+  ];
 
   let query = $state('');
   let active = $state(0);
