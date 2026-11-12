@@ -1,7 +1,7 @@
-import { pressTimer, TOUCH_MENU_MS } from './gestures';
+import { LONG_PRESS_MS, pressTimer } from './gestures';
 
 export function touchContextMenu(node: HTMLElement) {
-  const press = pressTimer(TOUCH_MENU_MS);
+  const press = pressTimer(LONG_PRESS_MS);
   let fired = false;
   const cancel = () => press.cancel();
   const on: Record<string, (e: any) => void> = {

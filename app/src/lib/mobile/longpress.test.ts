@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { CHIP_PRESS_MS as LONG_PRESS_MS } from './gestures';
+import { LONG_PRESS_MS } from './gestures';
 import { longPress } from './longpress';
 
 function pointer(type: string, x = 0, y = 0): PointerEvent {

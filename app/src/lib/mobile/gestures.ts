@@ -1,9 +1,7 @@
 import { clamp } from '../clamp';
 import { PINCH_FONT_MAX, PINCH_FONT_MIN } from '../terminal/terminal-font';
 
-export const LONG_PRESS_MS = 450;
-export const CHIP_PRESS_MS = 500;
-export const TOUCH_MENU_MS = 500;
+export const LONG_PRESS_MS = 500;
 export const SWIPE_MIN_PX = 56;
 export const MOVE_TOLERANCE_PX = 10;
 

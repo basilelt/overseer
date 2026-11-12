@@ -1,7 +1,7 @@
-import { CHIP_PRESS_MS, pressTimer } from './gestures';
+import { LONG_PRESS_MS, pressTimer } from './gestures';
 
 export function longPress(node: HTMLElement, onLong: (e: PointerEvent) => void) {
-  const press = pressTimer(CHIP_PRESS_MS);
+  const press = pressTimer(LONG_PRESS_MS);
   let fired = false;
   const down = (e: PointerEvent) => {
     fired = false;

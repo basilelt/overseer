@@ -4,6 +4,10 @@ import { LONG_PRESS_MS, pressTimer } from './gestures';
 afterEach(() => vi.useRealTimers());
 
 describe('pressTimer', () => {
+  it('long-press takes 500 ms for chips, tab menus, kanban cards and terminals', () => {
+    expect(LONG_PRESS_MS).toBe(500);
+  });
+
   it('fires once after the hold', () => {
     vi.useFakeTimers();
     const press = pressTimer(LONG_PRESS_MS);

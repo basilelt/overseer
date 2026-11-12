@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { TOUCH_MENU_MS } from './gestures';
+import { LONG_PRESS_MS } from './gestures';
 import { touchContextMenu } from './touch-menu';
 
 class FakeMouseEvent extends Event {
@@ -36,7 +36,7 @@ describe('touchContextMenu', () => {
   it('sends a contextmenu event at the pressed point after a touch hold, and swallows the click that follows', () => {
     const { el, menu, click, action } = setup();
     el.dispatchEvent(pointer('pointerdown', 12, 34));
-    vi.advanceTimersByTime(TOUCH_MENU_MS);
+    vi.advanceTimersByTime(LONG_PRESS_MS);
     expect(menu).toHaveBeenCalledOnce();
     expect(menu.mock.calls[0]![0]).toMatchObject({ type: 'contextmenu', clientX: 12, clientY: 34, bubbles: true, cancelable: true });
     el.dispatchEvent(pointer('pointerup'));
@@ -52,10 +52,10 @@ describe('touchContextMenu', () => {
   it('does nothing on a short tap, so the click still selects', () => {
     const { el, menu, click } = setup();
     el.dispatchEvent(pointer('pointerdown'));
-    vi.advanceTimersByTime(TOUCH_MENU_MS - 100);
+    vi.advanceTimersByTime(LONG_PRESS_MS - 100);
     el.dispatchEvent(pointer('pointerup'));
     el.dispatchEvent(pointer('click'));
-    vi.advanceTimersByTime(TOUCH_MENU_MS);
+    vi.advanceTimersByTime(LONG_PRESS_MS);
     expect(menu).not.toHaveBeenCalled();
     expect(click).toHaveBeenCalledOnce();
   });
@@ -64,10 +64,10 @@ describe('touchContextMenu', () => {
     const { el, menu } = setup();
     el.dispatchEvent(pointer('pointerdown', 0, 0));
     el.dispatchEvent(pointer('pointermove', 30, 0));
-    vi.advanceTimersByTime(TOUCH_MENU_MS * 2);
+    vi.advanceTimersByTime(LONG_PRESS_MS * 2);
     el.dispatchEvent(pointer('pointerdown'));
     el.dispatchEvent(pointer('pointercancel'));
-    vi.advanceTimersByTime(TOUCH_MENU_MS * 2);
+    vi.advanceTimersByTime(LONG_PRESS_MS * 2);
     expect(menu).not.toHaveBeenCalled();
   });
 
@@ -75,16 +75,16 @@ describe('touchContextMenu', () => {
     const { el, menu } = setup();
     el.dispatchEvent(pointer('pointerdown', 0, 0));
     el.dispatchEvent(pointer('pointermove', 3, 3));
-    vi.advanceTimersByTime(TOUCH_MENU_MS);
+    vi.advanceTimersByTime(LONG_PRESS_MS);
     expect(menu).toHaveBeenCalledOnce();
   });
 
   it('ignores a mouse or pen press, which has a real right-click', () => {
     const { el, menu } = setup();
     el.dispatchEvent(pointer('pointerdown', 0, 0, 'mouse'));
-    vi.advanceTimersByTime(TOUCH_MENU_MS * 2);
+    vi.advanceTimersByTime(LONG_PRESS_MS * 2);
     el.dispatchEvent(pointer('pointerdown', 0, 0, 'pen'));
-    vi.advanceTimersByTime(TOUCH_MENU_MS * 2);
+    vi.advanceTimersByTime(LONG_PRESS_MS * 2);
     expect(menu).not.toHaveBeenCalled();
   });
 
@@ -95,7 +95,7 @@ describe('touchContextMenu', () => {
     expect(menu).toHaveBeenCalledOnce();
     expect(right.defaultPrevented).toBe(false);
     el.dispatchEvent(pointer('pointerdown'));
-    vi.advanceTimersByTime(TOUCH_MENU_MS);
+    vi.advanceTimersByTime(LONG_PRESS_MS);
     expect(menu).toHaveBeenCalledTimes(2);
     const echo = trusted(new Event('contextmenu', { cancelable: true }));
     el.dispatchEvent(echo);
@@ -107,9 +107,9 @@ describe('touchContextMenu', () => {
     const { el, menu, action } = setup();
     el.dispatchEvent(pointer('pointerdown'));
     action.destroy();
-    vi.advanceTimersByTime(TOUCH_MENU_MS * 2);
+    vi.advanceTimersByTime(LONG_PRESS_MS * 2);
     el.dispatchEvent(pointer('pointerdown'));
-    vi.advanceTimersByTime(TOUCH_MENU_MS * 2);
+    vi.advanceTimersByTime(LONG_PRESS_MS * 2);
     expect(menu).not.toHaveBeenCalled();
   });
 });
