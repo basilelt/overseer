@@ -21,6 +21,7 @@
   import { dropZone } from '../../drop';
   import { uploadBlobs, uploadPaths, type Attachment, type Failure } from '../../kanban/task-attachments';
   import { isSubmitChord } from '../../chord';
+  import { uploadFailures } from '../../upload-pipeline';
 
   let { onclose }: { onclose: () => void } = $props();
 
@@ -92,21 +93,22 @@
     reset();
   }
 
-  const failed = (f: Failure) => app.notify(t('upload.failed', f), 'error');
-
-  async function attach(run: (c: NonNullable<typeof app.client>) => Promise<Attachment[]>) {
+  async function attach(run: (c: NonNullable<typeof app.client>, fail: (f: Failure) => void) => Promise<Attachment[]>) {
     const client = app.client;
     if (!client || !app.connected) return app.notify(t('ports.disconnected'), 'error');
     uploading++;
+    const failures = uploadFailures();
     try {
-      attachments = [...attachments, ...(await run(client))];
+      attachments = [...attachments, ...(await run(client, (f) => failures.fail(f.name, f.error)))];
     } finally {
       uploading--;
     }
+    const failure = failures.summary();
+    if (failure) app.notify(failure, 'error');
   }
 
-  const addFiles = (files: File[]) => files.length && attach((c) => uploadBlobs(c, files, failed));
-  const addPaths = (paths: string[]) => paths.length && attach((c) => uploadPaths(c, paths, failed));
+  const addFiles = (files: File[]) => files.length && attach((c, fail) => uploadBlobs(c, files, fail));
+  const addPaths = (paths: string[]) => paths.length && attach((c, fail) => uploadPaths(c, paths, fail));
 
   function onPaste(e: ClipboardEvent) {
     const files = Array.from(e.clipboardData?.files ?? []);

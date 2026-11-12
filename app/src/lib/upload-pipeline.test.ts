@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { UploadResult } from './types';
-import { savePasteAll, uploadList } from './upload-pipeline';
+import { savePasteAll, uploadFailures, uploadList } from './upload-pipeline';
 import { clipboardFiles, fileInfos, PROGRESS_FROM, refusalMessage } from './uploads';
 
 const file = (name: string, body = 'x') => new File([body], name, { type: 'image/png' });
@@ -106,5 +106,30 @@ describe('uploadList', () => {
   it('works without the optional hooks', async () => {
     const out = await uploadList(async () => result('a.png'), ['/a/a.png'], { progress: vi.fn(), fail: vi.fn() });
     expect(out).toHaveLength(1);
+  });
+});
+
+describe('uploadFailures', () => {
+  it('has nothing to report when every file went up', async () => {
+    const failures = uploadFailures();
+    await uploadList(async (p) => result(p), ['/a', '/b'], { progress: vi.fn(), fail: failures.fail });
+    expect(failures.summary()).toBeNull();
+  });
+
+  it('names the file and the error of a single failure', async () => {
+    const failures = uploadFailures();
+    await uploadList(async () => Promise.reject(new Error('disk full')), ['/tmp/a.png'], { progress: vi.fn(), fail: failures.fail });
+    expect(failures.summary()).toBe("Couldn't upload a.png: disk full");
+  });
+
+  it('sums several failures into one notice with the last error', async () => {
+    const failures = uploadFailures();
+    const upload = vi.fn(async (p: string) => {
+      if (p === '/ok') return result('ok');
+      throw p === '/x' ? new Error('first') : 'daemon down';
+    });
+    const done = await uploadList(upload, ['/x', '/ok', '/y'], { progress: vi.fn(), fail: failures.fail });
+    expect(done).toHaveLength(1);
+    expect(failures.summary()).toBe("Couldn't upload 2 files, last error: daemon down");
   });
 });

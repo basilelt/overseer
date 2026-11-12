@@ -184,12 +184,13 @@
     const uploadAll = async (paths: string[]): Promise<string[]> => {
       const lib = await loadPipeline();
       if (!lib) return [];
-      const failures: string[] = [];
+      const failures = lib.uploadFailures();
       const done = await lib.uploadList((p, onProgress) => app.requireClient().uploadFile(p, onProgress), paths, {
         progress: (name, fraction) => app.progress(t('upload.progress', { name }), fraction),
-        fail: (name, e) => void failures.push(t('upload.failed', { name, error: message(e) })),
+        fail: failures.fail,
       });
-      if (failures.length) app.notify(failures[failures.length - 1], 'error', undefined, 'upload');
+      const failure = failures.summary();
+      if (failure) app.notify(failure, 'error', undefined, 'upload');
       else if (done.length) {
         const text = done.length === 1 ? t('upload.done', { name: done[0].name, path: done[0].short ?? done[0].path }) : t('upload.doneMany', { n: done.length });
         app.notice({ kind: 'upload', title: text, quiet: true, toast: false });

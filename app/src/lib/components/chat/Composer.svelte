@@ -18,7 +18,7 @@
   import { app } from '../../state.svelte';
   import type { CustomCommand, LineLocal } from '../../types';
   import { clipboardFiles, fileInfos, insertText, planDrop, planPaste, refusalMessage, uploadedPath, type Refusal } from '../../uploads';
-  import { savePasteAll, uploadList } from '../../upload-pipeline';
+  import { savePasteAll, uploadFailures, uploadList } from '../../upload-pipeline';
   import { requirePath, savePasted } from '../../kanban/task-attachments';
   import { applySlash, commandsFor, enterAction, lineCount, shrank, slashMatches, slashQuery, STALE_SIZE, type SendMode, type SizeMark, type SlashCommand } from '../../chat/composer';
   import { ChatSender } from '../../chat/sender.svelte';
@@ -213,14 +213,17 @@
   const refuse = (r: Refusal) => app.notify(refusalMessage(r), 'error');
 
   async function uploadAll(paths: string[]): Promise<string[]> {
+    const failures = uploadFailures();
     const done = await uploadList((p, onProgress) => app.requireClient().uploadFile(p, onProgress), paths, {
       progress: (name, fraction) => app.progress(t('upload.progress', { name }), fraction),
       validate: (r) => void requirePath(r?.path),
       done: (name, r, large) => {
         if (large) app.notice({ kind: 'upload', title: t('upload.done', { name, path: uploadedPath(r) }) });
       },
-      fail: (name, e) => app.notify(t('upload.failed', { name, error: message(e) }), 'error', undefined, 'upload'),
+      fail: failures.fail,
     });
+    const failure = failures.summary();
+    if (failure) app.notify(failure, 'error', undefined, 'upload');
     return done.map(uploadedPath);
   }
 

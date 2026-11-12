@@ -1,3 +1,4 @@
+import { t } from './i18n.svelte';
 import { basename } from './paths';
 import type { UploadProgress, UploadResult } from './types';
 import { PROGRESS_FROM } from './uploads';
@@ -42,4 +43,18 @@ export async function uploadList(upload: (path: string, onProgress: (p: UploadPr
     }
   }
   return done;
+}
+
+export function uploadFailures() {
+  const failed: { name: string; error: string }[] = [];
+  return {
+    fail(name: string, e: unknown) {
+      failed.push({ name, error: String((e as Error)?.message ?? e) });
+    },
+    summary(): string | null {
+      const last = failed[failed.length - 1];
+      if (!last) return null;
+      return failed.length === 1 ? t('upload.failed', last) : t('upload.failedMany', { n: failed.length, error: last.error });
+    },
+  };
 }
