@@ -12,7 +12,6 @@
   import SendHorizontal from '@lucide/svelte/icons/send-horizontal';
   import X from '@lucide/svelte/icons/x';
   import { onMount } from 'svelte';
-  import { isTauri } from '../../daemon/client';
   import { dictationHintKey, dictationMode, startDictation } from '../../dictation';
   import { t } from '../../i18n.svelte';
   import { app } from '../../state.svelte';
@@ -23,7 +22,7 @@
   import { applySlash, commandsFor, enterAction, lineCount, slashMatches, slashQuery, type SendMode, type SlashCommand } from '../../chat/composer';
   import { ChatSender } from '../../chat/sender.svelte';
   import { clearComposerHeight, reportComposerHeight } from '../../chat/composer-height';
-  import { platformName } from '../../platform';
+  import { platformName, isTauri } from '../../platform';
   import { KEY_DRAFTS_CHAT } from '../../storage';
 
   let { lineId, agent, local, phone, history = [], onsent }: { lineId: string; agent: string; local: LineLocal | undefined; phone: boolean; history?: string[]; onsent?: (text: string) => void } = $props();

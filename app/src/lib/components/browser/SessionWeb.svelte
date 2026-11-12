@@ -11,7 +11,7 @@
   import X from '@lucide/svelte/icons/x';
   import { t } from '../../i18n.svelte';
   import { app } from '../../state.svelte';
-  import { isTauri } from '../../daemon/client';
+  import { isTauri } from '../../platform';
   import { boundsOf, nativeBrowser, normalizeUrl } from '../../browser';
   import { pages } from '../../session/session-pages.svelte';
   import type { Page } from '../../session/session-pages';

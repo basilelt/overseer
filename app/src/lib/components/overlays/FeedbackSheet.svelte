@@ -14,7 +14,8 @@
   import { api } from '../../daemon/api';
   import { feedbackApi } from '../../feedback/feedback-api';
   import { app } from '../../state.svelte';
-  import { isTauri, DaemonError } from '../../daemon/client';
+  import { DaemonError } from '../../daemon/client';
+  import { isTauri } from '../../platform';
   import { settings } from '../../settings/settings.svelte';
   import { findAgent, pickAgent, isAgentId } from '../../agents';
   import { MAX_UPLOAD } from '../../uploads';

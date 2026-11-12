@@ -15,3 +15,7 @@ export function isWindowsUA(): boolean {
 export function modLabel(): string {
   return isMac ? '⌘' : 'Ctrl';
 }
+
+export function isTauri(): boolean {
+  return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
+}

@@ -1,8 +1,7 @@
-import { isTauri } from '../daemon/client';
 import { answerCloseTab, closeActive, closeTabKey, command, newWindow, runShortcut } from './commands';
 import { ui } from '../mobile/ui.svelte';
 import { phoneOrMobile } from '../mobile/phone.svelte';
-import { isMac } from '../platform';
+import { isMac, isTauri } from '../platform';
 import { settings } from '../settings/settings.svelte';
 import { accelerator, resolveShortcut, shortcutLabel, type ShortcutId } from './shortcuts';
 import { app } from '../state.svelte';

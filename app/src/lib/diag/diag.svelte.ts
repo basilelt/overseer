@@ -1,6 +1,7 @@
 import { api } from '../daemon/api';
 import * as CMD from '../daemon/tauri-commands';
-import { isTauri, DaemonError, type DaemonClient } from '../daemon/client';
+import { DaemonError, type DaemonClient } from '../daemon/client';
+import { isTauri } from '../platform';
 import { type Sub, t } from '../i18n.svelte';
 import { errorText, forwardWarning, Limiter, type DiagInfo, type LogTail, type PreviousSession, type ServerLog } from './diag';
 

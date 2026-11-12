@@ -15,7 +15,7 @@
   import { followReview, openReviewFromHash } from './lib/review/open';
   import { liveOn } from './lib/git/live.svelte';
   import { api } from './lib/daemon/api';
-  import { isTauri } from './lib/daemon/client';
+  import { isTauri } from './lib/platform';
   import { themeReport } from './lib/terminal/terminal';
   import { colorPalette, customColors, resolvedTheme, saveSettings, setSystemDark, settings } from './lib/settings/settings.svelte';
   import Resizer from './lib/components/ui/Resizer.svelte';

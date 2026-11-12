@@ -1,7 +1,7 @@
 <script lang="ts">
   import Users from '@lucide/svelte/icons/users';
   import X from '@lucide/svelte/icons/x';
-  import { isTauri } from '../../daemon/client';
+  import { isTauri } from '../../platform';
   import { t, type Key } from '../../i18n.svelte';
   import { app } from '../../state.svelte';
   import { saveSettings, settings, type Settings } from '../../settings/settings.svelte';

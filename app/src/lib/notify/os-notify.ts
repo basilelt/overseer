@@ -1,5 +1,5 @@
 import * as CMD from '../daemon/tauri-commands';
-import { isTauri } from '../daemon/client';
+import { isTauri } from '../platform';
 import { isDemo } from '../daemon/demo';
 import { t } from '../i18n.svelte';
 import { center } from './notifications.svelte';

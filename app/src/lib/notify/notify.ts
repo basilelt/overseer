@@ -1,5 +1,5 @@
 import { agentName } from '../agents';
-import { isTauri } from '../daemon/client';
+import { isTauri } from '../platform';
 import { t } from '../i18n.svelte';
 import type { Snapshot } from '../reduce';
 import { settings, type Settings } from '../settings/settings.svelte';

@@ -1,5 +1,5 @@
 import * as CMD from '../daemon/tauri-commands';
-import { isTauri } from '../daemon/client';
+import { isTauri } from '../platform';
 
 let android = false;
 

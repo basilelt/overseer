@@ -1,4 +1,4 @@
-import { isTauri } from '../daemon/client';
+import { isTauri } from '../platform';
 import { nativePage, type Bounds, type NavEvent } from '../browser';
 import { attach, closePage, loadPages, MAX_LIVE, pageIds, patchPage, prune, savePages, select, setOpen, setRatio, touch, type Page, type PagesByKey } from './session-pages';
 import { OneShot } from '../timer';

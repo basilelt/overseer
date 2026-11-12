@@ -35,4 +35,13 @@ describe('platform', () => {
     expect(p.userAgent()).toBe('');
     expect(p.isMac).toBe(false);
   });
+
+  it('detects the Tauri runtime from the injected internals', async () => {
+    const p = await load('Linux', 'X11');
+    expect(p.isTauri()).toBe(false);
+    vi.stubGlobal('window', { __TAURI_INTERNALS__: {} });
+    expect(p.isTauri()).toBe(true);
+    vi.stubGlobal('window', undefined);
+    expect(p.isTauri()).toBe(false);
+  });
 });

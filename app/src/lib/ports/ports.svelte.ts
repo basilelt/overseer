@@ -1,5 +1,5 @@
 import { untrack } from 'svelte';
-import { isTauri } from '../daemon/client';
+import { isTauri } from '../platform';
 import { t } from '../i18n.svelte';
 import { closedForwards, EMPTY_PORTS, forwardNotices, forwardUrl, portChip, portCount, portRows, portSettings } from './ports';
 import { settings } from '../settings/settings.svelte';

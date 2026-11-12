@@ -8,7 +8,7 @@
   import Loader from '@lucide/svelte/icons/loader-circle';
   import { t } from '../../i18n.svelte';
   import { app } from '../../state.svelte';
-  import { isTauri } from '../../daemon/client';
+  import { isTauri } from '../../platform';
   import { boundsOf, nativeBrowser, normalizeUrl, type NavEvent } from '../../browser';
 
   let { initialUrl = null, onurl }: { initialUrl?: string | null; onurl?: (url: string) => void } = $props();

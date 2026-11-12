@@ -15,7 +15,8 @@
   import ChevronDown from '@lucide/svelte/icons/chevron-down';
   import X from '@lucide/svelte/icons/x';
   import { findHit, viewportFor, type Hit } from '../../terminal/termfind';
-  import { isTauri, type TermIO } from '../../daemon/client';
+  import { type TermIO } from '../../daemon/client';
+  import { isTauri } from '../../platform';
   import { t } from '../../i18n.svelte';
   import { attachIme } from '../../terminal/ime';
   import { keyToInput } from '../../commands/keys';

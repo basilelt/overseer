@@ -7,7 +7,7 @@
   import { feedback, ft } from '../../feedback/feedback.svelte';
   import Modal from '../ui/Modal.svelte';
   import { app } from '../../state.svelte';
-  import { isTauri } from '../../daemon/client';
+  import { isTauri } from '../../platform';
   import { diag, diagBackend, dt as tx, fetchServerLog } from '../../diag/diag.svelte';
   import { describeExit, filterLines, iso, parseLines, type DiagInfo, type LevelFilter, type ServerLog } from '../../diag/diag';
   import { formatBundle } from '../../diag/diag-bundle';

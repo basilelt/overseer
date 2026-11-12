@@ -1,5 +1,5 @@
 import type { Component } from 'svelte';
-import { isTauri } from '../daemon/client';
+import { isTauri } from '../platform';
 import { clamp } from '../clamp';
 import { closedShells } from '../tabs/closed-tabs';
 import { DEFAULT_SETTINGS, saveSettings, settings } from '../settings/settings.svelte';

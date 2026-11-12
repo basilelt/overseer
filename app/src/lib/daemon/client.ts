@@ -1,6 +1,7 @@
 import * as CMD from './tauri-commands';
 import type { ConnState, DaemonEvent, DeviceKey, Forward, HostTarget, LocalNetworkReport, PlatformInfo, PortSettings, PortsState, SavedHost, SshHost, UploadProgress, UploadResult } from '../types';
 import { isDemo } from './demo';
+import { isTauri } from '../platform';
 
 export interface TermIO {
   write(data: string): void;
@@ -53,10 +54,6 @@ export class DaemonError extends Error {
   ) {
     super(message);
   }
-}
-
-export function isTauri(): boolean {
-  return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
 }
 
 export function mockSelected(): boolean {
