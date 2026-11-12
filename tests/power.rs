@@ -98,6 +98,23 @@ fn a_refused_inhibitor_keeps_the_option_off_and_shows_why() {
 }
 
 #[test]
+fn a_refused_change_is_forgotten_after_a_restart() {
+    let (mut app, log) = app("power-refused-restart");
+    std::fs::write(log.with_extension("log.fail"), "").unwrap();
+    let (code, _) = app.req("PUT", LID, json!({"enabled": true}));
+    assert_eq!(code, 500);
+    assert_eq!(
+        app.ok("GET", LID, Value::Null)["error"],
+        "Failed to inhibit: Access denied"
+    );
+    app.crash_and_restart();
+    assert_eq!(
+        app.ok("GET", LID, Value::Null),
+        json!({"enabled": false, "active": false, "supported": true, "error": null})
+    );
+}
+
+#[test]
 fn a_non_boolean_body_is_rejected() {
     let (app, _log) = app("power-bad");
     let (code, v) = app.req("PUT", LID, json!({"enabled": "yes"}));
