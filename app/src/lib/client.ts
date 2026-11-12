@@ -1,3 +1,4 @@
+import { CMD, PLUGIN_CMD } from './tauri-commands';
 import type { ConnState, DaemonEvent, DeviceKey, Forward, HostTarget, LocalNetworkReport, PlatformInfo, PortSettings, PortsState, SavedHost, SshHost, UploadProgress, UploadResult } from './types';
 import { isDemo } from './demo';
 
@@ -65,11 +66,11 @@ async function demoClient(): Promise<DaemonClient> {
   const { MockDaemon } = await import('./mock');
   if (!isTauri()) return new MockDaemon();
   const { invoke } = await import('@tauri-apps/api/core');
-  const platform = await invoke<PlatformInfo>('app_platform').catch(() => undefined);
+  const platform = await invoke<PlatformInfo>(CMD.appPlatform).catch(() => undefined);
   const m = new MockDaemon({ platform });
-  m.copyText = async (text) => void (await invoke('plugin:clipboard-manager|write_text', { text }));
-  m.pasteText = () => invoke<string>('plugin:clipboard-manager|read_text');
-  m.saveDownload = (name, bytes) => invoke<string>('save_download', bytes, { headers: { 'x-name': encodeURIComponent(name) } });
+  m.copyText = async (text) => void (await invoke(PLUGIN_CMD.clipboardWrite, { text }));
+  m.pasteText = () => invoke<string>(PLUGIN_CMD.clipboardRead);
+  m.saveDownload = (name, bytes) => invoke<string>(CMD.saveDownload, bytes, { headers: { 'x-name': encodeURIComponent(name) } });
   return m;
 }
 

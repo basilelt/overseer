@@ -1,3 +1,4 @@
+import { CMD } from './tauri-commands';
 export type DictationMode = 'native' | 'hint' | null;
 
 export function dictationMode(os: string, platform: string, tauri: boolean, phone: boolean): DictationMode {
@@ -12,5 +13,5 @@ export function dictationHintKey(platform: string): 'dictation.hintMac' | 'dicta
 
 export async function startDictation(): Promise<void> {
   const { invoke } = await import('@tauri-apps/api/core');
-  await invoke('start_dictation');
+  await invoke(CMD.startDictation);
 }

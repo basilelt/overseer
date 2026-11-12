@@ -1,3 +1,4 @@
+import { CMD } from './tauri-commands';
 import { isTauri } from './client';
 import type { HostTarget } from './types';
 
@@ -14,7 +15,7 @@ export async function takeHandoff(search: string = globalThis.location?.search ?
   if (isTauri()) {
     try {
       const { invoke } = await import('@tauri-apps/api/core');
-      return asTarget(await invoke('window_handoff'));
+      return asTarget(await invoke(CMD.windowHandoff));
     } catch {
       return null;
     }

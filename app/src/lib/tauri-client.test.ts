@@ -20,8 +20,8 @@ describe('TauriDaemon slots', () => {
     await d.disconnect();
     await d.wake();
     expect(invoke).toHaveBeenCalledWith('daemon_request', { method: 'GET', path: '/v1/lines', body: null });
-    expect(invoke).toHaveBeenCalledWith('conn_disconnect');
-    expect(invoke).toHaveBeenCalledWith('conn_wake');
+    expect(invoke).toHaveBeenCalledWith('conn_disconnect', undefined);
+    expect(invoke).toHaveBeenCalledWith('conn_wake', undefined);
   });
 
   it('routes every connection call of an extra host through its slot', async () => {

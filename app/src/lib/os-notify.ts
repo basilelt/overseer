@@ -1,3 +1,4 @@
+import { CMD } from './tauri-commands';
 import { isTauri } from './client';
 import { isDemo } from './demo';
 import { t } from './i18n.svelte';
@@ -190,7 +191,7 @@ export function sendTest(app: AppLike): Promise<boolean> {
 
 export async function openSystemSettings(): Promise<void> {
   const { invoke } = await import('@tauri-apps/api/core');
-  await invoke('open_notification_settings');
+  await invoke(CMD.openNotificationSettings);
 }
 
 function membership(app: AppLike) {

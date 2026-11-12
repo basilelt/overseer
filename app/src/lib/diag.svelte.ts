@@ -1,3 +1,4 @@
+import { CMD } from './tauri-commands';
 import { isTauri, DaemonError, type DaemonClient } from './client';
 import { type Sub, t } from './i18n.svelte';
 import { errorText, forwardWarning, Limiter, type DiagInfo, type LogTail, type PreviousSession, type ServerLog } from './diag';
@@ -18,13 +19,13 @@ const MOCK_LINES = [
 ];
 
 export const diagBackend = {
-  tail: (lines: number): Promise<LogTail> => (isTauri() ? call<LogTail>('diag_tail', { lines }) : Promise.resolve({ path: 'app.log', lines: MOCK_LINES })),
-  info: (): Promise<DiagInfo | null> => (isTauri() ? call<DiagInfo>('diag_info') : Promise.resolve(null)),
-  previous: (): Promise<PreviousSession | null> => (isTauri() ? call<PreviousSession | null>('diag_previous') : Promise.resolve(null)),
-  dismiss: (): Promise<void> => (isTauri() ? call<void>('diag_dismiss') : Promise.resolve()),
-  save: (text: string): Promise<string> => call<string>('diag_save', { text }),
-  openDir: (): Promise<void> => call<void>('diag_open_dir'),
-  sessionEnd: (reason: string): Promise<void> => (isTauri() ? call<void>('diag_session_end', { reason }) : Promise.resolve()),
+  tail: (lines: number): Promise<LogTail> => (isTauri() ? call<LogTail>(CMD.diagTail, { lines }) : Promise.resolve({ path: 'app.log', lines: MOCK_LINES })),
+  info: (): Promise<DiagInfo | null> => (isTauri() ? call<DiagInfo>(CMD.diagInfo) : Promise.resolve(null)),
+  previous: (): Promise<PreviousSession | null> => (isTauri() ? call<PreviousSession | null>(CMD.diagPrevious) : Promise.resolve(null)),
+  dismiss: (): Promise<void> => (isTauri() ? call<void>(CMD.diagDismiss) : Promise.resolve()),
+  save: (text: string): Promise<string> => call<string>(CMD.diagSave, { text }),
+  openDir: (): Promise<void> => call<void>(CMD.diagOpenDir),
+  sessionEnd: (reason: string): Promise<void> => (isTauri() ? call<void>(CMD.diagSessionEnd, { reason }) : Promise.resolve()),
 };
 
 export async function fetchServerLog(client: DaemonClient | null, connected: boolean, tail = 300): Promise<ServerLog> {
@@ -63,8 +64,8 @@ function forward(level: 'error' | 'warn' | 'info', message: string, stack?: stri
   if (forwarding || !limiter.allow(`${level}:${message}`, Date.now())) return;
   forwarding = true;
   const dropped = limiter.takeDropped();
-  if (dropped) void call('diag_log', { level: 'warn', message: `${dropped} frontend messages not forwarded (rate limit)`, stack: null }).catch(() => {});
-  void call('diag_log', { level, message, stack: stack ?? null }).catch(() => {});
+  if (dropped) void call(CMD.diagLog, { level: 'warn', message: `${dropped} frontend messages not forwarded (rate limit)`, stack: null }).catch(() => {});
+  void call(CMD.diagLog, { level, message, stack: stack ?? null }).catch(() => {});
   forwarding = false;
 }
 
@@ -109,14 +110,14 @@ export function startDiagnostics(viewOf: () => string): () => void {
     console.warn = warn;
   });
 
-  const onVisibility = () => void call('diag_visibility', { visible: document.visibilityState === 'visible' }).catch(() => {});
+  const onVisibility = () => void call(CMD.diagVisibility, { visible: document.visibilityState === 'visible' }).catch(() => {});
   document.addEventListener('visibilitychange', onVisibility);
   stops.push(() => document.removeEventListener('visibilitychange', onVisibility));
 
   let unlisten: (() => void) | null = null;
   let stopped = false;
   void import('@tauri-apps/api/event').then(async ({ listen }) => {
-    const u = await listen('diag:ping', () => void call('diag_pong', { view: viewOf() }).catch(() => {}));
+    const u = await listen('diag:ping', () => void call(CMD.diagPong, { view: viewOf() }).catch(() => {}));
     if (stopped) u();
     else unlisten = u;
   });
@@ -124,7 +125,7 @@ export function startDiagnostics(viewOf: () => string): () => void {
     stopped = true;
     unlisten?.();
   });
-  void call('diag_pong', { view: viewOf() }).catch(() => {});
+  void call(CMD.diagPong, { view: viewOf() }).catch(() => {});
 
   void diagBackend
     .previous()

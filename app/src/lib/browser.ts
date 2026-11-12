@@ -1,3 +1,4 @@
+import { CMD } from './tauri-commands';
 import { Channel, invoke } from '@tauri-apps/api/core';
 
 export interface NavEvent {
@@ -32,31 +33,31 @@ export const nativeBrowser = {
   open(url: string, b: Bounds, onNav: (e: NavEvent) => void) {
     const ch = new Channel<NavEvent>();
     ch.onmessage = onNav;
-    return invoke('browser_open', { url, ...b, onNav: ch });
+    return invoke(CMD.browserOpen, { url, ...b, onNav: ch });
   },
-  bounds: (b: Bounds) => invoke('browser_bounds', { ...b }),
-  navigate: (url: string) => invoke('browser_navigate', { url }),
-  back: () => invoke('browser_back'),
-  forward: () => invoke('browser_forward'),
-  reload: () => invoke('browser_reload'),
-  hide: () => invoke('browser_hide'),
-  show: () => invoke('browser_show'),
-  external: (url: string) => invoke('open_external', { url }),
+  bounds: (b: Bounds) => invoke(CMD.browserBounds, { ...b }),
+  navigate: (url: string) => invoke(CMD.browserNavigate, { url }),
+  back: () => invoke(CMD.browserBack),
+  forward: () => invoke(CMD.browserForward),
+  reload: () => invoke(CMD.browserReload),
+  hide: () => invoke(CMD.browserHide),
+  show: () => invoke(CMD.browserShow),
+  external: (url: string) => invoke(CMD.openExternal, { url }),
 };
 
 export const nativePage = {
   open(id: string, url: string, b: Bounds, onNav: (e: NavEvent) => void) {
     const ch = new Channel<NavEvent>();
     ch.onmessage = onNav;
-    return invoke('browser_open', { id, url, ...b, onNav: ch });
+    return invoke(CMD.browserOpen, { id, url, ...b, onNav: ch });
   },
-  show: (id: string, b: Bounds) => invoke('browser_bounds', { id, ...b }).then(() => invoke('browser_show', { id })),
-  bounds: (id: string, b: Bounds) => invoke('browser_bounds', { id, ...b }),
-  navigate: (id: string, url: string) => invoke('browser_navigate', { id, url }),
-  back: (id: string) => invoke('browser_back', { id }),
-  forward: (id: string) => invoke('browser_forward', { id }),
-  reload: (id: string) => invoke('browser_reload', { id }),
-  hide: (id: string) => invoke('browser_hide', { id }),
-  close: (id: string) => invoke('browser_close', { id }),
-  reset: () => invoke('browser_pages_reset'),
+  show: (id: string, b: Bounds) => invoke(CMD.browserBounds, { id, ...b }).then(() => invoke(CMD.browserShow, { id })),
+  bounds: (id: string, b: Bounds) => invoke(CMD.browserBounds, { id, ...b }),
+  navigate: (id: string, url: string) => invoke(CMD.browserNavigate, { id, url }),
+  back: (id: string) => invoke(CMD.browserBack, { id }),
+  forward: (id: string) => invoke(CMD.browserForward, { id }),
+  reload: (id: string) => invoke(CMD.browserReload, { id }),
+  hide: (id: string) => invoke(CMD.browserHide, { id }),
+  close: (id: string) => invoke(CMD.browserClose, { id }),
+  reset: () => invoke(CMD.browserPagesReset),
 };

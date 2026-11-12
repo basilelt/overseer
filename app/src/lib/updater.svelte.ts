@@ -1,3 +1,4 @@
+import { CMD } from './tauri-commands';
 import { isTauri } from './client';
 import { isDemo } from './demo';
 import { type Sub, t } from './i18n.svelte';
@@ -189,15 +190,15 @@ export function ut(key: UKey, params?: Record<string, string | number>): string 
 async function tauriBackend(): Promise<UpdaterBackend> {
   const { invoke, Channel } = await import('@tauri-apps/api/core');
   return {
-    status: () => invoke<UpdateStatus>('update_status'),
-    check: () => invoke<CheckResult>('update_check'),
+    status: () => invoke<UpdateStatus>(CMD.updateStatus),
+    check: () => invoke<CheckResult>(CMD.updateCheck),
     install: (onProgress) => {
       const channel = new Channel<ProgressEvent>();
       channel.onmessage = onProgress;
-      return invoke<void>('update_install', { onProgress: channel });
+      return invoke<void>(CMD.updateInstall, { onProgress: channel });
     },
-    relaunch: () => invoke<void>('update_relaunch'),
-    openUrl: (url) => invoke<void>('open_external', { url }),
+    relaunch: () => invoke<void>(CMD.updateRelaunch),
+    openUrl: (url) => invoke<void>(CMD.openExternal, { url }),
   };
 }
 

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { CMD } from './lib/tauri-commands';
   import { onMount, untrack } from 'svelte';
   import { app } from './lib/state.svelte';
   import TitleBar from './lib/components/TitleBar.svelte';
@@ -104,7 +105,7 @@
   async function followSystemTheme(): Promise<() => void> {
     try {
       const { invoke } = await import('@tauri-apps/api/core');
-      const platform = await invoke<{ os: string; mobile: boolean }>('app_platform');
+      const platform = await invoke<{ os: string; mobile: boolean }>(CMD.appPlatform);
       if (platform.mobile) return followMobileSystem(platform.os);
       const { getCurrentWindow } = await import('@tauri-apps/api/window');
       const w = getCurrentWindow();
