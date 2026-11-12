@@ -1,20 +1,10 @@
+import { splitMinutes } from '../duration';
 import type { SysAgent, SysPoint, SysSample } from './types';
 
-export type Level = 'ok' | 'warn' | 'crit';
-export const WARN = 80;
-export const CRIT = 95;
+import { level, worst, type Level } from '../severity';
+
+export { level, type Level };
 export const WINDOW_MS = 600_000;
-
-export function level(pct: number | null | undefined): Level {
-  if (pct == null || !Number.isFinite(pct)) return 'ok';
-  if (pct >= CRIT) return 'crit';
-  if (pct >= WARN) return 'warn';
-  return 'ok';
-}
-
-export function worst(...levels: Level[]): Level {
-  return levels.includes('crit') ? 'crit' : levels.includes('warn') ? 'warn' : 'ok';
-}
 
 const UNITS = ['B', 'KB', 'MB', 'GB', 'TB', 'PB'];
 
@@ -42,9 +32,7 @@ export function formatPct(n: number | null | undefined): string {
 
 export function formatUptime(sec: number | null | undefined): string {
   if (sec == null || !Number.isFinite(sec) || sec < 0) return '—';
-  const d = Math.floor(sec / 86400);
-  const h = Math.floor((sec % 86400) / 3600);
-  const m = Math.floor((sec % 3600) / 60);
+  const { d, h, m } = splitMinutes(Math.floor(sec / 60));
   if (d) return `${d}d ${h}h`;
   if (h) return `${h}h ${m}m`;
   return `${m}m`;
@@ -65,7 +53,7 @@ export function chipText(s: SysSample | null | undefined): string | null {
 }
 
 export function chipLevel(s: SysSample | null | undefined): Level {
-  return worst(level(cpuPct(s)), level(memPct(s)));
+  return worst([level(cpuPct(s)), level(memPct(s))]);
 }
 
 export function niceMax(max: number): number {
