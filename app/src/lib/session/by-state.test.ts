@@ -93,9 +93,6 @@ describe('byState', () => {
   });
 
   it('groups sessions of a workspace outside the visible set under no workspace', () => {
-    // Given a session whose workspace is archived (not in the visible set)
-    // When the sections are built with the visible workspaces
-    // Then it lands in the last "no workspace" group, while visible ones keep theirs
     const wsOf = new Map([['x', 'gone'], ['y', 'w1']]);
     const open = byState([item('x', 'ready', day(6)), item('y', 'ready', day(5))], wsOf, now, new Set(['w1']))[1]!;
     expect(open.state === 'open' && open.groups.map((g) => g.workspaceId)).toEqual(['w1', null]);

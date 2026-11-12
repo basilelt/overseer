@@ -45,11 +45,8 @@ describe('workspaceSessions', () => {
   });
 
   it('lists running plain shells apart from the sessions, most recent first, and drops exited ones', () => {
-    // Given an agent session, two running shells and an exited one
     const items = [item('s1', 'running', day(6, 9), { kind: 'shell' }), item('a', 'running', day(6, 8)), item('s2', 'running', day(6, 10), { kind: 'shell' }), item('x', 'stopped', day(6, 11), { kind: 'shell' })];
-    // When the workspace sessions are built
     const r = workspaceSessions(items, now);
-    // Then shells stay out of live and closed, and only the running ones are listed, newest first
     expect(r.live.map((i) => i.key)).toEqual(['a']);
     expect(r.closed.count).toBe(0);
     expect(r.shells.map((i) => i.key)).toEqual(['s2', 's1']);
@@ -61,11 +58,8 @@ describe('workspaceSessions', () => {
   });
 
   it('follows the tab order of the workspace for live sessions and shells, whatever their state or age', () => {
-    // Given tabs reordered by hand: the paused session first, then a shell tab between sessions
     const items = [item('a', 'needs_input', day(6, 14)), item('r', 'running', day(6, 13)), item('p', 'paused', day(1)), item('s1', 'running', day(6, 9), { kind: 'shell' }), item('s2', 'running', day(6, 10), { kind: 'shell' })];
-    // When the workspace sessions are built with that order
     const r = workspaceSessions(items, now, ['p', 's1', 'a', 's2', 'r']);
-    // Then the sidebar lists them in the tab order, shells still apart
     expect(r.live.map((i) => i.key)).toEqual(['p', 'a', 'r']);
     expect(r.shells.map((i) => i.key)).toEqual(['s1', 's2']);
   });

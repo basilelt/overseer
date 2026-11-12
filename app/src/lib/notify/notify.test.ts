@@ -34,9 +34,6 @@ describe('agent notifications', () => {
   });
 
   it('names a renamed session by its custom title', () => {
-    // Given a busy session the user renamed
-    // When its turn finishes
-    // Then the notification body uses the custom title, not the auto title, and does not repeat the place already in the title
     const prev = snap([line('a', 'claude', { busy: true, titleOverride: 'Payments' })]);
     const next = snap([line('a', 'claude', { busy: false, titleOverride: 'Payments' })]);
     expect(notificationsFor(prev, next, all, () => 'webshop')[0].body).toBe('Payments');

@@ -75,18 +75,12 @@ describe('findPaths on long tokens', () => {
     return { out, ms: performance.now() - t0 };
   };
 
-  // Given a full git SHA and a session UUID, which have no file extension
-  // When findPaths scans them
-  // Then it returns nothing quickly instead of backtracking exponentially
   it('does not backtrack on SHAs and UUIDs', () => {
     const { out, ms } = timed('commit 3f9a1c0d2b7e4f6a8c1d3e5f7a9b0c2d4e6f8a1b in session 0b7f2c4e-91d3-4a6b-8e2f-5c7d9a1b3e4f_resume_token');
     expect(out).toEqual([]);
     expect(ms).toBeLessThan(50);
   });
 
-  // Given a very long run of path characters such as a base64 blob
-  // When findPaths scans it
-  // Then it skips it in bounded time and still finds a path next to it
   it('stays fast on huge tokens', () => {
     const blob = 'aB3+/x'.repeat(20_000);
     const { out, ms } = timed(`${blob} see ./docs/spec.pdf`);
@@ -94,9 +88,6 @@ describe('findPaths on long tokens', () => {
     expect(ms).toBeLessThan(100);
   });
 
-  // Given paths inside punctuation and a URL
-  // When findPaths scans the line
-  // Then the same matches as before are found
   it('keeps matching paths around punctuation', () => {
     expect(findPaths('(see ../a/b.md) "x/y.json", a//b.png, ~foo.png').map((m) => m.path)).toEqual(['../a/b.md', 'x/y.json', '~foo.png']);
   });

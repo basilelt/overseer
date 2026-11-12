@@ -685,35 +685,26 @@ describe('selectSession', () => {
   });
 
   it('opens the session and clears the multi-selection on a plain click', () => {
-    // Given a multi-selection
     app.multi = new Set(['a', 'b']);
-    // When a session is clicked without a modifier
     selectSession('c');
-    // Then it opens alone
     expect(app.select).toHaveBeenCalledWith('c');
     expect(app.multi.size).toBe(0);
   });
 
   it('toggles the session in the multi-selection on Ctrl, Meta or Shift click without opening it', () => {
-    // Given one session open
     app.selectedKey = 'a';
-    // When b is clicked with Ctrl, then Shift, then Meta
     selectSession('b', { ctrlKey: true } as MouseEvent);
     expect([...app.multi]).toEqual(['b']);
     selectSession('c', { shiftKey: true } as MouseEvent);
     selectSession('b', { metaKey: true } as MouseEvent);
-    // Then the set toggles and no session opens
     expect([...app.multi]).toEqual(['c']);
     expect(app.select).not.toHaveBeenCalled();
   });
 
   it('keeps the open session selected when the last toggle empties the set', () => {
-    // Given a session open and in the multi-selection
     app.selectedKey = 'a';
     app.multi = new Set(['a']);
-    // When it is Ctrl-clicked off
     selectSession('a', { ctrlKey: true } as MouseEvent);
-    // Then the open session stays selected
     expect([...app.multi]).toEqual(['a']);
   });
 });

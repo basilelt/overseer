@@ -111,34 +111,22 @@ describe('custom titles', () => {
   const task = { id: 't1', lineId: 'a', status: 'in_progress', title: 'Task A' } as Task;
 
   it('shows a line custom title over the auto and task titles', () => {
-    // Given a line with an auto title, a task title and a custom title
-    // When the sidebar items are built
-    // Then the custom title wins and the item is marked as renamed
     const [it] = sidebarItems([line('a', {}, { title: 'Auto', titleOverride: 'Mine' })], [], [task]);
     expect(it).toMatchObject({ title: 'Mine', renamed: true });
   });
 
   it('falls back to the auto title once the custom title is cleared', () => {
-    // Given a line whose custom title was cleared
-    // When the sidebar items are built
-    // Then the auto title shows and the item is not marked as renamed
     const [it] = sidebarItems([line('a', {}, { title: 'Auto', titleOverride: null })], [], []);
     expect(it.title).toBe('Auto');
     expect(it.renamed).toBeFalsy();
   });
 
   it('shows a plain terminal custom title over its auto title', () => {
-    // Given a loose terminal with a custom title
-    // When the sidebar items are built
-    // Then the custom title shows and the item is marked as renamed
     const term = { id: 's1', exited: false, cmd: ['zsh'], title: 'zsh', titleOverride: 'build watch', cwd: '/', createdAt: '' } as Term;
     expect(sidebarItems([], [term], [])[0]).toMatchObject({ title: 'build watch', renamed: true });
   });
 
   it('normalises a typed title like the daemon does', () => {
-    // Given titles with padding, control characters, blanks and excess length
-    // When each is cleaned
-    // Then it is trimmed, one line, capped at 80 characters, and blank means none
     expect(cleanTitle('  Payments  ')).toBe('Payments');
     expect(cleanTitle('a\nb\tc')).toBe('a b c');
     expect(cleanTitle('   ')).toBeNull();
@@ -146,9 +134,6 @@ describe('custom titles', () => {
   });
 
   it('turns an inline edit into a rename, a clear or no change', () => {
-    // Given an auto-titled item and a renamed item
-    // When the inline editor is committed with various drafts
-    // Then unchanged drafts do nothing, blanks clear and new text renames
     const auto = { title: 'Auto' };
     const renamed = { title: 'Mine', renamed: true };
     expect(titleEdit(auto, ' Auto ')).toBeUndefined();
@@ -164,18 +149,12 @@ describe('sticky notes on sidebar items', () => {
   const note = (id: string) => ({ id, text: id, createdAt: '', updatedAt: '' });
 
   it('counts the notes of a session and leaves sessions without notes unmarked', () => {
-    // Given a session with two notes and one without
-    // When the sidebar items are built
-    // Then only the first carries a count
     const [a, b] = sidebarItems([line('a', {}, { pid: 1, notes: [note('1'), note('2')] }), line('b', {}, { pid: 1, notes: [] })], [], []);
     expect(a.notes).toBe(2);
     expect(b.notes).toBeUndefined();
   });
 
   it('replaces a kept item when its note count changes, so the icon updates', () => {
-    // Given items built before and after a note was added
-    // When they are stabilised
-    // Then the item with a new count is a new object and the list changes
     const before = sidebarItems([line('a', {}, { pid: 1 })], [], []);
     const after = sidebarItems([line('a', {}, { pid: 1, notes: [note('1')] })], [], []);
     const out = stableItems(before, after);

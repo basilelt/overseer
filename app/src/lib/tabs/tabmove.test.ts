@@ -34,9 +34,6 @@ describe('moving a session to another workspace', () => {
   }
 
   it('moves a session line to the target workspace and out of the current tab strip', async () => {
-    // Given a session line open as a tab in its workspace
-    // When it is moved to another workspace
-    // Then it belongs to that workspace, leaves the strip and the daemon stores the assignment
     const { key, to } = setup((k) => k.startsWith('line:'));
     expect(await app.moveToWorkspace(key, to)).toBe(true);
     expect(app.itemWs.get(key)).toBe(to);
@@ -47,9 +44,6 @@ describe('moving a session to another workspace', () => {
   });
 
   it('puts the session back when the daemon refuses the move', async () => {
-    // Given a plain shell tab in its workspace and a daemon that fails the assignment
-    // When it is moved to another workspace
-    // Then it stays in its workspace and its tab stays in the strip
     const { key, from, to } = setup((k) => k.startsWith('term:'));
     m.fail = true;
     expect(await app.moveToWorkspace(key, to)).toBe(false);
@@ -58,9 +52,6 @@ describe('moving a session to another workspace', () => {
   });
 
   it('refuses tabs that are not sessions and drops on the current workspace', async () => {
-    // Given a browser tab and a session already in the target workspace
-    // When each is moved
-    // Then nothing is moved
     const { key, from } = setup((k) => k.startsWith('line:'));
     expect(app.canMoveToWorkspace('browser:https://x.dev')).toBe(false);
     expect(app.canMoveToWorkspace(key)).toBe(true);

@@ -173,9 +173,6 @@ describe('MockDaemon', () => {
   });
 
   it('ignores force on hold and answers 409 for a busy line, like the daemon', async () => {
-    // Given a busy line
-    // When it is held with force=true
-    // Then the daemon ignores force: 409 with the failed atPrompt predicate, and the line stays active
     const { m, a } = setup();
     await expect(m.request('POST', '/v1/lines/ln_06/hold?dryRun=false&force=true')).rejects.toMatchObject({
       status: 409,
@@ -185,9 +182,6 @@ describe('MockDaemon', () => {
   });
 
   it('refuses a plain hold of a pinned line or one waiting for input with 409, like the daemon', async () => {
-    // Given an idle pinned line and a line that waits for the user
-    // When each is held without afterTurn
-    // Then both get 409 naming notPinned / notNeedsInput and stay active
     const { m, a } = setup();
     await a.pin('ln_09', true);
     await expect(a.hold('ln_09')).rejects.toMatchObject({ status: 409, body: { predicates: { notPinned: { ok: false, detail: 'line is pinned' } } } });
@@ -198,9 +192,6 @@ describe('MockDaemon', () => {
   });
 
   it('refuses a plain hold of a held or hung-up line with 409 on alive, like the daemon', async () => {
-    // Given a held line and a line that was closed
-    // When each is held
-    // Then both fail the alive predicate with 409 and keep their state
     const { a } = setup();
     await a.close('ln_09');
     for (const id of ['ln_11', 'ln_09']) {
@@ -211,9 +202,6 @@ describe('MockDaemon', () => {
   });
 
   it('answers a forced dry-run close of a busy line with 200 would-close, like the daemon', async () => {
-    // Given a busy line
-    // When a dry-run close is forced, and an unforced one is asked
-    // Then the forced one plans would-close without touching it and the unforced one is 409
     const { m, a } = setup();
     const plan = (await m.request('POST', '/v1/lines/ln_06/close?force=true')) as { action: string };
     expect(plan.action).toBe('would-close');
@@ -222,9 +210,6 @@ describe('MockDaemon', () => {
   });
 
   it('cancels a pending hold, and answers 409 once the hold is being applied, like the daemon', async () => {
-    // Given a pending hold applied by the next tick
-    // When it is cancelled before the tick, then again right after it
-    // Then the first cancel succeeds and the second gets the daemon's 409
     const { m, a } = setup();
     (m.lines.find((l) => l.line.id === 'ln_09')!.local as { busy: boolean }).busy = true;
     expect((await a.holdAfterTurn('ln_09')).action).toBe('hold-pending');
@@ -236,9 +221,6 @@ describe('MockDaemon', () => {
   });
 
   it('exposes the running subagents on the line and keeps a pending hold while they run', async () => {
-    // Given an idle line, and the same line with a subagent still running
-    // When it is held after the turn, then the subagent stops
-    // Then local.subagents is 0 or 1 like the daemon, the hold waits for the subagent and applies after
     const { m, a } = setup();
     const get = async () => (await a.lines()).find((l) => l.line.id === 'ln_09')!;
     expect((await get()).local?.subagents).toBe(0);
@@ -252,9 +234,6 @@ describe('MockDaemon', () => {
   });
 
   it('queues an afterTurn hold with the noToolRunning predicate while a subagent runs, like the daemon', async () => {
-    // Given an idle line with one running subagent
-    // When it is held after the turn
-    // Then the pending body names noToolRunning with the daemon's detail
     const { m, a } = setup();
     (m.lines.find((l) => l.line.id === 'ln_09')!.local as { subagents: number }).subagents = 1;
     const r = await a.holdAfterTurn('ln_09');
@@ -263,9 +242,6 @@ describe('MockDaemon', () => {
   });
 
   it('drops a pending hold blocked by a background task after the grace with line.hold_refused, like the daemon', async () => {
-    // Given an idle line with a background task and a pending hold
-    // When the mock ticks before and after the 10 s grace
-    // Then the hold is dropped with a hold_refused event, and the line is never held
     vi.useFakeTimers();
     try {
       const { m, a, events } = setup();
@@ -288,9 +264,6 @@ describe('MockDaemon', () => {
   });
 
   it('drops a pending hold of a line pinned after it was queued, never holding it, like the daemon', async () => {
-    // Given an idle line with a pending hold that gets pinned afterwards
-    // When the mock ticks before and after the 10 s grace
-    // Then it is not held, and after the grace it is dropped with a hold_refused naming notPinned
     vi.useFakeTimers();
     try {
       const { m, a, events } = setup();
@@ -313,9 +286,6 @@ describe('MockDaemon', () => {
   });
 
   it('queues a hold on a busy line, applies it when the turn ends and stamps heldAt', async () => {
-    // Given a busy line
-    // When it is held with afterTurn, then the mock ticks twice
-    // Then the turn ends first, the hold applies on the next tick with heldAt, and resume clears heldAt
     const { m, a } = setup();
     const get = async () => (await a.lines()).find((l) => l.line.id === 'ln_06')!;
     const r = await a.holdAfterTurn('ln_06');
@@ -336,9 +306,6 @@ describe('MockDaemon', () => {
   });
 
   it('cancels a pending hold and answers an unknown line with 404 like the daemon', async () => {
-    // Given a pending hold
-    // When it is cancelled, then the turn ends
-    // Then the line is never held; cancelling an unknown line is a 404
     const { m, a } = setup();
     await a.holdAfterTurn('ln_04');
     expect(await a.cancelHold('ln_04')).toEqual({ lineId: 'ln_04', holdPending: false });
@@ -350,9 +317,6 @@ describe('MockDaemon', () => {
   });
 
   it('keeps a pending hold while the agent waits for the user and answers a dry run like the daemon', async () => {
-    // Given a line that waits for the user
-    // When a dry-run afterTurn hold is asked, then a real one, then the mock ticks
-    // Then the dry run changes nothing and says would-hold-pending, and the hold stays pending
     const { m, a } = setup();
     const get = async () => (await a.lines()).find((l) => l.line.id === 'ln_01')!;
     const dry = await m.request('POST', '/v1/lines/ln_01/hold?afterTurn=true');
@@ -366,9 +330,6 @@ describe('MockDaemon', () => {
   });
 
   it('holds an idle line at once with afterTurn and refuses a pinned or stopped one', async () => {
-    // Given an idle line, a pinned busy line and a held line
-    // When each is held with afterTurn
-    // Then the idle one is held, the others get 409 and nothing is pending
     const { a } = setup();
     const idle = (await a.lines()).find((l) => l.line.state === 'idle')!;
     expect((await a.holdAfterTurn(idle.line.id)).action).toBe('held');
@@ -503,9 +464,6 @@ describe('MockDaemon', () => {
   });
 
   it('assigns lines and terms to a workspace and clears them when it is deleted', async () => {
-    // Given a line, a plain shell term and a user workspace
-    // When both are assigned to it, an unknown workspace is tried, then the workspace is deleted
-    // Then each assignment is stored with an update event, refused for the unknown one, and cleared
     const { a, events } = setup();
     const w = (await a.workspaces()).find((x) => !x.auto)!;
     const l = (await a.lines())[0].line;
@@ -522,9 +480,6 @@ describe('MockDaemon', () => {
   });
 
   it('creates subjects like the daemon: no path, a shared cwd, strict validation, terms started in it', async () => {
-    // Given the mock daemon
-    // When two subjects share a cwd, bad bodies are sent and a shell starts for a subject without a cwd
-    // Then both exist with a null path, bad input is a 400, the term takes the cwd and the workspace, and cwd patches only apply to subjects
     const { m, a } = setup();
     const post = (b: object) => m.request<any>('POST', '/v1/workspaces', b);
     const s1 = await post({ kind: 'subject', name: 'Deal A', cwd: '~/shared' });
@@ -548,9 +503,6 @@ describe('MockDaemon', () => {
   });
 
   it('nests workspaces like the daemon: parent checks, start dir, adoption, the same error messages and cascading delete', async () => {
-    // Given the mock daemon and a top-level workspace
-    // When nested workspaces are created, a top-level one is adopted, bad bodies are sent and the parent is deleted
-    // Then each answer and error message matches the daemon's
     const { m } = setup();
     const post = (b: object) => m.request<any>('POST', '/v1/workspaces', b);
     const err = (p: Promise<unknown>) => p.then(() => '', (e) => `${(e as { status: number }).status} ${(e as Error).message}`);
@@ -583,9 +535,6 @@ describe('MockDaemon', () => {
   });
 
   it('clears the term of a line when the line is unassigned and lets a line inherit its term assignment', async () => {
-    // Given a subject and a term started for it on an existing line
-    // When the line is unassigned
-    // Then the line inherited the assignment at start, and unassigning clears the term too
     const { m, a } = setup();
     const s = await m.request<any>('POST', '/v1/workspaces', { kind: 'subject', name: 'S', cwd: '/tmp' });
     const line = (await a.lines()).find((x) => !x.local?.workspaceId)!.line;
@@ -675,9 +624,6 @@ describe('MockDaemon', () => {
   });
 
   it('renames and clears a line and a plain terminal with events', async () => {
-    // Given the mock daemon with a line and a loose terminal
-    // When each is renamed, then the line title is cleared
-    // Then the custom titles are cleaned, served, announced, and cleared to null
     const { a, events } = setup();
     const id = (await a.lines())[0].line.id;
     const term = (await a.terms()).find((t) => !t.lineId)!;

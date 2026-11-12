@@ -18,9 +18,6 @@ const html = (n: FolderNode, extra: Record<string, unknown> = {}) => render(Spac
 
 describe('SpaceFolder', () => {
   it('shows a top-level folder as an expanded section title with its folder and workspace counts', () => {
-    // Given an open depth-0 folder with 2 subfolders and 4 workspaces
-    // When it renders
-    // Then it is a section toggle carrying the name and "2 folders · 4 workspaces", without pills
     const h = html(node());
     expect(h).toContain('class="section');
     expect(h).toContain('aria-expanded="true"');
@@ -30,9 +27,6 @@ describe('SpaceFolder', () => {
   });
 
   it('adds the pills and total of the whole subtree to a collapsed section', () => {
-    // Given a collapsed section whose subtree holds attention, running and paused sessions
-    // When it renders
-    // Then the three pills and the total show next to the counts
     const h = html(node({ open: false }));
     expect(h).toContain('aria-expanded="false"');
     for (const s of ['attention', 'running', 'paused']) expect(h).toContain(`data-pill="${s}"`);
@@ -40,9 +34,6 @@ describe('SpaceFolder', () => {
   });
 
   it('uses the singular forms and leaves out a zero folder count', () => {
-    // Given sections with 1 folder and 1 workspace, then no folder and 2 workspaces
-    // When they render
-    // Then the labels read "1 folder · 1 workspace" and "2 workspaces"
     expect(html(node({ folders: 1, spaces: 1 }))).toContain('1 folder · 1 workspace');
     const h = html(node({ folders: 0, spaces: 2 }));
     expect(h).toContain('2 workspaces');
@@ -50,18 +41,12 @@ describe('SpaceFolder', () => {
   });
 
   it('labels the pinned section and gives it no toggle', () => {
-    // Given the pinned section
-    // When it renders
-    // Then it reads Pinned and cannot be collapsed
     const h = html(node({ key: 'f:*', folder: null }));
     expect(h).toContain('Pinned');
     expect(h).not.toContain('aria-expanded');
   });
 
   it('shows a nested folder as a row with an open or closed folder icon, its pills and total', () => {
-    // Given a depth-2 folder, open then collapsed
-    // When it renders
-    // Then the row carries the matching icon, the pills and the subtree total
     const open = html(node({ depth: 2 }));
     expect(open).toContain('class="row');
     expect(open).toContain('lucide-folder-open');
@@ -73,18 +58,12 @@ describe('SpaceFolder', () => {
   });
 
   it('hides the total of a folder without sessions', () => {
-    // Given a nested folder whose subtree has no session
-    // When it renders
-    // Then no total is shown
     expect(html(node({ depth: 1, summary: summary() }))).not.toContain('class="total');
   });
 });
 
 describe('SpaceFolder interactions', () => {
   it('is a drop zone for its folder, shows the drop marker, and opens its menu on right-click', () => {
-    // Given a section and a nested row, one dragged over
-    // When they render and the source is read
-    // Then both carry data-drop="folder" with the id, the marker class follows dropPos, and oncontextmenu calls onmenu
     const h = html(node(), { dropPos: 'inside' });
     expect(h).toContain('data-drop="folder"');
     expect(h).toContain('data-id="e"');
@@ -97,9 +76,6 @@ describe('SpaceFolder interactions', () => {
   });
 
   it('makes the pinned section a drop zone for pinning, with the highlight while hovered', () => {
-    // Given the pinned section (no folder), hovered by a dragged workspace
-    // When it renders
-    // Then it is data-drop="pinned" and highlighted only when targeted
     expect(html(node({ folder: null }), { target: true })).toMatch(/class="[^"]*target/);
     expect(html(node({ folder: null }))).not.toMatch(/class="[^"]*target/);
     expect(html(node({ folder: null }))).toContain('data-drop="pinned"');

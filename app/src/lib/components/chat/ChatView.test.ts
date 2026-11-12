@@ -23,9 +23,6 @@ function rendered(local: LocalLine['local'], termId?: string) {
 
 describe('ChatView while a resumed agent starts', () => {
   it('points to the terminal, where the agent may be asking something before it starts', () => {
-    // Given a stopped session that was resumed into a live terminal, before the agent reports its session
-    // When the chat renders
-    // Then it reads Starting and offers to open the terminal
     const h = rendered({ heldReason: 'lost' }, 't1');
     expect(h).toContain('Starting');
     expect(h).toContain('answer it in the terminal');

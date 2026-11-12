@@ -54,9 +54,6 @@ describe('chat markdown', () => {
 });
 
 describe('parseMarkdownCached', () => {
-  // Given a message already parsed once (before a tab switch)
-  // When the same text is parsed again
-  // Then the cached blocks are returned without a new parse
   it('reuses blocks for the same text', () => {
     const text = '# Same\n\nbody `x.png`';
     const a = parseMarkdownCached(text);
@@ -64,9 +61,6 @@ describe('parseMarkdownCached', () => {
     expect(a).toEqual(parseMarkdown(text));
   });
 
-  // Given two different texts
-  // When both are parsed
-  // Then each gets its own blocks
   it('keys the cache by text', () => {
     expect(parseMarkdownCached('one')).not.toBe(parseMarkdownCached('two'));
   });

@@ -14,9 +14,6 @@ describe('Lru', () => {
     expect(c.size).toBe(2);
   });
 
-  // Given a cached entry
-  // When it is deleted
-  // Then it is gone and the size drops
   it('deletes entries', () => {
     const c = new Lru<string, number>(4);
     c.set('a', 1);

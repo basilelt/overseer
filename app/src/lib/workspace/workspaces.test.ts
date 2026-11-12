@@ -73,9 +73,6 @@ describe('membership', () => {
   });
 
   it('ignores a subject (null path) when matching by path and still honours an explicit assignment to it', () => {
-    // Given a subject with a null path and a cwd inside the webshop workspace
-    // When membership is computed for an unassigned line and for one assigned to the subject
-    // Then nothing throws, the subject matches no path, and the assignment wins
     const subject = ws('subj', null as unknown as string, { path: null, kind: 'subject', cwd: '/home/u/work/webshop' });
     const plain = line('plain', '/home/u/work/webshop/src', 'github.com/o/webshop');
     const mine = { ...line('mine', '/home/u/work/webshop/src', 'github.com/o/webshop'), local: { workspaceId: 'subj' } };
@@ -110,9 +107,6 @@ describe('membership', () => {
   });
 
   it('puts sessions whose project sits inside a parent workspace in that workspace, not in Other sessions', () => {
-    // Given a workspace on a parent folder, and agent worktrees outside it under ~/.overseer/worktrees
-    // When membership is resolved for a task-linked line, a line with only its repo, a local repo and a task term
-    // Then each one lands in the parent workspace
     const parent = ws('work', '/home/u/work');
     const projects: Project[] = [
       { path: '/home/u/work/webshop', name: 'webshop', repo: 'github.com/o/webshop' },
@@ -131,9 +125,6 @@ describe('membership', () => {
   });
 
   it('prefers the workspace of the repo project over a workspace holding the agent worktrees', () => {
-    // Given a workspace on the worktrees folder and one on the folder that holds the repo's project
-    // When membership is resolved for an agent worktree of that repo
-    // Then the line joins the project's workspace
     const work = ws('work', '/home/u/work');
     const wts = ws('wts', '/home/u/.overseer/worktrees');
     const lines = [line('w', '/home/u/.overseer/worktrees/webshop-1/task-1', 'github.com/o/webshop')];
@@ -166,9 +157,6 @@ describe('membership', () => {
   });
 
   it('puts an explicitly assigned line or term in its workspace before task and path rules', () => {
-    // Given a task-linked line and a shell term, both assigned to the HOME workspace
-    // When membership is resolved
-    // Then the assignment wins over the task project and the cwd prefix
     const lines = [{ ...line('t', '/home/u/work/webshop/web', 'github.com/o/webshop'), local: { workspaceId: 'home' } }];
     const tasks = [{ id: 'k', lineId: 't', project: '/home/u/work/webshop', status: 'in_progress' } as Task];
     const terms = [{ id: 's', cwd: '/home/u/work/webshop', exited: false, cmd: ['zsh'], title: 'zsh', createdAt: at, workspaceId: 'home' } as Term];
@@ -179,9 +167,6 @@ describe('membership', () => {
   });
 
   it('ignores an assignment to a workspace that no longer exists', () => {
-    // Given a line and a term assigned to a deleted workspace
-    // When membership is resolved
-    // Then both fall back to the path rules
     const lines = [{ ...line('l', '/home/u/work/webshop/web/src', 'github.com/o/webshop'), local: { workspaceId: 'gone' } }];
     const terms = [{ id: 's', cwd: '/home/u/notes', exited: false, cmd: ['zsh'], title: 'zsh', createdAt: at, workspaceId: 'gone' } as Term];
     const items = sidebarItems(lines, terms, []);
@@ -191,9 +176,6 @@ describe('membership', () => {
   });
 
   it('finds the sidebar workspace row under the pointer', () => {
-    // Given a workspace row with a nested label, and an element outside any row
-    // When the drop target is looked up from each
-    // Then the row's workspace id is found from the label and nothing from outside
     const row = { getAttribute: (n: string) => (n === 'data-workspace-id' ? 'webshop' : null) };
     const el = (inRow: boolean) => ({ closest: (s: string) => (inRow && s === '[data-workspace-id]' ? row : null) }) as unknown as Element;
     expect(wsDropTarget(el(true))).toBe('webshop');
@@ -443,9 +425,6 @@ describe('workspaces load after a daemon error', () => {
     vi.useRealTimers();
   });
 
-  // Given the first workspaces load fails with a 500 (database locked)
-  // When the daemon answers again on the backoff retry
-  // Then the folders and the workspaces inside them appear without a restart
   it('retries until folders and foldered workspaces load', async () => {
     vi.useFakeTimers();
     const m = new LockedDaemon({ live: false, delayMs: 0 });
@@ -466,9 +445,6 @@ describe('workspaces load after a daemon error', () => {
     expect(app.selectedKey).toBe('line:kept');
   });
 
-  // Given the daemon keeps failing the workspaces load
-  // When the backoff schedule runs out
-  // Then the app stops asking instead of polling forever
   it('stops retrying after the last backoff step', async () => {
     vi.useFakeTimers();
     const m = new LockedDaemon({ live: false, delayMs: 0 });
@@ -485,9 +461,6 @@ describe('workspaces load after a daemon error', () => {
     expect(m.failures).toBe(left);
   });
 
-  // Given a workspaces retry is pending after a failed load
-  // When the user disconnects
-  // Then the retry is cancelled and the daemon is not asked again
   it('cancels the pending retry on disconnect', async () => {
     vi.useFakeTimers();
     const m = new LockedDaemon({ live: false, delayMs: 0 });
@@ -511,45 +484,27 @@ describe('Terminal pane action', () => {
   const session = (over: Partial<SidebarItem> = {}) => item('line:l1', 'running', { lineId: 'l1', ...over });
 
   it('marks a live session without Overseer term or tmux pane as external instead of resumable', () => {
-    // Given a Claude session alive in an external terminal (pid, busy, no term, no tmux pane)
-    // When the Terminal pane asks which action to offer
-    // Then it gets 'external', never 'resume'
     expect(paneAction(session(), live({ pid: 4242, busy: true, needsInput: false }))).toBe('external');
   });
 
   it('keeps attach for a live session in a tmux pane', () => {
-    // Given a live session running in a tmux pane
-    // When the Terminal pane asks which action to offer
-    // Then it gets 'attach'
     expect(paneAction(session(), live({ pid: 7, tmuxPane: '%3', busy: false, needsInput: false }))).toBe('attach');
   });
 
   it('keeps open for a session with an Overseer term', () => {
-    // Given a live session that owns an Overseer term
-    // When the Terminal pane asks which action to offer
-    // Then it gets 'open'
     expect(paneAction(session({ termId: 't1' }), live({ pid: 8, busy: true, needsInput: false }))).toBe('open');
   });
 
   it('keeps resume for a held session even if a pid is still known', () => {
-    // Given a held session whose daemon line still carries a pid
-    // When the Terminal pane asks which action to offer
-    // Then it gets 'resume'
     expect(paneAction(session(), live({ pid: 9, busy: false, needsInput: false }, 'held'))).toBe('resume');
   });
 
   it('keeps resume for a dead session and when the line is not loaded yet', () => {
-    // Given a session without pid, and a session whose daemon line is not loaded
-    // When the Terminal pane asks which action to offer
-    // Then both get 'resume'
     expect(paneAction(session(), live({ busy: false, needsInput: false }))).toBe('resume');
     expect(paneAction(session(), undefined)).toBe('resume');
   });
 
   it('offers no pane action for an item without line', () => {
-    // Given a plain terminal item
-    // When the Terminal pane asks which action to offer
-    // Then it gets null
     expect(paneAction(item('term:x', 'running', { termId: 'x' }), undefined)).toBeNull();
   });
 });

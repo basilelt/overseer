@@ -33,9 +33,7 @@ afterEach(() => vi.useRealTimers());
 
 describe('WsDrag', () => {
   it('moves a workspace below another one and swallows the click that ends the drag', async () => {
-    // Given a drag of workspace a that starts on a header
     const { deps, drag } = setup(at({ drop: 'workspace', id: 'b' }));
-    // When it moves 20px, over the lower half of workspace b, and is released
     drag.start(ev(0, 0), 'workspace', 'a');
     drag.move(ev(0, 20));
     expect(drag.dragging).toBe(true);
@@ -43,7 +41,6 @@ describe('WsDrag', () => {
     drag.move(ev(0, 80));
     expect(drag.posOf('workspace', 'b')).toBe('after');
     await drag.end();
-    // Then the daemon gets the planned patch, and the next click is ignored once
     expect(deps.patchWorkspace).toHaveBeenCalledWith('a', expect.objectContaining({ pinned: false, folderId: null, rank: expect.any(Number) }));
     expect(drag.suppressed).toBe(true);
     vi.runAllTimers();
@@ -52,24 +49,19 @@ describe('WsDrag', () => {
   });
 
   it('puts a workspace into a folder and a folder into another', async () => {
-    // Given a drop on the middle of folder x
     const { deps, drag } = setup(at({ drop: 'folder', id: 'x' }));
-    // When a workspace is dropped there, then a folder
     drag.start(ev(0, 0), 'workspace', 'a');
     drag.move(ev(0, 50));
     await drag.end();
     drag.start(ev(0, 0), 'folder', 'y');
     drag.move(ev(0, 50));
     await drag.end();
-    // Then the workspace gets folderId x and the folder gets parentId x
     expect(deps.patchWorkspace).toHaveBeenCalledWith('a', expect.objectContaining({ folderId: 'x' }));
     expect(deps.patchFolder).toHaveBeenCalledWith('y', expect.objectContaining({ parentId: 'x' }));
   });
 
   it('pins a workspace dropped on the pinned section and unpins it on the root', async () => {
-    // Given the pinned section under the pointer
     const pinned = setup(at({ drop: 'pinned' }));
-    // When a workspace is dropped there, then on the root zone
     pinned.drag.start(ev(0, 0), 'workspace', 'a');
     pinned.drag.move(ev(0, 50));
     await pinned.drag.end();
@@ -77,28 +69,22 @@ describe('WsDrag', () => {
     root.drag.start(ev(0, 0), 'workspace', 'a');
     root.drag.move(ev(0, 50));
     await root.drag.end();
-    // Then the patches pin, then clear pinned and folder
     expect(pinned.deps.patchWorkspace).toHaveBeenCalledWith('a', expect.objectContaining({ pinned: true }));
     expect(root.deps.patchWorkspace).toHaveBeenCalledWith('a', expect.objectContaining({ pinned: false, folderId: null }));
   });
 
   it('reads the horizontal position on a chip so wrapped chips reorder left to right', () => {
-    // Given a chip under the pointer
     const { drag } = setup(at({ drop: 'workspace', id: 'b', axis: 'x' }));
-    // When the pointer is in the left, then the right half, at the same height
     drag.start(ev(0, 0), 'workspace', 'a');
     drag.move(ev(20, 90));
     const left = drag.posOf('workspace', 'b');
     drag.move(ev(90, 90));
-    // Then the side decides, not the height
     expect(left).toBe('before');
     expect(drag.posOf('workspace', 'b')).toBe('after');
   });
 
   it('never drags without persistence, with another button, or under 5px, and drops nowhere do nothing', async () => {
-    // Given a workspace under the pointer
     const under = at({ drop: 'workspace', id: 'b' });
-    // When the drag is refused three ways, then released over nothing
     const a = setup(under, { persistent: () => false });
     a.drag.start(ev(0, 0), 'workspace', 'a');
     a.drag.move(ev(0, 50));
@@ -113,7 +99,6 @@ describe('WsDrag', () => {
     d.drag.start(ev(0, 0), 'workspace', 'a');
     d.drag.move(ev(0, 50));
     await d.drag.end();
-    // Then nothing is dragging, nothing is patched, and only the real drag swallowed the click
     expect([a.drag.dragging, b.drag.dragging, c.drag.dragging]).toEqual([false, false, false]);
     expect(c.drag.suppressed).toBe(false);
     expect(d.drag.suppressed).toBe(true);
@@ -121,13 +106,10 @@ describe('WsDrag', () => {
   });
 
   it('skips a drop the planner refuses (a folder onto itself)', async () => {
-    // Given folder x dragged over its own row
     const { deps, drag } = setup(at({ drop: 'folder', id: 'x' }));
-    // When it is released there
     drag.start(ev(0, 0), 'folder', 'x');
     drag.move(ev(0, 50));
     await drag.end();
-    // Then no patch is sent
     expect(deps.patchFolder).not.toHaveBeenCalled();
   });
 
@@ -155,27 +137,22 @@ describe('WsDrag', () => {
   });
 
   it('abandons a drag on cancel without patching, and without swallowing the next click', async () => {
-    // Given a workspace and a folder dragged over valid targets
     const a = setup(at({ drop: 'workspace', id: 'b' }));
     const b = setup(at({ drop: 'folder', id: 'x' }));
     a.drag.start(ev(0, 0), 'workspace', 'a');
     a.drag.move(ev(0, 80));
     b.drag.start(ev(0, 0), 'folder', 'y');
     b.drag.move(ev(0, 50));
-    // When the pointer is cancelled (system gesture, scroll takeover)
     a.drag.cancel();
     b.drag.cancel();
     await a.drag.end();
-    // Then nothing is patched and the drag state is reset
     expect(a.deps.patchWorkspace).not.toHaveBeenCalled();
     expect(b.deps.patchFolder).not.toHaveBeenCalled();
     expect([a.drag.dragging, a.drag.over, a.drag.suppressed]).toEqual([false, null, false]);
   });
 
   it('moves a dragged session onto a nested workspace line', async () => {
-    // Given a session drag over a nested workspace line
     const { deps, drag } = setup(at({ drop: 'child', id: 'sub' }));
-    // When it moves and is released
     drag.start(ev(0, 0), 'session', 'line:l1');
     expect(drag.kind).toBeNull();
     drag.move(ev(0, 30));
@@ -183,7 +160,6 @@ describe('WsDrag', () => {
     expect(drag.posOf('workspace', 'sub')).toBe('inside');
     await drag.end();
     expect(drag.kind).toBeNull();
-    // Then the session moves there and no workspace is reordered
     expect(deps.moveSession).toHaveBeenCalledWith('line:l1', 'sub');
     expect(deps.patchWorkspace).not.toHaveBeenCalled();
   });
@@ -212,16 +188,13 @@ describe('WsDrag', () => {
   });
 
   it('reorders the tabs when a session is dropped on the lower half of another row of its workspace', async () => {
-    // Given a session row b of workspace w under the pointer
     const { deps, drag } = setup(at({ drop: 'session', id: 'b', zone: 'w' }));
-    // When session a of the same workspace is dragged over its upper half, then its lower half, and dropped
     drag.start(ev(0, 0), 'session', 'a', 'w');
     drag.move(ev(0, 20));
     expect(drag.posOf('session', 'b')).toBe('before');
     drag.move(ev(0, 80));
     expect(drag.posOf('session', 'b')).toBe('after');
     await drag.end();
-    // Then the tab of a goes after the one of b, and nothing moves to another workspace
     expect(deps.reorder).toHaveBeenCalledWith('w', 'a', 'b', 'after');
     expect(deps.moveSession).not.toHaveBeenCalled();
   });
@@ -242,7 +215,6 @@ describe('WsDrag', () => {
   });
 
   it('reorders even when workspaces are not saved, but moves a session to another workspace only when it can', async () => {
-    // Given a client without persistent workspaces, and a session that cannot move
     const rows = setup(at({ drop: 'session', id: 'b', zone: 'w' }), { persistent: () => false });
     rows.drag.start(ev(0, 0), 'session', 'a', 'w');
     rows.drag.move(ev(0, 20));
@@ -252,7 +224,6 @@ describe('WsDrag', () => {
     head.drag.move(ev(0, 20));
     expect(head.drag.over).toBeNull();
     await head.drag.end();
-    // Then the reorder happens and the move does not
     expect(rows.deps.reorder).toHaveBeenCalledWith('w', 'a', 'b', 'before');
     expect(head.deps.moveSession).not.toHaveBeenCalled();
   });

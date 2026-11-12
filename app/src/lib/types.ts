@@ -40,7 +40,6 @@ export interface LineLocal {
   needsInput?: boolean;
   pinned?: boolean;
   heldReason?: null | 'user' | 'lost';
-  // When the session was held, and whether a pause waits for the current turn to end.
   heldAt?: string | null;
   holdPending?: boolean | null;
   // Running subagents and background tasks reported by hooks; 0 when unknown.

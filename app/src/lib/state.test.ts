@@ -761,7 +761,6 @@ describe('workspaces', () => {
   });
 
   it('opens a top-level workspace, not a nested one listed first, when none is remembered or busy', async () => {
-    // Given a daemon whose first workspace is nested, with no session anywhere and nothing remembered
     const at = '2026-11-01T00:00:00Z';
     const base = { station: 'atlas', kind: 'dir' as const, cwd: null, folderId: null, pinned: false, archived: false, auto: true, rank: 1, tabs: [], notifyIdle: false, createdAt: at, updatedAt: at };
     (m as unknown as { workspaces: unknown[] }).workspaces = [
@@ -772,9 +771,7 @@ describe('workspaces', () => {
     (m as unknown as { terms: unknown[] }).terms = [];
     settings.workspaceByHost = {};
     settings.workspaceId = undefined;
-    // When the app connects
     await connect();
-    // Then the top-level workspace opens
     expect(app.workspaceId).toBe('w_proj');
   });
 
@@ -915,14 +912,11 @@ describe('sessions', () => {
   });
 
   it('starts a session of a nested workspace in its start dir and assigns it there', async () => {
-    // Given a nested sub-folder that starts at the repo root, and a submodule that starts in its own folder
     const webshop = app.ws.workspaces.find((w) => w.id === 'ws_webshop')!.path!;
-    // When a shell starts in each
     app.selectWorkspace('ws_webshop_invoicing');
     await app.newSession('shell');
     app.selectWorkspace('ws_webshop_design');
     await app.newSession('shell');
-    // Then the first runs at the root and the second in the submodule, each assigned to its nested workspace
     const [a, b] = m.bodies['POST /v1/terms'].slice(-2) as { cwd: string; workspaceId: string }[];
     expect(a).toMatchObject({ cwd: webshop, workspaceId: 'ws_webshop_invoicing' });
     expect(b).toMatchObject({ cwd: `${webshop}/vendor/design-system`, workspaceId: 'ws_webshop_design' });
@@ -1076,9 +1070,6 @@ describe('sessions', () => {
     };
 
     it('sends the workspaceId and no cwd, and still starts agents in a worktree of the subject cwd repo', async () => {
-      // Given a subject whose cwd is a project repository, selected in the sidebar
-      // When an agent and a shell are started
-      // Then both bodies carry workspaceId and no cwd, and only the agent asks for a worktree
       const id = await subject();
       await app.newSession('claude');
       await app.newSession('shell');
@@ -1089,9 +1080,6 @@ describe('sessions', () => {
     });
 
     it('lets an explicit cwd win and sends no workspaceId', async () => {
-      // Given a selected subject
-      // When a session starts with an explicit cwd
-      // Then the body has that cwd and no workspaceId
       await subject();
       await app.newSession('shell', { cwd: '/tmp' });
       expect(m.bodies['POST /v1/terms']).toEqual([{ cwd: '/tmp', cols: 120, rows: 32 }]);

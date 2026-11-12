@@ -22,27 +22,18 @@ const snip = (s: string) => createRawSnippet(() => ({ render: () => `<i>${s}</i>
 
 describe('WorkspaceFrame', () => {
   it('draws the header line above the body', () => {
-    // Given a header and a body
-    // When the frame renders
-    // Then the header comes first
     const h = render(WorkspaceFrame, { props: { header: snip('HEAD'), children: snip('BODY') } }).body;
     expect(h.indexOf('HEAD')).toBeGreaterThanOrEqual(0);
     expect(h.indexOf('HEAD')).toBeLessThan(h.indexOf('BODY'));
   });
 
   it('renders the right-side header content when given', () => {
-    // Given an actions snippet
-    // When the frame renders
-    // Then it appears after the header
     const h = render(WorkspaceFrame, { props: { header: snip('HEAD'), actions: snip('ACT'), children: snip('BODY') } }).body;
     expect(h.indexOf('ACT')).toBeGreaterThan(h.indexOf('HEAD'));
     expect(render(WorkspaceFrame, { props: { header: snip('HEAD'), children: snip('BODY') } }).body).not.toContain('ACT');
   });
 
   it('takes its look from theme tokens, not fixed colours', () => {
-    // Given the component source
-    // When its styles are read
-    // Then colours come from CSS variables and nothing animates
     const src = componentSrc;
     expect(src).toContain('var(--ws-frame-border)');
     expect(src).toContain('var(--ws-frame-bg)');
@@ -51,9 +42,6 @@ describe('WorkspaceFrame', () => {
   });
 
   it('defines frame tokens for both themes', () => {
-    // Given the stylesheet
-    // When the themes are read
-    // Then dark carries the frozen values and light has its own
         const dark = css.slice(css.indexOf(":root[data-theme='dark']"));
     expect(dark).toMatch(/--ws-frame-border: #4a4a55/);
     expect(dark).toMatch(/--ws-frame-bg: #1e1e24/);
@@ -64,9 +52,6 @@ describe('WorkspaceFrame', () => {
   });
 
   it('keeps a workspace header where it sat while folded, so opening it does not shift it', () => {
-    // Given a folded workspace row and an open one, framed
-    // When their horizontal offsets are added up
-    // Then the header line starts and ends at the same x in both
     const frame = rule(componentSrc, '.frame');
     const head = box(rule(componentSrc, '.head'), 'padding');
     const solo = rule(spaceBlockSrc, '.solo');
@@ -78,9 +63,6 @@ describe('WorkspaceFrame', () => {
   });
 
   it('insets the header and the rows by the same margin on every side', () => {
-    // Given the frame paddings
-    // When the head and body insets are compared
-    // Then all four sides match and the body only skips the top, which the head already pads
     const head = box(rule(componentSrc, '.head'), 'padding');
     const body = box(rule(componentSrc, '.body'), 'padding');
     expect(new Set([head.top, head.right, head.bottom, head.left]).size).toBe(1);

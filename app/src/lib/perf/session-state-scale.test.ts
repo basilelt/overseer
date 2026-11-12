@@ -25,9 +25,6 @@ function work(n: number) {
 
 describe('sidebar derivation scales linearly with the session count', () => {
   it('runs the state machine a constant number of times per line', () => {
-    // Given 100 and 1000 sessions in mixed states
-    // When the sidebar items, groups and workspace aggregate are derived
-    // Then the state machine runs the same number of times per line and the work grows 10x
     const small = work(100);
     const big = work(1000);
     expect(big / small).toBeCloseTo(10, 5);

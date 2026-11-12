@@ -31,9 +31,6 @@ describe('renameItem', () => {
   });
 
   it('shows the custom title at once and keeps it once the daemon stores it', async () => {
-    // Given a connected app showing a session line
-    // When the user renames it
-    // Then the cleaned title shows before the daemon answers and is stored by the daemon
     const key = app.items.find((i) => i.lineId)!.key;
     const done = app.renameItem(key, '  Payments  ');
     expect(itemOf(key)).toMatchObject({ title: 'Payments', renamed: true });
@@ -44,9 +41,6 @@ describe('renameItem', () => {
   });
 
   it('restores the previous title and reports the error when the daemon refuses', async () => {
-    // Given a session line and a daemon that refuses renames
-    // When the user renames it
-    // Then the previous title comes back and the error is shown
     const item = app.items.find((i) => i.lineId)!;
     m.refuse = true;
     await app.renameItem(item.key, 'Payments');
@@ -55,9 +49,6 @@ describe('renameItem', () => {
   });
 
   it('clears a custom title back to the auto title', async () => {
-    // Given a renamed session line
-    // When the user clears its title
-    // Then the auto title shows again
     const item = app.items.find((i) => i.lineId)!;
     await app.renameItem(item.key, 'Payments');
     await app.renameItem(item.key, null);
@@ -66,9 +57,6 @@ describe('renameItem', () => {
   });
 
   it('offers rename in the item menu, and reset only once renamed', async () => {
-    // Given a session line with its auto title
-    // When its menu is opened before and after a rename, and reset is run
-    // Then rename is always offered, reset only when renamed, and reset restores the auto title
     const item = app.items.find((i) => i.lineId)!;
     const labels = () => itemMenu(item.key).map((m) => m.label);
     expect(labels()).toContain('Rename…');
@@ -81,9 +69,6 @@ describe('renameItem', () => {
   });
 
   it('renames a plain terminal tab', async () => {
-    // Given a loose terminal
-    // When the user renames it
-    // Then the terminal shows the custom title
     const key = app.items.find((i) => i.key.startsWith('term:'))!.key;
     await app.renameItem(key, 'build watch');
     expect(itemOf(key)).toMatchObject({ title: 'build watch', renamed: true });
