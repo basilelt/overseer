@@ -65,7 +65,7 @@ daemons answer 404 and the app says the server is too old.
 **UI.** An overlay rather than a second window (no new capability or route): "Previous session
 ended unexpectedly" opens at launch after an abnormal exit; the same dialog in live mode opens from
 the palette, Settings > Diagnostics and More on phones, and is a bottom sheet on phones. Copy all
-builds one plain-text bundle (`formatBundle` in `lib/diag.ts`): header (versions, OS, log folder,
+builds one plain-text bundle (`formatBundle` in `lib/diag/diag-bundle.ts`): header (versions, OS, log folder,
 host), previous session summary, crash report, app log tail, server log tail.
 
 ## Consequences
