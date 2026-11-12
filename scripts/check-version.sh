@@ -18,12 +18,10 @@ report() {
   fi
 }
 
-# [package] version of a manifest.
 toml() {
   awk '/^\[/ { pkg = ($0 == "[package]") } pkg && /^version = / { gsub(/^version = "|"$/, ""); print; exit }' "$1"
 }
 
-# version of each overseer crate in a lockfile, as "name version".
 lock() {
   awk '/^name = "overseer(-api|-app)?"$/ { n = $3; gsub(/"/, "", n); next_v = 1; next }
     next_v && /^version = / { gsub(/^version = "|"$/, ""); print n, $0; next_v = 0 }' "$1"

@@ -8,7 +8,6 @@ fail=0
 . "$root/scripts/version-files.sh"
 files="$VERSION_MANIFESTS $VERSION_LOCKS $VERSION_JSONS"
 
-# A copy of the stamped files, so each case edits its own tree.
 tree() {
   local dir=$work/$RANDOM$RANDOM
   mkdir -p "$dir/scripts"
