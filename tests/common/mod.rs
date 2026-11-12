@@ -683,6 +683,17 @@ pub fn mcp(app: &App, own: Option<&str>, input: &[Value]) -> Vec<Value> {
         .collect()
 }
 
+pub fn read_events(s: &mut UnixStream, buf: &mut String, want: &[&str], within: Duration) {
+    let end = Instant::now() + within;
+    while !want.iter().all(|w| buf.contains(w)) {
+        assert!(Instant::now() < end, "missing {want:?} in {buf}");
+        let mut b = [0u8; 4096];
+        if let Ok(n) = s.read(&mut b) {
+            buf.push_str(&String::from_utf8_lossy(&b[..n]));
+        }
+    }
+}
+
 pub struct App {
     pub fx: Fx,
     env: Vec<(String, String)>,
@@ -749,6 +760,17 @@ impl App {
         let (code, v) = self.req(method, target, body);
         assert!((200..300).contains(&code), "{method} {target}: {code} {v}");
         v
+    }
+
+    pub fn events(&self, within: Duration) -> (UnixStream, String) {
+        let mut s = UnixStream::connect(&self.fx.sock).unwrap();
+        s.set_read_timeout(Some(Duration::from_millis(200)))
+            .unwrap();
+        s.write_all(b"GET /v1/events HTTP/1.1\r\nHost: unix\r\n\r\n")
+            .unwrap();
+        let mut buf = String::new();
+        read_events(&mut s, &mut buf, &["retry:"], within);
+        (s, buf)
     }
 
     pub fn ws(&self, id: &str) -> WebSocket<UnixStream> {

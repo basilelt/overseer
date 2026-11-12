@@ -2,31 +2,17 @@ mod common;
 
 use common::{bin, read_until, send, wait, wait_for, App, Reap, SID, T};
 use serde_json::{json, Value};
-use std::io::{Read, Write};
+use std::io::Read;
 use std::os::unix::net::UnixStream;
 use std::process::{Command, Stdio};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 fn events(app: &App) -> (UnixStream, String) {
-    let mut s = UnixStream::connect(&app.fx.sock).unwrap();
-    s.set_read_timeout(Some(Duration::from_millis(200)))
-        .unwrap();
-    s.write_all(b"GET /v1/events HTTP/1.1\r\nHost: unix\r\n\r\n")
-        .unwrap();
-    let mut buf = String::new();
-    expect(&mut s, &mut buf, &["retry:"]);
-    (s, buf)
+    app.events(Duration::from_secs(20))
 }
 
 fn expect(s: &mut UnixStream, buf: &mut String, want: &[&str]) {
-    let end = Instant::now() + Duration::from_secs(20);
-    while !want.iter().all(|w| buf.contains(w)) {
-        assert!(Instant::now() < end, "missing {want:?} in {buf}");
-        let mut b = [0u8; 4096];
-        if let Ok(n) = s.read(&mut b) {
-            buf.push_str(&String::from_utf8_lossy(&b[..n]));
-        }
-    }
+    common::read_events(s, buf, want, Duration::from_secs(20));
 }
 
 fn id(v: &Value) -> String {

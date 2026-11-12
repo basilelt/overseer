@@ -2356,31 +2356,12 @@ fn enc(s: &str) -> String {
         .collect()
 }
 
-fn read_events(s: &mut UnixStream, buf: &mut String, want: &[&str]) {
-    use std::io::Read;
-    let end = Instant::now() + Duration::from_secs(15);
-    while !want.iter().all(|w| buf.contains(w)) {
-        assert!(Instant::now() < end, "missing {want:?} in {buf}");
-        let mut b = [0u8; 4096];
-        if let Ok(n) = s.read(&mut b) {
-            buf.push_str(&String::from_utf8_lossy(&b[..n]));
-        }
-    }
-}
-
 #[test]
 fn worktrees_graph_and_events_through_the_daemon() {
-    use std::io::Write;
     let app = App::new("worktrees", json!({"autoConcurrency": 0}));
     let wt = app.fx.wt.to_string_lossy().into_owned();
     let p = enc(&wt);
-    let mut s = UnixStream::connect(&app.fx.sock).unwrap();
-    s.set_read_timeout(Some(Duration::from_millis(200)))
-        .unwrap();
-    s.write_all(b"GET /v1/events HTTP/1.1\r\nHost: unix\r\n\r\n")
-        .unwrap();
-    let mut buf = String::new();
-    read_events(&mut s, &mut buf, &["retry:"]);
+    let (mut s, mut buf) = app.events(Duration::from_secs(15));
 
     let t = app.ok(
         "POST",
@@ -2477,7 +2458,7 @@ fn worktrees_graph_and_events_through_the_daemon() {
     std::fs::write(Path::new(&wpath).join("x.txt"), "x\n").unwrap();
     common::git(Path::new(&wpath), &["add", "-A"]);
     common::git(Path::new(&wpath), &["commit", "-q", "-m", "agent work"]);
-    read_events(
+    common::read_events(
         &mut s,
         &mut buf,
         &[
@@ -2485,6 +2466,7 @@ fn worktrees_graph_and_events_through_the_daemon() {
             "event: worktree.removed",
             "event: git.changed",
         ],
+        Duration::from_secs(15),
     );
 
     let task = app.ok("POST", "/v1/tasks", json!({"title": "here", "project": wt}));
