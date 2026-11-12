@@ -306,16 +306,25 @@ describe('startNotifications', () => {
         listeners.add(fn);
         return () => listeners.delete(fn);
       },
+      others: [] as { key: string; target: { kind: string; host?: string; label: string }; data: Snapshot; ws: { workspaces: { id: string; name: string }[] }; itemWs: Map<string, string> }[],
+      onOther: null as null | ((l: unknown, prev: Snapshot, next: Snapshot, e: DaemonEvent) => void),
       notice: vi.fn(),
       open: vi.fn(),
       select: vi.fn(),
+    };
+    const emitOther = (host: string, next: Snapshot, e: Partial<DaemonEvent> = {}) => {
+      let link = app.others.find((l) => l.key === `ssh:${host}`);
+      if (!link) app.others.push((link = { key: `ssh:${host}`, target: { kind: 'ssh', host, label: host }, data: snap([]), ws: { workspaces: [{ id: 'w9', name: 'Api' }] }, itemWs: new Map([['line:b', 'w9']]) }));
+      const prev = link.data;
+      link.data = next;
+      app.onOther?.(link, prev, next, e as DaemonEvent);
     };
     const emit = (next: Snapshot, e: Partial<DaemonEvent> = {}) => {
       const prev = app.data;
       app.data = next;
       for (const l of [...listeners]) l(prev, next, e as DaemonEvent);
     };
-    return { app, members, listeners, emit };
+    return { app, members, listeners, emit, emitOther };
   }
 
   let doc: { title: string; hasFocus: () => boolean };
@@ -352,6 +361,46 @@ describe('startNotifications', () => {
     emit(snap([line('a', 'claude', { needsInput: false })]), { id: 'ev-2' });
     await vi.waitFor(() => expect(doc.title).toBe(''));
     stop();
+  });
+
+  it('notifies a session waiting on a background host of the window, named after its host', async () => {
+    const { app, emitOther } = fakeApp();
+    const stop = startNotifications(app as unknown as typeof App);
+    emitOther('prod', snap([line('b', 'claude', { needsInput: true })]), { at: 'ev-9' });
+    await vi.waitFor(() => expect(doc.title).toBe('(1) '));
+    await vi.waitFor(() => {
+      vi.advanceTimersByTime(1500);
+      expect(app.notice).toHaveBeenCalled();
+    });
+    expect(app.notice).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: 'ssh:prod|needsInput|line:b|ev-9',
+        kind: 'needsInput',
+        title: 'prod: Claude Code needs your input',
+        action: { kind: 'line', key: 'line:b', host: 'ssh:prod' },
+        target: 'line:b',
+      }),
+    );
+    stop();
+  });
+
+  it('counts waiting sessions of every host of the window in the badge', async () => {
+    const { app, emit, emitOther } = fakeApp();
+    const stop = startNotifications(app as unknown as typeof App);
+    emit(snap([line('a', 'claude', { needsInput: true })]));
+    emitOther('prod', snap([line('b', 'claude', { needsInput: true })]));
+    await vi.waitFor(() => expect(doc.title).toBe('(2) '));
+    stop();
+  });
+
+  it('stops following background hosts when stopped', async () => {
+    const { app, emitOther } = fakeApp();
+    const stop = startNotifications(app as unknown as typeof App);
+    emitOther('prod', snap([line('b', 'claude', { needsInput: true })]), { at: 'ev-9' });
+    stop();
+    expect(app.onOther).toBeNull();
+    vi.advanceTimersByTime(5000);
+    expect(app.notice).not.toHaveBeenCalled();
   });
 
   it('skips events that change no line, term or task', () => {

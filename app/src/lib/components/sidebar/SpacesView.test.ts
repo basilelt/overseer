@@ -26,12 +26,12 @@ describe('SpacesView wiring', () => {
     expect(src).not.toContain('setInterval');
   });
 
-  it('tells an empty filter result from an empty list, and derives the host from the connection', () => {
+  it('tells an empty filter result from an empty list, and names no host on its rows', () => {
     // Given the component source
     // When it is read
-    // Then the no-match text is common.none and the host comes from hostFor
+    // Then the no-match text is common.none and rows get no host
     expect(src).toMatch(/q \? t\('common\.none'\) : t\('ws\.empty'\)/);
-    expect(src).toContain('hostFor(app.conn)');
+    expect(src).not.toContain('hostFor');
   });
 });
 

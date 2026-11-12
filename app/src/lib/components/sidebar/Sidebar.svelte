@@ -23,6 +23,8 @@
   import { notesUi } from '../../notes.svelte';
 
   const statesView = preload(() => import('./StatesView.svelte'));
+  // Only windows showing several hosts need it.
+  const hostSections = () => import('./HostSections.svelte');
   const gitView = () => import('../../git/SidebarGit.svelte');
   const notesView = () => import('./NotesPopover.svelte');
 
@@ -95,6 +97,8 @@
   {/if}
   {#if app.sidebarGit}
     {#await gitView() then { default: SidebarGit }}<SidebarGit />{/await}
+  {:else if app.hosts.length > 1}
+    {#await hostSections() then { default: HostSections }}<HostSections {filter} {showArchived} />{/await}
   {:else if app.sidebarMode === 'workspaces'}
     <SpacesView {filter} {showArchived} />
   {:else}

@@ -1,47 +1,61 @@
 (() => {
   const PORT = '__QA_PORT__';
-  const BASE = 'http://127.0.0.1:' + PORT, WS = 'ws://127.0.0.1:' + PORT;
+  // The extra hosts of a window (slots) reach a second sandbox daemon when QA_SLOT_PORT is set.
+  const SLOT_PORT = '__QA_SLOT_PORT__';
+  const hostsBy = new Map();
+  const H = (slot) => {
+    const k = slot || '';
+    let h = hostsBy.get(k);
+    if (!h) {
+      const port = k && !SLOT_PORT.startsWith('__') ? SLOT_PORT : PORT;
+      h = { base: 'http://127.0.0.1:' + port, ws: 'ws://127.0.0.1:' + port, up: Promise.resolve(), wake: null };
+      hostsBy.set(k, h);
+    }
+    return h;
+  };
   const cbs = new Map(); let nextCb = 1, nextId = 1;
   const subs = new Map(), terms = new Map();
   const idx = new Map();
   const send = (ch, message) => { if (!ch) return; const id = ch.id; const i = idx.get(id) ?? 0; idx.set(id, i + 1); const f = cbs.get(id); if (f) f({ index: i, message }); };
   window.__qaLog = [];
   const log = (...a) => window.__qaLog.push(a.map(String).join(' '));
-  let up = Promise.resolve(), wake = null, watch = null;
-  async function alive() {
-    try { const r = await fetch(BASE + '/v1/version', { signal: AbortSignal.timeout(5000) }); return r.ok ? ((await r.json()).version ?? '') : null; } catch { return null; }
+  const watches = new Map();
+  window.__qaWindows = [];
+  async function alive(slot) {
+    try { const r = await fetch(H(slot).base + '/v1/version', { signal: AbortSignal.timeout(5000) }); return r.ok ? ((await r.json()).version ?? '') : null; } catch { return null; }
   }
-  function monitor(ch, target) {
-    const me = { stop: false }; watch = me;
+  function monitor(ch, target, slot) {
+    const me = { stop: false }; watches.set(slot ?? '', me);
     (async () => {
       for (;;) {
         await new Promise((r) => setTimeout(r, 5000));
         if (me.stop) return;
-        if ((await alive()) !== null) continue;
-        up = new Promise((r) => (wake = r));
+        if ((await alive(slot)) !== null) continue;
+        const h = H(slot); h.up = new Promise((r) => (h.wake = r));
         for (let attempt = 0; !me.stop; attempt++) {
           send(ch, { phase: 'reconnecting', target, attempt, detail: 'the daemon stopped answering' });
           await new Promise((r) => setTimeout(r, 1000));
-          const version = await alive();
+          const version = await alive(slot);
           if (version !== null) { send(ch, { phase: 'connected', target, version }); break; }
         }
-        wake?.(); wake = null;
+        h.wake?.(); h.wake = null;
       }
     })();
   }
-  async function req(method, path, body) {
-    await up;
-    const r = await fetch(BASE + path, { method, headers: body == null ? {} : { 'Content-Type': 'application/json' }, body: body == null ? undefined : JSON.stringify(body) });
+  async function req(method, path, body, slot) {
+    const h = H(slot);
+    await h.up;
+    const r = await fetch(h.base + path, { method, headers: body == null ? {} : { 'Content-Type': 'application/json' }, body: body == null ? undefined : JSON.stringify(body) });
     const t = await r.text(); let b = null; try { b = t ? JSON.parse(t) : null; } catch { b = t; }
     return { status: r.status, body: b };
   }
-  function events(ch) {
+  function events(ch, slot) {
     const id = nextId++; const ac = new AbortController(); subs.set(id, ac);
     let last = null;
     (async () => {
       while (!ac.signal.aborted) {
         try {
-          await up; const r = await fetch(BASE + '/v1/events', { headers: last ? { Accept: 'text/event-stream', 'Last-Event-ID': last } : { Accept: 'text/event-stream' }, signal: ac.signal });
+          await H(slot).up; const r = await fetch(H(slot).base + '/v1/events', { headers: last ? { Accept: 'text/event-stream', 'Last-Event-ID': last } : { Accept: 'text/event-stream' }, signal: ac.signal });
           const rd = r.body.getReader(); const dec = new TextDecoder(); let buf = '';
           for (;;) {
             const { value, done } = await rd.read(); if (done) break;
@@ -61,9 +75,9 @@
     })();
     return id;
   }
-  function attach(termId, ch) {
+  function attach(termId, ch, slot) {
     return new Promise((resolve, reject) => {
-      const ws = new WebSocket(WS + '/v1/terms/' + encodeURIComponent(termId) + '/io'); ws.binaryType = 'arraybuffer';
+      const ws = new WebSocket(H(slot).ws + '/v1/terms/' + encodeURIComponent(termId) + '/io'); ws.binaryType = 'arraybuffer';
       const id = nextId++; terms.set(id, ws);
       ws.onopen = () => resolve(id);
       ws.onerror = (e) => { log('ws err', termId); reject('terminal attach failed'); };
@@ -88,17 +102,17 @@
       if (!bytes) throw a.path + ': No such file or directory (os error 2)';
       send(a.onProgress, { sent: 0, total: bytes.length });
       const name = a.path.split('/').pop();
-      const r = await fetch(BASE + '/v1/uploads?name=' + encodeURIComponent(name), { method: 'POST', body: bytes });
+      const r = await fetch(H(a.slot).base + '/v1/uploads?name=' + encodeURIComponent(name), { method: 'POST', body: bytes });
       const t = await r.text(); let b = null; try { b = t ? JSON.parse(t) : null; } catch {}
       if (!r.ok) throw (b && typeof b.error === 'string' && b.error) || 'upload failed: HTTP ' + r.status;
       send(a.onProgress, { sent: bytes.length, total: bytes.length });
       return b;
     },
-    daemon_request: (a) => req(a.method, a.path, a.body),
-    daemon_bytes: async (a) => { const r = await fetch(BASE + a.path); if (!r.ok) { const t = await r.text(); let e = `HTTP ${r.status}`; try { e = JSON.parse(t).error || e; } catch {} throw { status: r.status, error: e }; } send(a.onData, Array.from(new Uint8Array(await r.arrayBuffer()))); },
-    daemon_events: (a) => events(a.onEvent),
+    daemon_request: (a) => req(a.method, a.path, a.body, a.slot),
+    daemon_bytes: async (a) => { const r = await fetch(H(a.slot).base + a.path); if (!r.ok) { const t = await r.text(); let e = `HTTP ${r.status}`; try { e = JSON.parse(t).error || e; } catch {} throw { status: r.status, error: e }; } send(a.onData, Array.from(new Uint8Array(await r.arrayBuffer()))); },
+    daemon_events: (a) => events(a.onEvent, a.slot),
     daemon_events_stop: (a) => { subs.get(a.sub)?.abort(); subs.delete(a.sub); },
-    term_attach: (a) => attach(a.termId, a.onData),
+    term_attach: (a) => attach(a.termId, a.onData, a.slot),
     term_write: (a) => { terms.get(a.attach)?.send(new TextEncoder().encode(a.data)); },
     term_resize: (a) => { terms.get(a.attach)?.send(JSON.stringify({ resize: { cols: a.cols, rows: a.rows }, client: 'desktop' })); },
     term_background: () => null,
@@ -106,7 +120,7 @@
     diag_info: () => null,
     update_status: () => ({ current: '0.0.0-qa', kind: 'package', releasesUrl: 'https://github.com/basilelt/overseer/releases' }),
     update_check: () => { throw 'Updates are not available in the sandbox'; },
-    ports_watch: (a) => { const id = nextId++; const tick = async () => { try { const r = await fetch(BASE + '/v1/ports'); send(a.onState, { remote: false, detected: await r.json(), forwards: [] }); } catch {} }; tick(); subs.set(id, { abort: () => clearInterval(iv) }); const iv = setInterval(tick, 1500); return id; },
+    ports_watch: (a) => { const id = nextId++; const tick = async () => { try { const r = await fetch(H(a.slot).base + '/v1/ports'); send(a.onState, { remote: false, detected: await r.json(), forwards: [] }); } catch {} }; tick(); subs.set(id, { abort: () => clearInterval(iv) }); const iv = setInterval(tick, 1500); return id; },
     ports_watch_stop: (a) => { subs.get(a.sub)?.abort(); subs.delete(a.sub); },
     ports_configure: () => null,
     app_platform: () => { const os = new URLSearchParams(location.search).get('qaos'); return os ? { os, mobile: os === 'android' || os === 'ios' } : { os: 'linux', mobile: false }; },
@@ -125,8 +139,11 @@
     'plugin:app|register_listener': () => null,
     'plugin:notification|register_listener': () => null,
     save_download: (a, o) => { window.__qaDownload = { name: decodeURIComponent(o?.headers?.['x-name'] ?? ''), size: a?.byteLength ?? a?.length ?? 0 }; return '/home/qa/Downloads/' + window.__qaDownload.name; },
-    conn_connect: async (a) => { if (watch) watch.stop = true; send(a.onState, { phase: 'connected', target: a.target, version: (await alive()) ?? '0.2.0' }); monitor(a.onState, a.target); },
-    conn_disconnect: () => { if (watch) watch.stop = true; watch = null; wake?.(); wake = null; up = Promise.resolve(); return null; },
+    conn_connect: async (a) => { const w = watches.get(a.slot ?? ''); if (w) w.stop = true; log('conn_connect', a.slot ?? '', JSON.stringify(a.target)); send(a.onState, { phase: 'connected', target: a.target, version: (await alive(a.slot)) ?? '0.2.0' }); monitor(a.onState, a.target, a.slot); },
+    conn_disconnect: (a) => { const slot = a?.slot ?? ''; log('conn_disconnect', slot); const w = watches.get(slot); if (w) w.stop = true; watches.delete(slot); const h = H(slot); h.wake?.(); h.wake = null; h.up = Promise.resolve(); return null; },
+    window_new: (a) => { window.__qaWindows.push(a?.connect ?? null); return 'w-' + (window.__qaWindows.length + 1); },
+    window_handoff: () => null,
+    conn_drop_slots: () => { for (const [slot, w] of watches) if (slot) { w.stop = true; watches.delete(slot); } return null; },
     ssh_hosts: () => [],
     direct_hosts: () => [],
     'plugin:event|listen': () => nextId++,

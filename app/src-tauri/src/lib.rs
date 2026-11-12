@@ -8,6 +8,10 @@ mod browser;
 mod browsers;
 mod commands;
 mod conn;
+/// Held by tests that change the process environment (PATH, OVERSEER_SOCKET) and by tests that
+/// spawn processes needing it intact.
+#[cfg(test)]
+pub(crate) static TEST_ENV: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 #[cfg(all(test, unix))]
 mod daemon_it;
 pub mod diag;
@@ -95,6 +99,7 @@ pub fn run() {
             commands::conn_connect,
             commands::conn_disconnect,
             commands::conn_answer,
+            commands::conn_drop_slots,
             commands::conn_wake,
             commands::conn_restart_server,
             commands::ssh_hosts,
@@ -120,6 +125,7 @@ pub fn run() {
             browsers::browsers_list,
             browsers::browser_open_with,
             window::window_new,
+            window::window_handoff,
             updater::update_status,
             updater::update_check,
             updater::update_install,

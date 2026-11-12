@@ -20,6 +20,8 @@ export interface DaemonClient {
   attachTerm(termId: string, onData: (bytes: Uint8Array) => void, onClose?: () => void): Promise<TermIO>;
   connect(target: HostTarget, onState: (s: ConnState) => void, opts?: ConnectOptions): Promise<void>;
   disconnect(): Promise<void>;
+  /** Drops the extra host connections a previous page of this window left behind. */
+  dropSlots?(): Promise<void>;
   sshHosts(): Promise<SshHost[]>;
   watchPorts(onState: (s: PortsState) => void): () => void;
   configurePorts(s: PortSettings): Promise<void>;

@@ -3,6 +3,7 @@ import { isLocale, setLocale, systemLocale, type Locale } from './i18n.svelte';
 import { DEFAULT_SCROLLBACK_LINES } from './scroll';
 import type { Agent, Effort, HostTarget, Project } from './types';
 import type { LinkTarget } from './links';
+import type { HostChoice, HostWindows } from './host-choice';
 import { hostKey } from './window';
 import { DEFAULT_KINDS, DEFAULT_QUIET, migrateKinds, type Delivery, type NotifyKind, type QuietHours } from './notify-prefs';
 
@@ -79,6 +80,18 @@ export interface Settings {
   lightPreset: string;
   darkPreset: string;
   customPresets: CustomPreset[];
+  /** One window per host (as before) or every host in one window. */
+  hostWindows: HostWindows;
+  /** Ask "this window or a new one" when connecting to a host. */
+  hostAsk: boolean;
+  /** The answer remembered per host key. */
+  hostChoice: Record<string, HostChoice>;
+  hostTabColor: boolean;
+  hostReconnect: boolean;
+  /** The hosts of the main window, reconnected at launch. */
+  windowHosts?: HostTarget[];
+  /** Host sections folded in the sidebar. */
+  hostsFolded?: string[];
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -130,6 +143,11 @@ export const DEFAULT_SETTINGS: Settings = {
   lightPreset: 'light',
   darkPreset: 'dark',
   customPresets: [],
+  hostWindows: 'separate',
+  hostAsk: false,
+  hostChoice: {},
+  hostTabColor: true,
+  hostReconnect: true,
 };
 
 const KEY = 'overseer.settings';

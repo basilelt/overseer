@@ -27,7 +27,6 @@
   import { t } from '../../i18n.svelte';
   import type { SpaceRow } from '../../spaces';
   import { workspaceSessions, type WorkspaceSessions } from '../../workspace-sessions';
-  import type { ConnState } from '../../types';
   import SessionRow from './SessionRow.svelte';
   import StatePills from './StatePills.svelte';
   import WorkspaceFrame from './WorkspaceFrame.svelte';
@@ -39,7 +38,6 @@
     closedOpen,
     selectedKey,
     multi,
-    host,
     selected = false,
     tabDrop = false,
     dropPos = null,
@@ -61,7 +59,6 @@
     closedOpen: boolean;
     selectedKey: string | null;
     multi?: ReadonlySet<string>;
-    host?: { name: string } & Pick<ConnState, 'phase' | 'attempt' | 'version'>;
     /** This workspace is the active one. */
     selected?: boolean;
     /** A dragged tab hovers the header. */
@@ -125,7 +122,6 @@
     <SessionRow
       item={it}
       {now}
-      {host}
       selected={selectedKey === it.key}
       multi={multi?.has(it.key)}
       onselect={(e) => onselect(it.key, e)}
@@ -136,7 +132,7 @@
     />
   {/each}
   {#each s.shells as it (it.key)}
-    <SessionRow item={it} {now} {host} selected={selectedKey === it.key} multi={multi?.has(it.key)} onselect={(e) => onselect(it.key, e)} onmenu={onitemmenu && ((e) => onitemmenu(it.key, it.title, e))} onpointerdown={onsessiondown && ((e) => onsessiondown(e, it.key, key))} zone={onsessiondown ? key : undefined} dropPos={rowDrop?.(it.key) ?? null} />
+    <SessionRow item={it} {now} selected={selectedKey === it.key} multi={multi?.has(it.key)} onselect={(e) => onselect(it.key, e)} onmenu={onitemmenu && ((e) => onitemmenu(it.key, it.title, e))} onpointerdown={onsessiondown && ((e) => onsessiondown(e, it.key, key))} zone={onsessiondown ? key : undefined} dropPos={rowDrop?.(it.key) ?? null} />
   {/each}
   {#if s.closed.count}
     <button class="more" type="button" data-closed={key} aria-expanded={isClosedOpen} onclick={toggleClosed}>{s.closed.count === 1 ? t('ws.closedOne') : t('ws.closedMore', { n: s.closed.count })}</button>
@@ -144,7 +140,7 @@
       {#each s.closed.buckets as b (b.bucket)}
         <div class="bucket">{t(`ws.bucket.${b.bucket}`)}</div>
         {#each b.items as it (it.key)}
-          <SessionRow item={it} {now} {host} selected={selectedKey === it.key} multi={multi?.has(it.key)} onselect={(e) => onselect(it.key, e)} onmenu={onitemmenu && ((e) => onitemmenu(it.key, it.title, e))} />
+          <SessionRow item={it} {now} selected={selectedKey === it.key} multi={multi?.has(it.key)} onselect={(e) => onselect(it.key, e)} onmenu={onitemmenu && ((e) => onitemmenu(it.key, it.title, e))} />
         {/each}
       {/each}
     {/if}
@@ -199,6 +195,7 @@
 <style>
   .solo {
     margin: 0 6px;
+    padding: 0 4px;
   }
   .line {
     position: relative;

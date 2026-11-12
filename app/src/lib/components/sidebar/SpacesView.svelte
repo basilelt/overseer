@@ -5,7 +5,7 @@
   import { attention } from '../../attention';
   import { t } from '../../i18n.svelte';
   import { saveSettings, settings } from '../../settings.svelte';
-  import { folderSpaces, hostFor, openOnPick, spaceTrail, spaces, toggleOpen } from '../../spaces';
+  import { folderSpaces, openOnPick, spaceTrail, spaces, toggleOpen } from '../../spaces';
   import { hostKey } from '../../window';
   import { visibleClock } from '../../visible-clock';
   import { app, NO_WORKSPACE } from '../../state.svelte';
@@ -36,8 +36,6 @@
   const saved = $derived(settings.spacesOpen?.[hk]);
   // The parent of the active nested workspace stays open, so the active one is always in view.
   const opened = $derived(new Set([...(saved ?? [app.workspaceId]), ...(app.currentWorkspace?.parentId ? [app.currentWorkspace.parentId] : [])]));
-  // Every session of a connection runs on that connection's host.
-  const host = $derived(hostFor(app.conn));
   const q = $derived(filter.trim());
   const groups = $derived(app.ws.groups.slice().sort(byRank));
   const pinned = $derived(nodes.some((n) => n.type === 'folder' && !n.folder));
@@ -118,7 +116,6 @@
         <SpaceBlock
           row={r}
           {now}
-          {host}
           open={opened.has(r.id)}
           closedOpen={closedOpen.has(r.id)}
           selectedKey={app.selectedKey}

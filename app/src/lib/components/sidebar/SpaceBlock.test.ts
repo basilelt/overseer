@@ -73,14 +73,6 @@ describe('SpaceBlock', () => {
     expect(html([{ ...item('s', 'running'), kind: 'shell' }], { open: true })).toContain('T-s');
   });
 
-  it('passes the host to SSH rows only', () => {
-    // Given an SSH host
-    // When rows render
-    // Then the chip shows
-    expect(html([item('l', 'open')], { open: true, host: { name: 'devbox', phase: 'connected' } })).toContain('>devbox<');
-    expect(html([item('l', 'open')], { open: true })).not.toContain('class="host');
-  });
-
   it('forwards the row click with its event, the row menu and the toggle to the parent', () => {
     // Given the component source
     // When the handlers are read
