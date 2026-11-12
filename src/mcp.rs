@@ -115,29 +115,20 @@ fn refuse_configurator(call: &mut Call, own: Option<&str>, what: &str) -> Result
 }
 
 fn ensure_landed(call: &mut Call, own: &str) -> Result<(), String> {
-    let t = daemon(call, "GET", &format!("/v1/tasks/{}", encode(own)), None)?;
-    let (project, branch) = (t["project"].as_str(), t["branch"].as_str());
-    let (Some(project), Some(branch)) = (project, branch) else {
-        return Err("the task has no branch: nothing to mark as merged".into());
-    };
     let v = daemon(
         call,
         "GET",
-        &format!("/v1/projects/{}/worktrees", encode(project)),
+        &format!("/v1/tasks/{}/landed", encode(own)),
         None,
     )?;
-    let landed = v["worktrees"]
-        .as_array()
-        .into_iter()
-        .flatten()
-        .any(|w| w["branch"].as_str() == Some(branch) && w["merged"] == true);
-    if landed {
-        Ok(())
-    } else {
-        Err(format!(
-            "branch {branch} is not merged into the base branch yet: merge it first, then set merged"
-        ))
+    if v["landed"] == true {
+        return Ok(());
     }
+    let branch = v["branch"].as_str().unwrap_or("the task branch");
+    let base = v["base"].as_str().unwrap_or("the base branch");
+    Err(format!(
+        "branch {branch} is not merged into {base} yet: merge it first, then set merged"
+    ))
 }
 
 fn pick(v: &Value, keys: &[&str]) -> Value {
@@ -1160,16 +1151,12 @@ mod tests {
         }
     }
 
-    fn landed_answer(merged: bool, branch: Option<&str>) -> impl Fn(&str, &str) -> (u16, Value) {
-        let branch = branch.map(str::to_string);
+    fn landed_answer(answer: (u16, Value)) -> impl Fn(&str, &str) -> (u16, Value) {
         move |_, t| {
-            if t.contains("/worktrees") {
-                (
-                    200,
-                    json!({"worktrees": [{"branch": "sb/x", "merged": merged}, {"branch": "sb/y", "merged": true}]}),
-                )
+            if t == "/v1/tasks/OWN/landed" {
+                answer.clone()
             } else {
-                (200, json!({"id": "OWN", "project": "/p", "branch": branch}))
+                (200, json!({"id": "OWN", "project": "/p", "branch": "sb/x"}))
             }
         }
     }
@@ -1183,16 +1170,34 @@ mod tests {
                 a,
             )
         };
-        for answer in [
-            landed_answer(false, Some("sb/x")),
-            landed_answer(true, None),
+        for (answer, says) in [
+            (
+                (
+                    200,
+                    json!({"landed": false, "branch": "sb/x", "base": "next"}),
+                ),
+                "branch sb/x is not merged into next yet",
+            ),
+            (
+                (
+                    400,
+                    json!({"error": "the task has no branch: nothing to mark as merged"}),
+                ),
+                "the task has no branch",
+            ),
         ] {
-            let (out, log) = call(&answer);
-            assert_eq!(out.unwrap()["result"]["isError"], true);
+            let (out, log) = call(&landed_answer(answer));
+            let out = out.unwrap();
+            assert_eq!(out["result"]["isError"], true);
+            assert!(out.to_string().contains(says), "{out}");
             assert!(log.iter().all(|l| l.0 == "GET"), "no PATCH was sent");
         }
-        let (out, log) = call(&landed_answer(true, Some("sb/x")));
+        let (out, log) = call(&landed_answer((
+            200,
+            json!({"landed": true, "branch": "sb/x", "base": "next"}),
+        )));
         assert_eq!(out.unwrap()["result"]["isError"], false);
+        assert!(log.iter().any(|l| l.1 == "/v1/tasks/OWN/landed"));
         let last = log.last().unwrap();
         assert_eq!(
             (last.0.as_str(), last.1.as_str(), last.2.clone()),
