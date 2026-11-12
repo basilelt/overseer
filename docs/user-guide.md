@@ -1075,7 +1075,9 @@ In the app:
   input of Claude Code, Codex or another agent) moves the cursor there by sending Left/Right
   arrows, like in a text editor. Only the cursor's own row is handled; clicks on other rows,
   with a modifier, while scrolled back, on a phone, or in a program that reads the mouse itself
-  (tmux with mouse on, vim with `mouse=a`, htop) do nothing.
+  (tmux with mouse on, vim with `mouse=a`, htop) do nothing. It only works where a line editor
+  reads the input with bracketed paste on (bash 5.1+, zsh, fish, Claude Code): a shell without
+  one, such as `sh` on Debian (dash), would type the arrows, so clicks there do nothing.
 
 ### 14.1a Agents
 
@@ -1904,7 +1906,7 @@ shortcuts.
 | Split down | Cmd+Shift+D | Ctrl+Shift+D |
 | Focus the pane left / right / up / down | Cmd+Option+arrows | Ctrl+Alt+arrows |
 | Find in terminal (Enter: older match, Shift+Enter: newer, Esc closes) | Cmd+F | Ctrl+Shift+F (Ctrl+F outside a terminal) |
-| Copy the selection / paste | Cmd+C / Cmd+V | Ctrl+Shift+C / Ctrl+Shift+V |
+| Copy the selection / paste | Cmd+C / Cmd+V | Ctrl+Shift+C / Ctrl+Shift+V, or Ctrl+Insert / Shift+Insert |
 | Terminal font larger / smaller / default | Cmd+= / Cmd+- / Cmd+0 | Ctrl+= / Ctrl+- / Ctrl+0 |
 | Command palette | Cmd+K or Cmd+P | Ctrl+K, Ctrl+P (Ctrl+Shift+P in a terminal) |
 | Settings | Cmd+, | Ctrl+, |
