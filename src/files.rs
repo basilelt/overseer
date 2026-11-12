@@ -1,4 +1,4 @@
-use crate::http::{q, respond_raw, Request};
+use crate::http::{respond_raw, Request};
 use crate::procs::{Probe, System};
 use crate::Ctx;
 use serde_json::json;
@@ -30,9 +30,10 @@ fn load(ctx: &Ctx, r: &Request) -> Res<(&'static str, Vec<u8>)> {
     if raw.is_empty() {
         return Err((400, "path required".into()));
     }
-    let base = q(r, "term")
-        .and_then(|t| term_cwd(&crate::util::percent_decode(t)))
-        .or_else(|| q(r, "line").and_then(|l| line_cwd(ctx, &crate::util::percent_decode(l))));
+    let base = r
+        .param("term")
+        .and_then(|t| term_cwd(&t))
+        .or_else(|| r.param("line").and_then(|l| line_cwd(ctx, &l)));
     let p = resolve(&raw, base.as_deref())?;
     let p = check(&p, MAX)?;
     read(&p, MAX).map(|b| (ctype(&p), b))
