@@ -1003,6 +1003,11 @@ attaches to a process that is already running; a tab whose agent is not running 
 `claude --resume`. The daemon enforces it: `POST /v1/lines/<id>/resume` with `"attachOnly": true`
 answers 409 instead of starting anything.
 
+An agent can ask something before it starts, such as Claude Code asking whether to trust the
+folder. Until it is answered the session reads **Starting**:
+Resume is disabled and the chat offers **Open terminal** to answer it. Resuming again returns the
+same terminal instead of starting a second agent, and Close ends it.
+
 ```
 S=$(overseer socket-path)
 curl --unix-socket "$S" -X POST -d '{"cwd":"/home/me/src/app","cmd":["claude"],"cols":120,"rows":32}' http://unix/v1/terms

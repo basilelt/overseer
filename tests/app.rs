@@ -3854,6 +3854,147 @@ fn install_term_rejects_agents_without_an_install_command() {
     );
 }
 
+fn resumes_of(app: &App, sid: &str) -> usize {
+    stub_log(app)
+        .lines()
+        .filter(|l| l.contains(&format!("--resume {sid}")))
+        .count()
+}
+
+fn resume_line(app: &App, line: &str) -> Value {
+    let (code, r) = app.req(
+        "POST",
+        &format!("/v1/lines/{line}/resume?dryRun=false"),
+        json!({"target": "term"}),
+    );
+    assert!(code == 200 || code == 201, "{code}: {r}");
+    r
+}
+
+#[test]
+fn resuming_again_while_the_agent_waits_on_its_trust_prompt_reuses_its_term() {
+    // Given a stopped claude session whose resume stops at the folder trust prompt, before any hook
+    // When Resume is pressed again while that prompt is shown
+    // Then the same term comes back, no second agent starts, and trusting it brings the session back
+    let sid = "cccccccc-0000-4000-8000-000000000071";
+    let app = App::new("resumetrust", json!({}));
+    let (tid, line) = claude_term(&app, json!(["claude", "--session-id", sid]), sid);
+    app.ok(
+        "POST",
+        &format!("/v1/terms/{tid}/kill"),
+        json!({"confirm": true}),
+    );
+    wait(|| line_json(&app, &line)["local"]["pid"].is_null());
+    std::fs::write(app.fx.base.join("stub.log.trust"), "").unwrap();
+    let first = resume_line(&app, &line)["id"].as_str().unwrap().to_string();
+    let mut ws = app.ws(&first);
+    read_until(&mut ws, "Yes, I trust this folder");
+    let again = resume_line(&app, &line);
+    assert_eq!(again["id"], first.as_str());
+    assert_eq!(resumes_of(&app, sid), 1);
+    assert_eq!(line_json(&app, &line)["local"]["pid"], Value::Null);
+    send(&mut ws, "trust\r");
+    wait(|| line_json(&app, &line)["local"]["pid"].is_u64());
+    assert_eq!(resumes_of(&app, sid), 1);
+    app.ok(
+        "POST",
+        &format!("/v1/terms/{first}/kill"),
+        json!({"confirm": true}),
+    );
+}
+
+#[test]
+fn resuming_a_paused_session_twice_does_not_press_enter_on_its_trust_prompt() {
+    // Given a paused claude session resumed from its held stub, now at the folder trust prompt
+    // When Resume is pressed a second time
+    // Then no Enter reaches the prompt (it would answer "No, exit"), and the agent still waits on it
+    let sid = "cccccccc-0000-4000-8000-000000000072";
+    let app = App::new("resumeheldtrust", json!({}));
+    let (tid, line) = claude_term(&app, json!(["claude", "--session-id", sid]), sid);
+    let mut ws = app.ws(&tid);
+    read_until(&mut ws, "❯");
+    app.ok(
+        "POST",
+        &format!("/v1/lines/{line}/hold?dryRun=false"),
+        Value::Null,
+    );
+    wait(|| line_json(&app, &line)["line"]["state"] == "held");
+    let mut ws = app.ws(&tid);
+    read_until(&mut ws, "press Enter to resume");
+    std::fs::write(app.fx.base.join("stub.log.trust"), "").unwrap();
+    assert_eq!(resume_line(&app, &line)["id"], tid.as_str());
+    read_until(&mut ws, "Yes, I trust this folder");
+    wait(|| line_json(&app, &line)["local"]["heldReason"] != "user");
+    assert_eq!(resume_line(&app, &line)["id"], tid.as_str());
+    send(&mut ws, "trust\r");
+    wait(|| line_json(&app, &line)["local"]["pid"].is_u64());
+    assert_eq!(resumes_of(&app, sid), 1);
+    app.ok(
+        "POST",
+        &format!("/v1/terms/{tid}/kill"),
+        json!({"confirm": true}),
+    );
+}
+
+#[test]
+fn closing_a_session_still_at_its_trust_prompt_ends_the_starting_agent() {
+    // Given a stopped claude session resumed into a term that waits on the folder trust prompt
+    // When the session is closed
+    // Then that term ends instead of being left behind with an agent nobody sees
+    let sid = "cccccccc-0000-4000-8000-000000000073";
+    let app = App::new("closetrust", json!({}));
+    let (tid, line) = claude_term(&app, json!(["claude", "--session-id", sid]), sid);
+    app.ok(
+        "POST",
+        &format!("/v1/terms/{tid}/kill"),
+        json!({"confirm": true}),
+    );
+    wait(|| line_json(&app, &line)["local"]["pid"].is_null());
+    std::fs::write(app.fx.base.join("stub.log.trust"), "").unwrap();
+    let starting = resume_line(&app, &line)["id"].as_str().unwrap().to_string();
+    let mut ws = app.ws(&starting);
+    read_until(&mut ws, "Yes, I trust this folder");
+    app.ok(
+        "POST",
+        &format!("/v1/lines/{line}/close?dryRun=false"),
+        Value::Null,
+    );
+    wait(|| app.ok("GET", &format!("/v1/terms/{starting}"), Value::Null)["exited"] == true);
+}
+
+#[test]
+fn two_quick_resumes_of_a_paused_session_press_enter_on_its_stub_once() {
+    // Given a paused claude session whose agent will stop at the folder trust prompt
+    // When Resume is pressed twice in a row, before the stub has started the agent
+    // Then only the first press reaches the stub, so the prompt still waits for an answer
+    let sid = "cccccccc-0000-4000-8000-000000000074";
+    let app = App::new("resumeheldtwice", json!({}));
+    let (tid, line) = claude_term(&app, json!(["claude", "--session-id", sid]), sid);
+    let mut ws = app.ws(&tid);
+    read_until(&mut ws, "❯");
+    app.ok(
+        "POST",
+        &format!("/v1/lines/{line}/hold?dryRun=false"),
+        Value::Null,
+    );
+    wait(|| line_json(&app, &line)["line"]["state"] == "held");
+    let mut ws = app.ws(&tid);
+    read_until(&mut ws, "press Enter to resume");
+    std::fs::write(app.fx.base.join("stub.log.trust"), "").unwrap();
+    assert_eq!(resume_line(&app, &line)["id"], tid.as_str());
+    assert_eq!(resume_line(&app, &line)["id"], tid.as_str());
+    read_until(&mut ws, "Yes, I trust this folder");
+    std::thread::sleep(std::time::Duration::from_millis(500));
+    send(&mut ws, "trust\r");
+    wait(|| line_json(&app, &line)["local"]["pid"].is_u64());
+    assert_eq!(resumes_of(&app, sid), 1);
+    app.ok(
+        "POST",
+        &format!("/v1/terms/{tid}/kill"),
+        json!({"confirm": true}),
+    );
+}
+
 // Given a daemon started before an installer created ~/.local/bin
 // When the agent lands there and the app asks for a rescan
 // Then the agent is detected, /v1/env shows the dir and new terms find the agent
