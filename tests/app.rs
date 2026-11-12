@@ -1787,7 +1787,10 @@ fn agents_are_detected_and_launched_from_the_table() {
         .collect();
     assert_eq!(
         ids,
-        ["claude", "codex", "gemini", "agy", "opencode", "amp", "copilot", "cursor", "shell"]
+        [
+            "claude", "codex", "gemini", "agy", "opencode", "amp", "copilot", "cursor", "vibe",
+            "shell"
+        ]
     );
     let get = |id: &str| {
         list.as_array()
@@ -1970,7 +1973,8 @@ fn agent_auto_approval_settings_persist_and_control_new_term_argv() {
     let default = app.ok("GET", "/v1/agents/settings", Value::Null);
     assert_eq!(default["autoApprove"]["claude"], true);
     assert_eq!(default["autoApprove"]["codex"], true);
-    assert_eq!(default["autoApprove"].as_object().unwrap().len(), 7);
+    assert_eq!(default["autoApprove"].as_object().unwrap().len(), 8);
+    assert_eq!(default["autoApprove"]["vibe"], true);
 
     let disabled = app.ok(
         "PUT",

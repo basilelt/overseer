@@ -82,6 +82,7 @@ export const MOCK_AGENTS: AgentInfo[] = [
   { id: 'amp', name: 'Amp', installed: false, models: [], efforts: [...ALL_EFFORTS], resume: true, verified: true, install: 'npm install -g --allow-scripts=@ampcode/cli @sourcegraph/amp', installable: true, sessions: false, turns: false },
   { id: 'copilot', name: 'Copilot CLI', installed: true, version: '0.0.354', efforts: [...ALL_EFFORTS], resume: true, verified: true, sessions: false, turns: false },
   { id: 'cursor', name: 'Cursor Agent', installed: false, efforts: [], resume: true, verified: false, install: 'curl https://cursor.com/install -fsS | bash', installable: true, sessions: false, turns: false },
+  { id: 'vibe', name: 'Mistral Vibe', installed: true, version: 'vibe 3.1.2', models: [], efforts: [], resume: true, verified: true, install: 'uv tool install mistral-vibe', sessions: true, turns: true },
   { id: 'shell', name: 'Shell', installed: true, models: [], efforts: [], resume: false, verified: true, sessions: false, turns: false },
 ];
 
@@ -132,6 +133,7 @@ export const MOCK_PROFILES: ProfilesStore = {
     amp: { effort: 'flag' },
     copilot: { model: 'flag', effort: 'flag' },
     cursor: { model: 'flag' },
+    vibe: { model: 'env' },
   },
 };
 
@@ -683,6 +685,7 @@ export class MockDaemon implements DaemonClient {
   terms: Term[];
   tasks: Task[];
   autoOrganize = false;
+  agentMessaging = true;
   lidPower = { enabled: false, active: false, supported: true, error: null as string | null };
   autoApprove: Record<string, boolean> = Object.fromEntries(Object.keys(AUTO_APPROVE_ARGS).map((id) => [id, true]));
   messages: TaskMessage[];
@@ -855,6 +858,12 @@ export class MockDaemon implements DaemonClient {
       this.autoOrganize = body?.enabled === true;
       return { enabled: this.autoOrganize };
     }
+    if (method === 'GET' && path === '/v1/tasks/agent-messaging') return { enabled: this.agentMessaging };
+    if (method === 'PUT' && path === '/v1/tasks/agent-messaging') {
+      if (typeof body?.enabled !== 'boolean') throw new DaemonError(400, 'enabled must be a boolean');
+      this.agentMessaging = body.enabled;
+      return { enabled: this.agentMessaging };
+    }
     if (method === 'POST' && path === '/v1/tasks/organize') return this.organize(body);
     if (path.startsWith('/v1/organize/')) return this.organizeRoute(method, path, body);
     if ((r = m(/^\/v1\/tasks\/([^/]+)\/messages$/))) return this.messagesRoute(method, decodeURIComponent(r[1]), body);
@@ -884,7 +893,7 @@ export class MockDaemon implements DaemonClient {
   private chatRoute(id: string, action: string, q: URLSearchParams, body: any): unknown {
     const l = this.findLine(id);
     if (action === 'chat') {
-      if (!['claude', 'codex', 'gemini'].includes(l.line.agent)) throw new DaemonError(409, `no chat parser for ${l.line.agent}`);
+      if (!['claude', 'codex', 'gemini', 'vibe'].includes(l.line.agent)) throw new DaemonError(409, `no chat parser for ${l.line.agent}`);
       return chatPage(id, l.line.agent, this.chatOf(id), q);
     }
     if (action === 'screen') return mockScreen(id);
@@ -1683,6 +1692,8 @@ export class MockDaemon implements DaemonClient {
     const text = String(body?.body ?? '').trim();
     if (!text || text.length > 8000) throw new DaemonError(400, 'body must be 1 to 8000 characters');
     const sender = body?.from ? this.findTask(body.from) : null;
+    if (sender && sender.project !== t.project) throw new DaemonError(403, `task ${t.id} belongs to another project (${t.project}): agents may only message tasks of their own project. Do not retry.`);
+    if (sender && !this.agentMessaging && sender.parentId !== t.id && t.parentId !== sender.id) throw new DaemonError(403, "messages between agents are turned off in Overseer's settings. Do not retry; carry on without them.");
     const live = t.status === 'in_progress' && !!t.termId;
     const m: TaskMessage = {
       id: `msg_${Math.random().toString(36).slice(2, 8)}`,
@@ -2417,6 +2428,7 @@ function mockHooks(): HooksStatus {
       row('gemini', 'Gemini CLI', 'hooks', false, '/home/dev/.gemini/settings.json'),
       row('opencode', 'opencode', 'plugin', true, '/home/dev/.config/opencode/plugins/overseer.js'),
       row('agy', 'Antigravity', 'polling', false, undefined, 'No stable hook file for the Antigravity CLI yet'),
+      row('vibe', 'Mistral Vibe', 'hooks', false, '/home/dev/.vibe/hooks.toml', 'Needs Mistral Vibe 3.0 or later. An interrupted turn fires no hook: the line stays busy until the next turn ends.'),
     ],
   };
 }
