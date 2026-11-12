@@ -389,7 +389,7 @@ fn absorb(t: &mut Task, l: &Line, a: &Value) -> bool {
 pub fn refresh(t: &mut Task, line: Option<&Line>, env: &Env) -> bool {
     let Some(l) = line else {
         let changed = t.title_source.is_none() && retitle(t, None, &Value::Null);
-        return (!crate::tasks::is_done(&t.status)
+        return (!crate::status::is_done(&t.status)
             && (env.merged)(t)
             && follow(t, "merged", || true))
             || changed;
@@ -413,7 +413,7 @@ pub fn refresh(t: &mut Task, line: Option<&Line>, env: &Env) -> bool {
             crate::worktrees::forget_landed(b);
         }
     }
-    if matches!(state, "lost" | "done") && !crate::tasks::is_done(&t.status) && (env.merged)(t) {
+    if matches!(state, "lost" | "done") && !crate::status::is_done(&t.status) && (env.merged)(t) {
         state = "merged";
     }
     let branched = t.worktree_path.as_deref().is_some_and(|w| w != t.project);

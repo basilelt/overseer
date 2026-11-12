@@ -429,7 +429,7 @@ keeping the current relative order inside a quadrant (ranks are floats, lower fi
 pub fn organizable(tasks: &[Task], project: Option<&str>) -> Vec<String> {
     let mut out: Vec<String> = vec![];
     for t in tasks {
-        if crate::tasks::is_done(&t.status)
+        if crate::status::is_done(&t.status)
             || is_organizer(t)
             || t.from_session()
             || project.is_some_and(|p| p != t.project)
@@ -454,7 +454,7 @@ pub fn organize_due(tasks: &[Task], project: &str, live_organizer: bool, now_ms:
             .max()
     };
     let Some(work) = newest(&|t| {
-        !crate::tasks::is_done(&t.status)
+        !crate::status::is_done(&t.status)
             && matches!(t.origin.as_deref(), None | Some("user" | "agent"))
     }) else {
         return false;

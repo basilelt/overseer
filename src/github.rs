@@ -314,7 +314,7 @@ pub fn prepare(
     let (root, _) = crate::worktrees::project(&root).map_err(|(c, e)| (c, e, "failed"))?;
     let pull = format!("pull/{number}/head");
     let branch = crate::layout::review_branch(number);
-    let dir = crate::worktrees::store(ctx, &root).join(crate::worktrees::dir_name(&branch));
+    let dir = crate::worktrees::store(ctx, &root).join(crate::layout::branch_dir_name(&branch));
     if dir.is_dir() {
         let d = dir.to_string_lossy().into_owned();
         if git(

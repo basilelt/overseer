@@ -472,7 +472,7 @@ fn deps_json(d: &[String]) -> Option<String> {
     (!d.is_empty()).then(|| json!(d).to_string())
 }
 
-pub use crate::status::is_done;
+use crate::status::is_done;
 
 pub fn blockers<'a>(t: &Task, tasks: &'a [Task]) -> Vec<&'a Task> {
     t.depends_on
@@ -943,8 +943,6 @@ fn remove(reg: &Registry, id: &str) -> Res<Vec<Task>> {
     sql(tx.commit())?;
     Ok(dependents)
 }
-
-pub use crate::layout::task_slug as slug;
 
 fn dep_base(reg: &Registry, t: &Task) -> Option<String> {
     let [d] = t.depends_on.as_slice() else {
@@ -1664,10 +1662,13 @@ mod tests {
 
     #[test]
     fn slugs() {
-        assert_eq!(slug("Fix the Login page!"), "fix-the-login-page");
-        assert_eq!(slug("  ##  "), "task");
-        assert_eq!(slug("Été 2026 — élan"), "t-2026-lan");
-        assert!(slug(&"word ".repeat(30)).len() <= 40);
+        assert_eq!(
+            crate::layout::task_slug("Fix the Login page!"),
+            "fix-the-login-page"
+        );
+        assert_eq!(crate::layout::task_slug("  ##  "), "task");
+        assert_eq!(crate::layout::task_slug("Été 2026 — élan"), "t-2026-lan");
+        assert!(crate::layout::task_slug(&"word ".repeat(30)).len() <= 40);
     }
 
     #[test]

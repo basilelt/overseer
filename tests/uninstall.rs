@@ -44,7 +44,7 @@ fn store(fx: &Fx) -> PathBuf {
     let root = fx.wt.to_string_lossy().into_owned();
     home(fx).join(format!(
         ".overseer/worktrees/repo-{}",
-        overseer::worktrees::fnv(&root)
+        overseer::layout::store_hash(&root)
     ))
 }
 

@@ -1,5 +1,5 @@
-use crate::daemon::PROTOCOL;
 use crate::deliver::Job;
+use crate::wire::PROTOCOL;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::path::{Path, PathBuf};

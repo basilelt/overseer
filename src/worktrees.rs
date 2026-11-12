@@ -28,9 +28,6 @@ fn conflict(m: impl Into<String>) -> (u16, String) {
     (409, m.into())
 }
 
-pub use crate::layout::branch_dir_name as dir_name;
-pub use crate::layout::store_hash as fnv;
-
 pub fn project(path: &str) -> Res<(String, String)> {
     crate::tasks::main_root(&mut Git::default(), path)
         .ok_or_else(|| bad(format!("{path} is not in a git repository")))
@@ -424,7 +421,7 @@ pub fn create(ctx: &Ctx, path: &str, n: &New) -> Res<(String, String, String)> {
             let prefix = crate::layout::session_branch_prefix(n.agent);
             let s =
                 n.slug
-                    .map(crate::tasks::slug)
+                    .map(crate::layout::task_slug)
                     .filter(|s| n.slug.is_some_and(|x| !x.trim().is_empty()) && !s.is_empty())
                     .unwrap_or_else(|| match n.agent {
                         Some(_) => short_time(crate::util::now_ms()),
@@ -433,7 +430,9 @@ pub fn create(ctx: &Ctx, path: &str, n: &New) -> Res<(String, String, String)> {
                     });
             let mut b = format!("{prefix}{s}");
             let mut i = 2;
-            while has_ref(&root, &format!("refs/heads/{b}")) || store.join(dir_name(&b)).exists() {
+            while has_ref(&root, &format!("refs/heads/{b}"))
+                || store.join(crate::layout::branch_dir_name(&b)).exists()
+            {
                 b = format!("{prefix}{s}-{i}");
                 i += 1;
                 if i > 100 {
@@ -444,7 +443,7 @@ pub fn create(ctx: &Ctx, path: &str, n: &New) -> Res<(String, String, String)> {
             b
         }
     };
-    let dir = store.join(dir_name(&branch));
+    let dir = store.join(crate::layout::branch_dir_name(&branch));
     if dir.exists() {
         return Err(conflict(format!("{} already exists", dir.display())));
     }
@@ -1248,12 +1247,24 @@ mod tests {
 
     #[test]
     fn names() {
-        assert_eq!(dir_name("task/7-fix-login"), "task-7-fix-login");
-        assert_eq!(dir_name("sb/claude/1029-0930"), "sb-claude-1029-0930");
-        assert_eq!(dir_name("feat/AS-12_x..y"), "feat-AS-12_x..y");
-        assert_eq!(dir_name("//"), "worktree");
-        assert_eq!(fnv("/home/u/src/x").len(), 8);
-        assert_ne!(fnv("/a"), fnv("/b"));
+        assert_eq!(
+            crate::layout::branch_dir_name("task/7-fix-login"),
+            "task-7-fix-login"
+        );
+        assert_eq!(
+            crate::layout::branch_dir_name("sb/claude/1029-0930"),
+            "sb-claude-1029-0930"
+        );
+        assert_eq!(
+            crate::layout::branch_dir_name("feat/AS-12_x..y"),
+            "feat-AS-12_x..y"
+        );
+        assert_eq!(crate::layout::branch_dir_name("//"), "worktree");
+        assert_eq!(crate::layout::store_hash("/home/u/src/x").len(), 8);
+        assert_ne!(
+            crate::layout::store_hash("/a"),
+            crate::layout::store_hash("/b")
+        );
         assert_eq!(short_time(0), "0101-0000");
     }
 

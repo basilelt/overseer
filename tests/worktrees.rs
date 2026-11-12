@@ -202,7 +202,7 @@ fn creates_worktrees_in_the_sibling_store_with_consistent_names() {
     let store = worktrees::store(&fx.ctx(), fx.r());
     assert_eq!(
         store.file_name().unwrap().to_str().unwrap(),
-        format!("repo-{}", worktrees::fnv(fx.r()))
+        format!("repo-{}", overseer::layout::store_hash(fx.r()))
     );
     assert_eq!(Path::new(&p), store.join("sb-claude-fix-the-login"));
     assert!(

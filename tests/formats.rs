@@ -1,7 +1,7 @@
 use overseer::agents::{self, Launch};
 use overseer::procs::{Probe, ProcInfo};
 use overseer::registry::Registry;
-use overseer::{lifecycle, review, tasks, upgrade, worktrees, Config, Ctx};
+use overseer::{layout, lifecycle, review, upgrade, Config, Ctx};
 use serde_json::{json, Map, Value};
 use std::path::Path;
 
@@ -121,9 +121,9 @@ fn schema(base: &Path) -> Value {
 
 fn formats(base: &Path) -> Value {
     json!({
-        "taskSlug": table(tasks::slug),
-        "worktreeDirName": table(worktrees::dir_name),
-        "fnv": table(worktrees::fnv),
+        "taskSlug": table(layout::task_slug),
+        "worktreeDirName": table(layout::branch_dir_name),
+        "fnv": table(layout::store_hash),
         "agents": launches(),
         "savedTermKeys": keys(serde_json::to_value(upgrade::SavedTerm::default()).unwrap()),
         "lifecycleSavedKeys": keys(serde_json::to_value(lifecycle::Saved::default()).unwrap()),

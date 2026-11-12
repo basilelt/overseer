@@ -174,7 +174,9 @@ fn tell(ctx: &Ctx, to: &str, body: String) {
 
 fn stop_reviewers(ctx: &Ctx, reg: &Registry, worker: &str) {
     for mut r in tasks::all(reg).unwrap_or_default().into_iter().filter(|r| {
-        is_reviewer(r) && r.parent_id.as_deref() == Some(worker) && !tasks::is_done(&r.status)
+        is_reviewer(r)
+            && r.parent_id.as_deref() == Some(worker)
+            && !crate::status::is_done(&r.status)
     }) {
         if let Some(term) = r.live_term() {
             let _ = term.kill();
@@ -265,7 +267,7 @@ fn voter_role(w: &Task, from: &Task) -> Res<&'static str> {
     }
     if is_reviewer(from)
         && from.parent_id.as_deref() == Some(w.id.as_str())
-        && !tasks::is_done(&from.status)
+        && !crate::status::is_done(&from.status)
     {
         return Ok(REVIEWER);
     }

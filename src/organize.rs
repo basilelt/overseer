@@ -476,7 +476,8 @@ pub fn deterministic(i: &Input) -> Value {
             );
         }
     }
-    let open = |t: &Task| !crate::tasks::is_done(&t.status) && !crate::task_agents::is_organizer(t);
+    let open =
+        |t: &Task| !crate::status::is_done(&t.status) && !crate::task_agents::is_organizer(t);
     for t in i.tasks.iter().filter(|t| open(t)) {
         let running = t.status == "in_progress" && !t.from_session();
         if !running && t.branch.is_some() && (i.landed)(t) == Some(true) {
@@ -546,7 +547,7 @@ fn pick_up(i: &Input) -> Vec<Value> {
     let done = |l: &Line| {
         i.tasks.iter().any(|t| {
             t.line_id.as_deref() == Some(l.id.as_str())
-                && (crate::tasks::is_done(&t.status) || (i.landed)(t) == Some(true))
+                && (crate::status::is_done(&t.status) || (i.landed)(t) == Some(true))
         })
     };
     let mut out: Vec<(usize, i64, Value)> = cands

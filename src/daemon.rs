@@ -4,7 +4,7 @@ use crate::http::{
 };
 use crate::procs::System;
 use crate::util::now_ms;
-use crate::wire::{CMD_CLOSE, CMD_HOLD, CMD_LINK, CMD_RESUME};
+use crate::wire::{CMD_CLOSE, CMD_HOLD, CMD_LINK, CMD_RESUME, PROTOCOL};
 use crate::{scan, Ctx};
 use serde_json::{json, Value};
 use std::io::{BufRead, BufReader, ErrorKind, Read, Write};
@@ -12,8 +12,6 @@ use std::net::TcpStream;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::time::Duration;
-
-pub use crate::wire::PROTOCOL;
 
 pub trait Stream: Read + Write + Send {
     fn set_read_timeout(&self, d: Option<Duration>) -> std::io::Result<()>;
