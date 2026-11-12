@@ -2,6 +2,7 @@ export interface DismissOptions {
   onclose: () => void;
   active?: boolean;
   escape?: boolean | 'stop';
+  restore?: () => void;
   keep?: (target: Element | null) => boolean;
 }
 
@@ -17,6 +18,7 @@ export function dismiss(node: HTMLElement, options: DismissOptions) {
     if (!opts.escape || e.key !== 'Escape') return;
     if (opts.escape === 'stop') e.stopPropagation();
     opts.onclose();
+    opts.restore?.();
   };
   window.addEventListener('pointerdown', down);
   window.addEventListener('keydown', key);

@@ -84,6 +84,17 @@ describe('dismiss', () => {
     action.destroy();
   });
 
+  it('gives focus back to the opener after closing on Escape, not on an outside press', () => {
+    const order: string[] = [];
+    const restore = vi.fn(() => order.push('restore'));
+    const { action } = mount({ escape: true, restore, onclose: () => order.push('close') });
+    pointerdown();
+    expect(restore).not.toHaveBeenCalled();
+    keydown('Escape');
+    expect(order).toEqual(['close', 'close', 'restore']);
+    action.destroy();
+  });
+
   it('stops listening once destroyed', () => {
     const { onclose, action } = mount({ escape: true });
     action.destroy();

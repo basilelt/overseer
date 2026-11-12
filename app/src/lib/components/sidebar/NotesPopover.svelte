@@ -1,5 +1,6 @@
 <script lang="ts">
   import { dismiss } from '../../dismiss';
+  import { captureFocus } from '../../focus';
   import { isNotesTrigger } from '../../notes-trigger';
   import StickyNote from '@lucide/svelte/icons/sticky-note';
   import Trash2 from '@lucide/svelte/icons/trash-2';
@@ -13,6 +14,7 @@
   import { onDestroy, untrack } from 'svelte';
   import { isSubmitChord } from '../../chord';
 
+  const restore = captureFocus();
   let box: HTMLDivElement | undefined = $state();
   let pos = $state({ left: 0, top: 0 });
   let draft = $state('');
@@ -83,7 +85,7 @@
 </script>
 
 {#if phone}<div class="scrim" role="presentation"></div>{/if}
-<div class="notes" role="dialog" aria-label={t('notes.title')} bind:this={box} use:dismiss={{ onclose: closeNotes, escape: 'stop', keep: trigger }} style:left="{pos.left}px" style:top="{pos.top}px">
+<div class="notes" role="dialog" aria-label={t('notes.title')} bind:this={box} use:dismiss={{ onclose: closeNotes, escape: 'stop', restore, keep: trigger }} style:left="{pos.left}px" style:top="{pos.top}px">
   <header>
     <StickyNote size={14} />
     <span class="ttl">{t('notes.title')}</span>
