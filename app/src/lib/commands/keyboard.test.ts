@@ -252,13 +252,13 @@ describe('runShortcut: font size', () => {
     expect(settings.fontSize).toBe(12);
   });
 
-  it('clamps between 9 and 24', () => {
-    settings.fontSize = 24;
+  it('clamps between 8 and 28', () => {
+    settings.fontSize = 28;
     runShortcut({ id: 'fontUp' });
-    expect(settings.fontSize).toBe(24);
-    settings.fontSize = 9;
+    expect(settings.fontSize).toBe(28);
+    settings.fontSize = 8;
     runShortcut({ id: 'fontDown' });
-    expect(settings.fontSize).toBe(9);
+    expect(settings.fontSize).toBe(8);
   });
 
   it('resets to the default size', () => {
