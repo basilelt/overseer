@@ -634,6 +634,27 @@ fn auto_runner_respects_concurrency_in_fifo_order() {
 }
 
 #[test]
+fn an_auto_task_prompt_is_submitted_when_the_agent_drops_the_first_enter() {
+    let app = App::with_env(
+        "dropenter",
+        json!({"autoConcurrency": 1}),
+        &[("SB_STUB_DROP_ENTER", "1")],
+    );
+    let wt = app.fx.wt.to_string_lossy().into_owned();
+    let id = app.ok(
+        "POST",
+        "/v1/tasks",
+        json!({"title": "Ship it", "description": "carefully", "project": wt, "status": "auto"}),
+    )["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let term = wait_for(|| app.task(&id)["termId"].as_str().map(str::to_string));
+    let mut ws = app.ws(&term);
+    read_until(&mut ws, "got: Ship it  carefully");
+}
+
+#[test]
 fn auto_runner_waits_for_dependencies_and_starts_from_their_branch() {
     let app = App::new("deps", json!({"autoConcurrency": 2}));
     let wt = app.fx.wt.to_string_lossy().into_owned();
