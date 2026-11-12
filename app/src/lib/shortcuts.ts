@@ -62,13 +62,6 @@ export interface KeyEventLike {
 
 export const DIGITS = '1…9';
 
-export const SECTIONS: { id: 'tabs' | 'panes' | 'terminal' | 'app'; ids: ShortcutId[] }[] = [
-  { id: 'tabs', ids: ['newTab', 'closeTab', 'reopenTab', 'nextTab', 'prevTab', 'tabIndex'] },
-  { id: 'panes', ids: ['splitRight', 'splitDown', 'focusLeft', 'focusRight', 'focusUp', 'focusDown'] },
-  { id: 'terminal', ids: ['find', 'copy', 'paste', 'fontUp', 'fontDown', 'fontReset'] },
-  { id: 'app', ids: ['palette', 'settings', 'shortcuts', 'toggleSidebar', 'sourceControl', 'togglePanel', 'kanban', 'newWorkspace', 'reconnect', 'newWindow', 'closeWindow'] },
-];
-
 export function bindings({ mac, ctrlWClosesTab }: ShortcutOptions): Binding[] {
   const m = (key: string, extra: Omit<Combo, 'key' | 'mod'> = {}): Combo => ({ key, mod: true, ...extra });
   const termSafe = (key: string): Combo[] => (mac ? [m(key)] : [m(key, { shift: true }), m(key, { outsideTerminal: true })]);
@@ -176,20 +169,4 @@ export function accelerator(id: ShortcutId): string {
   const c = bindings({ mac: true, ctrlWClosesTab: false }).find((b) => b.id === id)?.combos[0];
   if (!c) return '';
   return ['CmdOrCtrl', c.alt ? 'Alt' : '', c.shift ? 'Shift' : '', c.key.toUpperCase()].filter(Boolean).join('+');
-}
-
-export interface SheetRow {
-  id: ShortcutId;
-  keys: { label: string; outsideTerminal: boolean }[];
-}
-
-export function sheetRows(opts: ShortcutOptions): { id: (typeof SECTIONS)[number]['id']; rows: SheetRow[] }[] {
-  const all = bindings(opts);
-  return SECTIONS.map((s) => ({
-    id: s.id,
-    rows: s.ids
-      .map((id) => all.find((b) => b.id === id))
-      .filter((b): b is Binding => !!b)
-      .map((b) => ({ id: b.id, keys: b.combos.map((c) => ({ label: formatCombo(c, opts.mac), outsideTerminal: !!c.outsideTerminal })) })),
-  }));
 }

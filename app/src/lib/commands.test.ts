@@ -4,7 +4,8 @@ import { registerMore } from './commands-more';
 import { tools } from './components/mobile/MobileMore.svelte';
 import { recorder } from './record.svelte';
 import { saveSettings, settings } from './settings.svelte';
-import { SECTIONS, type ShortcutId } from './shortcuts';
+import { SECTIONS } from './shortcut-sheet';
+import type { ShortcutId } from './shortcuts';
 import { app } from './state.svelte';
 
 beforeAll(() => registerMore());
