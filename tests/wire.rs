@@ -61,3 +61,18 @@ fn wire_strings_keep_their_protocol_values() {
         [1, 2, 3, 4, 5, 6, 7, 8, 9]
     );
 }
+
+#[test]
+fn state_directory_names_keep_their_values() {
+    assert_eq!(daemon::STATE_DIR_NAME, "overseer");
+    assert_eq!(daemon::SOCKET_FILE, "daemon.sock");
+    assert_eq!(daemon::ENDPOINT_FILE, "daemon.json");
+    assert_eq!(relay::STATE_DIR_NAME, daemon::STATE_DIR_NAME);
+}
+
+#[test]
+fn now_ms_is_the_util_clock_and_still_reachable_from_procs() {
+    let a = overseer::procs::now_ms();
+    let b = overseer::util::now_ms();
+    assert!(a > 1_600_000_000_000 && b >= a);
+}

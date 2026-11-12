@@ -357,7 +357,7 @@ pub fn default_state_dir() -> PathBuf {
 pub fn platform_state_dir() -> PathBuf {
     if cfg!(windows) {
         if let Some(d) = std::env::var_os("LOCALAPPDATA").filter(|v| !v.is_empty()) {
-            return PathBuf::from(d).join("overseer");
+            return PathBuf::from(d).join(wire::STATE_DIR_NAME);
         }
     }
     let home = PathBuf::from(std::env::var_os("HOME").unwrap_or_default());
@@ -368,7 +368,7 @@ pub fn platform_state_dir() -> PathBuf {
         .filter(|v| !v.is_empty())
         .map(PathBuf::from)
         .unwrap_or_else(|| home.join(".local/state"))
-        .join("overseer")
+        .join(wire::STATE_DIR_NAME)
 }
 
 impl<'a> Ctx<'a> {
@@ -1368,7 +1368,7 @@ fn scan_now(ctx: &Ctx) -> Result<Vec<Line>, String> {
         // The line left the held state (resumed) or hung up: drop stale pause marks.
         let still_held = marks.held_pid != 0 && pid == Some(marks.held_pid as u32);
         l.held_at = marks.held_at.clone();
-        if l.state == "held" {
+        if l.state == wire::STATE_HELD {
             if l.held_at.is_none() && (marks.held_pid != 0 || probe_ok()) {
                 let at = format_rfc3339(ctx.now_ms);
                 reg.set_mark(&id, "held_at", Some(&at))?;

@@ -60,9 +60,9 @@ pub fn socket_path(state_dir: &Path) -> PathBuf {
         .map(PathBuf::from)
         .unwrap_or_else(|| {
             state_dir.join(if cfg!(unix) {
-                "daemon.sock"
+                crate::wire::SOCKET_FILE
             } else {
-                "daemon.json"
+                crate::wire::ENDPOINT_FILE
             })
         })
 }

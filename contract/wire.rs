@@ -41,3 +41,7 @@ pub const STATE_IDLE: &str = "idle";
 pub const STATE_HELD: &str = "held";
 pub const STATE_HUNG_UP: &str = "hung-up";
 pub const LINE_STATES: [&str; 4] = [STATE_ACTIVE, STATE_IDLE, STATE_HELD, STATE_HUNG_UP];
+
+pub const STATE_DIR_NAME: &str = "overseer";
+pub const SOCKET_FILE: &str = "daemon.sock";
+pub const ENDPOINT_FILE: &str = "daemon.json";
