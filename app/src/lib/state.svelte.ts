@@ -12,6 +12,7 @@ import { pages } from './session-pages.svelte';
 import type { EntryKind } from './notifications';
 import type { Proposal } from './organize';
 import { dispatch, type NoticeInput } from './os-notify';
+import { center } from './notifications.svelte';
 import type { Activity, AgentInfo, ConnState, DaemonEvent, Effort, HostTarget, LocalLine, LocalNetworkReport, ProfilesStore, Project, Term, TaskMessage } from './types';
 import { isNoRoute } from './localnet';
 import { startupTarget } from './conn';
@@ -73,7 +74,14 @@ class AppState {
   overlay = $state<Overlay>(null);
   overlayArg = $state<string | null>(null);
   fileArg = $state<FileArg | null>(null);
-  selectedKey = $state<string | null>(null);
+  #selectedKey = $state<string | null>(null);
+  get selectedKey(): string | null {
+    return this.#selectedKey;
+  }
+  set selectedKey(key: string | null) {
+    this.#selectedKey = key;
+    if (key) center.markSubjectRead(key);
+  }
   panelOpen = $state(true);
   liveReview = $state(false);
   gitWorktree = $state<{ project: string; path: string } | null>(null);
