@@ -72,4 +72,12 @@ await test('names downloads like pastes', async () => {
   assert.deepEqual({ ...sandbox.__qaDownload }, { name: 'a_b.txt', size: 4 });
 });
 
+await test('answers the phone device key with a key, a fingerprint and an install command', async () => {
+  const k = await invoke('direct_device_key');
+  assert.match(k.publicKey, /^ssh-ed25519 /);
+  assert.match(k.fingerprint, /^SHA256:/);
+  assert.ok(k.installCommand.includes(k.publicKey));
+  assert.ok(!sandbox.__qaLog.includes('unhandled direct_device_key'));
+});
+
 process.exit(failed);
