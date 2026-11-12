@@ -1,7 +1,8 @@
 <script lang="ts">
   import { untrack } from 'svelte';
   import { tour, hasTarget } from '../../tour/tour.svelte';
-  import { keyAction, placeCard, targetOf, union, type Placement, type Rect, type Step } from '../../tour/steps';
+  import { keyAction, targetOf, type Step } from '../../tour/steps';
+  import { placeCard, union, type Placement, type Rect } from '../../tour/place';
   import { hasKey, tt } from '../../tour/strings';
   import { isPhone } from '../../mobile/ui.svelte';
   import { modLabel } from '../../platform';
