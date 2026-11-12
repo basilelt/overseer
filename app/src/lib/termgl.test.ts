@@ -17,7 +17,7 @@ import {
   type Attach,
   type RowStyle,
 } from './termgl';
-import { cell, fakeGl, grid, host, scrollback } from './termgl.fake';
+import { cell, fakeGl, grid, host, scrollback } from '../test/termgl-fake';
 
 afterEach(() => {
   vi.restoreAllMocks();

@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { SidebarItem } from './grouping';
 import { loadKnown, MAX_KEYS, MAX_KNOWN, mergeKnown, saveKnown, startKnown } from './known-tabs';
 import { workspaceTabs } from './workspaces';
-import { stateOfGroup } from './test-fixtures';
+import { stateOfGroup } from '../test/fixtures';
 
 const item = (key: string, group: SidebarItem['group'] = 'running', over: Partial<SidebarItem> = {}): SidebarItem => ({ key, kind: 'claude', group, state: stateOfGroup(group), title: key, at: '2026-10-29T10:00:00Z', ...over });
 

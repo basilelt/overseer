@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { SidebarItem } from './grouping';
-import { stateOfGroup } from './test-fixtures';
+import { stateOfGroup } from '../test/fixtures';
 import { workspaceSessions } from './workspace-sessions';
 
 const now = new Date(2026, 10, 6, 14, 30).getTime();

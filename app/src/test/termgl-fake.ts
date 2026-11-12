@@ -1,5 +1,5 @@
 import type { GhosttyCell } from 'ghostty-web';
-import type { Host, Renderable, Scrollback } from './termgl';
+import type { Host, Renderable, Scrollback } from '../lib/termgl';
 
 export interface GlLog {
   draws: number;

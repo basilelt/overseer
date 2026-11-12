@@ -6,7 +6,7 @@ import type { app as App } from './state.svelte';
 import { osId, routeOf } from './os-notify';
 import type { Snapshot } from './reduce';
 import type { DaemonEvent, LocalLine, Task, Term } from './types';
-import { stateOfGroup } from './test-fixtures';
+import { stateOfGroup } from '../test/fixtures';
 
 const line = (id: string, agent: string, local: LocalLine['local'], state: LocalLine['line']['state'] = 'active'): LocalLine => ({
   line: { id, agent, state, lastActivityAt: '', worktreePath: `/home/u/work/${id}-repo` },

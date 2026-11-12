@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { attention } from './attention';
 import type { SidebarItem } from './grouping';
-import { stateOfGroup } from './test-fixtures';
+import { stateOfGroup } from '../test/fixtures';
 
 const item = (key: string, group: SidebarItem['group'], at: string, over: Partial<SidebarItem> = {}): SidebarItem => ({
   key,

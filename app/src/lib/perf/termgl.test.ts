@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { CELL_BYTES, GlTerm } from '../termgl';
-import { fakeGl, grid, host } from '../termgl.fake';
+import { fakeGl, grid, host } from '../../test/termgl-fake';
 
 const raster = () => ({}) as TexImageSource;
 

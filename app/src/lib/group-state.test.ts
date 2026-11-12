@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { targetState } from './broadcast';
 import { GROUP_ORDER, GROUP_STATE, STATE_GROUP, type GroupId, type SidebarItem } from './grouping';
 import { STATE_URGENCY } from './session-state';
-import { stateOfGroup } from './test-fixtures';
+import { stateOfGroup } from '../test/fixtures';
 
 const item = (group: GroupId, kind = 'claude'): SidebarItem => ({ key: 'k', kind, group, state: GROUP_STATE[group], title: 't', at: '' });
 

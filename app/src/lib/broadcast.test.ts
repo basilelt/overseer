@@ -3,7 +3,7 @@ import { api } from './api';
 import { broadcastBody, summarize, targetRows } from './broadcast';
 import type { SidebarItem } from './grouping';
 import { MockDaemon } from './mock';
-import { stateOfGroup } from './test-fixtures';
+import { stateOfGroup } from '../test/fixtures';
 import { idleTransitions } from './notify';
 import type { DaemonEvent } from './types';
 

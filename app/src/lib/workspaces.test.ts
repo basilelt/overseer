@@ -29,7 +29,7 @@ import {
   wsDropTarget,
   type WsData,
 } from './workspaces';
-import { stateOfGroup } from './test-fixtures';
+import { stateOfGroup } from '../test/fixtures';
 
 const at = '2026-10-29T10:00:00Z';
 const ws = (id: string, path: string, over: Partial<Workspace> = {}): Workspace => ({
