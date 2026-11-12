@@ -44,9 +44,9 @@
     const c = command(id);
     return {
       id: c.id,
-      label: c.label(),
+      label: c.label?.() ?? c.id,
       icon: c.icon,
-      section: c.section,
+      section: c.section ?? 'actions',
       keys: desktop && c.shortcut && !UNHINTED.has(c.id) ? hint(c.shortcut) || undefined : undefined,
       run: () => {
         if (c.agentsView) app.view = 'agents';

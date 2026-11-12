@@ -36,13 +36,13 @@ import Unplug from '@lucide/svelte/icons/unplug';
 import Users from '@lucide/svelte/icons/users';
 import WandSparkles from '@lucide/svelte/icons/wand-sparkles';
 import type { Component } from 'svelte';
-import { allCommands, connected, label, register, type CommandDef } from './commands';
+import { allCommands, connected, register, type CommandDef } from './commands';
 import { diag, dt } from './diag.svelte';
 import { feedback, ft } from './feedback.svelte';
 import { toggleLiveReview } from './git/live-actions';
 import { openPrReviews } from './github/open.svelte';
 import { gt } from './github/strings';
-import { t } from './i18n.svelte';
+import { t, type Key } from './i18n.svelte';
 import { apk, at } from './mobile/apk-update.svelte';
 import { organizer } from './organize.svelte';
 import { recorder, rt } from './record.svelte';
@@ -56,6 +56,44 @@ import { tt } from './tour/strings';
 import { ust } from './usage/strings';
 import { updater, ut } from './updater.svelte';
 import { broadcastTo, createGroup, holdAll } from './wsactions';
+
+const label = (key: Key) => () => t(key);
+
+const CORE_LABELS: Record<string, Key> = {
+  'kanban': 'palette.openKanban',
+  'panel': 'palette.togglePanel',
+  'source-control': 'palette.sourceControl',
+  'split-right': 'palette.splitRight',
+  'split-down': 'palette.splitDown',
+  'settings': 'palette.settings',
+  'ws-new': 'palette.newWorkspace',
+  'folder-new': 'palette.newFolder',
+  'rescan-folders': 'palette.rescanFolders',
+  'shortcuts': 'palette.shortcuts',
+  'new-window': 'palette.newWindow',
+  'sidebar': 'palette.toggleSidebar',
+  'tab-new': 'palette.newTab',
+  'tab-close': 'palette.closeTab',
+  'tab-reopen': 'palette.reopenTab',
+  'palette': 'title.palette',
+  'reconnect': 'keys.reconnect',
+  'tab-next': 'keys.nextTab',
+  'tab-prev': 'keys.prevTab',
+  'tab-index': 'keys.tabIndex',
+  'focus-left': 'keys.focusLeft',
+  'focus-right': 'keys.focusRight',
+  'focus-up': 'keys.focusUp',
+  'focus-down': 'keys.focusDown',
+  'term-find': 'keys.find',
+  'term-copy': 'keys.copy',
+  'term-paste': 'keys.paste',
+  'font-up': 'keys.fontUp',
+  'font-down': 'keys.fontDown',
+  'font-reset': 'keys.fontReset',
+  'close-window': 'keys.closeWindow',
+};
+
+const AGENTS_VIEW = new Set(['split-right', 'split-down', 'tab-new', 'tab-close', 'tab-reopen']);
 
 function reviewChanges(side = false) {
   const target = reviewTargetFor(app.selected);
@@ -155,5 +193,10 @@ const ICONS: Record<string, Component<{ size?: number }>> = {
 
 export function registerMore() {
   register(more);
-  for (const c of allCommands()) c.icon = ICONS[c.id];
+  for (const c of allCommands()) {
+    c.icon = ICONS[c.id];
+    const key = CORE_LABELS[c.id];
+    if (key) c.label = label(key);
+    if (AGENTS_VIEW.has(c.id)) c.agentsView = true;
+  }
 }
