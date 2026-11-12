@@ -37,6 +37,7 @@ fn tools() -> Value {
                    "agent": s("Agent CLI that runs it (claude, codex, gemini, ...). For a quorum orchestrator, one of its workers (default the first)"),
                    "project": s("Absolute path of the project's main worktree root"),
                    "urgent": b("Needs doing soon"), "important": b("Matters for the project's goals"),
+                   "taskType": {"type": "string", "enum": crate::profiles::TASK_TYPES, "description": "Kind of work; picks the agent profile mapped to it"},
                    "dependsOn": deps(),
                    "inheritBranch": b("With exactly one dependency, start from its branch (default true)")}),
             json!(["title"])),
@@ -244,7 +245,7 @@ fn run_tool(name: &str, a: &Value, own: Option<&str>, call: &mut Call) -> Result
                     body[k] = json!(v);
                 }
             }
-            for k in ["agent", "dependsOn", "inheritBranch"] {
+            for k in ["agent", "taskType", "dependsOn", "inheritBranch"] {
                 if !a[k].is_null() {
                     body[k] = a[k].clone();
                 }
@@ -867,11 +868,12 @@ mod tests {
         let (_, log) = with_fake(
             tool(
                 "create_task",
-                json!({"title": "t", "project": "/q", "urgent": true, "important": false}),
+                json!({"title": "t", "project": "/q", "urgent": true, "important": false, "taskType": "fix"}),
             ),
             None,
             ok,
         );
+        assert_eq!(log[0].2.as_ref().unwrap()["taskType"], "fix");
         assert_eq!(log[0].2.as_ref().unwrap()["urgent"], true);
         assert_eq!(log[0].2.as_ref().unwrap()["important"], false);
     }

@@ -160,8 +160,9 @@ on a TCP port on the server.
 - **Notifications** when an agent needs input or finishes, from agent hooks Overseer can
   install for you.
 - **Agent profiles**: save each CLI's supported model and effort choices, plus named subagent models
-  for Gemini CLI and Antigravity. Apply a profile to new work, scope it to a workspace, and choose
-  when to update the agent files.
+  for Gemini CLI and Antigravity. Apply a profile to new work, scope it to a workspace or to a task
+  type (a bug fix and a migration in the same repo start with different models), and choose when
+  to update the agent files.
 - **Auto-approve defaults per agent**: choose which CLIs Overseer starts in their native
   auto-approval mode, one by one or all at once. The defaults are stored on each connected host and
   apply to new sessions.

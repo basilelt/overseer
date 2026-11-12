@@ -107,9 +107,13 @@ fn a_project_lists_issues_from_its_remote_and_added_sources() {
     stub(
         &bin,
         "gh",
-        r#"echo "$@" > "$(dirname "$0")/gh.args"; echo '[{"number":7,"title":"Fix login","body":"b","url":"https://github.com/acme/api/issues/7"}]'"#,
+        r#"echo "$@" > "$(dirname "$0")/gh.args"; echo '[{"number":7,"title":"Fix login","body":"b","url":"https://github.com/acme/api/issues/7","labels":[{"name":"bug"}]}]'"#,
     );
-    stub(&bin, "jira", r#"printf 'AS-12\tExport CSV\n'"#);
+    stub(
+        &bin,
+        "jira",
+        r#"echo "$@" > "$(dirname "$0")/jira.args"; printf 'Story\t\tAS-12\tExport CSV\n'"#,
+    );
     stub(
         &bin,
         "glab",
@@ -180,6 +184,14 @@ fn a_project_lists_issues_from_its_remote_and_added_sources() {
         .collect();
     assert_eq!(keys, ["#7", "AS-12"]);
     assert_eq!(v["items"][1]["ticketKey"], "AS-12");
+    assert_eq!(v["items"][1]["title"], "Export CSV");
+    assert_eq!(v["items"][0]["taskType"], "fix");
+    assert_eq!(v["items"][1]["taskType"], "feature");
+    let jira_args = std::fs::read_to_string(bin.join("jira.args")).unwrap();
+    assert!(
+        jira_args.contains("--columns type,key,summary"),
+        "{jira_args}"
+    );
     assert_eq!(v["errors"].as_array().unwrap().len(), 1);
     assert!(v["errors"][0]["error"]
         .as_str()
@@ -188,6 +200,10 @@ fn a_project_lists_issues_from_its_remote_and_added_sources() {
     let args = std::fs::read_to_string(bin.join("gh.args")).unwrap();
     assert!(
         args.starts_with("issue list -R acme/api --state open"),
+        "{args}"
+    );
+    assert!(
+        args.contains("--json number,title,body,url,labels"),
         "{args}"
     );
 
