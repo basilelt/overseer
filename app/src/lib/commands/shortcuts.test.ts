@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { accelerator, eventKey, formatCombo, resolveShortcut, shortcutLabel, type KeyEventLike } from './shortcuts';
+import { accelerator, comboModifiers, eventKey, formatCombo, resolveShortcut, shortcutLabel, type KeyEventLike } from './shortcuts';
 
 const ev = (key: string, code: string, mods: { meta?: boolean; ctrl?: boolean; shift?: boolean; alt?: boolean } = {}): KeyEventLike => ({
   key,
@@ -165,6 +165,7 @@ describe('shortcut labels', () => {
     expect(formatCombo({ key: 'T', mod: true, shift: true }, false)).toBe('Ctrl+Shift+T');
     expect(formatCombo({ key: 'Tab', ctrl: true }, true)).toBe('⌃⇥');
     expect(formatCombo({ key: 'ArrowLeft', mod: true, alt: true }, false)).toBe('Ctrl+Alt+Left');
+    expect(comboModifiers({ meta: true, shift: true, alt: true, ctrl: true }, false)).toEqual(['Ctrl', 'Alt', 'Shift', 'Cmd']);
     expect(shortcutLabel('splitRight', { mac: false, ctrlWClosesTab: true })).toBe('Ctrl+Shift+E');
     expect(shortcutLabel('splitRight', { mac: true, ctrlWClosesTab: true })).toBe('⌘D');
     expect(shortcutLabel('closeTab', { mac: false, ctrlWClosesTab: false })).toBe('');

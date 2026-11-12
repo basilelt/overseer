@@ -1,3 +1,4 @@
+import { comboModifiers } from '../commands/shortcuts';
 import { clock, redact } from '../feedback/feedback';
 
 export { clock };
@@ -66,7 +67,7 @@ const NAMED = new Set(['Escape', 'Enter', 'Tab', 'Backspace', 'Delete', 'ArrowUp
 
 export function shortcut(e: Pick<KeyboardEvent, 'key' | 'ctrlKey' | 'metaKey' | 'altKey' | 'shiftKey'>, inField: boolean): string | null {
   if (['Control', 'Meta', 'Alt', 'Shift'].includes(e.key)) return null;
-  const mods = [e.ctrlKey && 'Ctrl', e.metaKey && 'Cmd', e.altKey && 'Alt', e.shiftKey && 'Shift'].filter(Boolean) as string[];
+  const mods = comboModifiers({ ctrl: e.ctrlKey, alt: e.altKey, shift: e.shiftKey, meta: e.metaKey }, false);
   const fkey = /^F\d{1,2}$/.test(e.key);
   if (inField && !e.ctrlKey && !e.metaKey && !e.altKey && !fkey && e.key !== 'Escape') return null;
   if (!mods.length && !fkey && !NAMED.has(e.key)) return null;

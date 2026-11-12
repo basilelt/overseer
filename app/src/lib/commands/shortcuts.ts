@@ -151,13 +151,20 @@ export function resolveShortcut(e: KeyEventLike, opts: ShortcutOptions & { inTer
 const MAC_KEYS: Record<string, string> = { ArrowLeft: '←', ArrowRight: '→', ArrowUp: '↑', ArrowDown: '↓', Tab: '⇥' };
 const OTHER_KEYS: Record<string, string> = { ArrowLeft: 'Left', ArrowRight: 'Right', ArrowUp: 'Up', ArrowDown: 'Down' };
 
+const MODIFIERS = [
+  ['ctrl', 'Ctrl', '⌃'],
+  ['alt', 'Alt', '⌥'],
+  ['shift', 'Shift', '⇧'],
+  ['meta', 'Cmd', '⌘'],
+] as const;
+
+export function comboModifiers(m: Partial<Record<(typeof MODIFIERS)[number][0], boolean>>, symbols: boolean): string[] {
+  return MODIFIERS.filter(([k]) => m[k]).map(([, name, symbol]) => (symbols ? symbol : name));
+}
+
 export function formatCombo(c: Combo, mac: boolean): string {
-  if (mac) {
-    const mods = (c.ctrl ? '⌃' : '') + (c.alt ? '⌥' : '') + (c.shift ? '⇧' : '') + (c.mod ? '⌘' : '');
-    return mods + (MAC_KEYS[c.key] ?? c.key);
-  }
-  const parts = [c.ctrl || c.mod ? 'Ctrl' : '', c.alt ? 'Alt' : '', c.shift ? 'Shift' : '', OTHER_KEYS[c.key] ?? c.key].filter(Boolean);
-  return parts.join('+');
+  if (mac) return comboModifiers({ ctrl: c.ctrl, alt: c.alt, shift: c.shift, meta: c.mod }, true).join('') + (MAC_KEYS[c.key] ?? c.key);
+  return [...comboModifiers({ ctrl: c.ctrl || c.mod, alt: c.alt, shift: c.shift }, false), OTHER_KEYS[c.key] ?? c.key].join('+');
 }
 
 export function shortcutLabel(id: ShortcutId, opts: ShortcutOptions): string {

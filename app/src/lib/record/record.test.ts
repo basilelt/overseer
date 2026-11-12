@@ -1,6 +1,7 @@
 import { describe as group, expect, it } from 'vitest';
 import { activeAt, canVideo, clock, describe, extFor, fileName, formatLog, isField, pickMime, shortcut, type RecEvent } from './record';
 import { el } from '../../test/fake-dom';
+import { formatCombo } from '../commands/shortcuts';
 
 const asEl = (x: unknown) => x as Element;
 const key = (k: string, mods: Partial<Record<'ctrlKey' | 'metaKey' | 'altKey' | 'shiftKey', boolean>> = {}) => ({ key: k, ctrlKey: false, metaKey: false, altKey: false, shiftKey: false, ...mods });
@@ -93,7 +94,13 @@ group('isField', () => {
 group('shortcut', () => {
   it('logs modifier shortcuts with an upper-case key', () => {
     expect(shortcut(key('p', { ctrlKey: true }), false)).toBe('Ctrl+P');
-    expect(shortcut(key('k', { metaKey: true, shiftKey: true }), true)).toBe('Cmd+Shift+K');
+    expect(shortcut(key('k', { metaKey: true, shiftKey: true }), true)).toBe('Shift+Cmd+K');
+  });
+
+  it('orders modifiers like the shortcut hints', () => {
+    const e = key('n', { ctrlKey: true, altKey: true, shiftKey: true });
+    expect(shortcut(e, false)).toBe(formatCombo({ key: 'N', mod: true, alt: true, shift: true }, false));
+    expect(shortcut(key('ArrowLeft', { shiftKey: true, altKey: true }), false)).toBe('Alt+Shift+ArrowLeft');
   });
 
   it('logs named keys outside fields', () => {
