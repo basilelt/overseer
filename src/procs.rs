@@ -378,12 +378,7 @@ pub fn alive_not_zombie(pid: i32) -> bool {
             .contains(") Z ")
 }
 
-pub fn now_ms() -> i64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_millis() as i64)
-        .unwrap_or(0)
-}
+pub use crate::util::now_ms;
 
 pub fn parse_etime(s: &str) -> Option<i64> {
     let (days, rest) = match s.split_once('-') {
