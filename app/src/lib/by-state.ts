@@ -1,5 +1,6 @@
 import { newestFirst, type SidebarItem } from './grouping';
 import { bucketByTime, type TimeBucket } from './time-bucket';
+import { isAgentItem } from './agents';
 
 export interface WorkspaceGroup {
   /** null for the sessions outside any workspace ("Autres sessions"), always listed last. */
@@ -34,7 +35,7 @@ function groupByWorkspace(items: SidebarItem[], wsOf: ReadonlyMap<string, string
 // Sessions requiring attention are left out (the banner lists them) and plain shells are not sessions.
 // visible: the workspaces that are shown; a session of any other one is grouped with the unassigned.
 export function byState(items: SidebarItem[], wsOf: ReadonlyMap<string, string>, now: number, visible?: ReadonlySet<string>): StateSection[] {
-  const sorted = items.filter((i) => i.kind !== 'shell').sort(newestFirst);
+  const sorted = items.filter((i) => isAgentItem(i)).sort(newestFirst);
   const live = LIVE.map((state) => {
     const mine = sorted.filter((i) => i.state === state);
     return { state, count: mine.length, groups: groupByWorkspace(mine, wsOf, visible) };

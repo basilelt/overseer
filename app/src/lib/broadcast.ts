@@ -1,5 +1,6 @@
 import type { SidebarItem } from './grouping';
 import type { BroadcastRequest, BroadcastResult } from './types';
+import { isShellItem, isAgentItem } from './agents';
 
 export type TargetState = 'idle' | 'busy' | 'needs_input' | 'paused' | 'stopped';
 
@@ -14,7 +15,7 @@ export interface TargetRow {
 
 export function targetState(i: SidebarItem): TargetState {
   if (i.group === 'paused' || i.group === 'stopped') return i.group;
-  if (i.kind === 'shell') return 'idle';
+  if (isShellItem(i)) return 'idle';
   if (i.group === 'needs_input') return 'needs_input';
   if (i.group === 'running') return 'busy';
   return 'idle';
@@ -27,7 +28,7 @@ export function targetRows(items: SidebarItem[], queue: boolean): TargetRow[] {
     .map((i) => {
       const state = targetState(i);
       const selectable = state === 'idle' || (queue && state !== 'paused' && state !== 'stopped');
-      return { key: i.key, title: i.title, kind: i.kind, state, selectable, checked: selectable && (state === 'idle' ? i.kind !== 'shell' : true) };
+      return { key: i.key, title: i.title, kind: i.kind, state, selectable, checked: selectable && (state === 'idle' ? isAgentItem(i) : true) };
     })
     .sort((a, b) => order.indexOf(a.state) - order.indexOf(b.state) || a.title.localeCompare(b.title));
 }

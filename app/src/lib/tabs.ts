@@ -2,6 +2,7 @@ import type { Component } from 'svelte';
 import type { SidebarItem } from './grouping';
 import type { Term } from './types';
 import { REVIEW_PREFIX } from './review/keys';
+import { isShellItem } from './agents';
 
 export type TabKind = 'agent' | 'chat' | 'shell' | 'browser' | 'review' | 'graph' | 'worktrees' | 'system' | 'usage' | 'prs';
 
@@ -63,7 +64,7 @@ export function tabInfo(key: string, items: SidebarItem[], mode?: (item: Sidebar
   }
   const item = items.find((i) => i.key === key);
   if (!item) return null;
-  const kind: TabKind = item.kind === 'shell' ? 'shell' : mode?.(item) === 'chat' ? 'chat' : 'agent';
+  const kind: TabKind = isShellItem(item) ? 'shell' : mode?.(item) === 'chat' ? 'chat' : 'agent';
   return { key, kind, arg: item.lineId ?? item.termId ?? '', item };
 }
 

@@ -1,5 +1,6 @@
 import { STATE_URGENCY, type SessionState } from './session-state';
 import type { SidebarItem } from './grouping';
+import { isShellItem } from './agents';
 
 export interface WorkspaceSummary {
   total: number;
@@ -13,7 +14,7 @@ export function workspaceSummary(items: Pick<SidebarItem, 'state' | 'kind'>[]): 
   const counts: Record<SessionState, number> = { attention: 0, running: 0, open: 0, paused: 0, closed: 0 };
   let total = 0;
   for (const it of items) {
-    if (it.kind === 'shell') continue;
+    if (isShellItem(it)) continue;
     counts[it.state]++;
     total++;
   }

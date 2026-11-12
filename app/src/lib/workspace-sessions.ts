@@ -1,6 +1,7 @@
 import { newestFirst, type SidebarItem } from './grouping';
 import { STATE_URGENCY } from './session-state';
 import { bucketByTime, type TimeBucket } from './time-bucket';
+import { isShellItem, isAgentItem } from './agents';
 
 export interface WorkspaceSessions {
   /** In tab order; sessions without a tab after, by attention, running, open, paused, most recent first inside a state. */
@@ -15,14 +16,14 @@ const RANK = new Map(STATE_URGENCY.map((s, i) => [s, i]));
 // Mode "Espaces": the sessions of one expanded workspace, plus its closed ones for the "+ N closed" list.
 export function workspaceSessions(items: SidebarItem[], now: number, tabs: readonly string[] = []): WorkspaceSessions {
   const sorted = items.slice().sort(newestFirst);
-  const sessions = sorted.filter((i) => i.kind !== 'shell');
+  const sessions = sorted.filter((i) => isAgentItem(i));
   const live = byTabs(
     sessions.filter((i) => i.state !== 'closed').sort((a, b) => RANK.get(a.state)! - RANK.get(b.state)!),
     tabs,
   );
   const closed = sessions.filter((i) => i.state === 'closed');
   const shells = byTabs(
-    sorted.filter((i) => i.kind === 'shell' && i.state !== 'closed'),
+    sorted.filter((i) => isShellItem(i) && i.state !== 'closed'),
     tabs,
   );
   return { live, closed: { count: closed.length, buckets: bucketByTime(closed, now) }, shells };

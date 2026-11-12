@@ -1,4 +1,5 @@
 import type { AgentInfo, Workspace } from './types';
+import { isAgentId } from './agents';
 
 export interface EmptyPaneInput {
   sidebarMode: string;
@@ -18,7 +19,7 @@ export interface EmptyPaneView {
 }
 
 export function pickAgent(agents: AgentInfo[], preferred: string): AgentInfo | null {
-  const usable = agents.filter((a) => a.installed && a.id !== 'shell');
+  const usable = agents.filter((a) => a.installed && isAgentId(a.id));
   return usable.find((a) => a.id === preferred) ?? usable[0] ?? null;
 }
 

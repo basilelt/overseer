@@ -14,7 +14,7 @@
   import { app } from '../../state.svelte';
   import { isTauri, DaemonError } from '../../client';
   import { settings } from '../../settings.svelte';
-  import { findAgent, pickAgent } from '../../agents';
+  import { findAgent, pickAgent, isAgentId } from '../../agents';
   import { MAX_UPLOAD } from '../../uploads';
   import { openExternal } from '../../ports.svelte';
   import { diagBackend, fetchServerLog } from '../../diag.svelte';
@@ -27,7 +27,7 @@
   const repo = $derived((settings.feedbackRepo ?? '').trim() || DEFAULT_REPO);
   const agentId = $derived(pickAgent(app.agents, settings.defaultAgent));
   const agent = $derived(findAgent(app.agents, agentId));
-  const canAgent = $derived(app.connected && !!agent?.installed && agent.id !== 'shell');
+  const canAgent = $derived(app.connected && !!agent?.installed && isAgentId(agent.id));
   const host = $derived(app.conn.target.kind === 'local' ? 'local' : app.conn.target.label || app.conn.target.kind);
 
   let kind = $state<Kind>(prefill?.kind ?? 'bug');

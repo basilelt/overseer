@@ -2,6 +2,7 @@ import { isOff, newestFirst, type GroupId, type SidebarItem } from './grouping';
 import { isKnown } from './known-tabs';
 import type { Snapshot } from './reduce';
 import type { DaemonEvent, Folder, Group, LocalLine, Project, Task, Term, Workspace } from './types';
+import { isAgentItem } from './agents';
 
 export interface WsData {
   workspaces: Workspace[];
@@ -159,7 +160,7 @@ export function wsState(group: GroupId): WsState {
 
 export function aggregate(items: SidebarItem[]): Aggregate {
   const counts: Record<WsState, number> = { needs_input: 0, running: 0, needs_testing: 0, ready: 0, paused: 0, stopped: 0 };
-  const agentsOnly = items.filter((i) => i.kind !== 'shell');
+  const agentsOnly = items.filter((i) => isAgentItem(i));
   let latest: SidebarItem | undefined;
   for (const it of agentsOnly) {
     counts[wsState(it.group)]++;
@@ -187,7 +188,7 @@ export function summaryText(parts: { state: WsState; count: number }[], label: (
 }
 
 export function allIdle(items: SidebarItem[]): boolean {
-  const live = items.filter((i) => !isOff(i) && i.kind !== 'shell');
+  const live = items.filter((i) => !isOff(i) && isAgentItem(i));
   return live.length > 0 && live.every((i) => i.group === 'ready' || i.group === 'pushed');
 }
 

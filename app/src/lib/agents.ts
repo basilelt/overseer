@@ -48,8 +48,14 @@ export function splitInstalled(agents: AgentInfo[]): { installed: AgentInfo[]; m
   return { installed: agents.filter((a) => a.installed), missing: agents.filter((a) => !a.installed) };
 }
 
+export const SHELL_ID = 'shell';
+export const isShellId = (id: string | null | undefined): boolean => id === SHELL_ID;
+export const isAgentId = (id: string): boolean => id !== SHELL_ID;
+export const isShellItem = (i: { kind: string }): boolean => i.kind === SHELL_ID;
+export const isAgentItem = (i: { kind: string }): boolean => i.kind !== SHELL_ID;
+
 export function taskAgents(agents: AgentInfo[]): AgentInfo[] {
-  return ordered(agents.filter((a) => a.id !== 'shell'));
+  return ordered(agents.filter((a) => isAgentId(a.id)));
 }
 
 export function hasModel(a: AgentInfo | undefined): boolean {

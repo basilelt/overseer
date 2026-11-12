@@ -5,6 +5,7 @@
   import type { SidebarItem } from '../../grouping';
   import { t } from '../../i18n.svelte';
   import { age } from '../../time';
+  import { isShellItem } from '../../agents';
   // `now` comes from the shared clock so rows own no timer.
   let {
     item,
@@ -30,7 +31,7 @@
   } = $props();
 
   const label = $derived(t(`session.state.${item.state}`));
-  const shell = $derived(item.kind === 'shell');
+  const shell = $derived(isShellItem(item));
   const notes = $derived(item.notes ?? 0);
   const notesLabel = $derived(notes ? t(notes === 1 ? 'notes.countOne' : 'notes.count', { n: notes }) : t('notes.add'));
 </script>

@@ -3,6 +3,7 @@ import { STATE_URGENCY } from './session-state';
 import type { Folder, Workspace } from './types';
 import { byRank, isGhost, type WsData } from './workspaces';
 import { workspaceSummary, type WorkspaceSummary } from './workspace-summary';
+import { isShellItem } from './agents';
 
 export interface SpaceRow {
   /** '' for the sessions outside any workspace. */
@@ -49,7 +50,7 @@ export function spaces(workspaces: Workspace[], items: SidebarItem[], wsOf: Read
   const visible = new Set([...tops, ...[...kids.values()].flat().map((w) => w.id)]);
   const by = new Map<string, SidebarItem[]>();
   for (const it of items) {
-    if (it.kind === 'shell' && it.state === 'closed') continue;
+    if (isShellItem(it) && it.state === 'closed') continue;
     const w = wsOf.get(it.key);
     push(by, w !== undefined && visible.has(w) ? w : '', it);
   }

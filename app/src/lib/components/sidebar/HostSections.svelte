@@ -18,6 +18,7 @@
   import SpaceBlock from './SpaceBlock.svelte';
   import SpacesView from './SpacesView.svelte';
   import StatesView from './StatesView.svelte';
+  import { isAgentItem } from '../../agents';
 
   let { filter, showArchived }: { filter: string; showArchived: boolean } = $props();
 
@@ -32,7 +33,7 @@
 
   function count(l: HostLink): number {
     const items = l === app.link ? app.items : itemsOf(l).items;
-    return items.filter((i) => i.kind !== 'shell').length;
+    return items.filter((i) => isAgentItem(i)).length;
   }
 
   function dot(l: HostLink): string {

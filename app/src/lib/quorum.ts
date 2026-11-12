@@ -1,11 +1,12 @@
 import type { AgentInfo, Quorum, Task, TaskVotes } from './types';
+import { isAgentId } from './agents';
 
 export const ORCHESTRATORS = ['claude', 'codex'];
 export const MAX_REVIEWERS = 2;
 
 export const canOrchestrate = (agent: string): boolean => ORCHESTRATORS.includes(agent);
 
-const installed = (agents: AgentInfo[]) => agents.filter((a) => a.installed && a.id !== 'shell').map((a) => a.id);
+const installed = (agents: AgentInfo[]) => agents.filter((a) => a.installed && isAgentId(a.id)).map((a) => a.id);
 
 export function defaultQuorum(agents: AgentInfo[], orchestrator: string): Quorum {
   const ids = installed(agents);
