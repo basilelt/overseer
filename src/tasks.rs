@@ -1405,7 +1405,13 @@ pub fn tick(ctx: &Ctx, lines: &[Line]) {
                 .line_id
                 .as_deref()
                 .is_some_and(|id| lines.iter().any(|l| l.id == id && l.busy));
-            if !busy && crate::worktrees::branch_landed(&t, ctx.config.worktree_fetch) {
+            if !busy
+                && crate::worktrees::branch_landed(
+                    &t.project,
+                    t.branch.as_deref(),
+                    ctx.config.worktree_fetch,
+                )
+            {
                 let was = std::mem::replace(&mut t.status, MERGED.into());
                 t.session_state = Some(MERGED.into());
                 let _ = task_transition::enter(ctx, &reg, &mut t, &was, Origin::Landed);

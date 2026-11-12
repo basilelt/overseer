@@ -680,7 +680,7 @@ pub fn build(ctx: &Ctx) -> Result<Value, (u16, Value)> {
     let folders = workspaces::folders(&reg).map_err(e)?;
     let groups = workspaces::groups(&reg).map_err(e)?;
     let member = |l: &Line| ix.of_line(l).map(|w| w.id.clone());
-    let landed = |t: &Task| crate::worktrees::branch_landed_cached(t);
+    let landed = |t: &Task| crate::worktrees::branch_landed_cached(&t.project, t.branch.as_deref());
     let activity = |l: &Line| {
         crate::activity::find_transcript(
             &ctx.claude_dir,
