@@ -840,7 +840,7 @@
     left: 0;
     top: 0;
     will-change: transform;
-    z-index: 60;
+    z-index: var(--z-drag);
     pointer-events: none;
   }
   .phone-board {

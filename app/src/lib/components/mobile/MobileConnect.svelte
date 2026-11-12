@@ -317,7 +317,7 @@
   .screen {
     position: fixed;
     inset: 0;
-    z-index: 60;
+    z-index: var(--z-screen);
     display: flex;
     flex-direction: column;
     background: var(--bg);

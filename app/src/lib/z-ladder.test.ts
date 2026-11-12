@@ -12,6 +12,10 @@ describe('z-index ladder', () => {
     expect(['shell-scrim', 'shell', 'modal', 'popover-scrim', 'popover', 'picker', 'tour', 'tour-card', 'toast'].map(z)).toEqual([40, 41, 50, 59, 60, 70, 80, 81, 100]);
   });
 
+  it('pins the layers that share a value with another rung', () => {
+    expect(['dropdown', 'drag', 'screen', 'update', 'crash'].map(z)).toEqual([40, 60, 60, 70, 80]);
+  });
+
   it('stacks scrims under what they dim and the toast above everything', () => {
     expect(z('popover-scrim')).toBeLessThan(z('popover'));
     expect(z('shell-scrim')).toBeLessThan(z('shell'));

@@ -65,7 +65,7 @@
     background: var(--surface);
     border-radius: var(--radius);
     box-shadow: var(--shadow);
-    z-index: 40;
+    z-index: var(--z-dropdown);
   }
   .menu button {
     display: flex;
