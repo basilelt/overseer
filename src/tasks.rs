@@ -1,4 +1,5 @@
-use crate::board::{git_out, publish};
+use crate::board::publish;
+use crate::git::git_out;
 use crate::git::Git;
 use crate::registry::Registry;
 use crate::term::{self, Spec, Term};

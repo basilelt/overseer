@@ -1,5 +1,6 @@
-use crate::board::{git_out, publish};
+use crate::board::publish;
 use crate::deliver::{send, Channel};
+use crate::git::git_out;
 use crate::registry::Registry;
 use crate::tasks::{self, bad, db, sql, Res, Task};
 use crate::util::{format_rfc3339, ulid};

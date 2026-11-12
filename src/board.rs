@@ -1,5 +1,6 @@
 use crate::actions::{find_line, log_action};
 use crate::daemon::{dry_run, q, respond_raw, Request};
+use crate::git::git_out;
 use crate::sys::OpenOptionsExt;
 use crate::util::{format_rfc3339, parse_rfc3339};
 use crate::{scan, Ctx, Line, RECENT_MS};
@@ -8,7 +9,6 @@ use std::collections::{HashMap, VecDeque};
 use std::io::Write;
 use std::net::{SocketAddr, TcpListener};
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use std::sync::mpsc::{channel, Receiver, RecvTimeoutError, Sender};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -281,28 +281,6 @@ fn change_key(entry: &Value) -> String {
         local.remove("rssBytes");
     }
     v.to_string()
-}
-
-pub fn git_out(dir: &str, args: &[&str]) -> Result<String, String> {
-    let out = crate::git::output_within(
-        Command::new("git")
-            .arg("-C")
-            .arg(dir)
-            .args(["-c", "color.ui=never", "-c", "core.quotepath=off"])
-            .args(args)
-            .env("GIT_TERMINAL_PROMPT", "0"),
-        crate::git::limit_for(args),
-    )
-    .map_err(|e| format!("git {}: {e}", args.first().unwrap_or(&"")))?;
-    if out.status.success() {
-        Ok(String::from_utf8_lossy(&out.stdout).into_owned())
-    } else {
-        Err(format!(
-            "git {}: {}",
-            args.first().unwrap_or(&""),
-            String::from_utf8_lossy(&out.stderr).trim()
-        ))
-    }
 }
 
 fn worktree_line(ctx: &Ctx, id: &str, fresh: bool) -> Result<Line, (u16, String)> {

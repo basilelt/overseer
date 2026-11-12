@@ -1,4 +1,4 @@
-use crate::board::git_out;
+use crate::git::git_out;
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::path::Path;

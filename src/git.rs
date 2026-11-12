@@ -140,13 +140,36 @@ impl std::fmt::Display for RunError {
     }
 }
 
+pub fn git_env(cmd: &mut Command) -> &mut Command {
+    cmd.env("GIT_TERMINAL_PROMPT", "0")
+}
+
+pub fn git_read_env(cmd: &mut Command) -> &mut Command {
+    git_env(cmd).env("GIT_OPTIONAL_LOCKS", "0")
+}
+
+pub fn gh_env(cmd: &mut Command) -> &mut Command {
+    cmd.env("GH_PROMPT_DISABLED", "1")
+        .env("GH_NO_UPDATE_NOTIFIER", "1")
+        .env("NO_COLOR", "1")
+}
+
 pub fn run_within(cmd: &mut Command, limit: Duration) -> Result<Output, RunError> {
+    run_tracked(cmd, limit, |_| ())
+}
+
+pub fn run_tracked<T>(
+    cmd: &mut Command,
+    limit: Duration,
+    track: impl FnOnce(u32) -> T,
+) -> Result<Output, RunError> {
     let child = Watchdog::guard(cmd)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
         .map_err(RunError::Spawn)?;
+    let _tracked = track(child.id());
     let dog = Watchdog::start(child.id(), limit);
     let out = child.wait_with_output();
     if dog.finish() {
@@ -161,14 +184,40 @@ pub fn output_within(cmd: &mut Command, limit: Duration) -> Result<Output, Strin
 
 pub fn run_in(program: &str, dir: &str, args: &[&str], limit: Duration) -> Result<Output, String> {
     output_within(
-        Command::new(program)
-            .arg("-C")
-            .arg(dir)
-            .args(args)
-            .env("GIT_OPTIONAL_LOCKS", "0")
-            .env("GIT_TERMINAL_PROMPT", "0"),
+        git_read_env(Command::new(program).arg("-C").arg(dir).args(args)),
         limit,
     )
+}
+
+pub fn run_gh<I, S>(args: I, limit: Duration) -> Result<Output, RunError>
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<std::ffi::OsStr>,
+{
+    run_within(gh_env(Command::new("gh").args(args)), limit)
+}
+
+pub fn git_out(dir: &str, args: &[&str]) -> Result<String, String> {
+    let out = output_within(
+        git_env(
+            Command::new("git")
+                .arg("-C")
+                .arg(dir)
+                .args(["-c", "color.ui=never", "-c", "core.quotepath=off"])
+                .args(args),
+        ),
+        limit_for(args),
+    )
+    .map_err(|e| format!("git {}: {e}", args.first().unwrap_or(&"")))?;
+    if out.status.success() {
+        Ok(String::from_utf8_lossy(&out.stdout).into_owned())
+    } else {
+        Err(format!(
+            "git {}: {}",
+            args.first().unwrap_or(&""),
+            String::from_utf8_lossy(&out.stderr).trim()
+        ))
+    }
 }
 
 pub fn git(dir: &str, args: &[&str]) -> Option<String> {
@@ -528,6 +577,76 @@ mod tests {
         assert!(gone, "sleep {child} outlived the timeout");
         let fast = run_in("/bin/echo", "x", &["ok"], Duration::from_secs(5)).unwrap();
         assert_eq!(String::from_utf8_lossy(&fast.stdout).trim(), "-C x ok");
+        let _ = std::fs::remove_dir_all(d);
+    }
+
+    fn env_of(c: &Command, k: &str) -> Option<String> {
+        c.get_envs()
+            .find(|(n, _)| *n == k)
+            .and_then(|(_, v)| v.map(|v| v.to_string_lossy().into_owned()))
+    }
+
+    #[test]
+    fn each_tool_gets_its_own_environment() {
+        let mut g = Command::new("git");
+        git_env(&mut g);
+        assert_eq!(env_of(&g, "GIT_TERMINAL_PROMPT").as_deref(), Some("0"));
+        assert_eq!(env_of(&g, "GIT_OPTIONAL_LOCKS"), None);
+        let mut r = Command::new("git");
+        git_read_env(&mut r);
+        assert_eq!(env_of(&r, "GIT_OPTIONAL_LOCKS").as_deref(), Some("0"));
+        let mut h = Command::new("gh");
+        gh_env(&mut h);
+        for k in ["GH_PROMPT_DISABLED", "GH_NO_UPDATE_NOTIFIER", "NO_COLOR"] {
+            assert_eq!(env_of(&h, k).as_deref(), Some("1"), "{k}");
+        }
+        assert_eq!(env_of(&h, "GIT_TERMINAL_PROMPT"), None);
+    }
+
+    #[test]
+    fn a_tracked_child_is_registered_until_it_has_been_waited_for() {
+        struct Guard(std::sync::Arc<std::sync::atomic::AtomicU32>);
+        impl Drop for Guard {
+            fn drop(&mut self) {
+                self.0.store(0, std::sync::atomic::Ordering::SeqCst);
+            }
+        }
+        let seen = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0));
+        let s = seen.clone();
+        let out = run_tracked(
+            Command::new("echo").arg("hi"),
+            Duration::from_secs(5),
+            |pid| {
+                s.store(pid, std::sync::atomic::Ordering::SeqCst);
+                Guard(s.clone())
+            },
+        )
+        .unwrap();
+        assert_eq!(String::from_utf8_lossy(&out.stdout).trim(), "hi");
+        assert_eq!(seen.load(std::sync::atomic::Ordering::SeqCst), 0);
+        let missing = run_tracked(
+            &mut Command::new("sb-no-such-bin"),
+            Duration::from_secs(1),
+            |_| panic!("never spawned"),
+        );
+        assert!(matches!(missing, Err(RunError::Spawn(_))));
+    }
+
+    #[test]
+    fn git_out_names_the_subcommand_in_both_failure_shapes() {
+        let d = tmp("out");
+        let dir = d.to_string_lossy().into_owned();
+        let e = git_out(&dir, &["rev-parse", "HEAD"]).unwrap_err();
+        assert!(e.starts_with("git rev-parse: "), "{e}");
+        let gone = d.join("nope").to_string_lossy().into_owned();
+        assert!(git_out(&gone, &["status"])
+            .unwrap_err()
+            .starts_with("git status: "));
+        sh(&d, &["init", "-q", "-b", "main"]);
+        assert_eq!(
+            git_out(&dir, &["symbolic-ref", "HEAD"]).unwrap().trim(),
+            "refs/heads/main"
+        );
         let _ = std::fs::remove_dir_all(d);
     }
 

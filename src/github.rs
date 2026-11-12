@@ -1,9 +1,9 @@
 use crate::daemon::Request;
+use crate::git::RunError;
 use crate::Ctx;
 use serde_json::{json, Value};
-use std::io::Read;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::Command;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
@@ -95,61 +95,18 @@ pub fn run(bin: &str, dir: Option<&Path>, args: &[&str], timeout: Duration) -> R
     if let Some(d) = dir {
         cmd.current_dir(d);
     }
-    #[cfg(unix)]
-    std::os::unix::process::CommandExt::process_group(&mut cmd, 0);
-    let mut child = cmd
-        .args(args)
-        .env("GH_PROMPT_DISABLED", "1")
-        .env("GH_NO_UPDATE_NOTIFIER", "1")
-        .env("GIT_TERMINAL_PROMPT", "0")
-        .env("NO_COLOR", "1")
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .map_err(|e| {
-            if e.kind() == std::io::ErrorKind::NotFound {
-                (
-                    424,
-                    format!("{bin} is not installed on this host"),
-                    "missing",
-                )
-            } else {
-                (500, format!("{bin}: {e}"), "failed")
-            }
-        })?;
-    fn drain(p: Option<impl Read + Send + 'static>) -> std::thread::JoinHandle<Vec<u8>> {
-        std::thread::spawn(move || {
-            let mut s = Vec::new();
-            if let Some(mut p) = p {
-                let _ = p.read_to_end(&mut s);
-            }
-            s
-        })
-    }
-    let _tracked = Child::track(child.id());
-    let (out, err) = (drain(child.stdout.take()), drain(child.stderr.take()));
-    let begin = Instant::now();
-    let status = loop {
-        match child.try_wait() {
-            Ok(Some(s)) => break s,
-            Ok(None) if begin.elapsed() > timeout => {
-                #[cfg(unix)]
-                if let Ok(pid) = i32::try_from(child.id()) {
-                    unsafe { libc::kill(-pid, libc::SIGKILL) };
-                }
-                let _ = child.kill();
-                let _ = child.wait();
-                return Err((504, format!("{bin} {} timed out", args[0]), "timeout"));
-            }
-            Ok(None) => std::thread::sleep(Duration::from_millis(50)),
-            Err(e) => return Err((500, e.to_string(), "failed")),
-        }
-    };
-    let (stdout, stderr) = (
-        out.join().unwrap_or_default(),
-        err.join().unwrap_or_default(),
-    );
+    crate::git::gh_env(crate::git::git_env(cmd.args(args)));
+    let out = crate::git::run_tracked(&mut cmd, timeout, Child::track).map_err(|e| match e {
+        RunError::Spawn(e) if e.kind() == std::io::ErrorKind::NotFound => (
+            424,
+            format!("{bin} is not installed on this host"),
+            "missing",
+        ),
+        RunError::Spawn(e) => (500, format!("{bin}: {e}"), "failed"),
+        RunError::TimedOut(_) => (504, format!("{bin} {} timed out", args[0]), "timeout"),
+        RunError::Wait(e) => (500, e.to_string(), "failed"),
+    })?;
+    let (status, stdout, stderr) = (out.status, out.stdout, out.stderr);
     if status.success() {
         return Ok(String::from_utf8_lossy(&stdout).into_owned());
     }

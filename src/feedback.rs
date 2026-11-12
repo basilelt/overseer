@@ -3,7 +3,6 @@ use crate::Ctx;
 use serde_json::{json, Value};
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use std::time::{Duration, SystemTime};
 
 type Res<T> = Result<T, (u16, String)>;
@@ -291,15 +290,7 @@ pub fn args(
 
 fn gh(args: &[String]) -> Res<(bool, String, String)> {
     use crate::git::RunError;
-    let out = crate::git::run_within(
-        Command::new("gh")
-            .args(args)
-            .env("GH_PROMPT_DISABLED", "1")
-            .env("GH_NO_UPDATE_NOTIFIER", "1")
-            .env("NO_COLOR", "1"),
-        GH_TIMEOUT,
-    )
-    .map_err(|e| match e {
+    let out = crate::git::run_gh(args, GH_TIMEOUT).map_err(|e| match e {
         RunError::Spawn(e) if e.kind() == std::io::ErrorKind::NotFound => {
             (424, "gh is not installed on this host".to_string())
         }

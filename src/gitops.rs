@@ -1,6 +1,6 @@
-use crate::board::{decode, git_out, publish};
+use crate::board::{decode, publish};
 use crate::daemon::{q, Request};
-use crate::git::git;
+use crate::git::{git, git_out};
 use crate::worktrees::{self, valid_sha, Res};
 use crate::Ctx;
 use serde_json::{json, Value};

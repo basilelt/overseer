@@ -1,4 +1,5 @@
-use crate::board::{decode, git_out, publish};
+use crate::board::{decode, publish};
+use crate::git::git_out;
 use crate::git::{git, Git};
 use crate::util::{format_rfc3339, ticket};
 use crate::{Ctx, Line};
