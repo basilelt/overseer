@@ -57,6 +57,26 @@ pub struct Saved {
     pub profile: Option<crate::profiles::Chip>,
 }
 
+impl From<&Info> for Saved {
+    fn from(i: &Info) -> Self {
+        Self {
+            id: i.id.clone(),
+            cwd: i.cwd.clone(),
+            title: i.title.clone(),
+            cols: i.cols,
+            rows: i.rows,
+            agent: i.agent.clone(),
+            session: i.session.clone(),
+            flags: i.flags.clone(),
+            line_id: i.line_id.clone(),
+            task_id: i.task_id.clone(),
+            workspace_id: i.workspace_id.clone(),
+            title_override: i.title_override.clone(),
+            profile: i.profile.clone(),
+        }
+    }
+}
+
 #[derive(Debug, PartialEq)]
 pub struct Restore {
     pub saved: Saved,
@@ -109,19 +129,12 @@ pub fn snapshot(terms: &[Info], lines: &[Line]) -> Vec<Saved> {
                 return None;
             }
             Some(Saved {
-                id: i.id.clone(),
-                cwd: i.cwd.clone(),
-                title: i.title.clone(),
-                cols: i.cols,
-                rows: i.rows,
                 agent: line.map(|l| l.agent.to_string()),
                 session: line.map(|l| l.session_id.clone()),
                 flags: line.map(|l| l.launch_args.clone()).unwrap_or_default(),
                 line_id: line.map(|l| l.id.clone()).or_else(|| i.line_id.clone()),
-                task_id: i.task_id.clone(),
-                workspace_id: i.workspace_id.clone(),
-                title_override: i.title_override.clone(),
                 profile: line.and(i.profile.clone()),
+                ..Saved::from(i)
             })
         })
         .collect()
