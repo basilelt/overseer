@@ -2,7 +2,7 @@
   import ChevronRight from '@lucide/svelte/icons/chevron-right';
   import type { GroupId } from '../../grouping';
   import { t } from '../../i18n.svelte';
-  import { GROUP_COLOR } from './AgentIcon.svelte';
+  import { GROUP_COLOR } from '../../ws-color';
 
   let { id, count, collapsed, ontoggle }: { id: GroupId; count: number; collapsed: boolean; ontoggle: () => void } = $props();
 </script>

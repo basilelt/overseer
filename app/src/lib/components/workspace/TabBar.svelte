@@ -26,7 +26,7 @@
   import { app, tabLazy } from '../../state.svelte';
   import { whenIdle } from '../../idle';
   import { closePaneAt, closeTabAt, openInFocused, reorderTab, split, update, type Pane } from '../../workspace.svelte';
-  import AgentIcon, { GROUP_COLOR } from '../sidebar/AgentIcon.svelte';
+  import AgentIcon from '../sidebar/AgentIcon.svelte';
   import ReviewBadge from '../review/ReviewBadge.svelte';
   import { itemTarget, reviewTitle } from '../../review/open';
   import { liveOn } from '../../git/live.svelte';
@@ -35,6 +35,7 @@
   import { chipLabel, chipShort } from '../../profiles';
   import { formatCost } from '../../usage/format';
   import { pages } from '../../session-pages.svelte';
+  import { GROUP_COLOR } from '../../ws-color';
 
   let { pane, index, focused, canClose }: { pane: Pane; index: number; focused: boolean; canClose: boolean } = $props();
 

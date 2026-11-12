@@ -4,7 +4,7 @@
   import { beside } from '../../review/beside.svelte';
   import { focusPane, update, workspace } from '../../workspace.svelte';
   import AgentGlyph from '../ui/AgentGlyph.svelte';
-  import { GROUP_COLOR } from './AgentIcon.svelte';
+  import { GROUP_COLOR } from '../../ws-color';
 
   const items = $derived(app.scopeItems().filter((i) => i.lineId || i.termId));
 

@@ -16,7 +16,6 @@
   import X from '@lucide/svelte/icons/x';
   import type { MenuItem } from '../../menu';
   import { reviewTitle } from '../../review/open';
-  import { GROUP_COLOR } from '../sidebar/AgentIcon.svelte';
   import AgentGlyph from '../ui/AgentGlyph.svelte';
   import { ui } from '../../mobile/ui.svelte';
   import MessageSquare from '@lucide/svelte/icons/message-square';
@@ -26,6 +25,7 @@
   import { ust } from '../../usage/strings';
   import { gt } from '../../github/strings';
   import { pages } from '../../session-pages.svelte';
+  import { GROUP_COLOR } from '../../ws-color';
 
   const tabs = $derived(activeTabs(workspace.layout).map((k) => tabInfo(k, app.items)).filter((x): x is TabInfo => !!x));
   const canPanel = $derived(!!app.selected?.lineId);

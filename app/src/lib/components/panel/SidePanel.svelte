@@ -4,7 +4,6 @@
   import { chipLabel } from '../../profiles';
   import { app } from '../../state.svelte';
   import type { Diff, SessionCost as Cost } from '../../types';
-  import { GROUP_COLOR } from '../sidebar/AgentIcon.svelte';
   import AgentGlyph from '../ui/AgentGlyph.svelte';
   import { agentName, sessionsAvailable } from '../../agents';
   import { preload } from '../../idle';
@@ -30,6 +29,7 @@
   import { diffs, relateds } from '../../panel-cache';
   import { loadPanel } from '../../panel-load';
   import { hostKey } from '../../window';
+  import { GROUP_COLOR } from '../../ws-color';
 
   const EFFORTS = new Set(['low', 'medium', 'high', 'xhigh', 'max']);
   const item = $derived(app.selected);

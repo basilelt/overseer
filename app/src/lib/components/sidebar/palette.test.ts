@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { GROUP_COLOR, STATE_COLOR } from './AgentIcon.svelte';
-import { WS_COLOR } from '../../ws-color';
+import { GROUP_COLOR, STATE_COLOR, WS_COLOR } from '../../ws-color';
 import chatSrc from '../chat/ChatView.svelte?raw';
 
 // Old group/workspace ids that name a session state, and the state they stand for.

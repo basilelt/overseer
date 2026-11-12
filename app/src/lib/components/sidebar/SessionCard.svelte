@@ -2,8 +2,9 @@
   import type { SidebarItem } from '../../grouping';
   import { t } from '../../i18n.svelte';
   import { age } from '../../time';
-  import AgentIcon, { GROUP_COLOR, STATE_COLOR } from './AgentIcon.svelte';
+  import AgentIcon from './AgentIcon.svelte';
   import { isShellItem } from '../../agents';
+  import { GROUP_COLOR, STATE_COLOR } from '../../ws-color';
 
   let { item, selected, now, onselect }: { item: SidebarItem; selected: boolean; now: number; onselect: (e?: MouseEvent) => void } = $props();
 </script>
