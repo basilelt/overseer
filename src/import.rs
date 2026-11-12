@@ -631,6 +631,7 @@ pub fn routes(
     match (method, segs) {
         ("GET", ["v1", "import", "switchboard"]) => Some((200, status(state_dir))),
         ("POST", ["v1", "import", "switchboard"]) => {
+            crate::daemon::mark(crate::daemon::Effect::Rescan);
             let dir = old_dir();
             if !old_db(&dir).is_file() {
                 return Some((404, json!({"error": "no switchboard data found"})));

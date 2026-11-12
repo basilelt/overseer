@@ -1035,7 +1035,10 @@ pub fn route(r: &Request, segs: &[&str], body: &Value, ctx: &Ctx) -> Option<(u16
             Err((c, e)) => (c, json!({ "error": e })),
         },
         ("PATCH", ["v1", "workspaces", id]) => out(200, patch(ctx, id, body), ws),
-        ("DELETE", ["v1", "workspaces", id]) => out(200, reg().and_then(|g| delete(&g, id)), |v| v),
+        ("DELETE", ["v1", "workspaces", id]) => {
+            crate::daemon::mark(crate::daemon::Effect::Rescan);
+            out(200, reg().and_then(|g| delete(&g, id)), |v| v)
+        }
         ("GET", ["v1", "folders"]) => out(200, reg().and_then(|g| folders(&g)), |v| {
             Value::Array(v.iter().map(Folder::to_json).collect())
         }),
@@ -1065,8 +1068,14 @@ pub fn route(r: &Request, segs: &[&str], body: &Value, ctx: &Ctx) -> Option<(u16
             out(200, reg().and_then(|g| delete_group(&g, id)), |v| v)
         }
         ("POST", ["v1", "broadcast"]) => out(200, crate::broadcast::post(ctx, body), |v| v),
-        ("PUT", ["v1", "lines", id, "workspace"]) => out(200, assign_line(ctx, id, body), |v| v),
-        ("PUT", ["v1", "terms", id, "workspace"]) => out(200, assign_term(ctx, id, body), |v| v),
+        ("PUT", ["v1", "lines", id, "workspace"]) => {
+            crate::daemon::mark(crate::daemon::Effect::Persist);
+            out(200, assign_line(ctx, id, body), |v| v)
+        }
+        ("PUT", ["v1", "terms", id, "workspace"]) => {
+            crate::daemon::mark(crate::daemon::Effect::Persist);
+            out(200, assign_term(ctx, id, body), |v| v)
+        }
         _ => return None,
     })
 }

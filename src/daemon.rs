@@ -1,6 +1,5 @@
 use crate::actions;
 use crate::procs::{now_ms, System};
-use crate::util::ticket;
 use crate::{scan, Ctx};
 use serde_json::{json, Value};
 use std::io::{BufRead, BufReader, ErrorKind, Read, Write};
@@ -175,6 +174,25 @@ fn read_head(r: &mut impl BufRead) -> Result<Head, HeadErr> {
     })
 }
 
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
+pub(crate) enum Effect {
+    None,
+    Rescan,
+    Persist,
+}
+
+thread_local! {
+    static EFFECT: std::cell::Cell<Effect> = const { std::cell::Cell::new(Effect::None) };
+}
+
+pub(crate) fn mark(e: Effect) {
+    EFFECT.with(|c| c.set(c.get().max(e)));
+}
+
+fn take_effect() -> Effect {
+    EFFECT.with(|c| c.replace(Effect::None))
+}
+
 pub fn q<'a>(r: &'a Request, k: &str) -> Option<&'a str> {
     r.query
         .iter()
@@ -345,6 +363,7 @@ fn terms(r: &Request, segs: &[&str], body: &Value, ctx: &Ctx) -> Option<(u16, Va
             Value::Array(term::all().iter().map(|t| t.to_json()).collect()),
         ),
         ("POST", ["v1", "terms"]) => {
+            mark(Effect::Rescan);
             let started = match crate::workspaces::start_body(ctx, body) {
                 Ok(b) => b,
                 Err((c, e)) => return Some(err(c, e)),
@@ -378,40 +397,49 @@ fn terms(r: &Request, segs: &[&str], body: &Value, ctx: &Ctx) -> Option<(u16, Va
                 Ok(t.to_json())
             }),
         ),
-        ("PUT", ["v1", "terms", id, "title"]) => res(
-            200,
-            found(id).and_then(|t| {
-                let raw = body
-                    .get("title")
-                    .filter(|v| v.is_null() || v.is_string())
-                    .ok_or((400, "title (string or null) required".into()))?;
-                t.set_title(crate::actions::clean_title(raw.as_str()));
-                Ok(t.to_json())
-            }),
-        ),
-        ("POST", ["v1", "terms", id, "kill"]) => res(
-            202,
-            found(id).and_then(|t| {
-                if body["confirm"] != true {
-                    return Err((400, "kill needs {\"confirm\":true}".into()));
-                }
-                if t.exited() {
-                    return Err((409, "term has exited".into()));
-                }
-                t.kill().map_err(|e| (500, e))?;
-                Ok(t.to_json())
-            }),
-        ),
-        ("DELETE", ["v1", "terms", id]) => res(
-            200,
-            found(id).and_then(|t| {
-                if !t.exited() {
-                    return Err((409, "term is still running; kill it first".into()));
-                }
-                term::remove(id);
-                Ok(json!({"deleted": id}))
-            }),
-        ),
+        ("PUT", ["v1", "terms", id, "title"]) => {
+            mark(Effect::Persist);
+            res(
+                200,
+                found(id).and_then(|t| {
+                    let raw = body
+                        .get("title")
+                        .filter(|v| v.is_null() || v.is_string())
+                        .ok_or((400, "title (string or null) required".into()))?;
+                    t.set_title(crate::actions::clean_title(raw.as_str()));
+                    Ok(t.to_json())
+                }),
+            )
+        }
+        ("POST", ["v1", "terms", id, "kill"]) => {
+            mark(Effect::Rescan);
+            res(
+                202,
+                found(id).and_then(|t| {
+                    if body["confirm"] != true {
+                        return Err((400, "kill needs {\"confirm\":true}".into()));
+                    }
+                    if t.exited() {
+                        return Err((409, "term has exited".into()));
+                    }
+                    t.kill().map_err(|e| (500, e))?;
+                    Ok(t.to_json())
+                }),
+            )
+        }
+        ("DELETE", ["v1", "terms", id]) => {
+            mark(Effect::Rescan);
+            res(
+                200,
+                found(id).and_then(|t| {
+                    if !t.exited() {
+                        return Err((409, "term is still running; kill it first".into()));
+                    }
+                    term::remove(id);
+                    Ok(json!({"deleted": id}))
+                }),
+            )
+        }
         _ => return None,
     })
 }
@@ -507,18 +535,27 @@ fn tasks(r: &Request, segs: &[&str], body: &Value, ctx: &Ctx) -> Option<(u16, Va
             res(200, tasks::patch(ctx, id, body).map(|t| t.to_json(st)))
         }
         ("DELETE", ["v1", "tasks", id]) => res(200, tasks::delete(ctx, id)),
-        ("POST", ["v1", "tasks", id, "start"]) => res(
-            200,
-            crate::term::size(body)
-                .map_err(|e| (400, e))
-                .and_then(|size| tasks::start_with(ctx, id, size, body["inPlace"] == true))
-                .map(|t| t.to_json(st)),
-        ),
-        ("POST", ["v1", "tasks", "organize"]) => res(
-            200,
-            crate::task_agents::organize(ctx, body["project"].as_str().filter(|p| !p.is_empty()))
+        ("POST", ["v1", "tasks", id, "start"]) => {
+            mark(Effect::Rescan);
+            res(
+                200,
+                crate::term::size(body)
+                    .map_err(|e| (400, e))
+                    .and_then(|size| tasks::start_with(ctx, id, size, body["inPlace"] == true))
+                    .map(|t| t.to_json(st)),
+            )
+        }
+        ("POST", ["v1", "tasks", "organize"]) => {
+            mark(Effect::Rescan);
+            res(
+                200,
+                crate::task_agents::organize(
+                    ctx,
+                    body["project"].as_str().filter(|p| !p.is_empty()),
+                )
                 .map(|ts| json!({"started": ts.iter().map(|t| t.to_json(st)).collect::<Vec<_>>()})),
-        ),
+            )
+        }
         ("GET", ["v1", "tasks", id, "messages"]) => res(
             200,
             crate::registry::Registry::open(&ctx.state_dir)
@@ -897,6 +934,7 @@ pub fn handle(ctx: &Ctx, r: &Request) -> (u16, Value) {
     let body: Value = serde_json::from_slice(&r.body).unwrap_or(Value::Null);
     if let ("POST", ["v1", "lines", id, "resume"]) = (r.method.as_str(), segs.as_slice()) {
         if body["target"] == "term" {
+            mark(Effect::Rescan);
             return resume_term(ctx, r, id, &body);
         }
     }
@@ -904,6 +942,7 @@ pub fn handle(ctx: &Ctx, r: &Request) -> (u16, Value) {
         (r.method.as_str(), segs.as_slice())
     {
         if let Some((station, online, seen)) = crate::board::remote_station(ctx, id) {
+            mark(Effect::Rescan);
             if !online {
                 return err(
                     409,
@@ -984,6 +1023,7 @@ pub fn handle(ctx: &Ctx, r: &Request) -> (u16, Value) {
             Err(e) => err(500, e),
         },
         ("POST", ["v1", "lines", id, "hold"]) => {
+            mark(Effect::Rescan);
             let held = if q(r, "afterTurn") == Some("true") {
                 actions::hold_after_turn(ctx, id, !dry_run(r))
             } else {
@@ -994,11 +1034,15 @@ pub fn handle(ctx: &Ctx, r: &Request) -> (u16, Value) {
                 Err(e) => err(404, e),
             }
         }
-        ("DELETE", ["v1", "lines", id, "hold"]) => match actions::cancel_pending_hold(ctx, id) {
-            Ok(id) => (200, json!({"lineId": id, "holdPending": false})),
-            Err((code, e)) => err(code, e),
-        },
+        ("DELETE", ["v1", "lines", id, "hold"]) => {
+            mark(Effect::Rescan);
+            match actions::cancel_pending_hold(ctx, id) {
+                Ok(id) => (200, json!({"lineId": id, "holdPending": false})),
+                Err((code, e)) => err(code, e),
+            }
+        }
         ("POST", ["v1", "lines", id, "close"]) => {
+            mark(Effect::Rescan);
             match actions::close(
                 ctx,
                 id,
@@ -1011,12 +1055,14 @@ pub fn handle(ctx: &Ctx, r: &Request) -> (u16, Value) {
             }
         }
         ("POST", ["v1", "lines", id, "resume"]) => {
+            mark(Effect::Rescan);
             match actions::resume(ctx, id, dry_run(r), actions::Launch::Detached) {
                 Ok(p) => (200, p.to_json()),
                 Err(e) => err(409, e),
             }
         }
         ("POST", ["v1", "lines", id, "link"]) => {
+            mark(Effect::Rescan);
             let Some(k) = body["ticketKey"].as_str() else {
                 return err(400, "ticketKey required");
             };
@@ -1026,6 +1072,7 @@ pub fn handle(ctx: &Ctx, r: &Request) -> (u16, Value) {
             }
         }
         ("PUT", ["v1", "lines", id, "pin"]) => {
+            mark(Effect::Persist);
             let Some(p) = body["pinned"].as_bool() else {
                 return err(400, "pinned required");
             };
@@ -1035,6 +1082,7 @@ pub fn handle(ctx: &Ctx, r: &Request) -> (u16, Value) {
             }
         }
         ("PUT", ["v1", "lines", id, "title"]) => {
+            mark(Effect::Persist);
             let Some(raw) = body.get("title").filter(|v| v.is_null() || v.is_string()) else {
                 return err(400, "title (string or null) required");
             };
@@ -1227,10 +1275,12 @@ pub fn conn(mut s: impl Stream, token: Option<&str>) {
     {
         return;
     }
+    take_effect();
     let (code, v) = handle(&ctx, &req);
-    if changes_lines(&req.method, &req.path, code) {
+    let effect = take_effect();
+    if req.method != "GET" && (200..300).contains(&code) && effect != Effect::None {
         crate::scanner::poke();
-        if settles_lines(&req.method, &req.path) {
+        if effect == Effect::Persist {
             if let Ok(lines) = crate::scan(&ctx) {
                 crate::lifecycle::persist(&ctx.state_dir, &lines);
             }
@@ -1256,41 +1306,6 @@ pub fn conn(mut s: impl Stream, token: Option<&str>) {
         }
         std::process::exit(0);
     }
-}
-
-fn settles_lines(method: &str, path: &str) -> bool {
-    let segs: Vec<&str> = path.trim_matches('/').split('/').collect();
-    method == "PUT"
-        && matches!(
-            segs.as_slice(),
-            ["v1", "lines", _, "pin" | "title" | "workspace"]
-                | ["v1", "terms", _, "title" | "workspace"]
-        )
-}
-
-fn changes_lines(method: &str, path: &str, code: u16) -> bool {
-    if method == "GET" || !(200..300).contains(&code) {
-        return false;
-    }
-    let segs: Vec<&str> = path.trim_matches('/').split('/').collect();
-    matches!(
-        (method, segs.as_slice()),
-        (
-            _,
-            [
-                "v1",
-                "lines",
-                _,
-                "hold" | "close" | "resume" | "link" | "pin" | "title" | "workspace"
-            ]
-        ) | ("POST", ["v1", "terms"])
-            | ("POST", ["v1", "terms", _, "kill"])
-            | ("PUT", ["v1", "terms", _, "title" | "workspace"])
-            | ("DELETE", ["v1", "terms" | "workspaces", _])
-            | ("POST", ["v1", "tasks", _, "start"])
-            | ("POST", ["v1", "tasks", "organize"])
-            | ("POST", ["v1", "import", "switchboard"])
-    )
 }
 
 pub(crate) fn accept<S: Stream + 'static>(s: S, token: Option<String>) {
@@ -1864,26 +1879,6 @@ pub fn call(method: &str, target: &str, body: Option<&Value>) -> Result<(u16, Va
 mod tests {
     use super::*;
 
-    const PINNED: [(&str, &str, bool); 17] = [
-        ("POST", "/v1/lines/x/hold", false),
-        ("DELETE", "/v1/lines/x/hold", false),
-        ("POST", "/v1/lines/x/close", false),
-        ("POST", "/v1/lines/x/resume", false),
-        ("POST", "/v1/lines/x/link", false),
-        ("PUT", "/v1/lines/x/pin", true),
-        ("PUT", "/v1/lines/x/title", true),
-        ("PUT", "/v1/lines/x/workspace", true),
-        ("POST", "/v1/terms", false),
-        ("POST", "/v1/terms/x/kill", false),
-        ("PUT", "/v1/terms/x/title", true),
-        ("PUT", "/v1/terms/x/workspace", true),
-        ("DELETE", "/v1/terms/x", false),
-        ("DELETE", "/v1/workspaces/w", false),
-        ("POST", "/v1/tasks/t/start", false),
-        ("POST", "/v1/tasks/organize", false),
-        ("POST", "/v1/import/switchboard", false),
-    ];
-
     #[test]
     fn windows_daemon_gets_a_hidden_console_its_children_inherit() {
         assert_ne!(WINDOWS_DETACH_FLAGS & 0x0800_0000, 0);
@@ -1983,17 +1978,73 @@ mod tests {
             .starts_with("HTTP/1.1 431 Request Header Fields Too Large\r\n"));
     }
 
+    fn effect_of(ctx: &Ctx, method: &str, path: &str, body: &str) -> Effect {
+        let req = Request {
+            method: method.into(),
+            path: path.into(),
+            query: vec![],
+            headers: vec![],
+            body: body.as_bytes().to_vec(),
+        };
+        take_effect();
+        handle(ctx, &req);
+        take_effect()
+    }
+
     #[test]
-    fn successful_writes_ask_for_a_rescan() {
-        assert!(changes_lines("POST", "/v1/terms", 400) == false);
-        assert!(!changes_lines("GET", "/v1/lines", 200));
-        assert!(!changes_lines("POST", "/v1/hook-events", 202));
-        assert!(!changes_lines("POST", "/v1/terms/t1/resize", 200));
-        assert!(!changes_lines("POST", "/v1/lines/x/keys", 200));
-        for (m, p, settles) in PINNED {
-            assert!(changes_lines(m, p, 200), "{m} {p}");
-            assert_eq!(settles_lines(m, p), settles, "{m} {p}");
+    fn routes_that_change_lines_declare_what_the_daemon_does_after_them() {
+        let dir = std::env::temp_dir().join(format!("ov-effects-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let probe = System;
+        let ctx = Ctx {
+            claude_dir: dir.join("claude"),
+            codex_dir: dir.join("codex"),
+            gemini_dir: dir.join("gemini"),
+            vibe_dir: dir.join("vibe"),
+            snapshot: dir.join("snapshot.json"),
+            config: crate::load_config(&dir),
+            state_dir: dir.clone(),
+            now_ms: 1_000_000,
+            probe: &probe,
+            tmux: None,
+        };
+        use Effect::{None as No, Persist, Rescan};
+        let cases: [(&str, &str, &str, Effect); 29] = [
+            ("POST", "/v1/lines/x/hold", "", Rescan),
+            ("DELETE", "/v1/lines/x/hold", "", Rescan),
+            ("POST", "/v1/lines/x/close", "", Rescan),
+            ("POST", "/v1/lines/x/resume", "", Rescan),
+            ("POST", "/v1/lines/x/resume", r#"{"target":"term"}"#, Rescan),
+            ("POST", "/v1/lines/x/link", "", Rescan),
+            ("PUT", "/v1/lines/x/pin", "", Persist),
+            ("PUT", "/v1/lines/x/title", "", Persist),
+            ("PUT", "/v1/lines/x/workspace", "", Persist),
+            ("POST", "/v1/terms", r#"{"cmd":5}"#, Rescan),
+            ("POST", "/v1/terms/x/kill", "", Rescan),
+            ("PUT", "/v1/terms/x/title", "", Persist),
+            ("PUT", "/v1/terms/x/workspace", "", Persist),
+            ("DELETE", "/v1/terms/x", "", Rescan),
+            ("DELETE", "/v1/workspaces/w", "", Rescan),
+            ("POST", "/v1/tasks/t/start", "", Rescan),
+            ("POST", "/v1/tasks/organize", "", Rescan),
+            ("GET", "/v1/lines", "", No),
+            ("GET", "/v1/terms", "", No),
+            ("POST", "/v1/hook-events", "", No),
+            ("POST", "/v1/terms/t1/resize", "", No),
+            ("POST", "/v1/lines/x/keys", "", No),
+            ("POST", "/v1/lines/x/notes", "", No),
+            ("PATCH", "/v1/workspaces/w", "", No),
+            ("POST", "/v1/workspaces", "", No),
+            ("PATCH", "/v1/tasks/t", "", No),
+            ("DELETE", "/v1/tasks/t", "", No),
+            ("GET", "/v1/lines/x/screen", "", No),
+            ("PUT", "/v1/nowhere", "", No),
+        ];
+        for (m, p, b, want) in cases {
+            assert_eq!(effect_of(&ctx, m, p, b), want, "{m} {p}");
         }
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
