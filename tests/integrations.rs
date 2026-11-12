@@ -117,6 +117,42 @@ fn files_containing(dir: &Path, needle: &str) -> Vec<PathBuf> {
 }
 
 #[test]
+fn a_relay_that_cannot_apply_snapshots_is_not_flooded_and_recovers() {
+    let t = T::new();
+    let api = Api::start(&t.base);
+    let relay_db = || rusqlite::Connection::open(t.base.join("api.db")).unwrap();
+    let _agent = t.start_agent("a", SID, "claude");
+    let relay = relay_db();
+    relay
+        .execute_batch(
+            "CREATE TRIGGER block_insert BEFORE INSERT ON lines BEGIN SELECT RAISE(ABORT, 'blocked'); END",
+        )
+        .unwrap();
+    let _sync = sync(
+        &t,
+        &api,
+        "st1",
+        "vm",
+        json!({"stationId": "st1", "owner": "dev@example.com"}),
+    );
+    std::thread::sleep(std::time::Duration::from_secs(3));
+    let next_seq = rusqlite::Connection::open(t.base.join("state/sync.db"))
+        .unwrap()
+        .query_row("SELECT v FROM sync_meta WHERE k = 'next_seq'", [], |r| {
+            r.get::<_, i64>(0)
+        })
+        .unwrap();
+    assert!(next_seq <= 8, "station sent {next_seq} frames in 3 s");
+    let lines = |api: &Api| {
+        let (_, v) = api.http("GET", "/v1/lines?stationId=st1", ADMIN, None);
+        v.as_array().map(Vec::len).unwrap_or(0)
+    };
+    assert_eq!(lines(&api), 0);
+    relay.execute_batch("DROP TRIGGER block_insert").unwrap();
+    wait_for(|| (lines(&api) == 1).then_some(()));
+}
+
+#[test]
 fn board_actions_on_another_station_go_through_the_api() {
     let t = T::new();
     let api = Api::start(&t.base);

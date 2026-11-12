@@ -3,6 +3,7 @@ use crate::util::format_rfc3339;
 use crate::{load_config, mkdir_private, procs::System, scan, Ctx};
 use rusqlite::{params, Connection, OptionalExtension};
 use serde_json::{json, Value};
+use std::cell::Cell;
 use std::collections::BTreeMap;
 use std::io::Write;
 use std::net::{SocketAddr, TcpStream, ToSocketAddrs};
@@ -118,6 +119,7 @@ pub struct Client {
     state_dir: PathBuf,
     station: String,
     conn: Option<Box<dyn Transport>>,
+    snapshot_unacked: Cell<Option<i64>>,
 }
 
 pub(crate) fn private_file(path: &Path, bytes: &[u8]) -> Result<(), String> {
@@ -191,6 +193,7 @@ impl Client {
             state_dir: state_dir.into(),
             station: station.into(),
             conn: None,
+            snapshot_unacked: Cell::new(None),
         })
     }
 
@@ -301,12 +304,16 @@ impl Client {
             .execute("DELETE FROM sync_outbox", [])
             .map_err(|e| e.to_string())?;
         self.set_meta("next_seq", next + 1)?;
+        self.snapshot_unacked.set(Some(next));
         Ok(vec![
             json!({ "kind": FRAME_SNAPSHOT, "seq": next, "lines": lines }),
         ])
     }
 
     fn on_ack(&self, seq: i64) -> Result<(), String> {
+        if self.snapshot_unacked.get().is_some_and(|s| seq >= s) {
+            self.snapshot_unacked.set(None);
+        }
         self.set_meta("acked", seq)?;
         self.db
             .execute("DELETE FROM sync_outbox WHERE seq <= ?1", [seq])
@@ -395,6 +402,9 @@ impl Client {
             Some(FRAME_ACK) => {
                 let seq = v["seq"].as_i64().unwrap_or(0);
                 if v[FRAME_RESYNC] == true {
+                    if self.snapshot_unacked.get().is_some() {
+                        return Err("api could not apply the snapshot".into());
+                    }
                     self.frames_after(seq, true)
                 } else {
                     self.on_ack(seq).map(|_| vec![])
@@ -427,6 +437,7 @@ impl Client {
         version: &str,
         now_ms: i64,
     ) -> Result<(), String> {
+        self.snapshot_unacked.set(None);
         t.send(&json!({
             "kind": FRAME_HELLO, "stationId": self.station, "daemonVersion": version,
             "lastAckedSeq": self.acked(),
@@ -659,15 +670,15 @@ pub fn cli_sync(args: &[String]) -> ExitCode {
             }
         }
         if client.connected() {
-            backoff = Duration::from_secs(1);
             let hb = scanned.as_ref().map(|l| client.heartbeat(l));
             let wait = if once {
                 Duration::from_millis(200)
             } else {
                 HEARTBEAT
             };
-            if let Err(e) = client.pump(wait, hb, ctx.now_ms) {
-                eprintln!("overseer: sync: {e}");
+            match client.pump(wait, hb, ctx.now_ms) {
+                Ok(()) => backoff = Duration::from_secs(1),
+                Err(e) => eprintln!("overseer: sync: {e}"),
             }
         }
         if once {
@@ -804,6 +815,75 @@ mod tests {
         c.connect(Box::new(f.clone()), "t", 0).unwrap();
         assert_eq!(kinds(&f), [("hello".into(), -1), ("snapshot".into(), 5)]);
         assert_eq!(f.sent.borrow()[1]["lines"].as_array().unwrap().len(), 2);
+        let _ = std::fs::remove_dir_all(d);
+    }
+
+    fn resync_ack() -> Value {
+        json!({ "kind": "ack", "seq": 0, "resync": true })
+    }
+
+    fn snapshots(f: &Fake) -> usize {
+        f.sent
+            .borrow()
+            .iter()
+            .filter(|v| v["kind"] == "snapshot")
+            .count()
+    }
+
+    #[test]
+    fn a_resync_ack_after_our_snapshot_drops_the_connection_instead_of_resending() {
+        let d = dir("resync-loop");
+        let mut c = Client::open(&d, "vm").unwrap();
+        c.stage(&[line("a", "active")]).unwrap();
+        let f = Fake::default();
+        f.incoming.borrow_mut().push_back(resync_ack());
+        c.connect(Box::new(f.clone()), "t", 0).unwrap();
+        assert_eq!(snapshots(&f), 1);
+        for _ in 0..5 {
+            f.incoming.borrow_mut().push_back(resync_ack());
+        }
+        let err = c.pump(Duration::ZERO, None, 0).unwrap_err();
+        assert!(err.contains("snapshot"), "{err}");
+        assert!(!c.connected());
+        assert_eq!(snapshots(&f), 1);
+        let _ = std::fs::remove_dir_all(d);
+    }
+
+    #[test]
+    fn a_resync_ack_after_a_delta_gets_one_snapshot_and_a_second_one_errors() {
+        let d = dir("resync-delta");
+        let mut c = Client::open(&d, "vm").unwrap();
+        c.stage(&[line("a", "active")]).unwrap();
+        let f = Fake::default();
+        f.incoming
+            .borrow_mut()
+            .push_back(json!({ "kind": "ack", "seq": 0, "resync": false }));
+        c.connect(Box::new(f.clone()), "t", 0).unwrap();
+        assert_eq!(snapshots(&f), 0);
+        for _ in 0..5 {
+            f.incoming.borrow_mut().push_back(resync_ack());
+        }
+        assert!(c.pump(Duration::ZERO, None, 0).is_err());
+        assert_eq!(snapshots(&f), 1);
+        assert!(!c.connected());
+        let _ = std::fs::remove_dir_all(d);
+    }
+
+    #[test]
+    fn an_ack_of_the_snapshot_allows_a_later_resync() {
+        let d = dir("resync-after-ack");
+        let mut c = Client::open(&d, "vm").unwrap();
+        c.stage(&[line("a", "active")]).unwrap();
+        let f = Fake::default();
+        f.incoming.borrow_mut().push_back(resync_ack());
+        c.connect(Box::new(f.clone()), "t", 0).unwrap();
+        f.incoming
+            .borrow_mut()
+            .push_back(json!({ "kind": "ack", "seq": 2, "resync": false }));
+        f.incoming.borrow_mut().push_back(resync_ack());
+        c.pump(Duration::ZERO, None, 0).unwrap();
+        assert_eq!(snapshots(&f), 2);
+        assert!(c.connected());
         let _ = std::fs::remove_dir_all(d);
     }
 
