@@ -188,4 +188,25 @@
     flex: none;
     color: var(--text-2);
   }
+  :global(:root.phone) .row {
+    height: var(--touch);
+    gap: 10px;
+    margin-left: 12px;
+    width: calc(100% - 12px);
+    padding: 0 10px;
+    border-radius: 10px;
+  }
+  :global(:root.phone) .row.shell {
+    height: 40px;
+  }
+  :global(:root.phone) .action,
+  :global(:root.phone) .age {
+    font-size: 13px;
+  }
+  :global(:root.phone) .hst {
+    display: none;
+  }
+  :global(:root.phone) .chev {
+    font-size: 18px;
+  }
 </style>

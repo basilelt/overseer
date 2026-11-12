@@ -392,7 +392,7 @@
     top: 0;
     bottom: 0;
     left: 0;
-    width: min(86vw, 360px);
+    width: min(92vw, 400px);
     z-index: 41;
     display: flex;
     flex-direction: column;
