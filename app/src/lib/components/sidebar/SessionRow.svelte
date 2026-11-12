@@ -6,7 +6,6 @@
   import { t } from '../../i18n.svelte';
   import { age } from '../../time';
   import { isShellItem } from '../../agents';
-  // `now` comes from the shared clock so rows own no timer.
   let {
     item,
     now,
@@ -25,7 +24,6 @@
     onselect: (e?: MouseEvent) => void;
     onmenu?: (e: MouseEvent) => void;
     onpointerdown?: (e: PointerEvent) => void;
-    /** The workspace this row is listed in; makes it a drop target for reordering its tabs. */
     zone?: string;
     dropPos?: 'before' | 'after' | 'inside' | null;
   } = $props();

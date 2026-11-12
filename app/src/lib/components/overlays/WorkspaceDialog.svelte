@@ -11,7 +11,6 @@
 
   let { onclose }: { onclose: () => void } = $props();
 
-  // Opened with a workspace id: a subject (sub-folder, submodule or path-less) nested in that workspace.
   const parent = app.overlayArg ? app.ws.workspaces.find((w) => w.id === app.overlayArg && !w.parentId && !!w.path) : undefined;
   let startAtRoot = $state(true);
 

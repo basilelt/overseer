@@ -24,7 +24,6 @@
   import { notesUi } from '../../notes.svelte';
 
   const statesView = preload(() => import('./StatesView.svelte'));
-  // Only windows showing several hosts need it.
   const hostSections = () => import('./HostSections.svelte');
   const gitView = () => import('../../git/SidebarGit.svelte');
   const notesView = () => import('./NotesPopover.svelte');

@@ -16,7 +16,6 @@
     resume: 'session.action.resume',
     close: 'session.action.close',
   };
-  // Pause and cancel pause share a slot: only one makes sense at a time.
   const shown = $derived((['interrupt', view.actions.cancelPause.enabled ? 'cancelPause' : 'pause', 'resume', 'close'] as const));
 
   const off = (a: SessionAction) => acting !== null || !view.actions[a].enabled;

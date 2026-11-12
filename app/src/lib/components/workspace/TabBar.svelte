@@ -144,7 +144,6 @@
 
   let suppress = false;
 
-  // The rename input loads in the first idle moment, or on first use if sooner.
   let Extra = $state.raw<typeof import('./TabTitleExtra.svelte').default | null>(null);
   const loadExtra = () => (Extra ? Promise.resolve() : tabLazy().then((m) => void (Extra = m.TabTitleExtra)));
   $effect(() => whenIdle(() => void loadExtra().catch(() => {})));
@@ -227,7 +226,6 @@
     if (Extra) editing = edit;
     else void loadExtra().then(() => (editing = edit));
   }
-  // Several hosts in this window: every tab says which one it runs on.
   const hostTag = $derived(app.hosts.length > 1 && settings.hostTabColor && app.link ? { name: hostName(app.link.target), color: hostColor(app.link.key) } : null);
 </script>
 
@@ -452,7 +450,6 @@
   .slot > * {
     grid-area: 1 / 1;
   }
-  /* While renaming, the input takes the title's place. */
   .label:has(:global(.name-input)) > .name {
     display: none;
   }

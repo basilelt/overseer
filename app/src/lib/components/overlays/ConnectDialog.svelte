@@ -95,7 +95,6 @@
   const lnView = $derived(app.conn.phase === 'error' ? localNetworkView(app.localNet, app.conn.error) : 'none');
   const lnReport = $derived(lnView === 'none' ? null : app.localNet);
 
-  // Opened from "Add a host to this window": the target joins the hosts already here.
   const forced: HostChoice | undefined = app.overlayArg === 'add' ? 'add' : undefined;
   let asking = $state<HostTarget | null>(askedFor(app.overlayArg));
   let remember = $state(false);

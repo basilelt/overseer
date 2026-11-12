@@ -6,7 +6,6 @@
   import type { SpaceNode } from '../../workspace/spaces';
   import StatePills from './StatePills.svelte';
 
-  // dropPos and target mark where a dragged item would land; the folder and pinned zones are found by their data-drop.
   let {
     node,
     ontoggle,

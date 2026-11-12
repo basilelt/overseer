@@ -3,7 +3,6 @@
   import type { SessionState } from '../../session/session-state';
   import type { WorkspaceSummary } from '../../workspace/workspace-summary';
 
-  // The live-state pills of a workspace or a folder; the total is hidden when zero only if asked.
   let { summary, hideZero = false }: { summary: WorkspaceSummary; hideZero?: boolean } = $props();
 
   const PILLS: SessionState[] = ['attention', 'running', 'paused'];

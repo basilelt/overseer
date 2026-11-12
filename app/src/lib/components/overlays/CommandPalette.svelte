@@ -69,7 +69,6 @@
       ]
     : [];
 
-  // The current workspace, or the parent of the current nested one, takes new subjects.
   const subjectParent = $derived.by(() => {
     const w = app.currentWorkspace;
     const top = w?.parentId ? app.ws.workspaces.find((p) => p.id === w.parentId) : w;

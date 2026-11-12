@@ -4,7 +4,6 @@
   import SessionRow from './SessionRow.svelte';
   import WorkspaceFrame from './WorkspaceFrame.svelte';
 
-  // One frame per workspace, its sessions in the order given; the unassigned group is named "Other sessions".
   let {
     groups,
     names,

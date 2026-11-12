@@ -91,7 +91,6 @@
     return failedPred ?? body?.error ?? String((e as Error)?.message ?? e);
   }
 
-  // One cold load per line: watcher events and quick back-and-forth switches must not start parallel full parses.
   function load() {
     const id = lineId;
     return loads.run(id, () => loadTail(id));
@@ -246,7 +245,6 @@
   function remember() {
     clearTimeout(anchorTimer);
     capture();
-    // A cut window lacks the newest entries: coming back must load a fresh tail, not show it.
     if (cachedAs && chat.cut) chats.drop(cachedAs);
     else if (cachedAs && chat.loaded && !unsupported && !failed) chats.put(cachedAs, { state: chat, anchor: following ? null : anchor, following, shown });
     anchor = null;
@@ -289,7 +287,6 @@
     });
   });
 
-  // Scrolling near the top loads the previous window; the observer only fires on crossings, so no idle work.
   $effect(() => {
     const el = sentinel;
     const root = scroller;

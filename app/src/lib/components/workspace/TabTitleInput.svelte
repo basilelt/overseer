@@ -6,7 +6,6 @@
 
   let { tabKey, initial, openedAt, ondone }: { tabKey: string; initial: string; openedAt: number; ondone: () => void } = $props();
 
-  // The draft starts from the title shown when editing began, then belongs to the user.
   let draft = $state(untrack(() => initial));
   let done = false;
 

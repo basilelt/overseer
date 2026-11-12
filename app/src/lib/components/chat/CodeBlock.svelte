@@ -13,7 +13,6 @@
   let copied = $state(false);
   let el = $state<HTMLDivElement>();
 
-  // Highlight only blocks near the viewport; remounts reuse the cached HTML.
   $effect(() => {
     const c = code;
     const l = lang;

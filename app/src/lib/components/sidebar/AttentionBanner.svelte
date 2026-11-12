@@ -2,7 +2,6 @@
   import type { AttentionEntry } from '../../attention';
   import { t } from '../../i18n.svelte';
 
-  // pathOf gives the folder path of an entry's workspace; the by-state view passes none.
   let { entries, onselect, pathOf }: { entries: AttentionEntry[]; onselect: (entry: AttentionEntry) => void; pathOf?: (entry: AttentionEntry) => string | undefined } = $props();
 </script>
 
