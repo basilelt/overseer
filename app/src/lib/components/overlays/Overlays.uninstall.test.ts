@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import source from './Overlays.svelte?raw';
 import { en } from '../../i18n/en';
+import { parentOverlay } from '../../overlay-route';
 
 describe('uninstall dialog overlay', () => {
   it('returns to Settings when closed instead of dropping every overlay', () => {
-    expect(source).toContain("if (k === 'uninstall') return { onclose: () => app.closeOverlay() };");
+    expect(parentOverlay('uninstall')).toBe('settings');
   });
 });
 

@@ -4,7 +4,7 @@
   import { diag } from '../../diag.svelte';
   import { feedback } from '../../feedback.svelte';
   import { organizer } from '../../organize.svelte';
-  import { mainOverlay, type MainOverlay } from '../../overlay-route';
+  import { mainOverlay, parentOverlay, type MainOverlay } from '../../overlay-route';
   import { rec } from '../../record-state.svelte';
   import type { Component } from 'svelte';
   import { phoneOrMobile } from '../../mobile/phone.svelte';
@@ -46,7 +46,7 @@
   };
   const main = $derived(mainOverlay({ overlay: app.overlay, overlayArg: app.overlayArg, hasFile: !!app.fileArg, phone: phoneOrMobile() }));
   function propsOf(k: MainOverlay): Record<string, unknown> {
-    if (k === 'uninstall') return { onclose: () => app.closeOverlay() };
+    if (parentOverlay(k)) return { onclose: () => app.closeOverlay() };
     if (k === 'mobileConnect') return { onclose: close, initial: app.overlayArg };
     if (k === 'profiles') return { onclose: close, scope: app.overlayArg };
     if (k === 'switchboardImport') return { onclose: close, from: app.overlayArg };

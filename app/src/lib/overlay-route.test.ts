@@ -1,5 +1,18 @@
 import { describe, expect, it } from 'vitest';
-import { mainOverlay } from './overlay-route';
+import { mainOverlay, parentOverlay } from './overlay-route';
+
+describe('parentOverlay', () => {
+  it('returns the uninstall dialog to settings', () => {
+    expect(parentOverlay('uninstall')).toBe('settings');
+  });
+
+  it('has no parent for any other overlay or for none', () => {
+    expect(parentOverlay('settings')).toBeNull();
+    expect(parentOverlay('palette')).toBeNull();
+    expect(parentOverlay('constructor')).toBeNull();
+    expect(parentOverlay(null)).toBeNull();
+  });
+});
 
 const at = (overlay: string | null, more: Partial<{ overlayArg: string | null; hasFile: boolean; phone: boolean }> = {}) => mainOverlay({ overlay, hasFile: false, phone: false, ...more });
 

@@ -1,5 +1,6 @@
 import { activityDelay } from './activity';
 import { FALLBACK_AGENTS, sessionsAvailable } from './agents';
+import { parentOverlay } from './overlay-route';
 import { onPresence, presence } from './presence';
 import { api, type Api } from './api';
 import { DaemonError, getClient, isMockClient, type DaemonClient } from './client';
@@ -795,7 +796,7 @@ class AppState {
   }
 
   closeOverlay() {
-    this.open(this.overlay === 'uninstall' ? 'settings' : null);
+    this.open(parentOverlay(this.overlay));
   }
 
   openPage(url: string, from: { key?: string | null; termId?: string }): boolean {
