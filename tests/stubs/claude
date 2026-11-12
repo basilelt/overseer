@@ -39,7 +39,15 @@ status idle
 hook SessionStart
 prompt() { printf '%s\n' "────────────────────────────────────────"; printf '❯ '; }
 prompt
+held=
 while IFS= read -r line; do
+  if [ -n "${SB_STUB_DROP_ENTER:-}" ]; then
+    SB_STUB_DROP_ENTER=
+    held=$line
+    printf '%s\n❯ %s\n%s\n' "────────────────────────────────────────" "$line" "────────────────────────────────────────"
+    continue
+  fi
+  [ -z "$line" ] && [ -n "$held" ] && { line=$held; held=; }
   case $line in
     busy) status busy; hook UserPromptSubmit ;;
     done) status idle; hook Stop ;;

@@ -194,7 +194,73 @@ pub fn when_started(t: &Term, text: &str, own_dir: bool) {
             return;
         }
     }
-    let _ = term::paste(t, text);
+    submit(
+        t,
+        text,
+        READY_WAIT,
+        Duration::from_millis(200),
+        CONFIRM_AFTER,
+    );
+}
+
+const READY_WAIT: Duration = Duration::from_secs(5);
+const CONFIRM_AFTER: Duration = Duration::from_secs(1);
+const RESENDS: usize = 3;
+
+fn empty_prompt(t: &Term, limit: Duration, poll: Duration) -> bool {
+    let begin = Instant::now();
+    loop {
+        if t.exited() {
+            return false;
+        }
+        if crate::hold::input_text(&t.grid().ansi()).is_some_and(|s| s.is_empty()) {
+            return true;
+        }
+        if begin.elapsed() >= limit {
+            return false;
+        }
+        std::thread::sleep(poll);
+    }
+}
+
+fn squash(s: &str) -> String {
+    s.chars().filter(|c| !c.is_whitespace()).collect()
+}
+
+fn holds(typed: &str, text: &str) -> bool {
+    let head: String = squash(text).chars().take(24).collect();
+    let typed = squash(typed);
+    !head.is_empty() && (typed.starts_with(&head) || typed.starts_with("[Pasted"))
+}
+
+// An agent can show the pasted text yet miss the Enter that follows it. Press Enter again
+// only while its input box still holds this text, so a dialog or menu that replaced the box
+// is never answered by mistake.
+fn submit(t: &Term, text: &str, ready_wait: Duration, poll: Duration, confirm: Duration) {
+    let ready = empty_prompt(t, ready_wait, poll);
+    if t.exited() || term::paste(t, text).is_err() {
+        return;
+    }
+    let watch = match ready {
+        true => confirm * RESENDS as u32,
+        false => ready_wait * 3,
+    };
+    let begin = Instant::now();
+    let mut resent = 0;
+    while resent < RESENDS && begin.elapsed() < watch {
+        std::thread::sleep(confirm);
+        if t.exited() {
+            return;
+        }
+        match crate::hold::input_text(&t.grid().ansi()) {
+            Some(typed) if holds(&typed, text) => {
+                let _ = t.input(b"\r");
+                resent += 1;
+            }
+            Some(_) => return,
+            None => {}
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -261,6 +327,118 @@ mod tests {
         let yes_first = "❯ 1. Yes, I trust this folder\r\n  2. No, exit".as_bytes();
         assert_eq!(trust_answer(yes_first), Some(&b"\r"[..]));
         assert_eq!(trust_answer("❯ hello, I trust you".as_bytes()), None);
+    }
+
+    fn unsent(screen: &str, text: &str) -> bool {
+        let shown = crate::screen::render(screen.as_bytes(), 60, 12).ansi();
+        crate::hold::input_text(&shown).is_some_and(|typed| holds(&typed, text))
+    }
+
+    #[test]
+    fn enter_is_pressed_again_only_while_the_box_holds_the_text() {
+        let rule = "─".repeat(30);
+        let text = "Fix the login\n\nThe button does nothing when clicked twice.";
+        let typed = format!(
+            "{rule}\r\n❯ Fix the login The button does nothing when\r\nclicked twice.\r\n{rule}"
+        );
+        assert!(unsent(&typed, text));
+        let pasted = format!("{rule}\r\n❯ [Pasted text #1 +40 lines]\r\n{rule}");
+        assert!(unsent(&pasted, text));
+        let codex = "› [Pasted Content 4120 chars]\r\n\r\n  ⏎ send";
+        assert!(unsent(codex, text));
+        let empty = format!("● Working\r\n{rule}\r\n❯ \x1b[2mTry \"fix lint\"\x1b[0m\r\n{rule}");
+        assert!(!unsent(&empty, text));
+        let other = format!("{rule}\r\n❯ something the user typed\r\n{rule}");
+        assert!(!unsent(&other, text));
+        let menu = "Do you want to proceed?\r\n❯ 1. Yes\r\n  2. No, exit";
+        assert!(!unsent(menu, text));
+        assert!(!unsent("Loading…", text));
+        assert!(!unsent(&typed, ""));
+    }
+
+    #[cfg(unix)]
+    fn agent(script: &str) -> Arc<Term> {
+        term::spawn(term::Spec {
+            cwd: std::env::temp_dir().to_string_lossy().into_owned(),
+            cmd: vec!["/bin/sh".into(), "-c".into(), script.into()],
+            cols: 80,
+            rows: 24,
+            ..Default::default()
+        })
+        .unwrap()
+    }
+
+    #[cfg(unix)]
+    fn wait_screen(t: &Term, word: &str) -> String {
+        let deadline = Instant::now() + Duration::from_secs(10);
+        loop {
+            let s = t.grid().text();
+            if s.contains(word) || Instant::now() >= deadline {
+                return s;
+            }
+            std::thread::sleep(Duration::from_millis(50));
+        }
+    }
+
+    #[cfg(unix)]
+    const RULE: &str = "r=────────────────────────────────; ";
+
+    #[cfg(unix)]
+    #[test]
+    fn a_dropped_enter_is_pressed_again() {
+        let t = agent(&format!(
+            r#"{RULE}sleep 0.3; printf '%s\n❯ ' "$r"; read a; printf '%s\n❯ %s\n%s\n' "$r" "$a" "$r"; read b; echo "got: $a"; sleep 30"#
+        ));
+        let ms = Duration::from_millis;
+        submit(&t, "Fix it\n\nnow", ms(3000), ms(20), ms(200));
+        let s = wait_screen(&t, "got:");
+        t.kill().unwrap();
+        term::remove(&t.info().id);
+        assert!(s.contains("got: Fix it  now"), "{s}");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_dropped_enter_is_pressed_again_when_the_prompt_shows_late() {
+        let t = agent(&format!(
+            r#"{RULE}read a; printf '%s\n❯ %s\n%s\n' "$r" "$a" "$r"; read b; echo "got: $a"; sleep 30"#
+        ));
+        let ms = Duration::from_millis;
+        submit(&t, "Fix it", ms(300), ms(20), ms(200));
+        let s = wait_screen(&t, "got:");
+        t.kill().unwrap();
+        term::remove(&t.info().id);
+        assert!(s.contains("got: Fix it"), "{s}");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_submitted_prompt_gets_no_extra_enter() {
+        let t = agent(&format!(
+            r#"{RULE}printf '%s\n❯ ' "$r"; read a; echo "got: $a"; printf '%s\n❯ \n%s\n' "$r" "$r"; read b; echo "extra: $b"; sleep 30"#
+        ));
+        let ms = Duration::from_millis;
+        submit(&t, "Fix it", ms(3000), ms(20), ms(500));
+        std::thread::sleep(ms(300));
+        let s = t.grid().text();
+        t.kill().unwrap();
+        term::remove(&t.info().id);
+        assert!(s.contains("got: Fix it") && !s.contains("extra:"), "{s}");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_menu_after_the_paste_is_never_answered() {
+        let t = agent(&format!(
+            r#"{RULE}printf '%s\n❯ ' "$r"; read a; printf 'Proceed?\n❯ 1. Yes\n  2. No\n'; read b; echo "answered: $b"; sleep 30"#
+        ));
+        let ms = Duration::from_millis;
+        submit(&t, "Fix it", ms(3000), ms(20), ms(500));
+        std::thread::sleep(ms(300));
+        let s = t.grid().text();
+        t.kill().unwrap();
+        term::remove(&t.info().id);
+        assert!(s.contains("Proceed?") && !s.contains("answered:"), "{s}");
     }
 
     #[test]
