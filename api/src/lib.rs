@@ -332,16 +332,16 @@ impl App {
                 .unwrap_or(false)
     }
 
-    fn upsert_line(&self, db: &Connection, station: &str, line: &Value) -> bool {
+    fn upsert_line(&self, db: &Connection, station: &str, line: &Value) -> rusqlite::Result<bool> {
         let (Some(id), Some(owner), Some(state)) = (
             str_field(line, "id"),
             str_field(line, "owner"),
             line["state"].as_str().filter(|s| LINE_STATES.contains(s)),
         ) else {
-            return false;
+            return Ok(false);
         };
         if line["stationId"].as_str() != Some(station) {
-            return false;
+            return Ok(false);
         }
         let old: Option<(String, String)> = db
             .query_row(
@@ -352,18 +352,15 @@ impl App {
             .optional()
             .unwrap_or(None);
         if old.as_ref().is_some_and(|(s, _)| s != station) {
-            return false;
+            return Ok(false);
         }
-        let written = db.execute(
+        db.execute(
             "INSERT INTO lines (id, station_id, owner, ticket_key, state, body, synced_ms)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
              ON CONFLICT (id) DO UPDATE SET owner = excluded.owner, ticket_key = excluded.ticket_key,
                state = excluded.state, body = excluded.body, synced_ms = excluded.synced_ms",
             params![id, station, owner, line["ticketKey"].as_str(), state, line.to_string(), self.now()],
-        );
-        if written.is_err() {
-            return false;
-        }
+        )?;
         let old: Option<Value> = old.and_then(|(_, b)| serde_json::from_str(&b).ok());
         match old {
             None => self.emit(db, "line.created", json!({ "line": line })),
@@ -390,7 +387,7 @@ impl App {
                 }
             }
         }
-        true
+        Ok(true)
     }
 
     fn relay(
@@ -813,7 +810,7 @@ async fn create_line(State(app): State<Arc<App>>, h: HeaderMap, Json(b): Json<Va
             if let Some(t) = ticket {
                 line["ticketKey"] = json!(t);
             }
-            app.upsert_line(&db, &station, &line);
+            let _ = app.upsert_line(&db, &station, &line);
             drop(db);
             let mut args = Map::new();
             for (k, v) in [
