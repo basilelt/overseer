@@ -14,7 +14,7 @@ describe('savePayload', () => {
   });
 
   it('drops scope and type rules that point at a deleted profile, keeping built-ins, the none marker and empty ids', () => {
-    const s = store({ scopes: { '/a': 'old', '/b': 'balanced', '/c': NONE, '/d': 'kept', '/e': '' }, types: { bug: 'old', feature: 'kept' } });
+    const s = store({ scopes: { '/a': 'old', '/b': 'balanced', '/c': NONE, '/d': 'kept', '/e': '' }, types: { fix: 'old', feature: 'kept' } });
     const out = savePayload(s, [mine('kept')]);
     expect(out.scopes).toEqual({ '/b': 'balanced', '/c': NONE, '/d': 'kept', '/e': '' });
     expect(out.types).toEqual({ feature: 'kept' });

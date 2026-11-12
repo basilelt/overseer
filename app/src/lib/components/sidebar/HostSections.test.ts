@@ -15,8 +15,8 @@ describe('HostSections', () => {
   let prod: HostLink;
 
   beforeEach(async () => {
-    local = new HostLink({ kind: 'local', label: 'Local' }, new MockDaemon({ live: false }));
-    prod = new HostLink({ kind: 'ssh', host: 'prod', label: 'prod' }, new MockDaemon({ live: false }));
+    local = new HostLink({ kind: 'local', label: 'Local' }, new MockDaemon({ live: false, delayMs: 0 }));
+    prod = new HostLink({ kind: 'ssh', host: 'prod', label: 'prod' }, new MockDaemon({ live: false, delayMs: 0 }));
     await prod.connect();
     watch(prod);
     await load(prod);
