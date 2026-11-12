@@ -269,8 +269,14 @@ pub fn config_dir(id: &str) -> std::path::PathBuf {
     get(id).and_then(Agent::config_dir).unwrap_or_default()
 }
 
+pub const SHELL: &str = "shell";
+
+pub fn is_shell(id: &str) -> bool {
+    id == SHELL
+}
+
 pub fn task_agent(id: &str) -> bool {
-    get(id).is_some_and(|a| a.id != "shell")
+    get(id).is_some_and(Agent::coding)
 }
 
 fn base(arg: &str) -> &str {
@@ -434,6 +440,14 @@ impl Agent {
             a.extend([flag.to_string(), p.to_string()]);
         }
         a
+    }
+
+    pub fn coding(&self) -> bool {
+        !is_shell(self.id)
+    }
+
+    pub fn polled(&self) -> bool {
+        !self.sessions && !self.bin.is_empty()
     }
 
     pub fn has_ids(&self) -> bool {
@@ -894,6 +908,21 @@ mod tests {
         assert_eq!(get("agy").unwrap().valid_efforts(), AGY_EFFORTS);
         assert!(matches!(get("agy").unwrap().install, Install::Manual(_)));
         assert!(get("shell").unwrap().install_cmd().is_none());
+    }
+
+    #[test]
+    fn predicates_name_the_agent_groups() {
+        let ids = |f: fn(&Agent) -> bool| -> Vec<&str> {
+            AGENTS.iter().filter(|a| f(a)).map(|a| a.id).collect()
+        };
+        assert_eq!(ids(|a| !a.coding()), ["shell"]);
+        assert_eq!(ids(|a| a.sessions), ["claude", "codex", "gemini", "vibe"]);
+        assert_eq!(
+            ids(Agent::polled),
+            ["agy", "opencode", "amp", "copilot", "cursor"]
+        );
+        assert!(is_shell("shell") && !is_shell("claude") && !is_shell("nope"));
+        assert!(task_agent("claude") && !task_agent("shell") && !task_agent("nope"));
     }
 
     #[test]

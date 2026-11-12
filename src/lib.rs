@@ -931,7 +931,7 @@ fn term_found(states: &HashMap<(&'static str, String), HookState>, now_ms: i64) 
             .agent
             .as_deref()
             .and_then(agents::get)
-            .filter(|a| !a.sessions && !a.bin.is_empty())
+            .filter(|a| a.polled())
         else {
             continue;
         };
@@ -1193,10 +1193,7 @@ fn scan_now(ctx: &Ctx) -> Result<Vec<Line>, String> {
     let gemini_hooks = hook_map("gemini")?;
     let vibe_hooks = hook_map("vibe")?;
     let mut term_hooks = HashMap::new();
-    for a in agents::AGENTS
-        .iter()
-        .filter(|a| !a.sessions && !a.bin.is_empty())
-    {
+    for a in agents::AGENTS.iter().filter(|a| a.polled()) {
         for (k, h) in reg.hook_sessions(a.id)? {
             if k.starts_with("term:") {
                 term_hooks.insert((a.id, k), h);

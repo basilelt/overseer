@@ -1089,7 +1089,7 @@ pub fn handle(ctx: &Ctx, r: &Request) -> (u16, Value) {
             else {
                 return err(400, "agent and event required");
             };
-            if crate::agents::get(agent).is_none_or(|a| a.id == "shell") {
+            if !crate::agents::task_agent(agent) {
                 return err(400, "agent must be a known coding agent");
             }
             let event = crate::hooks::canonical(event, body["notificationType"].as_str());

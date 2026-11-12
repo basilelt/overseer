@@ -692,7 +692,9 @@ impl Term {
     fn may_fall_back(&self) -> bool {
         let i = lock(&self.info);
         cfg!(unix)
-            && i.agent.as_deref().is_some_and(|a| a != "shell")
+            && i.agent
+                .as_deref()
+                .is_some_and(|a| !crate::agents::is_shell(a))
             && i.task_id.is_none()
             && !self.killed.load(Ordering::SeqCst)
     }

@@ -830,7 +830,7 @@ pub fn status(
 ) -> Value {
     let rows: Vec<Value> = crate::agents::AGENTS
         .iter()
-        .filter(|a| a.id != "shell")
+        .filter(|a| a.coding())
         .map(|a| {
             let t = targets.iter().find(|t| t.agent == a.id);
             let present = t.is_some_and(installed);

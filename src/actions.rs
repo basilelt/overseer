@@ -867,7 +867,10 @@ pub fn pending_terms(l: &Line) -> Vec<std::sync::Arc<crate::term::Term>> {
             let i = t.info();
             !i.exited
                 && i.line_id.as_deref() == Some(l.id.as_str())
-                && (is_stub_wrapper(&i.cmd) || i.agent.as_deref().is_some_and(|a| a != "shell"))
+                && (is_stub_wrapper(&i.cmd)
+                    || i.agent
+                        .as_deref()
+                        .is_some_and(|a| !crate::agents::is_shell(a)))
         })
         .collect()
 }

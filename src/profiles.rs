@@ -539,7 +539,7 @@ pub fn validate(s: &Store) -> Res<()> {
             ));
         }
         for (agent, c) in &p.agents {
-            let Some(a) = crate::agents::get(agent).filter(|a| a.id != "shell") else {
+            let Some(a) = crate::agents::get(agent).filter(|a| a.coding()) else {
                 return Err((400, format!("profile {}: unknown agent {agent}", p.id)));
             };
             let what = format!("profile {} / {}", p.id, a.name);
@@ -644,7 +644,7 @@ pub fn save(state_dir: &Path, s: &Store) -> Res<()> {
 pub fn to_json(s: &Store) -> Value {
     let agents: serde_json::Map<String, Value> = crate::agents::AGENTS
         .iter()
-        .filter(|a| a.id != "shell")
+        .filter(|a| a.coding())
         .map(|a| (a.id.to_string(), support_json(&support(a))))
         .collect();
     json!({

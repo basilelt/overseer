@@ -20,7 +20,7 @@ fn ids(q: &Value, key: &str, max: usize, err: &str) -> Res<Vec<&'static str>> {
     for v in list {
         let id = v.as_str().unwrap_or_default();
         let a = crate::agents::get(id).ok_or_else(|| bad(format!("unknown agent {id}")))?;
-        if a.id == "shell" {
+        if !a.coding() {
             return Err(bad("shell cannot join a quorum"));
         }
         if out.contains(&a.id) {
