@@ -634,6 +634,14 @@ describe('MockDaemon', () => {
     expect(await a.autoOrganize()).toEqual({ enabled: true });
   });
 
+  it('stores the agent tasks switch, on by default, and refuses a non-boolean', async () => {
+    const { a, m } = setup();
+    expect(await a.agentTasks()).toEqual({ enabled: true });
+    expect(await a.setAgentTasks(false)).toEqual({ enabled: false });
+    expect(await a.agentTasks()).toEqual({ enabled: false });
+    await expect(m.request('PUT', '/v1/tasks/agent-tasks', { enabled: 'no' })).rejects.toMatchObject({ status: 400, message: expect.stringContaining('enabled must be a boolean') });
+  });
+
   it('stores the agent messaging switch, on by default, and refuses a non-boolean', async () => {
     const { a, m } = setup();
     expect(await a.agentMessaging()).toEqual({ enabled: true });
