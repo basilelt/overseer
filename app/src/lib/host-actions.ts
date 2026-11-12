@@ -4,7 +4,8 @@ import ChevronsUpDown from '@lucide/svelte/icons/chevrons-up-down';
 import RotateCw from '@lucide/svelte/icons/rotate-cw';
 import Unplug from '@lucide/svelte/icons/unplug';
 import { t } from './i18n.svelte';
-import { hostName, toggled } from './hosts';
+import { toggled } from './host-choice';
+import { hostName } from './hosts';
 import type { MenuItem } from './menu';
 import { saveSettings, settings } from './settings.svelte';
 import { app } from './state.svelte';
@@ -30,8 +31,8 @@ export function hostMenu(key: string): MenuItem[] {
   const failed = (active ? app.conn : link.conn).phase === 'error';
   return [
     ...(active ? [] : [{ label: t('hosts.makeActive'), icon: ArrowLeftRight, run: () => app.switchHost(key) }]),
-    ...(failed ? [{ label: t('hosts.retry'), icon: RotateCw, run: () => (active ? app.connect(link.target) : app.removeHost(key).then(() => app.addHost(link.target, false))) }] : []),
-    { label: t(folded ? 'hosts.unfold' : 'hosts.fold', { name }), icon: ChevronsUpDown, run: () => toggleFold(key) },
+    ...(failed ? [{ label: t('common.retry'), icon: RotateCw, run: () => (active ? app.connect(link.target) : app.removeHost(key).then(() => app.addHost(link.target, false))) }] : []),
+    { label: t(folded ? 'ws.expand' : 'ws.collapse', { name }), icon: ChevronsUpDown, run: () => toggleFold(key) },
     { label: t('hosts.moveToWindow'), icon: AppWindow, disabled: app.hosts.length < 2, run: () => app.moveToWindow(key) },
     { label: t('hosts.disconnect'), icon: Unplug, danger: true, run: () => app.removeHost(key) },
   ];

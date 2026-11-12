@@ -634,6 +634,27 @@ fn auto_runner_respects_concurrency_in_fifo_order() {
 }
 
 #[test]
+fn an_auto_task_prompt_is_submitted_when_the_agent_drops_the_first_enter() {
+    let app = App::with_env(
+        "dropenter",
+        json!({"autoConcurrency": 1}),
+        &[("SB_STUB_DROP_ENTER", "1")],
+    );
+    let wt = app.fx.wt.to_string_lossy().into_owned();
+    let id = app.ok(
+        "POST",
+        "/v1/tasks",
+        json!({"title": "Ship it", "description": "carefully", "project": wt, "status": "auto"}),
+    )["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let term = wait_for(|| app.task(&id)["termId"].as_str().map(str::to_string));
+    let mut ws = app.ws(&term);
+    read_until(&mut ws, "got: Ship it  carefully");
+}
+
+#[test]
 fn auto_runner_waits_for_dependencies_and_starts_from_their_branch() {
     let app = App::new("deps", json!({"autoConcurrency": 2}));
     let wt = app.fx.wt.to_string_lossy().into_owned();
@@ -1407,7 +1428,7 @@ fn mcp_server_talks_to_the_daemon() {
         .collect();
     assert_eq!(replies.len(), 6, "{replies:?}");
     assert_eq!(replies[0]["result"]["protocolVersion"], "2025-06-18");
-    assert_eq!(replies[1]["result"]["tools"].as_array().unwrap().len(), 18);
+    assert_eq!(replies[1]["result"]["tools"].as_array().unwrap().len(), 19);
     let child = &replies[2]["result"]["structuredContent"];
     assert_eq!(child["status"], "pending");
     assert_eq!(child["origin"], "agent");
@@ -1421,6 +1442,78 @@ fn mcp_server_talks_to_the_daemon() {
     assert_eq!(
         t["progress"],
         json!({"done": 2, "total": 4, "note": "half"})
+    );
+}
+
+#[test]
+fn mcp_set_merged_follows_the_pull_request_target_branch() {
+    let app = App::new("mcp-landed", json!({"autoConcurrency": 0}));
+    let wt = app.fx.wt.to_string_lossy().into_owned();
+    let start = |title: &str| {
+        let t = app.ok(
+            "POST",
+            "/v1/tasks",
+            json!({"title": title, "description": "", "project": wt}),
+        );
+        let id = t["id"].as_str().unwrap().to_string();
+        let s = app.ok("POST", &format!("/v1/tasks/{id}/start"), json!({}));
+        let dir = Path::new(s["worktreePath"].as_str().unwrap()).to_path_buf();
+        std::fs::write(dir.join(format!("{title}.txt")), "work\n").unwrap();
+        common::git(&dir, &["add", "-A"]);
+        common::git(&dir, &["commit", "-q", "-m", title]);
+        (id, s["branch"].as_str().unwrap().to_string())
+    };
+    let pr = |branch: &str, state: &str| {
+        let key: String = format!("github.com/Acme/board {branch}")
+            .chars()
+            .map(|c| if c.is_ascii_alphanumeric() { c } else { '_' })
+            .collect();
+        std::fs::write(
+            app.fx.base.join("gh").join(format!("{key}.json")),
+            json!([{"number": 9, "url": "https://github.com/Acme/board/pull/9", "state": state,
+                    "isDraft": false, "title": "x", "baseRefName": "next", "statusCheckRollup": []}])
+            .to_string(),
+        )
+        .unwrap();
+    };
+    let set_merged = |id: &str| {
+        let msg = json!({"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+            "params": {"name": "set_task_status", "arguments": {"status": "merged"}}});
+        let mut c = Command::new(bin());
+        app.fx.env(&mut c);
+        c.env("OVERSEER_TASK_ID", id).arg("mcp");
+        let out = output(&mut c, Some(&format!("{msg}\n")));
+        let reply: Value = serde_json::from_slice(&out.stdout).unwrap();
+        (
+            reply["result"]["isError"] == true,
+            reply["result"].to_string(),
+        )
+    };
+
+    let (open, b) = start("open");
+    pr(&b, "OPEN");
+    let (err, text) = set_merged(&open);
+    assert!(
+        err && text.contains(&format!("{b} is not merged into next")),
+        "{text}"
+    );
+    assert_ne!(app.task(&open)["status"], "merged");
+    common::git(&app.fx.wt, &["branch", "next", &b]);
+    let (err, text) = set_merged(&open);
+    assert!(!err, "{text}");
+    assert_eq!(app.task(&open)["status"], "merged");
+
+    let (gone, b) = start("gone");
+    pr(&b, "MERGED");
+    let (err, text) = set_merged(&gone);
+    assert!(!err, "{text}");
+    assert_eq!(app.task(&gone)["status"], "merged");
+
+    let (lone, b) = start("lone");
+    let (err, text) = set_merged(&lone);
+    assert!(
+        err && text.contains(&format!("{b} is not merged into feature/AS-42-board")),
+        "{text}"
     );
 }
 
@@ -1787,7 +1880,10 @@ fn agents_are_detected_and_launched_from_the_table() {
         .collect();
     assert_eq!(
         ids,
-        ["claude", "codex", "gemini", "agy", "opencode", "amp", "copilot", "cursor", "shell"]
+        [
+            "claude", "codex", "gemini", "agy", "opencode", "amp", "copilot", "cursor", "vibe",
+            "shell"
+        ]
     );
     let get = |id: &str| {
         list.as_array()
@@ -1970,7 +2066,8 @@ fn agent_auto_approval_settings_persist_and_control_new_term_argv() {
     let default = app.ok("GET", "/v1/agents/settings", Value::Null);
     assert_eq!(default["autoApprove"]["claude"], true);
     assert_eq!(default["autoApprove"]["codex"], true);
-    assert_eq!(default["autoApprove"].as_object().unwrap().len(), 7);
+    assert_eq!(default["autoApprove"].as_object().unwrap().len(), 8);
+    assert_eq!(default["autoApprove"]["vibe"], true);
 
     let disabled = app.ok(
         "PUT",
@@ -2778,6 +2875,109 @@ fn profiles_apply_at_launch_with_workspace_and_task_precedence() {
 }
 
 #[test]
+fn task_type_picks_the_profile_between_explicit_and_workspace() {
+    let app = App::new("profiles-types", json!({"autoConcurrency": 0}));
+    let wt = app.fx.wt.to_string_lossy().into_owned();
+    let p = app.ok("GET", "/v1/profiles", Value::Null);
+    assert_eq!(
+        p["taskTypes"],
+        json!(["fix", "feature", "engineering", "refactor", "triage"])
+    );
+    assert_eq!(p["types"], json!({}));
+    let bad = app.req(
+        "PUT",
+        "/v1/profiles",
+        json!({"types": {"migration": "max"}}),
+    );
+    assert_eq!(bad.0, 400);
+    assert!(bad.1["error"]
+        .as_str()
+        .unwrap()
+        .starts_with("unknown task type \"migration\""));
+    assert_eq!(
+        app.req("PUT", "/v1/profiles", json!({"types": {"fix": "ghost"}}))
+            .0,
+        400
+    );
+    let saved = app.ok(
+        "PUT",
+        "/v1/profiles",
+        json!({
+            "scopes": {wt.clone(): "economy"},
+            "types": {"refactor": "max", "triage": "none"},
+        }),
+    );
+    assert_eq!(saved["types"]["refactor"], "max");
+
+    let refactor = app.ok(
+        "POST",
+        "/v1/tasks",
+        json!({"title": "migrate", "project": wt, "taskType": "refactor"}),
+    );
+    assert_eq!(refactor["taskType"], "refactor");
+    assert_eq!(refactor["effort"], "");
+    let triage = app.ok(
+        "POST",
+        "/v1/tasks",
+        json!({"title": "logs", "project": wt, "taskType": "triage", "agent": "gemini"}),
+    );
+    assert_eq!(triage["effort"], "high");
+    let r = app.req(
+        "POST",
+        "/v1/tasks",
+        json!({"title": "x", "project": wt, "taskType": "chore"}),
+    );
+    assert_eq!(r.0, 400);
+    assert_eq!(
+        r.1["error"],
+        "taskType must be one of fix, feature, engineering, refactor, triage"
+    );
+
+    let start = |id: &str| {
+        let s = app.ok("POST", &format!("/v1/tasks/{id}/start"), json!({}));
+        app.ok(
+            "GET",
+            &format!("/v1/terms/{}", s["termId"].as_str().unwrap()),
+            Value::Null,
+        )
+    };
+    let term = start(refactor["id"].as_str().unwrap());
+    let cmd = strs(&term["cmd"]);
+    assert_eq!(cmd[cmd.len() - 4..], ["--model", "opus", "--effort", "max"]);
+    assert_eq!(term["profile"]["id"], "max");
+
+    let feature = app.ok(
+        "POST",
+        "/v1/tasks",
+        json!({"title": "small", "project": wt}),
+    );
+    let fid = feature["id"].as_str().unwrap();
+    let patched = app.ok(
+        "PATCH",
+        &format!("/v1/tasks/{fid}"),
+        json!({"taskType": "feature", "effort": ""}),
+    );
+    assert_eq!(patched["taskType"], "feature");
+    let term = start(fid);
+    assert_eq!(term["profile"]["id"], "economy");
+
+    let explicit = app.ok(
+        "POST",
+        "/v1/tasks",
+        json!({"title": "pinned", "project": wt, "taskType": "refactor", "profile": "balanced"}),
+    );
+    let term = start(explicit["id"].as_str().unwrap());
+    assert_eq!(term["profile"]["id"], "balanced");
+
+    let cleared = app.ok(
+        "PATCH",
+        &format!("/v1/tasks/{}", triage["id"].as_str().unwrap()),
+        json!({"taskType": null}),
+    );
+    assert!(cleared.get("taskType").is_none());
+}
+
+#[test]
 fn profiles_list_and_apply_gemini_and_antigravity_subagent_models_over_http() {
     let app = App::new("gsubs", json!({"autoConcurrency": 0}));
     let wt = app.fx.wt.to_string_lossy().into_owned();
@@ -3370,6 +3570,7 @@ fn closing_an_idle_codex_session_accepts_its_dim_composer_prompt() {
     send(&mut ws, "busy\r");
     let line = wait_for(|| line_of(&app, &id));
     let lid = line["line"]["id"].as_str().unwrap().to_string();
+    wait(|| line_json(&app, &lid)["local"]["busy"] == true);
     send(&mut ws, "done\r");
     wait(|| line_json(&app, &lid)["local"]["busy"] == false);
 
@@ -3600,6 +3801,29 @@ fn direct_feedback_attaches_files_with_gh() {
 }
 
 #[test]
+fn direct_feedback_attaches_a_screen_recording_and_keeps_its_action_log() {
+    let fx = Fx::new("feedback-recording", 0);
+    let _d = fx.daemon(false);
+    let rec = upload(&fx, "recording-20261109-162639.webm", "WEBMDATA");
+    let report = "It broke\n\n### Attachments\n@ATTACHMENTS@\n\n<details><summary>Recorded actions (0:05)</summary>\n\n```text\n0:00  start  Recording started with screen video\n0:03  click  button \"Settings\"\n```\n\n</details>\n\n_Sent from Overseer._";
+    let body = json!({"repo": "o/r", "title": "Bug: x", "labels": ["bug"], "body": report, "attachments": [{"path": rec["path"], "name": rec["name"]}]});
+    let (code, out) = fx.req("POST", "/v1/feedback/direct", &body.to_string());
+    assert_eq!(code, 201, "{out}");
+    assert!(!out.contains("attachWarning"), "{out}");
+    let log = gh_log(&fx);
+    assert!(
+        log.contains(&format!("--attach={}", rec["path"].as_str().unwrap())),
+        "{log}"
+    );
+    let issue = std::fs::read_to_string(fx.base.join("gh.log.body")).unwrap();
+    assert!(issue.contains("Recorded actions (0:05)"), "{issue}");
+    assert!(
+        issue.contains("0:03  click  button \"Settings\""),
+        "{issue}"
+    );
+}
+
+#[test]
 fn direct_feedback_reports_files_gh_refused_but_keeps_the_issue() {
     let fx = Fx::new("feedback-attach-partial", 0);
     let _d = fx.daemon(false);
@@ -3649,4 +3873,274 @@ fn feedback_rejects_attachments_github_would_not_accept() {
     let outside = json!({"path": "/etc/passwd", "name": "passwd.png"});
     assert_eq!(direct(&fx, "o/r", &[&outside]).0, 400);
     assert!(gh_log(&fx).is_empty());
+}
+
+fn install_amp(app: &App) -> (String, WebSocketLike) {
+    let wt = app.fx.wt.to_string_lossy().into_owned();
+    let t = app.ok(
+        "POST",
+        "/v1/terms",
+        json!({"install": "amp", "cwd": wt, "cols": 120, "rows": 32}),
+    );
+    assert_eq!(
+        t["cmd"],
+        json!(["npm install -g --allow-scripts=@ampcode/cli @sourcegraph/amp"])
+    );
+    assert_eq!(t["title"], "Install Amp");
+    assert!(t["agent"].is_null());
+    let id = t["id"].as_str().unwrap().to_string();
+    let ws = app.ws(&id);
+    (id, ws)
+}
+
+type WebSocketLike = tungstenite::WebSocket<UnixStream>;
+
+fn exit_code(app: &App, id: &str) -> Value {
+    wait_for(|| {
+        let t = app.ok("GET", &format!("/v1/terms/{id}"), Value::Null);
+        (t["exited"] == true).then(|| t["exitCode"].clone())
+    })
+}
+
+#[test]
+fn install_term_runs_the_agent_install_command_and_exits_with_its_status() {
+    let app = App::new("install", json!({}));
+    let (id, mut ws) = install_amp(&app);
+    read_until(&mut ws, "added 1 package (stub)");
+    assert_eq!(exit_code(&app, &id), 0);
+    let log = std::fs::read_to_string(app.fx.base.join("stub.log")).unwrap();
+    assert!(
+        log.contains("npm install -g --allow-scripts=@ampcode/cli @sourcegraph/amp"),
+        "{log}"
+    );
+}
+
+#[test]
+fn install_term_reports_a_failed_install_and_keeps_its_exit_code() {
+    let app = App::with_env("installfail", json!({}), &[("SB_NPM_FAIL", "1")]);
+    let (id, mut ws) = install_amp(&app);
+    read_until(&mut ws, "Install failed with exit code 1");
+    assert_eq!(exit_code(&app, &id), 1);
+}
+
+#[test]
+fn install_term_rejects_agents_without_an_install_command() {
+    let app = App::new("installbad", json!({}));
+    let (code, v) = app.req("POST", "/v1/terms", json!({"install": "agy"}));
+    assert_eq!(
+        (code, v["error"].as_str()),
+        (400, Some("Antigravity has no install command"))
+    );
+    let (code, v) = app.req("POST", "/v1/terms", json!({"install": "nope"}));
+    assert_eq!(
+        (code, v["error"].as_str()),
+        (400, Some("unknown agent nope"))
+    );
+    let (code, v) = app.req(
+        "POST",
+        "/v1/terms",
+        json!({"install": "amp", "agent": "amp"}),
+    );
+    assert_eq!(
+        (code, v["error"].as_str()),
+        (400, Some("give either install, agent or cmd"))
+    );
+}
+
+fn resumes_of(app: &App, sid: &str) -> usize {
+    stub_log(app)
+        .lines()
+        .filter(|l| l.contains(&format!("--resume {sid}")))
+        .count()
+}
+
+fn resume_line(app: &App, line: &str) -> Value {
+    let (code, r) = app.req(
+        "POST",
+        &format!("/v1/lines/{line}/resume?dryRun=false"),
+        json!({"target": "term"}),
+    );
+    assert!(code == 200 || code == 201, "{code}: {r}");
+    r
+}
+
+#[test]
+fn resuming_again_while_the_agent_waits_on_its_trust_prompt_reuses_its_term() {
+    // Given a stopped claude session whose resume stops at the folder trust prompt, before any hook
+    // When Resume is pressed again while that prompt is shown
+    // Then the same term comes back, no second agent starts, and trusting it brings the session back
+    let sid = "cccccccc-0000-4000-8000-000000000071";
+    let app = App::new("resumetrust", json!({}));
+    let (tid, line) = claude_term(&app, json!(["claude", "--session-id", sid]), sid);
+    app.ok(
+        "POST",
+        &format!("/v1/terms/{tid}/kill"),
+        json!({"confirm": true}),
+    );
+    wait(|| line_json(&app, &line)["local"]["pid"].is_null());
+    std::fs::write(app.fx.base.join("stub.log.trust"), "").unwrap();
+    let first = resume_line(&app, &line)["id"].as_str().unwrap().to_string();
+    let mut ws = app.ws(&first);
+    read_until(&mut ws, "Yes, I trust this folder");
+    let again = resume_line(&app, &line);
+    assert_eq!(again["id"], first.as_str());
+    assert_eq!(resumes_of(&app, sid), 1);
+    assert_eq!(line_json(&app, &line)["local"]["pid"], Value::Null);
+    send(&mut ws, "trust\r");
+    wait(|| line_json(&app, &line)["local"]["pid"].is_u64());
+    assert_eq!(resumes_of(&app, sid), 1);
+    app.ok(
+        "POST",
+        &format!("/v1/terms/{first}/kill"),
+        json!({"confirm": true}),
+    );
+}
+
+#[test]
+fn resuming_a_paused_session_twice_does_not_press_enter_on_its_trust_prompt() {
+    // Given a paused claude session resumed from its held stub, now at the folder trust prompt
+    // When Resume is pressed a second time
+    // Then no Enter reaches the prompt (it would answer "No, exit"), and the agent still waits on it
+    let sid = "cccccccc-0000-4000-8000-000000000072";
+    let app = App::new("resumeheldtrust", json!({}));
+    let (tid, line) = claude_term(&app, json!(["claude", "--session-id", sid]), sid);
+    let mut ws = app.ws(&tid);
+    read_until(&mut ws, "❯");
+    app.ok(
+        "POST",
+        &format!("/v1/lines/{line}/hold?dryRun=false"),
+        Value::Null,
+    );
+    wait(|| line_json(&app, &line)["line"]["state"] == "held");
+    let mut ws = app.ws(&tid);
+    read_until(&mut ws, "press Enter to resume");
+    std::fs::write(app.fx.base.join("stub.log.trust"), "").unwrap();
+    assert_eq!(resume_line(&app, &line)["id"], tid.as_str());
+    read_until(&mut ws, "Yes, I trust this folder");
+    wait(|| line_json(&app, &line)["local"]["heldReason"] != "user");
+    assert_eq!(resume_line(&app, &line)["id"], tid.as_str());
+    send(&mut ws, "trust\r");
+    wait(|| line_json(&app, &line)["local"]["pid"].is_u64());
+    assert_eq!(resumes_of(&app, sid), 1);
+    app.ok(
+        "POST",
+        &format!("/v1/terms/{tid}/kill"),
+        json!({"confirm": true}),
+    );
+}
+
+#[test]
+fn closing_a_session_still_at_its_trust_prompt_ends_the_starting_agent() {
+    // Given a stopped claude session resumed into a term that waits on the folder trust prompt
+    // When the session is closed
+    // Then that term ends instead of being left behind with an agent nobody sees
+    let sid = "cccccccc-0000-4000-8000-000000000073";
+    let app = App::new("closetrust", json!({}));
+    let (tid, line) = claude_term(&app, json!(["claude", "--session-id", sid]), sid);
+    app.ok(
+        "POST",
+        &format!("/v1/terms/{tid}/kill"),
+        json!({"confirm": true}),
+    );
+    wait(|| line_json(&app, &line)["local"]["pid"].is_null());
+    std::fs::write(app.fx.base.join("stub.log.trust"), "").unwrap();
+    let starting = resume_line(&app, &line)["id"].as_str().unwrap().to_string();
+    let mut ws = app.ws(&starting);
+    read_until(&mut ws, "Yes, I trust this folder");
+    app.ok(
+        "POST",
+        &format!("/v1/lines/{line}/close?dryRun=false"),
+        Value::Null,
+    );
+    wait(|| app.ok("GET", &format!("/v1/terms/{starting}"), Value::Null)["exited"] == true);
+}
+
+#[test]
+fn two_quick_resumes_of_a_paused_session_press_enter_on_its_stub_once() {
+    // Given a paused claude session whose agent will stop at the folder trust prompt
+    // When Resume is pressed twice in a row, before the stub has started the agent
+    // Then only the first press reaches the stub, so the prompt still waits for an answer
+    let sid = "cccccccc-0000-4000-8000-000000000074";
+    let app = App::new("resumeheldtwice", json!({}));
+    let (tid, line) = claude_term(&app, json!(["claude", "--session-id", sid]), sid);
+    let mut ws = app.ws(&tid);
+    read_until(&mut ws, "❯");
+    app.ok(
+        "POST",
+        &format!("/v1/lines/{line}/hold?dryRun=false"),
+        Value::Null,
+    );
+    wait(|| line_json(&app, &line)["line"]["state"] == "held");
+    let mut ws = app.ws(&tid);
+    read_until(&mut ws, "press Enter to resume");
+    std::fs::write(app.fx.base.join("stub.log.trust"), "").unwrap();
+    assert_eq!(resume_line(&app, &line)["id"], tid.as_str());
+    assert_eq!(resume_line(&app, &line)["id"], tid.as_str());
+    read_until(&mut ws, "Yes, I trust this folder");
+    std::thread::sleep(std::time::Duration::from_millis(500));
+    send(&mut ws, "trust\r");
+    wait(|| line_json(&app, &line)["local"]["pid"].is_u64());
+    assert_eq!(resumes_of(&app, sid), 1);
+    app.ok(
+        "POST",
+        &format!("/v1/terms/{tid}/kill"),
+        json!({"confirm": true}),
+    );
+}
+
+// Given a daemon started before an installer created ~/.local/bin
+// When the agent lands there and the app asks for a rescan
+// Then the agent is detected, /v1/env shows the dir and new terms find the agent
+#[test]
+fn rescan_finds_an_agent_installed_into_a_dir_created_after_start() {
+    let app = App::new("rescan-new-dir", json!({}));
+    let cursor = |agents: &Value| {
+        agents
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|a| a["id"] == "cursor")
+            .unwrap()["installed"]
+            .clone()
+    };
+    assert_eq!(
+        cursor(&app.ok("POST", "/v1/agents/rescan", Value::Null)),
+        false
+    );
+    let dir = app.fx.base.join("home/.local/bin");
+    assert!(!dir.exists());
+    std::fs::create_dir_all(&dir).unwrap();
+    let stub = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/stubs/agent");
+    std::fs::copy(stub, dir.join("cursor-agent")).unwrap();
+
+    assert_eq!(
+        cursor(&app.ok("POST", "/v1/agents/rescan", Value::Null)),
+        true
+    );
+    assert_eq!(cursor(&app.ok("GET", "/v1/agents", Value::Null)), true);
+    let dir = dir.to_string_lossy().into_owned();
+    let env = app.ok("GET", "/v1/env", Value::Null);
+    assert!(
+        env["path"].as_str().unwrap().split(':').any(|d| d == dir),
+        "{env}"
+    );
+    let wt = app.fx.wt.to_string_lossy().into_owned();
+    let t = app.ok(
+        "POST",
+        "/v1/terms",
+        json!({"cwd": wt, "cmd": ["cursor-agent"], "cols": 80, "rows": 24}),
+    );
+    let mut ws = app.ws(t["id"].as_str().unwrap());
+    read_until(&mut ws, "cursor-agent ready");
+    send(&mut ws, "exit\n");
+
+    let t = app.ok(
+        "POST",
+        "/v1/tasks",
+        json!({"title": "cur", "description": "", "project": wt, "agent": "cursor"}),
+    );
+    let id = t["id"].as_str().unwrap().to_string();
+    let s = app.ok("POST", &format!("/v1/tasks/{id}/start"), json!({}));
+    let mut ws = app.ws(s["termId"].as_str().unwrap());
+    read_until(&mut ws, "cursor-agent ready");
 }

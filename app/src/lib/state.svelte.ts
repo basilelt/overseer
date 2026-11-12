@@ -7,13 +7,13 @@ import { groupItems, sidebarItems, stableItems, type SidebarItem } from './group
 import { applyEvent, deepEqual, mergeFetched, touchedKey, type Snapshot, type Touched } from './reduce';
 import { rememberHost, rememberWorkspace, saveSettings, settings, workspaceFor } from './settings.svelte';
 import { hostKey, isMainWindow } from './window';
-import { HostLink, type LinkChange } from './host-link.svelte';
-import { ordered, restoreHosts } from './hosts';
+import type { HostLink, LinkChange } from './host-link.svelte';
 import { normalizeUrl } from './browser';
 import { pages } from './session-pages.svelte';
 import type { EntryKind } from './notifications';
 import type { Proposal } from './organize';
 import { dispatch, type NoticeInput } from './os-notify';
+import { center } from './notifications.svelte';
 import type { Activity, AgentInfo, ConnState, DaemonEvent, Effort, HostTarget, LocalLine, LocalNetworkReport, ProfilesStore, Project, Term, TaskMessage } from './types';
 import { isNoRoute } from './localnet';
 import { startupTarget } from './conn';
@@ -28,6 +28,7 @@ import { t } from './i18n.svelte';
 import { browsers, openOutside } from './browsers.svelte';
 import { ui } from './mobile/ui.svelte';
 import { feedback } from './feedback.svelte';
+import { tap } from './record-state.svelte';
 
 export type View = 'agents' | 'kanban' | 'browser';
 export type Overlay = null | 'taskDetail' | 'palette' | 'connect' | 'settings' | 'task' | 'project' | 'review' | 'ports' | 'system' | 'usage' | 'broadcast' | 'holdAll' | 'name' | 'workspaceNew' | 'profiles' | 'shortcuts' | 'file' | 'notifications' | 'closeTab' | 'switchboardImport' | 'uninstall';
@@ -64,9 +65,12 @@ class AppState {
   others = $state.raw<HostLink[]>([]);
   /** @internal */
   hostOrder = $state.raw<string[]>([]);
-  hosts = $derived(this.link ? ordered(this.hostOrder, [this.link, ...this.others], (l) => l.key) : this.others);
+  // Sections keep the order hosts joined the window, whichever is active.
+  hosts = $derived(this.link ? [this.link, ...this.others].sort((a, b) => this.hostOrder.indexOf(a.key) - this.hostOrder.indexOf(b.key)) : this.others);
   /** @internal */
   attachOnReady = false;
+  /** @internal Once the window shows a second host: the link of each client, which takes its connection state. */
+  linkOf: WeakMap<DaemonClient, HostLink> | null = null;
   /** @internal */
   slots = 0;
   conn = $state<ConnState>({ phase: 'idle', target: LOCAL });
@@ -74,6 +78,7 @@ class AppState {
   data = $state.raw<Snapshot>({ lines: [], terms: [], tasks: [], activity: {} });
   projects = $state.raw<Project[]>([]);
   agents = $state.raw<AgentInfo[]>([]);
+  private installing = new Map<string, string>();
   profiles = $state.raw<ProfilesStore | null>(null);
   nextProfile = $state<string | null>(null);
   connected = $state(false);
@@ -84,8 +89,17 @@ class AppState {
   overlay = $state<Overlay>(null);
   overlayArg = $state<string | null>(null);
   fileArg = $state<FileArg | null>(null);
-  selectedKey = $state<string | null>(null);
+  #selectedKey = $state<string | null>(null);
+  get selectedKey(): string | null {
+    return this.#selectedKey;
+  }
+  set selectedKey(key: string | null) {
+    this.#selectedKey = key;
+    if (key) center.markSubjectRead(key);
+  }
   panelOpen = $state(true);
+  liveReview = $state(false);
+  gitWorktree = $state<{ project: string; path: string } | null>(null);
   sidebarOpen = $state(true);
   browserUrl = $state('');
   toast = $state<{ text: string; kind: 'info' | 'error'; action?: ToastAction; progress?: number } | null>(null);
@@ -99,8 +113,10 @@ class AppState {
   ws = $state.raw<WsData>(EMPTY_WS);
   wsPersistent = $state(true);
   sidebarMode = $state<SidebarMode>(settings.sidebarMode ?? 'workspaces');
+  sidebarGit = $state(settings.sidebarGit ?? false);
   workspaceId = $state<string>(NO_WORKSPACE);
-  private following: { id: string; goToWorkspace: boolean } | null = null;
+  /** @internal */
+  following: { id: string; goToWorkspace: boolean } | null = null;
   private pendingTab: 'graph' | 'worktrees' | null = initialTab();
   private wsChosen = false;
   multi = $state.raw<Set<string>>(new Set());
@@ -121,13 +137,16 @@ class AppState {
   unsubscribe: (() => void) | null = null;
   private listeners = new Set<(prev: Snapshot, next: Snapshot, e: DaemonEvent) => void>();
   private toastTimer: ReturnType<typeof setTimeout> | undefined;
-  private activityTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  /** @internal */
+  activityTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private wsRetry: ReturnType<typeof setTimeout> | undefined;
   private wsAttempt = 0;
   private refreshing = 0;
-  private added = new Map<string, Term>();
+  /** @internal */
+  added = new Map<string, Term>();
   private eventSeq = 0;
-  private touched: Touched = new Map();
+  /** @internal */
+  touched: Touched = new Map();
 
   get api(): Api {
     if (!this.client) throw new Error('not connected');
@@ -156,9 +175,9 @@ class AppState {
       return this.open('connect');
     }
     if (!platform.mobile) await this.client.dropSlots?.().catch(() => {});
-    const restore = !platform.mobile && isMainWindow() && settings.hostReconnect && !settings.explicitlyDisconnected ? restoreHosts(settings.windowHosts, target) : [];
+    const restore = !platform.mobile && isMainWindow() && settings.hostReconnect && !settings.explicitlyDisconnected && (settings.windowHosts?.length ?? 0) > 1 ? settings.windowHosts : null;
     await this.connect(target);
-    for (const h of restore) void this.addHost(h, false);
+    if (restore) void hostOps().then((m) => m.restore(this, restore, target));
     if (this.conn.phase === 'error' && target.kind !== 'local') this.open('connect');
   }
 
@@ -185,19 +204,18 @@ class AppState {
   /** `add` keeps the hosts already in the window and shows the target beside them. */
   async connect(target: HostTarget, how: 'replace' | 'add' = 'replace') {
     const key = hostKey(target);
-    if (this.link && key !== this.link.key) {
-      if (this.others.some((l) => l.key === key)) return this.switchHost(key);
-      if (how === 'add' && (this.link.ready || this.others.length)) return this.addHost(target, true);
+    if (key !== hostKey(this.conn.target) && (this.others.some((l) => l.key === key) || (how === 'add' && (this.connected || this.others.length)))) {
+      return hostOps().then((m) => (this.others.some((l) => l.key === key) ? m.switchHost(this, key) : m.addHost(this, target, true)));
     }
     const c = this.client ?? (this.client = await getClient());
-    const renewed = this.link?.client !== c;
-    const link = renewed || !this.link ? (this.link = new HostLink(target, c)) : this.link;
-    const prevKey = link.key;
-    link.ready = false;
-    link.target = target;
-    if (renewed && !this.others.length) this.hostOrder = [key];
-    else if (!this.hostOrder.includes(key)) this.hostOrder = this.hostOrder.includes(prevKey) ? this.hostOrder.map((k) => (k === prevKey ? key : k)) : [...this.hostOrder, key];
-    link.listener = this.onActiveState;
+    const link = this.linkOf?.get(c);
+    if (!link && !this.others.length) this.link = null;
+    if (link) {
+      const prev = link.key;
+      link.ready = false;
+      link.target = target;
+      if (prev !== key) this.hostOrder = this.hostOrder.map((k) => (k === prev ? key : k));
+    }
     this.attachOnReady = false;
     this.unsubscribe?.();
     this.cancelWsRetry();
@@ -207,15 +225,22 @@ class AppState {
     this.conn = { phase: 'connecting', target };
     if (target.kind === 'ssh') await this.askLocalNetwork(target.host);
     try {
-      await link.connect({ serverBinDir: settings.serverBinDir || undefined });
-      if (this.link !== link) return;
+      // A window with several hosts gives each client a link that takes its state; otherwise it is ours.
+      const onState = (st: ConnState) => {
+        const l = this.linkOf?.get(c);
+        if (l) l.onState(st);
+        else if (this.client === c) this.onActiveState(st, this.conn);
+      };
+      await c.connect(target, onState, { serverBinDir: settings.serverBinDir || undefined });
+      if (this.client !== c) return;
+      if (link) link.ready = true;
       this.connected = true;
       rememberHost(target, isMainWindow());
-      this.saveHosts();
+      if (link) void hostOps().then((m) => m.saveHosts(this));
       this.unsubscribe = c.subscribe((e) => this.onEvent(e));
       await this.refresh();
     } catch (err) {
-      if (this.link !== link) return;
+      if (this.client !== c) return;
       const error = this.conn.phase === 'error' && this.conn.error ? this.conn.error : String((err as Error)?.message ?? err);
       this.conn = { phase: 'error', target, error, resolved: this.conn.resolved };
       if (target.kind === 'ssh' && isNoRoute(error)) this.localNet = await this.probeLocalNetwork(target.host);
@@ -232,7 +257,7 @@ class AppState {
     this.conn = s;
     if (s.phase === 'connected' && this.attachOnReady) {
       this.attachOnReady = false;
-      void this.attach();
+      void hostOps().then((m) => m.attach(this));
     } else if (resumed || (prev.phase === 'reconnecting' && s.phase === 'connected' && this.connected)) this.refresh().catch(() => {});
   };
 
@@ -255,18 +280,13 @@ class AppState {
   resetHost() {
     this.data = EMPTY;
     this.agents = [];
+    this.installing.clear();
     this.profiles = null;
     this.nextProfile = null;
     this.selectedKey = null;
     this.ws = EMPTY_WS;
     this.workspaceId = NO_WORKSPACE;
     this.wsChosen = false;
-    this.following = null;
-    this.multi = new Set();
-    this.touched.clear();
-    this.added.clear();
-    for (const t of this.activityTimers.values()) clearTimeout(t);
-    this.activityTimers.clear();
     forgetLayouts();
     workspace.layout = EMPTY_LAYOUT;
   }
@@ -291,32 +311,13 @@ class AppState {
     return hostOps().then((m) => m.moveToWindow(this, key));
   }
 
-  /** @internal */
-  async attach() {
-    const link = this.link;
-    if (!link || !this.client) return;
-    this.connected = true;
-    this.unsubscribe?.();
-    this.unsubscribe = this.client.subscribe((e) => this.onEvent(e));
-    await this.refresh();
-  }
 
-  /** @internal */
-  otherListeners = new Set<LinkChange>();
 
-  /** Session changes on the background hosts of this window. */
-  onOtherChange(fn: LinkChange): () => void {
-    this.otherListeners.add(fn);
-    return () => this.otherListeners.delete(fn);
-  }
+  /** Session changes on the background hosts of this window (notifications). */
+  onOther: LinkChange | null = null;
 
-  /** @internal */
-  saveHosts() {
-    if (!isMainWindow() || this.mobile) return;
-    const list = this.hosts.filter((l) => l.target.kind !== 'direct').map((l) => l.target);
-    if (list.length < 2 && !settings.windowHosts?.length) return;
-    saveSettings({ windowHosts: list.length < 2 ? [] : list });
-  }
+
+
 
   async refresh() {
     if (!this.connected) return;
@@ -452,7 +453,7 @@ class AppState {
     const pref = live.find((w) => w.id === want);
     if (pref) return pref.id;
     const busy = live.filter((w) => this.aggregates.get(w.id)?.agents).sort((a, b) => Number(b.pinned) - Number(a.pinned) || a.rank - b.rank);
-    return (busy[0] ?? live[0])?.id ?? NO_WORKSPACE;
+    return (busy[0] ?? live.find((w) => !w.parentId) ?? live[0])?.id ?? NO_WORKSPACE;
   }
 
   membersOf(workspaceId: string) {
@@ -471,6 +472,7 @@ class AppState {
   }
 
   selectWorkspace(id: string) {
+    this.following = null;
     this.workspaceId = id;
     this.wsChosen = true;
     rememberWorkspace(this.conn.target, id);
@@ -481,8 +483,19 @@ class AppState {
     this.menu = { items, x: at.clientX, y: at.clientY, label };
   }
 
+  setSidebarGit(on: boolean) {
+    this.sidebarGit = on;
+    if (on) this.sidebarOpen = true;
+    saveSettings({ sidebarGit: on });
+  }
+
+  toggleSourceControl() {
+    this.setSidebarGit(!(this.sidebarGit && this.sidebarOpen));
+  }
+
   setSidebarMode(mode: SidebarMode) {
     this.sidebarMode = mode;
+    if (this.sidebarGit) this.setSidebarGit(false);
     saveSettings({ sidebarMode: mode });
   }
 
@@ -671,16 +684,40 @@ class AppState {
     return term.id;
   }
 
-  async newSession(agent: string, opts: { cwd?: string; model?: string; effort?: Effort; worktree?: boolean; profile?: string } = {}): Promise<Term> {
+  async installAgent(id: string): Promise<Term> {
+    const term = await this.newSession('shell', { install: id, worktree: false });
+    this.installing.set(term.id, id);
+    void this.installsEnded(this.data.terms);
+    return term;
+  }
+
+  async installsEnded(terms: Term[]): Promise<void> {
+    if (!this.installing.size) return;
+    const ended = terms.filter((x) => x.exited && this.installing.has(x.id)).map((x) => ({ id: this.installing.get(x.id)!, ok: x.exitCode === 0 }));
+    if (!ended.length) return;
+    for (const x of terms) if (x.exited) this.installing.delete(x.id);
+    try {
+      this.agents = await this.api.rescanAgents();
+    } catch (e) {
+      this.notify(String((e as Error)?.message ?? e), 'error');
+      return;
+    }
+    for (const e of ended) {
+      const a = this.agents.find((x) => x.id === e.id);
+      if (a) this.notify(t(a.installed ? 'agents.installed' : e.ok ? 'agents.installNotFound' : 'agents.installFailed', { name: a.name }), a.installed ? 'info' : 'error');
+    }
+  }
+
+  async newSession(agent: string, opts: { cwd?: string; model?: string; effort?: Effort; worktree?: boolean; profile?: string; install?: string } = {}): Promise<Term> {
     const scoped = this.sidebarMode === 'workspaces' ? this.currentWorkspace : null;
     // A subject has no directory: the daemon starts the term in its cwd and assigns it.
     // A repo workspace is assigned too: the term runs in a worktree outside its path until it reports a line.
     const subject = scoped && (!opts.cwd || (scoped.kind !== 'subject' && !!scoped.path && within(opts.cwd, scoped.path))) ? scoped.id : undefined;
-    const cwd = opts.cwd ?? scoped?.path ?? undefined;
+    const cwd = opts.cwd ?? (scoped?.kind === 'subject' ? undefined : (scoped?.cwd ?? scoped?.path)) ?? undefined;
     const worktree = (opts.worktree ?? (agent !== 'shell' && !settings.sessionsInCheckout)) && this.inProject(cwd ?? (subject ? (scoped?.cwd ?? undefined) : undefined));
     const size = { cols: 120, rows: 32, ...(worktree ? { worktree: true } : {}) };
     const profile = agent === 'shell' ? undefined : (opts.profile ?? this.nextProfile ?? undefined);
-    const term = await this.api.createTerm(agent === 'shell' ? { cwd, ...(subject ? { workspaceId: subject } : {}), ...size } : { agent, cwd, ...(subject ? { workspaceId: subject } : {}), model: opts.model || undefined, effort: opts.effort, ...(profile ? { profile } : {}), ...size });
+    const term = await this.api.createTerm(agent === 'shell' ? { cwd, ...(opts.install ? { install: opts.install } : {}), ...(subject ? { workspaceId: subject } : {}), ...size } : { agent, cwd, ...(subject ? { workspaceId: subject } : {}), model: opts.model || undefined, effort: opts.effort, ...(profile ? { profile } : {}), ...size });
     if (profile && !opts.profile) this.nextProfile = null;
     this.followSession(term, false);
     return term;
@@ -718,6 +755,7 @@ class AppState {
     if (!p) return;
     const key = newTabKey(kind, p);
     this.view = 'agents';
+    if (ui.layout === 'phone') ui.tab = 'agents';
     update((l) => openInFocused(l, key));
     this.selectedKey = key;
   }
@@ -800,6 +838,7 @@ class AppState {
   }
 
   notify(text: string, kind: 'info' | 'error' = 'info', action?: ToastAction, entry: EntryKind = 'error') {
+    if (kind === 'error') tap.note?.('toast', text);
     if (kind === 'error') dispatch(this, { kind: entry, title: text, coalesce: `error:${text}`, toast: false }, () => {});
     this.show(text, kind, action);
   }
@@ -900,5 +939,6 @@ onTabClosed((key, end) => {
 });
 
 app.onChange((prev, next) => {
+  if (prev.terms !== next.terms) void app.installsEnded(next.terms);
   if (prev.terms !== next.terms && next.terms.some((t) => t.exited)) void tabLazy().then((m) => m.closeCleanExits(app, prev.terms, next.terms));
 });

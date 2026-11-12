@@ -3,7 +3,7 @@ import { isLocale, setLocale, systemLocale, type Locale } from './i18n.svelte';
 import { DEFAULT_SCROLLBACK_LINES } from './scroll';
 import type { Agent, Effort, HostTarget, Project } from './types';
 import type { LinkTarget } from './links';
-import type { HostChoice, HostWindows } from './hosts';
+import type { HostChoice, HostWindows } from './host-choice';
 import { hostKey } from './window';
 import { DEFAULT_KINDS, DEFAULT_QUIET, migrateKinds, type Delivery, type NotifyKind, type QuietHours } from './notify-prefs';
 
@@ -34,6 +34,8 @@ export interface Settings {
   defaultEffort: Effort;
   autoConcurrency: number;
   autoOrganize: boolean;
+  agentMessaging: boolean;
+  agentTasks: boolean;
   kanbanView: 'board' | 'matrix';
   recentHosts: HostTarget[];
   serverBinDir: string;
@@ -51,6 +53,7 @@ export interface Settings {
   hooksNever: string[];
   keepRunningOffered?: string[];
   sidebarMode?: 'workspaces' | 'status';
+  sidebarGit?: boolean;
   /** Expanded workspaces, per host. */
   spacesOpen?: Record<string, string[]>;
   /** Opened closed-intervals of the by-state view, per host. */
@@ -111,6 +114,8 @@ export const DEFAULT_SETTINGS: Settings = {
   defaultEffort: 'high',
   autoConcurrency: 2,
   autoOrganize: false,
+  agentMessaging: true,
+  agentTasks: true,
   kanbanView: 'board',
   recentHosts: [],
   serverBinDir: '',

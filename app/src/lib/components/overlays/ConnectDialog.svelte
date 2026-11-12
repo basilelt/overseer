@@ -15,7 +15,7 @@
   import { t, type Key } from '../../i18n.svelte';
   import { app } from '../../state.svelte';
   import { saveSettings, settings } from '../../settings.svelte';
-  import { connectHow, preferredChoice, type ConnectHow, type HostChoice } from '../../hosts';
+  import { connectHow, preferredChoice, type ConnectHow, type HostChoice } from '../../host-choice';
   import { hostKey, openWindow } from '../../window';
   import { isBusy, steps } from '../../conn';
   import { exitDemo, isDemo, startDemo } from '../../demo';

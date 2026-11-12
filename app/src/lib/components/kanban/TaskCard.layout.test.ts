@@ -41,4 +41,9 @@ describe('TaskCard hover actions layout', () => {
     expect(rule('.actions')).toContain('opacity: 0');
     expect(style).toMatch(/\.card:hover \.actions/);
   });
+
+  it('shows the task cost in the meta row without letting it shrink', () => {
+    expect(source).toMatch(/\{#if task\.cost\}<span class="cost mono" title=\{t\('cost\.task'\)\}>\{formatCost\(task\.cost\.cost, task\.cost\.partial\)\}/);
+    expect(rule('.cost')).toContain('flex: none');
+  });
 });

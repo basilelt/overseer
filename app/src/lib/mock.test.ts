@@ -403,17 +403,17 @@ describe('MockDaemon', () => {
   it('lists every agent with install state and capabilities', async () => {
     const { a } = setup();
     const agents = await a.agents();
-    expect(agents.map((x) => x.id)).toEqual(['claude', 'codex', 'gemini', 'agy', 'opencode', 'amp', 'copilot', 'cursor', 'shell']);
+    expect(agents.map((x) => x.id)).toEqual(['claude', 'codex', 'gemini', 'agy', 'opencode', 'amp', 'copilot', 'cursor', 'vibe', 'shell']);
     expect(agents.filter((x) => !x.installed).map((x) => x.id)).toEqual(['opencode', 'amp', 'cursor']);
     expect(agents.find((x) => x.id === 'amp')!.install).toContain('npm');
     expect(agents.find((x) => x.id === 'gemini')!.efforts).toEqual([]);
     expect(agents.find((x) => x.id === 'agy')!.efforts).toEqual(['low', 'medium', 'high', 'xhigh', 'max']);
-    expect(agents.filter((x) => x.sessions).map((x) => x.id)).toEqual(['claude', 'codex', 'gemini']);
+    expect(agents.filter((x) => x.sessions).map((x) => x.id)).toEqual(['claude', 'codex', 'gemini', 'vibe']);
   });
 
   it('persists per-agent auto-approval defaults and applies them to newly started terms', async () => {
     const { m, a } = setup();
-    expect((await a.agentSettings()).autoApprove).toEqual({ claude: true, codex: true, gemini: true, agy: true, opencode: true, copilot: true, cursor: true });
+    expect((await a.agentSettings()).autoApprove).toEqual({ claude: true, codex: true, gemini: true, agy: true, opencode: true, copilot: true, cursor: true, vibe: true });
     expect((await a.createTerm({ agent: 'codex' })).cmd).toContain('--ask-for-approval');
     expect((await a.setAgentAutoApprove('codex', false)).autoApprove.codex).toBe(false);
     expect((await a.createTerm({ agent: 'codex' })).cmd).not.toContain('--ask-for-approval');
@@ -449,6 +449,20 @@ describe('MockDaemon', () => {
     expect(await a.activity(copilot.line.id)).toMatchObject({ lineId: copilot.line.id, transcript: false, workLog: [], todos: [], editedFiles: [] });
     expect((await a.terms()).some((t) => t.lineId === copilot.line.id && t.agent === 'copilot')).toBe(true);
     expect(await a.activity('ln_06')).toMatchObject({ lineId: 'ln_06', transcript: true });
+  });
+
+  it('gives sessions of agents with token counts a cost, and their tasks the same total', async () => {
+    const { a } = setup();
+    const act = await a.activity('ln_04');
+    expect(act.cost).toMatchObject({ model: 'claude-opus-5-5', partial: false, pricesAsOf: expect.any(String) });
+    expect(act.cost!.models.map((m) => m.model)).toEqual(['claude-opus-5-5', 'claude-haiku-5-5']);
+    expect(act.cost!.cost).toBeCloseTo(act.cost!.models.reduce((s, m) => s + (m.cost ?? 0), 0), 4);
+    const task = (await a.tasks()).find((t) => t.lineId === 'ln_04')!;
+    expect(task.cost).toMatchObject({ cost: act.cost!.cost, sessions: 1, model: 'claude-opus-5-5' });
+    expect((await a.tasks()).filter((t) => t.status === 'pending').every((t) => !t.cost)).toBe(true);
+    const lines = await a.lines();
+    const copilot = lines.find((l) => l.line.agent === 'copilot')!;
+    expect((await a.activity(copilot.line.id)).cost).toBeUndefined();
   });
 
   it('creates projects at the repository root and rejects non repositories', async () => {
@@ -533,6 +547,41 @@ describe('MockDaemon', () => {
     expect((await a.terms()).find((x) => x.id === t.id)?.workspaceId ?? null).toBeNull();
   });
 
+  it('nests workspaces like the daemon: parent checks, start dir, adoption, the same error messages and cascading delete', async () => {
+    // Given the mock daemon and a top-level workspace
+    // When nested workspaces are created, a top-level one is adopted, bad bodies are sent and the parent is deleted
+    // Then each answer and error message matches the daemon's
+    const { m } = setup();
+    const post = (b: object) => m.request<any>('POST', '/v1/workspaces', b);
+    const err = (p: Promise<unknown>) => p.then(() => '', (e) => `${(e as { status: number }).status} ${(e as Error).message}`);
+    const parent = await post({ path: '/home/u/endurance' });
+    const n = await post({ path: '/home/u/endurance/20/onboarding', name: 'Onboarding PME', parentId: parent.id, cwd: '/home/u/endurance' });
+    expect(n).toMatchObject({ parentId: parent.id, cwd: '/home/u/endurance', name: 'Onboarding PME', folderId: null, pinned: false });
+    const subject = await post({ kind: 'subject', name: 'Archi V3', parentId: parent.id });
+    expect(subject).toMatchObject({ parentId: parent.id, cwd: '/home/u/endurance', path: null });
+    const top = await post({ path: '/home/u/endurance/40/os', pinned: true });
+    const adopted = await post({ path: '/home/u/endurance/40/os', parentId: parent.id });
+    expect(adopted).toMatchObject({ id: top.id, parentId: parent.id, pinned: false, folderId: null });
+    expect(await err(post({ path: '/home/u/elsewhere', parentId: parent.id }))).toBe('400 /home/u/elsewhere is not inside /home/u/endurance');
+    expect(await err(post({ path: '/home/u/endurance', parentId: parent.id }))).toBe('400 /home/u/endurance is not inside /home/u/endurance');
+    expect(await err(post({ path: '/home/u/endurance/20/onboarding/kyc', parentId: n.id }))).toBe('400 the parent must be a top-level folder workspace');
+    expect(await err(post({ path: '/home/u/endurance/x', parentId: 'nope' }))).toBe('400 no workspace nope');
+    expect(await err(post({ path: '/home/u/endurance/x', parentId: parent.id, pinned: true }))).toBe('400 a nested workspace has no folder and cannot be pinned');
+    expect(await err(post({ path: '/home/u/other', cwd: '/home/u' }))).toBe('400 cwd is only for subjects and nested workspaces');
+    expect(await err(m.request('PATCH', `/v1/workspaces/${n.id}`, { folderId: 'f_acme' }))).toBe('400 a nested workspace has no folder and cannot be pinned');
+    expect(await err(m.request('PATCH', `/v1/workspaces/${n.id}`, { pinned: true }))).toBe('400 a nested workspace has no folder and cannot be pinned');
+    expect(await err(m.request('PATCH', `/v1/workspaces/${parent.id}`, { cwd: '/home/u' }))).toBe('400 cwd is only for subjects and nested workspaces');
+    expect((await m.request<any>('PATCH', `/v1/workspaces/${n.id}`, { cwd: null })).cwd).toBeNull();
+    const t = await m.request<any>('POST', '/v1/terms', { workspaceId: subject.id, cmd: ['zsh'] });
+    expect(t.cwd).toBe('/home/u/endurance');
+    const gone = await m.request<any>('DELETE', `/v1/workspaces/${parent.id}`);
+    expect(gone.deleted).toBe(parent.id);
+    expect(new Set(gone.children)).toEqual(new Set([n.id, subject.id, top.id]));
+    const left = await m.request<any[]>('GET', '/v1/workspaces');
+    expect(left.some((w) => [parent.id, n.id, subject.id, top.id].includes(w.id))).toBe(false);
+    expect((await m.request<any[]>('GET', '/v1/terms')).find((x) => x.id === t.id)?.workspaceId ?? null).toBeNull();
+  });
+
   it('clears the term of a line when the line is unassigned and lets a line inherit its term assignment', async () => {
     // Given a subject and a term started for it on an existing line
     // When the line is unassigned
@@ -585,6 +634,37 @@ describe('MockDaemon', () => {
     expect(await a.autoOrganize()).toEqual({ enabled: true });
   });
 
+  it('stores the agent tasks switch, on by default, and refuses a non-boolean', async () => {
+    const { a, m } = setup();
+    expect(await a.agentTasks()).toEqual({ enabled: true });
+    expect(await a.setAgentTasks(false)).toEqual({ enabled: false });
+    expect(await a.agentTasks()).toEqual({ enabled: false });
+    await expect(m.request('PUT', '/v1/tasks/agent-tasks', { enabled: 'no' })).rejects.toMatchObject({ status: 400, message: expect.stringContaining('enabled must be a boolean') });
+  });
+
+  it('stores the agent messaging switch, on by default, and refuses a non-boolean', async () => {
+    const { a, m } = setup();
+    expect(await a.agentMessaging()).toEqual({ enabled: true });
+    expect(await a.setAgentMessaging(false)).toEqual({ enabled: false });
+    expect(await a.agentMessaging()).toEqual({ enabled: false });
+    await expect(m.request('PUT', '/v1/tasks/agent-messaging', { enabled: 'no' })).rejects.toMatchObject({ status: 400, message: expect.stringContaining('enabled must be a boolean') });
+  });
+
+  it('keeps agent messages inside a project and honours the switch, like the daemon', async () => {
+    const { a, m } = setup();
+    const mk = (title: string, project: string) => a.createTask({ title, description: '', project, agent: 'claude', model: '' });
+    const [x, y, far] = [await mk('X', '/p'), await mk('Y', '/p'), await mk('Far', '/q')];
+    const send = (to: string, from?: string) => m.request('POST', `/v1/tasks/${to}/messages`, { body: 'hi', ...(from ? { from } : {}) });
+    await expect(send(y.id, x.id)).resolves.toMatchObject({ from: x.id });
+    await expect(send(far.id, x.id)).rejects.toMatchObject({ status: 403, message: expect.stringContaining('another project (/q)') });
+    await a.setAgentMessaging(false);
+    await expect(send(y.id, x.id)).rejects.toMatchObject({ status: 403, message: expect.stringContaining('turned off') });
+    await expect(send(y.id)).resolves.toMatchObject({ from: null });
+    const sub = (await a.tasks()).find((t) => t.parentId)!;
+    await expect(send(sub.id, sub.parentId!)).resolves.toMatchObject({ from: sub.parentId });
+    await expect(send(sub.parentId!, sub.id)).resolves.toMatchObject({ from: sub.id });
+  });
+
   it('walks the remote connection phases', async () => {
     const { m } = setup();
     const phases: ConnPhase[] = [];
@@ -611,6 +691,46 @@ describe('MockDaemon', () => {
   });
 });
 
+describe('agent install terms', () => {
+  it('runs the install command in a shell term titled after the agent', async () => {
+    const { a } = setup();
+    const t = await a.createTerm({ install: 'amp', cwd: '/tmp', cols: 120, rows: 32 });
+    expect(t.cmd).toEqual(['npm install -g --allow-scripts=@ampcode/cli @sourcegraph/amp']);
+    expect(t.title).toBe('Install Amp');
+  });
+
+  it('shows the agent as installed on the next rescan', async () => {
+    const { a } = setup();
+    expect((await a.rescanAgents()).find((x) => x.id === 'amp')?.installed).toBe(false);
+    await a.createTerm({ install: 'amp' });
+    expect((await a.rescanAgents()).find((x) => x.id === 'amp')?.installed).toBe(true);
+  });
+
+  it('finishes the install term in the live demo, like a clean install', async () => {
+    vi.useFakeTimers();
+    try {
+      const m = new MockDaemon({ live: true, delayMs: 0 });
+      const exited: unknown[] = [];
+      m.subscribe((e) => e.type === 'term.exited' && exited.push(e.data));
+      const t = await api(m).createTerm({ install: 'amp' });
+      expect(exited).toEqual([]);
+      await vi.advanceTimersByTimeAsync(1500);
+      expect(exited).toEqual([{ term: expect.objectContaining({ id: t.id, exited: true, exitCode: 0 }) }]);
+      await m.disconnect();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('rejects what the daemon rejects, with its messages', async () => {
+    const { a } = setup();
+    await expect(a.createTerm({ install: 'nope' })).rejects.toMatchObject({ status: 400, message: 'unknown agent nope' });
+    await expect(a.createTerm({ install: 'shell' })).rejects.toMatchObject({ status: 400, message: 'Shell has no install command' });
+    await expect(a.createTerm({ install: 'amp', agent: 'amp' })).rejects.toMatchObject({ status: 400, message: 'give either install, agent or cmd' });
+    await expect(a.createTerm({ install: 'amp', cmd: ['sh'] })).rejects.toMatchObject({ status: 400, message: 'give either install, agent or cmd' });
+  });
+});
+
 describe('fault injection', () => {
   it('fails matching requests at the configured rate', async () => {
     const f = { rate: 0.5, on: 'POST', hang: '', hangMs: 0 };
@@ -621,5 +741,66 @@ describe('fault injection', () => {
 
   it('times out hung requests like the transport does', async () => {
     await expect(inject('GET /api/review', { rate: 0, on: '', hang: '/review', hangMs: 1 })).rejects.toThrow('timed out');
+  });
+
+  describe('quorum', () => {
+    const mk = (a: ReturnType<typeof setup>['a'], quorum: unknown, extra: Record<string, unknown> = {}) =>
+      a.createTask({ title: 'Q', description: '', project: '/p', agent: 'claude', model: '', quorum, ...extra } as never);
+    const ok = { workers: ['claude', 'codex'], reviewers: ['codex', 'gemini'] };
+
+    it('stores and returns a valid quorum', async () => {
+      const { a } = setup();
+      const t = await mk(a, ok);
+      expect(t.quorum).toEqual(ok);
+      expect((await a.tasks()).find((x) => x.id === t.id)?.quorum).toEqual(ok);
+      expect((await mk(a, null)).quorum).toBeUndefined();
+    });
+
+    it.each([
+      ['a string', 'x', 'quorum must be an object or null'],
+      ['an array', [], 'quorum must be an object or null'],
+      ['no workers', { workers: [], reviewers: ['codex'] }, 'quorum.workers must be a non-empty array of agent ids'],
+      ['non-string workers', { workers: [1], reviewers: ['codex'] }, 'quorum.workers must be a non-empty array of agent ids'],
+      ['missing reviewers', { workers: ['claude'] }, 'quorum.reviewers must list 1 or 2 agent ids'],
+      ['no reviewer', { workers: ['claude'], reviewers: [] }, 'quorum.reviewers must list 1 or 2 agent ids'],
+      ['three reviewers', { workers: ['claude'], reviewers: ['codex', 'gemini', 'agy'] }, 'quorum.reviewers must list 1 or 2 agent ids'],
+      ['an unknown agent', { workers: ['nope'], reviewers: ['codex'] }, 'unknown agent nope'],
+      ['shell worker', { workers: ['shell'], reviewers: ['codex'] }, 'shell cannot join a quorum'],
+      ['shell reviewer', { workers: ['claude'], reviewers: ['shell'] }, 'shell cannot join a quorum'],
+      ['duplicate worker', { workers: ['claude', 'claude'], reviewers: ['codex'] }, 'quorum.workers lists claude twice'],
+      ['duplicate reviewer', { workers: ['claude'], reviewers: ['codex', 'codex'] }, 'quorum.reviewers lists codex twice'],
+    ])('rejects %s', async (_n, quorum, msg) => {
+      const { a } = setup();
+      await expect(mk(a, quorum)).rejects.toMatchObject({ status: 400, message: msg });
+    });
+
+    it('rejects an orchestrator that is not claude or codex', async () => {
+      const { a } = setup();
+      await expect(mk(a, ok, { agent: 'gemini' })).rejects.toMatchObject({ status: 400, message: 'the quorum orchestrator must be claude or codex' });
+    });
+
+    it('rejects a quorum on a subtask', async () => {
+      const { a } = setup();
+      await expect(mk(a, ok, { parentId: 'tk_01' })).rejects.toMatchObject({ status: 400, message: 'a subtask cannot run a quorum' });
+    });
+
+    it('patches and clears the quorum on a pending task only', async () => {
+      const { a } = setup();
+      const t = await mk(a, null);
+      expect((await a.patchTask(t.id, { quorum: ok })).quorum).toEqual(ok);
+      expect((await a.patchTask(t.id, { quorum: null })).quorum).toBeUndefined();
+      await expect(a.patchTask(t.id, { quorum: 3 as never })).rejects.toMatchObject({ status: 400 });
+      await expect(a.patchTask(t.id, { quorum: ok, agent: 'gemini' })).rejects.toMatchObject({ status: 400, message: 'the quorum orchestrator must be claude or codex' });
+      await a.startTask(t.id);
+      await expect(a.patchTask(t.id, { quorum: ok })).rejects.toMatchObject({ status: 409, message: 'the quorum can only change before the task starts' });
+    });
+
+    it('seeds a quorum root, a voted worker and reviewer tasks', async () => {
+      const { a } = setup();
+      const tasks = await a.tasks();
+      expect(tasks.find((t) => t.quorum)).toBeTruthy();
+      expect(tasks.find((t) => t.votes)?.votes?.outcome).toBe('rejected');
+      expect(tasks.filter((t) => t.origin === 'reviewer').every((t) => t.parentId === 'tk_q2')).toBe(true);
+    });
   });
 });

@@ -8,8 +8,6 @@ import type { DaemonEvent, LocalLine } from './types';
 import { allIdle } from './workspaces';
 import { MAX_COOLDOWN_S } from './notify-prefs';
 import { startOs } from './os-notify';
-import { hostName } from './hosts';
-import type { HostLink } from './host-link.svelte';
 
 export type NoticeKind = 'needsInput' | 'taskTesting' | 'finished' | 'failed' | 'allIdle';
 
@@ -97,11 +95,12 @@ export function notificationsFor(prev: Snapshot, next: Snapshot, prefs: Prefs, p
       const agent = agentName([], l.line.agent);
       const place = placeOf(l);
       const title = place ? t('notify.agentFinished', { agent, place }) : t('notify.agentDone', { agent });
-      out.push({ kind: 'finished', key: `line:${l.line.id}`, title, body: describe(l, place) });
+      out.push({ kind: 'finished', key: `line:${l.line.id}`, title, body: lineTitle(l) === place ? '' : lineTitle(l) });
     }
     for (const { item: task, before } of changes(prev.tasks, next.tasks, byOwnId)) {
       if (task.status !== 'in_testing' || before?.status === 'in_testing') continue;
-      out.push({ kind: 'taskTesting', key: task.lineId ? `line:${task.lineId}` : null, title: t('notify.taskTesting', { n: task.number }), body: task.title });
+      const key = task.lineId ? `line:${task.lineId}` : null;
+      out.push({ kind: 'taskTesting', key, title: t('notify.taskTesting', { n: task.number }), body: task.title, target: key ?? `task:${task.id}` });
     }
   }
   for (const { item: term, before } of changes(prev.terms, next.terms, byOwnId)) {
@@ -238,11 +237,12 @@ export function startNotifications(app: typeof App): () => void {
   };
   // Background hosts of the window: same rules, their own settle and cooldown, named after their host.
   const gates = new Map<string, Gate>();
-  const unwatchOthers = app.onOtherChange((l, prev, next, e) => {
-    if (prev.lines === next.lines && prev.terms === next.terms && prev.tasks === next.tasks) return;
+  let stopped = false;
+  app.onOther = (l, prev, next, e) => {
     badge();
-    pushHost(app, gates, l, prev, next, e);
-  });
+    // Loaded with the hosts code, which a window with a background host has already loaded.
+    void import('./host-ops').then((m) => !stopped && m.pushHost(app, gates, l, prev, next, e));
+  };
   const unwatch = app.onChange((prev, next, e: DaemonEvent) => {
     if (prev.lines === next.lines && prev.terms === next.terms && prev.tasks === next.tasks) return;
     const at = e?.at || e?.id || String(Date.now());
@@ -257,35 +257,10 @@ export function startNotifications(app: typeof App): () => void {
   });
   return () => {
     unwatch();
-    unwatchOthers();
+    app.onOther = null;
+    stopped = true;
     for (const g of gates.values()) g.stop();
     gate.stop();
     untap();
   };
-}
-
-/** Notifications of a background host of the window: same rules, its own settle and cooldown, named after it. */
-function pushHost(app: typeof App, gates: Map<string, Gate>, l: HostLink, prev: Snapshot, next: Snapshot, e: DaemonEvent | undefined) {
-  let g = gates.get(l.key);
-  if (!g) {
-    g = notifyGate(
-      (n, id) =>
-        app.notice({
-          id: `${l.key}|${id}`,
-          kind: n.kind,
-          title: t('hosts.onHost', { host: hostName(l.target), title: n.title }),
-          body: n.body || undefined,
-          action: n.key ? { kind: 'line', key: n.key, host: l.key } : undefined,
-          target: n.target ?? n.key ?? undefined,
-        }),
-      (n) => stillDue(l.data, n),
-      globalThis.localStorage,
-      Date.now,
-      () => Math.min(MAX_COOLDOWN_S, Math.max(0, settings.notifyCooldown)) * 1000,
-    );
-    gates.set(l.key, g);
-  }
-  const at = e?.at || e?.id || String(Date.now());
-  const place = (line: LocalLine) => l.ws.workspaces.find((w) => w.id === l.itemWs.get(`line:${line.line.id}`))?.name || folderName(line);
-  for (const n of notificationsFor(prev, next, prefsOf(settings), place)) g.push(n, at);
 }

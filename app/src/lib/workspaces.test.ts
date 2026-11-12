@@ -297,6 +297,21 @@ describe('sidebar tree', () => {
     expect(flat(data, { showArchived: true })).toContain('old');
   });
 
+  it('lists nested workspaces right after their parent, one level deeper, and nowhere else', () => {
+    const nested: WsData = {
+      ...data,
+      workspaces: [
+        ...data.workspaces,
+        ws('api', '/w/billing/api', { parentId: 'billing', rank: 2 }),
+        ws('ui', '/w/billing/ui', { parentId: 'billing', rank: 1, folderId: 'uni' }),
+        ws('kit', '/w/webshop/kit', { parentId: 'webshop' }),
+        ws('orphan', '/z/orphan', { parentId: 'gone' }),
+      ],
+    };
+    expect(flat(nested)).toEqual(['[uni] 1', '[alice] 3', '  [labs] 1', '    lab1', '  root', '  proxmox', '[acme] 1', '  billing', '    ui', '    api', 'loose']);
+    expect(buildTree(nested).pinned.map((w) => w.id)).toEqual(['webshop', 'kit']);
+  });
+
   it('plans workspace drops: before a sibling, into a folder, to pinned', () => {
     const before = planWorkspaceDrop(data, 'billing', { type: 'workspace', id: 'proxmox', pos: 'before' })!;
     expect(before.folderId).toBe('alice');

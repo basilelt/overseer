@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { setClient, type DaemonClient } from './client';
+import { itemsOf } from './host-watch';
+import { restoreHosts } from './host-ops';
 import { MockDaemon } from './mock';
 import { settings } from './settings.svelte';
 import { app } from './state.svelte';
@@ -39,10 +41,8 @@ class Daemon extends MockDaemon {
 }
 
 const made = vi.hoisted(() => [] as unknown[]);
-vi.mock('./client', async (orig) => {
-  const mod = await orig<typeof import('./client')>();
+vi.mock('./host-client', () => {
   return {
-    ...mod,
     newHostClient: vi.fn(async (): Promise<DaemonClient> => {
       const { MockDaemon: M } = await import('./mock');
       const d = new (class extends M {
@@ -92,7 +92,8 @@ afterEach(async () => {
 describe('one window per host (the default)', () => {
   it('replaces the host of the window and opens no second connection', async () => {
     await app.connect(prod);
-    expect(app.hosts.map((l) => l.key)).toEqual(['ssh:prod']);
+    expect(app.hosts).toEqual([]);
+    expect(app.link).toBeNull();
     expect(app.others).toEqual([]);
     expect(made).toEqual([]);
     expect(m.connects).toEqual([local, prod]);
@@ -128,7 +129,7 @@ describe('several hosts in one window', () => {
     await app.connect(prod, 'add');
     await app.switchHost('local');
     const other = app.others[0];
-    await vi.waitFor(() => expect(other.items.length).toBeGreaterThan(0));
+    await vi.waitFor(() => expect(itemsOf(other).items.length).toBeGreaterThan(0));
     const before = app.data;
     (made[0] as MockDaemon).emit('line.updated', { ...other.data.lines[0], line: { ...other.data.lines[0].line, title: 'renamed on prod' } });
     expect(app.data).toBe(before);
@@ -201,7 +202,10 @@ describe('several hosts in one window', () => {
     await app.connect(local);
     m.fail = null;
     await app.connect(prod, 'add');
-    expect(app.hosts.map((l) => l.key)).toEqual(['ssh:prod']);
+    expect(app.conn.target).toEqual(prod);
+    expect(app.connected).toBe(true);
+    expect(app.others).toEqual([]);
+    expect(app.hosts).toEqual([]);
   });
 
   it('brings a host that is still connecting into the main area once it is ready', async () => {
@@ -220,7 +224,7 @@ describe('extra hosts', () => {
   it('get the port settings before they connect, so they never auto-forward with the defaults', async () => {
     settings.portsAutoForward = false;
     const order: string[] = [];
-    const { newHostClient } = await import('./client');
+    const { newHostClient } = await import('./host-client');
     vi.mocked(newHostClient).mockImplementationOnce(async () => {
       const d = new MockDaemon({ live: false, delayMs: 0 });
       d.configurePorts = async (s) => void order.push(`ports ${s.autoForward}`);
@@ -236,7 +240,7 @@ describe('extra hosts', () => {
 
   it('tells the user when a background host needs an answer, and brings it forward with its question', async () => {
     let ask: ((s: ConnState) => void) | null = null;
-    const { newHostClient } = await import('./client');
+    const { newHostClient } = await import('./host-client');
     vi.mocked(newHostClient).mockImplementationOnce(async () => {
       const d = new MockDaemon({ live: false, delayMs: 0 });
       d.connect = (target, onState) => {
@@ -279,5 +283,15 @@ describe('launch', () => {
     await app.init();
     expect(app.others).toEqual([]);
     expect(made).toEqual([]);
+  });
+});
+
+describe('restoreHosts', () => {
+  const local: HostTarget = { kind: 'local', label: 'Local' };
+  const p: HostTarget = { kind: 'ssh', host: 'prod', label: 'prod' };
+
+  it('brings back the other hosts once, without the first one or phone hosts', () => {
+    expect(restoreHosts([local, p, p, { kind: 'direct', host: 'h1', label: 'x' }], local)).toEqual([p]);
+    expect(restoreHosts(undefined, local)).toEqual([]);
   });
 });

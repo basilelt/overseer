@@ -105,6 +105,13 @@ describe('shortcut resolver', () => {
     expect(resolveShortcut(ev('?', 'Slash', { meta: true, shift: true }), mac)).toEqual({ id: 'shortcuts' });
   });
 
+  it('opens source control with Ctrl+Shift+G, even from a terminal, like VS Code', () => {
+    expect(resolveShortcut(ev('G', 'KeyG', { ctrl: true, shift: true }), linuxTerm)).toEqual({ id: 'sourceControl' });
+    expect(resolveShortcut(ev('G', 'KeyG', { ctrl: true, shift: true }), linux)).toEqual({ id: 'sourceControl' });
+    expect(resolveShortcut(ev('G', 'KeyG', { meta: true, shift: true }), mac)).toEqual({ id: 'sourceControl' });
+    expect(resolveShortcut(ev('g', 'KeyG', { ctrl: true }), linuxTerm)).toBeNull();
+  });
+
   it('copies and pastes with Ctrl+Shift+C/V only in a terminal and leaves Ctrl+V and macOS native', () => {
     expect(resolveShortcut(ev('C', 'KeyC', { ctrl: true, shift: true }), linuxTerm)).toEqual({ id: 'copy' });
     expect(resolveShortcut(ev('C', 'KeyC', { ctrl: true, shift: true }), linux)).toBeNull();
@@ -117,6 +124,17 @@ describe('shortcut resolver', () => {
     expect(resolveShortcut(ev('v', 'KeyV', { meta: true }), { ...mac, inTerminal: true })).toBeNull();
     expect(resolveShortcut(ev('c', 'KeyC', { meta: true }), { ...mac, inTerminal: true })).toBeNull();
     expect(resolveShortcut(ev('W', 'KeyW', { meta: true, shift: true }), mac)).toBeNull();
+  });
+
+  it('pastes with Shift+Insert and copies with Ctrl+Insert in a terminal, instead of sending the Insert key to the shell', () => {
+    expect(resolveShortcut(ev('Insert', 'Insert', { shift: true }), linuxTerm)).toEqual({ id: 'paste' });
+    expect(resolveShortcut(ev('Insert', 'Insert', { ctrl: true }), linuxTerm)).toEqual({ id: 'copy' });
+    expect(resolveShortcut(ev('Insert', 'Insert', { shift: true }), linux)).toBeNull();
+    expect(resolveShortcut(ev('Insert', 'Insert', { ctrl: true }), linux)).toBeNull();
+    expect(resolveShortcut(ev('Insert', 'Insert'), linuxTerm)).toBeNull();
+    expect(resolveShortcut(ev('Insert', 'Insert', { ctrl: true, shift: true }), linuxTerm)).toBeNull();
+    expect(resolveShortcut(ev('Insert', 'Insert', { shift: true, alt: true }), linuxTerm)).toBeNull();
+    expect(resolveShortcut(ev('Insert', 'Insert', { shift: true }), { ...mac, inTerminal: true })).toBeNull();
   });
 
   it('moves focus between panes with Mod+Alt+arrows', () => {
@@ -165,5 +183,9 @@ describe('shortcut labels', () => {
       { label: 'Ctrl+Shift+F', outsideTerminal: false },
       { label: 'Ctrl+F', outsideTerminal: true },
     ]);
+    const paste = sheetRows({ mac: false, ctrlWClosesTab: true })
+      .flatMap((s) => s.rows)
+      .find((r) => r.id === 'paste');
+    expect(paste?.keys.map((k) => k.label)).toEqual(['Ctrl+Shift+V', 'Shift+Insert']);
   });
 });

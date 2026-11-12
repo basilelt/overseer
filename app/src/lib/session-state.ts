@@ -27,6 +27,8 @@ export interface SessionView {
   sub?: SubLabel;
   // The line was hung up: shown only while its tab is still open.
   ended?: true;
+  // Resumed, but the agent has not reported its session yet: it may be waiting on a prompt in its terminal.
+  starting?: true;
   since?: string;
   actions: Record<SessionAction, ActionGate>;
 }
@@ -65,8 +67,17 @@ export function sessionState(l: LocalLine, termId?: string | null): SessionView 
     return { state: 'closed', label: 'session.ended', ended: true, actions: { interrupt: ended, pause: ended, cancelPause: ended, resume: ended, close: ended } };
   }
   const state = stateOf(l, termId);
-  const local = l.local;
+  const { line, local } = l;
   const label = `session.state.${state}` as const;
+  if (state === 'closed' && termId && line.state === 'held') {
+    const none = off('session.why.noProcess');
+    return {
+      state,
+      label: 'session.state.starting',
+      starting: true,
+      actions: { interrupt: none, pause: none, cancelPause: off('session.why.noPausePending'), resume: off('session.why.starting'), close: ON },
+    };
+  }
   if (state === 'paused' || state === 'closed') {
     const none = off('session.why.noProcess');
     return {

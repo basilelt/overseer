@@ -1,6 +1,7 @@
-import type { AgentInfo, Effort, Profile, ProfileAgent, ProfileChip, ProfilesStore, ProfileSupport } from './types';
+import type { AgentInfo, Effort, Profile, ProfileAgent, ProfileChip, ProfilesStore, ProfileSupport, TaskType } from './types';
 
 export const NONE = 'none';
+export const TASK_TYPES: TaskType[] = ['fix', 'feature', 'engineering', 'refactor', 'triage'];
 export const PRICES_AS_OF = '2026-10-29';
 
 export const PRICES: Record<string, [number, number]> = {
@@ -50,21 +51,28 @@ export function scoped(store: ProfilesStore, cwd: string | undefined): string | 
   return best?.[1];
 }
 
+export function typed(store: ProfilesStore, taskType: TaskType | null | undefined): string | undefined {
+  const id = taskType ? store.types?.[taskType] : undefined;
+  return id && (id === NONE || store.profiles.some((p) => p.id === id)) ? id : undefined;
+}
+
 export function findProfile(store: ProfilesStore | null | undefined, id: string | undefined): Profile | undefined {
   return id ? store?.profiles.find((p) => p.id === id) : undefined;
 }
 
-export function effectiveId(store: ProfilesStore, opts: { explicit?: string; cwd?: string }): string {
-  const id = opts.explicit || scoped(store, opts.cwd) || store.default;
+type Pick = { explicit?: string; taskType?: TaskType | null; cwd?: string };
+
+export function effectiveId(store: ProfilesStore, opts: Pick): string {
+  const id = opts.explicit || typed(store, opts.taskType) || scoped(store, opts.cwd) || store.default;
   return id === NONE ? '' : id;
 }
 
-export function resolveProfile(store: ProfilesStore | null | undefined, opts: { explicit?: string; cwd?: string }): Profile | undefined {
+export function resolveProfile(store: ProfilesStore | null | undefined, opts: Pick): Profile | undefined {
   if (!store || opts.explicit === NONE) return undefined;
   const id = effectiveId(store, opts);
   const p = findProfile(store, id);
   if (p || !opts.explicit) return p;
-  return resolveProfile(store, { cwd: opts.cwd });
+  return resolveProfile(store, { taskType: opts.taskType, cwd: opts.cwd });
 }
 
 export function agentCfg(p: Profile | undefined, agent: string): ProfileAgent {

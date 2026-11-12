@@ -3,7 +3,7 @@ import { build, type Rolldown } from 'vite';
 
 const ENTRY_BUDGET_KB = 340;
 const STARTUP_BUDGET_KB = 530;
-const LAZY_ONLY = /^(hljs|hljs-core|mock|ReviewView|ReviewTab|KanbanView|StatesView|ProfileSelect|ConnBanner|ChatView|MobileShell|MobileConnect|SettingsDialog|GraphTabKind|ProfilesDialog|CommandPalette|UpdateDialog|ApkUpdateSheet|ApkUpdateHost|apk-update\.svelte)$/;
+const LAZY_ONLY = /^(hljs|hljs-core|mock|ReviewView|ReviewTab|KanbanView|StatesView|ProfileSelect|ConnBanner|ChatView|MobileShell|MobileConnect|SettingsDialog|GraphTabKind|ProfilesDialog|CommandPalette|NewSessionList|Menu|DemoPill|HostMenu|UpdateDialog|ApkUpdateSheet|ApkUpdateHost|apk-update\.svelte|SidePanel)$/;
 
 async function chunks(): Promise<Rolldown.OutputChunk[]> {
   const out = await build({ configFile: 'vite.config.ts', mode: 'production', logLevel: 'silent', build: { write: false, reportCompressedSize: false } });

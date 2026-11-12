@@ -1,15 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { createRawSnippet } from 'svelte';
 import { render } from 'svelte/server';
 import { HostLink } from '../../host-link.svelte';
+import { itemsOf, load, watch } from '../../host-watch';
 import { MockDaemon } from '../../mock';
 import { settings } from '../../settings.svelte';
 import { app } from '../../state.svelte';
 import HostSections from './HostSections.svelte';
 import sidebarSrc from './Sidebar.svelte?raw';
 
-const active = createRawSnippet(() => ({ render: () => '<div class="active-view">ACTIVE VIEW</div>' }));
-const html = (filter = '') => render(HostSections, { props: { filter, active } }).body;
+const html = (filter = '') => render(HostSections, { props: { filter, showArchived: false } }).body;
 
 describe('HostSections', () => {
   const before = { link: app.link, others: app.others, conn: app.conn, hostsFolded: settings.hostsFolded };
@@ -20,9 +19,9 @@ describe('HostSections', () => {
     local = new HostLink({ kind: 'local', label: 'Local' }, new MockDaemon({ live: false }));
     prod = new HostLink({ kind: 'ssh', host: 'prod', label: 'prod' }, new MockDaemon({ live: false }));
     await prod.connect();
-    prod.watch();
+    watch(prod);
     await new Promise((r) => setTimeout(r, 0));
-    await prod.load();
+    await load(prod);
     app.link = local;
     app.conn = { phase: 'connected', target: local.target };
     app.others = [prod];
@@ -39,13 +38,13 @@ describe('HostSections', () => {
     const out = html();
     expect(out).toContain('aria-label="Local"');
     expect(out).toContain('aria-label="prod"');
-    expect(out).toContain('ACTIVE VIEW');
+    expect(out).toMatch(/class="spaces[ "]/);
     expect(out.match(/aria-current="true"/g)).toHaveLength(1);
-    expect(out).toContain('this machine');
+    expect(out).toContain('This computer');
   });
 
   it('lists the sessions of a background host under its own section', () => {
-    const name = prod.items.find((i) => i.kind !== 'shell')?.title;
+    const name = itemsOf(prod).items.find((i) => i.kind !== 'shell')?.title;
     expect(name).toBeTruthy();
     expect(html()).toContain(name!);
   });
@@ -53,9 +52,9 @@ describe('HostSections', () => {
   it('folds a host section to its header', () => {
     settings.hostsFolded = ['ssh:prod', 'local'];
     const out = html();
-    expect(out).not.toContain('ACTIVE VIEW');
-    expect(out).not.toContain(prod.items[0].title);
-    expect(out).toContain('Unfold prod');
+    expect(out).not.toMatch(/class="spaces[ "]/);
+    expect(out).not.toContain(itemsOf(prod).items[0].title);
+    expect(out).toContain('Expand prod');
   });
 
   it('shows the state of a host that is not connected instead of its sessions', () => {
@@ -68,6 +67,7 @@ describe('HostSections', () => {
   });
 
   it('is shown by the sidebar only when the window has several hosts, around the usual view', () => {
-    expect(sidebarSrc).toMatch(/\{#if app\.hosts\.length > 1\}\n\s+\{#await hostSections\(\) then \{ default: HostSections \}\}<HostSections \{filter\} active=\{view\} \/>\{\/await\}/);
+    expect(sidebarSrc).toMatch(/\{:else if app\.hosts\.length > 1\}\n\s+\{#await hostSections\(\) then \{ default: HostSections \}\}<HostSections \{filter\} \{showArchived\} \/>\{\/await\}/);
+    expect(sidebarSrc).toContain("const hostSections = () => import('./HostSections.svelte');");
   });
 });

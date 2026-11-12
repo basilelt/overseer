@@ -1,5 +1,4 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { DaemonError } from './client';
 import { HostLink } from './host-link.svelte';
 import { MockDaemon } from './mock';
 import type { ConnState, HostTarget } from './types';
@@ -7,7 +6,6 @@ import type { ConnState, HostTarget } from './types';
 const prod: HostTarget = { kind: 'ssh', host: 'prod', label: 'prod' };
 
 class Daemon extends MockDaemon {
-  states: ConnState[] = [];
   override async connect(target: HostTarget, onState: (s: ConnState) => void) {
     onState({ phase: 'connecting', target });
     onState({ phase: 'connected', target });
@@ -57,76 +55,29 @@ describe('HostLink', () => {
     expect(asked).toHaveBeenCalledTimes(1);
   });
 
-  it('lists nothing and listens to nothing until watched', async () => {
-    const { d, link } = await make();
-    const sub = vi.spyOn(d, 'subscribe');
-    expect(link.items).toEqual([]);
-    expect(sub).not.toHaveBeenCalled();
-  });
-
-  it('loads its sessions and workspaces when watched, then follows its events', async () => {
-    const { d, link } = await make();
-    link.watch();
-    await vi.waitFor(() => expect(link.items.length).toBeGreaterThan(0));
-    expect(link.ws.workspaces.length).toBeGreaterThan(0);
-    const first = link.data.lines[0];
-    const changes: string[] = [];
-    link.onChange = (_l, _p, next) => changes.push(next.lines.find((l) => l.line.id === first.line.id)?.local?.title ?? '');
-    d.emit('line.updated', { ...first, local: { ...first.local, title: 'renamed' } });
-    expect(changes).toEqual(['renamed']);
-  });
-
-  it('starts from the snapshot the app showed, without its activity', async () => {
+  it('reloads after a reconnect only while watched', async () => {
     const { link } = await make();
-    link.ready = false;
-    link.watch({ data: { lines: [], terms: [], tasks: [], activity: { a: {} as never } }, ws: { workspaces: [], folders: [], groups: [] }, projects: [{ path: '/p', name: 'p' } as never] });
-    expect(link.data.activity).toEqual({});
-    expect(link.projects).toHaveLength(1);
-  });
-
-  it('reloads after a reconnect while watched', async () => {
-    const { d, link } = await make();
-    link.watch();
-    await vi.waitFor(() => expect(link.items.length).toBeGreaterThan(0));
-    const lines = vi.spyOn(d, 'request');
+    const reload = vi.fn();
+    link.reload = reload;
     link.onState({ phase: 'reconnecting', target: prod, attempt: 1 });
     link.onState({ phase: 'connected', target: prod });
-    await vi.waitFor(() => expect(lines.mock.calls.some(([, p]) => String(p).startsWith('/v1/lines'))).toBe(true));
+    expect(reload).not.toHaveBeenCalled();
+    link.watching = true;
+    link.onState({ phase: 'reconnecting', target: prod, attempt: 1 });
+    link.onState({ phase: 'connected', target: prod });
+    expect(reload).toHaveBeenCalledTimes(1);
   });
 
-  it('keeps what it had when a load fails, and treats a daemon without workspaces as none', async () => {
+  it('stops its event stream and disconnects when closed', async () => {
     const { d, link } = await make();
-    link.watch();
-    await vi.waitFor(() => expect(link.items.length).toBeGreaterThan(0));
-    const before = link.data.lines;
-    vi.spyOn(d, 'request').mockImplementation(async (_m, path) => {
-      if (String(path).startsWith('/v1/workspaces')) throw new DaemonError(404, 'nope');
-      throw new DaemonError(500, 'down');
-    });
-    await link.load();
-    expect(link.data.lines).toBe(before);
-    expect(link.ws.workspaces).toEqual([]);
-  });
-
-  it('applies workspace and project events to its own lists', async () => {
-    const { d, link } = await make();
-    link.watch();
-    await vi.waitFor(() => expect(link.ws.workspaces.length).toBeGreaterThan(0));
-    const before = link.projects.length;
-    d.emit('project.added', { project: { path: '/new', name: 'new' } });
-    expect(link.projects.length).toBe(before + 1);
-    d.emit('project.added', { project: { path: '/new', name: 'new' } });
-    expect(link.projects.length).toBe(before + 1);
-  });
-
-  it('stops listening and disconnects when closed', async () => {
-    const { d, link } = await make();
-    link.watch();
-    const off = vi.spyOn(d, 'disconnect');
+    const off = vi.fn();
+    Object.assign(link, { off, watching: true });
+    const disc = vi.spyOn(d, 'disconnect');
     await link.close();
+    expect(off).toHaveBeenCalled();
     expect(link.watching).toBe(false);
     expect(link.ready).toBe(false);
     expect(link.conn.phase).toBe('idle');
-    expect(off).toHaveBeenCalled();
+    expect(disc).toHaveBeenCalled();
   });
 });

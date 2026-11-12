@@ -10,10 +10,12 @@
   import { settings } from '../../settings.svelte';
   import { t, type Key } from '../../i18n.svelte';
   import { findAgent, hasModel, pickAgent, taskAgents } from '../../agents';
-  import { initialChoice, resolveProfile } from '../../profiles';
+  import { initialChoice, resolveProfile, TASK_TYPES } from '../../profiles';
   import ProfileSelect from '../ui/ProfileSelect.svelte';
   import DepPicker from './DepPicker.svelte';
-  import type { Effort } from '../../types';
+  import QuorumField from './QuorumField.svelte';
+  import { defaultQuorum, quorumBody } from '../../quorum';
+  import type { Effort, TaskType } from '../../types';
   import { taskDrafts, type TaskDraft } from '../../task-drafts';
   import { ft } from '../../feedback.svelte';
   import { dropZone } from '../../drop';
@@ -36,12 +38,15 @@
   let description = $state(saved?.description ?? '');
   let project = $state(initialProject);
   let profile = $state('');
+  let taskType = $state<TaskType | ''>('');
   let agent = $state(initialAgent);
   let model = $state(initial.model);
   let effort = $state<Effort | undefined>(initial.effort);
   let ticketKey = $state(saved?.ticketKey ?? '');
   let dependsOn = $state<string[]>(after ? [after.id] : []);
   let inheritBranch = $state<boolean | null>(null);
+  let quorumOn = $state(false);
+  let quorum = $state(defaultQuorum(app.agents, initialAgent));
   let error = $state('');
   let busy = $state(false);
   let importing = $state(false);
@@ -60,18 +65,25 @@
   const effortOptions = $derived(info?.efforts ?? []);
 
   function reset() {
-    ({ model, effort } = initialChoice(resolveProfile(app.profiles, { explicit: profile, cwd: project }), findAgent(app.agents, agent), fallback(agent)));
+    ({ model, effort } = initialChoice(resolveProfile(app.profiles, { explicit: profile, taskType: taskType || undefined, cwd: project }), findAgent(app.agents, agent), fallback(agent)));
   }
 
-  function pick(fill: { title: string; description: string; ticketKey: string }) {
+  function pick(fill: { title: string; description: string; ticketKey: string; taskType?: TaskType }) {
     ({ title, description, ticketKey } = fill);
+    if (fill.taskType && app.profiles?.taskTypes) setTaskType(fill.taskType);
     error = '';
     importing = false;
   }
 
   function setAgent(id: string) {
     agent = id;
+    quorum = defaultQuorum(app.agents, id);
     reset();
+  }
+
+  function setTaskType(ty: TaskType | '') {
+    taskType = ty;
+    if (!profile) reset();
   }
 
   function setProfile(id: string) {
@@ -129,8 +141,10 @@
         effort: effortOptions.length ? effort : undefined,
         ticketKey: ticketKey.trim() || undefined,
         ...(profile ? { profile } : {}),
+        ...(taskType ? { taskType } : {}),
         ...(dependsOn.length ? { dependsOn } : {}),
         ...(dependsOn.length === 1 && inheritBranch !== null ? { inheritBranch } : {}),
+        ...quorumBody(quorumOn, agent, quorum),
         ...(attachments.length ? { attachments: attachments.map(({ path, name }) => ({ path, name })) } : {}),
       });
       if (!app.data.tasks.some((x) => x.id === task.id)) app.data = { ...app.data, tasks: [...app.data.tasks, task] };
@@ -239,7 +253,21 @@
       <span>{t('task.dependsOn')}</span>
       <DepPicker value={dependsOn} {project} inherit={inheritBranch} onchange={(ids) => (dependsOn = ids)} oninherit={(on) => (inheritBranch = on)} />
     </div>
-    {#if app.profiles}
+    {#if app.profiles?.taskTypes}
+      <div class="row">
+        <label>
+          <span>{t('task.type')}</span>
+          <select data-tour="task-type" value={taskType} onchange={(e) => setTaskType(e.currentTarget.value as TaskType | '')}>
+            <option value="">{t('taskType.unset')}</option>
+            {#each TASK_TYPES as ty (ty)}<option value={ty}>{t(`taskType.${ty}` as Key)}</option>{/each}
+          </select>
+        </label>
+        <div class="field">
+          <span>{t('profile.label')}</span>
+          <ProfileSelect value={profile} cwd={project} {taskType} {agent} onchange={setProfile} />
+        </div>
+      </div>
+    {:else if app.profiles}
       <div class="field">
         <span>{t('profile.label')}</span>
         <ProfileSelect value={profile} cwd={project} {agent} onchange={setProfile} />
@@ -256,6 +284,7 @@
         />
       </div>
     {/if}
+    <QuorumField agents={app.agents} {agent} on={quorumOn} value={quorum} onon={(v) => (quorumOn = v)} onchange={(q) => (quorum = q)} />
     {#if info && !info.turns}
       <p class="hint faint">{t('task.noTurns', { agent: info.name })}</p>
     {/if}

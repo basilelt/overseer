@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import bar from './TabBar.svelte?raw';
+import actions from '../../wsactions.ts?raw';
 
 function rule(selector: string): string {
   const style = bar.slice(bar.indexOf('<style'));
@@ -23,6 +24,11 @@ describe('tab strip', () => {
     expect(rule('.tabs')).toMatch(/scrollbar-width:\s*none/);
     expect(rule('.tabs::-webkit-scrollbar')).toMatch(/display:\s*none/);
     expect(bar).not.toMatch(/\.tabs:hover/);
+  });
+
+  it('shows the session cost on its tab, shrinking before the title does', () => {
+    expect(bar).toMatch(/\{#if costOf\(tab\)\}.*<span class="chip cost mono" title=\{t\('cost\.tab'/);
+    expect(rule('.chip.cost')).toMatch(/flex:\s*0 8 auto/);
   });
 
   it('lays no overlay over the strip on hover', () => {
@@ -62,9 +68,17 @@ describe('tab strip', () => {
 
 describe('new tab menu', () => {
   it('only starts sessions; views live in the command palette', () => {
-    const menu = bar.slice(bar.indexOf('function addMenu'), bar.indexOf('function openAdd'));
+    expect(bar).toContain("t('tabs.new'), newSessionItems())");
+    const menu = actions.slice(actions.indexOf('export function newSessionItems'), actions.indexOf('export function startIn'));
     expect(menu).toContain('app.newSession');
     for (const view of ['browser', 'graph', 'worktrees', 'system', 'usage', 'prs', 'reviewKey', 'tabs.reviewChanges']) expect(menu).not.toContain(view);
+  });
+
+  it('installs an absent agent from its entry instead of greying it out', () => {
+    const menu = actions.slice(actions.indexOf('export function newSessionItems'), actions.indexOf('export function startIn'));
+    expect(menu).toMatch(/more: missing\.map\(.*disabled: !canInstall\(a\).*run: install\(a\.id\)/);
+    expect(menu).toContain('app.installAgent');
+    expect(menu).toContain("label: canInstall(a) ? t('palette.installAgent', { name: a.name }) : a.name");
   });
 });
 

@@ -29,11 +29,11 @@ describe('host actions', () => {
   const labels = (key: string) => hostMenu(key).map((i) => i.label);
 
   it('offers to bring a background host into the main area, fold it, move it out or disconnect it', () => {
-    expect(labels('ssh:prod')).toEqual(['Show in the main area', 'Fold prod', 'Move to its own window', 'Disconnect, sessions keep running']);
+    expect(labels('ssh:prod')).toEqual(['Show in the main area', 'Collapse prod', 'Move to its own window', 'Disconnect, sessions keep running']);
   });
 
   it('does not offer to show the active host again', () => {
-    expect(labels('local')).toEqual(['Fold Local', 'Move to its own window', 'Disconnect, sessions keep running']);
+    expect(labels('local')).toEqual(['Collapse Local', 'Move to its own window', 'Disconnect, sessions keep running']);
   });
 
   it('offers a retry for a host that failed', () => {

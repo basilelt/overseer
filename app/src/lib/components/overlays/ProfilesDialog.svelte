@@ -3,6 +3,7 @@
   import Plus from '@lucide/svelte/icons/plus';
   import Copy from '@lucide/svelte/icons/copy';
   import Trash from '@lucide/svelte/icons/trash-2';
+  import ChevronRight from '@lucide/svelte/icons/chevron-right';
   import Modal from '../ui/Modal.svelte';
   import ModelField from '../ui/ModelField.svelte';
   import AgentGlyph from '../ui/AgentGlyph.svelte';
@@ -10,8 +11,8 @@
   import { t, type Key } from '../../i18n.svelte';
   import { app } from '../../state.svelte';
   import { settings } from '../../settings.svelte';
-  import { chipLabel, clean, costIndex, formatIndex, NONE, PRICES_AS_OF, slugId, validateProfile } from '../../profiles';
-  import type { AgentInfo, Effort, FileEdit, Profile, ProfileAgent, ProfileSupport, SubagentDef } from '../../types';
+  import { chipLabel, clean, costIndex, formatIndex, NONE, PRICES_AS_OF, slugId, TASK_TYPES, validateProfile } from '../../profiles';
+  import type { AgentInfo, Effort, FileEdit, Profile, ProfileAgent, ProfileSupport, SubagentDef, TaskType } from '../../types';
 
   let { onclose, scope = null }: { onclose: () => void; scope?: string | null } = $props();
 
@@ -94,6 +95,7 @@
         profiles,
         default: known(store.default) ? store.default : '',
         scopes: Object.fromEntries(Object.entries(store.scopes).filter(([, id]) => known(id))),
+        types: Object.fromEntries(Object.entries(store.types ?? {}).filter(([, id]) => known(id))),
       });
       app.notify(t('profile.saved'));
     } catch (e) {
@@ -114,6 +116,17 @@
     else delete scopes[wsPath];
     await app.saveProfiles({ scopes }).catch((e) => app.notify(String((e as Error)?.message ?? e), 'error'));
   }
+
+  async function setType(ty: TaskType, id: string) {
+    if (!store) return;
+    const types = { ...store.types };
+    if (id) types[ty] = id;
+    else delete types[ty];
+    await app.saveProfiles({ types }).catch((e) => app.notify(String((e as Error)?.message ?? e), 'error'));
+  }
+
+  const typed = $derived(Object.keys(store?.types ?? {}).length);
+  let typesOpen = $state<boolean | null>(null);
 
   async function loadSubs() {
     subs = (await app.api.subagents(wsPath ?? undefined).catch(() => ({ subagents: [] }))).subagents;
@@ -170,6 +183,25 @@
             <option value={NONE}>{t('profile.none')}</option>
           </select>
         </label>
+      {/if}
+      {#if store.taskTypes}
+        <details class="types" data-tour="profile-types" open={typesOpen ?? typed > 0} ontoggle={(e) => (typesOpen = e.currentTarget.open)}>
+          <summary>
+            <ChevronRight size={14} class="chev" />
+            <span>{t('profile.byType')}<small>{t('profile.byTypeHint')}</small></span>
+            {#if typed}<span class="count">{typed}</span>{/if}
+          </summary>
+          {#each TASK_TYPES as ty (ty)}
+            <label class="row">
+              <span>{t(`taskType.${ty}` as Key)}<small>{t(`taskType.${ty}.hint` as Key)}</small></span>
+              <select aria-label={t(`taskType.${ty}` as Key)} value={store.types?.[ty] ?? ''} onchange={(e) => setType(ty, e.currentTarget.value)}>
+                <option value="">{t('profile.byPath')}</option>
+                {#each store.profiles as p (p.id)}<option value={p.id}>{p.name}</option>{/each}
+                <option value={NONE}>{t('profile.none')}</option>
+              </select>
+            </label>
+          {/each}
+        </details>
       {/if}
     </section>
 
@@ -365,6 +397,34 @@
   .scopes select {
     flex: none;
     max-width: 50%;
+  }
+  .types summary {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 34px;
+    cursor: pointer;
+  }
+  .types summary :global(.chev) {
+    flex: none;
+    color: var(--text-3);
+    transition: transform 0.15s;
+  }
+  .types[open] summary :global(.chev) {
+    transform: rotate(90deg);
+  }
+  .types summary > span:first-of-type {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-width: 0;
+  }
+  .types .row {
+    padding-left: 22px;
+  }
+  .count {
+    font-size: 11px;
+    color: var(--text-3);
   }
   small {
     color: var(--text-3);

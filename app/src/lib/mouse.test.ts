@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { cellAt, clickMove, ModeTracker, WheelAccumulator, wheelAction, wheelReport, type TermModes } from './mouse';
 
-const base: TermModes = { tracking: false, sgr: false, urxvt: false, utf8: false, alt: false, alternateScroll: true, appCursor: false };
+const base: TermModes = { tracking: false, sgr: false, urxvt: false, utf8: false, alt: false, alternateScroll: true, appCursor: false, lineEditor: false };
 const at = { deltaY: 0, deltaMode: 0 as const, col: 3, row: 7 };
 
 describe('ModeTracker', () => {
@@ -22,6 +22,14 @@ describe('ModeTracker', () => {
     expect(t.modes()).toMatchObject({ tracking: true, alt: true, appCursor: true, alternateScroll: false });
     t.feed('\x1b[?1007h\x1b[?47l\x1b[?1047h');
     expect(t.modes()).toMatchObject({ alt: true, alternateScroll: true });
+  });
+
+  it('reports a line editor while bracketed paste is on, as readline, zle and fish set it at their prompt', () => {
+    const t = new ModeTracker();
+    t.feed('\x1b[?2004h$ ');
+    expect(t.modes().lineEditor).toBe(true);
+    t.feed('\x1b[?2004l');
+    expect(t.modes().lineEditor).toBe(false);
   });
 
   it('joins sequences split across chunks', () => {
@@ -101,6 +109,7 @@ describe('wheel', () => {
 describe('clickMove', () => {
   const narrow = () => 1;
   const cur = { x: 10, y: 4 };
+  const base: TermModes = { tracking: false, sgr: false, urxvt: false, utf8: false, alt: false, alternateScroll: true, appCursor: false, lineEditor: true };
 
   it('sends left arrows for a click before the cursor on its row', () => {
     expect(clickMove(7, 4, cur, narrow, base)).toBe('\x1b[D'.repeat(3));
@@ -127,5 +136,9 @@ describe('clickMove', () => {
     expect(clickMove(3, 2, cur, narrow, base)).toBeNull();
     expect(clickMove(10, 4, cur, narrow, base)).toBeNull();
     expect(clickMove(3, 4, cur, narrow, { ...base, tracking: true })).toBeNull();
+  });
+
+  it('sends nothing when no line editor reads the input, as in dash, which would type the arrows', () => {
+    expect(clickMove(7, 4, cur, narrow, { ...base, lineEditor: false })).toBeNull();
   });
 });

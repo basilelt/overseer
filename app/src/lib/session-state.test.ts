@@ -143,6 +143,21 @@ describe('sessionState: which actions each state offers', () => {
     expect(enabled(line({}, {}))).toEqual(sorted(['resume', 'close']));
   });
 
+  it('starting: only close, so a resume still at its agent prompt is never resumed a second time', () => {
+    const resumed = line({ state: 'held' }, { heldReason: 'lost' });
+    const v = sessionState(resumed, 't1');
+    expect(v).toMatchObject({ state: 'closed', label: 'session.state.starting', starting: true });
+    expect(v.actions.resume).toEqual({ enabled: false, reason: 'session.why.starting' });
+    expect(enabled(resumed, 't1')).toEqual(['close']);
+  });
+
+  it('stays paused, not starting, while the held stub of a paused session waits in its terminal', () => {
+    const v = sessionState(line({ state: 'held' }, { heldReason: 'user' }), 'stub');
+    expect(v.state).toBe('paused');
+    expect(v.starting).toBeUndefined();
+    expect(v.actions.resume.enabled).toBe(true);
+  });
+
   it('ended: nothing', () => {
     expect(enabled(line({ state: 'hung-up' }))).toEqual([]);
   });

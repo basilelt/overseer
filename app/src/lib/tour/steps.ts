@@ -1,4 +1,4 @@
-export type StepId = 'host' | 'workspaces' | 'tabs' | 'view' | 'panel' | 'kanban' | 'review' | 'chips' | 'notify' | 'profiles' | 'palette' | 'paletteKey' | 'organize' | 'settings' | 'feedback' | 'demo' | 'gpuTerminal' | 'worktreeCleanup' | 'switchboard' | 'clickCursor' | 'palettes' | 'skills' | 'autoApprove' | 'merged' | 'uninstall' | 'autoUpdate' | 'hosts';
+export type StepId = 'host' | 'workspaces' | 'tabs' | 'view' | 'panel' | 'kanban' | 'review' | 'chips' | 'notify' | 'profiles' | 'palette' | 'paletteKey' | 'organize' | 'settings' | 'feedback' | 'demo' | 'gpuTerminal' | 'worktreeCleanup' | 'switchboard' | 'clickCursor' | 'palettes' | 'skills' | 'autoApprove' | 'merged' | 'uninstall' | 'autoUpdate' | 'subjects' | 'sourceControl' | 'reviewMap' | 'lidClosed' | 'recordBug' | 'quorum' | 'installAgent' | 'agentMessaging' | 'mistralVibe' | 'cost' | 'taskType' | 'agentTasks' | 'hosts';
 
 export interface Step {
   id: StepId;
@@ -34,6 +34,18 @@ export const STEPS: Step[] = [
   { id: 'merged', targets: ['merged', 'kanban'], since: '0.34' },
   { id: 'uninstall', targets: ['uninstall', 'settings'], since: '0.34' },
   { id: 'autoUpdate', targets: ['updates', 'settings'], since: '0.35' },
+  { id: 'subjects', targets: ['subjects', 'workspaces'], since: '0.36' },
+  { id: 'sourceControl', targets: ['git-button', 'palette'], since: '0.36' },
+  { id: 'reviewMap', targets: ['review-map', 'review'], since: '0.36' },
+  { id: 'lidClosed', targets: ['lid-closed', 'settings'], since: '0.36' },
+  { id: 'recordBug', targets: ['palette'], since: '0.36', center: true },
+  { id: 'quorum', targets: ['quorum', 'kanban'], since: '0.36' },
+  { id: 'installAgent', targets: ['new-session', 'palette'], since: '0.36' },
+  { id: 'agentMessaging', targets: ['agent-messaging', 'settings'], since: '0.36' },
+  { id: 'mistralVibe', targets: ['new-session', 'palette'], since: '0.36' },
+  { id: 'cost', targets: ['session-cost', 'panel'], since: '0.36' },
+  { id: 'taskType', targets: ['task-type', 'kanban'], since: '0.36' },
+  { id: 'agentTasks', targets: ['agent-tasks', 'settings'], since: '0.36' },
   { id: 'hosts', targets: ['host-sections', 'hosts'], since: '0.36' },
 ];
 

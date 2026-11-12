@@ -49,7 +49,7 @@ fn fetch(repo: &str, branch: &str) -> Value {
             .args(["pr", "list", "--state", "all", "--limit", "1"])
             .arg(format!("--repo={repo}"))
             .arg(format!("--head={branch}"))
-            .arg("--json=number,url,state,isDraft,title,statusCheckRollup")
+            .arg("--json=number,url,state,isDraft,title,baseRefName,statusCheckRollup")
             .env("GH_PROMPT_DISABLED", "1")
             .env("GH_NO_UPDATE_NOTIFIER", "1")
             .env("NO_COLOR", "1"),
@@ -70,15 +70,29 @@ fn fetch(repo: &str, branch: &str) -> Value {
     match list.get(0) {
         Some(p) => json!({"pr": {
             "number": p["number"], "url": p["url"], "state": p["state"], "isDraft": p["isDraft"],
-            "title": p["title"], "ci": ci(&p["statusCheckRollup"]),
+            "title": p["title"], "base": p["baseRefName"], "ci": ci(&p["statusCheckRollup"]),
         }}),
         None => json!({"pr": null}),
     }
 }
 
+fn askable(repo: &str, branch: &str) -> bool {
+    !(repo.is_empty()
+        || branch.is_empty()
+        || repo.starts_with('-')
+        || repo.starts_with("local:")
+        || repo.split('/').count() < 3)
+}
+
+pub fn pr_fresh(repo: &str, branch: &str) -> Value {
+    if let Some(m) = CACHE.lock().unwrap_or_else(|e| e.into_inner()).as_mut() {
+        m.remove(&(repo.to_string(), branch.to_string()));
+    }
+    pr_info(repo, branch)
+}
+
 pub fn pr_info(repo: &str, branch: &str) -> Value {
-    if repo.is_empty() || branch.is_empty() || repo.starts_with('-') || repo.split('/').count() < 3
-    {
+    if !askable(repo, branch) {
         return json!({"pr": null});
     }
     let key = (repo.to_string(), branch.to_string());
@@ -104,12 +118,7 @@ pub fn pr_info(repo: &str, branch: &str) -> Value {
 static INFLIGHT: Mutex<Vec<(String, String)>> = Mutex::new(vec![]);
 
 pub fn cached_or_fetch(repo: &str, branch: &str, done: impl FnOnce() + Send + 'static) -> Value {
-    if repo.is_empty()
-        || branch.is_empty()
-        || repo.starts_with('-')
-        || repo.starts_with("local:")
-        || repo.split('/').count() < 3
-    {
+    if !askable(repo, branch) {
         return json!({"pr": null});
     }
     let key = (repo.to_string(), branch.to_string());

@@ -29,6 +29,8 @@ export interface UsageLimits {
   hit: { at: string; message: string } | null;
   auth?: 'ok' | 'expired' | 'unavailable';
   via?: string;
+  credits?: { hasCredits: boolean; unlimited: boolean; balance: number | null } | null;
+  reached?: string | null;
 }
 
 export interface StatuslineStatus {

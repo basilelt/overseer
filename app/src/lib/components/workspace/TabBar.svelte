@@ -14,27 +14,26 @@
   import OctagonX from '@lucide/svelte/icons/octagon-x';
   import Plus from '@lucide/svelte/icons/plus';
   import Globe from '@lucide/svelte/icons/globe';
-  import GitCompare from '@lucide/svelte/icons/git-compare';
+  import GitBranch from '@lucide/svelte/icons/git-branch';
   import Megaphone from '@lucide/svelte/icons/megaphone';
   import { st } from '../../system/strings';
-  import { saveSettings, settings } from '../../settings.svelte';
+  import { settings } from '../../settings.svelte';
   import { projectName } from '../../state.svelte';
-  import { ordered } from '../../agents';
   import { coarsePointer, focusSession, stripScroll, tabInfo, type TabInfo } from '../../tabs';
-  import { broadcastTo } from '../../wsactions';
+  import { broadcastTo, newSessionItems } from '../../wsactions';
   import { wsDropTarget } from '../../workspaces';
-  import type { MenuItem } from '../../menu';
   import { t, type Key } from '../../i18n.svelte';
   import { app, tabLazy } from '../../state.svelte';
   import { whenIdle } from '../../idle';
   import { closePaneAt, closeTabAt, openInFocused, reorderTab, split, update, type Pane } from '../../workspace.svelte';
   import AgentIcon, { GROUP_COLOR } from '../sidebar/AgentIcon.svelte';
   import ReviewBadge from '../review/ReviewBadge.svelte';
-  import { itemTarget, modeFor, reviewTitle, setReviewMode } from '../../review/open';
-  import type { ReviewMode } from '../../review/pane';
+  import { itemTarget, reviewTitle } from '../../review/open';
+  import { liveOn } from '../../git/live.svelte';
   import { chatCapable } from '../../chat/viewmode';
   import ModeToggle from '../chat/ModeToggle.svelte';
   import { chipLabel, chipShort } from '../../profiles';
+  import { formatCost } from '../../usage/format';
   import { pages } from '../../session-pages.svelte';
 
   let { pane, index, focused, canClose }: { pane: Pane; index: number; focused: boolean; canClose: boolean } = $props();
@@ -78,6 +77,7 @@
   });
 
   const chipOf = (tab: TabInfo) => (tab.item?.termId ? app.data.terms.find((x) => x.id === tab.item!.termId)?.profile : undefined);
+  const costOf = (tab: TabInfo) => (tab.item?.lineId ? app.data.activity[tab.item.lineId]?.cost : undefined);
   const effortLabel = (e: string) => t('profile.effortOf', { effort: t(`effort.${e}` as Key).toLowerCase() });
 
   function label(tab: TabInfo): string {
@@ -98,21 +98,9 @@
     return tab.key;
   }
 
-  function addMenu(): MenuItem[] {
-    const start = (id: string) => () => app.newSession(id).catch((e) => app.notify(String((e as Error)?.message ?? e), 'error'));
-    const agents = ordered(app.agents).filter((a) => a.id !== 'shell');
-    const shell = app.agents.find((a) => a.id === 'shell');
-    return [
-      ...agents.map((a) => ({ label: a.name, agent: a.id, default: a.id === settings.defaultAgent, disabled: !a.installed, hint: a.installed ? undefined : (a.install ?? t('agents.notInstalled')), run: start(a.id) })),
-      { label: t('tabs.inCheckout'), checked: settings.sessionsInCheckout, run: () => saveSettings({ sessionsInCheckout: !settings.sessionsInCheckout }) },
-      { label: '', separator: true },
-      { label: shell?.name ?? t('tabs.shell'), agent: 'shell', run: start('shell') },
-    ];
-  }
-
   function openAdd(e?: MouseEvent) {
     const r = plus?.getBoundingClientRect();
-    app.openMenu(e && e.clientX ? { clientX: e.clientX, clientY: e.clientY } : { clientX: r?.left ?? 0, clientY: (r?.bottom ?? 0) + 4 }, t('tabs.new'), addMenu());
+    app.openMenu(e && e.clientX ? { clientX: e.clientX, clientY: e.clientY } : { clientX: r?.left ?? 0, clientY: (r?.bottom ?? 0) + 4 }, t('tabs.new'), newSessionItems());
   }
 
   $effect(() => {
@@ -202,18 +190,6 @@
   }
   const reviewable = $derived(!!pane.active && !!itemTarget(pane.active));
 
-  function reviewMenu(e: MouseEvent) {
-    const target = itemTarget(pane.active);
-    if (!target) return;
-    const mode = modeFor(pane.active);
-    const set = (m: ReviewMode) => () => setReviewMode(target, m, index);
-    app.openMenu(e, t('review.mode'), [
-      { label: t('review.beside'), checked: mode === 'side', run: set('side') },
-      { label: t('review.asTab'), checked: mode === 'tab', run: set('tab') },
-      { label: t('review.close'), checked: mode === 'off', disabled: mode === 'off', run: set('off') },
-    ]);
-  }
-
   const term = $derived(activeItem?.termId ? app.data.terms.find((x) => x.id === activeItem.termId) : undefined);
   const killable = $derived(!!term && !term.exited);
 
@@ -296,7 +272,7 @@
         onpointerdown={(e) => tabDown(e, key)}
         ondblclick={(e) => startEdit(e, tab)}
       >
-        {#if hostTag}<span class="host mono" style:--host={hostTag.color} title={hostTag.name}>{hostTag.name}</span>{/if}
+        {#if hostTag}<span class="host mono" style:--host={hostTag.color}>{hostTag.name}</span>{/if}
         {#if tab.item}
           <AgentIcon kind={tab.item.kind} size={12} />
           <span class="dot" style:background={GROUP_COLOR[tab.item.group]}></span>
@@ -316,6 +292,7 @@
           {/if}
         </span>
         {#if chipOf(tab)}{@const chip = chipOf(tab)}<span class="chip mono" title={chipLabel(chip, effortLabel)}>{chipShort(chip)}</span>{/if}
+        {#if costOf(tab)}{@const c = costOf(tab)!}<span class="chip cost mono" title={t('cost.tab', { cost: formatCost(c.cost, c.partial) })}>{formatCost(c.cost, c.partial).replace('≈', '')}</span>{/if}
         <ReviewBadge tabKey={key} />
         <span class="slot"><span class="num faint">{i < 9 ? i + 1 : ''}</span><button class="x" aria-label={t('common.close')} onclick={(e) => close(e, key)}><svg class="i" width="12" height="12" aria-hidden="true"><use href="#sbi-x" /></svg></button></span>
       </div>
@@ -325,7 +302,7 @@
   <div class="actions">
     {#if activeItem && chatCapable(activeItem)}<ModeToggle item={activeItem} />{/if}
     {#if reviewable}
-      <button class="icon-btn" class:on={modeFor(pane.active) !== 'off'} title={t('review.mode')} aria-label={t('review.mode')} aria-haspopup="menu" onclick={reviewMenu}><GitCompare size={14} /></button>
+      <button class="icon-btn" class:on={liveOn()} title={t('git.button')} aria-label={t('git.button')} aria-pressed={liveOn()} data-tour="git-button" onclick={() => void import('../../git/live-actions').then((m) => m.toggleLiveReview(pane.active))}><GitBranch size={14} /></button>
     {/if}
     {#if activeWeb?.pages.length}
       <button class="icon-btn web" class:on={activeWeb.open} title={t('web.toggle')} aria-label={t('web.toggle')} aria-pressed={activeWeb.open} onclick={() => activeItem && pages.setOpen(activeItem.key, !activeWeb.open)}
@@ -495,6 +472,9 @@
   /* While renaming, the input takes the title's place. */
   .label:has(:global(.name-input)) > .name {
     display: none;
+  }
+  .chip.cost {
+    flex: 0 8 auto;
   }
   .chip {
     flex: 0 6 auto;

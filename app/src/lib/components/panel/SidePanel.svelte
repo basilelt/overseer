@@ -3,7 +3,7 @@
   import { t, type Key } from '../../i18n.svelte';
   import { chipLabel } from '../../profiles';
   import { app } from '../../state.svelte';
-  import type { Diff } from '../../types';
+  import type { Diff, SessionCost as Cost } from '../../types';
   import { GROUP_COLOR } from '../sidebar/AgentIcon.svelte';
   import AgentGlyph from '../ui/AgentGlyph.svelte';
   import { agentName, sessionsAvailable } from '../../agents';
@@ -14,7 +14,8 @@
   import Section from './Section.svelte';
   const todosView = preload(() => import('./Todos.svelte'));
   const workLogView = preload(() => import('./WorkLog.svelte'));
-  import SessionUsage from '../usage/SessionUsage.svelte';
+  import SessionCost from './SessionCost.svelte';
+  import { formatCost } from '../../usage/format';
   import GitPullRequest from '@lucide/svelte/icons/git-pull-request';
   import { openReview, openReviewBeside } from '../../review/open';
   import { inRepo } from '../../review/repo';
@@ -27,8 +28,10 @@
   import { saveSettings, settings } from '../../settings.svelte';
   import { moveSection, normalizeOrder, type PanelSection } from '../../panelorder';
   import { diffs, relateds } from '../../panel-cache';
+  import { loadPanel } from '../../panel-load';
   import { hostKey } from '../../window';
 
+  const EFFORTS = new Set(['low', 'medium', 'high', 'xhigh', 'max']);
   const item = $derived(app.selected);
   const lineId = $derived(item?.lineId ?? null);
   const line = $derived(lineId ? app.data.lines.find((l) => l.line.id === lineId) : undefined);
@@ -83,18 +86,17 @@
 
   $effect(() => {
     const id = lineId;
+    const inGit = repo;
     missing = false;
-    if (!id || !app.client || !repo) {
+    if (!id || !app.client) {
       diff = null;
       related = null;
       return;
     }
     untrack(() => {
-      diff = diffs.get(cacheKey(id)) ?? null;
-      related = relateds.get(cacheKey(id)) ?? null;
-      app.loadActivity(id);
-      loadDiff(id);
-      loadRelated(id);
+      diff = inGit ? (diffs.get(cacheKey(id)) ?? null) : null;
+      related = inGit ? (relateds.get(cacheKey(id)) ?? null) : null;
+      loadPanel(id, inGit, { activity: (x) => app.loadActivity(x), diff: loadDiff, related: loadRelated });
     });
   });
 
@@ -122,6 +124,8 @@
 
   const sectionOrder = $derived(normalizeOrder(settings.panelOrder));
   const orderOf = (id: PanelSection) => sectionOrder.indexOf(id) + 1;
+  const costLine = (c: Cost) =>
+    [formatCost(c.cost, c.partial), c.model, c.effort ? t('profile.effortOf', { effort: (EFFORTS.has(c.effort) ? t(`effort.${c.effort}` as Key) : c.effort).toLowerCase() }) : ''].filter(Boolean).join(' · ');
   let dragging: { id: string; y: number; moved: boolean; el: HTMLElement } | null = null;
   let swallow = false;
 
@@ -200,7 +204,7 @@
         <span class="agent"><AgentGlyph agent={line.line.agent} size={12} />{agentName(app.agents, line.line.agent)}</span>
         <span class="mono">{line.line.branch ?? ''}{line.line.ticketKey ? ` · ${line.line.ticketKey}` : ''}</span>
       </p>
-      {#key line.line.id}<SessionUsage lineId={line.line.id} />{/key}
+      {#if act?.cost}<p class="profile faint mono" data-tour="session-cost" title={t('cost.hint', { date: act.cost.pricesAsOf })}>{costLine(act.cost)}</p>{/if}
       {#if chip}<p class="profile faint" title={t('profile.label')}>{chipLabel(chip, (e) => t('profile.effortOf', { effort: t(`effort.${e}` as Key).toLowerCase() }))}</p>{/if}
     </header>
     <PanelActions {line} />
@@ -219,6 +223,11 @@
         {#if act.todos.length}
           <Section id="todos" order={orderOf('todos')} title={t('panel.todos')} meta={t('panel.todosProgress', { done: todosDone, total: act.todos.length })}>
             {#await todosView() then { default: Todos }}<Todos todos={act.todos} />{/await}
+          </Section>
+        {/if}
+        {#if act.cost}
+          <Section id="cost" order={orderOf('cost')} title={t('cost.title')} meta={formatCost(act.cost.cost, act.cost.partial)}>
+            <SessionCost cost={act.cost} />
           </Section>
         {/if}
         {#if act.editedFiles.length}

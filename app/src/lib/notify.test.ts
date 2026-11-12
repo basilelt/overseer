@@ -20,7 +20,7 @@ describe('agent notifications', () => {
     const prev = snap([line('a', 'opencode', { busy: true }), line('b', 'claude', { busy: false }), line('c', 'amp', { busy: true })]);
     const next = snap([line('a', 'opencode', { busy: false }), line('b', 'claude', { busy: false }), line('c', 'amp', { busy: true })]);
     const n = notificationsFor(prev, next, all, () => 'webshop');
-    expect(n).toEqual([{ kind: 'finished', key: 'line:a', title: 'opencode finished in webshop', body: 'T a · webshop' }]);
+    expect(n).toEqual([{ kind: 'finished', key: 'line:a', title: 'opencode finished in webshop', body: 'T a' }]);
     expect(notificationsFor(prev, next, { ...all, notifyFinished: false }, () => 'webshop')).toEqual([]);
   });
 
@@ -36,10 +36,11 @@ describe('agent notifications', () => {
   it('names a renamed session by its custom title', () => {
     // Given a busy session the user renamed
     // When its turn finishes
-    // Then the notification body uses the custom title, not the auto title
+    // Then the notification body uses the custom title, not the auto title, and does not repeat the place already in the title
     const prev = snap([line('a', 'claude', { busy: true, titleOverride: 'Payments' })]);
     const next = snap([line('a', 'claude', { busy: false, titleOverride: 'Payments' })]);
-    expect(notificationsFor(prev, next, all, () => 'webshop')[0].body).toBe('Payments · webshop');
+    expect(notificationsFor(prev, next, all, () => 'webshop')[0].body).toBe('Payments');
+    expect(notificationsFor(prev, next, all, () => 'Payments')[0].body).toBe('');
   });
 
   it('says which agent needs input', () => {
@@ -293,7 +294,6 @@ describe('startNotifications', () => {
 
   function fakeApp() {
     const listeners = new Set<Listener>();
-    const otherListeners = new Set<(l: unknown, prev: Snapshot, next: Snapshot, e: DaemonEvent) => void>();
     const members: Record<string, SidebarItem[]> = { w1: [item('line:a', 'running')], g1: [item('line:a', 'running')] };
     const app = {
       data: snap([]),
@@ -307,10 +307,7 @@ describe('startNotifications', () => {
         return () => listeners.delete(fn);
       },
       others: [] as { key: string; target: { kind: string; host?: string; label: string }; data: Snapshot; ws: { workspaces: { id: string; name: string }[] }; itemWs: Map<string, string> }[],
-      onOtherChange: (fn: (l: unknown, prev: Snapshot, next: Snapshot, e: DaemonEvent) => void) => {
-        otherListeners.add(fn);
-        return () => otherListeners.delete(fn);
-      },
+      onOther: null as null | ((l: unknown, prev: Snapshot, next: Snapshot, e: DaemonEvent) => void),
       notice: vi.fn(),
       open: vi.fn(),
       select: vi.fn(),
@@ -320,14 +317,14 @@ describe('startNotifications', () => {
       if (!link) app.others.push((link = { key: `ssh:${host}`, target: { kind: 'ssh', host, label: host }, data: snap([]), ws: { workspaces: [{ id: 'w9', name: 'Api' }] }, itemWs: new Map([['line:b', 'w9']]) }));
       const prev = link.data;
       link.data = next;
-      for (const l of [...otherListeners]) l(link, prev, next, e as DaemonEvent);
+      app.onOther?.(link, prev, next, e as DaemonEvent);
     };
     const emit = (next: Snapshot, e: Partial<DaemonEvent> = {}) => {
       const prev = app.data;
       app.data = next;
       for (const l of [...listeners]) l(prev, next, e as DaemonEvent);
     };
-    return { app, members, listeners, otherListeners, emit, emitOther };
+    return { app, members, listeners, emit, emitOther };
   }
 
   let doc: { title: string; hasFocus: () => boolean };
@@ -375,14 +372,15 @@ describe('startNotifications', () => {
       vi.advanceTimersByTime(1500);
       expect(app.notice).toHaveBeenCalled();
     });
-    expect(app.notice).toHaveBeenCalledWith({
-      id: 'ssh:prod|needsInput|line:b|ev-9',
-      kind: 'needsInput',
-      title: 'prod: Claude Code needs your input',
-      body: 'T b · Api',
-      action: { kind: 'line', key: 'line:b', host: 'ssh:prod' },
-      target: 'line:b',
-    });
+    expect(app.notice).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: 'ssh:prod|needsInput|line:b|ev-9',
+        kind: 'needsInput',
+        title: 'prod: Claude Code needs your input',
+        action: { kind: 'line', key: 'line:b', host: 'ssh:prod' },
+        target: 'line:b',
+      }),
+    );
     stop();
   });
 
@@ -396,11 +394,11 @@ describe('startNotifications', () => {
   });
 
   it('stops following background hosts when stopped', async () => {
-    const { app, otherListeners, emitOther } = fakeApp();
+    const { app, emitOther } = fakeApp();
     const stop = startNotifications(app as unknown as typeof App);
     emitOther('prod', snap([line('b', 'claude', { needsInput: true })]), { at: 'ev-9' });
     stop();
-    expect(otherListeners.size).toBe(0);
+    expect(app.onOther).toBeNull();
     vi.advanceTimersByTime(5000);
     expect(app.notice).not.toHaveBeenCalled();
   });

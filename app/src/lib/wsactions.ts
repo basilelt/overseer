@@ -5,6 +5,8 @@ import BellOff from '@lucide/svelte/icons/bell-off';
 import Gauge from '@lucide/svelte/icons/gauge';
 import FolderInput from '@lucide/svelte/icons/folder-input';
 import FolderPlus from '@lucide/svelte/icons/folder-plus';
+import FolderTree from '@lucide/svelte/icons/folder-tree';
+import Home from '@lucide/svelte/icons/house';
 import Megaphone from '@lucide/svelte/icons/megaphone';
 import Pause from '@lucide/svelte/icons/pause';
 import Pencil from '@lucide/svelte/icons/pencil';
@@ -26,6 +28,9 @@ import { byRank, lineActions, type LineAction } from './workspaces';
 import { runSessionAction } from './session-action';
 import { movableStatuses, taskForItem } from './kanban-core';
 import { isTargetMuted, toggleTargetMute } from './os-notify';
+import { canInstall, splitInstalled } from './agents';
+import { saveSettings, settings } from './settings.svelte';
+import { tabLazy } from './state.svelte';
 
 const muteItem = (target: string): MenuItem => ({ label: t('nb.mute'), icon: BellOff, checked: isTargetMuted(app, target), run: () => toggleTargetMute(app, target) });
 
@@ -106,16 +111,48 @@ export function groupPicker(keys: string[]): MenuItem[] {
   ];
 }
 
+// The menu of the tab strip "+", also opened from a nested workspace's "+": agents, then the shell.
+export function newSessionItems(): MenuItem[] {
+  const start = (id: string) => () => app.newSession(id).catch(fail);
+  const install = (id: string) => () => app.installAgent(id).catch(fail);
+  const { installed, missing } = splitInstalled(app.agents.filter((a) => a.id !== 'shell'));
+  const shell = app.agents.find((a) => a.id === 'shell');
+  return [
+    ...installed.map((a) => ({ label: a.name, agent: a.id, default: a.id === settings.defaultAgent, run: start(a.id) })),
+    ...(missing.length
+      ? [{ label: t('agents.notInstalledCount', { n: missing.length }), more: missing.map((a) => ({ label: canInstall(a) ? t('palette.installAgent', { name: a.name }) : a.name, agent: a.id, disabled: !canInstall(a), hint: a.install ?? t('agents.notInstalled'), run: install(a.id) })) }]
+      : []),
+    { label: t('tabs.inCheckout'), checked: settings.sessionsInCheckout, run: () => saveSettings({ sessionsInCheckout: !settings.sessionsInCheckout }) },
+    { label: '', separator: true },
+    { label: shell?.name ?? t('tabs.shell'), agent: 'shell', run: start('shell') },
+  ];
+}
+
+// The "+" of a nested workspace: selects it, then offers the new-session menu with where sessions start.
+export function startIn(e: { clientX: number; clientY: number }, w: Workspace) {
+  app.selectWorkspace(w.id);
+  const dir = w.cwd ?? w.path;
+  app.openMenu(e, t('ws.sub.startHere', { name: w.name }), [...newSessionItems(), ...(dir ? [{ label: '', separator: true }, { label: t('ws.sub.startsIn', { path: dir }), disabled: true }] : [])]);
+}
+
 export function workspaceMenu(w: Workspace): MenuItem[] {
   const persistent = app.wsPersistent;
   const folders = app.ws.folders.slice().sort(byRank);
+  const parent = w.parentId ? app.ws.workspaces.find((p) => p.id === w.parentId) : undefined;
+  const top = !w.parentId;
   return [
     { label: t('ws.rename'), icon: Pencil, disabled: !persistent, run: () => askName(t('ws.rename'), t('ws.name'), w.name, (name) => app.patchWorkspace(w.id, { name })) },
-    { label: w.pinned ? t('ws.unpin') : t('ws.pin'), icon: w.pinned ? PinOff : Pin, disabled: !persistent, run: () => app.patchWorkspace(w.id, { pinned: !w.pinned }) },
-    ...folders
-      .filter((f) => f.id !== w.folderId)
-      .map((f) => ({ label: t('ws.moveTo', { name: f.parentId ? `${folders.find((p) => p.id === f.parentId)?.name ?? ''} / ${f.name}` : f.name }), icon: FolderInput, disabled: !persistent, run: () => app.patchWorkspace(w.id, { folderId: f.id, pinned: false }) })),
-    ...(w.folderId ? [{ label: t('ws.moveTop'), icon: FolderInput, disabled: !persistent, run: () => app.patchWorkspace(w.id, { folderId: null }) }] : []),
+    ...(top ? [{ label: w.pinned ? t('ws.unpin') : t('ws.pin'), icon: w.pinned ? PinOff : Pin, disabled: !persistent, run: () => app.patchWorkspace(w.id, { pinned: !w.pinned }) }] : []),
+    ...(top && w.path && w.kind !== 'subject' ? [{ label: t('ws.sub.new'), icon: FolderTree, disabled: !persistent, run: () => app.open('workspaceNew', w.id) }] : []),
+    ...(parent?.path && w.kind !== 'subject'
+      ? [{ label: t('ws.sub.startAtRoot'), icon: Home, checked: w.cwd === parent.path, disabled: !persistent, run: () => app.patchWorkspace(w.id, { cwd: w.cwd === parent.path ? null : parent.path }) }]
+      : []),
+    ...(top
+      ? folders
+          .filter((f) => f.id !== w.folderId)
+          .map((f) => ({ label: t('ws.moveTo', { name: f.parentId ? `${folders.find((p) => p.id === f.parentId)?.name ?? ''} / ${f.name}` : f.name }), icon: FolderInput, disabled: !persistent, run: () => app.patchWorkspace(w.id, { folderId: f.id, pinned: false }) }))
+      : []),
+    ...(top && w.folderId ? [{ label: t('ws.moveTop'), icon: FolderInput, disabled: !persistent, run: () => app.patchWorkspace(w.id, { folderId: null }) }] : []),
     { label: '', separator: true },
     { label: t('broadcast.title'), icon: Megaphone, run: () => broadcastTo({ kind: 'workspace', id: w.id }) },
     { label: t('hold.all'), icon: Pause, run: () => holdAll({ kind: 'workspace', id: w.id }, 'hold') },
@@ -289,6 +326,9 @@ export function itemMenu(key: string): MenuItem[] {
     ...lineMenu(key, keys),
     ...renameMenu(key, keys),
     ...status,
+    ...(keys.length === 1 && app.canMoveToWorkspace(key)
+      ? [{ label: t('ws.moveSession'), icon: FolderInput, run: () => void tabLazy().then((m) => app.openMenu(lastMenuAt, t('ws.moveSession'), m.moveMenu(app, key))) }]
+      : []),
     { label: t('broadcast.title'), icon: Megaphone, run: () => broadcastTo({ kind: 'items', keys }) },
     ...(keys.length === 1 ? [muteItem(key)] : []),
     { label: '', separator: true },
@@ -318,4 +358,9 @@ export function selectSession(key: string, e?: MouseEvent) {
   app.select(key);
 }
 
-export const itemMenuAt = (key: string, title: string, e: MouseEvent) => app.openMenu(e, title, itemMenu(key));
+let lastMenuAt = { clientX: 0, clientY: 0 };
+
+export const itemMenuAt = (key: string, title: string, e: MouseEvent) => {
+  lastMenuAt = { clientX: e.clientX, clientY: e.clientY };
+  app.openMenu(e, title, itemMenu(key));
+};

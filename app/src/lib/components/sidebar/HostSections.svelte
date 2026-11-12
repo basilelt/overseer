@@ -1,5 +1,4 @@
 <script lang="ts">
-  import type { Snippet } from 'svelte';
   import { onMount } from 'svelte';
   import ChevronDown from '@lucide/svelte/icons/chevron-down';
   import Ellipsis from '@lucide/svelte/icons/ellipsis';
@@ -10,14 +9,17 @@
   import { hostMenu, hostName, openOnHost, toggleFold } from '../../host-actions';
   import type { HostLink } from '../../host-link.svelte';
   import { hostColor } from '../../hosts';
+  import { itemsOf } from '../../host-watch';
   import { t } from '../../i18n.svelte';
   import { settings } from '../../settings.svelte';
   import { spaces } from '../../spaces';
   import { app } from '../../state.svelte';
   import { visibleClock } from '../../visible-clock';
   import SpaceBlock from './SpaceBlock.svelte';
+  import SpacesView from './SpacesView.svelte';
+  import StatesView from './StatesView.svelte';
 
-  let { filter, active }: { filter: string; active: Snippet } = $props();
+  let { filter, showArchived }: { filter: string; showArchived: boolean } = $props();
 
   let now = $state(Date.now());
   onMount(() => visibleClock((n) => (now = n)));
@@ -29,7 +31,7 @@
   }
 
   function count(l: HostLink): number {
-    const items = l === app.link ? app.items : l.items;
+    const items = l === app.link ? app.items : itemsOf(l).items;
     return items.filter((i) => i.kind !== 'shell').length;
   }
 
@@ -44,7 +46,7 @@
     const c = stateOf(l);
     if (c.prompt) return t('hosts.waiting');
     if (c.phase !== 'connected') return connLabel(c);
-    if (l.target.kind === 'local') return t('hosts.thisMachine');
+    if (l.target.kind === 'local') return t('connect.local');
     const addr = c.resolved?.split(' ')[0] ?? l.target.host ?? '';
     return addr === hostName(l.target) ? '' : addr;
   }
@@ -63,10 +65,10 @@
     {@const name = hostName(l.target)}
     <section class="host" class:active={isActive} aria-label={name}>
       <div class="head" role="presentation" oncontextmenu={(e) => menu(e, l)}>
-        <button class="fold" type="button" aria-expanded={open} aria-label={t(open ? 'hosts.fold' : 'hosts.unfold', { name })} onclick={() => toggleFold(l.key)}>
+        <button class="fold" type="button" aria-expanded={open} aria-label={t(open ? 'ws.collapse' : 'ws.expand', { name })} onclick={() => toggleFold(l.key)}>
           <ChevronDown size={12} class={open ? '' : 'shut'} />
         </button>
-        <button class="pick" type="button" aria-current={isActive ? 'true' : undefined} title={isActive ? t('hosts.active') : t('hosts.makeActive')} onclick={() => !isActive && app.switchHost(l.key)}>
+        <button class="pick" type="button" aria-current={isActive ? 'true' : undefined} title={isActive ? undefined : t('hosts.makeActive')} onclick={() => !isActive && app.switchHost(l.key)}>
           {#if l.target.kind === 'local'}<Monitor size={13} />{:else}<Server size={13} />{/if}
           <span class="dot" style:background={dot(l)}></span>
           <span class="name">{name}</span>
@@ -77,9 +79,10 @@
       </div>
       {#if open}
         {#if isActive}
-          {@render active()}
+          {#if app.sidebarMode === 'workspaces'}<SpacesView {filter} {showArchived} />{:else}<StatesView {filter} />{/if}
         {:else}
-          {@const view = spaces(l.ws.workspaces, l.items, l.itemWs, filter)}
+          {@const its = itemsOf(l)}
+          {@const view = spaces(l.ws.workspaces, its.items, its.itemWs, filter)}
           <div class="rows">
             {#each view.rows as r (r.id)}
               <SpaceBlock

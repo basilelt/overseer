@@ -3,11 +3,12 @@ import { mockUsage } from './usage/mock';
 import { DaemonError, type DaemonClient, type TermIO } from './client';
 import { phoneParam } from './mobile/layout';
 import { MockGit } from './git/mockGit';
+import { MockScm } from './git/mockScm';
 import { bigDiff, bigPatch, MockReview } from './review/mock';
 import { chatPage, mockScreen, MOCK_COMMANDS, seedAgentChat, seedChat } from './chat/mock';
-import type { Effort, HookResult, HooksStatus, SwitchboardStatus, Profile, ProfileChip, ProfilesStore, SourceItem, SourceItems, SubagentDef, TaskSource } from './types';
+import type { Effort, HookResult, HooksStatus, SwitchboardStatus, Profile, ProfileChip, ProfilesStore, SourceItem, SourceItems, SubagentDef, TaskSource, TaskType, Quorum, SessionCost, TaskCost } from './types';
 import { mockSystem } from './system/mock';
-import { resolveProfile } from './profiles';
+import { resolveProfile, TASK_TYPES } from './profiles';
 import { fileKind } from './files';
 import { cleanTitle } from './titles';
 import { isDone } from './kanban-core';
@@ -77,16 +78,19 @@ export const MOCK_AGENTS: AgentInfo[] = [
   { id: 'codex', name: 'Codex', installed: true, version: '0.58.0', efforts: [...ALL_EFFORTS], resume: true, verified: true, sessions: true, turns: true },
   { id: 'gemini', name: 'Gemini CLI', installed: true, version: '0.21.0', efforts: [], resume: true, verified: true, sessions: true, turns: false },
   { id: 'agy', name: 'Antigravity', installed: true, version: '1.4.2', efforts: AGY_EFFORTS, resume: false, verified: true, sessions: false, turns: false },
-  { id: 'opencode', name: 'opencode', installed: false, efforts: [], resume: true, verified: true, install: 'npm install -g --allow-scripts=opencode-ai opencode-ai', sessions: false, turns: false },
-  { id: 'amp', name: 'Amp', installed: false, models: [], efforts: [...ALL_EFFORTS], resume: true, verified: true, install: 'npm install -g --allow-scripts=@ampcode/cli @sourcegraph/amp', sessions: false, turns: false },
+  { id: 'opencode', name: 'opencode', installed: false, efforts: [], resume: true, verified: true, install: 'npm install -g --allow-scripts=opencode-ai opencode-ai', installable: true, sessions: false, turns: false },
+  { id: 'amp', name: 'Amp', installed: false, models: [], efforts: [...ALL_EFFORTS], resume: true, verified: true, install: 'npm install -g --allow-scripts=@ampcode/cli @sourcegraph/amp', installable: true, sessions: false, turns: false },
   { id: 'copilot', name: 'Copilot CLI', installed: true, version: '0.0.354', efforts: [...ALL_EFFORTS], resume: true, verified: true, sessions: false, turns: false },
-  { id: 'cursor', name: 'Cursor Agent', installed: false, efforts: [], resume: true, verified: false, install: 'curl https://cursor.com/install -fsS | bash', sessions: false, turns: false },
+  { id: 'cursor', name: 'Cursor Agent', installed: false, efforts: [], resume: true, verified: false, install: 'curl https://cursor.com/install -fsS | bash', installable: true, sessions: false, turns: false },
+  { id: 'vibe', name: 'Mistral Vibe', installed: true, version: 'vibe 3.1.2', models: [], efforts: [], resume: true, verified: true, install: 'uv tool install mistral-vibe', sessions: true, turns: true },
   { id: 'shell', name: 'Shell', installed: true, models: [], efforts: [], resume: false, verified: true, sessions: false, turns: false },
 ];
 
 export const MOCK_PROFILES: ProfilesStore = {
   default: '',
   scopes: {},
+  types: {},
+  taskTypes: ['fix', 'feature', 'engineering', 'refactor', 'triage'],
   profiles: [
     {
       id: 'economy',
@@ -129,6 +133,7 @@ export const MOCK_PROFILES: ProfilesStore = {
     amp: { effort: 'flag' },
     copilot: { model: 'flag', effort: 'flag' },
     cursor: { model: 'flag' },
+    vibe: { model: 'env' },
   },
 };
 
@@ -202,6 +207,7 @@ function seedLines(now: number): LocalLine[] {
       tasks: 0,
       title: s.title,
       heldReason: s.state === 'held' ? (s.ago > 600 ? 'lost' : 'user') : undefined,
+      ...(NESTED_LINES[s.id] ? { workspaceId: NESTED_LINES[s.id] } : {}),
     },
   }));
 }
@@ -228,6 +234,46 @@ function scatteredLines(now: number): LocalLine[] {
       local: { title: `${repo} experiment ${i + 1}` },
     };
   });
+}
+
+const MOCK_MODELS: Partial<Record<Agent, [string, string, number, number, number, number]>> = {
+  claude: ['claude-opus-5-5', 'claude-haiku-5-5', 4, 20, 0.2, 5],
+  codex: ['gpt-5-codex', 'gpt-5-mini', 1.25, 10, 0.125, 0],
+  gemini: ['gemini-2.5-pro', 'gemini-2.5-flash', 1.25, 10, 0.31, 0],
+};
+
+export function mockCost(agent: Agent, i: number): SessionCost | null {
+  const m = MOCK_MODELS[agent];
+  if (!m) return null;
+  const [main, sub, pin, pout, pread, pwrite] = m;
+  const k = 1 + (i % 4);
+  const split = (n: number) => ({ input: 900 * n, cacheWrite: pwrite ? 40_000 * n : 0, cacheRead: 1_800_000 * n, output: 28_000 * n });
+  const price = (t: ReturnType<typeof split>, f: number) => Math.round(((t.input * pin + t.cacheWrite * pwrite + t.cacheRead * pread + t.output * pout) / 1e6) * f * 10_000) / 10_000;
+  const a = split(k);
+  const b = split(k / 4);
+  const models = [
+    { model: main, ...a, cost: price(a, 1) },
+    { model: sub, ...b, cost: price(b, 0.2) },
+  ];
+  const sum = (key: 'input' | 'cacheWrite' | 'cacheRead' | 'output') => a[key] + b[key];
+  return {
+    input: sum('input'),
+    cacheWrite: sum('cacheWrite'),
+    cacheRead: sum('cacheRead'),
+    output: sum('output'),
+    cost: Math.round((models[0].cost + models[1].cost) * 10_000) / 10_000,
+    partial: false,
+    model: main,
+    effort: (['medium', 'high', 'xhigh', 'low'] as const)[i % 4],
+    pricesAsOf: '2026-11-11',
+    models,
+    switches: i % 3 === 0 && pwrite ? [{ at: iso(30 + i), from: 'claude-sonnet-5-5', to: main, cacheWrite: 60_000, cost: 0.3 }] : [],
+  };
+}
+
+function taskCost(c: SessionCost | null): TaskCost | null {
+  if (!c) return null;
+  return { input: c.input, cacheWrite: c.cacheWrite, cacheRead: c.cacheRead, output: c.output, cost: c.cost, partial: c.partial, sessions: 1, model: c.model, effort: c.effort };
 }
 
 function seedActivity(): Record<string, Activity> {
@@ -257,6 +303,7 @@ function seedActivity(): Record<string, Activity> {
       lastAssistantText: s.needsInput
         ? `${s.status} I can do either; the cap before shipping matches the spec in ${s.ticket ?? 'the ticket'}.`
         : `${s.status}.`,
+      cost: mockCost(s.agent, SEEDS.indexOf(s)),
     };
   }
   return out;
@@ -297,6 +344,7 @@ function seedTasks(now: number): Task[] {
     termId: lineId ? `tm_${lineId}` : null,
     branch: lineId ? SEEDS.find((s) => s.id === lineId)?.branch : null,
     progress: status === 'in_progress' ? { done: 1 + (i % 3), total: 5, note: 'Implementing' } : status === 'in_testing' || status === 'merged' || status === 'completed' ? { done: 5, total: 5 } : null,
+    ...(status === 'pending' || status === 'auto' ? {} : { cost: taskCost(mockCost(agent, lineId ? SEEDS.findIndex((s) => s.id === lineId) : i)), profile: (['economy', 'balanced', 'max'] as const)[i % 3] }),
     createdAt: iso(60 * 24 * (TASK_SEEDS.length - i) / 3, now),
     updatedAt: iso(30 - i, now),
   }));
@@ -316,7 +364,7 @@ function seedTasks(now: number): Task[] {
     if (q) [t.urgent, t.important] = q;
     t.dependsOn = deps[t.id] ?? [];
   }
-  return own.concat(seedAgentTasks(now), seedSessionTasks(now));
+  return own.concat(seedAgentTasks(now), seedSessionTasks(now), seedQuorumTasks(now));
 }
 
 const AGENT_TASK_SEEDS: [string, string, string, boolean | null, boolean | null][] = [
@@ -345,6 +393,50 @@ function seedAgentTasks(now: number): Task[] {
     createdAt: iso(40 - i * 7, now),
     updatedAt: iso(40 - i * 7, now),
   }));
+}
+
+function seedQuorumTasks(now: number): Task[] {
+  const base = (id: string, n: number, title: string, agent: Agent, model: string, extra: Partial<Task>): Task => ({
+    id,
+    number: n,
+    title,
+    description: '',
+    project: repoPath('webshop'),
+    status: 'in_progress',
+    agent,
+    model,
+    effort: 'medium',
+    rank: 200 + n,
+    station: 'atlas',
+    createdAt: iso(50, now),
+    updatedAt: iso(5, now),
+    ...extra,
+  });
+  return [
+    base('tk_q1', 122, 'Add CSV export to the orders page', 'claude', 'opus', {
+      description: 'Split into the API endpoint, the UI button and the tests.',
+      quorum: { workers: ['claude', 'codex', 'gemini'], reviewers: ['codex', 'gemini'] },
+      progress: { done: 1, total: 3, note: 'Waiting for the reviewers' },
+    }),
+    base('tk_q2', 123, 'CSV export endpoint', 'codex', 'gpt-5-codex', {
+      status: 'in_testing',
+      origin: 'agent',
+      parentId: 'tk_q1',
+      votes: {
+        round: 1,
+        voters: 3,
+        needed: 2,
+        outcome: 'rejected',
+        votes: [
+          { from: 'tk_q3', number: 124, agent: 'gemini', role: 'reviewer', approve: false, reason: 'The endpoint loads every order in memory; stream the rows.' },
+          { from: 'tk_q4', number: 125, agent: 'codex', role: 'reviewer', approve: true, reason: 'Tests cover the empty and the large export.' },
+          { from: 'tk_q1', number: 122, agent: 'claude', role: 'orchestrator', approve: false, reason: 'Agree with the streaming remark.' },
+        ],
+      },
+    }),
+    base('tk_q3', 124, 'Review CSV export endpoint', 'gemini', '', { status: 'completed', origin: 'reviewer', parentId: 'tk_q2' }),
+    base('tk_q4', 125, 'Review CSV export endpoint', 'codex', 'gpt-5-codex', { status: 'completed', origin: 'reviewer', parentId: 'tk_q2' }),
+  ];
 }
 
 function seedMessages(tasks: Task[], now: number): TaskMessage[] {
@@ -485,13 +577,20 @@ const WS_SEEDS: [string, string, string, string | null, boolean, boolean, boolea
   ['ws_thesis', 'thesis', `${HOME}/Documents/thesis`, 'f_alice', false, false, true],
 ];
 
+// Nested workspaces of webshop: a sub-folder whose sessions start at the repo root, and a checked-out submodule.
+const NESTED_SEEDS: [string, string, string, string, string | null, boolean][] = [
+  ['ws_webshop_invoicing', 'Invoicing', `${repoPath('webshop')}/services/invoicing`, 'ws_webshop', repoPath('webshop'), false],
+  ['ws_webshop_design', 'design-system', `${repoPath('webshop')}/vendor/design-system`, 'ws_webshop', null, true],
+];
+const NESTED_LINES: Record<string, string> = { ln_05: 'ws_webshop_invoicing' };
+
 const DISCOVERABLE: Project[] = [{ path: `${HOME}/Documents/Github/perso/dotfiles`, name: 'dotfiles', repo: 'github.com/alice/dotfiles' }];
 
 function seedWs(now: number): { workspaces: Workspace[]; folders: Folder[]; groups: Group[] } {
   const at = iso(60 * 24, now);
   return {
     folders: FOLDER_SEEDS.map(([id, name, collapsed], i) => ({ id, name, parentId: null, rank: i + 1, collapsed, createdAt: at, updatedAt: at })),
-    workspaces: WS_SEEDS.map(([id, name, path, folderId, pinned, auto, missing], i) => ({
+    workspaces: WS_SEEDS.map(([id, name, path, folderId, pinned, auto, missing], i): Workspace => ({
       id,
       name,
       path,
@@ -508,7 +607,26 @@ function seedWs(now: number): { workspaces: Workspace[]; folders: Folder[]; grou
       ...(missing ? { missing } : {}),
       createdAt: at,
       updatedAt: at,
-    })),
+    })).concat(
+      NESTED_SEEDS.map(([id, name, path, parentId, cwd, auto], i): Workspace => ({
+        id,
+        name,
+        path,
+        station: 'atlas',
+        kind: 'dir' as const,
+        cwd,
+        parentId,
+        folderId: null,
+        pinned: false,
+        archived: false,
+        auto,
+        rank: WS_SEEDS.length + i + 1,
+        tabs: [],
+        notifyIdle: false,
+        createdAt: at,
+        updatedAt: at,
+      })),
+    ),
     groups: [
       { id: 'g_release', name: 'release 5.8', rank: 1, members: ['line:ln_01', 'line:ln_05', 'line:ln_08'], notifyIdle: false, createdAt: at, updatedAt: at },
       { id: 'g_infra', name: 'infra', rank: 2, members: ['line:ln_07', 'line:ln_11', 'line:ln_04'], notifyIdle: false, createdAt: at, updatedAt: at },
@@ -609,6 +727,9 @@ export class MockDaemon implements DaemonClient {
   terms: Term[];
   tasks: Task[];
   autoOrganize = false;
+  agentMessaging = true;
+  agentTasks = true;
+  lidPower = { enabled: false, active: false, supported: true, error: null as string | null };
   autoApprove: Record<string, boolean> = Object.fromEntries(Object.keys(AUTO_APPROVE_ARGS).map((id) => [id, true]));
   messages: TaskMessage[];
   activity: Record<string, Activity>;
@@ -620,6 +741,7 @@ export class MockDaemon implements DaemonClient {
   statusline = { path: '~/.claude/settings.json', installed: false, command: '~/.claude/statusline.sh' as string | null };
   profileStore: ProfilesStore = structuredClone(MOCK_PROFILES);
   git = new MockGit(this);
+  scm = new MockScm(this, (wt) => this.git.projectOf(wt) ?? wt, (p, rev) => this.git.hasCommit(p, rev));
   workspaces: Workspace[];
   folders: Folder[];
   groups: Group[];
@@ -712,7 +834,7 @@ export class MockDaemon implements DaemonClient {
     if (method === 'DELETE' && path.startsWith('/v1/projects/sources/')) return this.removeSource(decodeURIComponent(path.slice('/v1/projects/sources/'.length)));
     if (method === 'GET' && path === '/v1/projects/items') return this.sourceItems(new URLSearchParams(qs).get('project') ?? '');
     if (method === 'GET' && path === '/v1/agents') return structuredClone(this.agents);
-    if (method === 'POST' && path === '/v1/agents/rescan') return structuredClone(this.agents);
+    if (method === 'POST' && path === '/v1/agents/rescan') return this.rescanAgents();
     if (method === 'GET' && path === '/v1/agents/settings') return { autoApprove: structuredClone(this.autoApprove) };
     if (method === 'PUT' && path === '/v1/agents/settings') {
       if (typeof body?.agent !== 'string' || typeof body?.autoApprove !== 'boolean') throw new DaemonError(400, 'agent and autoApprove are required');
@@ -768,15 +890,35 @@ export class MockDaemon implements DaemonClient {
     if (method === 'POST' && (r = m(/^\/v1\/ports\/([^/]+)\/kill$/))) return this.killPortProcess(decodeURIComponent(r[1]), body);
     if (method === 'DELETE' && (r = m(/^\/v1\/terms\/([^/]+)$/))) return this.deleteTerm(decodeURIComponent(r[1]));
     if ((r = m(/^\/v1\/terms\/([^/]+)\/(resize|kill|title)$/))) return this.termAction(decodeURIComponent(r[1]), r[2], body);
+    if (method === 'GET' && path === '/v1/power/lid') return { ...this.lidPower };
+    if (method === 'PUT' && path === '/v1/power/lid') {
+      if (typeof body?.enabled !== 'boolean') throw new DaemonError(400, 'enabled must be a boolean');
+      this.lidPower = { ...this.lidPower, enabled: body.enabled, active: body.enabled, error: null };
+      return { ...this.lidPower };
+    }
     if (method === 'GET' && path === '/v1/tasks/auto-organize') return { enabled: this.autoOrganize };
     if (method === 'PUT' && path === '/v1/tasks/auto-organize') {
       this.autoOrganize = body?.enabled === true;
       return { enabled: this.autoOrganize };
     }
+    if (method === 'GET' && path === '/v1/tasks/agent-tasks') return { enabled: this.agentTasks };
+    if (method === 'PUT' && path === '/v1/tasks/agent-tasks') {
+      if (typeof body?.enabled !== 'boolean') throw new DaemonError(400, 'enabled must be a boolean');
+      this.agentTasks = body.enabled;
+      return { enabled: this.agentTasks };
+    }
+    if (method === 'GET' && path === '/v1/tasks/agent-messaging') return { enabled: this.agentMessaging };
+    if (method === 'PUT' && path === '/v1/tasks/agent-messaging') {
+      if (typeof body?.enabled !== 'boolean') throw new DaemonError(400, 'enabled must be a boolean');
+      this.agentMessaging = body.enabled;
+      return { enabled: this.agentMessaging };
+    }
     if (method === 'POST' && path === '/v1/tasks/organize') return this.organize(body);
     if (path.startsWith('/v1/organize/')) return this.organizeRoute(method, path, body);
     if ((r = m(/^\/v1\/tasks\/([^/]+)\/messages$/))) return this.messagesRoute(method, decodeURIComponent(r[1]), body);
     if ((r = m(/^\/v1\/tasks\/([^/]+)(?:\/(start|review))?$/))) return this.taskAction(method, decodeURIComponent(r[1]), r[2], body);
+    const sc = this.scm.route(method, path, new URLSearchParams(qs), body);
+    if (sc !== undefined) return sc;
     const g = this.git.route(method, path, new URLSearchParams(qs), body);
     if (g !== undefined) return g;
     throw new DaemonError(404, `no route ${method} ${path}`);
@@ -800,7 +942,7 @@ export class MockDaemon implements DaemonClient {
   private chatRoute(id: string, action: string, q: URLSearchParams, body: any): unknown {
     const l = this.findLine(id);
     if (action === 'chat') {
-      if (!['claude', 'codex', 'gemini'].includes(l.line.agent)) throw new DaemonError(409, `no chat parser for ${l.line.agent}`);
+      if (!['claude', 'codex', 'gemini', 'vibe'].includes(l.line.agent)) throw new DaemonError(409, `no chat parser for ${l.line.agent}`);
       return chatPage(id, l.line.agent, this.chatOf(id), q);
     }
     if (action === 'screen') return mockScreen(id);
@@ -978,16 +1120,27 @@ export class MockDaemon implements DaemonClient {
       if (kind === 'workspaces' && body?.kind === 'subject') {
         if (body.path != null) throw new DaemonError(400, 'a subject has no path, give cwd');
         if (!name) throw new DaemonError(400, 'name required');
-        const cwd = this.subjectCwd(body.cwd);
-        item = { id: `ws_${Math.random().toString(36).slice(2, 8)}`, name, path: null, kind: 'subject', cwd, station: 'atlas', folderId: body?.folderId ?? null, pinned: !!body?.pinned, archived: false, auto: false, rank: Date.now(), tabs: [], notifyIdle: false, createdAt: now, updatedAt: now } as unknown as Workspace;
+        const parent = this.wsParent(body);
+        const cwd = body?.cwd == null && parent ? parent.path! : this.subjectCwd(body.cwd);
+        item = { id: `ws_${Math.random().toString(36).slice(2, 8)}`, name, path: null, kind: 'subject', cwd, parentId: parent?.id ?? null, station: 'atlas', folderId: body?.folderId ?? null, pinned: !!body?.pinned, archived: false, auto: false, rank: Date.now(), tabs: [], notifyIdle: false, createdAt: now, updatedAt: now } as unknown as Workspace;
       } else if (kind === 'workspaces') {
         if (body?.kind != null && body.kind !== 'dir') throw new DaemonError(400, 'kind must be "dir" or "subject"');
-        if (body?.cwd != null) throw new DaemonError(400, 'cwd is only for subjects');
         const path = String(body?.path ?? '').trim().replace(/^~(?=\/|$)/, HOME).replace(/\/+$/, '');
+        if (!path) throw new DaemonError(400, 'path required');
         if (!path.startsWith('/')) throw new DaemonError(400, 'path must be absolute');
+        const parent = this.wsParent(body);
+        if (!parent && body?.cwd != null) throw new DaemonError(400, 'cwd is only for subjects and nested workspaces');
+        if (parent && (path === parent.path || !path.startsWith(`${parent.path}/`))) throw new DaemonError(400, `${path} is not inside ${parent.path}`);
+        const cwd = body?.cwd == null ? null : this.subjectCwd(body.cwd);
         const existing = this.workspaces.find((w) => w.path === path);
-        if (existing) return structuredClone(existing);
-        item = { id: `ws_${Math.random().toString(36).slice(2, 8)}`, name: name || path.split('/').pop() || path, path, station: 'atlas', kind: 'dir', cwd: null, folderId: body?.folderId ?? null, pinned: !!body?.pinned, archived: false, auto: false, rank: Date.now(), tabs: [], notifyIdle: false, createdAt: now, updatedAt: now } as unknown as Workspace;
+        if (existing) {
+          if (parent && !existing.parentId && !this.workspaces.some((w) => w.parentId === existing.id)) {
+            Object.assign(existing, { parentId: parent.id, folderId: null, pinned: false, cwd, archived: false, updatedAt: now }, body?.name != null ? { name } : {});
+            this.emit('workspace.updated', { workspace: existing });
+          }
+          return structuredClone(existing);
+        }
+        item = { id: `ws_${Math.random().toString(36).slice(2, 8)}`, name: name || path.split('/').pop() || path, path, station: 'atlas', kind: 'dir', cwd, parentId: parent?.id ?? null, folderId: body?.folderId ?? null, pinned: !!body?.pinned, archived: false, auto: false, rank: Date.now(), tabs: [], notifyIdle: false, createdAt: now, updatedAt: now } as unknown as Workspace;
       } else {
         if (!name) throw new DaemonError(400, 'name required');
         if (kind === 'folders') {
@@ -1003,17 +1156,24 @@ export class MockDaemon implements DaemonClient {
     const item = list.find((x) => x.id === id);
     if (!item) throw new DaemonError(404, `no ${single} ${id}`);
     if (method === 'DELETE') {
-      (this as any)[kind] = list.filter((x) => x.id !== id);
+      const children = kind === 'workspaces' ? this.workspaces.filter((w) => w.parentId === id).map((w) => w.id) : [];
+      const gone = new Set<string>([...children, item.id]);
+      (this as any)[kind] = list.filter((x) => !gone.has(x.id));
       if (kind === 'folders') for (const w of this.workspaces) if (w.folderId === id) w.folderId = (item as Folder).parentId;
-      if (kind === 'workspaces') this.unassign(item.id);
-      this.emit(`${single}.deleted` as EventType, { id });
-      return { deleted: id };
+      for (const g of gone) {
+        if (kind === 'workspaces') this.unassign(g);
+        this.emit(`${single}.deleted` as EventType, { id: g });
+      }
+      return children.length ? { deleted: id, children } : { deleted: id };
     }
     if (method === 'PATCH') {
       const { add, remove, id: _i, ...patch } = body ?? {};
+      const nested = kind === 'workspaces' && !!(item as Workspace).parentId;
+      if (nested && ((patch.folderId != null) || (patch.pinned != null && patch.pinned !== false))) throw new DaemonError(400, 'a nested workspace has no folder and cannot be pinned');
       if (kind === 'workspaces' && 'cwd' in patch) {
-        if ((item as any).kind !== 'subject') throw new DaemonError(400, 'cwd is only for subjects');
-        patch.cwd = this.subjectCwd(patch.cwd);
+        if ((item as any).kind === 'subject') patch.cwd = this.subjectCwd(patch.cwd);
+        else if (nested) patch.cwd = patch.cwd == null ? null : this.subjectCwd(patch.cwd);
+        else throw new DaemonError(400, 'cwd is only for subjects and nested workspaces');
       }
       Object.assign(item, patch, { updatedAt: now });
       if (kind === 'groups') {
@@ -1024,6 +1184,17 @@ export class MockDaemon implements DaemonClient {
       return structuredClone(item);
     }
     return structuredClone(item);
+  }
+
+  private wsParent(body: any): Workspace | null {
+    const pid = body?.parentId;
+    if (pid == null) return null;
+    if (typeof pid !== 'string') throw new DaemonError(400, 'parentId must be a string or null');
+    const p = this.workspaces.find((w) => w.id === pid);
+    if (!p) throw new DaemonError(400, `no workspace ${pid}`);
+    if (p.kind === 'subject' || p.parentId) throw new DaemonError(400, 'the parent must be a top-level folder workspace');
+    if (body?.folderId != null || body?.pinned != null) throw new DaemonError(400, 'a nested workspace has no folder and cannot be pinned');
+    return p;
   }
 
   private subjectCwd(raw: unknown): string {
@@ -1185,7 +1356,15 @@ export class MockDaemon implements DaemonClient {
     return term;
   }
 
+  private installed = new Set<string>();
+
+  private rescanAgents(): AgentInfo[] {
+    for (const a of this.agents) if (this.installed.has(a.id)) Object.assign(a, { installed: true, version: '0.0.0' });
+    return structuredClone(this.agents);
+  }
+
   private startTerm(body: NewTerm): Term {
+    if (body?.install !== undefined) return this.installTerm(body);
     const scopeCwd = body?.cwd;
     const project = body?.worktree && this.projects.find((p) => p.path === body.cwd);
     if (project) {
@@ -1205,6 +1384,28 @@ export class MockDaemon implements DaemonClient {
     const cmd = a.id === 'shell' ? ['zsh'] : [a.id, ...(this.autoApprove[a.id] ? AUTO_APPROVE_ARGS[a.id] ?? [] : []), ...(model ? ['--model', model] : []), ...(effort && a.efforts.includes(effort) ? ['--effort', effort] : [])];
     const profile = p || model || effort ? { ...(p ? { id: p.id, name: p.name } : {}), ...(model ? { model } : {}), ...(effort ? { effort } : {}) } : undefined;
     return this.spawn({ ...body, cmd, title: body.title ?? (a.id === 'shell' ? 'zsh' : a.name) }, a.id, profile);
+  }
+
+  private installTerm(body: NewTerm): Term {
+    if (typeof body.install !== 'string') throw new DaemonError(400, 'install must be a string');
+    if (body.cmd || body.agent !== undefined) throw new DaemonError(400, 'give either install, agent or cmd');
+    const a = this.agents.find((x) => x.id === body.install);
+    if (!a) throw new DaemonError(400, `unknown agent ${body.install}`);
+    if (!a.installable || !a.install) throw new DaemonError(400, `${a.name} has no install command`);
+    this.installed.add(a.id);
+    const { install: _i, ...rest } = body;
+    const term = this.spawn({ ...rest, cmd: [a.install], title: body.title ?? `Install ${a.name}` }, 'shell');
+    if (this.live) this.installTimers.push(setTimeout(() => this.finishInstall(term.id), 1500));
+    return term;
+  }
+
+  private installTimers: ReturnType<typeof setTimeout>[] = [];
+
+  private finishInstall(id: string) {
+    const t = this.terms.find((x) => x.id === id);
+    if (!t || t.exited) return;
+    Object.assign(t, { exited: true, exitCode: 0 });
+    this.emit('term.exited', { term: structuredClone(t) });
   }
 
   private discover(): { added: number; projects: Project[] } {
@@ -1391,13 +1592,13 @@ export class MockDaemon implements DaemonClient {
           [63, "Bug: Doesn't reduce text correctly"],
           [50, 'Idea: add an option to add tasks to a project from multi sources'],
         ] as const) {
-          items.push({ source: s.id, kind: 'github', key: `#${n}`, title, body: `Reported from Overseer.\n\nSee ${s.target}#${n}.`, url: `https://github.com/${s.target}/issues/${n}` });
+          items.push({ source: s.id, kind: 'github', key: `#${n}`, title, body: `Reported from Overseer.\n\nSee ${s.target}#${n}.`, url: `https://github.com/${s.target}/issues/${n}`, taskType: title.startsWith('Bug') ? 'fix' : 'feature' });
         }
       } else if (s.kind === 'gitlab') {
-        items.push({ source: s.id, kind: 'gitlab', key: '#12', title: 'Pipeline cache misses on main', body: 'Cache key changes every run.', url: `https://gitlab.com/${s.target}/-/issues/12` });
+        items.push({ source: s.id, kind: 'gitlab', key: '#12', title: 'Pipeline cache misses on main', body: 'Cache key changes every run.', url: `https://gitlab.com/${s.target}/-/issues/12`, taskType: 'fix' });
       } else {
-        items.push({ source: s.id, kind: 'jira', key: 'PROJ-1204', title: 'Export orders as CSV', body: '', url: '', ticketKey: 'PROJ-1204' });
-        items.push({ source: s.id, kind: 'jira', key: 'OPS-7', title: 'Rotate staging certificates', body: '', url: '', ticketKey: null });
+        items.push({ source: s.id, kind: 'jira', key: 'PROJ-1204', title: 'Export orders as CSV', body: '', url: '', ticketKey: 'PROJ-1204', taskType: 'feature' });
+        items.push({ source: s.id, kind: 'jira', key: 'OPS-7', title: 'Rotate staging certificates', body: '', url: '', ticketKey: null, taskType: null });
       }
     }
     return { sources, items, errors };
@@ -1439,9 +1640,14 @@ export class MockDaemon implements DaemonClient {
     const next = structuredClone(this.profileStore);
     if (body?.default !== undefined) next.default = body.default;
     if (body?.scopes) next.scopes = body.scopes;
+    if (body?.types) next.types = body.types;
     if (body?.profiles) next.profiles = [...next.profiles.filter((p) => p.builtin), ...body.profiles.filter((p: Profile) => !p.builtin)];
     const ids = next.profiles.map((p) => p.id);
     if (next.default && next.default !== 'none' && !ids.includes(next.default)) throw new DaemonError(400, `unknown default profile ${next.default}`);
+    for (const [ty, id] of Object.entries(next.types ?? {})) {
+      if (!TASK_TYPES.includes(ty as TaskType)) throw new DaemonError(400, `unknown task type ${JSON.stringify(ty)}, expected one of ${TASK_TYPES.join(', ')}`);
+      if (!id || (id !== 'none' && !ids.includes(id))) throw new DaemonError(400, `task type ${ty}: unknown profile ${id}`);
+    }
     this.profileStore = next;
     this.emit('profiles.changed', {});
     return structuredClone(next);
@@ -1465,8 +1671,30 @@ export class MockDaemon implements DaemonClient {
     return { dryRun: false, files: files.filter((f) => body.files!.includes(f.path)).map((f) => ({ ...f, written: true, backup: `${f.path}.bak-202610291200` })) };
   }
 
+  private quorumOf(q: unknown, agent: string): Quorum | null {
+    if (q === null) return null;
+    if (typeof q !== 'object' || Array.isArray(q)) throw new DaemonError(400, 'quorum must be an object or null');
+    const { workers, reviewers } = q as Record<string, unknown>;
+    const strings = (v: unknown): v is string[] => Array.isArray(v) && v.every((x) => typeof x === 'string');
+    if (!strings(workers) || !workers.length) throw new DaemonError(400, 'quorum.workers must be a non-empty array of agent ids');
+    if (!strings(reviewers) || reviewers.length < 1 || reviewers.length > 2) throw new DaemonError(400, 'quorum.reviewers must list 1 or 2 agent ids');
+    for (const id of [...workers, ...reviewers]) {
+      if (!this.agents.some((a) => a.id === id)) throw new DaemonError(400, `unknown agent ${id}`);
+      if (id === 'shell') throw new DaemonError(400, 'shell cannot join a quorum');
+    }
+    for (const [name, list] of [['workers', workers], ['reviewers', reviewers]] as const) {
+      const dup = list.find((id, i) => list.indexOf(id) !== i);
+      if (dup) throw new DaemonError(400, `quorum.${name} lists ${dup} twice`);
+    }
+    if (agent !== 'claude' && agent !== 'codex') throw new DaemonError(400, 'the quorum orchestrator must be claude or codex');
+    return { workers: [...workers], reviewers: [...reviewers] };
+  }
+
   private createTask(body: NewTask): Task {
     if (!body?.title?.trim()) throw new DaemonError(400, 'title required');
+    const quorum = body.quorum === undefined ? undefined : this.quorumOf(body.quorum, body.agent);
+    const taskType = this.taskTypeOf(body.taskType);
+    if (quorum && (body as any).parentId) throw new DaemonError(400, 'a subtask cannot run a quorum');
     const now = new Date().toISOString();
     const id = `tk_${Math.random().toString(36).slice(2, 8)}`;
     const kept = this.keepAttachments(id, body.attachments);
@@ -1480,8 +1708,9 @@ export class MockDaemon implements DaemonClient {
       status: body.status ?? 'pending',
       agent: body.agent,
       model: body.model,
-      effort: body.effort ?? (resolveProfile(this.profileStore, { explicit: body.profile, cwd: body.project })?.agents[body.agent]?.effort ? ('' as Effort) : 'high'),
+      effort: body.effort ?? (resolveProfile(this.profileStore, { explicit: body.profile, taskType, cwd: body.project })?.agents[body.agent]?.effort ? ('' as Effort) : 'high'),
       ...(body.profile ? { profile: body.profile } : {}),
+      ...(taskType ? { taskType } : {}),
       rank: Math.max(0, ...this.tasks.filter((x) => x.status === (body.status ?? 'pending')).map((x) => x.rank)) + 1,
       station: 'atlas',
       ticketKey: body.ticketKey || null,
@@ -1490,6 +1719,7 @@ export class MockDaemon implements DaemonClient {
       ...((body as any).origin ? { origin: (body as any).origin } : {}),
       ...((body as any).parentId ? { parentId: (body as any).parentId } : {}),
       dependsOn: body.dependsOn ?? [],
+      ...(quorum ? { quorum } : {}),
       ...(typeof body.inheritBranch === 'boolean' ? { inheritBranch: body.inheritBranch } : {}),
       createdAt: now,
       updatedAt: now,
@@ -1499,12 +1729,20 @@ export class MockDaemon implements DaemonClient {
     return structuredClone(task);
   }
 
+  private taskTypeOf(v: unknown): TaskType | undefined {
+    if (v == null || v === '') return undefined;
+    if (typeof v === 'string' && TASK_TYPES.includes(v as TaskType)) return v as TaskType;
+    throw new DaemonError(400, `taskType must be one of ${TASK_TYPES.join(', ')}`);
+  }
+
   private messagesRoute(method: string, id: string, body: any): unknown {
     const t = this.findTask(id);
     if (method === 'GET') return structuredClone(this.messages.filter((m) => m.taskId === id || m.from === id));
     const text = String(body?.body ?? '').trim();
     if (!text || text.length > 8000) throw new DaemonError(400, 'body must be 1 to 8000 characters');
     const sender = body?.from ? this.findTask(body.from) : null;
+    if (sender && sender.project !== t.project) throw new DaemonError(403, `task ${t.id} belongs to another project (${t.project}): agents may only message tasks of their own project. Do not retry.`);
+    if (sender && !this.agentMessaging && sender.parentId !== t.id && t.parentId !== sender.id) throw new DaemonError(403, "messages between agents are turned off in Overseer's settings. Do not retry; carry on without them.");
     const live = t.status === 'in_progress' && !!t.termId;
     const m: TaskMessage = {
       id: `msg_${Math.random().toString(36).slice(2, 8)}`,
@@ -1701,6 +1939,21 @@ export class MockDaemon implements DaemonClient {
         } else if (!['pending', 'auto', 'in_testing', 'merged', 'completed'].includes(patch.status)) {
           throw new DaemonError(400, 'status must be one of pending, auto, in_testing, merged, completed');
         }
+      }
+      if ('quorum' in patch) {
+        const quorum = this.quorumOf(patch.quorum, patch.agent ?? t.agent);
+        if (t.status !== 'pending' && t.status !== 'auto') throw new DaemonError(409, 'the quorum can only change before the task starts');
+        if (quorum) patch.quorum = quorum;
+        else {
+          delete patch.quorum;
+          delete t.quorum;
+        }
+      }
+      if ('taskType' in patch) {
+        const ty = this.taskTypeOf(patch.taskType);
+        delete patch.taskType;
+        if (ty) t.taskType = ty;
+        else delete t.taskType;
       }
       Object.assign(t, patch);
       if (t.origin === 'session' && patch.status) t.manualStatus = patch.status;
@@ -2153,6 +2406,8 @@ export class MockDaemon implements DaemonClient {
     this.stop();
     for (const x of this.portTimers) clearTimeout(x);
     this.portTimers = [];
+    for (const x of this.installTimers) clearTimeout(x);
+    this.installTimers = [];
   }
 
   async sshHosts(): Promise<SshHost[]> {
@@ -2222,6 +2477,7 @@ function mockHooks(): HooksStatus {
       row('gemini', 'Gemini CLI', 'hooks', false, '/home/dev/.gemini/settings.json'),
       row('opencode', 'opencode', 'plugin', true, '/home/dev/.config/opencode/plugins/overseer.js'),
       row('agy', 'Antigravity', 'polling', false, undefined, 'No stable hook file for the Antigravity CLI yet'),
+      row('vibe', 'Mistral Vibe', 'hooks', false, '/home/dev/.vibe/hooks.toml', 'Needs Mistral Vibe 3.0 or later. An interrupted turn fires no hook: the line stays busy until the next turn ends.'),
     ],
   };
 }

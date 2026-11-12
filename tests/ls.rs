@@ -212,6 +212,7 @@ impl Fx {
             claude_dir: self.claude(),
             codex_dir: self.codex(),
             gemini_dir: self.base.join(".gemini"),
+            vibe_dir: self.base.join(".vibe"),
             state_dir: self.state(),
             snapshot: self.base.join("snapshot.json"),
             tmux: None,
@@ -888,6 +889,7 @@ fn ws(path: &str) -> overseer::workspaces::Workspace {
         updated_ms: 0,
         subject: false,
         cwd: None,
+        parent_id: None,
     }
 }
 
@@ -1224,4 +1226,55 @@ fn resuming_a_line_whose_session_changed_reattaches_the_process_to_that_line() {
     let extra = lines.iter().find(|l| l.pid == Some(6003)).unwrap();
     assert_ne!(extra.id, line.id);
     assert!(back.duplicate && extra.duplicate);
+}
+
+#[test]
+fn a_vibe_session_lives_on_the_tui_above_its_app_server_lease() {
+    // Given a Vibe 3 session whose lease names the app-server, a child of the vibe-rs TUI started with a prompt
+    // When the station is scanned
+    // Then the line is live on the TUI's pid, and its launch args drop the prompt after `--`
+    let fx = Fx::new();
+    let sid = "4a3b2c1d-0e9f-4a8b-b7c6-d5e4f3a2b1c0";
+    let root = fx.base.join(".vibe/logs/session");
+    let dir = root.join("unified").join(sid);
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::create_dir_all(root.join("active")).unwrap();
+    std::fs::write(dir.join("CURRENT"), "{}").unwrap();
+    std::fs::write(
+        dir.join("meta.json"),
+        serde_json::json!({"session_id": sid, "parent_session_id": null,
+            "start_time": "2026-10-28T09:00:00+00:00",
+            "environment": {"working_directory": fx.wt_chore}, "title": "Vibe work"})
+        .to_string(),
+    )
+    .unwrap();
+    std::fs::write(
+        root.join(format!("active/{sid}.lock.json")),
+        serde_json::json!({"lease_version": 1, "session_id": sid, "process_id": 7101}).to_string(),
+    )
+    .unwrap();
+    let cwd = Some(fx.wt_chore.clone());
+    let probe = Tree {
+        procs: Fake(vec![
+            (
+                7100,
+                "1",
+                argv("/u/.local/share/uv/tools/mistral-vibe/lib/python3.14/site-packages/vibe/_bin/vibe-rs --auto-approve -- fix the bug"),
+                cwd.clone(),
+            ),
+            (
+                7101,
+                "1",
+                argv("/u/.local/share/uv/tools/mistral-vibe/bin/python3 /u/.local/share/uv/tools/mistral-vibe/bin/vibe-app-server"),
+                cwd,
+            ),
+        ]),
+        parents: vec![(7101, 7100), (7100, 900)],
+        rss: vec![],
+    };
+    let lines = fx.scan(&probe);
+    let l = lines.iter().find(|l| l.session_id == sid).unwrap();
+    assert_eq!(l.agent, "vibe");
+    assert_eq!(l.pid, Some(7100));
+    assert_eq!(l.launch_args, ["--auto-approve"]);
 }

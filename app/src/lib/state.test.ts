@@ -2,10 +2,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { FALLBACK_AGENTS } from './agents';
 import { DaemonError, setClient } from './client';
 import { t } from './i18n.svelte';
-import { MockDaemon } from './mock';
+import { MOCK_AGENTS, MockDaemon } from './mock';
 import { center } from './notifications.svelte';
 import { setPresence } from './presence';
 import { pages } from './session-pages.svelte';
+import { ui } from './mobile/ui.svelte';
 import { settings, workspaceFor } from './settings.svelte';
 import { app, NO_WORKSPACE, projectName, statusLine } from './state.svelte';
 import { allTabs, closeTabAt, EMPTY_LAYOUT, openInFocused, workspace } from './workspace.svelte';
@@ -748,6 +749,24 @@ describe('workspaces', () => {
     expect(app.workspaceId).toBe('ws_oslabs');
   });
 
+  it('opens a top-level workspace, not a nested one listed first, when none is remembered or busy', async () => {
+    // Given a daemon whose first workspace is nested, with no session anywhere and nothing remembered
+    const at = '2026-11-01T00:00:00Z';
+    const base = { station: 'atlas', kind: 'dir' as const, cwd: null, folderId: null, pinned: false, archived: false, auto: true, rank: 1, tabs: [], notifyIdle: false, createdAt: at, updatedAt: at };
+    (m as unknown as { workspaces: unknown[] }).workspaces = [
+      { ...base, id: 'w_lib', name: 'lib', path: '/p/40/lib', parentId: 'w_proj' },
+      { ...base, id: 'w_proj', name: 'proj', path: '/p', parentId: null },
+    ];
+    (m as unknown as { lines: unknown[] }).lines = [];
+    (m as unknown as { terms: unknown[] }).terms = [];
+    settings.workspaceByHost = {};
+    settings.workspaceId = undefined;
+    // When the app connects
+    await connect();
+    // Then the top-level workspace opens
+    expect(app.workspaceId).toBe('w_proj');
+  });
+
   it('keeps the sidebar mode across launches', () => {
     app.setSidebarMode('status');
     expect(app.sidebarMode).toBe('status');
@@ -884,6 +903,67 @@ describe('sessions', () => {
     expect(app.view).toBe('agents');
   });
 
+  it('starts a session of a nested workspace in its start dir and assigns it there', async () => {
+    // Given a nested sub-folder that starts at the repo root, and a submodule that starts in its own folder
+    const webshop = app.ws.workspaces.find((w) => w.id === 'ws_webshop')!.path!;
+    // When a shell starts in each
+    app.selectWorkspace('ws_webshop_invoicing');
+    await app.newSession('shell');
+    app.selectWorkspace('ws_webshop_design');
+    await app.newSession('shell');
+    // Then the first runs at the root and the second in the submodule, each assigned to its nested workspace
+    const [a, b] = m.bodies['POST /v1/terms'].slice(-2) as { cwd: string; workspaceId: string }[];
+    expect(a).toMatchObject({ cwd: webshop, workspaceId: 'ws_webshop_invoicing' });
+    expect(b).toMatchObject({ cwd: `${webshop}/vendor/design-system`, workspaceId: 'ws_webshop_design' });
+  });
+
+  describe('installing an agent', () => {
+    it('opens a shell term that runs the install, outside any worktree', async () => {
+      app.selectWorkspace('ws_webshop');
+      const term = await app.installAgent('amp');
+      expect(m.bodies['POST /v1/terms']).toEqual([{ cwd: app.currentWorkspace!.path, install: 'amp', workspaceId: 'ws_webshop', cols: 120, rows: 32 }]);
+      expect(app.selectedKey).toBe(`term:${term.id}`);
+    });
+
+    it('rescans the agents and says so when the install term exits cleanly', async () => {
+      const term = await app.installAgent('amp');
+      expect(m.hits(/rescan/)).toEqual([]);
+      m.emit('term.exited', { term: { ...term, exited: true, exitCode: 0 } });
+      await vi.waitFor(() => expect(app.agents.find((a) => a.id === 'amp')?.installed).toBe(true));
+      expect(app.toast).toMatchObject({ text: 'Amp is installed', kind: 'info' });
+      m.emit('term.updated', { term: { ...term, exited: true, title: 'x' } });
+      expect(m.hits(/rescan/)).toHaveLength(1);
+    });
+
+    it('points to the terminal when the install command failed', async () => {
+      m.override['POST /v1/agents/rescan'] = () => structuredClone(MOCK_AGENTS);
+      const term = await app.installAgent('amp');
+      m.emit('term.exited', { term: { ...term, exited: true, exitCode: 1 } });
+      await vi.waitFor(() => expect(app.toast).toMatchObject({ text: 'Amp did not install; its terminal shows why', kind: 'error' }));
+    });
+
+    it('says the PATH is the problem when the install succeeded but the agent is still missing', async () => {
+      m.override['POST /v1/agents/rescan'] = () => structuredClone(MOCK_AGENTS);
+      const term = await app.installAgent('amp');
+      m.emit('term.exited', { term: { ...term, exited: true, exitCode: 0 } });
+      await vi.waitFor(() => expect(app.toast).toMatchObject({ text: 'Amp installed, but the daemon does not find it on its PATH', kind: 'error' }));
+    });
+
+    it('reports a rescan that fails', async () => {
+      m.override['POST /v1/agents/rescan'] = () => Promise.reject(new Error('daemon down'));
+      const term = await app.installAgent('amp');
+      m.emit('term.exited', { term: { ...term, exited: true, exitCode: 0 } });
+      await vi.waitFor(() => expect(app.toast).toMatchObject({ text: 'daemon down', kind: 'error' }));
+    });
+
+    it('ignores other terms exiting', async () => {
+      await app.installAgent('amp');
+      const other = await app.newSession('shell');
+      m.emit('term.exited', { term: { ...other, exited: true, exitCode: 0 } });
+      expect(m.hits(/rescan/)).toEqual([]);
+    });
+  });
+
   describe('following a session just started', () => {
     const lineFor = async () => {
       const all = await m.request<{ line: { id: string } }[]>('GET', '/v1/lines');
@@ -925,6 +1005,16 @@ describe('sessions', () => {
       const line = await lineFor();
       m.emit('line.updated', { line });
       expect(app.selectedKey).toBe(`term:${term.id}`);
+    });
+
+    it('does not pull a shell into another workspace after the user switched', async () => {
+      app.selectWorkspace('ws_proxmox');
+      const shell = await app.newSession('shell');
+      app.selectWorkspace('ws_webshop');
+      app.selectedKey = null;
+      m.emit('term.updated', { term: { ...shell, title: 'renamed' } as Term });
+      expect(app.selectedKey).toBeNull();
+      expect(app.workspaceId).toBe('ws_webshop');
     });
 
     it('opens the workspace that holds a session started from elsewhere', async () => {
@@ -1109,6 +1199,35 @@ describe('sessions', () => {
     expect(key).toContain('/home/alice/Documents/Github/uni/os-labs');
     expect(allTabs(workspace.layout)).toEqual([key]);
     expect(app.view).toBe('agents');
+  });
+
+  it('shows source control in the sidebar, reopening a hidden sidebar, and leaves it for a session list', () => {
+    app.sidebarGit = false;
+    app.sidebarOpen = false;
+    app.toggleSourceControl();
+    expect([app.sidebarGit, app.sidebarOpen]).toEqual([true, true]);
+    expect(settings.sidebarGit).toBe(true);
+    app.toggleSourceControl();
+    expect(app.sidebarGit).toBe(false);
+    app.setSidebarGit(true);
+    const mode = app.sidebarMode;
+    app.setSidebarMode('status');
+    expect(app.sidebarGit).toBe(false);
+    expect(app.sidebarMode).toBe('status');
+    app.setSidebarMode(mode);
+  });
+
+  it('shows a project tab opened from More on the phone', () => {
+    ui.layout = 'phone';
+    ui.tab = 'more';
+    try {
+      app.openProjectTab('graph');
+      expect(ui.tab).toBe('agents');
+      expect(app.selectedKey).toMatch(/^graph:/);
+    } finally {
+      ui.layout = 'desktop';
+      ui.tab = 'agents';
+    }
   });
 
   it('opens no project tab without any project', () => {

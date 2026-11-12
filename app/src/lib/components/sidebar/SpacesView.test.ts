@@ -12,7 +12,8 @@ describe('SpacesView wiring', () => {
     // When the handlers are read
     // Then each click reaches today's action
     expect(src).toMatch(/onselect=\{\(e\) => app\.select\(e\.key\)\}/);
-    expect(src).toMatch(/onselect=\{selectSession\}/);
+    expect(src).toMatch(/onselect=\{select\}/);
+    expect(src).toMatch(/const select = \(key: string, e\?: MouseEvent\) => !drag\.suppressed && selectSession\(key, e\)/);
     expect(src).toMatch(/onclick=\{\(\) => pick\(w\.id\)\}/);
   });
 
@@ -204,5 +205,16 @@ describe('Sidebar touch menus', () => {
     // Then one touchContextMenu action sits on the aside and iOS callouts are off
     expect(sidebarSrc).toMatch(/<aside class="sidebar"[^>]*use:touchContextMenu>/);
     expect(sidebarSrc).toMatch(/\.sidebar \{[^}]*-webkit-touch-callout: none/s);
+  });
+
+  it('keeps the parent of the active nested workspace open, wires subjects to the same toggles and drags only real workspaces', () => {
+    expect(src).toMatch(/const opened = \$derived\(new Set\(\[\.\.\.\(saved \?\? \[app\.workspaceId\]\), \.\.\.\(app\.currentWorkspace\?\.parentId \? \[app\.currentWorkspace\.parentId\] : \[\]\)\]\)\)/);
+    expect(src).toMatch(/ontoggle: toggle,\s*onpick: pick,\s*onclosed: toggleClosed,/);
+    expect(src).toMatch(/kids=\{kidsFor\(r\.workspace\)\}/);
+    expect(src).toMatch(/drag\.start\(e, 'session', key, zone\)/);
+    expect(src).toMatch(/tabs=\{tabsOf\(r\.id\)\}/);
+    expect(src).toMatch(/tabsOf,/);
+    expect(src).toMatch(/drag\.dragging && drag\.kind !== 'session' && !pinned/);
+    expect(src).toMatch(/drag\.dragging && drag\.kind !== 'session'\}<div class="rootdrop"/);
   });
 });

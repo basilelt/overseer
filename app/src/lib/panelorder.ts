@@ -1,4 +1,4 @@
-export const PANEL_SECTIONS = ['last', 'log', 'todos', 'files', 'diff'] as const;
+export const PANEL_SECTIONS = ['last', 'log', 'todos', 'files', 'diff', 'cost'] as const;
 export type PanelSection = (typeof PANEL_SECTIONS)[number];
 
 export function normalizeOrder(order: readonly string[] | undefined): PanelSection[] {

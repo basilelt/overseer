@@ -72,14 +72,17 @@ that predate it answer `404`.
 ```json
 [{"id":"claude","name":"Claude Code","installed":true,"version":"2.1.289 (Claude Code)",
   "models":["opus","sonnet","fable"],"efforts":["low","medium","high","max"],"resume":true,
-  "verified":true,"sessions":true,"turns":true,"install":"curl -fsSL https://claude.ai/install.sh | bash"}]
+  "verified":true,"sessions":true,"turns":true,"install":"curl -fsSL https://claude.ai/install.sh | bash","installable":true}]
 ```
 
-- `id` ∈ `claude | codex | gemini | agy | opencode | amp | copilot | cursor | shell`. `shell` is
+- `id` ∈ `claude | codex | gemini | agy | opencode | amp | copilot | cursor | vibe | shell`. `shell` is
   the login shell (`$SHELL`); it is never a task agent.
 - `installed`: the binary is on the daemon's `PATH` and `<bin> --version` exits 0 within 5 s
   (results cached 60 s); `version` is the first line it printed. A broken wrapper reports
   `installed: false`.
+- `install`: how to install the agent, a command or a hint (`see https://…`); `installable: true`
+  (absent otherwise) when it is a command `POST /v1/terms` with `install` can run (never on a
+  Windows daemon).
 - `models`: absent → free text; `[]` → the agent takes no model (the field is ignored);
   otherwise suggestions (free text still allowed). `efforts` is the subset of
   `low|medium|high|max` the agent maps (empty → effort ignored).
@@ -101,7 +104,7 @@ setting in the daemon registry and returns the full map. New sessions started by
 these defaults, including task and feedback launches. Existing sessions keep their launch mode.
 Supported flags are Claude Code `--permission-mode auto`, Codex `--sandbox danger-full-access
 --ask-for-approval never`, Gemini CLI `--approval-mode=yolo`, Antigravity `--mode=auto`, opencode
-`--auto`, Copilot CLI `--allow-all`, and Cursor Agent `--force`. Amp currently auto-approves by
+`--auto`, Copilot CLI `--allow-all`, Cursor Agent `--force`, and Mistral Vibe `--auto-approve`. Amp currently auto-approves by
 default unless its own permission configuration enables a policy, so Amp is not in the map.
 400 when either required field is missing or the agent has no launch-time control.
 
@@ -135,10 +138,12 @@ overrides them.
 | amp | `amp` | — | `--mode` (`ultra`) | — | typed | `amp threads continue --last` |
 | copilot | `copilot` | `--model` | `--effort` (`xhigh`) | `--resume=<uuid>` | `-i <prompt>` | `--resume=<id>` |
 | cursor | `cursor-agent` | `--model` | — | — | typed | `cursor-agent resume` |
+| vibe | `vibe` | `VIBE_ACTIVE_MODEL` (profiles only) | — | — | `-- <prompt>` | `--resume <id>` |
 
 `cursor` is unverified (no binary on the development machine). "typed" = the prompt is pasted
 into the PTY as described in §5; with a prompt flag it goes in argv instead, and `Term.cmd`
-shows `<prompt>` in its place. Claude and Codex keep the paste: their argv is read back from
+shows `<prompt>` in its place. `vibe` takes the prompt as its positional argument after `--`,
+and a task launch adds `--trust` (a new worktree would stop at Vibe's trust prompt). Claude and Codex keep the paste: their argv is read back from
 `/proc` to build resume commands, so a prompt in argv would be replayed on resume.
 
 ## 3. Terminals
@@ -178,7 +183,7 @@ when not null. `PUT /v1/lines/{id}/title` `{"title": str | null}` stores it in t
 
 | Route | Body | Result |
 |---|---|---|
-| `POST /v1/terms` | `{cwd?, cmd?:[str] \| agent?:str, model?, effort?, env?:{str:str}, cols?, rows?, title?, lineId?, taskId?}` | **201** Term. `cwd` defaults to `$HOME`, `cmd` to the login shell (`$SHELL`, else `/bin/sh`; `%COMSPEC%` on Windows), `cols`×`rows` to 80×24 (each 1..=1000). `title` defaults to the basename of `cmd[0]`. The child gets the daemon's environment plus `env`, `TERM=xterm-256color`, `COLORTERM=truecolor`, `OVERSEER_TERM_ID=<id>`. With `agent` (instead of `cmd`) the daemon builds the argv from §2a with `model`/`effort`, a fresh session id when the agent takes one, and `title` = the agent's name. With `worktree: true` (or `{branch?, base?, slug?}`) and a `cwd` inside a git repository, the daemon first creates a worktree as `POST /v1/worktrees` does (branch `sb/<agent>/<slug>`, `shell` for a plain shell) and starts the term in it. 400: bad body, `cwd` not a directory, `cmd[0]` not found, both `agent` and `cmd`, unknown or not installed agent, bad `effort`, `worktree` with a `cwd` outside a repository; 409: the worktree could not be created. |
+| `POST /v1/terms` | `{cwd?, cmd?:[str] \| agent?:str \| install?:str, model?, effort?, env?:{str:str}, cols?, rows?, title?, lineId?, taskId?}` | **201** Term. `cwd` defaults to `$HOME`, `cmd` to the login shell (`$SHELL`, else `/bin/sh`; `%COMSPEC%` on Windows), `cols`×`rows` to 80×24 (each 1..=1000). `title` defaults to the basename of `cmd[0]`. The child gets the daemon's environment plus `env`, `TERM=xterm-256color`, `COLORTERM=truecolor`, `OVERSEER_TERM_ID=<id>`. With `agent` (instead of `cmd`) the daemon builds the argv from §2a with `model`/`effort`, a fresh session id when the agent takes one, and `title` = the agent's name. With `install` (an agent id, instead of `agent` and `cmd`; Unix only) the term runs `/bin/sh -c` with that agent's install command from §2a, shows it as `cmd` (`["npm install -g @openai/codex"]`), is titled `Install <name>`, and exits with the command's status after printing `Install failed with exit code N` on a failure. With `worktree: true` (or `{branch?, base?, slug?}`) and a `cwd` inside a git repository, the daemon first creates a worktree as `POST /v1/worktrees` does (branch `sb/<agent>/<slug>`, `shell` for a plain shell) and starts the term in it. 400: bad body, `cwd` not a directory, `cmd[0]` not found, both `agent` and `cmd`, `install` with `agent` or `cmd` (`give either install, agent or cmd`), an `install` agent without an install command (`<name> has no install command`), unknown or not installed agent, bad `effort`, `worktree` with a `cwd` outside a repository; 409: the worktree could not be created. |
 | `GET /v1/terms` | | 200 `[Term]` (running and exited, oldest first) |
 | `GET /v1/terms/{id}` | | 200 Term · 404 |
 | `POST /v1/terms/{id}/resize` | `{cols, rows, client?}` | 200 Term · 400 · 404 · 409 exited |
@@ -351,7 +356,7 @@ timeout is 30 s).
   attach; only an explicit Resume omits it.
 - Agent sessions started from the app in a term (`POST /v1/terms` with `agent` or `cmd:
   ["claude", …]`) become lines through the usual discovery (Claude transcripts, Codex rollouts,
-  Gemini chats, hooks) and are linked by pid as above. Starting `claude` with `--session-id
+  Gemini chats, Mistral Vibe session stores, hooks) and are linked by pid as above. Starting `claude` with `--session-id
   <uuid>` makes the line appear sooner.
 - A term running another agent (`sessions: false` in §2a) is itself a line: `agent` = the agent
   id, `agentSessionId` = the session id given at start (copilot) or the term id, `cwd` the term's,
@@ -559,7 +564,11 @@ directory or not in a git repository.
 - Parsed from the Claude transcript (`tool_use`/`tool_result`, the last `TodoWrite`), the
   Codex rollout (`function_call`/`custom_tool_call` + outputs, the last `update_plan`) or the
   Gemini chat (`~/.gemini/tmp/<project>/chats/session-*.json[l]`: `toolCalls` with their
-  `status`, the last `write_todos`). Other agents have no activity (409).
+  `status`, the last `write_todos`) or the Mistral Vibe 3 session store
+  (`$VIBE_HOME/logs/session/unified/<id>/`: the published projection's chunks, then the
+  `projection_delta`, `projection_advanced` and `session_relocated` records of the current journal
+  segment; `effect` entries with `state.status`, the last `vibe.todo` write; a bash exit code other
+  than 0 is `failed`). Other agents have no activity (409).
 - `kind`: `edit` (Edit, MultiEdit, Write, NotebookEdit, apply_patch, write_file, replace),
   `bash` (Bash, shell, exec_command, run_shell_command), `read` (Read, read_file,
   list_directory), `search` (Grep, Glob, WebSearch, glob, search_file_content,
@@ -574,12 +583,26 @@ directory or not in a git repository.
   `lastAssistantText` are `""` when unknown.
 - `status` is the line state (`active|idle|held|hung-up`). Content is shown to the user in the
   app; the daemon never writes it to a log.
+- `cost` (omitted when the transcript has no token counts): `{input, cacheWrite, cacheRead,
+  output, cost, partial, model, effort, pricesAsOf, models:[{model, input, cacheWrite, cacheRead,
+  output, cost}], switches:[{at, from, to, cacheWrite, cost}]}`. Tokens come from each assistant
+  message's `usage` (Claude, counted once per message id, subagent transcripts included), the
+  `token_count` totals per `turn_context` model (Codex) or the message `tokens` (Gemini).
+  `input` is uncached input. `cost` is USD at the daemon's API list prices (`usage::PRICES`,
+  dated `pricesAsOf`; a row matches a model id that equals it or continues with `-`), `null`
+  when no model is priced; `partial` when some are not. Subagent transcripts are read up to
+  `subagents/*/*/*.jsonl` (workflow agents included). A switch is the first main-transcript turn
+  on a new model, priced on its cache write and uncached input (the cache it rebuilt).
+  Tasks carry the sum of their sessions as `cost` (`TaskCost`), snapshot on the task row when the
+  session's activity moved (at most once a minute while busy, at most 8 sessions per scan); the
+  row is written and `task.updated` sent only when a number changed. An effort the session no
+  longer reports keeps its last value, else the task's.
 - `GET /v1/lines/{id}/diff` (existing) gives the worktree diff.
 
 ## 6b. Chat view (ADR 0036)
 
 `GET /v1/lines/{id}/chat[?after=<cursor>|before=<seq>][&limit=<n>]` → 200 · 400 bad query ·
-404 unknown line · 409 agent without a chat parser (anything but `claude`, `codex`, `gemini`)
+404 unknown line · 409 agent without a chat parser (anything but `claude`, `codex`, `gemini`, `vibe`)
 or no transcript yet.
 
 ```json
@@ -612,6 +635,13 @@ or no transcript yet.
   `id`. `before=<seq>`: up to `limit` entries before that `seq` ("load earlier"). `reset: true`
   means the client must drop what it has (transcript truncated or rewritten, cursor from an
   earlier daemon or chat cache) and the entries are a fresh tail.
+- Mistral Vibe: the chat is the store's public history (`message` user/assistant, `effect` tools
+  with `file_system.*`, `vibe.todo`, subagent `agents.spawn` as `task`, `checkpoint` compaction as a
+  notice, `error`). The daemon replays the published chunks once, then reads only new records of
+  the journal segment; a `remove_entry`, `set_history_entries`, `projection_advanced` or a new
+  generation whose history is not an extension of the shown one answers `reset: true`. `model`
+  comes from `meta.json` (`config.active_model`), then from `model_change` checkpoints. Images are
+  not counted (`images` absent).
 - The daemon parses incrementally from the last byte offset (complete lines only), keeps at
   most 2000 entries per chat and at most 8 chats (subagent transcripts are evicted first), and
   forgets a chat nobody read for 15 minutes.
@@ -1174,7 +1204,8 @@ when it changes. No schema change.
   an object.
 - Flags were checked against `--help` of claude 2.1.289, codex 0.165.0, gemini 0.66.0, agy
   1.1.0, opencode 1.19.5, amp 0.0.1793260836 and copilot 1.0.48 (2026-10-29); cursor-agent is
-  unverified. Resume by id for Gemini (`--resume <uuid>`) is unverified: its help documents
+  unverified. Mistral Vibe was checked against the 3.1.2 source (CLI help, hook payloads, session
+  store writers) without a live 3.x session (2026-11-11); its resume by id is marked unverified. Resume by id for Gemini (`--resume <uuid>`) is unverified: its help documents
   `latest` or an index.
 - Workspaces (§6a): `DELETE` leaves a tombstone for every workspace, not only `auto` ones; a
   broadcast to a workspace targets its alive lines and its terms without a line, not its held
@@ -1583,3 +1614,18 @@ repository, which the daemon cannot find from a `missing` directory otherwise.
   recreates the saved terms with their ids before it serves requests, then publishes the usual
   `term.created` events.
 
+## Lid closed (keep agents running)
+
+- `GET /v1/power/lid` → `{"enabled", "active", "supported", "error": string|null}`. `enabled` is the
+  stored option, `active` whether the system is kept awake right now, `error` the last refusal.
+- `PUT /v1/power/lid` with `{"enabled": true|false}` → the same object. 400 when `enabled` is not a
+  boolean, 500 with `{"error"}` when the system refuses (the option stays as it was), 501 on a
+  system other than Linux, macOS or Windows.
+- Linux: the daemon holds `systemd-inhibit --what=handle-lid-switch --no-ask-password --mode=block` while it
+  runs, fed by a pipe so the lock goes away with the daemon (crash or upgrade) and is taken again
+  at start. polkit may refuse it when the daemon has no active session.
+- macOS: `pmset -a disablesleep 1|0` through an administrator prompt (`osascript`); the setting
+  persists in the OS until the option is turned off.
+- Windows: `powercfg` sets the lid close action of the current scheme to Do nothing (AC and DC),
+  remembers the previous actions in the registry and puts them back when turned off.
+- The app offers it only for a local daemon on the desktop.

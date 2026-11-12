@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { lidAvailable } from '../../lid.svelte';
   import { untrack } from 'svelte';
   import X from '@lucide/svelte/icons/x';
   import Search from '@lucide/svelte/icons/search';
@@ -13,6 +14,7 @@
   import ServerSettings from './ServerSettings.svelte';
   import NotificationSettings from './NotificationSettings.svelte';
   import { adaptChoice, findAgent, hasModel, taskAgents } from '../../agents';
+  import { allState, setAll } from '../../auto-approve';
   import { localeName, locales, t, type Key } from '../../i18n.svelte';
   import { COLOR_TOKENS, saveSettings, settings, type ColorToken, type Mode, type PresetColors, type ThemePref } from '../../settings.svelte';
   import { contrastWarnings, fullColors, presetsFor, readableOn } from '../../theme-edit';
@@ -100,6 +102,7 @@
   let autoApproveLoaded = $state(false);
   let autoApproveBusy = $state<string | null>(null);
   const autoApproveAgents = $derived(app.agents.filter((agent) => Object.hasOwn(autoApprove, agent.id)));
+  const autoApproveAll = $derived(allState(autoApprove, autoApproveAgents.map((agent) => agent.id)));
 
   function setAgent(id: string) {
     const next = adaptChoice(findAgent(app.agents, id), { model: settings.defaultModel, effort: settings.defaultEffort });
@@ -157,13 +160,41 @@
 
   $effect(() => {
     if (!app.connected || app.conn.phase !== 'connected') return;
-    untrack(() =>
+    untrack(() => {
       app.api
         .autoOrganize()
         .then((r) => saveSettings({ autoOrganize: r.enabled }))
-        .catch(() => {}),
-    );
+        .catch(() => {});
+      app.api
+        .agentMessaging()
+        .then((r) => saveSettings({ agentMessaging: r.enabled }))
+        .catch(() => {});
+      app.api
+        .agentTasks()
+        .then((r) => saveSettings({ agentTasks: r.enabled }))
+        .catch(() => {});
+    });
   });
+  async function setAgentMessaging(el: HTMLInputElement) {
+    const on = el.checked;
+    try {
+      const r = await app.api.setAgentMessaging(on);
+      saveSettings({ agentMessaging: r.enabled });
+    } catch (e) {
+      el.checked = !on;
+      app.notify(String((e as Error)?.message ?? e), 'error');
+    }
+  }
+  async function setAgentTasks(el: HTMLInputElement) {
+    const on = el.checked;
+    try {
+      const r = await app.api.setAgentTasks(on);
+      saveSettings({ agentTasks: r.enabled });
+    } catch (e) {
+      el.checked = !on;
+      app.notify(String((e as Error)?.message ?? e), 'error');
+    }
+  }
   async function setAutoOrganize(el: HTMLInputElement) {
     const on = el.checked;
     try {
@@ -213,6 +244,21 @@
     }
   }
 
+  async function setAllAutoApprove(el: HTMLInputElement) {
+    if (!autoApproveLoaded || autoApproveBusy) return;
+    autoApproveBusy = '*';
+    try {
+      autoApprove = await setAll(app.api, autoApprove, autoApproveAgents.map((agent) => agent.id), el.checked);
+    } catch (e) {
+      autoApprove = (e as { autoApprove?: Record<string, boolean> }).autoApprove ?? autoApprove;
+      app.notify(String((e as Error)?.message ?? e), 'error');
+    } finally {
+      autoApproveBusy = null;
+      el.checked = autoApproveAll === 'on';
+      el.indeterminate = autoApproveAll === 'mixed';
+    }
+  }
+
   const phoneLinks = $derived(app.mobile || ui.layout === 'phone');
   const linkValue = $derived(settings.linkTarget === 'browser' && !phoneLinks ? `browser:${settings.linkBrowser}` : settings.linkTarget === 'browser' ? 'default' : settings.linkTarget);
   $effect(() => void browsers.load(!phoneLinks));
@@ -226,6 +272,7 @@
     desktop: !phone,
     nonMac: !isMac,
     connected: app.connected,
+    localServer: lidAvailable(),
     profiles: !!app.profiles,
     hooks: !!hooks.status,
     updater: updater.enabled && !app.mobile,
@@ -485,7 +532,11 @@
           {#if row('defaults', 'autoApprove')}
             <div class="row" class:hit={hit('defaults', 'autoApprove')} data-tour="auto-approve">
               <span>{t('settings.autoApprove')}<small>{autoApproveLoaded ? t('settings.autoApproveHint') : t('settings.autoApproveConnect')}</small></span>
-              <span></span>
+              {#if autoApproveAgents.length}
+                <input type="checkbox" class="switch" aria-label={t('settings.autoApproveAll')} checked={autoApproveAll === 'on'} indeterminate={autoApproveAll === 'mixed'} disabled={!autoApproveLoaded || autoApproveBusy !== null} onchange={(e) => setAllAutoApprove(e.currentTarget)} />
+              {:else}
+                <span></span>
+              {/if}
             </div>
             {#each autoApproveAgents as agent (agent.id)}
               <label class="row" class:hit={hit('defaults', 'autoApprove')}>
@@ -522,6 +573,18 @@
             <label class="row" class:hit={hit('defaults', 'autoOrganize')}>
               <span>{t('settings.autoOrganize')}<small>{t('settings.autoOrganizeHint')}</small></span>
               <input type="checkbox" class="switch" checked={settings.autoOrganize} onchange={(e) => setAutoOrganize(e.currentTarget)} />
+            </label>
+          {/if}
+          {#if row('defaults', 'agentMessaging')}
+            <label class="row" class:hit={hit('defaults', 'agentMessaging')}>
+              <span>{t('settings.agentMessaging')}<small>{t('settings.agentMessagingHint')}</small></span>
+              <input type="checkbox" class="switch" data-tour="agent-messaging" checked={settings.agentMessaging} onchange={(e) => setAgentMessaging(e.currentTarget)} />
+            </label>
+          {/if}
+          {#if row('defaults', 'agentTasks')}
+            <label class="row" class:hit={hit('defaults', 'agentTasks')}>
+              <span>{t('settings.agentTasks')}<small>{t('settings.agentTasksHint')}</small></span>
+              <input type="checkbox" class="switch" data-tour="agent-tasks" checked={settings.agentTasks} onchange={(e) => setAgentTasks(e.currentTarget)} />
             </label>
           {/if}
         </section>
@@ -603,7 +666,7 @@
 
       {#if vis('usage')}
         <section>
-          <h3>{t('settings.usage')}</h3>
+          <h3>{t('settings.usage.claude')}</h3>
           {#if row('usage', 'claudeLimits')}
             <label class="row" class:hit={hit('usage', 'claudeLimits')}>
               <span>{t('settings.fetchClaudeLimits')}<small>{t('settings.fetchClaudeLimitsHint')}</small></span>
@@ -623,6 +686,28 @@
         </section>
       {/if}
 
+      {#if vis('usageCodex')}
+        <section>
+          <h3>{t('settings.usage.codex')}</h3>
+          {#if row('usageCodex', 'codexLimits')}
+            <div class="row" class:hit={hit('usageCodex', 'codexLimits')}>
+              <span>{t('settings.codexLimits')}<small>{t('settings.codexLimitsHint')}</small></span>
+            </div>
+          {/if}
+        </section>
+      {/if}
+
+      {#if vis('usageGemini')}
+        <section>
+          <h3>{t('settings.usage.gemini')}</h3>
+          {#if row('usageGemini', 'geminiTokens')}
+            <div class="row" class:hit={hit('usageGemini', 'geminiTokens')}>
+              <span>{t('settings.geminiTokens')}<small>{t('settings.geminiTokensHint')}</small></span>
+            </div>
+          {/if}
+        </section>
+      {/if}
+
       {#if vis('notifications')}<NotificationSettings row={(e) => row('notifications', e)} hit={(e) => hit('notifications', e)} />{/if}
 
       {#if vis('hosts')}
@@ -630,12 +715,12 @@
           <h3>{t('settings.hosts')}</h3>
           {#if !app.mobile && row('hosts', 'hostWindows')}
             <div class="row stacked" class:hit={hit('hosts', 'hostWindows')}>
-              <span>{t('settings.hostWindows')}<small>{t('settings.hostWindowsHint')}</small></span>
+              <span>{t('settings.hostWindows')}</span>
               <div class="host-modes" role="radiogroup" aria-label={t('settings.hostWindows')}>
-                {#each [['shared', 'settings.hostShared', 'settings.hostSharedHint'], ['separate', 'settings.hostSeparate', 'settings.hostSeparateHint']] as const as [mode, label, hint] (mode)}
+                {#each [['shared', 'settings.hostShared'], ['separate', 'settings.hostSeparate']] as const as [mode, label] (mode)}
                   <label class="host-mode" class:on={settings.hostWindows === mode}>
                     <input type="radio" name="host-windows" value={mode} checked={settings.hostWindows === mode} onchange={() => saveSettings({ hostWindows: mode })} />
-                    <span><b>{t(label)}</b><small>{t(hint)}</small></span>
+                    <span><b>{t(label)}</b></span>
                   </label>
                 {/each}
               </div>
@@ -646,19 +731,19 @@
           {/if}
           {#if !app.mobile && row('hosts', 'hostAsk')}
             <label class="row" class:hit={hit('hosts', 'hostAsk')}>
-              <span>{t('settings.hostAsk')}<small>{t('settings.hostAskHint')}</small></span>
+              <span>{t('settings.hostAsk')}</span>
               <input type="checkbox" class="switch" checked={settings.hostAsk} onchange={(e) => saveSettings({ hostAsk: e.currentTarget.checked })} />
             </label>
           {/if}
           {#if !app.mobile && row('hosts', 'hostTabColor')}
             <label class="row" class:hit={hit('hosts', 'hostTabColor')}>
-              <span>{t('settings.hostTabColor')}<small>{t('settings.hostTabColorHint')}</small></span>
+              <span>{t('settings.hostTabColor')}</span>
               <input type="checkbox" class="switch" checked={settings.hostTabColor} onchange={(e) => saveSettings({ hostTabColor: e.currentTarget.checked })} />
             </label>
           {/if}
           {#if !app.mobile && row('hosts', 'hostReconnect')}
             <label class="row" class:hit={hit('hosts', 'hostReconnect')}>
-              <span>{t('settings.hostReconnect')}<small>{t('settings.hostReconnectHint')}</small></span>
+              <span>{t('settings.hostReconnect')}</span>
               <input type="checkbox" class="switch" checked={settings.hostReconnect} onchange={(e) => saveSettings({ hostReconnect: e.currentTarget.checked })} />
             </label>
           {/if}
@@ -776,13 +861,6 @@
     display: block;
     font-weight: 600;
     color: var(--text);
-  }
-  .host-mode small {
-    display: block;
-    margin-top: 2px;
-    color: var(--text-2);
-    font-size: 12px;
-    line-height: 1.4;
   }
   .settings {
     display: grid;

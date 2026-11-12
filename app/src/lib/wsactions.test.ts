@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { app } = vi.hoisted(() => ({ app: {} as Record<string, any> }));
+const { app, moveMenu } = vi.hoisted(() => ({ app: {} as Record<string, any>, moveMenu: vi.fn(() => [{ label: 'webshop' }]) }));
 
-vi.mock('./state.svelte', () => ({ app, NO_WORKSPACE: '' }));
+vi.mock('./state.svelte', () => ({ app, NO_WORKSPACE: '', tabLazy: async () => ({ moveMenu }) }));
 
 import { t } from './i18n.svelte';
 import type { MenuItem } from './menu';
@@ -21,7 +21,10 @@ import {
   itemMenu,
   otherMenu,
   rescanFolders,
+  newSessionItems,
   selectSession,
+  startIn,
+  itemMenuAt,
   targetItems,
   targetName,
   workspaceMenu,
@@ -85,6 +88,11 @@ function freshApp() {
     patchWorkspace: vi.fn(async () => {}),
     membersOf: vi.fn(() => ['members']),
     groupItems: vi.fn(() => ['groupItems']),
+    canMoveToWorkspace: vi.fn(() => false),
+    selectWorkspace: vi.fn(),
+    openMenu: vi.fn(),
+    newSession: vi.fn(async () => ({})),
+    agents: [] as any[],
   };
 }
 
@@ -710,3 +718,91 @@ describe('selectSession', () => {
   });
 });
 
+
+describe('nested workspaces', () => {
+  const parent = workspace({ id: 'p', name: 'endurance', path: '/home/u/endurance' });
+  const nested = workspace({ id: 'n', name: 'Onboarding', path: '/home/u/endurance/20_processus/onboarding', parentId: 'p', cwd: null, folderId: null });
+
+  beforeEach(() => {
+    app.ws = { workspaces: [parent, nested], folders: [folder({ id: 'f1', name: 'Clients' })], groups: [] };
+  });
+
+  it('offers a new subject on a top-level folder workspace and opens the dialog for it', () => {
+    pick(workspaceMenu(parent), t('ws.sub.new')).run!();
+    expect(app.open).toHaveBeenCalledWith('workspaceNew', 'p');
+  });
+
+  it('gives a nested workspace no pin, folder move or new subject, and toggles its start at the parent root', async () => {
+    const items = labels(workspaceMenu(nested));
+    expect(items).not.toContain(t('ws.pin'));
+    expect(items).not.toContain(t('ws.sub.new'));
+    expect(items.some((l) => l.startsWith(t('ws.moveTo', { name: '' })))).toBe(false);
+    const root = pick(workspaceMenu(nested), t('ws.sub.startAtRoot'));
+    expect(root.checked).toBe(false);
+    root.run!();
+    expect(app.patchWorkspace).toHaveBeenCalledWith('n', { cwd: '/home/u/endurance' });
+    const atRoot = { ...nested, cwd: '/home/u/endurance' };
+    const again = pick(workspaceMenu(atRoot), t('ws.sub.startAtRoot'));
+    expect(again.checked).toBe(true);
+    again.run!();
+    expect(app.patchWorkspace).toHaveBeenLastCalledWith('n', { cwd: null });
+  });
+
+  it('offers no start-at-root toggle on a subject without a folder', () => {
+    const subject = workspace({ id: 's', name: 'Archi', path: null, kind: 'subject', cwd: '/home/u/endurance', parentId: 'p' });
+    expect(labels(workspaceMenu(subject))).not.toContain(t('ws.sub.startAtRoot'));
+  });
+
+  it('starts in a nested workspace: selects it, then opens the new-session menu with where sessions start', () => {
+    app.agents = [{ id: 'claude', name: 'Claude Code', installed: true }, { id: 'shell', name: 'Shell', installed: true }];
+    startIn({ clientX: 3, clientY: 4 }, { ...nested, cwd: '/home/u/endurance' });
+    expect(app.selectWorkspace).toHaveBeenCalledWith('n');
+    const [at, title, items] = app.openMenu.mock.calls[0];
+    expect(at).toEqual({ clientX: 3, clientY: 4 });
+    expect(title).toBe(t('ws.sub.startHere', { name: 'Onboarding' }));
+    expect(labels(items)).toContain('Claude Code');
+    expect(pick(items, t('ws.sub.startsIn', { path: '/home/u/endurance' })).disabled).toBe(true);
+  });
+
+  it('lists installed agents in the new-session menu and folds the missing ones under one row', () => {
+    app.agents = [
+      { id: 'claude', name: 'Claude Code', installed: true },
+      { id: 'amp', name: 'Amp', installed: false, installable: true, install: 'npm i -g amp' },
+      { id: 'agy', name: 'Antigravity', installed: false },
+      { id: 'shell', name: 'Shell', installed: true },
+    ];
+    app.installAgent = vi.fn(async () => {});
+    const items = newSessionItems();
+    expect(labels(items)).not.toContain('Amp');
+    const more = pick(items, t('agents.notInstalledCount', { n: 2 }));
+    expect(more.more!.map((i) => [i.label, !!i.disabled])).toEqual([
+      [t('palette.installAgent', { name: 'Amp' }), false],
+      ['Antigravity', true],
+    ]);
+    more.more![0].run!();
+    expect(app.installAgent).toHaveBeenCalledWith('amp');
+  });
+
+  it('shows no not-installed row when every agent is installed', () => {
+    app.agents = [{ id: 'claude', name: 'Claude Code', installed: true }];
+    expect(newSessionItems().some((i) => i.more)).toBe(false);
+  });
+
+  it('starts the picked agent from the shared new-session menu and reports a failure', async () => {
+    app.agents = [{ id: 'claude', name: 'Claude Code', installed: true }];
+    app.newSession = vi.fn(async () => Promise.reject(new Error('daemon down')));
+    pick(newSessionItems(), 'Claude Code').run!();
+    await vi.waitFor(() => expect(app.notify).toHaveBeenCalledWith('daemon down', 'error'));
+    expect(app.newSession).toHaveBeenCalledWith('claude');
+  });
+
+  it('offers to move a single movable session to another workspace from its menu', async () => {
+    app.items = [{ key: 'line:l1', title: 'Accueil', state: 'running' }];
+    app.canMoveToWorkspace = vi.fn(() => true);
+    itemMenuAt('line:l1', 'Accueil', { clientX: 7, clientY: 8, preventDefault() {} } as MouseEvent);
+    const items = app.openMenu.mock.calls[0][2] as MenuItem[];
+    pick(items, t('ws.moveSession')).run!();
+    await vi.waitFor(() => expect(moveMenu).toHaveBeenCalledWith(app, 'line:l1'));
+    expect(app.openMenu).toHaveBeenLastCalledWith({ clientX: 7, clientY: 8 }, t('ws.moveSession'), [{ label: 'webshop' }]);
+  });
+});

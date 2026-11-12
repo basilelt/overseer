@@ -1,5 +1,5 @@
 <script lang="ts">
-  import Clock from '@lucide/svelte/icons/clock';
+  import Search from '@lucide/svelte/icons/search';
   import Columns2 from '@lucide/svelte/icons/columns-2';
   import PanelRight from '@lucide/svelte/icons/panel-right';
   import Play from '@lucide/svelte/icons/play';
@@ -7,16 +7,16 @@
   import MessageSquarePlus from '@lucide/svelte/icons/message-square-plus';
   import { feedback, ft } from '../feedback.svelte';
   import { t } from '../i18n.svelte';
+  import { hint } from '../keyboard';
   import { app, type View } from '../state.svelte';
   import { closePaneAt, toggleSplit, update, workspace } from '../workspace.svelte';
-  import AgentAvatars from './titlebar/AgentAvatars.svelte';
   import HostChip from './titlebar/HostChip.svelte';
   import PortsChip from './ports/PortsChip.svelte';
   import SystemChip from './system/SystemChip.svelte';
   import UsageChip from './usage/UsageChip.svelte';
   import NewSessionMenu from './titlebar/NewSessionMenu.svelte';
   import UpdatePill from './titlebar/UpdatePill.svelte';
-  import DemoPill from './ui/DemoPill.svelte';
+  import { isDemo } from '../demo';
   import NotificationBell from './titlebar/NotificationBell.svelte';
   import { startable } from '../kanban-core';
 
@@ -36,6 +36,7 @@
       app.notify(String((e as Error).message ?? e), 'error');
     }
   }
+  const demoPill = isDemo() ? () => import('./ui/DemoPill.svelte') : null;
 </script>
 
 <header class="bar" class:mac data-tauri-drag-region>
@@ -49,8 +50,8 @@
       onclick={() => (workspace.layout.panes.length > 1 ? closePaneAt(1) : update(toggleSplit))}><Columns2 size={15} /></button
     >
     <NewSessionMenu />
-    <button class="icon-btn" data-tour="palette" title={t('title.history')} aria-label={t('title.history')} onclick={() => app.open('palette')}
-      ><Clock size={15} /></button
+    <button class="icon-btn" data-tour="palette" title={`${t('title.palette')} (${hint('palette')})`} aria-label={t('title.palette')} onclick={() => app.open('palette')}
+      ><Search size={15} /></button
     >
   </div>
   <div class="views" role="tablist">
@@ -59,8 +60,7 @@
     {/each}
   </div>
   <div class="spacer" data-tauri-drag-region></div>
-  <AgentAvatars />
-  <DemoPill />
+  {#if demoPill}{#await demoPill() then { default: DemoPill }}<DemoPill />{/await}{/if}
   <UpdatePill />
   <SystemChip />
   <UsageChip />

@@ -49,19 +49,34 @@ pub const COPILOT_EVENTS: &[&str] = &[
     "sessionEnd",
 ];
 
+pub const VIBE_EVENTS: &[&str] = &[
+    "session_start",
+    "pre_agent",
+    "post_agent",
+    "post_tool",
+    "notification",
+    "session_end",
+];
+
 pub const CURSOR_EVENTS: &[&str] = &["sessionStart", "beforeSubmitPrompt", "stop", "sessionEnd"];
 
 const MAX_STDIN: u64 = 1 << 20;
 
 pub fn canonical<'a>(event: &'a str, notification_type: Option<&str>) -> &'a str {
     match event {
-        "BeforeAgent" | "userPromptSubmitted" | "beforeSubmitPrompt" => "UserPromptSubmit",
-        "AfterAgent" | "agentStop" | "stop" => "Stop",
-        "sessionStart" => "SessionStart",
-        "sessionEnd" => "SessionEnd",
+        "BeforeAgent" | "userPromptSubmitted" | "beforeSubmitPrompt" | "pre_agent" => {
+            "UserPromptSubmit"
+        }
+        "AfterAgent" | "agentStop" | "stop" | "post_agent" => "Stop",
+        "sessionStart" | "session_start" => "SessionStart",
+        "sessionEnd" | "session_end" => "SessionEnd",
+        "post_tool" => "PostToolUse",
         "errorOccurred" => "StopFailure",
         "notification" | "Notification" => match notification_type {
-            Some("agent_idle" | "agent_completed") => "Stop",
+            Some("agent_idle" | "agent_completed" | "turn_completed") => "Stop",
+            Some("turn_failed") => "StopFailure",
+            Some("approval_requested") => "PermissionRequest",
+            Some("question_asked") => "Elicitation",
             _ => "Notification",
         },
         e => e,
@@ -176,7 +191,7 @@ pub fn apply(h: &mut HookState, ev: &Value) {
 
 pub fn session_key(agent: &str, ev: &Value) -> Option<String> {
     let term = ev["termId"].as_str().filter(|t| !t.is_empty());
-    let by_session = matches!(agent, "claude" | "codex" | "gemini");
+    let by_session = matches!(agent, "claude" | "codex" | "gemini" | "vibe");
     match (ev["sessionId"].as_str(), term) {
         (Some(s), _) if by_session => Some(s.to_string()),
         (_, Some(t)) => Some(term_key(t)),
@@ -273,6 +288,56 @@ mod tests {
         let rec = spool_record("codex", "Stop", b"not json", None, |_| None, 7);
         assert_eq!(rec["event"], "Stop");
         assert!(rec.get("sessionId").is_none());
+    }
+
+    #[test]
+    fn vibe_events_map_to_line_states_by_session() {
+        let rec =
+            |stdin: &[u8]| spool_record("vibe", "x", stdin, Some(9), |_| Some("T1".into()), 1);
+        let ev = |name: &str, extra: &str| {
+            rec(format!(r#"{{"session_id":"v1","parent_session_id":null,"cwd":"/w","transcript_path":"/h/unified/v1","hook_event_name":"{name}"{extra}}}"#).as_bytes())
+        };
+        let mut h = HookState::default();
+        let start = ev(
+            "session_start",
+            r#","source":"startup","agent_name":"default","model":"m""#,
+        );
+        assert_eq!(start["event"], "SessionStart");
+        assert_eq!(session_key("vibe", &start).as_deref(), Some("v1"));
+        let pre = ev(
+            "pre_agent",
+            r#","agent_name":"default","turn_id":"t","prompt":"hi""#,
+        );
+        assert_eq!(pre["event"], "UserPromptSubmit");
+        apply(&mut h, &pre);
+        assert!(h.busy);
+        let ask = ev(
+            "notification",
+            r#","notification_type":"approval_requested","message":"m","tool_name":"file_system.bash""#,
+        );
+        assert_eq!(ask["event"], "PermissionRequest");
+        apply(&mut h, &ask);
+        assert!(h.needs_input);
+        let tool = ev(
+            "post_tool",
+            r#","tool_name":"file_system.bash","tool_status":"success""#,
+        );
+        apply(&mut h, &tool);
+        assert!(!h.needs_input && h.busy);
+        let q = ev("notification", r#","notification_type":"question_asked""#);
+        assert_eq!(q["event"], "Elicitation");
+        let done = ev("notification", r#","notification_type":"turn_completed""#);
+        assert_eq!(done["event"], "Stop");
+        let failed = ev("notification", r#","notification_type":"turn_failed""#);
+        assert_eq!(failed["event"], "StopFailure");
+        let post = ev("post_agent", r#","agent_name":"default""#);
+        assert_eq!(post["event"], "Stop");
+        apply(&mut h, &post);
+        assert!(!h.busy);
+        assert_eq!(
+            ev("session_end", r#","reason":"exit""#)["event"],
+            "SessionEnd"
+        );
     }
 
     #[test]

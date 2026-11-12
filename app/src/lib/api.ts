@@ -1,7 +1,7 @@
 import { DaemonError, type DaemonClient } from './client';
 import type { StatuslineStatus } from './usage/types';
 import type { DirListing } from './dirs';
-import type { Activity, AgentInfo, BroadcastRequest, ChatPage, CustomCommand, ScreenText, BroadcastResponse, DaemonEnv, Diff, DiscoverResult, FileEdit, Folder, Group, HooksRun, HooksStatus, SwitchboardResult, SwitchboardStatus, LocalLine, NewTask, NewTerm, Profile, ProfilesStore, Project, Status, SubagentDef, Task, TaskMessage, Term, Version, Workspace, Lifecycle, LifecyclePatch, UninstallReport } from './types';
+import type { Activity, LidPower, AgentInfo, BroadcastRequest, ChatPage, CustomCommand, ScreenText, BroadcastResponse, DaemonEnv, Diff, DiscoverResult, FileEdit, Folder, Group, HooksRun, HooksStatus, SwitchboardResult, SwitchboardStatus, LocalLine, NewTask, NewTerm, Profile, ProfilesStore, Project, Status, SubagentDef, Task, TaskMessage, Term, Version, Workspace, Lifecycle, LifecyclePatch, UninstallReport } from './types';
 
 const enc = encodeURIComponent;
 
@@ -49,6 +49,10 @@ export function api(c: DaemonClient) {
     sendTaskMessage: (id: string, body: string) => c.request<TaskMessage>('POST', `/v1/tasks/${enc(id)}/messages`, { body }),
     autoOrganize: () => c.request<{ enabled: boolean }>('GET', '/v1/tasks/auto-organize'),
     setAutoOrganize: (enabled: boolean) => c.request<{ enabled: boolean }>('PUT', '/v1/tasks/auto-organize', { enabled }),
+    agentMessaging: () => c.request<{ enabled: boolean }>('GET', '/v1/tasks/agent-messaging'),
+    setAgentMessaging: (enabled: boolean) => c.request<{ enabled: boolean }>('PUT', '/v1/tasks/agent-messaging', { enabled }),
+    agentTasks: () => c.request<{ enabled: boolean }>('GET', '/v1/tasks/agent-tasks'),
+    setAgentTasks: (enabled: boolean) => c.request<{ enabled: boolean }>('PUT', '/v1/tasks/agent-tasks', { enabled }),
     organize: (project?: string) => c.request<{ started: Task[] }>('POST', '/v1/tasks/organize', project ? { project } : {}),
     projects: () => c.request<Project[]>('GET', '/v1/projects'),
     createProject: (path: string) => c.request<Project>('POST', '/v1/projects', { path }),
@@ -63,6 +67,8 @@ export function api(c: DaemonClient) {
     switchboardStatus: () => c.request<SwitchboardStatus>('GET', '/v1/import/switchboard'),
     importSwitchboard: () => c.request<SwitchboardResult>('POST', '/v1/import/switchboard', {}),
     lifecycle: () => c.request<Lifecycle>('GET', '/v1/lifecycle'),
+    lidPower: () => c.request<LidPower>('GET', '/v1/power/lid'),
+    setLidPower: (enabled: boolean) => c.request<LidPower>('PUT', '/v1/power/lid', { enabled }),
     patchLifecycle: (patch: LifecyclePatch) => c.request<Lifecycle>('PATCH', '/v1/lifecycle', patch),
     uninstall: (dryRun = true) => c.request<UninstallReport>('POST', '/v1/uninstall', { dryRun }),
     installHooks: (agents: string[], dryRun = false) => c.request<HooksRun>('POST', '/v1/hooks/install', { agents, dryRun }),
@@ -70,7 +76,7 @@ export function api(c: DaemonClient) {
     statusline: () => c.request<StatuslineStatus>('GET', '/v1/usage/statusline'),
     setStatusline: (on: boolean) => c.request<StatuslineStatus>('POST', `/v1/usage/statusline/${on ? 'install' : 'uninstall'}`, { dryRun: false }),
     profiles: () => c.request<ProfilesStore>('GET', '/v1/profiles'),
-    saveProfiles: (patch: { default?: string; profiles?: Profile[]; scopes?: Record<string, string> }) => c.request<ProfilesStore>('PUT', '/v1/profiles', patch),
+    saveProfiles: (patch: { default?: string; profiles?: Profile[]; scopes?: Record<string, string>; types?: ProfilesStore['types'] }) => c.request<ProfilesStore>('PUT', '/v1/profiles', patch),
     subagents: (cwd?: string) => c.request<{ subagents: SubagentDef[] }>('GET', `/v1/profiles/subagents${cwd ? `?cwd=${enc(cwd)}` : ''}`),
     applyProfileFiles: (b: { profile: string; cwd?: string; dryRun: boolean; files?: string[] }) => c.request<{ dryRun: boolean; files: FileEdit[] }>('POST', '/v1/profiles/apply-files', b),
     holdPlan: (id: string) =>
@@ -84,8 +90,8 @@ export function api(c: DaemonClient) {
         throw e;
       }),
     workspaces: () => c.request<Workspace[]>('GET', '/v1/workspaces'),
-    createWorkspace: (w: { path: string; name?: string; folderId?: string | null; pinned?: boolean }) => c.request<Workspace>('POST', '/v1/workspaces', w),
-    patchWorkspace: (id: string, patch: Partial<Pick<Workspace, 'name' | 'folderId' | 'pinned' | 'archived' | 'rank' | 'tabs' | 'notifyIdle'>>) =>
+    createWorkspace: (w: { path?: string; name?: string; kind?: 'dir' | 'subject'; folderId?: string | null; pinned?: boolean; parentId?: string; cwd?: string | null }) => c.request<Workspace>('POST', '/v1/workspaces', w),
+    patchWorkspace: (id: string, patch: Partial<Pick<Workspace, 'name' | 'folderId' | 'pinned' | 'archived' | 'rank' | 'tabs' | 'notifyIdle' | 'cwd'>>) =>
       c.request<Workspace>('PATCH', `/v1/workspaces/${enc(id)}`, patch),
     deleteWorkspace: (id: string) => c.request('DELETE', `/v1/workspaces/${enc(id)}`),
     folders: () => c.request<Folder[]>('GET', '/v1/folders'),

@@ -7,6 +7,7 @@ describe('chat view mode', () => {
   it('defaults to chat on phones for agents with a transcript parser', () => {
     expect(defaultMode('phone', claude)).toBe('chat');
     expect(defaultMode('phone', { kind: 'codex', lineId: 'x' })).toBe('chat');
+    expect(defaultMode('phone', { kind: 'vibe', lineId: 'x' })).toBe('chat');
     expect(defaultMode('desktop', claude)).toBe('terminal');
     expect(defaultMode('phone', { kind: 'aider', lineId: 'x' })).toBe('terminal');
     expect(defaultMode('phone', { kind: 'shell' })).toBe('terminal');

@@ -208,14 +208,11 @@ fn is_rule(l: &[Cell]) -> bool {
     t.len() >= 10 && t.iter().all(|c| matches!(c.c, '─' | '━' | '-' | '╌' | '═'))
 }
 
-pub fn input_empty(screen: Option<&str>) -> Check {
-    let Some(screen) = screen else {
-        return check("inputEmpty", false, "terminal content unavailable");
-    };
+fn prompt_input(screen: &str) -> Result<String, &'static str> {
     let lines = cells(screen);
     let last = lines.iter().rposition(|l| !trim_box(l).is_empty());
     let Some(last) = last else {
-        return check("inputEmpty", false, "prompt not found on screen");
+        return Err("prompt not found on screen");
     };
     let from = last.saturating_sub(15);
     let prompt = (from..=last).rev().find(|&i| {
@@ -234,7 +231,7 @@ pub fn input_empty(screen: Option<&str>) -> Check {
                 .is_none_or(|c| c.c.is_whitespace() || c.c == '\u{a0}')
     });
     let Some(p) = prompt else {
-        return check("inputEmpty", false, "prompt not found on screen");
+        return Err("prompt not found on screen");
     };
     let mut rest: Vec<Cell> = trim_box(&lines[p])[1..].to_vec();
     for l in &lines[p + 1..=last] {
@@ -243,10 +240,27 @@ pub fn input_empty(screen: Option<&str>) -> Check {
         }
         rest.extend_from_slice(trim_box(l));
     }
-    let typed = rest
+    Ok(rest
         .iter()
-        .any(|c| !c.c.is_whitespace() && c.c != '\u{a0}' && !c.dim);
-    check("inputEmpty", !typed, "input box is not empty")
+        .filter(|c| !c.dim)
+        .map(|c| if c.c == '\u{a0}' { ' ' } else { c.c })
+        .collect::<String>()
+        .trim()
+        .to_string())
+}
+
+pub fn input_text(screen: &str) -> Option<String> {
+    prompt_input(screen).ok()
+}
+
+pub fn input_empty(screen: Option<&str>) -> Check {
+    let Some(screen) = screen else {
+        return check("inputEmpty", false, "terminal content unavailable");
+    };
+    match prompt_input(screen) {
+        Ok(typed) => check("inputEmpty", typed.is_empty(), "input box is not empty"),
+        Err(e) => check("inputEmpty", false, e),
+    }
 }
 
 pub fn evaluate(i: &HoldInput) -> Vec<Check> {

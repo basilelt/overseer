@@ -1,10 +1,12 @@
 <script lang="ts" module>
   import { ensureSprite } from '../../icons/sprite';
+  import { formatCost } from '../../usage/format';
 
   ensureSprite();
 </script>
 
 <script lang="ts">
+  import QuorumChips from './QuorumChips.svelte';
   import GitBranch from '@lucide/svelte/icons/git-branch';
   import FolderGit from '@lucide/svelte/icons/folder-git';
   import LoaderCircle from '@lucide/svelte/icons/loader-circle';
@@ -175,6 +177,7 @@
       {#if task.origin === 'agent'}
         <span class="by" title={parent ? t('kanban.byTaskTitle', { n: parent.number }) : t('task.createdByAgent')}><svg class="i" width="11" height="11" aria-hidden="true"><use href="#sbi-bot" /></svg>{#if parent}{t('kanban.byTask', { n: parent.number })}{/if}</span>
       {/if}
+      <QuorumChips {task} />
       {#if showStatus}<span class="stat {task.status}">{t(`kanban.col.${task.status}` as Key)}</span>{/if}
     </div>
     {#if editing}
@@ -221,6 +224,7 @@
       {#if status.kind === 'progress'}
         <span class="progress" title="{status.pct}%"><span class="bar"><span class="fill" style:width="{status.pct}%"></span></span><span class="pct mono">{task.progress?.done}/{task.progress?.total}</span></span>
       {/if}
+      {#if task.cost}<span class="cost mono" title={t('cost.task')}>{formatCost(task.cost.cost, task.cost.partial)}</span>{/if}
       {#if !session && task.effort && (findAgent(app.agents, task.agent)?.efforts.length ?? 1)}<span class="effort">{t(`effort.${task.effort}` as Key)}</span>{/if}
       <span class="tail">
       <span class="age faint">{t(age.key, { n: age.n })}</span>
@@ -561,6 +565,11 @@
   .meta .age {
     color: var(--text-3);
     padding-left: 4px;
+  }
+  .cost {
+    flex: none;
+    font-size: 11px;
+    color: var(--text-3);
   }
   .effort {
     flex: none;

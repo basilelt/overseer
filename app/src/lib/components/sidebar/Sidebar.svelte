@@ -8,6 +8,7 @@
   import Users from '@lucide/svelte/icons/users';
   import X from '@lucide/svelte/icons/x';
   import { t } from '../../i18n.svelte';
+  import { hint } from '../../keyboard';
   import { touchContextMenu } from '../../mobile/touch-menu';
   import { app, type SidebarMode } from '../../state.svelte';
   import { broadcastTo, createFolder, groupPicker, rescanFolders } from '../../wsactions';
@@ -17,10 +18,13 @@
   import { nudgeVisible, unplacedCount } from '../../organize';
   import SpacesView from './SpacesView.svelte';
   import { preload } from '../../idle';
+  import GitBranch from '@lucide/svelte/icons/git-branch';
+  import { ui } from '../../mobile/ui.svelte';
 
   const statesView = preload(() => import('./StatesView.svelte'));
   // Only windows showing several hosts need it.
   const hostSections = () => import('./HostSections.svelte');
+  const gitView = () => import('../../git/SidebarGit.svelte');
 
   const unplaced = $derived(app.connected && app.wsPersistent ? unplacedCount(app.data.lines, app.ws.workspaces, app.projects, app.data.tasks) : 0);
   const nudge = $derived(nudgeVisible(unplaced, settings.organizeNudgeAt));
@@ -30,6 +34,7 @@
     { id: 'workspaces', label: () => t('ws.title') },
     { id: 'status', label: () => t('ws.byStatus') },
   ];
+  const phone = $derived(ui.layout === 'phone');
   const listed = $derived(app.items.filter((i) => i.kind !== 'shell').length);
   const selection = $derived([...app.multi]);
   const addMenu = () => [
@@ -38,36 +43,47 @@
   ];
 </script>
 
+{#snippet wsActions()}
+    <button class="icon-btn" title={t('ws.new')} aria-label={t('ws.new')} disabled={!app.connected || !app.wsPersistent} aria-haspopup="menu" onclick={(e) => app.openMenu(e, t('ws.new'), addMenu())}
+      ><Plus size={14} /></button
+    >
+    <button class="icon-btn" title={t('ws.newFolder')} aria-label={t('ws.newFolder')} disabled={!app.connected || !app.wsPersistent} onclick={() => createFolder()}
+      ><FolderPlus size={14} /></button
+    >
+    <button
+      class="icon-btn"
+      class:active={showArchived}
+      title={t('ws.showArchived')}
+      aria-label={t('ws.showArchived')}
+      aria-pressed={showArchived}
+      onclick={() => (showArchived = !showArchived)}><Archive size={14} /></button
+    >
+{/snippet}
+
 <aside class="sidebar" data-tour="workspaces" use:touchContextMenu>
   <header>
     <div class="modes" role="tablist" aria-label={t('ws.mode')}>
       {#each modes as m (m.id)}
-        <button role="tab" title={m.label()} aria-selected={app.sidebarMode === m.id} class:on={app.sidebarMode === m.id} onclick={() => app.setSidebarMode(m.id)}>{m.label()}</button>
+        <button role="tab" title={m.label()} aria-selected={!app.sidebarGit && app.sidebarMode === m.id} class:on={!app.sidebarGit && app.sidebarMode === m.id} onclick={() => app.setSidebarMode(m.id)}>{m.label()}</button>
       {/each}
+      <button role="tab" class="git" title={`${t('git.scm')} (${hint('sourceControl')})`} aria-label={t('git.scm')} aria-selected={app.sidebarGit} class:on={app.sidebarGit} data-tour="sidebar-git-tab" onclick={() => app.setSidebarGit(true)}><GitBranch size={13} />{t('git.side.tab')}</button>
     </div>
-    {#if app.sidebarMode === 'workspaces'}
-      <button class="icon-btn" title={t('ws.new')} aria-label={t('ws.new')} disabled={!app.connected || !app.wsPersistent} aria-haspopup="menu" onclick={(e) => app.openMenu(e, t('ws.new'), addMenu())}
-        ><Plus size={14} /></button
-      >
-      <button class="icon-btn" title={t('ws.newFolder')} aria-label={t('ws.newFolder')} disabled={!app.connected || !app.wsPersistent} onclick={() => createFolder()}
-        ><FolderPlus size={14} /></button
-      >
-      <button
-        class="icon-btn"
-        class:active={showArchived}
-        title={t('ws.showArchived')}
-        aria-label={t('ws.showArchived')}
-        aria-pressed={showArchived}
-        onclick={() => (showArchived = !showArchived)}><Archive size={14} /></button
-      >
+    {#if app.sidebarGit}
+      <span></span>
+    {:else if app.sidebarMode === 'workspaces'}
+      {#if !phone}{@render wsActions()}{/if}
     {:else}
       <span class="count faint">{listed}</span>
     {/if}
   </header>
-  <label class="filter">
-    <Search size={13} />
-    <input bind:value={filter} placeholder={app.sidebarMode === 'workspaces' ? t('ws.filter') : t('sidebar.filter')} aria-label={t('sidebar.filter')} />
-  </label>
+  {#if !app.sidebarGit}
+  <div class="tools">
+    <label class="filter">
+      <Search size={13} />
+      <input bind:value={filter} placeholder={app.sidebarMode === 'workspaces' ? t('ws.filter') : t('sidebar.filter')} aria-label={t('sidebar.filter')} />
+    </label>
+    {#if phone && app.sidebarMode === 'workspaces'}{@render wsActions()}{/if}
+  </div>
   {#if nudge}
     <div class="nudge" data-tour="organize">
       <WandSparkles size={14} />
@@ -76,17 +92,15 @@
       <button class="icon-btn" title={t('org.nudgeHide')} aria-label={t('org.nudgeHide')} onclick={() => saveSettings({ organizeNudgeAt: unplaced })}><X size={13} /></button>
     </div>
   {/if}
-  {#snippet view()}
-    {#if app.sidebarMode === 'workspaces'}
-      <SpacesView {filter} {showArchived} />
-    {:else}
-      {#await statesView() then { default: StatesView }}<StatesView {filter} />{/await}
-    {/if}
-  {/snippet}
-  {#if app.hosts.length > 1}
-    {#await hostSections() then { default: HostSections }}<HostSections {filter} active={view} />{/await}
+  {/if}
+  {#if app.sidebarGit}
+    {#await gitView() then { default: SidebarGit }}<SidebarGit />{/await}
+  {:else if app.hosts.length > 1}
+    {#await hostSections() then { default: HostSections }}<HostSections {filter} {showArchived} />{/await}
+  {:else if app.sidebarMode === 'workspaces'}
+    <SpacesView {filter} {showArchived} />
   {:else}
-    {@render view()}
+    {#await statesView() then { default: StatesView }}<StatesView {filter} />{/await}
   {/if}
   {#if selection.length > 1}
     <div class="selbar" role="toolbar" aria-label={t('ws.selection', { n: selection.length })}>
@@ -145,6 +159,13 @@
       background var(--ease),
       color var(--ease);
   }
+  .modes button.git {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 0 8px;
+  }
   .modes button.on {
     background: var(--surface);
     color: var(--text);
@@ -154,6 +175,9 @@
     font-size: 12px;
     padding: 0 6px;
     font-variant-numeric: tabular-nums;
+  }
+  .tools {
+    display: contents;
   }
   .filter {
     display: flex;
@@ -213,4 +237,39 @@
     font-size: 12px;
     font-weight: 500;
   }
+  :global(:root.phone) header {
+    padding: 10px 12px 8px;
+  }
+  :global(:root.phone) .modes {
+    margin-right: 0;
+    padding: 3px;
+    border-radius: 10px;
+  }
+  :global(:root.phone) .modes button {
+    flex: 1 1 0;
+    height: 40px;
+    border-radius: 8px;
+    font-size: 14px;
+  }
+  :global(:root.phone) .modes button.git {
+    flex: 1 1 0;
+    justify-content: center;
+    gap: 6px;
+  }
+  :global(:root.phone) .tools {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    margin: 0 8px 8px 12px;
+  }
+  :global(:root.phone) .filter {
+    flex: 1;
+    min-width: 0;
+    margin: 0 4px 0 0;
+    border-radius: 10px;
+  }
+  :global(:root.phone) .filter input {
+    padding: 0;
+  }
+
 </style>

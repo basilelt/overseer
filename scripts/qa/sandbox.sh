@@ -71,12 +71,12 @@ start)
       && GIT_CONFIG_GLOBAL=/dev/null git -c user.name=qa -c user.email=qa@example.com commit -qm init)
   fi
   sed -e "s/__QA_PORT__/$PORT/" -e "s/__QA_SLOT_PORT__/${QA_SLOT_PORT:-__QA_SLOT_PORT__}/" "$R/scripts/qa/shim.js" > "$D/shim.js"
-  env -i PATH="$daemon_path" HOME="$D/home" SHELL=/bin/sh TERM=xterm-256color LANG=C.UTF-8 \
+  env -i PATH="$daemon_path" HOME="$D/home" SHELL="${QA_SHELL:-/bin/sh}" TERM=xterm-256color LANG=C.UTF-8 \
     XDG_RUNTIME_DIR="$D/run" CLAUDE_CONFIG_DIR="$D/home/.claude" CODEX_HOME="$D/home/.codex" \
     OVERSEER_STATE_DIR="$D/state" OVERSEER_TMUX_SOCKET="$D/tmux.sock" OVERSEER_LOGIN_ENV=0 \
     GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 GIT_AUTHOR_NAME=qa GIT_AUTHOR_EMAIL=qa@example.com \
     GIT_COMMITTER_NAME=qa GIT_COMMITTER_EMAIL=qa@example.com \
-    SB_BIN="$BIN" SB_STUB_LOG="$D/stub.log" \
+    SB_BIN="$BIN" SB_STUB_LOG="$D/stub.log" ${SB_NPM_FAIL:+SB_NPM_FAIL=$SB_NPM_FAIL} ${SB_STUB_DROP_ENTER:+SB_STUB_DROP_ENTER=$SB_STUB_DROP_ENTER} ${SB_GH_DIR:+SB_GH_DIR=$SB_GH_DIR} SB_INHIBIT_LOG="$D/inhibit.log" \
     "$SETSID" ${SETSID_ARG:+"$SETSID_ARG"} "$BIN" daemon --interval 1 >> "$D/daemon.log" 2>&1 &
   i=0
   until python3 -c 'import socket,sys; socket.socket(socket.AF_UNIX).connect(sys.argv[1])' "$D/state/daemon.sock" 2>/dev/null; do

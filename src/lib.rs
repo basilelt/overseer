@@ -22,6 +22,7 @@ pub mod gh;
 pub mod git;
 pub mod gitgraph;
 pub mod github;
+pub mod gitops;
 pub mod hold;
 pub mod hooks;
 pub mod import;
@@ -32,9 +33,11 @@ pub mod mcp;
 pub mod naming;
 pub mod organize;
 pub mod ports;
+pub mod power;
 pub mod procs;
 pub mod profiles;
 pub mod proxy;
+pub mod quorum;
 pub mod registry;
 pub mod remote;
 pub mod review;
@@ -58,6 +61,7 @@ pub mod upgrade;
 pub mod uploads;
 pub mod usage;
 pub mod util;
+pub mod vibe;
 pub mod workspaces;
 pub mod worktrees;
 
@@ -95,6 +99,7 @@ pub struct Ctx<'a> {
     pub claude_dir: PathBuf,
     pub codex_dir: PathBuf,
     pub gemini_dir: PathBuf,
+    pub vibe_dir: PathBuf,
     pub state_dir: PathBuf,
     pub snapshot: PathBuf,
     pub now_ms: i64,
@@ -368,6 +373,7 @@ impl<'a> Ctx<'a> {
             claude_dir: env_dir("CLAUDE_CONFIG_DIR", ".claude"),
             codex_dir: env_dir("CODEX_HOME", ".codex"),
             gemini_dir: home().join(".gemini"),
+            vibe_dir: vibe::home(),
             snapshot: std::env::var_os("OVERSEER_TMUX_SNAPSHOT")
                 .filter(|v| !v.is_empty())
                 .map(PathBuf::from)
@@ -824,6 +830,81 @@ fn gemini_found(ctx: &Ctx, hooks: &HashMap<String, HookState>) -> Vec<Found> {
         .collect()
 }
 
+fn vibe_found(ctx: &Ctx, hooks: &HashMap<String, HookState>) -> Vec<Found> {
+    let mut sessions = vibe::sessions(&ctx.vibe_dir);
+    if sessions.is_empty() {
+        return vec![];
+    }
+    sessions.sort_by_key(|s| -s.activity_ms);
+    let procs: HashMap<u32, Vec<String>> = ctx
+        .probe
+        .list()
+        .into_iter()
+        .filter(|(_, argv)| argv.iter().take(3).any(|a| vibe::is_vibe(a)))
+        .collect();
+    let tui = |pid: u32| {
+        let mut p = Some(pid);
+        for _ in 0..4 {
+            let cur = p?;
+            if procs.contains_key(&cur) {
+                return Some(cur);
+            }
+            p = ctx.probe.ppid(cur);
+        }
+        None
+    };
+    let mut claimed = HashSet::new();
+    sessions
+        .into_iter()
+        .map(|s| {
+            let mut f = Found::new("vibe", s.id.clone());
+            let leased = s
+                .pid
+                .filter(|p| ctx.probe.info(*p).is_some())
+                .and_then(tui)
+                .filter(|t| !claimed.contains(t));
+            let named = || {
+                procs
+                    .iter()
+                    .find(|(pid, argv)| !claimed.contains(*pid) && argv.contains(&s.id))
+                    .map(|(pid, _)| *pid)
+            };
+            let live = leased.or_else(named);
+            if let Some(t) = live {
+                claimed.insert(t);
+                let flags = procs
+                    .get(&t)
+                    .and_then(|argv| flags_after(argv, vibe::is_vibe))
+                    .unwrap_or_default();
+                f.alive = Some((t, without_prompt(&procs::strip_resume(&flags))));
+            }
+            let hook = hooks.get(&s.id);
+            if let Some(h) = hook {
+                f.busy = h.busy;
+                f.busy_known = f.alive.is_some();
+            }
+            if let (Some(h), Some((pid, _))) = (hook, &f.alive) {
+                if let Some(t) = term::of_pid(*pid, ctx.probe) {
+                    f.busy = term::effective_busy(
+                        h.busy,
+                        h.at_ms,
+                        t.submit_ms(),
+                        t.turn_busy(ctx.now_ms),
+                    );
+                }
+            }
+            f.cwd = s.cwd.unwrap_or_default();
+            f.title = s.title;
+            f.archived = s.archived;
+            f.activity_ms = s
+                .activity_ms
+                .max(s.started_ms.unwrap_or(0))
+                .max(hook.map_or(0, |h| h.at_ms));
+            f
+        })
+        .collect()
+}
+
 fn without_prompt(flags: &[String]) -> Vec<String> {
     let mut out = vec![];
     let mut it = flags.iter();
@@ -832,6 +913,7 @@ fn without_prompt(flags: &[String]) -> Vec<String> {
             "-i" | "--prompt-interactive" | "-p" | "--prompt" => {
                 it.next();
             }
+            "--" => break,
             s if s.starts_with("--prompt-interactive=") || s.starts_with("--prompt=") => {}
             _ => out.push(f.clone()),
         }
@@ -1107,6 +1189,7 @@ fn scan_now(ctx: &Ctx) -> Result<Vec<Line>, String> {
     let claude_hooks = hook_map("claude")?;
     let codex_hooks = hook_map("codex")?;
     let gemini_hooks = hook_map("gemini")?;
+    let vibe_hooks = hook_map("vibe")?;
     let mut term_hooks = HashMap::new();
     for a in agents::AGENTS
         .iter()
@@ -1125,6 +1208,7 @@ fn scan_now(ctx: &Ctx) -> Result<Vec<Line>, String> {
     let mut found = claude_found(ctx, &claude_hooks, &reg.divergent("claude")?);
     found.extend(codex_found(ctx, &codex_hooks));
     found.extend(gemini_found(ctx, &gemini_hooks));
+    found.extend(vibe_found(ctx, &vibe_hooks));
     found.extend(term_found(&term_hooks, ctx.now_ms));
     let probed: Vec<_> = found
         .into_iter()
@@ -1208,6 +1292,7 @@ fn scan_now(ctx: &Ctx) -> Result<Vec<Line>, String> {
                 .filter(|h| !f.shared || h.pid == pid),
             "codex" => codex_hooks.get(&f.session_id),
             "gemini" => gemini_hooks.get(&f.session_id),
+            "vibe" => vibe_hooks.get(&f.session_id),
             _ => f.hook.as_ref(),
         }
         .cloned();

@@ -21,6 +21,7 @@ export type ShortcutId =
   | 'fontDown'
   | 'fontReset'
   | 'toggleSidebar'
+  | 'sourceControl'
   | 'togglePanel'
   | 'kanban'
   | 'newWorkspace'
@@ -65,7 +66,7 @@ export const SECTIONS: { id: 'tabs' | 'panes' | 'terminal' | 'app'; ids: Shortcu
   { id: 'tabs', ids: ['newTab', 'closeTab', 'reopenTab', 'nextTab', 'prevTab', 'tabIndex'] },
   { id: 'panes', ids: ['splitRight', 'splitDown', 'focusLeft', 'focusRight', 'focusUp', 'focusDown'] },
   { id: 'terminal', ids: ['find', 'copy', 'paste', 'fontUp', 'fontDown', 'fontReset'] },
-  { id: 'app', ids: ['palette', 'settings', 'shortcuts', 'toggleSidebar', 'togglePanel', 'kanban', 'newWorkspace', 'reconnect', 'newWindow', 'closeWindow'] },
+  { id: 'app', ids: ['palette', 'settings', 'shortcuts', 'toggleSidebar', 'sourceControl', 'togglePanel', 'kanban', 'newWorkspace', 'reconnect', 'newWindow', 'closeWindow'] },
 ];
 
 export function bindings({ mac, ctrlWClosesTab }: ShortcutOptions): Binding[] {
@@ -88,12 +89,13 @@ export function bindings({ mac, ctrlWClosesTab }: ShortcutOptions): Binding[] {
     { id: 'focusUp', combos: [m('ArrowUp', { alt: true })] },
     { id: 'focusDown', combos: [m('ArrowDown', { alt: true })] },
     { id: 'find', combos: termSafe('F') },
-    { id: 'copy', combos: [mac ? m('C', { native: true }) : m('C', { shift: true, terminalOnly: true })] },
-    { id: 'paste', combos: [mac ? m('V', { native: true }) : m('V', { shift: true, terminalOnly: true })] },
+    { id: 'copy', combos: mac ? [m('C', { native: true })] : [m('C', { shift: true, terminalOnly: true }), { key: 'Insert', ctrl: true, terminalOnly: true }] },
+    { id: 'paste', combos: mac ? [m('V', { native: true })] : [m('V', { shift: true, terminalOnly: true }), { key: 'Insert', shift: true, terminalOnly: true }] },
     { id: 'fontUp', combos: [m('=', { anyShift: true })] },
     { id: 'fontDown', combos: [m('-', { anyShift: true })] },
     { id: 'fontReset', combos: [m('0')] },
     { id: 'toggleSidebar', combos: termSafe('B') },
+    { id: 'sourceControl', combos: [m('G', { shift: true })] },
     { id: 'togglePanel', combos: termSafe('J') },
     { id: 'kanban', combos: [m('K', { shift: true })] },
     { id: 'newWorkspace', combos: [m('N', { shift: true })] },
@@ -126,7 +128,7 @@ function matches(c: Combo, e: KeyEventLike, mac: boolean, key: string): boolean 
     const primary = mac ? e.metaKey : e.ctrlKey;
     const other = mac ? e.ctrlKey : e.metaKey;
     if (!primary || other) return false;
-  }
+  } else if (e.ctrlKey || e.metaKey) return false;
   if (!!c.alt !== e.altKey) return false;
   if (!c.anyShift && !!c.shift !== e.shiftKey) return false;
   if (c.key === DIGITS) return /^[1-9]$/.test(key);
@@ -139,8 +141,8 @@ export interface Resolved {
 }
 
 export function resolveShortcut(e: KeyEventLike, opts: ShortcutOptions & { inTerminal: boolean }): Resolved | null {
-  if (!e.metaKey && !e.ctrlKey) return null;
   const key = eventKey(e);
+  if (!e.metaKey && !e.ctrlKey && key !== 'Insert') return null;
   for (const b of bindings(opts)) {
     for (const c of b.combos) {
       if (c.native) continue;

@@ -159,6 +159,19 @@ pub static AGENTS: &[Agent] = &[
         ..NONE
     },
     Agent {
+        id: "vibe",
+        name: "Mistral Vibe",
+        bin: "vibe",
+        install: "uv tool install mistral-vibe",
+        sessions: true,
+        turns: true,
+        models: Some(&[]),
+        prompt: Some("--"),
+        resume: Some(&["{flags}", "--resume", "{id}"]),
+        cont: Some(&["--continue"]),
+        ..NONE
+    },
+    Agent {
         id: "shell",
         name: "Shell",
         models: Some(&[]),
@@ -216,6 +229,7 @@ pub fn auto_approve_args(id: &str) -> Option<&'static [&'static str]> {
         "opencode" => Some(&["--auto"]),
         "copilot" => Some(&["--allow-all"]),
         "cursor" => Some(&["--force"]),
+        "vibe" => Some(&["--auto-approve"]),
         _ => None,
     }
 }
@@ -239,6 +253,7 @@ fn approval_overrides(id: &str) -> &'static [&'static str] {
         "opencode" => &["--auto"],
         "copilot" => &["--allow-all", "--allow-all-tools", "--yolo"],
         "cursor" => &["--force", "-f", "--yolo"],
+        "vibe" => &["--auto-approve", "--yolo", "--agent", "--smart-approve"],
         _ => &[],
     }
 }
@@ -407,8 +422,37 @@ impl Agent {
         if !self.install.is_empty() {
             v["install"] = json!(self.install);
         }
+        if cfg!(unix) && self.install_cmd().is_some() {
+            v["installable"] = json!(true);
+        }
         v
     }
+
+    pub fn install_cmd(&self) -> Option<&'static str> {
+        Some(self.install).filter(|c| !c.is_empty() && !c.starts_with("see "))
+    }
+}
+
+#[cfg(unix)]
+pub fn install_argv(a: &Agent) -> Result<Vec<String>, String> {
+    let cmd = a
+        .install_cmd()
+        .ok_or_else(|| format!("{} has no install command", a.name))?;
+    Ok(vec![
+        "/bin/sh".into(),
+        "-c".into(),
+        format!(
+            "printf '%s\\r\\n\\r\\n' \"$1\"; {cmd}; s=$?; [ $s -eq 0 ] || printf '\\r\\n%s %s\\r\\n' \"$2\" \"$s\"; exit $s"
+        ),
+        "sh".into(),
+        format!("$ {cmd}"),
+        "Install failed with exit code".into(),
+    ])
+}
+
+#[cfg(not(unix))]
+pub fn install_argv(_: &Agent) -> Result<Vec<String>, String> {
+    Err("installing agents from the app is not supported on this platform".into())
 }
 
 pub fn redact(argv: &[String], agent: &Agent, prompt: Option<&str>) -> Vec<String> {
@@ -435,7 +479,7 @@ pub fn on_path(bin: &str, path: &std::ffi::OsStr, exts: &str) -> Option<std::pat
 
 fn program(bin: &str) -> std::path::PathBuf {
     if cfg!(windows) {
-        let path = std::env::var_os("PATH").unwrap_or_default();
+        let path = std::ffi::OsString::from(crate::shellenv::path());
         let exts = std::env::var("PATHEXT").unwrap_or_else(|_| ".COM;.EXE;.BAT;.CMD".into());
         if let Some(p) = on_path(bin, &path, &exts) {
             return p;
@@ -446,7 +490,9 @@ fn program(bin: &str) -> std::path::PathBuf {
 
 pub fn version(bin: &str) -> Option<String> {
     let o = crate::git::output_within(
-        Command::new(program(bin)).arg("--version"),
+        Command::new(program(bin))
+            .arg("--version")
+            .env("PATH", crate::shellenv::path()),
         Duration::from_secs(5),
     )
     .ok()?;
@@ -486,7 +532,7 @@ fn detect() -> Detected {
 }
 
 pub fn installed() -> Detected {
-    let path = std::env::var("PATH").unwrap_or_default();
+    let path = crate::shellenv::path();
     let mut g = CACHE.lock().unwrap_or_else(|e| e.into_inner());
     if let Some((at, p, d)) = g.as_ref() {
         if *p == path && at.elapsed() < Duration::from_secs(60) {
@@ -516,6 +562,7 @@ pub fn list() -> Value {
 }
 
 pub fn rescan() -> Value {
+    crate::shellenv::refresh();
     *CACHE.lock().unwrap_or_else(|e| e.into_inner()) = None;
     list()
 }
@@ -523,6 +570,37 @@ pub fn rescan() -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_runnable_install_commands_are_installable() {
+        let j = |id: &str| {
+            list()
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|a| a["id"] == id)
+                .cloned()
+                .unwrap()
+        };
+        assert_eq!(j("codex")["installable"], cfg!(unix));
+        assert!(j("agy")["installable"].is_null());
+        assert_eq!(
+            j("agy")["install"],
+            "see https://antigravity.google/download"
+        );
+        assert!(j("shell")["installable"].is_null());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn install_argv_wraps_the_command_and_exits_with_its_status() {
+        let argv = install_argv(get("codex").unwrap()).unwrap();
+        assert_eq!(argv[..2], ["/bin/sh", "-c"]);
+        assert!(argv[2].contains("; npm install -g @openai/codex; s=$?;"));
+        assert!(argv[2].ends_with("exit $s"));
+        assert_eq!(argv[4], "$ npm install -g @openai/codex");
+        assert!(install_argv(get("agy").unwrap()).is_err());
+    }
 
     #[test]
     fn on_path_finds_a_cmd_shim_by_pathext() {

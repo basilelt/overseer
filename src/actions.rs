@@ -827,7 +827,7 @@ pub(crate) fn close_line(
             let reg = Registry::open(&ctx.state_dir)?;
             reg.set_mark(&l.id, "closed_at", Some(&format_rfc3339(ctx.now_ms)))?;
             reg.set_mark(&l.id, "state", Some("hung-up"))?;
-            for t in held_terms(l) {
+            for t in pending_terms(l) {
                 if t.kill().is_ok() {
                     r.steps.push(format!("closed held term {}", t.info().id));
                 }
@@ -855,7 +855,9 @@ fn is_stub_wrapper(cmd: &[String]) -> bool {
     cmd.last().is_some_and(|c| c.contains(" stub "))
 }
 
-pub fn held_terms(l: &Line) -> Vec<std::sync::Arc<crate::term::Term>> {
+// Terms of a line with no agent pid yet: its held stub, or an agent still starting, such as
+// a resumed Claude waiting on its folder trust prompt before any hook reports the session.
+pub fn pending_terms(l: &Line) -> Vec<std::sync::Arc<crate::term::Term>> {
     if l.alive() {
         return vec![];
     }
@@ -863,9 +865,17 @@ pub fn held_terms(l: &Line) -> Vec<std::sync::Arc<crate::term::Term>> {
         .into_iter()
         .filter(|t| {
             let i = t.info();
-            !i.exited && i.line_id.as_deref() == Some(l.id.as_str()) && is_stub_wrapper(&i.cmd)
+            !i.exited
+                && i.line_id.as_deref() == Some(l.id.as_str())
+                && (is_stub_wrapper(&i.cmd) || i.agent.as_deref().is_some_and(|a| a != "shell"))
         })
         .collect()
+}
+
+// Only the stub of a line held by the user waits for Enter; once pressed, the agent runs in
+// the same term and an Enter would answer its prompt instead.
+pub fn waits_for_enter(l: &Line, t: &crate::term::Term) -> bool {
+    l.held_reason == Some("user") && is_stub_wrapper(&t.info().cmd)
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]

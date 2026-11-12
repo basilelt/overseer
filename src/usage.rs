@@ -37,7 +37,11 @@ const fn p(input: f64, output: f64, cache_read: f64, write_5m: f64, write_1h: f6
     }
 }
 
+pub const PRICES_AS_OF: &str = "2026-11-11";
+
 pub const PRICES: &[(&str, Price)] = &[
+    ("claude-fable-5-2", p(8.0, 40.0, 0.2, 10.0, 16.0)),
+    ("claude-mythos-5-2", p(8.0, 40.0, 0.2, 10.0, 16.0)),
     ("claude-fable-", p(10.0, 50.0, 0.25, 12.5, 20.0)),
     ("claude-mythos-", p(10.0, 50.0, 0.25, 12.5, 20.0)),
     ("claude-opus-5-5", p(4.0, 20.0, 0.2, 5.0, 8.0)),
@@ -47,11 +51,18 @@ pub const PRICES: &[(&str, Price)] = &[
     ("claude-opus-4-7", p(5.0, 25.0, 0.5, 6.25, 10.0)),
     ("claude-opus-4-8", p(5.0, 25.0, 0.5, 6.25, 10.0)),
     ("claude-opus-4", p(15.0, 75.0, 1.5, 18.75, 30.0)),
+    ("claude-sonnet-5-5", p(2.0, 10.0, 0.1, 2.5, 4.0)),
     ("claude-sonnet-5", p(2.0, 10.0, 0.2, 2.5, 4.0)),
     ("claude-sonnet-4", p(3.0, 15.0, 0.3, 3.75, 6.0)),
     ("claude-3-7-sonnet", p(3.0, 15.0, 0.3, 3.75, 6.0)),
+    ("claude-haiku-5-5", p(0.1, 0.5, 0.01, 0.125, 0.2)),
     ("claude-haiku-4", p(1.0, 5.0, 0.1, 1.25, 2.0)),
     ("claude-3-5-haiku", p(0.8, 4.0, 0.08, 1.0, 1.6)),
+    ("gpt-5.5", p(5.0, 30.0, 0.5, 0.0, 0.0)),
+    ("gpt-5.4-mini", p(0.75, 4.5, 0.075, 0.0, 0.0)),
+    ("gpt-5.4", p(2.5, 15.0, 0.25, 0.0, 0.0)),
+    ("gpt-5.3-codex", p(1.75, 14.0, 0.175, 0.0, 0.0)),
+    ("gpt-5.2", p(1.75, 14.0, 0.175, 0.0, 0.0)),
     ("gpt-5-mini", p(0.25, 2.0, 0.025, 0.0, 0.0)),
     ("gpt-5-nano", p(0.05, 0.4, 0.005, 0.0, 0.0)),
     ("gpt-5", p(1.25, 10.0, 0.125, 0.0, 0.0)),
@@ -71,7 +82,10 @@ pub fn price(model: &str) -> Option<&'static Price> {
     let m = m.rsplit('/').next().unwrap_or(&m);
     PRICES
         .iter()
-        .filter(|(k, _)| m.starts_with(k))
+        .filter(|(k, _)| {
+            m.strip_prefix(k)
+                .is_some_and(|rest| k.ends_with('-') || rest.is_empty() || rest.starts_with('-'))
+        })
         .max_by_key(|(k, _)| k.len())
         .map(|(_, p)| p)
 }
@@ -90,7 +104,7 @@ impl Tokens {
         self.input + self.output + self.cache_read + self.cache_write
     }
 
-    fn add(&mut self, o: &Tokens) {
+    pub(crate) fn add(&mut self, o: &Tokens) {
         self.input += o.input;
         self.output += o.output;
         self.cache_read += o.cache_read;
@@ -147,6 +161,17 @@ pub struct Limits {
     pub at: i64,
     pub windows: Vec<Window>,
     pub plan: Option<String>,
+    #[serde(default)]
+    pub credits: Option<Credits>,
+    #[serde(default)]
+    pub reached: Option<String>,
+}
+
+#[derive(Default, Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Credits {
+    pub has_credits: bool,
+    pub unlimited: bool,
+    pub balance: Option<f64>,
 }
 
 #[derive(Default, Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -369,6 +394,18 @@ fn codex_limits(rl: &Value, ts: i64) -> Option<Limits> {
         at: ts,
         windows,
         plan: rl["plan_type"].as_str().map(str::to_string),
+        credits: rl["credits"].is_object().then(|| {
+            let c = &rl["credits"];
+            Credits {
+                has_credits: c["has_credits"].as_bool().unwrap_or(false),
+                unlimited: c["unlimited"].as_bool().unwrap_or(false),
+                balance: c["balance"]
+                    .as_str()
+                    .and_then(|b| b.parse().ok())
+                    .or_else(|| c["balance"].as_f64()),
+            }
+        }),
+        reached: rl["rate_limit_reached_type"].as_str().map(str::to_string),
     })
 }
 
@@ -455,6 +492,41 @@ fn gemini_msg(c: &mut Cursor, v: &Value, b: &mut Batch) {
     }
     let a = if same { 0 } else { active(c, ts, false) };
     b.add(ts, &model, &delta, !same, a);
+}
+
+#[derive(Default)]
+pub(crate) struct Meter {
+    c: Cursor,
+}
+
+impl Meter {
+    pub(crate) fn line(&mut self, agent: &str, line: &[u8]) -> Vec<(String, Tokens, bool)> {
+        let mut b = Batch::default();
+        match agent {
+            "codex" => codex_line(&mut self.c, line, &mut b),
+            "gemini" => {
+                if let Ok(v) = serde_json::from_slice::<Value>(line) {
+                    gemini_msg(&mut self.c, &v, &mut b);
+                }
+            }
+            _ if !contains(line, "\"usage\"") => return vec![],
+            _ => claude_line(&mut self.c, true, line, &mut b),
+        }
+        Self::turns(b)
+    }
+
+    pub(crate) fn gemini(&mut self, v: &Value) -> Vec<(String, Tokens, bool)> {
+        let mut b = Batch::default();
+        gemini_msg(&mut self.c, v, &mut b);
+        Self::turns(b)
+    }
+
+    fn turns(b: Batch) -> Vec<(String, Tokens, bool)> {
+        b.buckets
+            .into_iter()
+            .map(|((_, model), a)| (model, a.tokens, a.messages > 0))
+            .collect()
+    }
 }
 
 fn mtime_len(p: &Path) -> Option<(i64, u64)> {
@@ -1238,6 +1310,12 @@ fn limits_json(
                 })
             }).collect::<Vec<_>>(),
             "hit": hit,
+            "credits": l.credits.as_ref().map(|c| json!({
+                "hasCredits": c.has_credits,
+                "unlimited": c.unlimited,
+                "balance": c.balance,
+            })),
+            "reached": l.reached,
             "via": if via_tap { "statusline" } else { agent },
         }),
         None => json!({
@@ -1639,7 +1717,15 @@ mod tests {
         assert_eq!(price("claude-opus-4-6").unwrap().input, 5.0);
         assert_eq!(price("claude-fable-5-1").unwrap().output, 50.0);
         assert_eq!(price("claude-sonnet-4-6").unwrap().input, 3.0);
-        assert_eq!(price("gpt-5.4").unwrap().input, 1.25);
+        assert_eq!(price("gpt-5.4").unwrap().input, 2.5);
+        assert_eq!(price("gpt-5.5").unwrap().output, 30.0);
+        assert_eq!(price("gpt-5.4-mini").unwrap().input, 0.75);
+        assert_eq!(price("gpt-5-codex").unwrap().input, 1.25);
+        assert!(price("gpt-5.9").is_none());
+        assert!(price("gpt-6-luna").is_none());
+        assert_eq!(price("claude-fable-5-2").unwrap().input, 8.0);
+        assert_eq!(price("claude-sonnet-5-5").unwrap().cache_read, 0.1);
+        assert_eq!(price("claude-haiku-5-5").unwrap().output, 0.5);
         assert_eq!(price("gpt-5-mini").unwrap().input, 0.25);
         assert_eq!(price("gemini-2.5-flash-lite").unwrap().input, 0.1);
         assert_eq!(price("models/gemini-2.5-pro").unwrap().input, 1.25);
@@ -1774,7 +1860,7 @@ mod tests {
         assert_eq!(u["cacheRead"], 9_000);
         assert_eq!(u["output"], 400);
         assert_eq!(u["messages"], 2);
-        let expect = (6_000.0 * 1.25 + 9_000.0 * 0.125 + 400.0 * 10.0) / 1e6;
+        let expect = (6_000.0 * 2.5 + 9_000.0 * 0.25 + 400.0 * 15.0) / 1e6;
         assert!((u["cost"].as_f64().unwrap() - expect).abs() < 1e-4);
         let m = get(&idx, Range::Today, "model", 0);
         assert_eq!(m["groups"][0]["model"], "gpt-5.4");
@@ -1847,6 +1933,62 @@ mod tests {
         assert_eq!(limits["windows"][0]["stale"], false);
 
         std::fs::remove_dir_all(&d).unwrap();
+    }
+
+    #[test]
+    fn codex_spent_plan_window_reports_the_credits_still_in_use() {
+        let (d, mut idx) = home("codexcredits");
+        let r = d.join("codex/sessions/2026/10/29/rollout-2026-11-09T08-43-52-01a1bf7a-68b2-71c2-bc92-0e5477d8ed37.jsonl");
+        let line = json!({
+            "timestamp": "2026-11-09T08:45:34.126Z",
+            "type": "event_msg",
+            "payload": {
+                "type": "token_count",
+                "info": {"total_token_usage": {"input_tokens": 10, "output_tokens": 2}},
+                "rate_limits": {
+                    "limit_id": "codex",
+                    "limit_name": null,
+                    "primary": {"used_percent": 100.0, "window_minutes": 43_200, "resets_at": 1_795_622_413_i64},
+                    "secondary": null,
+                    "credits": {"has_credits": true, "unlimited": false, "balance": "1272.1821530000"},
+                    "individual_limit": null,
+                    "spend_control_reached": null,
+                    "plan_type": "go",
+                    "rate_limit_reached_type": null
+                }
+            }
+        })
+        .to_string();
+        std::fs::write(&r, format!("{line}\n")).unwrap();
+        touch_now(&r);
+        idx.sweep(now(), true, None).unwrap();
+
+        let v = get(&idx, Range::Today, "agent", 0);
+        let codex = v["agents"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|a| a["agent"] == "codex")
+            .unwrap();
+        let limits = &codex["limits"];
+        assert_eq!(limits["windows"][0]["usedPercent"], 100.0);
+        assert_eq!(limits["credits"]["hasCredits"], true);
+        assert_eq!(limits["credits"]["unlimited"], false);
+        assert_eq!(limits["credits"]["balance"], 1272.182153);
+        assert_eq!(limits["reached"], Value::Null);
+
+        std::fs::remove_dir_all(&d).unwrap();
+    }
+
+    #[test]
+    fn limits_stored_before_credits_still_load() {
+        let old: Limits = serde_json::from_str(
+            r#"{"at":5,"windows":[{"key":"mo","minutes":43200,"used":100.0,"resets_at":0}],"plan":"go"}"#,
+        )
+        .unwrap();
+        assert_eq!(old.windows.len(), 1);
+        assert_eq!(old.credits, None);
+        assert_eq!(old.reached, None);
     }
 
     #[test]
@@ -2075,6 +2217,7 @@ mod tests {
                 resets_at: now() + 3_600_000,
             }],
             plan: None,
+            ..Limits::default()
         };
         let v = lim_tap(&idx, true, Some(tapped.clone()));
         assert_eq!(v["via"], "statusline");
