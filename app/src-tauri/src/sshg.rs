@@ -161,13 +161,17 @@ pub struct SshCmd {
     pub config: Option<PathBuf>,
 }
 
+pub fn config_override() -> Option<std::ffi::OsString> {
+    std::env::var_os("OVERSEER_SSH_CONFIG")
+}
+
 impl SshCmd {
     pub fn from_env() -> Self {
         let program = std::env::var_os("OVERSEER_SSH")
             .filter(|v| !v.is_empty())
             .map(PathBuf::from)
             .unwrap_or_else(default_program);
-        let config = std::env::var_os("OVERSEER_SSH_CONFIG")
+        let config = config_override()
             .filter(|v| !v.is_empty())
             .map(PathBuf::from);
         Self { program, config }
@@ -374,5 +378,21 @@ userknownhostsfile ~/.ssh/known_hosts ~/.ssh/known_hosts2\nstricthostkeychecking
             crate::sshconfig::SshConfig::parse(text, &mut |_| vec![]).resolve("alice-workstation");
         assert_eq!(old.host_name, "workstation");
         let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn an_empty_config_override_is_ignored_by_the_ssh_command_but_not_by_the_raw_reader() {
+        let _env = crate::TEST_ENV.blocking_lock();
+        let prev = std::env::var_os("OVERSEER_SSH_CONFIG");
+        std::env::set_var("OVERSEER_SSH_CONFIG", "");
+        assert_eq!(config_override(), Some(std::ffi::OsString::new()));
+        assert_eq!(SshCmd::from_env().config, None);
+        std::env::set_var("OVERSEER_SSH_CONFIG", "/tmp/cfg");
+        assert_eq!(SshCmd::from_env().config, Some(PathBuf::from("/tmp/cfg")));
+        std::env::remove_var("OVERSEER_SSH_CONFIG");
+        assert_eq!(config_override(), None);
+        if let Some(p) = prev {
+            std::env::set_var("OVERSEER_SSH_CONFIG", p);
+        }
     }
 }

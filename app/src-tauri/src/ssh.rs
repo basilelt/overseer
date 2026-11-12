@@ -86,7 +86,7 @@ pub struct Options {
 
 #[cfg(desktop)]
 pub fn list_hosts() -> Vec<crate::sshconfig::SshHost> {
-    let path = std::env::var_os("OVERSEER_SSH_CONFIG")
+    let path = crate::sshg::config_override()
         .map(PathBuf::from)
         .or_else(crate::sshconfig::user_config_path);
     path.map(|p| crate::sshconfig::SshConfig::load(&p))
@@ -108,10 +108,23 @@ fn detach_flags(replace: bool) -> &'static str {
     }
 }
 
-pub fn bootstrap_script(version: &str, replace: bool) -> String {
+fn check_version(version: &str) {
     assert!(version
         .chars()
         .all(|c| c.is_ascii_alphanumeric() || ".-+".contains(c)));
+}
+
+fn receive_upload(dest: &str) -> String {
+    format!(
+        "mkdir -p \"$d\" || {{ echo \"SB:ERROR cannot create $d\"; exit 3; }}; t=\"$d/.overseer.$$\"; head -c \"$s\" > \"$t\"; \
+         x=$( (sha256sum \"$t\" 2>/dev/null || shasum -a 256 \"$t\") | cut -d\" \" -f1); \
+         [ \"$x\" = \"$h\" ] || {{ rm -f \"$t\"; echo \"SB:ERROR checksum mismatch after upload ($x)\"; exit 3; }}; \
+         chmod 755 \"$t\" && mv -f \"$t\" \"{dest}\" || {{ echo \"SB:ERROR cannot install {dest}\"; exit 3; }}"
+    )
+}
+
+pub fn bootstrap_script(version: &str, replace: bool) -> String {
+    check_version(version);
     [
         &format!("v={version}"),
         "d=\"$HOME/.overseer/server/$v\"",
@@ -119,10 +132,7 @@ pub fn bootstrap_script(version: &str, replace: bool) -> String {
         "i=$(\"$b\" version 2>/dev/null | cut -d\" \" -f2)",
         "echo \"SB:HELLO $(uname -s) $(uname -m) ${i:--}\"",
         "read c s h || exit 1",
-        "if [ \"$c\" = INSTALL ]; then mkdir -p \"$d\" || { echo \"SB:ERROR cannot create $d\"; exit 3; }; t=\"$d/.overseer.$$\"; head -c \"$s\" > \"$t\"; \
-         x=$( (sha256sum \"$t\" 2>/dev/null || shasum -a 256 \"$t\") | cut -d\" \" -f1); \
-         [ \"$x\" = \"$h\" ] || { rm -f \"$t\"; echo \"SB:ERROR checksum mismatch after upload ($x)\"; exit 3; }; \
-         chmod 755 \"$t\" && mv -f \"$t\" \"$b\" || { echo \"SB:ERROR cannot install $b\"; exit 3; }; fi",
+        &format!("if [ \"$c\" = INSTALL ]; then {}; fi", receive_upload("$b")),
         &format!("\"$b\" daemon {} >&2 || {{ echo \"SB:ERROR the daemon did not start, see its daemon.log\"; exit 4; }}", detach_flags(replace)),
         "exec \"$b\" proxy",
     ]
@@ -134,9 +144,7 @@ pub fn remote_command(version: &str, replace: bool) -> String {
 }
 
 pub fn installed_script(version: &str, replace: bool) -> String {
-    assert!(version
-        .chars()
-        .all(|c| c.is_ascii_alphanumeric() || ".-+".contains(c)));
+    check_version(version);
     [
         &format!("r=\"$HOME/.overseer/server\"; b=\"$r/{version}/overseer\""),
         "[ -x \"$b\" ] || b=$(ls -t \"$r\"/*/overseer 2>/dev/null | head -n 1)",
@@ -144,11 +152,9 @@ pub fn installed_script(version: &str, replace: bool) -> String {
         "echo \"SB:HELLO $(uname -s) $(uname -m) ${i:--}\"",
         "read c s h || exit 1",
         &format!(
-            "if [ \"$c\" = INSTALL ]; then d=\"$r/{version}\"; mkdir -p \"$d\" || {{ echo \"SB:ERROR cannot create $d\"; exit 3; }}; t=\"$d/.overseer.$$\"; head -c \"$s\" > \"$t\"; \
-             x=$( (sha256sum \"$t\" 2>/dev/null || shasum -a 256 \"$t\") | cut -d\" \" -f1); \
-             [ \"$x\" = \"$h\" ] || {{ rm -f \"$t\"; echo \"SB:ERROR checksum mismatch after upload ($x)\"; exit 3; }}; \
-             chmod 755 \"$t\" && mv -f \"$t\" \"$d/overseer\" || {{ echo \"SB:ERROR cannot install $d/overseer\"; exit 3; }}; b=\"$d/overseer\"; \
-             elif [ \"$c\" = RUN ]; then :; else exit 1; fi"
+            "if [ \"$c\" = INSTALL ]; then d=\"$r/{version}\"; {}; b=\"$d/overseer\"; \
+             elif [ \"$c\" = RUN ]; then :; else exit 1; fi",
+            receive_upload("$d/overseer")
         ),
         "[ -n \"$b\" ] || exit 1",
         &format!("f=--detach; [ \"$b\" = \"$r/{version}/overseer\" ] && f=\"{}\"", detach_flags(replace)),
