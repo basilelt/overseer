@@ -79,12 +79,6 @@ export function agentCfg(p: Profile | undefined, agent: string): ProfileAgent {
   return p?.agents[agent] ?? {};
 }
 
-export function chipFor(p: Profile | undefined, agent: string): ProfileChip | undefined {
-  if (!p) return undefined;
-  const c = agentCfg(p, agent);
-  return { id: p.id, name: p.name, model: c.model, effort: c.effort };
-}
-
 export function chipLabel(chip: ProfileChip | undefined, effortLabel: (e: string) => string = (e) => `effort ${e}`): string {
   if (!chip) return '';
   return [chip.name, chip.model, chip.effort ? effortLabel(chip.effort) : ''].filter(Boolean).join(' · ');

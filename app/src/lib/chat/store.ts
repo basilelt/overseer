@@ -58,10 +58,6 @@ export function applyEarlier(s: ChatState, p: ChatPage, keep = KEEP * 2): ChatSt
   return { ...s, entries: cut ? all.slice(0, keep) : all, more: p.more, model: s.model ?? p.model, cut: cut || !!s.cut };
 }
 
-export function firstSeq(s: ChatState): number | undefined {
-  return s.entries[0]?.seq;
-}
-
 export function needsFetch(s: ChatState, cursor: number): boolean {
   return !s.loaded || cursor === 0 || cursor > s.cursor;
 }

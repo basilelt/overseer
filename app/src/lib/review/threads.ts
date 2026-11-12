@@ -1,4 +1,4 @@
-import type { ReviewComment, Thread, ThreadStatus } from './types';
+import type { Thread, ThreadStatus } from './types';
 import { OPEN } from './unresolved';
 
 export { OPEN, unresolvedByWorktree } from './unresolved';
@@ -41,10 +41,6 @@ export function withStatus(t: Thread, action: 'resolve' | 'reopen'): Thread {
   return { ...t, status: action === 'resolve' ? 'resolved' : reopenStatus(t) };
 }
 
-export function pendingComments(threads: Thread[]): ReviewComment[] {
-  return threads.flatMap((t) => t.comments.filter((c) => c.pending));
-}
-
 export interface Batch {
   comments: number;
   threads: number;
@@ -68,11 +64,6 @@ export function batch(threads: Thread[]): Batch {
 export function canSubmit(kind: 'comment' | 'request_changes' | 'approve', b: Batch, body: string): boolean {
   if (kind === 'approve') return true;
   return b.comments > 0 || body.trim().length > 0;
-}
-
-export function markSent(threads: Thread[], sent: Thread[]): Thread[] {
-  const by = new Map(sent.map((t) => [t.id, t]));
-  return threads.map((t) => by.get(t.id) ?? t);
 }
 
 export function upsert(threads: Thread[], t: Thread): Thread[] {

@@ -204,18 +204,6 @@ export function placeThreads(rows: Row[], threads: Thread[]): Placement {
   return { byRow, top };
 }
 
-export function rowSelectable(r: Row): { side: Side; line: number } | null {
-  if (r.type === 'line') {
-    if (r.kind === 'del') return { side: 'old', line: r.old! };
-    return r.new !== undefined ? { side: 'new', line: r.new } : null;
-  }
-  return null;
-}
-
-export function inRange(side: Side, line: number, sel: { side: Side; start: number; end: number } | null): boolean {
-  return !!sel && sel.side === side && line >= sel.start && line <= sel.end;
-}
-
 export function linesFor(file: ReviewFile, side: Side, start: number, end: number, fileLines?: string[]): string[] {
   const out: string[] = [];
   for (let n = start; n <= end; n++) {

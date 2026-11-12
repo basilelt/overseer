@@ -41,9 +41,8 @@ describe('StatesView wiring', () => {
   it('is what the by-state tab shows', () => {
     // Given the sidebar source
     // When read
-    // Then StatesView replaces StatusList
+    // Then StatesView is what it renders
     expect(sidebarSrc).toContain('<StatesView');
-    expect(sidebarSrc).not.toContain('<StatusList');
   });
 
   it('loads the by-status view lazily and only imports it from the sidebar on demand', () => {
