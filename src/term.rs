@@ -463,6 +463,9 @@ fn launch(
     for (k, v) in crate::shellenv::term_env() {
         cb.env(k, v);
     }
+    if let Some(path) = crate::shellenv::extended() {
+        cb.env("PATH", path);
+    }
     if let Some(v) = crate::termtheme::colorfgbg() {
         cb.env("COLORFGBG", v);
     }

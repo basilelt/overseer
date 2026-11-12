@@ -3852,3 +3852,60 @@ fn install_term_rejects_agents_without_an_install_command() {
         (400, Some("give either install, agent or cmd"))
     );
 }
+
+// Given a daemon started before an installer created ~/.local/bin
+// When the agent lands there and the app asks for a rescan
+// Then the agent is detected, /v1/env shows the dir and new terms find the agent
+#[test]
+fn rescan_finds_an_agent_installed_into_a_dir_created_after_start() {
+    let app = App::new("rescan-new-dir", json!({}));
+    let cursor = |agents: &Value| {
+        agents
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|a| a["id"] == "cursor")
+            .unwrap()["installed"]
+            .clone()
+    };
+    assert_eq!(
+        cursor(&app.ok("POST", "/v1/agents/rescan", Value::Null)),
+        false
+    );
+    let dir = app.fx.base.join("home/.local/bin");
+    assert!(!dir.exists());
+    std::fs::create_dir_all(&dir).unwrap();
+    let stub = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/stubs/agent");
+    std::fs::copy(stub, dir.join("cursor-agent")).unwrap();
+
+    assert_eq!(
+        cursor(&app.ok("POST", "/v1/agents/rescan", Value::Null)),
+        true
+    );
+    assert_eq!(cursor(&app.ok("GET", "/v1/agents", Value::Null)), true);
+    let dir = dir.to_string_lossy().into_owned();
+    let env = app.ok("GET", "/v1/env", Value::Null);
+    assert!(
+        env["path"].as_str().unwrap().split(':').any(|d| d == dir),
+        "{env}"
+    );
+    let wt = app.fx.wt.to_string_lossy().into_owned();
+    let t = app.ok(
+        "POST",
+        "/v1/terms",
+        json!({"cwd": wt, "cmd": ["cursor-agent"], "cols": 80, "rows": 24}),
+    );
+    let mut ws = app.ws(t["id"].as_str().unwrap());
+    read_until(&mut ws, "cursor-agent ready");
+    send(&mut ws, "exit\n");
+
+    let t = app.ok(
+        "POST",
+        "/v1/tasks",
+        json!({"title": "cur", "description": "", "project": wt, "agent": "cursor"}),
+    );
+    let id = t["id"].as_str().unwrap().to_string();
+    let s = app.ok("POST", &format!("/v1/tasks/{id}/start"), json!({}));
+    let mut ws = app.ws(s["termId"].as_str().unwrap());
+    read_until(&mut ws, "cursor-agent ready");
+}

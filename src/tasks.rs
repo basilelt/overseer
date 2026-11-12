@@ -1168,8 +1168,7 @@ pub(crate) fn start_with_args(
         .rev()
         .find(|(k, _)| k == "PATH")
         .map(|(_, v)| v.clone())
-        .or_else(|| std::env::var("PATH").ok())
-        .unwrap_or_default();
+        .unwrap_or_else(crate::shellenv::path);
     env.retain(|(k, _)| k != "PATH");
     env.push((
         "PATH".into(),
