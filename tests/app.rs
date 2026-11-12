@@ -1425,6 +1425,78 @@ fn mcp_server_talks_to_the_daemon() {
 }
 
 #[test]
+fn mcp_set_merged_follows_the_pull_request_target_branch() {
+    let app = App::new("mcp-landed", json!({"autoConcurrency": 0}));
+    let wt = app.fx.wt.to_string_lossy().into_owned();
+    let start = |title: &str| {
+        let t = app.ok(
+            "POST",
+            "/v1/tasks",
+            json!({"title": title, "description": "", "project": wt}),
+        );
+        let id = t["id"].as_str().unwrap().to_string();
+        let s = app.ok("POST", &format!("/v1/tasks/{id}/start"), json!({}));
+        let dir = Path::new(s["worktreePath"].as_str().unwrap()).to_path_buf();
+        std::fs::write(dir.join(format!("{title}.txt")), "work\n").unwrap();
+        common::git(&dir, &["add", "-A"]);
+        common::git(&dir, &["commit", "-q", "-m", title]);
+        (id, s["branch"].as_str().unwrap().to_string())
+    };
+    let pr = |branch: &str, state: &str| {
+        let key: String = format!("github.com/Acme/board {branch}")
+            .chars()
+            .map(|c| if c.is_ascii_alphanumeric() { c } else { '_' })
+            .collect();
+        std::fs::write(
+            app.fx.base.join("gh").join(format!("{key}.json")),
+            json!([{"number": 9, "url": "https://github.com/Acme/board/pull/9", "state": state,
+                    "isDraft": false, "title": "x", "baseRefName": "next", "statusCheckRollup": []}])
+            .to_string(),
+        )
+        .unwrap();
+    };
+    let set_merged = |id: &str| {
+        let msg = json!({"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+            "params": {"name": "set_task_status", "arguments": {"status": "merged"}}});
+        let mut c = Command::new(bin());
+        app.fx.env(&mut c);
+        c.env("OVERSEER_TASK_ID", id).arg("mcp");
+        let out = output(&mut c, Some(&format!("{msg}\n")));
+        let reply: Value = serde_json::from_slice(&out.stdout).unwrap();
+        (
+            reply["result"]["isError"] == true,
+            reply["result"].to_string(),
+        )
+    };
+
+    let (open, b) = start("open");
+    pr(&b, "OPEN");
+    let (err, text) = set_merged(&open);
+    assert!(
+        err && text.contains(&format!("{b} is not merged into next")),
+        "{text}"
+    );
+    assert_ne!(app.task(&open)["status"], "merged");
+    common::git(&app.fx.wt, &["branch", "next", &b]);
+    let (err, text) = set_merged(&open);
+    assert!(!err, "{text}");
+    assert_eq!(app.task(&open)["status"], "merged");
+
+    let (gone, b) = start("gone");
+    pr(&b, "MERGED");
+    let (err, text) = set_merged(&gone);
+    assert!(!err, "{text}");
+    assert_eq!(app.task(&gone)["status"], "merged");
+
+    let (lone, b) = start("lone");
+    let (err, text) = set_merged(&lone);
+    assert!(
+        err && text.contains(&format!("{b} is not merged into feature/AS-42-board")),
+        "{text}"
+    );
+}
+
+#[test]
 fn version_socket_path_and_detach_is_idempotent() {
     let fx = Fx::new("detach", 0);
     let run = |args: &[&str]| {

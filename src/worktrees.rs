@@ -189,10 +189,14 @@ pub fn landed(root: &str, branch: &str, fetch: bool) -> bool {
     std::thread::spawn(move || {
         let (root, branch) = &key;
         let _one = LANDING_ONE.lock().unwrap_or_else(|e| e.into_inner());
-        if fetch && fetch_due(root) {
+        let due = fetch && fetch_due(root);
+        if due {
             fetch_base(root, &default_branch_cached(root));
         }
-        let v = branch_merged(root, branch);
+        let v = branch_merged(root, branch) || {
+            let pr = pr_of(root, branch, false);
+            !pr.is_null() && landing(root, branch, &pr, due).0
+        };
         let mut g = LANDED.lock().unwrap_or_else(|e| e.into_inner());
         let m = g.get_or_insert_with(HashMap::new);
         m.retain(|_, (at, _)| at.elapsed() < LANDED_FOR * 12);
@@ -231,8 +235,64 @@ fn fetch_due(root: &str) -> bool {
     true
 }
 
+fn pr_of(root: &str, branch: &str, fresh: bool) -> Value {
+    let Ok((_, repo)) = project(root) else {
+        return Value::Null;
+    };
+    let v = if fresh {
+        crate::gh::pr_fresh(&repo, branch)
+    } else {
+        crate::gh::pr_info(&repo, branch)
+    };
+    v["pr"].clone()
+}
+
+fn landing(root: &str, branch: &str, pr: &Value, fetch: bool) -> (bool, String) {
+    let def = default_branch_cached(root);
+    let base = pr["base"]
+        .as_str()
+        .filter(|b| !b.is_empty())
+        .unwrap_or(&def)
+        .to_string();
+    if pr["state"] == "MERGED" {
+        return (true, base);
+    }
+    if fetch && base != def {
+        fetch_base(root, &base);
+    }
+    (branch_merged_into(root, branch, &base), base)
+}
+
+pub fn task_landed(ctx: &Ctx, id: &str) -> Res<Value> {
+    let reg = crate::registry::Registry::open(&ctx.state_dir).map_err(|e| (500, e))?;
+    let t = crate::tasks::get(&reg, id)?;
+    let branch = t
+        .branch
+        .filter(|b| !b.is_empty())
+        .ok_or_else(|| bad("the task has no branch: nothing to mark as merged"))?;
+    let pr = pr_of(&t.project, &branch, true);
+    let fetch = ctx.config.worktree_fetch;
+    if fetch {
+        fetch_base(&t.project, &default_branch_cached(&t.project));
+    }
+    let (landed, base) = landing(&t.project, &branch, &pr, fetch);
+    let landed =
+        landed || (base != default_branch_cached(&t.project) && branch_merged(&t.project, &branch));
+    if landed {
+        forget_landed(&branch);
+    }
+    let mut v = json!({"landed": landed, "branch": branch, "base": base});
+    if !pr.is_null() {
+        v["pr"] = json!({"number": pr["number"], "state": pr["state"], "base": pr["base"], "url": pr["url"]});
+    }
+    Ok(v)
+}
+
 pub fn branch_merged(root: &str, branch: &str) -> bool {
-    let name = default_branch_cached(root);
+    branch_merged_into(root, branch, &default_branch_cached(root))
+}
+
+fn branch_merged_into(root: &str, branch: &str, name: &str) -> bool {
     if branch.is_empty() || branch == name || branch == "HEAD" {
         return false;
     }
@@ -244,7 +304,7 @@ pub fn branch_merged(root: &str, branch: &str) -> bool {
     .find_map(|r| git(root, &["rev-parse", "-q", "--verify", &r]).map(|t| (r, t))) else {
         return false;
     };
-    let base = start_point(root, &name);
+    let base = start_point(root, name);
     if base == "HEAD" {
         return false;
     }
@@ -1368,6 +1428,41 @@ mod tests {
             assert_eq!(got, want, "{tag}");
             let _ = std::fs::remove_dir_all(d);
         }
+    }
+
+    #[test]
+    fn landing_follows_the_pull_request_target_branch() {
+        let (d, got) = scenario("pr-base", |up| {
+            sh(up, &["checkout", "-q", "-b", "next"]);
+            sh(up, &["merge", "-q", "--no-ff", "-m", "merge", "feat/x"]);
+            sh(up, &["checkout", "-q", "main"]);
+        });
+        assert!(!got);
+        let w = d.join("work");
+        let w = w.to_str().unwrap();
+        let open = |base: &str| json!({"state": "OPEN", "base": base});
+        assert_eq!(
+            landing(w, "feat/x", &open("next"), false),
+            (true, "next".into())
+        );
+        assert_eq!(
+            landing(w, "feat/x", &open("main"), false),
+            (false, "main".into())
+        );
+        assert_eq!(
+            landing(w, "feat/x", &Value::Null, false),
+            (false, "main".into())
+        );
+        assert_eq!(
+            landing(
+                w,
+                "feat/x",
+                &json!({"state": "MERGED", "base": "gone"}),
+                false
+            ),
+            (true, "gone".into())
+        );
+        let _ = std::fs::remove_dir_all(d);
     }
 
     #[test]

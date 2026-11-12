@@ -523,6 +523,7 @@ fn tasks(r: &Request, segs: &[&str], body: &Value, ctx: &Ctx) -> Option<(u16, Va
             201,
             crate::task_agents::send_message(ctx, id, body).map(|m| m.to_json()),
         ),
+        ("GET", ["v1", "tasks", id, "landed"]) => res(200, crate::worktrees::task_landed(ctx, id)),
         ("GET", ["v1", "tasks", id, "overlaps"]) => {
             res(200, crate::task_agents::overlaps(ctx, id).map(Value::from))
         }
