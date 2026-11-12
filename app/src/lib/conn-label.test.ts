@@ -1,13 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { connLabel, HOST_CHIP_DOT, phoneHostDot } from './conn-label';
+import { connLabel, hostChipDot, HOST_WORKING_DOT } from './conn-label';
+import { phoneHostDot } from './mobile/hosts';
 
 describe('host dot colours', () => {
   it('shows every connecting phase as working on the desktop chip', () => {
-    expect(HOST_CHIP_DOT.connecting).toBe('var(--st-working)');
-    expect(HOST_CHIP_DOT.reconnecting).toBe('var(--st-working)');
-    expect(HOST_CHIP_DOT.idle).toBe('var(--st-held)');
-    expect(HOST_CHIP_DOT.connected).toBe('var(--st-input)');
-    expect(HOST_CHIP_DOT.error).toBe('var(--st-failed)');
+    for (const p of ['connecting', 'checking', 'downloading', 'installing', 'starting', 'reconnecting'] as const) expect(hostChipDot(p)).toBe(HOST_WORKING_DOT);
+    expect(hostChipDot('idle')).toBe('var(--st-held)');
+    expect(hostChipDot('connected')).toBe('var(--st-input)');
+    expect(hostChipDot('error')).toBe('var(--st-failed)');
   });
 
   it('shows only connected and error as coloured on the phone', () => {

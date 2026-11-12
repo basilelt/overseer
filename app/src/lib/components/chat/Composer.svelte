@@ -17,7 +17,8 @@
   import { t } from '../../i18n.svelte';
   import { app } from '../../state.svelte';
   import type { CustomCommand, LineLocal } from '../../types';
-  import { clipboardFiles, fileInfos, insertText, planDrop, planPaste, refusalMessage, savePasteAll, uploadedPath, uploadList, type Refusal } from '../../uploads';
+  import { clipboardFiles, fileInfos, insertText, planDrop, planPaste, refusalMessage, uploadedPath, type Refusal } from '../../uploads';
+  import { savePasteAll, uploadList } from '../../upload-pipeline';
   import { requirePath, savePasted } from '../../task-attachments';
   import { applySlash, commandsFor, enterAction, lineCount, slashMatches, slashQuery, type SendMode, type SlashCommand } from '../../chat/composer';
   import { ChatSender } from '../../chat/sender.svelte';

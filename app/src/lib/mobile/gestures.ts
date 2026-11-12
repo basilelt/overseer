@@ -18,24 +18,24 @@ export function movedTooFar(dx: number, dy: number, tolerance = MOVE_TOLERANCE_P
 
 export function pressTimer(ms: number) {
   let timer: ReturnType<typeof setTimeout> | undefined;
-  let origin: { x: number; y: number } | null = null;
+  let ox = NaN;
+  let oy = NaN;
   const cancel = () => {
     clearTimeout(timer);
-    timer = undefined;
-    origin = null;
+    ox = NaN;
   };
   return {
     start(x: number, y: number, onFire: () => void) {
       cancel();
-      origin = { x, y };
+      ox = x;
+      oy = y;
       timer = setTimeout(() => {
-        timer = undefined;
-        origin = null;
+        ox = NaN;
         onFire();
       }, ms);
     },
     move(x: number, y: number) {
-      if (origin && movedTooFar(x - origin.x, y - origin.y)) cancel();
+      if (movedTooFar(x - ox, y - oy)) cancel();
     },
     cancel,
   };

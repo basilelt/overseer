@@ -1,4 +1,4 @@
-import type { Endpoint, SavedHost } from '../types';
+import type { ConnPhase, Endpoint, SavedHost } from '../types';
 
 export interface HostForm {
   id: string;
@@ -98,4 +98,8 @@ export function connectHint(error: string | undefined): ConnectHint {
   if (error.includes('HOST IDENTIFICATION HAS CHANGED')) return 'hostKeyChanged';
   if (/timed out|No route to host|Network is unreachable|Connection refused|failed to lookup|nodename nor servname/i.test(error)) return 'unreachable';
   return null;
+}
+
+export function phoneHostDot(phase: ConnPhase): string {
+  return phase === 'connected' ? 'var(--st-input)' : phase === 'error' ? 'var(--st-failed)' : 'var(--st-held)';
 }

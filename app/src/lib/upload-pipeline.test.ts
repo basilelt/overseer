@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { UploadResult } from './types';
-import { clipboardFiles, fileInfos, PROGRESS_FROM, refusalMessage, savePasteAll, uploadList } from './uploads';
+import { savePasteAll, uploadList } from './upload-pipeline';
+import { clipboardFiles, fileInfos, PROGRESS_FROM, refusalMessage } from './uploads';
 
 const file = (name: string, body = 'x') => new File([body], name, { type: 'image/png' });
 const result = (name: string): UploadResult => ({ name, path: `/up/${name}`, size: 1 });

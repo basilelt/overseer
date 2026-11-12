@@ -27,7 +27,8 @@
   import { gt } from '../../github/strings';
   import { dt } from '../../diag.svelte';
   import type { Component } from 'svelte';
-  import { connLabel, phoneHostDot } from '../../conn-label';
+  import { connLabel } from '../../conn-label';
+  import { phoneHostDot } from '../../mobile/hosts';
   import { t } from '../../i18n.svelte';
   import { saveSettings, settings, type ThemePref } from '../../settings.svelte';
   import { app } from '../../state.svelte';

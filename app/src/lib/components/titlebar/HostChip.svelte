@@ -2,7 +2,7 @@
   import ChevronDown from '@lucide/svelte/icons/chevron-down';
   import Monitor from '@lucide/svelte/icons/monitor';
   import Server from '@lucide/svelte/icons/server';
-  import { connLabel, HOST_CHIP_DOT } from '../../conn-label';
+  import { connLabel, hostChipDot, HOST_WORKING_DOT } from '../../conn-label';
   import { t } from '../../i18n.svelte';
   import { preload } from '../../idle';
   import { isMockClient } from '../../client';
@@ -12,6 +12,7 @@
   const menu = preload(() => import('./HostMenu.svelte'));
 
   const conn = $derived(app.conn);
+  const dot = $derived(hostChipDot(conn.phase));
   const many = $derived(app.hosts.length > 1);
   const label = $derived(many ? t('hosts.count', { n: app.hosts.length }) : conn.target.kind === 'local' ? t('host.local') : conn.target.label);
   const phaseText = $derived(connLabel(conn));
@@ -35,7 +36,7 @@
   >
     {#if conn.target.kind === 'local'}<Monitor size={13} />{:else}<Server size={13} />{/if}
     <span class="label">{label}</span>
-    <span class="dot" class:pulse={HOST_CHIP_DOT[conn.phase] === 'var(--st-working)'} style:background={HOST_CHIP_DOT[conn.phase]}></span>
+    <span class="dot" class:pulse={dot === HOST_WORKING_DOT} style:background={dot}></span>
     <ChevronDown size={12} />
   </button>
   {#if open}

@@ -7,18 +7,8 @@ export function connLabel(c: Pick<ConnState, 'phase' | 'attempt' | 'version'>): 
   return t(`conn.${c.phase}`);
 }
 
-export const HOST_CHIP_DOT: Record<ConnPhase, string> = {
-  idle: 'var(--st-held)',
-  connecting: 'var(--st-working)',
-  checking: 'var(--st-working)',
-  downloading: 'var(--st-working)',
-  installing: 'var(--st-working)',
-  starting: 'var(--st-working)',
-  reconnecting: 'var(--st-working)',
-  connected: 'var(--st-input)',
-  error: 'var(--st-failed)',
-};
+export const HOST_WORKING_DOT = 'var(--st-working)';
 
-export function phoneHostDot(phase: ConnPhase): string {
-  return phase === 'connected' ? 'var(--st-input)' : phase === 'error' ? 'var(--st-failed)' : 'var(--st-held)';
+export function hostChipDot(phase: ConnPhase): string {
+  return phase === 'idle' ? 'var(--st-held)' : phase === 'connected' ? 'var(--st-input)' : phase === 'error' ? 'var(--st-failed)' : HOST_WORKING_DOT;
 }
