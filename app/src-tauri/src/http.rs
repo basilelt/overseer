@@ -306,6 +306,10 @@ pub fn json_body(body: &[u8]) -> serde_json::Value {
         .unwrap_or_else(|_| serde_json::Value::String(String::from_utf8_lossy(body).into_owned()))
 }
 
+pub fn error_field(body: &serde_json::Value) -> Option<String> {
+    body.get("error").and_then(|e| e.as_str()).map(String::from)
+}
+
 fn invalid(msg: impl Into<String>) -> std::io::Error {
     std::io::Error::new(std::io::ErrorKind::InvalidData, msg.into())
 }
@@ -447,5 +451,17 @@ mod tests {
     async fn malformed_status_is_an_error() {
         let (_h, c) = serve(b"garbage\r\n\r\n").await;
         assert!(request(c, "GET", "/", None).await.is_err());
+    }
+
+    #[test]
+    fn error_field_reads_a_string_error_only() {
+        let field = |v: serde_json::Value| error_field(&v);
+        assert_eq!(
+            field(serde_json::json!({"error": "no"})).as_deref(),
+            Some("no")
+        );
+        assert_eq!(field(serde_json::json!({"error": 3})), None);
+        assert_eq!(field(serde_json::json!({})), None);
+        assert_eq!(field(serde_json::json!("plain")), None);
     }
 }

@@ -94,17 +94,19 @@ impl AppState {
             .clone()
     }
 
-    pub fn close(&self, label: &str) {
+    fn take_connections(&self, label: &str, with_own: bool) -> Vec<Arc<WindowConn>> {
         let prefix = format!("{label}{SLOT_SEP}");
-        let gone: Vec<Arc<WindowConn>> = {
-            let mut windows = self.windows.lock().unwrap();
-            let keys: Vec<String> = windows
-                .keys()
-                .filter(|k| *k == label || k.starts_with(&prefix))
-                .cloned()
-                .collect();
-            keys.iter().filter_map(|k| windows.remove(k)).collect()
-        };
+        let mut windows = self.windows.lock().unwrap();
+        let keys: Vec<String> = windows
+            .keys()
+            .filter(|k| (with_own && *k == label) || k.starts_with(&prefix))
+            .cloned()
+            .collect();
+        keys.iter().filter_map(|k| windows.remove(k)).collect()
+    }
+
+    pub fn close(&self, label: &str) {
+        let gone = self.take_connections(label, true);
         if !gone.is_empty() {
             crate::diag::info(
                 "conn",
@@ -121,16 +123,7 @@ impl AppState {
 
     /// Drops every extra host connection of a window, keeping its own.
     pub fn drop_slots(&self, label: &str) {
-        let prefix = format!("{label}{SLOT_SEP}");
-        let gone: Vec<Arc<WindowConn>> = {
-            let mut windows = self.windows.lock().unwrap();
-            let keys: Vec<String> = windows
-                .keys()
-                .filter(|k| k.starts_with(&prefix))
-                .cloned()
-                .collect();
-            keys.iter().filter_map(|k| windows.remove(k)).collect()
-        };
+        let gone = self.take_connections(label, false);
         for w in gone {
             w.shutdown();
         }
@@ -251,10 +244,7 @@ pub async fn daemon_bytes(
         .await?;
     let status = res.head.status;
     if status != 200 {
-        let error = http::json_body(&res.body)
-            .get("error")
-            .and_then(|e| e.as_str())
-            .map(String::from)
+        let error = http::error_field(&http::json_body(&res.body))
             .unwrap_or_else(|| format!("HTTP {status}"));
         return Err(BytesError { status, error });
     }
@@ -322,10 +312,7 @@ pub async fn upload_file(
         .await?;
     let body = http::json_body(&res.body);
     if !(200..300).contains(&res.head.status) {
-        return Err(body
-            .get("error")
-            .and_then(|v| v.as_str())
-            .map(String::from)
+        return Err(http::error_field(&body)
             .unwrap_or_else(|| format!("upload failed: HTTP {}", res.head.status)));
     }
     Ok(body)
@@ -662,7 +649,7 @@ pub async fn conn_connect(
     let _t = crate::diag::track(
         format!(
             "conn_connect {}",
-            target.host.as_deref().unwrap_or(&target.kind)
+            target.host.as_deref().unwrap_or(target.kind.as_str())
         ),
         Duration::MAX,
     );
@@ -676,7 +663,7 @@ pub async fn conn_connect(
 #[cfg(desktop)]
 pub fn window_title(target: &Target) -> String {
     let host = if target.label.trim().is_empty() {
-        target.host.as_deref().unwrap_or(&target.kind)
+        target.host.as_deref().unwrap_or(target.kind.as_str())
     } else {
         target.label.trim()
     };
