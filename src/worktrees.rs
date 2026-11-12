@@ -1,4 +1,5 @@
 use crate::board::{decode, publish};
+use crate::daemon::res;
 use crate::git::git_out;
 use crate::git::{git, Git};
 use crate::util::{format_rfc3339, ticket};
@@ -1155,13 +1156,6 @@ pub fn for_term(ctx: &Ctx, cwd: &str, agent: &str, opt: &Value) -> Res<String> {
     .map_err(|(c, e)| (if c == 400 { 400 } else { 409 }, e))?;
     announce(root, path.clone());
     Ok(path)
-}
-
-fn res(code: u16, r: Res<Value>) -> (u16, Value) {
-    match r {
-        Ok(v) => (code, v),
-        Err((c, e)) => (c, json!({ "error": e })),
-    }
 }
 
 pub fn routes(ctx: &Ctx, method: &str, segs: &[&str], body: &Value) -> Option<(u16, Value)> {

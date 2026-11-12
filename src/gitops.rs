@@ -1,5 +1,5 @@
 use crate::board::{decode, publish};
-use crate::daemon::{q, Request};
+use crate::daemon::{q, res, Request};
 use crate::git::{git, git_out};
 use crate::worktrees::{self, valid_sha, Res};
 use crate::Ctx;
@@ -695,22 +695,18 @@ pub fn revert(wt: &str, b: &Value) -> Res<Value> {
     reply(wt, head(wt))
 }
 
-fn res(r: Res<Value>) -> (u16, Value) {
-    match r {
-        Ok(v) => (200, v),
-        Err((c, e)) => (c, json!({ "error": e })),
-    }
-}
-
 pub fn routes(ctx: &Ctx, r: &Request, segs: &[&str], body: &Value) -> Option<(u16, Value)> {
-    let post = |f: &dyn Fn(&str) -> Res<Value>| res(target_b(ctx, body).and_then(|wt| f(&wt)));
+    let post = |f: &dyn Fn(&str) -> Res<Value>| res(200, target_b(ctx, body).and_then(|wt| f(&wt)));
     let with =
         |f: &dyn Fn(&str, &Files) -> Res<Value>| post(&|wt| files(body).and_then(|fs| f(wt, &fs)));
     Some(match (r.method.as_str(), segs) {
-        ("GET", ["v1", "git", "status"]) => res(target_q(ctx, r).and_then(|wt| {
-            crate::review::watch::touch(&wt);
-            status(&wt)
-        })),
+        ("GET", ["v1", "git", "status"]) => res(
+            200,
+            target_q(ctx, r).and_then(|wt| {
+                crate::review::watch::touch(&wt);
+                status(&wt)
+            }),
+        ),
         ("POST", ["v1", "git", "stage"]) => with(&stage),
         ("POST", ["v1", "git", "unstage"]) => with(&unstage),
         ("POST", ["v1", "git", "discard"]) => with(&discard),

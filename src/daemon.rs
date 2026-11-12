@@ -224,11 +224,11 @@ fn notes_reply(r: Result<(crate::Line, Value, Vec<Value>), crate::notes::Err>) -
     }
 }
 
-fn err(code: u16, msg: impl Into<String>) -> (u16, Value) {
+pub(crate) fn err(code: u16, msg: impl Into<String>) -> (u16, Value) {
     (code, json!({ "error": msg.into() }))
 }
 
-fn res(code: u16, r: Result<Value, (u16, String)>) -> (u16, Value) {
+pub(crate) fn res(code: u16, r: Result<Value, (u16, String)>) -> (u16, Value) {
     r.map(|v| (code, v)).unwrap_or_else(|(c, e)| err(c, e))
 }
 
@@ -476,7 +476,7 @@ fn tasks(r: &Request, segs: &[&str], body: &Value, ctx: &Ctx) -> Option<(u16, Va
                 .map(|reg| json!({"enabled": crate::task_agents::auto_organize_on(ctx, &reg)})),
         ),
         ("PUT", ["v1", "tasks", "auto-organize"]) => match body["enabled"].as_bool() {
-            None => (400, json!({"error": "enabled must be a boolean"})),
+            None => err(400, "enabled must be a boolean"),
             Some(on) => res(
                 200,
                 crate::registry::Registry::open(&ctx.state_dir)
@@ -494,7 +494,7 @@ fn tasks(r: &Request, segs: &[&str], body: &Value, ctx: &Ctx) -> Option<(u16, Va
                 .map(|reg| json!({"enabled": crate::task_agents::agent_messaging_enabled(&reg)})),
         ),
         ("PUT", ["v1", "tasks", "agent-messaging"]) => match body["enabled"].as_bool() {
-            None => (400, json!({"error": "enabled must be a boolean"})),
+            None => err(400, "enabled must be a boolean"),
             Some(on) => res(
                 200,
                 crate::registry::Registry::open(&ctx.state_dir)
@@ -512,7 +512,7 @@ fn tasks(r: &Request, segs: &[&str], body: &Value, ctx: &Ctx) -> Option<(u16, Va
                 .map(|reg| json!({"enabled": crate::task_agents::agent_tasks_enabled(&reg)})),
         ),
         ("PUT", ["v1", "tasks", "agent-tasks"]) => match body["enabled"].as_bool() {
-            None => (400, json!({"error": "enabled must be a boolean"})),
+            None => err(400, "enabled must be a boolean"),
             Some(on) => res(
                 200,
                 crate::registry::Registry::open(&ctx.state_dir)
@@ -1197,6 +1197,10 @@ fn write_response(s: &mut (impl Write + ?Sized), code: u16, ctype: &str, extra: 
     let _ = s.write_all(body);
 }
 
+pub(crate) fn respond_err(s: &mut impl Write, code: u16, msg: &str) {
+    respond(s, code, &json!({ "error": msg }));
+}
+
 pub(crate) fn respond(s: &mut impl Write, code: u16, v: &Value) {
     respond_raw(
         s,
@@ -1225,23 +1229,21 @@ pub fn conn(mut s: impl Stream, token: Option<&str>) {
             drop(r);
             return match e {
                 HeadErr::Io(ErrorKind::WouldBlock | ErrorKind::TimedOut) => {
-                    respond(&mut s, 408, &json!({"error": "request head timed out"}))
+                    respond_err(&mut s, 408, "request head timed out")
                 }
-                HeadErr::TooLarge(code) => respond(
-                    &mut s,
-                    code,
-                    &json!({"error": "request line or headers too large"}),
-                ),
-                HeadErr::Io(_) => respond(&mut s, 400, &json!({"error": "bad request"})),
+                HeadErr::TooLarge(code) => {
+                    respond_err(&mut s, code, "request line or headers too large")
+                }
+                HeadErr::Io(_) => respond_err(&mut s, 400, "bad request"),
             };
         }
     };
     if token.is_some_and(|t| !crate::board::authorized(&head.req, t)) {
         drop(r);
-        return respond(
+        return respond_err(
             &mut s,
             403,
-            &json!({"error": "token required: open the URL printed by `overseer board`"}),
+            "token required: open the URL printed by `overseer board`",
         );
     }
     if head.req.method == "POST" && head.req.path.trim_matches('/') == "v1/uploads" {
@@ -1254,7 +1256,7 @@ pub fn conn(mut s: impl Stream, token: Option<&str>) {
     let read = r.read_exact(&mut body);
     drop(r);
     if read.is_err() {
-        return respond(&mut s, 400, &json!({"error": "bad request"}));
+        return respond_err(&mut s, 400, "bad request");
     }
     req.body = body;
     let segs: Vec<&str> = req.path.trim_matches('/').split('/').collect();

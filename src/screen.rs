@@ -1,3 +1,4 @@
+use crate::daemon::err;
 use crate::deliver::Channel;
 use crate::hold::sgr_dim;
 use crate::Ctx;
@@ -450,10 +451,6 @@ pub fn parse_keys(v: &Value) -> Result<Vec<Vec<u8>>, String> {
                 .ok_or_else(|| format!("unknown key {k}"))
         })
         .collect()
-}
-
-fn err(code: u16, msg: impl Into<String>) -> (u16, Value) {
-    (code, json!({ "error": msg.into() }))
 }
 
 fn channel_of(ctx: &Ctx, id: &str) -> Result<(String, Channel), (u16, Value)> {

@@ -1,5 +1,5 @@
 use crate::board::{decode, publish};
-use crate::daemon::{q, Request};
+use crate::daemon::{q, res, Request};
 use crate::git::{git, git_out};
 use crate::util::{format_rfc3339, ticket};
 use crate::worktrees::{self, valid_sha, Res};
@@ -572,13 +572,6 @@ pub fn watch_loop() {
         for project in poll() {
             publish("git.changed", json!({ "project": project }));
         }
-    }
-}
-
-fn res(code: u16, r: Res<Value>) -> (u16, Value) {
-    match r {
-        Ok(v) => (code, v),
-        Err((c, e)) => (c, json!({ "error": e })),
     }
 }
 
