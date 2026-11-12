@@ -11,7 +11,8 @@
   import Paperclip from '@lucide/svelte/icons/paperclip';
   import SendHorizontal from '@lucide/svelte/icons/send-horizontal';
   import X from '@lucide/svelte/icons/x';
-  import { onMount } from 'svelte';
+  import { onMount, tick } from 'svelte';
+  import { keepFocus } from '../../focus';
   import { dictationHintKey, dictationMode, startDictation } from '../../dictation';
   import { t } from '../../i18n.svelte';
   import { app } from '../../state.svelte';
@@ -148,7 +149,7 @@
 
   async function send(mode: SendMode) {
     const id = lineId;
-    const out = await sender.send(text, id, local, mode);
+    const out = await keepFocus(box, () => sender.send(text, id, local, mode), tick);
     if (out.kind === 'failed') return app.notify(t('mobile.compose.failed', { reason: out.reason }), 'error');
     if (out.kind !== 'sent' && out.kind !== 'queued') return;
     if (out.kind === 'sent') onsent?.(out.text);
