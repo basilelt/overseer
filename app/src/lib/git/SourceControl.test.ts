@@ -138,7 +138,7 @@ describe('source control', () => {
 
   it('commits everything when nothing is staged, and on Ctrl+Enter', () => {
     expect(sc).toMatch(/const all = o\.all \|\| !s\.staged\.length;/);
-    expect(sc).toMatch(/e\.key === 'Enter' && \(e\.ctrlKey \|\| e\.metaKey\) && canCommit/);
+    expect(sc).toContain('isSubmitChord(e) && canCommit');
   });
 
   it('refreshes on events about its worktree, debounced, and stops listening on destroy', () => {

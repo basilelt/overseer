@@ -7,6 +7,7 @@
   import { broadcastBody, summarize, targetRows, type TargetState } from '../../broadcast';
   import { targetItems, targetName } from '../../wsactions';
   import type { BroadcastResult } from '../../types';
+  import { isSubmitChord } from '../../chord';
 
   let { onclose }: { onclose: () => void } = $props();
 
@@ -100,7 +101,7 @@
         aria-label={t('broadcast.message')}
         spellcheck="true"
         onkeydown={(e) => {
-          if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+          if (isSubmitChord(e)) {
             e.preventDefault();
             send();
           }

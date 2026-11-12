@@ -20,6 +20,7 @@
   import { ft } from '../../feedback.svelte';
   import { dropZone } from '../../drop';
   import { uploadBlobs, uploadPaths, type Attachment, type Failure } from '../../task-attachments';
+  import { isSubmitChord } from '../../chord';
 
   let { onclose }: { onclose: () => void } = $props();
 
@@ -158,7 +159,7 @@
   }
 
   function onKey(e: KeyboardEvent) {
-    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+    if (isSubmitChord(e)) {
       e.preventDefault();
       submit();
     }

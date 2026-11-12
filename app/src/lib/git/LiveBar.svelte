@@ -20,6 +20,7 @@
   import SourceControl from './SourceControl.svelte';
   import { gt } from './strings';
   import type { ScmSubmodule } from './types';
+  import { isSubmitChord } from '../chord';
 
   const scm = new Scm(
     () => (app.client ? gitApi(app.client) : null),
@@ -140,7 +141,7 @@
   });
 
   function onKey(e: KeyboardEvent) {
-    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey || !e.shiftKey) && (primary.kind === 'commit' || primary.kind === 'merge') && primary.enabled) {
+    if ((isSubmitChord(e) || (e.key === 'Enter' && !e.shiftKey)) && (primary.kind === 'commit' || primary.kind === 'merge') && primary.enabled) {
       e.preventDefault();
       commit();
     }

@@ -68,7 +68,7 @@ describe('NotesPopover', () => {
     // When the handlers are read
     // Then they reach the note actions and close without eating the button that toggles it
     expect(src).toMatch(/onblur=\{\(\) => save\(n\.id\)\}/);
-    expect(src).toContain("e.key === 'Enter' && (e.ctrlKey || e.metaKey)");
+    expect(src).toContain('isSubmitChord(e)');
     expect(src).toMatch(/onkeydown=\{\(e\) => onKey\(e, add\)\}/);
     expect(src).toContain("e.key === 'Escape'");
     expect(src).toMatch(/!box\.contains\(el\) && !el\?\.closest\?\.\(`\[data-notes=/);

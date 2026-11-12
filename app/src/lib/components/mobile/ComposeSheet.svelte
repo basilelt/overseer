@@ -10,6 +10,7 @@
   import Modal from '../ui/Modal.svelte';
   import { isNativeAndroid, native } from '../../mobile/native';
   import { insertText, MAX_UPLOAD } from '../../uploads';
+  import { isSubmitChord } from '../../chord';
 
   let { targetKey, onclose }: { targetKey: string | null; onclose: () => void } = $props();
 
@@ -83,7 +84,7 @@
   }
 
   function onkeydown(e: KeyboardEvent) {
-    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+    if (isSubmitChord(e)) {
       e.preventDefault();
       void send('queue');
     }

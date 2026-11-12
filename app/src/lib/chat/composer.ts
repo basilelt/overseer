@@ -1,3 +1,4 @@
+import { isSubmitChord } from '../chord';
 import { rank } from '../fuzzy';
 import { composeRequest } from '../mobile/compose';
 import type { BroadcastRequest, BroadcastResult, CustomCommand } from '../types';
@@ -41,7 +42,7 @@ export interface KeyLike {
 
 export function enterAction(e: KeyLike, phone: boolean): 'send' | null {
   if (e.key !== 'Enter' || e.isComposing) return null;
-  if (e.ctrlKey || e.metaKey) return 'send';
+  if (isSubmitChord(e)) return 'send';
   if (phone || e.shiftKey || e.altKey) return null;
   return 'send';
 }

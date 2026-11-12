@@ -1,3 +1,4 @@
+import { isSubmitChord } from '../chord';
 import { insertSuggestion } from './threads';
 import type { NewThread, ReviewTarget, Side } from './types';
 
@@ -46,7 +47,7 @@ export type KeyAction = 'submit' | 'cancel' | null;
 
 export function keyAction(e: { key: string; ctrlKey?: boolean; metaKey?: boolean }): KeyAction {
   if (e.key === 'Escape') return 'cancel';
-  if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) return 'submit';
+  if (isSubmitChord(e)) return 'submit';
   return null;
 }
 

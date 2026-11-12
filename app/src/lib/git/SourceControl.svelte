@@ -15,6 +15,7 @@
   import { fileCount, touches, type Scm } from './scm.svelte';
   import { gt } from './strings';
   import type { ScmFile } from './types';
+  import { isSubmitChord } from '../chord';
 
   let { scm, filesOnly = false, onopen }: { scm: Scm; filesOnly?: boolean; onopen?: (worktree: string) => void } = $props();
 
@@ -98,7 +99,7 @@
   }
 
   function onKey(e: KeyboardEvent) {
-    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey) && canCommit) {
+    if (isSubmitChord(e) && canCommit) {
       e.preventDefault();
       commit();
     }

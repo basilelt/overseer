@@ -4,11 +4,12 @@
   import X from '@lucide/svelte/icons/x';
   import { t } from '../../i18n.svelte';
   import { app } from '../../state.svelte';
-  import { ui } from '../../mobile/ui.svelte';
+  import { isPhone } from '../../mobile/ui.svelte';
   import { addNote, editNote, notesOf, removeNote } from '../../notes';
   import { closeNotes, notesUi } from '../../notes.svelte';
   import { age } from '../../time';
   import { onDestroy, untrack } from 'svelte';
+  import { isSubmitChord } from '../../chord';
 
   let box: HTMLDivElement | undefined = $state();
   let pos = $state({ left: 0, top: 0 });
@@ -17,7 +18,7 @@
   const lineId = $derived(notesUi.lineId!);
   const notes = $derived(notesOf(app.data, lineId));
   const title = $derived(app.items.find((i) => i.lineId === lineId)?.title ?? '');
-  const phone = $derived(ui.layout === 'phone');
+  const phone = $derived(isPhone());
 
   $effect(() => {
     if (!box) return;
@@ -70,7 +71,7 @@
   const rowsFor = (text: string) => Math.min(8, text.split('\n').reduce((n, l) => n + Math.max(1, Math.ceil(l.length / 38)), 0));
 
   function onKey(e: KeyboardEvent, run: () => void) {
-    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+    if (isSubmitChord(e)) {
       e.preventDefault();
       run();
     }

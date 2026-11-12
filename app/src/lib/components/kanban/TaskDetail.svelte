@@ -11,6 +11,7 @@
   import { agentName } from '../../agents';
   import { fromOverseer } from '../../quorum';
   import type { Task, TaskMessage } from '../../types';
+  import { isSubmitChord } from '../../chord';
 
   let { onclose }: { onclose: () => void } = $props();
 
@@ -86,7 +87,7 @@
   }
 
   function onKey(e: KeyboardEvent) {
-    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+    if (isSubmitChord(e)) {
       e.preventDefault();
       send();
     }
