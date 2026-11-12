@@ -658,6 +658,31 @@ pub fn wait_for<V>(mut f: impl FnMut() -> Option<V>) -> V {
     }
 }
 
+pub fn mcp(app: &App, own: Option<&str>, input: &[Value]) -> Vec<Value> {
+    let mut c = Command::new(bin());
+    app.fx.env(&mut c);
+    if let Some(o) = own {
+        c.env("OVERSEER_TASK_ID", o);
+    }
+    let mut child = c
+        .arg("mcp")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap();
+    let mut stdin = child.stdin.take().unwrap();
+    for m in input {
+        writeln!(stdin, "{m}").unwrap();
+    }
+    drop(stdin);
+    let out = child.wait_with_output().unwrap();
+    String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .map(|l| serde_json::from_str(l).unwrap())
+        .collect()
+}
+
 pub struct App {
     pub fx: Fx,
     env: Vec<(String, String)>,

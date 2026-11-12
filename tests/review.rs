@@ -1,6 +1,6 @@
 mod common;
 
-use common::{bin, read_until, wait, wait_for, Fx, Reap};
+use common::{bin, mcp, read_until, wait, wait_for, App, Reap};
 use serde_json::{json, Value};
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::UnixStream;
@@ -8,68 +8,20 @@ use std::path::Path;
 use std::process::{Command, Stdio};
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
-use tungstenite::{Message, WebSocket};
+use tungstenite::Message;
 
-struct App {
-    fx: Fx,
-    _d: Reap,
-}
-
-impl App {
-    fn new(tag: &str) -> App {
-        let fx = Fx::new(tag, 0);
-        let cfg = json!({"stationId": "vm-local", "autoConcurrency": 0,
-                         "worktreeDir": fx.base.join("worktrees")});
-        std::fs::write(fx.state.join("config.json"), cfg.to_string()).unwrap();
-        let mut c = Command::new(bin());
-        fx.env(&mut c);
-        c.env("SB_BIN", bin())
-            .env("SB_STUB_LOG", fx.base.join("stub.log"))
-            .env("SHELL", "/bin/sh")
-            .args(["daemon", "--interval", "1"]);
-        let d = Reap::spawn(c.stderr(Stdio::null()));
-        wait(|| UnixStream::connect(&fx.sock).is_ok());
-        App { fx, _d: d }
-    }
-
-    fn req(&self, method: &str, target: &str, body: Value) -> (u16, Value) {
-        let b = if body.is_null() {
-            String::new()
-        } else {
-            body.to_string()
-        };
-        let (code, out) = self.fx.req(method, target, &b);
-        (code, serde_json::from_str(&out).unwrap_or(Value::Null))
-    }
-
-    fn ok(&self, method: &str, target: &str, body: Value) -> Value {
-        let (code, v) = self.req(method, target, body);
-        assert!((200..300).contains(&code), "{method} {target}: {code} {v}");
-        v
-    }
-
-    fn ws(&self, id: &str) -> WebSocket<UnixStream> {
-        let s = UnixStream::connect(&self.fx.sock).unwrap();
-        s.set_read_timeout(Some(Duration::from_millis(100)))
-            .unwrap();
-        tungstenite::client(format!("ws://localhost/v1/terms/{id}/io"), s)
-            .unwrap()
-            .0
-    }
-
-    fn thread(&self, task: &str, id: &str) -> Value {
-        self.ok(
-            "GET",
-            &format!("/v1/review/comments?task={task}"),
-            Value::Null,
-        )
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|t| t["id"] == id)
-        .cloned()
-        .unwrap()
-    }
+fn thread(app: &App, task: &str, id: &str) -> Value {
+    app.ok(
+        "GET",
+        &format!("/v1/review/comments?task={task}"),
+        Value::Null,
+    )
+    .as_array()
+    .unwrap()
+    .iter()
+    .find(|t| t["id"] == id)
+    .cloned()
+    .unwrap()
 }
 
 fn events(sock: &Path) -> mpsc::Receiver<Value> {
@@ -102,28 +54,6 @@ fn next_event(rx: &mpsc::Receiver<Value>, f: impl Fn(&Value) -> bool) -> Value {
     }
 }
 
-fn mcp(app: &App, input: &[Value]) -> Vec<Value> {
-    let mut c = Command::new(bin());
-    app.fx.env(&mut c);
-    let mut child = c
-        .arg("mcp")
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .spawn()
-        .unwrap();
-    let mut stdin = child.stdin.take().unwrap();
-    for m in input {
-        writeln!(stdin, "{m}").unwrap();
-    }
-    drop(stdin);
-    let out = child.wait_with_output().unwrap();
-    String::from_utf8_lossy(&out.stdout)
-        .lines()
-        .map(|l| serde_json::from_str(l).unwrap())
-        .collect()
-}
-
 fn tool(id: u64, name: &str, args: Value) -> Value {
     json!({"jsonrpc": "2.0", "id": id, "method": "tools/call",
            "params": {"name": name, "arguments": args}})
@@ -131,7 +61,7 @@ fn tool(id: u64, name: &str, args: Value) -> Value {
 
 #[test]
 fn live_review_comments_reach_the_agent_and_come_back() {
-    let app = App::new("review");
+    let app = App::new("review", json!({"autoConcurrency": 0}));
     let ev = events(&app.fx.sock);
     let project = app.fx.wt.to_string_lossy().into_owned();
     let t = app.ok(
@@ -322,7 +252,7 @@ fn live_review_comments_reach_the_agent_and_come_back() {
     });
     assert_eq!(d["data"]["worktree"], wt.as_str());
     read_until(&mut ws, "Code review: changes requested on 2 files");
-    assert_eq!(app.thread(&task, &id1)["delivery"]["status"], "delivered");
+    assert_eq!(thread(&app, &task, &id1)["delivery"]["status"], "delivered");
     let again = app.ok(
         "POST",
         "/v1/review/submit",
@@ -335,16 +265,16 @@ fn live_review_comments_reach_the_agent_and_come_back() {
         e["type"] == "review.changed" && e["data"]["worktree"] == wt.as_str()
     });
     assert_eq!(ch["data"]["files"], json!(["a.txt"]));
-    wait(|| app.thread(&task, &id1)["line"] == 3);
-    let t = app.thread(&task, &id1);
+    wait(|| thread(&app, &task, &id1)["line"] == 3);
+    let t = thread(&app, &task, &id1);
     assert_eq!(
         (t["endLine"].as_u64(), t["changed"].as_bool()),
         (Some(4), Some(false))
     );
     assert_eq!(t["originalLine"], 2);
     w("a.txt", "zero\none\nTwo!\nthree\nfour\n");
-    wait(|| app.thread(&task, &id1)["changed"] == true);
-    let t = app.thread(&task, &id1);
+    wait(|| thread(&app, &task, &id1)["changed"] == true);
+    let t = thread(&app, &task, &id1);
     assert_eq!(
         (t["line"].as_u64(), t["endLine"].as_u64()),
         (Some(3), Some(4))
@@ -359,10 +289,11 @@ fn live_review_comments_reach_the_agent_and_come_back() {
         409
     );
     w("a.txt", "zero\none\ntwo\nthree\nfour\n");
-    wait(|| app.thread(&task, &id1)["changed"] == false);
+    wait(|| thread(&app, &task, &id1)["changed"] == false);
 
     let out = mcp(
         &app,
+        None,
         &[
             json!({"jsonrpc": "2.0", "id": 0, "method": "initialize", "params": {}}),
             tool(1, "list_review_comments", json!({"worktree": wt})),
