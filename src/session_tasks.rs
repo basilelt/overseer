@@ -339,7 +339,7 @@ pub fn model_of(args: &[String]) -> String {
 pub fn new_task(l: &Line, project: String, a: Option<&Value>) -> Task {
     let null = Value::Null;
     let a = a.unwrap_or(&null);
-    let now = crate::procs::now_ms();
+    let now = crate::util::now_ms();
     let mut t = Task {
         id: ulid(now),
         title: title_of(l.title.as_deref(), a, l.agent),
@@ -445,7 +445,7 @@ mod tests {
         let dir = std::env::temp_dir().join(format!(
             "sb-session-tasks-{tag}-{}-{}",
             std::process::id(),
-            crate::procs::now_ms()
+            crate::util::now_ms()
         ));
         std::fs::create_dir_all(&dir).unwrap();
         (Registry::open(&dir).unwrap(), dir)

@@ -18,7 +18,7 @@ fn a_session_cost_reaches_its_activity_and_its_task() {
     let app = App::new("cost", json!({}));
     let wt = app.fx.wt.to_string_lossy().into_owned();
     let sid = "ffffffff-0000-4000-8000-000000000001";
-    let ts = overseer::util::format_rfc3339(overseer::procs::now_ms() - 60_000);
+    let ts = overseer::util::format_rfc3339(overseer::util::now_ms() - 60_000);
     let dir = app.fx.base.join("home/.claude/projects/p");
     let path = dir.join(format!("{sid}.jsonl"));
     let lines = [
@@ -65,7 +65,7 @@ fn a_session_cost_reaches_its_activity_and_its_task() {
     assert_eq!(cost["switches"], json!([]));
     assert!((cost["cost"].as_f64().unwrap() - (opus + haiku)).abs() < 1e-4);
 
-    let later = overseer::util::format_rfc3339(overseer::procs::now_ms());
+    let later = overseer::util::format_rfc3339(overseer::util::now_ms());
     let mut f = std::fs::OpenOptions::new()
         .append(true)
         .open(&path)
@@ -96,7 +96,7 @@ fn a_session_without_token_counts_has_no_cost() {
     let app = App::new("cost-none", json!({}));
     let wt = app.fx.wt.to_string_lossy().into_owned();
     let sid = "ffffffff-0000-4000-8000-000000000002";
-    let ts = overseer::util::format_rfc3339(overseer::procs::now_ms() - 60_000);
+    let ts = overseer::util::format_rfc3339(overseer::util::now_ms() - 60_000);
     std::fs::write(
         app.fx
             .base

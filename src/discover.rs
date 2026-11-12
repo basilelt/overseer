@@ -84,7 +84,7 @@ pub fn run(ctx: &Ctx) -> Res<Value> {
             .conn
             .execute(
                 "INSERT OR IGNORE INTO projects (path, added_ms) VALUES (?1, ?2)",
-                params![root, crate::procs::now_ms()],
+                params![root, crate::util::now_ms()],
             )
             .map_err(sql)?;
     }
@@ -124,7 +124,7 @@ mod tests {
         let base = std::env::temp_dir().join(format!(
             "sb-discover-{}-{}",
             std::process::id(),
-            crate::procs::now_ms()
+            crate::util::now_ms()
         ));
         let _ = std::fs::remove_dir_all(&base);
         let root = base.join("root");

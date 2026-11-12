@@ -2,7 +2,8 @@ use crate::actions;
 use crate::http::{
     dry_run, err, header, q, res, respond, respond_err, respond_raw, write_response, Request,
 };
-use crate::procs::{now_ms, System};
+use crate::procs::System;
+use crate::util::now_ms;
 use crate::wire::{CMD_CLOSE, CMD_HOLD, CMD_LINK, CMD_RESUME};
 use crate::{scan, Ctx};
 use serde_json::{json, Value};

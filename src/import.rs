@@ -537,7 +537,7 @@ fn strip_target(t: &Target, stamp: &str) -> Result<bool, String> {
 }
 
 fn import_hooks(state_dir: &Path) -> bool {
-    let stamp = install::stamp(crate::procs::now_ms());
+    let stamp = install::stamp(crate::util::now_ms());
     let targets = install::targets();
     let mut agents: Vec<String> = vec![];
     let mut wrapped = false;
@@ -575,7 +575,7 @@ fn import_hooks(state_dir: &Path) -> bool {
             false,
             &bin,
             state_dir,
-            crate::procs::now_ms(),
+            crate::util::now_ms(),
         ) {
             crate::dlog::line("warn", &format!("overseer import: statusline: {e}"));
         }
@@ -612,7 +612,7 @@ fn run_import(state_dir: &Path, dir: &Path) -> Result<Value, String> {
         .conn
         .execute(
             "INSERT OR REPLACE INTO kv (key, value) VALUES (?1, ?2)",
-            rusqlite::params![legacy::IMPORT_KEY, crate::procs::now_ms().to_string()],
+            rusqlite::params![legacy::IMPORT_KEY, crate::util::now_ms().to_string()],
         )
         .map_err(|e| e.to_string())?;
     Ok(json!({

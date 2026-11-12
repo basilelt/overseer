@@ -1101,7 +1101,7 @@ fn apply_files(ctx: &crate::Ctx, body: &Value) -> Res<Value> {
         .iter()
         .filter_map(Value::as_str)
         .collect();
-    let stamp = crate::install::stamp(crate::procs::now_ms());
+    let stamp = crate::install::stamp(crate::util::now_ms());
     let results: Vec<Value> = plan
         .iter()
         .filter(|e| wanted.contains(&e.path.to_string_lossy().as_ref()))

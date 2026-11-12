@@ -1479,7 +1479,7 @@ fn worker(db: PathBuf, dirs: Dirs) {
     };
     let first = !idx.indexed;
     let pace = first.then_some(Duration::from_millis(2));
-    match idx.sweep(crate::procs::now_ms(), true, pace) {
+    match idx.sweep(crate::util::now_ms(), true, pace) {
         Ok(_) => crate::board::publish("usage.updated", json!({})),
         Err(e) => crate::dlog::line("error", &format!("usage: {e}")),
     }
@@ -1495,7 +1495,7 @@ fn worker(db: PathBuf, dirs: Dirs) {
         let full = {
             let mut g = SHARED.lock().unwrap_or_else(|e| e.into_inner());
             loop {
-                let now = crate::procs::now_ms();
+                let now = crate::util::now_ms();
                 match g.as_mut() {
                     Some(s) if s.poked && demanded(s, now) => {
                         s.poked = false;
@@ -1509,7 +1509,7 @@ fn worker(db: PathBuf, dirs: Dirs) {
             }
         };
         std::thread::sleep(Duration::from_millis(DEBOUNCE_MS));
-        let swept = match idx.sweep(crate::procs::now_ms(), full, None) {
+        let swept = match idx.sweep(crate::util::now_ms(), full, None) {
             Ok(c) => c,
             Err(e) => {
                 crate::dlog::line("error", &format!("usage: {e}"));
@@ -1526,7 +1526,7 @@ fn worker(db: PathBuf, dirs: Dirs) {
 }
 
 fn claude_limits_due(idx: &Index, tap: Option<&Limits>) -> bool {
-    let now = crate::procs::now_ms();
+    let now = crate::util::now_ms();
     if crate::claude_limits::tap_covers(tap.map(|t| t.at), now) {
         return false;
     }
@@ -1557,7 +1557,7 @@ fn claude_limits_due(idx: &Index, tap: Option<&Limits>) -> bool {
 }
 
 pub fn api(r: &crate::http::Request, lines: &[crate::Line]) -> (u16, Value) {
-    let now = crate::procs::now_ms();
+    let now = crate::util::now_ms();
     let Some(range) = Range::parse(crate::http::q(r, "range")) else {
         return (400, json!({"error": "range must be today, 7d or 30d"}));
     };
@@ -1639,7 +1639,7 @@ mod tests {
         let d = std::env::temp_dir().join(format!(
             "sb-usage-{tag}-{}-{}",
             std::process::id(),
-            crate::procs::now_ms()
+            crate::util::now_ms()
         ));
         std::fs::create_dir_all(&d).unwrap();
         d
@@ -1718,7 +1718,7 @@ mod tests {
     }
 
     fn real_now() -> i64 {
-        crate::procs::now_ms()
+        crate::util::now_ms()
     }
 
     #[test]

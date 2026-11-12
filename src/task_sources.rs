@@ -151,7 +151,7 @@ pub fn insert(reg: &Registry, project: &str, kind: &str, target: &str) -> Res<So
     {
         return Err((409, "this source is already added".into()));
     }
-    let now = crate::procs::now_ms();
+    let now = crate::util::now_ms();
     let s = Source {
         id: ulid(now),
         kind: kind.into(),

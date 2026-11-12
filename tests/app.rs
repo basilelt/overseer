@@ -804,7 +804,7 @@ fn events_cover_terms_and_tasks() {
 fn resume_target_term_starts_the_resume_argv() {
     let fx_sid = "aaaaaaaa-0000-4000-8000-000000000000";
     let app = App::new("resume", json!({}));
-    let ts = overseer::util::format_rfc3339(overseer::procs::now_ms() - 60_000);
+    let ts = overseer::util::format_rfc3339(overseer::util::now_ms() - 60_000);
     std::fs::write(
         app.fx
             .base
@@ -1562,7 +1562,7 @@ fn chat_images_are_served_from_the_transcript() {
         .collect();
     let dir = app.fx.base.join(format!("home/.claude/projects/{proj}"));
     std::fs::create_dir_all(&dir).unwrap();
-    let ts = overseer::util::format_rfc3339(overseer::procs::now_ms());
+    let ts = overseer::util::format_rfc3339(overseer::util::now_ms());
     let first = json!({"type": "user", "uuid": "u0", "sessionId": sid, "timestamp": ts,
         "message": {"content": "hello"}})
     .to_string()
@@ -1642,7 +1642,7 @@ fn transcript_growth_emits_line_activity() {
     let chat0 = app.ok("GET", &format!("/v1/lines/{line}/chat"), Value::Null);
     assert_eq!(chat0["lineId"], line);
     let cursor0 = chat0["cursor"].as_u64().unwrap();
-    let ts = overseer::util::format_rfc3339(overseer::procs::now_ms());
+    let ts = overseer::util::format_rfc3339(overseer::util::now_ms());
     let entry = json!({"type": "assistant", "sessionId": sid, "timestamp": ts, "message": {"content": [
         {"type": "tool_use", "id": "toolu_1", "name": "Edit", "input": {"file_path": format!("{wt}/a.txt")}}]}});
     let mut f = std::fs::OpenOptions::new()
@@ -2613,7 +2613,7 @@ fn agent_sessions_become_tasks_that_follow_them() {
     let wt = app.fx.wt.to_string_lossy().into_owned();
     let sid = "eeeeeeee-0000-4000-8000-000000000001";
     let prompt = "Fix the flaky login test in the checkout flow please";
-    let ts = overseer::util::format_rfc3339(overseer::procs::now_ms() - 60_000);
+    let ts = overseer::util::format_rfc3339(overseer::util::now_ms() - 60_000);
     std::fs::write(
         app.fx
             .base

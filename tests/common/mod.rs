@@ -274,7 +274,7 @@ pub struct Fx {
 }
 
 fn now_ms() -> i64 {
-    overseer::procs::now_ms()
+    overseer::util::now_ms()
 }
 
 pub fn git(dir: &Path, args: &[&str]) -> String {

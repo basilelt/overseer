@@ -1,6 +1,7 @@
-use crate::procs::{now_ms, Probe};
+use crate::procs::Probe;
 use crate::registry::{HookState, Registry};
 use crate::sys::OpenOptionsExt;
+use crate::util::now_ms;
 use serde_json::{json, Value};
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::Path;

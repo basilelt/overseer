@@ -381,7 +381,7 @@ mod tests {
         let home = std::env::temp_dir().join(format!(
             "sb-autostart-{tag}-{}-{}",
             std::process::id(),
-            crate::procs::now_ms()
+            crate::util::now_ms()
         ));
         let _ = std::fs::remove_dir_all(&home);
         Env {

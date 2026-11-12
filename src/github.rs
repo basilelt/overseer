@@ -234,7 +234,7 @@ fn list(ctx: &Ctx, bin: &str, refresh: bool) -> Res<Value> {
             p["localPath"] = json!(local);
         }
     }
-    v["fetchedAt"] = json!(crate::procs::now_ms());
+    v["fetchedAt"] = json!(crate::util::now_ms());
     *CACHE.lock().unwrap_or_else(|e| e.into_inner()) = Some((Instant::now(), v.clone()));
     Ok(v)
 }
@@ -431,7 +431,7 @@ fn review(ctx: &Ctx, owner: &str, name: &str, number: &str, b: &Value) -> Res<(u
         "body": b,
         "local": local,
         "pr": pr,
-        "startedAt": crate::procs::now_ms(),
+        "startedAt": crate::util::now_ms(),
     });
     let dir = crate::default_state_dir().join(JOURNAL);
     let (tx, rx) = std::sync::mpsc::channel();
@@ -519,7 +519,7 @@ pub fn resume_pending(state_dir: &Path) {
     let Ok(rd) = std::fs::read_dir(&dir) else {
         return;
     };
-    let now = crate::procs::now_ms();
+    let now = crate::util::now_ms();
     for e in rd.flatten() {
         let path = e.path();
         let job: Value = std::fs::read(&path)
@@ -578,7 +578,7 @@ mod tests {
         let d = std::env::temp_dir().join(format!("sb-gh-journal-{}", std::process::id()));
         let dir = d.join(JOURNAL);
         std::fs::create_dir_all(&dir).unwrap();
-        let now = crate::procs::now_ms();
+        let now = crate::util::now_ms();
         let jobs = [
             json!({"title": "PR #1 acme/old", "repo": "acme/old", "number": 1, "body": {"agent": "claude"}, "startedAt": now - 2 * RESUME_MAX_MS}),
             json!({"title": "PR #2 acme/bad", "repo": "acme/bad", "number": 2, "body": {"agent": "nope"}, "startedAt": now}),

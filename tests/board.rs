@@ -10,7 +10,7 @@ use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
 fn now_ms() -> i64 {
-    overseer::procs::now_ms()
+    overseer::util::now_ms()
 }
 
 fn js(s: &str) -> Value {

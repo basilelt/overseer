@@ -1,3 +1,4 @@
+use crate::util::now_ms;
 use std::process::Command;
 
 pub struct ProcInfo {
@@ -376,8 +377,6 @@ pub fn alive_not_zombie(pid: i32) -> bool {
             .unwrap_or_default()
             .contains(") Z ")
 }
-
-pub use crate::util::now_ms;
 
 pub fn parse_etime(s: &str) -> Option<i64> {
     let (days, rest) = match s.split_once('-') {

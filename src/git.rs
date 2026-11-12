@@ -1,6 +1,6 @@
 use crate::exec::{output_within, run_within, RunError};
-use crate::procs::now_ms;
 use crate::util::normalize_remote;
+use crate::util::now_ms;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};

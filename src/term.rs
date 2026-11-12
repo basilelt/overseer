@@ -1,7 +1,8 @@
 use crate::board::publish;
 use crate::daemon::Stream;
 use crate::http::{header, respond_raw, Request};
-use crate::procs::{now_ms, Probe};
+use crate::procs::Probe;
+use crate::util::now_ms;
 use crate::util::{format_rfc3339, ulid};
 use portable_pty::{native_pty_system, ChildKiller, CommandBuilder, MasterPty, PtySize};
 use serde_json::{json, Value};

@@ -392,7 +392,7 @@ impl<'a> Ctx<'a> {
             now_ms: std::env::var("OVERSEER_NOW")
                 .ok()
                 .and_then(|s| util::parse_rfc3339(&s))
-                .unwrap_or_else(procs::now_ms),
+                .unwrap_or_else(util::now_ms),
             probe,
             tmux: Some(tmux::Tmux::from_env()),
         }

@@ -1,7 +1,7 @@
 use crate::agents;
-use crate::procs::now_ms;
 use crate::term::{self, Term};
 use crate::tmux::Tmux;
+use crate::util::now_ms;
 use crate::Line;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, MutexGuard};

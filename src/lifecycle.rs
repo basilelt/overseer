@@ -556,7 +556,7 @@ mod tests {
         let d = std::env::temp_dir().join(format!(
             "sb-lifecycle-{}-{}",
             std::process::id(),
-            crate::procs::now_ms()
+            crate::util::now_ms()
         ));
         std::fs::create_dir_all(&d).unwrap();
         let reg = Registry::open(&d).unwrap();

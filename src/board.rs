@@ -59,7 +59,7 @@ pub fn publish(kind: &str, data: Value) {
     let bus = g.get_or_insert_with(Bus::default);
     bus.next += 1;
     let id = bus.next;
-    let env = json!({"id": id.to_string(), "type": kind, "at": format_rfc3339(crate::procs::now_ms()), "data": data});
+    let env = json!({"id": id.to_string(), "type": kind, "at": format_rfc3339(crate::util::now_ms()), "data": data});
     let frame = Arc::new(sse_frame(id, kind, &env));
     bus.subs.retain(|s| s.send(frame.clone()).is_ok());
     bus.recent.push_back((id, frame));

@@ -207,7 +207,7 @@ pub fn allow_agent_message(reg: &Registry, from: &Task, to: &Task) -> Res<()> {
 
 fn post(reg: &Registry, id: &str, from: Option<String>, body: &str) -> Res<Message> {
     let target = tasks::get(reg, id)?;
-    let now = crate::procs::now_ms();
+    let now = crate::util::now_ms();
     let mut m = Message {
         id: ulid(now),
         task_id: id.into(),
@@ -481,7 +481,7 @@ fn organize_one(ctx: &Ctx, reg: &Registry, project: &str) -> Res<Task> {
             format!("{} is not installed ({})", claude.name, claude.bin),
         ));
     }
-    let now = crate::procs::now_ms();
+    let now = crate::util::now_ms();
     let mut t = Task {
         id: ulid(now),
         title: "Organize board".into(),
@@ -543,7 +543,7 @@ pub fn auto_organize(ctx: &Ctx, reg: &Registry) {
     let Ok(all) = tasks::all(reg) else {
         return;
     };
-    let now = crate::procs::now_ms();
+    let now = crate::util::now_ms();
     for p in organizable(&all, None) {
         if failed(|m| backed_off(m.get(&p).copied(), now)) {
             continue;
@@ -564,7 +564,7 @@ mod tests {
         let dir = std::env::temp_dir().join(format!(
             "sb-task-agents-{tag}-{}-{}",
             std::process::id(),
-            crate::procs::now_ms()
+            crate::util::now_ms()
         ));
         std::fs::create_dir_all(&dir).unwrap();
         Registry::open(&dir).unwrap()
@@ -721,7 +721,7 @@ mod tests {
         let d = std::env::temp_dir().join(format!(
             "sb-overlap-base-{}-{}",
             std::process::id(),
-            crate::procs::now_ms()
+            crate::util::now_ms()
         ));
         let up = d.join("up");
         std::fs::create_dir_all(&up).unwrap();

@@ -1,6 +1,6 @@
 use crate::http::{q, respond_raw, Request};
-use crate::procs::now_ms;
 use crate::util::format_rfc3339;
+use crate::util::now_ms;
 use serde_json::{json, Value};
 use std::collections::{HashMap, VecDeque};
 use std::io::Write;

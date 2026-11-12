@@ -1,6 +1,6 @@
 use crate::activity::{codex_failed, command_label};
 use crate::agents::Transcript;
-use crate::procs::now_ms;
+use crate::util::now_ms;
 use crate::util::{format_rfc3339, parse_rfc3339};
 use serde_json::{json, Map, Value};
 use std::collections::{HashMap, HashSet};

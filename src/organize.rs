@@ -617,7 +617,7 @@ pub fn list(reg: &Registry) -> Res<Vec<Value>> {
 }
 
 pub fn store(reg: &Registry, plan: &Value, source: &str, task: Option<&str>) -> Res<Value> {
-    let now = crate::procs::now_ms();
+    let now = crate::util::now_ms();
     let id = ulid(now);
     sql(reg.conn.execute(
         "INSERT INTO proposals (id, created_ms, status, source, task_id, body) VALUES (?1, ?2, 'pending_review', ?3, ?4, ?5)",
@@ -1104,7 +1104,7 @@ fn start(ctx: &Ctx, b: &Value) -> Res<Value> {
     crate::mkdir_private(&dir).map_err(|e| (500, format!("{}: {e}", dir.display())))?;
     let dir = std::path::absolute(&dir).unwrap_or(dir);
     let s = |k: &str| b[k].as_str().unwrap_or("").trim().to_string();
-    let now = crate::procs::now_ms();
+    let now = crate::util::now_ms();
     let mut t = Task {
         id: ulid(now),
         title: "Organize sessions".into(),
@@ -1246,7 +1246,7 @@ mod tests {
         let dir = std::env::temp_dir().join(format!(
             "sb-organize-{tag}-{}-{}",
             std::process::id(),
-            crate::procs::now_ms()
+            crate::util::now_ms()
         ));
         std::fs::create_dir_all(&dir).unwrap();
         let r = Registry::open(&dir).unwrap();

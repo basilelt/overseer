@@ -323,12 +323,7 @@ fn feedback_hub_starts_and_relaunches_a_line_on_a_runner() {
     let c = hub.relaunch(&id, "rl-busy", "busy", false);
     assert_eq!(c["status"], "succeeded", "{c}");
     let c = wait_for(|| {
-        let c = hub.relaunch(
-            &id,
-            &format!("rl-{}", overseer::procs::now_ms()),
-            "x",
-            false,
-        );
+        let c = hub.relaunch(&id, &format!("rl-{}", overseer::util::now_ms()), "x", false);
         (c["status"] == "refused").then_some(c)
     });
     assert!(c["reason"].as_str().unwrap().contains("atPrompt"), "{c}");

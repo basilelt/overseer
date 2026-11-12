@@ -269,7 +269,7 @@ fn cost_total(c: &Value) -> Option<Value> {
 
 fn track_cost(ctx: &Ctx, reg: &Registry, lines: &[Line]) {
     let Ok(tasks) = all(reg) else { return };
-    let now = crate::procs::now_ms();
+    let now = crate::util::now_ms();
     let mut budget = COST_PER_TICK;
     let mut seen = COST_SEEN.lock().unwrap_or_else(|e| e.into_inner());
     let seen = seen.get_or_insert_with(HashMap::new);
@@ -392,7 +392,7 @@ pub(crate) fn save(ctx: &Ctx, reg: &Registry, t: &mut Task) -> Res<()> {
 }
 
 pub(crate) fn store(reg: &Registry, t: &mut Task, station: &str) -> Res<()> {
-    t.updated_ms = crate::procs::now_ms();
+    t.updated_ms = crate::util::now_ms();
     sql(update_row!(
         reg.conn, "tasks", id = t.id;
         title = t.title,
@@ -692,7 +692,7 @@ pub fn create(ctx: &Ctx, b: &Value) -> Res<Task> {
     let origin = pick(b, "origin", &["user", "agent"], "user")?;
     let parent_id = parent.map(|p| p.id);
     let depends_on = deps_of(&reg, "", &project, &b["dependsOn"])?;
-    let now = crate::procs::now_ms();
+    let now = crate::util::now_ms();
     let mut t = Task {
         id: ulid(now),
         title: title.into(),
@@ -842,7 +842,7 @@ pub fn patch(ctx: &Ctx, id: &str, b: &Value) -> Res<Task> {
                     return Err(bad("use POST /v1/tasks/{id}/start to start a task"));
                 }
                 t.status = status::IN_PROGRESS.into();
-                t.started_ms = Some(crate::procs::now_ms());
+                t.started_ms = Some(crate::util::now_ms());
                 seen_busy(|s| s.remove(&t.id));
             }
             "status" if v == status::IN_PROGRESS => {}
@@ -918,7 +918,7 @@ pub fn delete(ctx: &Ctx, id: &str) -> Res<Value> {
 }
 
 fn remove(reg: &Registry, id: &str) -> Res<Vec<Task>> {
-    let now = crate::procs::now_ms();
+    let now = crate::util::now_ms();
     let dependents: Vec<Task> = all(reg)?
         .into_iter()
         .filter(|d| d.id != id && d.depends_on.iter().any(|x| x == id))
@@ -1037,7 +1037,7 @@ fn reserve(
         .map(|i| i.repo)
         .unwrap_or_else(|| "unknown".into());
     let l = Line {
-        id: format!("{}-{}", ctx.config.station_id, ulid(crate::procs::now_ms())),
+        id: format!("{}-{}", ctx.config.station_id, ulid(crate::util::now_ms())),
         agent,
         session_id: session.into(),
         owner: ctx.config.owner.clone(),
@@ -1195,7 +1195,7 @@ pub(crate) fn start_with_args(
     t.status = status::IN_PROGRESS.into();
     t.error = None;
     t.session_state = None;
-    t.started_ms = Some(crate::procs::now_ms());
+    t.started_ms = Some(crate::util::now_ms());
     seen_busy(|s| s.remove(&t.id));
     save(ctx, &reg, &mut t)?;
     crate::task_agents::mark_delivered(&reg, &waiting);
@@ -1265,7 +1265,7 @@ pub fn review(ctx: &Ctx, id: &str, b: &Value) -> Res<Value> {
                         .map_err(|e| (500, e))?;
                 }
                 t.status = status::IN_PROGRESS.into();
-                t.started_ms = Some(crate::procs::now_ms());
+                t.started_ms = Some(crate::util::now_ms());
                 seen_busy(|s| s.remove(&t.id));
             }
             (None, Some(_)) => {
@@ -1401,7 +1401,7 @@ pub fn tick(ctx: &Ctx, lines: &[Line]) {
         }
     }
     if let Ok(tasks) = all(&reg) {
-        let now = crate::procs::now_ms();
+        let now = crate::util::now_ms();
         for mut t in tasks.into_iter().filter(|t| merge_candidate(t, now)) {
             let busy = t
                 .line_id
@@ -1544,7 +1544,7 @@ pub fn add_project(ctx: &Ctx, b: &Value) -> Res<(bool, Value)> {
     let reg = db(ctx)?;
     let n = sql(reg.conn.execute(
         "INSERT OR IGNORE INTO projects (path, added_ms) VALUES (?1, ?2)",
-        params![root, crate::procs::now_ms()],
+        params![root, crate::util::now_ms()],
     ))?;
     Ok((n > 0, project_json(&root, &repo, false)))
 }
@@ -1557,7 +1557,7 @@ mod tests {
         let base = std::env::temp_dir().join(format!(
             "sb-submod-{}-{}",
             std::process::id(),
-            crate::procs::now_ms()
+            crate::util::now_ms()
         ));
         let git = |dir: &Path, args: &[&str]| {
             crate::git::fixture::run(dir, args);
@@ -1598,7 +1598,7 @@ mod tests {
         let base = std::env::temp_dir().join(format!(
             "sb-modwt-{}-{}",
             std::process::id(),
-            crate::procs::now_ms()
+            crate::util::now_ms()
         ));
         let common = base.join(".git/modules/x");
         std::fs::create_dir_all(&common).unwrap();

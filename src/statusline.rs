@@ -281,7 +281,7 @@ pub fn routes(method: &str, segs: &[&str], body: &Value, state_dir: &Path) -> Op
             dry,
             &bin,
             state_dir,
-            crate::procs::now_ms(),
+            crate::util::now_ms(),
         ) {
             Ok(v) => (200, v),
             Err(e) => (409, json!({"error": e})),
@@ -326,7 +326,7 @@ pub fn tap(args: &[String]) -> ExitCode {
     let _ = std::io::stdin().read_to_end(&mut input);
     let state = state.unwrap_or_else(crate::default_state_dir);
     if input.len() as u64 <= MAX_INPUT {
-        let _ = record(&state, &input, crate::procs::now_ms());
+        let _ = record(&state, &input, crate::util::now_ms());
     }
     match original {
         Some(o) => match wrap(&o, &input) {
@@ -352,7 +352,7 @@ fn cli(install: bool, args: &[String]) -> ExitCode {
         !apply_it,
         &bin,
         &state,
-        crate::procs::now_ms(),
+        crate::util::now_ms(),
     ) {
         Ok(v) => {
             if !v["changed"].as_bool().unwrap_or(false) {

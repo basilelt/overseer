@@ -414,7 +414,7 @@ mod tests {
         let d = std::env::temp_dir().join(format!(
             "sb-feedback-{tag}-{}-{}",
             std::process::id(),
-            crate::procs::now_ms()
+            crate::util::now_ms()
         ));
         let _ = std::fs::remove_dir_all(&d);
         d

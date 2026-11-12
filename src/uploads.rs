@@ -236,7 +236,7 @@ mod tests {
         let d = std::env::temp_dir().join(format!(
             "sb-uploads-{tag}-{}-{}",
             std::process::id(),
-            crate::procs::now_ms()
+            crate::util::now_ms()
         ));
         let _ = std::fs::remove_dir_all(&d);
         std::fs::create_dir_all(&d).unwrap();

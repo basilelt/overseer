@@ -427,7 +427,7 @@ pub fn create(ctx: &Ctx, path: &str, n: &New) -> Res<(String, String, String)> {
                     .map(crate::tasks::slug)
                     .filter(|s| n.slug.is_some_and(|x| !x.trim().is_empty()) && !s.is_empty())
                     .unwrap_or_else(|| match n.agent {
-                        Some(_) => short_time(crate::procs::now_ms()),
+                        Some(_) => short_time(crate::util::now_ms()),
                         None => git(&root, &["rev-parse", "--short", &start])
                             .unwrap_or_else(|| "wt".into()),
                     });
@@ -878,7 +878,7 @@ pub fn list(ctx: &Ctx, path: &str) -> Res<Value> {
         store: store.to_string_lossy().into_owned(),
         managed_root,
         stale_ms: ctx.config.worktree_stale_days.max(0) * DAY_MS,
-        now_ms: crate::procs::now_ms(),
+        now_ms: crate::util::now_ms(),
         known: &known,
         paths: all.iter().map(|e| e.path.clone()).collect(),
     };

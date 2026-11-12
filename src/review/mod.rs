@@ -256,7 +256,7 @@ fn add_comment(
     body: &str,
     pending: bool,
 ) -> Res<()> {
-    let now = crate::procs::now_ms();
+    let now = crate::util::now_ms();
     sql(reg.conn.execute(
         "INSERT INTO review_comments (id, thread_id, author, body, pending, created_ms, updated_ms)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6)",
@@ -890,7 +890,7 @@ pub fn reanchor(reg: &Registry, wt: &str) {
         };
         if (line, end, outdated, changed) != (t.line, t.end, t.outdated, t.changed) {
             (t.line, t.end, t.outdated, t.changed) = (line, end, outdated, changed);
-            t.updated_ms = crate::procs::now_ms();
+            t.updated_ms = crate::util::now_ms();
             if save(reg, &t).is_ok() {
                 emit(reg, &t);
             }
@@ -920,7 +920,7 @@ fn create(ctx: &Ctx, b: &Value) -> Res<Value> {
     if let Some(tid) = b["threadId"].as_str() {
         let mut t = thread(&reg, tid)?;
         add_comment(&reg, &t.id, "user", body, true)?;
-        t.updated_ms = crate::procs::now_ms();
+        t.updated_ms = crate::util::now_ms();
         save(&reg, &t)?;
         emit(&reg, &t);
         return to_json(&reg, &t);
@@ -958,7 +958,7 @@ fn create(ctx: &Ctx, b: &Value) -> Res<Value> {
         .task_id
         .clone()
         .or_else(|| task_of(ctx, &tg.worktree).map(|t| t.id));
-    let now = crate::procs::now_ms();
+    let now = crate::util::now_ms();
     let t = Thread {
         id: format!("rt-{}", ulid(now)),
         worktree: tg.worktree.clone(),
@@ -1000,7 +1000,7 @@ fn comment_by_id(reg: &Registry, id: &str) -> Res<Option<Comment>> {
 
 fn patch(ctx: &Ctx, id: &str, b: &Value) -> Res<Value> {
     let reg = open(ctx)?;
-    let now = crate::procs::now_ms();
+    let now = crate::util::now_ms();
     if let Some(c) = comment_by_id(&reg, id)? {
         let body = b["body"]
             .as_str()
@@ -1108,7 +1108,7 @@ fn apply(ctx: &Ctx, id: &str) -> Res<Value> {
         out.push_str(eol);
     }
     std::fs::write(&full, out).map_err(|e| (500, e.to_string()))?;
-    let now = crate::procs::now_ms();
+    let now = crate::util::now_ms();
     if let Some(a) = capture(&lines, t.line, (t.line + n).saturating_sub(1).max(t.line)) {
         if n > 0 {
             t.code = a.code;
@@ -1151,7 +1151,7 @@ fn submit(ctx: &Ctx, b: &Value) -> Res<Value> {
     if let Some(l) = via {
         tg.line_id = Some(l.id.clone());
     }
-    let now = crate::procs::now_ms();
+    let now = crate::util::now_ms();
     let did = format!("rd-{}", ulid(now));
     let fmt: Vec<deliver::Item> = items
         .iter()
@@ -1283,7 +1283,7 @@ fn attempt(ctx: &Ctx, reg: &Registry, id: &str, lines: &[Line]) -> bool {
     if st == "queued" && why == reason && label == prev_target {
         return true;
     }
-    let now = crate::procs::now_ms();
+    let now = crate::util::now_ms();
     let _ = reg.conn.execute(
         "UPDATE review_deliveries SET status = ?2, reason = ?3, target = ?4, updated_ms = ?5,
            text = CASE WHEN ?2 = 'delivered' THEN '' ELSE text END WHERE id = ?1",
@@ -1309,7 +1309,7 @@ pub fn tick(ctx: &Ctx, lines: &[Line]) {
         QUEUE.push(crate::deliver::Job {
             target: String::new(),
             text: String::new(),
-            at_ms: crate::procs::now_ms(),
+            at_ms: crate::util::now_ms(),
             id,
         });
     }

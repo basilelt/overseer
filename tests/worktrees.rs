@@ -120,7 +120,7 @@ impl Fx {
             vibe_dir: self.base.join("vibe"),
             state_dir: self.base.join("state"),
             snapshot: self.base.join("snapshot.json"),
-            now_ms: overseer::procs::now_ms(),
+            now_ms: overseer::util::now_ms(),
             probe: &self.probe,
             tmux: None,
             config: Config {

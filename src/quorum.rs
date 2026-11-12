@@ -223,7 +223,7 @@ pub fn on_ready(ctx: &Ctx, worker: &Task) {
         .unwrap_or_else(|| "the base branch".into());
     let mut started = vec![];
     for (i, agent) in reviewers.iter().enumerate() {
-        let now = crate::procs::now_ms();
+        let now = crate::util::now_ms();
         let mut r = Task {
             id: ulid(now + i as i64),
             title: format!("Review #{} (round {round})", w.number),
@@ -335,7 +335,7 @@ fn record(
     let round = state["round"].as_u64().unwrap_or(1);
     if decided == Some("rejected") && w.status == status::IN_TESTING && w.live_term().is_some() {
         w.status = status::IN_PROGRESS.into();
-        w.started_ms = Some(crate::procs::now_ms());
+        w.started_ms = Some(crate::util::now_ms());
     }
     tasks::store(reg, &mut w, &ctx.config.station_id)?;
     if let Some(o) = decided {

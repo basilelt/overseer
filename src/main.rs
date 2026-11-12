@@ -258,7 +258,7 @@ fn hooks_cmd(args: &[String]) -> ExitCode {
     let bin = install::hook_bin();
     let state = overseer::default_state_dir();
     let state = state.canonicalize().unwrap_or(state);
-    let stamp = install::stamp(overseer::procs::now_ms());
+    let stamp = install::stamp(overseer::util::now_ms());
     let r = install::Run {
         mode,
         apply,

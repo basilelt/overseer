@@ -374,7 +374,7 @@ mod tests {
         let home = std::env::temp_dir().join(format!(
             "sb-shellenv-{}-{}",
             std::process::id(),
-            crate::procs::now_ms()
+            crate::util::now_ms()
         ));
         let _ = std::fs::remove_dir_all(&home);
         for d in [
@@ -417,7 +417,7 @@ mod tests {
         let home = std::env::temp_dir().join(format!(
             "sb-shellenv-new-{}-{}",
             std::process::id(),
-            crate::procs::now_ms()
+            crate::util::now_ms()
         ));
         let _ = std::fs::remove_dir_all(&home);
         std::fs::create_dir_all(home.join(".cargo/bin")).unwrap();

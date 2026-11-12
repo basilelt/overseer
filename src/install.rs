@@ -946,7 +946,7 @@ pub fn routes(method: &str, segs: &[&str], body: &Value, state_dir: &Path) -> Op
     };
     let apply = body["dryRun"].as_bool() == Some(false);
     let bin = hook_bin();
-    let stamp = stamp(crate::procs::now_ms());
+    let stamp = stamp(crate::util::now_ms());
     let r = Run {
         mode,
         apply,
@@ -1001,7 +1001,7 @@ pub fn on_daemon_start(state_dir: &Path) {
         }
     }
     let bin = hook_bin();
-    let stamp = stamp(crate::procs::now_ms());
+    let stamp = stamp(crate::util::now_ms());
     let r = Run {
         mode: Mode::Repair,
         apply: true,
