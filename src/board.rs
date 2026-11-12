@@ -526,12 +526,9 @@ pub fn serve(ctx: &Ctx, r: &Request, s: &mut dyn Write) -> bool {
             respond_raw(s, 200, "text/css; charset=utf-8", CSS.as_bytes())
         }
         ("GET", ["v1", "events"]) => sse(r, s),
-        ("GET", ["v1", "board"]) => json(
-            s,
-            board(ctx, q(r, "all") == Some("true")).map_err(|e| (500, e)),
-        ),
+        ("GET", ["v1", "board"]) => json(s, board(ctx, r.is_true("all")).map_err(|e| (500, e))),
         ("GET", ["v1", "pr"]) => {
-            let (repo, branch) = (q(r, "repo").map(decode), q(r, "branch").map(decode));
+            let (repo, branch) = (r.param("repo"), r.param("branch"));
             match (repo, branch) {
                 (Some(repo), Some(branch)) => json(s, Ok(crate::gh::pr_info(&repo, &branch))),
                 _ => json(s, Err((400, "repo and branch required".into()))),

@@ -1011,7 +1011,7 @@ pub fn routes(
     segs: &[&str],
     body: &Value,
 ) -> Option<(u16, Value)> {
-    let q = |k: &str| crate::daemon::q(r, k).map(crate::board::decode);
+    let q = |k: &str| r.param(k);
     let res = |r: Res<Value>| match r {
         Ok(v) => (200, v),
         Err((c, e)) => (c, json!({ "error": e })),

@@ -1584,7 +1584,7 @@ pub fn api(r: &crate::daemon::Request, lines: &[crate::Line]) -> (u16, Value) {
             None => return (404, json!({"error": format!("no line {id}")})),
         },
     };
-    let oauth = crate::daemon::q(r, "claudeLimits") == Some("1");
+    let oauth = r.is_one("claudeLimits");
     let Some((db, indexing)) = demand(now, oauth) else {
         return (503, json!({"error": "usage is not available"}));
     };

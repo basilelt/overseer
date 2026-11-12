@@ -80,7 +80,7 @@ impl Drop for Pending {
 pub fn routes(ctx: &Ctx, r: &Request, segs: &[&str], body: &Value) -> Option<(u16, Value)> {
     let res = match (r.method.as_str(), segs) {
         ("GET", ["v1", "github", "review-requests"]) => {
-            list(ctx, "gh", crate::daemon::q(r, "refresh") == Some("1")).map(|v| (200, v))
+            list(ctx, "gh", r.is_one("refresh")).map(|v| (200, v))
         }
         ("POST", ["v1", "github", "review-requests", owner, repo, number, "review"]) => {
             review(ctx, owner, repo, number, body)

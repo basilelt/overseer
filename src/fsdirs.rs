@@ -1,4 +1,4 @@
-use crate::daemon::{q, respond_raw, Request};
+use crate::daemon::{respond_raw, Request};
 use serde_json::{json, Value};
 use std::io::Write;
 use std::path::PathBuf;
@@ -11,8 +11,8 @@ pub fn serve(r: &Request, s: &mut dyn Write) -> bool {
     if r.method != "GET" || r.path.trim_matches('/') != "v1/fs/dirs" {
         return false;
     }
-    let raw = crate::board::decode(q(r, "path").unwrap_or_default());
-    let (code, v) = match list(&raw, q(r, "hidden") == Some("1"), CAP) {
+    let raw = r.param("path").unwrap_or_default();
+    let (code, v) = match list(&raw, r.is_one("hidden"), CAP) {
         Ok(v) => (200, v),
         Err((code, e)) => (code, json!({ "error": e })),
     };

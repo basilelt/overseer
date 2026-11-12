@@ -271,7 +271,7 @@ pub fn graph(ctx: &Ctx, path: &str, r: &Request) -> Res<Value> {
         })
         .transpose()?
         .unwrap_or(0);
-    let sel = q(r, "refs").map(decode).unwrap_or_default();
+    let sel = r.param("refs").unwrap_or_default();
     let all = refs(&root);
     let base = worktrees::default_branch(&root);
     let ov = overlays(ctx, &root, &repo, &all);

@@ -26,7 +26,7 @@ pub fn serve(ctx: &Ctx, r: &Request, s: &mut dyn Write) -> bool {
 }
 
 fn load(ctx: &Ctx, r: &Request) -> Res<(&'static str, Vec<u8>)> {
-    let raw = crate::board::decode(q(r, "path").unwrap_or_default());
+    let raw = r.param("path").unwrap_or_default();
     if raw.is_empty() {
         return Err((400, "path required".into()));
     }

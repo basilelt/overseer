@@ -207,8 +207,26 @@ pub fn header<'a>(r: &'a Request, k: &str) -> Option<&'a str> {
         .map(|(_, v)| v.as_str())
 }
 
+impl Request {
+    pub fn param(&self, k: &str) -> Option<String> {
+        q(self, k).map(crate::board::decode)
+    }
+
+    pub fn is_true(&self, k: &str) -> bool {
+        q(self, k) == Some("true")
+    }
+
+    pub fn is_one(&self, k: &str) -> bool {
+        q(self, k) == Some("1")
+    }
+
+    pub fn not_false(&self, k: &str) -> bool {
+        q(self, k) != Some("false")
+    }
+}
+
 pub fn dry_run(r: &Request) -> bool {
-    q(r, "dryRun") != Some("false")
+    r.not_false("dryRun")
 }
 
 fn notes_reply(r: Result<(crate::Line, Value, Vec<Value>), crate::notes::Err>) -> (u16, Value) {
@@ -449,8 +467,8 @@ fn tasks(r: &Request, segs: &[&str], body: &Value, ctx: &Ctx) -> Option<(u16, Va
     let st = ctx.config.station_id.as_str();
     Some(match (r.method.as_str(), segs) {
         ("GET", ["v1", "tasks"]) => {
-            let project = q(r, "project").map(crate::board::decode);
-            let status = q(r, "status").map(crate::board::decode);
+            let project = r.param("project");
+            let status = r.param("status");
             let wanted: Vec<&str> = status
                 .as_deref()
                 .map(|s| s.split(',').collect())
@@ -645,7 +663,7 @@ fn resume_term(ctx: &Ctx, r: &Request, id: &str, body: &Value) -> (u16, Value) {
     };
     let attach_only = body["attachOnly"] == true;
     if let Some(t) = actions::pending_terms(l).into_iter().next() {
-        if !attach_only && q(r, "dryRun") != Some("true") && actions::waits_for_enter(l, &t) {
+        if !attach_only && !r.is_true("dryRun") && actions::waits_for_enter(l, &t) {
             if let Err(e) = t.input(b"\r") {
                 return err(409, e.to_string());
             }
@@ -660,7 +678,7 @@ fn resume_term(ctx: &Ctx, r: &Request, id: &str, body: &Value) -> (u16, Value) {
             return (200, t.to_json());
         }
         if let Some(pane) = l.pane.as_deref() {
-            return attach_pane(ctx, l, pane, size, q(r, "dryRun") == Some("true"));
+            return attach_pane(ctx, l, pane, size, r.is_true("dryRun"));
         }
     }
     if attach_only {
@@ -672,7 +690,7 @@ fn resume_term(ctx: &Ctx, r: &Request, id: &str, body: &Value) -> (u16, Value) {
     };
     plan.r#where = "term";
     plan.pane = None;
-    if q(r, "dryRun") == Some("true") {
+    if r.is_true("dryRun") {
         return (200, plan.to_json());
     }
     let applied = crate::agents::get(l.agent)
@@ -773,7 +791,7 @@ fn activity(ctx: &Ctx, r: &Request, id: &str) -> (u16, Value) {
         Ok(l) => l,
         Err(e) => return err(404, e),
     };
-    let since = match q(r, "since").map(crate::board::decode) {
+    let since = match r.param("since") {
         None => None,
         Some(s) => match crate::util::parse_rfc3339(&s) {
             Some(ms) => Some(ms),
@@ -1008,7 +1026,7 @@ pub fn handle(ctx: &Ctx, r: &Request) -> (u16, Value) {
         ("GET", ["v1", "lines"]) => match crate::current_lines(ctx) {
             Ok(lines) => {
                 let filter = crate::LineFilter::new(
-                    q(r, "all") == Some("true"),
+                    r.is_true("all"),
                     q(r, "ticketKey"),
                     q(r, "repo"),
                     q(r, "state"),
@@ -1024,7 +1042,7 @@ pub fn handle(ctx: &Ctx, r: &Request) -> (u16, Value) {
         },
         ("POST", ["v1", "lines", id, "hold"]) => {
             mark(Effect::Rescan);
-            let held = if q(r, "afterTurn") == Some("true") {
+            let held = if r.is_true("afterTurn") {
                 actions::hold_after_turn(ctx, id, !dry_run(r))
             } else {
                 actions::hold(ctx, id, !dry_run(r))
@@ -1043,13 +1061,7 @@ pub fn handle(ctx: &Ctx, r: &Request) -> (u16, Value) {
         }
         ("POST", ["v1", "lines", id, "close"]) => {
             mark(Effect::Rescan);
-            match actions::close(
-                ctx,
-                id,
-                !dry_run(r),
-                q(r, "shell") == Some("true"),
-                q(r, "force") == Some("true"),
-            ) {
+            match actions::close(ctx, id, !dry_run(r), r.is_true("shell"), r.is_true("force")) {
                 Ok(rep) => (if rep.ok() { 200 } else { 409 }, rep.to_json()),
                 Err(e) => err(404, e),
             }
@@ -1978,6 +1990,28 @@ mod tests {
         respond(&mut out, code, &json!({}));
         assert!(String::from_utf8_lossy(&out)
             .starts_with("HTTP/1.1 431 Request Header Fields Too Large\r\n"));
+    }
+
+    #[test]
+    fn query_helpers_keep_one_convention_each() {
+        let req = |q: &str| Request {
+            method: "GET".into(),
+            path: "/".into(),
+            query: q
+                .split('&')
+                .filter_map(|kv| kv.split_once('='))
+                .map(|(k, v)| (k.into(), v.into()))
+                .collect(),
+            headers: vec![],
+            body: vec![],
+        };
+        let r = req("p=a%2Fb+c&t=true&o=1&f=false&x=yes");
+        assert_eq!(r.param("p").as_deref(), Some("a/b c"));
+        assert_eq!(r.param("missing"), None);
+        assert!(r.is_true("t") && !r.is_true("o") && !r.is_true("missing"));
+        assert!(r.is_one("o") && !r.is_one("t") && !r.is_one("missing"));
+        assert!(!r.not_false("f") && r.not_false("x") && r.not_false("missing"));
+        assert!(dry_run(&req("")) && !dry_run(&req("dryRun=false")));
     }
 
     fn effect_of(ctx: &Ctx, method: &str, path: &str, body: &str) -> Effect {

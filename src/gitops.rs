@@ -1,5 +1,5 @@
-use crate::board::{decode, publish};
-use crate::daemon::{q, res, Request};
+use crate::board::publish;
+use crate::daemon::{res, Request};
 use crate::git::{git, git_out};
 use crate::worktrees::{self, valid_sha, Res};
 use crate::Ctx;
@@ -186,7 +186,7 @@ fn target(ctx: &Ctx, worktree: Option<String>, line: Option<String>) -> Res<Stri
 }
 
 fn target_q(ctx: &Ctx, r: &Request) -> Res<String> {
-    let d = |k| q(r, k).map(decode).filter(|s| !s.is_empty());
+    let d = |k| r.param(k).filter(|s| !s.is_empty());
     target(ctx, d("worktree"), d("line"))
 }
 

@@ -1306,7 +1306,7 @@ fn list(ctx: &Ctx, r: &Request) -> Res<Value> {
     if let Some(w) = &wt {
         watch::touch(w);
     }
-    let status = q(r, "status").map(decode);
+    let status = r.param("status");
     let wanted: Vec<&str> = status
         .as_deref()
         .map(|s| s.split(',').collect())
@@ -1353,15 +1353,13 @@ pub fn routes(r: &Request, segs: &[&str], body: &Value, ctx: &Ctx) -> Option<(u1
     Some(match (r.method.as_str(), segs) {
         ("GET", ["v1", "review"]) => out(
             200,
-            target_q(ctx, r).and_then(|t| review(ctx, &t, q(r, "base").map(decode).as_deref())),
+            target_q(ctx, r).and_then(|t| review(ctx, &t, r.param("base").as_deref())),
         ),
         ("GET", ["v1", "review", "file"]) => out(
             200,
             target_q(ctx, r).and_then(|t| {
-                let p = q(r, "path")
-                    .map(decode)
-                    .ok_or_else(|| bad("path required"))?;
-                let lines = match q(r, "rev").map(decode) {
+                let p = r.param("path").ok_or_else(|| bad("path required"))?;
+                let lines = match r.param("rev") {
                     Some(rev) if crate::worktrees::valid_sha(&rev) => {
                         diff::lines_at(&t.worktree, &rev, rel(&p)?)
                             .ok_or_else(|| (404, format!("{p} is not in {rev}")))?
@@ -1374,8 +1372,7 @@ pub fn routes(r: &Request, segs: &[&str], body: &Value, ctx: &Ctx) -> Option<(u1
         ),
         ("GET", ["v1", "review", "graph"]) => out(
             200,
-            target_q(ctx, r)
-                .and_then(|t| graph::route(ctx, &t, q(r, "base").map(decode).as_deref())),
+            target_q(ctx, r).and_then(|t| graph::route(ctx, &t, r.param("base").as_deref())),
         ),
         ("GET", ["v1", "review", "map"]) => out(
             200,
