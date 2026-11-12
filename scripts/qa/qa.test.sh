@@ -62,4 +62,11 @@ got=$(HOME=$work/mac PLAYWRIGHT_BROWSERS_PATH= PYTHONPATH="$work/pw:$root/script
   python3 -c 'import drive; print(drive.newest_chromium())')
 check "drive.py searches ~/Library/Caches/ms-playwright" "$work/mac/Library/Caches/ms-playwright/chromium_headless_shell-9/chrome-headless-shell-mac-arm64/chrome-headless-shell" "$got"
 
+if command -v node > /dev/null; then
+  node "$root/scripts/qa/shim.test.mjs" | tee "$work/shim.out"
+  grep -q '^FAIL' "$work/shim.out" && fail=1
+else
+  echo "skip shim tests: node not installed"
+fi
+
 exit $fail
