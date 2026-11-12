@@ -242,21 +242,18 @@ fn landing(root: &str, branch: &str, pr: &Value, fetch: bool) -> (bool, String) 
     (branch_merged_into(root, branch, &base), base)
 }
 
-pub fn task_landed(ctx: &Ctx, id: &str) -> Res<Value> {
-    let reg = crate::registry::Registry::open(&ctx.state_dir).map_err(|e| (500, e))?;
-    let t = crate::tasks::get(&reg, id)?;
-    let branch = t
-        .branch
+pub fn task_landed(ctx: &Ctx, project: &str, branch: Option<String>) -> Res<Value> {
+    let branch = branch
         .filter(|b| !b.is_empty())
         .ok_or_else(|| bad("the task has no branch: nothing to mark as merged"))?;
-    let pr = pr_of(&t.project, &branch, true);
+    let pr = pr_of(project, &branch, true);
     let fetch = ctx.config.worktree_fetch;
     if fetch {
-        fetch_base(&t.project, &default_branch_cached(&t.project));
+        fetch_base(project, &default_branch_cached(project));
     }
-    let (landed, base) = landing(&t.project, &branch, &pr, fetch);
+    let (landed, base) = landing(project, &branch, &pr, fetch);
     let landed =
-        landed || (base != default_branch_cached(&t.project) && branch_merged(&t.project, &branch));
+        landed || (base != default_branch_cached(project) && branch_merged(project, &branch));
     if landed {
         forget_landed(&branch);
     }

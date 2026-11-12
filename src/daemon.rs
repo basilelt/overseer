@@ -546,7 +546,7 @@ fn tasks(r: &Request, segs: &[&str], body: &Value, ctx: &Ctx) -> Option<(u16, Va
             201,
             crate::task_agents::send_message(ctx, id, body).map(|m| m.to_json()),
         ),
-        ("GET", ["v1", "tasks", id, "landed"]) => res(200, crate::worktrees::task_landed(ctx, id)),
+        ("GET", ["v1", "tasks", id, "landed"]) => res(200, task_landed(ctx, id)),
         ("GET", ["v1", "tasks", id, "overlaps"]) => {
             res(200, crate::task_agents::overlaps(ctx, id).map(Value::from))
         }
@@ -1125,6 +1125,12 @@ pub fn handle(ctx: &Ctx, r: &Request) -> (u16, Value) {
         }
         _ => err(404, "not found"),
     }
+}
+
+fn task_landed(ctx: &Ctx, id: &str) -> Result<Value, (u16, String)> {
+    let reg = crate::registry::Registry::open(&ctx.state_dir).map_err(|e| (500, e))?;
+    let t = crate::tasks::get(&reg, id)?;
+    crate::worktrees::task_landed(ctx, &t.project, t.branch)
 }
 
 fn upload(r: &mut BufReader<&mut impl Stream>, h: &Head) -> (u16, Value) {
