@@ -1,3 +1,4 @@
+import { coarseMinutes, wholeMinutes } from './duration';
 import { TASK_STATUSES, type Task, type TaskMessage, type TaskStatus } from './types';
 
 export * from './kanban-core';
@@ -218,11 +219,8 @@ export function revertTask(tasks: Task[], prev: Task): Task[] {
 }
 
 export function relTime(iso: string, now = Date.now()): { key: 'time.now' | 'time.m' | 'time.h' | 'time.d'; n: number } {
-  const m = Math.floor((now - Date.parse(iso)) / 60_000);
-  if (m < 1) return { key: 'time.now', n: 0 };
-  if (m < 60) return { key: 'time.m', n: m };
-  if (m < 60 * 24) return { key: 'time.h', n: Math.floor(m / 60) };
-  return { key: 'time.d', n: Math.floor(m / 1440) };
+  const c = coarseMinutes(wholeMinutes(now - Date.parse(iso)));
+  return { key: `time.${c.unit}`, n: c.n };
 }
 
 const FAMILIES = ['opus', 'sonnet', 'haiku', 'fable'];
