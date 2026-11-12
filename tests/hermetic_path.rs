@@ -4,7 +4,6 @@ use std::path::Path;
 
 #[test]
 fn test_path_exposes_no_host_dir_beyond_system_ones_and_a_tmux_link() {
-    // Given the PATH the harness gives a daemon under test
     let fx = Fx::new("hermetic-path", 0);
     let path = fx
         .vars()
@@ -12,9 +11,7 @@ fn test_path_exposes_no_host_dir_beyond_system_ones_and_a_tmux_link() {
         .find(|(k, _)| *k == "PATH")
         .map(|(_, v)| v)
         .unwrap();
-    // When listing its directories
     let dirs: Vec<_> = std::env::split_paths(&path).collect();
-    // Then only the stubs, the system dirs and a dir holding just tmux are on it
     for d in &dirs {
         let ok = d.ends_with("tests/stubs")
             || ["/usr/bin", "/bin", "/usr/sbin", "/sbin"]

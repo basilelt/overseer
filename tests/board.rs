@@ -232,9 +232,6 @@ fn board_end_to_end() {
 
 #[test]
 fn pinning_a_line_announces_the_pin_in_the_line_update() {
-    // Given a daemon with one local session line and a client listening to events
-    // When the line is pinned
-    // Then the line list shows the pin at once and the announced update carries it
     let fx = Fx::new("pinevent", 1);
     let _d = fx.daemon(false);
     let mut s = UnixStream::connect(&fx.sock).unwrap();
@@ -274,9 +271,6 @@ fn pinning_a_line_announces_the_pin_in_the_line_update() {
 
 #[test]
 fn line_updates_carry_the_same_local_as_the_line_list() {
-    // Given a daemon with one held local session line and a client listening to events
-    // When the line is pinned, then unpinned
-    // Then each announced update carries the local the line list serves, held fields included
     let fx = Fx::new("evlocal", 1);
     let _d = fx.daemon(false);
     let mut s = UnixStream::connect(&fx.sock).unwrap();
@@ -330,9 +324,6 @@ fn line_updates_carry_the_same_local_as_the_line_list() {
 
 #[test]
 fn line_title_override_is_set_shared_and_cleared() {
-    // Given a daemon with one local session line and a client listening to events
-    // When a client renames the line, then clears the custom title
-    // Then the trimmed title is served and announced, the auto title is kept, and clearing removes it
     let fx = Fx::new("title", 1);
     let _d = fx.daemon(false);
     let (tx, rx) = mpsc::channel();
@@ -376,9 +367,6 @@ fn line_title_override_is_set_shared_and_cleared() {
 
 #[test]
 fn line_notes_are_added_edited_removed_and_survive_a_restart() {
-    // Given a daemon with one local session line and a client listening to events
-    // When a client adds, edits and deletes sticky notes the way the app sends them, then the daemon restarts
-    // Then each change is served and announced, bad input gets the daemon's errors, and notes outlive the restart
     let fx = Fx::new("notes", 1);
     let d = fx.daemon(false);
     let (tx, rx) = mpsc::channel();

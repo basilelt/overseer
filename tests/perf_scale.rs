@@ -281,9 +281,6 @@ fn term_titled(len: usize) -> Killed {
 
 #[test]
 fn inheriting_a_term_workspace_does_not_depend_on_the_term_state() {
-    // Given a term with a short title and one with a 100 KB title, both assigned
-    // When the scan's per-line lookup runs on each
-    // Then the cost is the same: only the workspace id is read, not the whole info
     let (small_t, big_t) = (term_titled(1), term_titled(100_000));
     let (a, b) = (small_t.0.info().id, big_t.0.info().id);
     assert_eq!(overseer::term::workspace_of(&a).as_deref(), Some("w1"));

@@ -563,9 +563,6 @@ fn discovery_adds_repos_and_missing_folders_hide_auto_workspaces() {
 
 #[test]
 fn sessions_move_to_an_explicitly_assigned_workspace() {
-    // Given an agent line and a shell term in the repo, and a second workspace elsewhere
-    // When both are assigned to that workspace, then the workspace is deleted
-    // Then broadcast membership follows the assignment and the deletion clears it
     let app = App::new("ws-assign", json!({"autoConcurrency": 0}));
     let wt = app.fx.wt.to_string_lossy().into_owned();
     let other = app.fx.base.join("elsewhere");
@@ -707,9 +704,6 @@ fn local_of(app: &App, line: &str) -> Value {
 
 #[test]
 fn subjects_are_created_edited_listed_and_deleted_without_a_directory() {
-    // Given two directories, one reachable as ~/shared
-    // When two subjects share a cwd, one is patched, bad bodies are sent, then a subject is deleted
-    // Then list shows kind and cwd with a null path, bad input is a 400 and the other subject stays
     let app = App::new("ws-subject-crud", json!({"autoConcurrency": 0}));
     let shared = app.fx.base.join("home").join("shared");
     std::fs::create_dir_all(&shared).unwrap();
@@ -801,9 +795,6 @@ fn subjects_are_created_edited_listed_and_deleted_without_a_directory() {
 
 #[test]
 fn a_session_in_a_dir_workspace_assigned_to_a_subject_shows_only_in_the_subject() {
-    // Given a shell term whose cwd is inside a dir workspace and a subject
-    // When the term is assigned to the subject, then the subject is deleted
-    // Then it is a member of the subject only, and falls back to the dir workspace without being killed
     let app = App::new("ws-subject-member", json!({"autoConcurrency": 0}));
     let wt = app.fx.wt.to_string_lossy().into_owned();
     let subject = id(&app.ok(
@@ -842,9 +833,6 @@ fn a_session_in_a_dir_workspace_assigned_to_a_subject_shows_only_in_the_subject(
 
 #[test]
 fn a_term_started_for_a_subject_starts_in_its_cwd_and_its_line_inherits_the_assignment() {
-    // Given a subject whose cwd is the repo
-    // When a shell and an agent are started with its workspaceId and no cwd
-    // Then both run in the subject cwd and are assigned, the agent line inherits it, and an unknown id is a 404
     let app = App::new("ws-subject-start", json!({"autoConcurrency": 0}));
     let wt = app.fx.wt.to_string_lossy().into_owned();
     let subject = id(&app.ok(
@@ -904,9 +892,6 @@ fn a_term_started_for_a_subject_starts_in_its_cwd_and_its_line_inherits_the_assi
 
 #[test]
 fn a_term_started_for_a_dir_workspace_without_a_cwd_starts_in_its_path() {
-    // Given a dir workspace on a directory other than HOME
-    // When a shell is started with its workspaceId and no cwd
-    // Then it runs in the workspace path and is assigned to it
     let app = App::new("ws-dir-start", json!({"autoConcurrency": 0}));
     let dir = app.fx.base.join("elsewhere");
     std::fs::create_dir_all(&dir).unwrap();
@@ -931,9 +916,6 @@ fn a_term_started_for_a_dir_workspace_without_a_cwd_starts_in_its_path() {
 
 #[test]
 fn patching_a_subject_cwd_to_null_is_refused_and_keeps_the_cwd() {
-    // Given a subject with a cwd
-    // When its cwd is patched to null
-    // Then the daemon answers 400 and the cwd is unchanged
     let app = App::new("ws-subject-null-cwd", json!({"autoConcurrency": 0}));
     let dir = app.fx.base.join("home");
     let s = app.ok(
@@ -953,9 +935,6 @@ fn patching_a_subject_cwd_to_null_is_refused_and_keeps_the_cwd() {
 
 #[test]
 fn deleting_a_subject_unassigns_its_lines_and_keeps_them_running() {
-    // Given an agent line assigned to a subject
-    // When the subject is deleted
-    // Then the line has no assignment any more and its term is still alive
     let app = App::new("ws-subject-del-line", json!({"autoConcurrency": 0}));
     let wt = app.fx.wt.to_string_lossy().into_owned();
     let subject = id(&app.ok(
@@ -1034,9 +1013,6 @@ fn meta_repo(root: &std::path::Path, subs: &[&str], checked_out: &[&str]) {
 
 #[test]
 fn checked_out_submodules_become_nested_workspaces_and_a_deleted_one_stays_gone() {
-    // Given a repo whose .gitmodules lists two checked-out submodules (one two levels deep) and one not checked out
-    // When the repo is added as a workspace, a submodule is deleted, folders are rescanned, then the parent is deleted
-    // Then each checked-out submodule is nested under it, the deleted one does not come back, and the parent takes its children along
     let app = App::new("ws-submodules", json!({"autoConcurrency": 0}));
     let meta = app.fx.base.join("home/endurance");
     meta_repo(
@@ -1088,9 +1064,6 @@ fn checked_out_submodules_become_nested_workspaces_and_a_deleted_one_stays_gone(
 
 #[test]
 fn a_top_level_workspace_on_a_submodule_is_adopted_with_its_id_and_tabs() {
-    // Given a top-level workspace already on a submodule checkout, with tabs
-    // When its enclosing repo is added
-    // Then the same workspace is nested under the repo, keeps its id and tabs, and loses its folder and pin
     let app = App::new("ws-submodule-adopt", json!({"autoConcurrency": 0}));
     let meta = app.fx.base.join("home/atk");
     meta_repo(&meta, &["src/webplatform"], &["src/webplatform"]);
@@ -1120,9 +1093,6 @@ fn a_top_level_workspace_on_a_submodule_is_adopted_with_its_id_and_tabs() {
 
 #[test]
 fn nested_workspaces_validate_their_parent_and_start_in_their_cwd() {
-    // Given a top-level workspace with a sub-folder
-    // When a nested workspace starting at the parent root is created, a shell starts for it and another runs in the sub-folder, and bad bodies are sent
-    // Then the first shell starts at the root, the second belongs to the nested workspace by path, and each bad body is a 400 with its message
     let app = App::new("ws-nested", json!({"autoConcurrency": 0}));
     let root = app.fx.base.join("home/backbone");
     let sub = root.join("20_processus/onboarding");
