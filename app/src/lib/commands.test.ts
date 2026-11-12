@@ -50,7 +50,10 @@ describe('registry shape', () => {
   });
 
   it('labels every command', () => {
-    for (const c of allCommands()) expect(c.label(), c.id).not.toBe('');
+    for (const c of allCommands()) {
+      expect(c.label, c.id).toBeDefined();
+      expect(c.label!(), c.id).not.toBe('');
+    }
   });
 });
 

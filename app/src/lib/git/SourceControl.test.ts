@@ -20,9 +20,9 @@ describe('git button', () => {
     const { command } = await import('../commands');
     const { registerMore } = await import('../commands-more');
     registerMore();
-    expect(command('review-beside').label()).toBe('Review beside the agent');
+    expect(command('review-beside').label!()).toBe('Review beside the agent');
     expect(command('review-close').section).toBe('actions');
-    expect(command('live-review').label()).toBe('Open or close the live review');
+    expect(command('live-review').label!()).toBe('Open or close the live review');
     expect(command('graph').section).toBe('views');
   });
 

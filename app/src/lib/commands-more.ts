@@ -195,6 +195,7 @@ export function registerMore() {
   register(more);
   for (const c of allCommands()) {
     c.icon = ICONS[c.id];
+    c.section ??= 'actions';
     const key = CORE_LABELS[c.id];
     if (key) c.label = label(key);
     if (AGENTS_VIEW.has(c.id)) c.agentsView = true;

@@ -88,9 +88,9 @@ describe('host commands', () => {
 
   it('labels the connect command after the connection state', () => {
     vi.spyOn(app, 'connected', 'get').mockReturnValue(false);
-    const off = command('connect').label();
+    const off = command('connect').label!();
     vi.spyOn(app, 'connected', 'get').mockReturnValue(true);
-    expect(command('connect').label()).not.toBe(off);
+    expect(command('connect').label!()).not.toBe(off);
   });
 
   it('opens the ports dialog, and the forward form for a remote host', () => {
