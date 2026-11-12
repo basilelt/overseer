@@ -44,7 +44,7 @@ describe('sidebar git tab', () => {
     expect(sidebar).toMatch(/aria-selected=\{app\.sidebarGit\}[^>]*onclick=\{\(\) => app\.setSidebarGit\(true\)\}/);
     expect(sidebar).toMatch(/\{#if app\.sidebarGit\}\s*\{#await gitView\(\) then \{ default: SidebarGit \}\}<SidebarGit \/>\{\/await\}/);
     expect(sidebar).toMatch(/const gitView = \(\) => import\('\.\.\/\.\.\/git\/SidebarGit\.svelte'\)/);
-    expect(sidebar).toMatch(/\{#if !app\.sidebarGit\}\s*<label class="filter">/);
+    expect(sidebar).toMatch(/\{#if !app\.sidebarGit\}\s*<div class="tools">\s*<label class="filter">/);
   });
 
   it('follows the selected session, lets you pick another worktree or submodule, and resets the pick on a new session', () => {

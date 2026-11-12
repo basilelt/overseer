@@ -85,4 +85,21 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
+  :global(:root.phone) .banner {
+    padding: 8px;
+    border-radius: 12px;
+  }
+  :global(:root.phone) .head {
+    padding: 0 4px 2px;
+    font-size: 12px;
+  }
+  :global(:root.phone) .item {
+    min-height: var(--touch);
+    padding: 4px 8px;
+    border-radius: 10px;
+  }
+  :global(:root.phone) .path {
+    padding-bottom: 0;
+    font-size: 12px;
+  }
 </style>
