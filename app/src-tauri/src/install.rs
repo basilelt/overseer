@@ -136,10 +136,7 @@ pub fn live_terms(body: &serde_json::Value) -> Option<usize> {
 }
 
 pub fn sha256_hex(bytes: &[u8]) -> String {
-    Sha256::digest(bytes)
-        .iter()
-        .map(|b| format!("{b:02x}"))
-        .collect()
+    crate::release_http::hex(&Sha256::digest(bytes))
 }
 
 pub fn windows_resource(resource_dir: &Path, arch: &str) -> PathBuf {
