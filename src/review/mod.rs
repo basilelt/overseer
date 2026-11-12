@@ -10,7 +10,7 @@ pub mod watch;
 
 use crate::board::{decode, publish};
 use crate::daemon::{q, Request};
-use crate::registry::{sql, Registry};
+use crate::registry::{col_at, columns, insert_row, sql, Registry};
 use crate::util::{format_rfc3339, ulid};
 use crate::{Ctx, Line};
 use anchor::{capture, locate, Anchor, Found};
@@ -78,7 +78,29 @@ CREATE TABLE IF NOT EXISTS review_viewed (
 );
 ";
 
-const TCOLS: &str = "id, worktree, path, side, line, end_line, orig_line, orig_end_line, code, ctx_before, ctx_after, status, outdated, changed, sent, line_id, task_id, delivery_id, created_ms, updated_ms";
+columns!(
+    TCOLUMNS,
+    TCOLS = id,
+    worktree,
+    path,
+    side,
+    line,
+    end_line,
+    orig_line,
+    orig_end_line,
+    code,
+    ctx_before,
+    ctx_after,
+    status,
+    outdated,
+    changed,
+    sent,
+    line_id,
+    task_id,
+    delivery_id,
+    created_ms,
+    updated_ms
+);
 
 static LINES: Mutex<Vec<Line>> = Mutex::new(vec![]);
 static DELIVER: Mutex<()> = Mutex::new(());
@@ -123,26 +145,27 @@ fn unhash(v: &[u64]) -> String {
 
 fn trow(r: &Row) -> rusqlite::Result<Thread> {
     Ok(Thread {
-        id: r.get(0)?,
-        worktree: r.get(1)?,
-        path: r.get(2)?,
-        side: r.get(3)?,
-        line: r.get::<_, i64>(4)? as usize,
-        end: r.get::<_, i64>(5)? as usize,
-        orig_line: r.get::<_, i64>(6)? as usize,
-        orig_end: r.get::<_, i64>(7)? as usize,
-        code: serde_json::from_str(&r.get::<_, String>(8)?).unwrap_or_default(),
-        before: hashes(&r.get::<_, String>(9)?),
-        after: hashes(&r.get::<_, String>(10)?),
-        status: r.get(11)?,
-        outdated: r.get(12)?,
-        changed: r.get(13)?,
-        sent: r.get(14)?,
-        line_id: r.get(15)?,
-        task_id: r.get(16)?,
-        delivery_id: r.get(17)?,
-        created_ms: r.get(18)?,
-        updated_ms: r.get(19)?,
+        id: r.get(col_at!(TCOLUMNS, "id"))?,
+        worktree: r.get(col_at!(TCOLUMNS, "worktree"))?,
+        path: r.get(col_at!(TCOLUMNS, "path"))?,
+        side: r.get(col_at!(TCOLUMNS, "side"))?,
+        line: r.get::<_, i64>(col_at!(TCOLUMNS, "line"))? as usize,
+        end: r.get::<_, i64>(col_at!(TCOLUMNS, "end_line"))? as usize,
+        orig_line: r.get::<_, i64>(col_at!(TCOLUMNS, "orig_line"))? as usize,
+        orig_end: r.get::<_, i64>(col_at!(TCOLUMNS, "orig_end_line"))? as usize,
+        code: serde_json::from_str(&r.get::<_, String>(col_at!(TCOLUMNS, "code"))?)
+            .unwrap_or_default(),
+        before: hashes(&r.get::<_, String>(col_at!(TCOLUMNS, "ctx_before"))?),
+        after: hashes(&r.get::<_, String>(col_at!(TCOLUMNS, "ctx_after"))?),
+        status: r.get(col_at!(TCOLUMNS, "status"))?,
+        outdated: r.get(col_at!(TCOLUMNS, "outdated"))?,
+        changed: r.get(col_at!(TCOLUMNS, "changed"))?,
+        sent: r.get(col_at!(TCOLUMNS, "sent"))?,
+        line_id: r.get(col_at!(TCOLUMNS, "line_id"))?,
+        task_id: r.get(col_at!(TCOLUMNS, "task_id"))?,
+        delivery_id: r.get(col_at!(TCOLUMNS, "delivery_id"))?,
+        created_ms: r.get(col_at!(TCOLUMNS, "created_ms"))?,
+        updated_ms: r.get(col_at!(TCOLUMNS, "updated_ms"))?,
     })
 }
 
@@ -155,14 +178,28 @@ pub fn open(ctx: &Ctx) -> Res<Registry> {
 }
 
 fn save(reg: &Registry, t: &Thread) -> Res<()> {
-    sql(reg.conn.execute(
-        &format!("INSERT OR REPLACE INTO review_threads ({TCOLS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20)"),
-        params![
-            t.id, t.worktree, t.path, t.side, t.line as i64, t.end as i64, t.orig_line as i64,
-            t.orig_end as i64, serde_json::to_string(&t.code).unwrap_or_default(), unhash(&t.before),
-            unhash(&t.after), t.status, t.outdated, t.changed, t.sent, t.line_id, t.task_id,
-            t.delivery_id, t.created_ms, t.updated_ms
-        ],
+    sql(insert_row!(
+        reg.conn, "INSERT OR REPLACE INTO", "review_threads", "";
+        id = t.id,
+        worktree = t.worktree,
+        path = t.path,
+        side = t.side,
+        line = t.line as i64,
+        end_line = t.end as i64,
+        orig_line = t.orig_line as i64,
+        orig_end_line = t.orig_end as i64,
+        code = serde_json::to_string(&t.code).unwrap_or_default(),
+        ctx_before = unhash(&t.before),
+        ctx_after = unhash(&t.after),
+        status = t.status,
+        outdated = t.outdated,
+        changed = t.changed,
+        sent = t.sent,
+        line_id = t.line_id,
+        task_id = t.task_id,
+        delivery_id = t.delivery_id,
+        created_ms = t.created_ms,
+        updated_ms = t.updated_ms,
     ))
     .map(|_| ())
 }
