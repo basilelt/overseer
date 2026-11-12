@@ -26,14 +26,8 @@ fn conflict(m: impl Into<String>) -> (u16, String) {
     (409, m.into())
 }
 
-pub fn fnv(s: &str) -> String {
-    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
-    for b in s.bytes() {
-        h ^= u64::from(b);
-        h = h.wrapping_mul(0x0100_0000_01b3);
-    }
-    format!("{:08x}", h >> 32)
-}
+pub use crate::layout::branch_dir_name as dir_name;
+pub use crate::layout::store_hash as fnv;
 
 pub fn project(path: &str) -> Res<(String, String)> {
     crate::tasks::main_root(&mut Git::default(), path)
@@ -41,30 +35,7 @@ pub fn project(path: &str) -> Res<(String, String)> {
 }
 
 pub fn store(ctx: &Ctx, root: &str) -> PathBuf {
-    let name = Path::new(root)
-        .file_name()
-        .map(|n| crate::tasks::slug(&n.to_string_lossy()))
-        .unwrap_or_else(|| "repo".into());
-    ctx.config
-        .worktree_dir
-        .join(format!("{name}-{}", fnv(root)))
-}
-
-pub fn dir_name(branch: &str) -> String {
-    let mut out = String::new();
-    for c in branch.chars() {
-        if c.is_ascii_alphanumeric() || c == '.' || c == '_' {
-            out.push(c);
-        } else if !out.ends_with('-') {
-            out.push('-');
-        }
-    }
-    let out = out.trim_matches(|c| c == '-' || c == '.').to_string();
-    if out.is_empty() {
-        "worktree".into()
-    } else {
-        out
-    }
+    crate::layout::store_dir(&ctx.config.worktree_dir, root)
 }
 
 fn has_ref(dir: &str, r: &str) -> bool {
@@ -436,10 +407,7 @@ pub fn create(ctx: &Ctx, path: &str, n: &New) -> Res<(String, String, String)> {
             b.to_string()
         }
         None => {
-            let prefix = match n.agent {
-                Some(a) => format!("sb/{}/", crate::tasks::slug(a)),
-                None => "sb/".into(),
-            };
+            let prefix = crate::layout::session_branch_prefix(n.agent);
             let s =
                 n.slug
                     .map(crate::tasks::slug)
@@ -552,12 +520,7 @@ pub fn entries(root: &str) -> Vec<Entry> {
     res
 }
 
-fn inside(child: &str, dir: &str) -> bool {
-    child == dir
-        || child
-            .strip_prefix(dir)
-            .is_some_and(|rest| rest.starts_with('/'))
-}
+use crate::layout::inside;
 
 fn canon(p: &Path) -> String {
     p.canonicalize()
@@ -743,7 +706,7 @@ struct Shared<'a> {
     base_name: &'a str,
     base: &'a str,
     store: String,
-    managed_root: Vec<String>,
+    managed_root: crate::layout::ManagedRoot,
     stale_ms: i64,
     now_ms: i64,
     known: &'a Known,
@@ -766,11 +729,7 @@ fn json_of(s: &Shared, e: &Entry) -> Value {
         .collect();
     let kind = if main {
         "main"
-    } else if !tasks.is_empty()
-        || s.managed_root
-            .iter()
-            .any(|m| inside(&e.path, m) || inside(&canon_path, m))
-    {
+    } else if !tasks.is_empty() || s.managed_root.holds_checkout(&e.path, &canon_path) {
         "managed"
     } else {
         "orphan"
@@ -896,11 +855,7 @@ pub fn list(ctx: &Ctx, path: &str) -> Res<Value> {
     let base_name = default_branch(&root);
     let base = start_point(&root, &base_name);
     let store = store(ctx, &root);
-    let wd = &ctx.config.worktree_dir;
-    let mut managed_root = vec![wd.to_string_lossy().into_owned()];
-    if let Ok(c) = wd.canonicalize() {
-        managed_root.push(c.to_string_lossy().into_owned());
-    }
+    let managed_root = crate::layout::ManagedRoot::new(&ctx.config.worktree_dir);
     let shared = Shared {
         root: &root,
         repo: &repo,

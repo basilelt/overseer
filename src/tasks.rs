@@ -938,25 +938,7 @@ fn remove(reg: &Registry, id: &str) -> Res<Vec<Task>> {
     Ok(dependents)
 }
 
-pub fn slug(s: &str) -> String {
-    let mut out = String::new();
-    for c in s.chars().flat_map(char::to_lowercase) {
-        if c.is_ascii_alphanumeric() {
-            out.push(c);
-        } else if !out.ends_with('-') && !out.is_empty() {
-            out.push('-');
-        }
-        if out.len() >= 40 {
-            break;
-        }
-    }
-    let out = out.trim_matches('-').to_string();
-    if out.is_empty() {
-        "task".into()
-    } else {
-        out
-    }
-}
+pub use crate::layout::task_slug as slug;
 
 fn dep_base(reg: &Registry, t: &Task) -> Option<String> {
     let [d] = t.depends_on.as_slice() else {
@@ -981,7 +963,7 @@ fn worktree(ctx: &Ctx, reg: &Registry, t: &mut Task) -> Res<String> {
     let branch = t
         .branch
         .clone()
-        .unwrap_or_else(|| format!("task/{}-{}", t.number, slug(&t.title)));
+        .unwrap_or_else(|| crate::layout::task_branch(t.number, &t.title));
     let base = dep_base(reg, t);
     let (root, path, branch) = crate::worktrees::create(
         ctx,

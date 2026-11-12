@@ -68,20 +68,6 @@ pub fn clone_for(ctx: &Ctx, repo: &str) -> Option<PathBuf> {
         })
 }
 
-fn slug(s: &str) -> String {
-    s.chars()
-        .map(|c| {
-            if c.is_ascii_alphanumeric() || c == '.' || c == '_' {
-                c
-            } else {
-                '-'
-            }
-        })
-        .collect::<String>()
-        .trim_matches(['-', '.'])
-        .to_string()
-}
-
 fn content_file(ctx: &Ctx, id: &str, text: &str) -> Result<PathBuf, String> {
     let dir = ctx.state_dir.join("tmp");
     mkdir_private(&dir).map_err(|e| e.to_string())?;
@@ -160,15 +146,7 @@ fn plan(ctx: &Ctx, line_id: &str, args: &Value) -> Result<Plan, String> {
     if git(&c, &["check-ref-format", "--branch", &branch]).is_none() {
         return Err(format!("'{branch}' is not a valid branch name"));
     }
-    let name = clone
-        .file_name()
-        .map(|n| n.to_string_lossy().into_owned())
-        .unwrap_or_else(|| "repo".into());
-    let path = ctx
-        .config
-        .worktree_dir
-        .join(slug(&name))
-        .join(slug(&branch));
+    let path = crate::layout::feedback_checkout_dir(&ctx.config.worktree_dir, &clone, &branch);
     if path.exists() {
         return Err(format!("worktree path {} already exists", path.display()));
     }
@@ -455,7 +433,7 @@ pub fn patch_local(ctx: &Ctx, l: &Line, print: bool) -> Result<String, String> {
     if dir.exists() {
         return Err(format!("{} already exists", dir.display()));
     }
-    let session = format!("sb-patch-{}", slug(&l.branch).replace('.', "-"));
+    let session = crate::layout::patch_session_name(&l.branch);
     if print {
         return Ok(format!(
             "would add worktree {} on branch {} from {}, start claude in tmux session {session} and send it a summary of line {}",
@@ -526,14 +504,7 @@ pub fn patch_local(ctx: &Ctx, l: &Line, print: bool) -> Result<String, String> {
 }
 
 pub fn patch_dir(ctx: &Ctx, l: &Line) -> PathBuf {
-    let name = Path::new(&l.repo)
-        .file_name()
-        .map(|n| n.to_string_lossy().into_owned())
-        .unwrap_or_else(|| "repo".into());
-    ctx.config
-        .worktree_dir
-        .join(slug(&name))
-        .join(format!("{}-patch", slug(&l.branch)))
+    crate::layout::patch_checkout_dir(&ctx.config.worktree_dir, Path::new(&l.repo), &l.branch)
 }
 
 #[cfg(test)]
@@ -593,7 +564,7 @@ mod claude_argv_tests {
 
 #[cfg(test)]
 mod slug_tests {
-    use super::slug;
+    use crate::layout::checkout_slug as slug;
 
     #[test]
     fn keeps_dots_and_underscores_and_trims_edges() {

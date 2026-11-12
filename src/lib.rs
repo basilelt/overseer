@@ -28,6 +28,7 @@ pub mod hooks;
 pub mod import;
 pub mod inbox;
 pub mod install;
+pub mod layout;
 pub mod lifecycle;
 pub mod mcp;
 pub mod naming;

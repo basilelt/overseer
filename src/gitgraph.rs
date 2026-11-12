@@ -180,17 +180,9 @@ fn overlays(ctx: &Ctx, root: &str, repo: &str, all: &[Ref]) -> Vec<Value> {
             m.entry("worktree").or_insert(json!(w));
         }
     }
-    let wd = ctx.config.worktree_dir.to_string_lossy().into_owned();
-    let wdc = ctx
-        .config
-        .worktree_dir
-        .canonicalize()
-        .map(|p| p.to_string_lossy().into_owned())
-        .unwrap_or_else(|_| wd.clone());
+    let managed_root = crate::layout::ManagedRoot::new(&ctx.config.worktree_dir);
     for e in &entries {
-        let managed =
-            e.path.starts_with(&format!("{wd}/")) || e.path.starts_with(&format!("{wdc}/"));
-        if let (true, Some(b)) = (managed, &e.branch) {
+        if let (true, Some(b)) = (managed_root.holds_entry(&e.path), &e.branch) {
             let i = slot(&mut by, b);
             by[i].1.entry("worktree").or_insert(json!(e.path));
         }
