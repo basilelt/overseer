@@ -1,4 +1,5 @@
 use crate::autostart;
+use crate::http::err;
 use crate::registry::Registry;
 use crate::term::Info;
 use crate::Line;
@@ -290,20 +291,17 @@ pub fn routes(method: &str, segs: &[&str], body: &Value, state_dir: &Path) -> Op
     }
     let reg = match Registry::open(state_dir) {
         Ok(r) => r,
-        Err(e) => return Some((500, json!({"error": e}))),
+        Err(e) => return Some(err(500, e)),
     };
     match method {
         "GET" => Some((200, payload(state_dir, &reg))),
         "PATCH" => {
             if let Some(v) = body.get("afterReboot") {
                 let Some(m) = v.as_str().and_then(AfterReboot::parse) else {
-                    return Some((
-                        400,
-                        json!({"error": "afterReboot must be agents, shells or nothing"}),
-                    ));
+                    return Some(err(400, "afterReboot must be agents, shells or nothing"));
                 };
                 if let Err(e) = reg.put(AFTER_KEY, m.as_str()) {
-                    return Some((500, json!({"error": e})));
+                    return Some(err(500, e));
                 }
             }
             let env = autostart::Env::current(state_dir);

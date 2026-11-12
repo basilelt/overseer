@@ -96,11 +96,11 @@ pub(crate) fn write_response(
     let _ = s.write_all(body);
 }
 
-pub(crate) fn respond_err(s: &mut impl Write, code: u16, msg: &str) {
+pub(crate) fn respond_err(s: &mut (impl Write + ?Sized), code: u16, msg: &str) {
     respond(s, code, &json!({ "error": msg }));
 }
 
-pub(crate) fn respond(s: &mut impl Write, code: u16, v: &Value) {
+pub(crate) fn respond(s: &mut (impl Write + ?Sized), code: u16, v: &Value) {
     respond_raw(
         s,
         code,

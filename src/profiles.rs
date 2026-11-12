@@ -1,5 +1,6 @@
 use crate::agents::Agent;
 use crate::agents::ProfileKind;
+use crate::http::err;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::BTreeMap;
@@ -1014,7 +1015,7 @@ pub fn routes(
     let q = |k: &str| r.param(k);
     let res = |r: Res<Value>| match r {
         Ok(v) => (200, v),
-        Err((c, e)) => (c, json!({ "error": e })),
+        Err((c, e)) => err(c, e),
     };
     Some(match (r.method.as_str(), segs) {
         ("GET", ["v1", "profiles"]) => (200, to_json(&load(&ctx.state_dir))),
@@ -1050,7 +1051,7 @@ pub fn routes(
                     crate::board::publish("profiles.changed", json!({}));
                     (200, to_json(&s))
                 }
-                Err((c, e)) => (c, json!({ "error": e })),
+                Err((c, e)) => err(c, e),
             }
         }
         ("GET", ["v1", "profiles", "subagents"]) => {

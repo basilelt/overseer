@@ -1,5 +1,6 @@
 use crate::agents::Hooks;
 use crate::hooks;
+use crate::http::err;
 use crate::legacy;
 use crate::util::shell_quote;
 use serde_json::{json, Map, Value};
@@ -937,12 +938,7 @@ pub fn routes(method: &str, segs: &[&str], body: &Value, state_dir: &Path) -> Op
                 .filter_map(|v| v.as_str().map(str::to_string))
                 .collect(),
         ),
-        _ => {
-            return Some((
-                400,
-                json!({"error": "agents must be an array of agent ids"}),
-            ))
-        }
+        _ => return Some(err(400, "agents must be an array of agent ids")),
     };
     let apply = body["dryRun"].as_bool() == Some(false);
     let bin = hook_bin();

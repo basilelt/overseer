@@ -1,6 +1,7 @@
 use crate::activity::read_lines;
 use crate::agents::Transcript;
 use crate::claude_limits::{outcome, read_creds, Auth, Outcome, Token, ACTIVE_MS, REFRESH_MS};
+use crate::http::err;
 use crate::util::{format_rfc3339, parse_rfc3339};
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
@@ -1559,40 +1560,32 @@ fn claude_limits_due(idx: &Index, tap: Option<&Limits>) -> bool {
 pub fn api(r: &crate::http::Request, lines: &[crate::Line]) -> (u16, Value) {
     let now = crate::util::now_ms();
     let Some(range) = Range::parse(crate::http::q(r, "range")) else {
-        return (400, json!({"error": "range must be today, 7d or 30d"}));
+        return err(400, "range must be today, 7d or 30d");
     };
     let by = crate::http::q(r, "by").unwrap_or("agent");
     if !matches!(by, "agent" | "project" | "model" | "session") {
-        return (
-            400,
-            json!({"error": "by must be agent, project, model or session"}),
-        );
+        return err(400, "by must be agent, project, model or session");
     }
     let tz = match crate::http::q(r, "tzOffset").map(|s| s.parse::<i64>()) {
         None => 0,
         Some(Ok(m)) if (-14 * 60..=14 * 60).contains(&m) => m,
-        _ => {
-            return (
-                400,
-                json!({"error": "tzOffset must be minutes east of UTC"}),
-            )
-        }
+        _ => return err(400, "tzOffset must be minutes east of UTC"),
     };
     let wanted = crate::http::q(r, "line");
     let session = match wanted {
         None => None,
         Some(id) => match lines.iter().find(|l| l.id == id) {
             Some(l) => Some((l.agent, l.session_id.as_str())),
-            None => return (404, json!({"error": format!("no line {id}")})),
+            None => return err(404, format!("no line {id}")),
         },
     };
     let oauth = r.is_one("claudeLimits");
     let Some((db, indexing)) = demand(now, oauth) else {
-        return (503, json!({"error": "usage is not available"}));
+        return err(503, "usage is not available");
     };
     let conn = match open_db(&db) {
         Ok(c) => c,
-        Err(e) => return (500, json!({"error": e})),
+        Err(e) => return err(500, e),
     };
     let map: HashMap<(String, String), LineInfo> = lines
         .iter()
@@ -1621,7 +1614,7 @@ pub fn api(r: &crate::http::Request, lines: &[crate::Line]) -> (u16, Value) {
             v["indexing"] = json!(indexing);
             (200, v)
         }
-        Err(e) => (500, json!({"error": e})),
+        Err(e) => err(500, e),
     }
 }
 

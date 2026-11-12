@@ -1,4 +1,4 @@
-use crate::http::{respond_raw, Request};
+use crate::http::{err, respond_raw, Request};
 use serde_json::{json, Value};
 use std::io::Write;
 use std::path::PathBuf;
@@ -14,7 +14,7 @@ pub fn serve(r: &Request, s: &mut dyn Write) -> bool {
     let raw = r.param("path").unwrap_or_default();
     let (code, v) = match list(&raw, r.is_one("hidden"), CAP) {
         Ok(v) => (200, v),
-        Err((code, e)) => (code, json!({ "error": e })),
+        Err((code, e)) => err(code, e),
     };
     respond_raw(s, code, "application/json", v.to_string().as_bytes());
     true

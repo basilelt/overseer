@@ -1,3 +1,4 @@
+use crate::http::err;
 use crate::install::{atomic_write, diff, pretty, stamp};
 use crate::usage::{Limits, Window};
 use crate::util::shell_quote;
@@ -284,7 +285,7 @@ pub fn routes(method: &str, segs: &[&str], body: &Value, state_dir: &Path) -> Op
             crate::util::now_ms(),
         ) {
             Ok(v) => (200, v),
-            Err(e) => (409, json!({"error": e})),
+            Err(e) => err(409, e),
         },
     )
 }

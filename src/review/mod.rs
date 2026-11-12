@@ -9,7 +9,7 @@ pub mod triage;
 pub mod watch;
 
 use crate::board::publish;
-use crate::http::{q, Request};
+use crate::http::{err, q, Request};
 use crate::registry::{col_at, columns, insert_row, sql, Registry};
 use crate::util::percent_decode;
 use crate::util::{format_rfc3339, ulid};
@@ -1380,7 +1380,7 @@ fn set_viewed(ctx: &Ctx, b: &Value) -> Res<Value> {
 pub fn routes(r: &Request, segs: &[&str], body: &Value, ctx: &Ctx) -> Option<(u16, Value)> {
     let out = |code: u16, v: Res<Value>| match v {
         Ok(v) => (code, v),
-        Err((c, e)) => (c, json!({"error": e})),
+        Err((c, e)) => err(c, e),
     };
     Some(match (r.method.as_str(), segs) {
         ("GET", ["v1", "review"]) => out(

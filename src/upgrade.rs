@@ -263,7 +263,7 @@ pub use unix::*;
 #[cfg(unix)]
 mod unix {
     use super::*;
-    use crate::http::{respond, Request};
+    use crate::http::{respond, respond_err, Request};
     use std::io::Write;
     use std::os::fd::{FromRawFd, OwnedFd};
     use std::os::unix::net::UnixListener;
@@ -447,11 +447,7 @@ mod unix {
     pub fn serve(req: &Request, mut s: impl Write) {
         let body: Value = serde_json::from_slice(&req.body).unwrap_or(Value::Null);
         if UPGRADING.swap(true, Ordering::SeqCst) {
-            return respond(
-                &mut s,
-                409,
-                &json!({"error": "an upgrade is already in progress"}),
-            );
+            return respond_err(&mut s, 409, "an upgrade is already in progress");
         }
         match plan(&body) {
             Ok(p) => {
@@ -472,7 +468,7 @@ mod unix {
             }
             Err((code, e)) => {
                 UPGRADING.store(false, Ordering::SeqCst);
-                respond(&mut s, code, &json!({ "error": e }));
+                respond_err(&mut s, code, &e);
             }
         }
     }

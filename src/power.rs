@@ -1,3 +1,4 @@
+use crate::http::err;
 use crate::registry::Registry;
 use serde_json::{json, Value};
 use std::io::{Read, Write};
@@ -285,16 +286,16 @@ pub fn routes(method: &str, segs: &[&str], body: &Value, state_dir: &Path) -> Op
     }
     let reg = match Registry::open(state_dir) {
         Ok(r) => r,
-        Err(e) => return Some((500, json!({"error": e}))),
+        Err(e) => return Some(err(500, e)),
     };
     let os = Os::current();
     Some(match method {
         "GET" => (200, status(os, &run_cmd, &reg)),
         "PUT" => match body["enabled"].as_bool() {
-            None => (400, json!({"error": "enabled must be a boolean"})),
+            None => err(400, "enabled must be a boolean"),
             Some(on) => match set(os, &run_cmd, &reg, on) {
                 Ok(v) => (200, v),
-                Err((code, e)) => (code, json!({"error": e})),
+                Err((code, e)) => err(code, e),
             },
         },
         _ => return None,

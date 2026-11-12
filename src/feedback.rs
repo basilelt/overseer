@@ -1,3 +1,4 @@
+use crate::http::err;
 use crate::sys::OpenOptionsExt;
 use crate::Ctx;
 use serde_json::{json, Value};
@@ -24,7 +25,7 @@ pub fn routes(ctx: &Ctx, method: &str, segs: &[&str], body: &Value) -> Option<(u
         ("POST", ["v1", "feedback", "direct"]) => direct(ctx, body).map(|v| (201, v)),
         _ => return None,
     };
-    Some(r.unwrap_or_else(|(c, e)| (c, json!({ "error": e }))))
+    Some(r.unwrap_or_else(|(c, e)| err(c, e)))
 }
 
 fn bad(m: impl Into<String>) -> (u16, String) {

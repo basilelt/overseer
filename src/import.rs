@@ -1,3 +1,4 @@
+use crate::http::err;
 use crate::install::{self, Format, Target};
 use crate::legacy;
 use crate::registry::Registry;
@@ -637,11 +638,11 @@ pub fn routes(
             crate::daemon::mark(crate::daemon::Effect::Rescan);
             let dir = old_dir();
             if !old_db(&dir).is_file() {
-                return Some((404, json!({"error": "no switchboard data found"})));
+                return Some(err(404, "no switchboard data found"));
             }
             Some(match run_import(state_dir, &dir) {
                 Ok(v) => (200, v),
-                Err(e) => (500, json!({"error": e})),
+                Err(e) => err(500, e),
             })
         }
         _ => None,

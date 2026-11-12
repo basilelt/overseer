@@ -1,5 +1,5 @@
 use crate::board::publish;
-use crate::http::Request;
+use crate::http::{err, Request};
 use crate::registry::{col_at, columns, db, sql, update_row, Registry};
 use crate::tasks::Task;
 use crate::util::now_ms;
@@ -1036,7 +1036,7 @@ fn assign_term(ctx: &Ctx, id: &str, b: &Value) -> Res<Value> {
 fn out<T>(code: u16, r: Res<T>, f: impl FnOnce(T) -> Value) -> (u16, Value) {
     match r {
         Ok(v) => (code, f(v)),
-        Err((c, e)) => (c, json!({ "error": e })),
+        Err((c, e)) => err(c, e),
     }
 }
 
@@ -1055,7 +1055,7 @@ pub fn route(r: &Request, segs: &[&str], body: &Value, ctx: &Ctx) -> Option<(u16
         }),
         ("POST", ["v1", "workspaces"]) => match create(ctx, body) {
             Ok((created, w)) => (if created { 201 } else { 200 }, w.to_json(st)),
-            Err((c, e)) => (c, json!({ "error": e })),
+            Err((c, e)) => err(c, e),
         },
         ("PATCH", ["v1", "workspaces", id]) => out(200, patch(ctx, id, body), ws),
         ("DELETE", ["v1", "workspaces", id]) => {

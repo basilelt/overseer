@@ -1,7 +1,6 @@
-use crate::http::{respond_raw, Request};
+use crate::http::{respond_err, respond_raw, Request};
 use crate::procs::{Probe, System};
 use crate::Ctx;
-use serde_json::json;
 use std::io::{ErrorKind, Read, Write};
 use std::path::{Path, PathBuf};
 
@@ -15,12 +14,7 @@ pub fn serve(ctx: &Ctx, r: &Request, s: &mut dyn Write) -> bool {
     }
     match load(ctx, r) {
         Ok((ctype, bytes)) => respond_raw(s, 200, ctype, &bytes),
-        Err((code, e)) => respond_raw(
-            s,
-            code,
-            "application/json",
-            json!({ "error": e }).to_string().as_bytes(),
-        ),
+        Err((code, e)) => respond_err(s, code, &e),
     }
     true
 }

@@ -1,5 +1,5 @@
 use crate::git::Git;
-use crate::http::{q, Request};
+use crate::http::{err, q, Request};
 use crate::registry::Registry;
 use crate::registry::{db, sql};
 use crate::tasks::{bad, main_root};
@@ -47,7 +47,7 @@ pub fn routes(ctx: &Ctx, r: &Request, segs: &[&str], body: &Value) -> Option<(u1
         }
         _ => return None,
     };
-    Some(out.unwrap_or_else(|(c, e)| (c, json!({ "error": e }))))
+    Some(out.unwrap_or_else(|(c, e)| err(c, e)))
 }
 
 fn project(r: &Request) -> Res<String> {

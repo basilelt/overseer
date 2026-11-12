@@ -1,5 +1,5 @@
 use crate::board::publish;
-use crate::http::{q, Request};
+use crate::http::{err, q, Request};
 use crate::registry::{self, sql, Registry};
 use crate::task_agents::CONFIGURATOR;
 use crate::tasks::{self, Task};
@@ -650,9 +650,9 @@ fn index(ctx: &Ctx, lines: &[Line]) -> Res<workspaces::Index> {
 
 fn world_check(ctx: &Ctx, reg: &Registry, plan: &Value) -> Result<Value, (u16, Value)> {
     let lines = crate::daemon::lines(ctx);
-    let ws = workspaces::all(reg).map_err(|(c, e)| (c, json!({"error": e})))?;
-    let folders = workspaces::folders(reg).map_err(|(c, e)| (c, json!({"error": e})))?;
-    let tasks = tasks::all(reg).map_err(|(c, e)| (c, json!({"error": e})))?;
+    let ws = workspaces::all(reg).map_err(|(c, e)| err(c, e))?;
+    let folders = workspaces::folders(reg).map_err(|(c, e)| err(c, e))?;
+    let tasks = tasks::all(reg).map_err(|(c, e)| err(c, e))?;
     let remote = |id: &str| crate::board::remote_station(ctx, id).is_some();
     validate(
         plan,
@@ -673,7 +673,7 @@ fn world_check(ctx: &Ctx, reg: &Registry, plan: &Value) -> Result<Value, (u16, V
 }
 
 pub fn build(ctx: &Ctx) -> Result<Value, (u16, Value)> {
-    let e = |(c, e): (u16, String)| (c, json!({ "error": e }));
+    let e = |(c, e): (u16, String)| err(c, e);
     let lines = crate::daemon::lines(ctx);
     let ix = index(ctx, &lines).map_err(e)?;
     let reg = db(ctx).map_err(e)?;
@@ -717,16 +717,16 @@ pub fn build(ctx: &Ctx) -> Result<Value, (u16, Value)> {
 }
 
 fn record(ctx: &Ctx, b: &Value) -> Result<Value, (u16, Value)> {
-    let e = |(c, e): (u16, String)| (c, json!({ "error": e }));
+    let e = |(c, e): (u16, String)| err(c, e);
     let reg = db(ctx).map_err(e)?;
     let task = match b["taskId"].as_str() {
         None => None,
         Some(id) => {
             let t = tasks::get(&reg, id).map_err(e)?;
             if t.origin.as_deref() != Some(CONFIGURATOR) {
-                return Err((
+                return Err(err(
                     403,
-                    json!({"error": "only the session configurator may propose an organization"}),
+                    "only the session configurator may propose an organization",
                 ));
             }
             Some(t.id)
@@ -1201,7 +1201,7 @@ fn layout(ctx: &Ctx) -> Res<Value> {
 fn out(code: u16, r: Res<Value>) -> (u16, Value) {
     match r {
         Ok(v) => (code, v),
-        Err((c, e)) => (c, json!({ "error": e })),
+        Err((c, e)) => err(c, e),
     }
 }
 
@@ -1232,7 +1232,7 @@ pub fn routes(ctx: &Ctx, r: &Request, segs: &[&str], body: &Value) -> Option<(u1
             tasks::projects(ctx, &crate::daemon::lines(ctx)).map(Value::from),
         ),
         ("GET", ["v1", "organize", "layout"]) => out(200, layout(ctx)),
-        _ => (404, json!({"error": "not found"})),
+        _ => err(404, "not found"),
     })
 }
 

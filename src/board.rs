@@ -1,6 +1,6 @@
 use crate::actions::{find_line, log_action};
 use crate::git::git_out;
-use crate::http::{dry_run, q, respond_raw, Request};
+use crate::http::{dry_run, err, q, respond_raw, Request};
 use crate::sys::OpenOptionsExt;
 use crate::util::{format_rfc3339, parse_rfc3339};
 use crate::{scan, Ctx, Line, RECENT_MS};
@@ -489,9 +489,7 @@ fn sse(r: &Request, s: &mut dyn Write) {
 pub fn serve(ctx: &Ctx, r: &Request, s: &mut dyn Write) -> bool {
     let segs: Vec<&str> = r.path.trim_matches('/').split('/').collect();
     let json = |s: &mut dyn Write, res: Result<Value, (u16, String)>| {
-        let (code, v) = res
-            .map(|v| (200, v))
-            .unwrap_or_else(|(c, e)| (c, json!({"error": e})));
+        let (code, v) = res.map(|v| (200, v)).unwrap_or_else(|(c, e)| err(c, e));
         respond_raw(s, code, "application/json", v.to_string().as_bytes());
     };
     match (r.method.as_str(), segs.as_slice()) {
