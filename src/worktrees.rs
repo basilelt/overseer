@@ -6,7 +6,7 @@ use crate::{Ctx, Line};
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::Command;
 use std::sync::Mutex;
 use std::time::{Duration, Instant, UNIX_EPOCH};
 
@@ -354,40 +354,26 @@ fn squashed(root: &str, base: &str, tip: &str) -> bool {
 }
 
 fn patch_ids(root: &str, args: &[&str]) -> Vec<String> {
-    use std::io::Write;
     let Some(diff) = crate::git::run_in("git", root, args, crate::git::TIMEOUT)
         .ok()
         .filter(|o| o.status.success() && !o.stdout.is_empty())
     else {
         return vec![];
     };
-    let Ok(mut c) = crate::git::Watchdog::guard(
+    let Ok(o) = crate::git::run_stdin(
         Command::new("git")
             .arg("-C")
             .arg(root)
             .args(["patch-id", "--stable"]),
-    )
-    .stdin(Stdio::piped())
-    .stdout(Stdio::piped())
-    .stderr(Stdio::null())
-    .spawn() else {
+        diff.stdout,
+        crate::git::TIMEOUT,
+    ) else {
         return vec![];
     };
-    let dog = crate::git::Watchdog::start(c.id(), crate::git::TIMEOUT);
-    if let Some(mut i) = c.stdin.take() {
-        std::thread::spawn(move || i.write_all(&diff.stdout));
-    }
-    let out = c.wait_with_output();
-    if dog.finish() {
-        return vec![];
-    }
-    out.map(|o| {
-        String::from_utf8_lossy(&o.stdout)
-            .lines()
-            .filter_map(|l| l.split_whitespace().next().map(str::to_string))
-            .collect()
-    })
-    .unwrap_or_default()
+    String::from_utf8_lossy(&o.stdout)
+        .lines()
+        .filter_map(|l| l.split_whitespace().next().map(str::to_string))
+        .collect()
 }
 
 pub fn start_point(root: &str, name: &str) -> String {
@@ -1350,21 +1336,10 @@ mod tests {
     }
 
     fn sh(d: &Path, args: &[&str]) {
-        let ok = Command::new("git")
-            .current_dir(d)
-            .env("GIT_CONFIG_GLOBAL", "/dev/null")
-            .env("GIT_CONFIG_NOSYSTEM", "1")
-            .args(["-c", "user.email=t@example.com", "-c", "user.name=T"])
-            .args(["-c", "commit.gpgsign=false"])
-            .env("GIT_AUTHOR_DATE", "2020-01-02T00:00:00Z")
-            .env("GIT_COMMITTER_DATE", "2020-01-02T00:00:00Z")
-            .args(args)
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status()
-            .unwrap()
-            .success();
-        assert!(ok, "git {args:?}");
+        let mut c = crate::git::fixture::cmd(d);
+        c.env("GIT_AUTHOR_DATE", "2020-01-02T00:00:00Z")
+            .env("GIT_COMMITTER_DATE", "2020-01-02T00:00:00Z");
+        crate::git::fixture::checked(c, args);
     }
 
     fn commit(d: &Path, file: &str, body: &str) {

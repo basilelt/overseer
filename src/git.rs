@@ -182,6 +182,46 @@ pub fn output_within(cmd: &mut Command, limit: Duration) -> Result<Output, Strin
     run_within(cmd, limit).map_err(|e| e.to_string())
 }
 
+pub fn run_stdin(cmd: &mut Command, input: Vec<u8>, limit: Duration) -> Result<Output, RunError> {
+    use std::io::Write;
+    let mut child = Watchdog::guard(cmd)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .map_err(RunError::Spawn)?;
+    let dog = Watchdog::start(child.id(), limit);
+    if let Some(mut i) = child.stdin.take() {
+        std::thread::spawn(move || i.write_all(&input));
+    }
+    let out = child.wait_with_output();
+    if dog.finish() {
+        return Err(RunError::TimedOut(limit));
+    }
+    out.map_err(RunError::Wait)
+}
+
+pub fn stdout_ok(cmd: &mut Command, limit: Duration) -> Option<String> {
+    let out = output_within(cmd, limit).ok()?;
+    out.status
+        .success()
+        .then(|| String::from_utf8_lossy(&out.stdout).into_owned())
+}
+
+pub fn stdout_or(
+    cmd: &mut Command,
+    limit: Duration,
+    name: &str,
+    failure: impl FnOnce(&Output) -> String,
+) -> Result<String, String> {
+    let out = output_within(cmd, limit).map_err(|e| format!("{name}: {e}"))?;
+    if out.status.success() {
+        Ok(String::from_utf8_lossy(&out.stdout).into_owned())
+    } else {
+        Err(failure(&out))
+    }
+}
+
 pub fn run_in(program: &str, dir: &str, args: &[&str], limit: Duration) -> Result<Output, String> {
     output_within(
         git_read_env(Command::new(program).arg("-C").arg(dir).args(args)),
@@ -518,6 +558,48 @@ fn list_worktrees(dir: &str) -> Vec<Worktree> {
 }
 
 #[cfg(test)]
+pub mod fixture {
+    use std::path::Path;
+    use std::process::Command;
+
+    pub fn cmd(dir: &Path) -> Command {
+        let mut c = Command::new("git");
+        c.current_dir(dir)
+            .env("GIT_CONFIG_GLOBAL", "/dev/null")
+            .env("GIT_CONFIG_NOSYSTEM", "1")
+            .args([
+                "-c",
+                "user.email=t@example.com",
+                "-c",
+                "user.name=T",
+                "-c",
+                "commit.gpgsign=false",
+                "-c",
+                "core.hooksPath=/dev/null",
+                "-c",
+                "protocol.file.allow=always",
+                "-c",
+                "init.defaultBranch=main",
+            ]);
+        c
+    }
+
+    pub fn checked(mut c: Command, args: &[&str]) -> String {
+        let o = c.args(args).output().unwrap();
+        assert!(
+            o.status.success(),
+            "git {args:?}: {}",
+            String::from_utf8_lossy(&o.stderr)
+        );
+        String::from_utf8_lossy(&o.stdout).trim().to_string()
+    }
+
+    pub fn run(dir: &Path, args: &[&str]) -> String {
+        checked(cmd(dir), args)
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
 
@@ -650,6 +732,45 @@ mod tests {
         let _ = std::fs::remove_dir_all(d);
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn stdin_is_fed_to_the_child_and_a_hung_child_times_out() {
+        let big = vec![b'x'; 1 << 20];
+        let out = run_stdin(
+            &mut Command::new("cat"),
+            big.clone(),
+            Duration::from_secs(10),
+        )
+        .unwrap();
+        assert_eq!(out.stdout.len(), big.len());
+        let slow = run_stdin(
+            Command::new("sleep").arg("30"),
+            vec![],
+            Duration::from_millis(200),
+        );
+        assert!(matches!(slow, Err(RunError::TimedOut(_))));
+        let missing = run_stdin(&mut Command::new("sb-no-such-bin"), vec![], TIMEOUT);
+        assert!(matches!(missing, Err(RunError::Spawn(_))));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn system_command_helpers_keep_each_callers_failure_shape() {
+        let ok = |c: &mut Command| stdout_ok(c, Duration::from_secs(5));
+        assert_eq!(ok(Command::new("echo").arg("a")).as_deref(), Some("a\n"));
+        assert_eq!(ok(&mut Command::new("false")), None);
+        assert_eq!(ok(&mut Command::new("sb-no-such-bin")), None);
+        let or = |c: &mut Command| {
+            stdout_or(c, Duration::from_secs(5), "tool", |o| {
+                format!("exit {}", o.status.code().unwrap_or(-1))
+            })
+        };
+        assert_eq!(or(Command::new("echo").arg("a")).unwrap(), "a\n");
+        assert_eq!(or(&mut Command::new("false")).unwrap_err(), "exit 1");
+        let e = or(&mut Command::new("sb-no-such-bin")).unwrap_err();
+        assert!(e.starts_with("tool: "), "{e}");
+    }
+
     #[test]
     fn slow_subcommands_get_the_long_limit() {
         assert_eq!(limit_for(&["status", "--porcelain"]), TIMEOUT);
@@ -660,23 +781,7 @@ mod tests {
     }
 
     fn sh(dir: &Path, args: &[&str]) {
-        let ok = Command::new("git")
-            .arg("-C")
-            .arg(dir)
-            .args([
-                "-c",
-                "commit.gpgsign=false",
-                "-c",
-                "core.hooksPath=/dev/null",
-            ])
-            .args(args)
-            .env("GIT_CONFIG_NOSYSTEM", "1")
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status()
-            .unwrap()
-            .success();
-        assert!(ok, "git {args:?}");
+        fixture::run(dir, args);
     }
 
     #[test]

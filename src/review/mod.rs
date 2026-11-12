@@ -1413,22 +1413,7 @@ mod tests {
     use super::*;
 
     fn run(d: &Path, args: &[&str]) -> String {
-        let out = std::process::Command::new("git")
-            .current_dir(d)
-            .env("GIT_CONFIG_GLOBAL", "/dev/null")
-            .env("GIT_CONFIG_NOSYSTEM", "1")
-            .args(["-c", "user.email=t@example.com", "-c", "user.name=T"])
-            .args([
-                "-c",
-                "commit.gpgsign=false",
-                "-c",
-                "protocol.file.allow=always",
-            ])
-            .args(args)
-            .output()
-            .unwrap();
-        assert!(out.status.success(), "git {args:?}");
-        String::from_utf8_lossy(&out.stdout).trim().to_string()
+        crate::git::fixture::run(d, args)
     }
 
     fn tmp(tag: &str) -> std::path::PathBuf {

@@ -874,23 +874,7 @@ mod tests {
     }
 
     fn run(d: &Path, args: &[&str]) {
-        let ok = std::process::Command::new("git")
-            .current_dir(d)
-            .env("GIT_CONFIG_GLOBAL", "/dev/null")
-            .env("GIT_CONFIG_NOSYSTEM", "1")
-            .args([
-                "-c",
-                "user.email=t@example.com",
-                "-c",
-                "user.name=T",
-                "-c",
-                "commit.gpgsign=false",
-            ])
-            .args(args)
-            .status()
-            .unwrap()
-            .success();
-        assert!(ok, "git {args:?}");
+        crate::git::fixture::run(d, args);
     }
 
     #[test]

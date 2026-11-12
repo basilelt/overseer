@@ -1070,23 +1070,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&d);
         std::fs::create_dir_all(&d).unwrap();
         let run = |args: &[&str]| {
-            let ok = Command::new("git")
-                .current_dir(&d)
-                .env("GIT_CONFIG_GLOBAL", "/dev/null")
-                .env("GIT_CONFIG_NOSYSTEM", "1")
-                .args([
-                    "-c",
-                    "user.email=t@example.com",
-                    "-c",
-                    "user.name=T",
-                    "-c",
-                    "commit.gpgsign=false",
-                ])
-                .args(args)
-                .status()
-                .unwrap()
-                .success();
-            assert!(ok, "git {args:?}");
+            crate::git::fixture::run(&d, args);
         };
         run(&["init", "-q", "-b", "main"]);
         std::fs::write(d.join("a.rs"), "fn a() {}\n").unwrap();

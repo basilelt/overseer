@@ -436,29 +436,7 @@ mod tests {
     }
 
     fn git(d: &Path, args: &[&str]) -> String {
-        let o = std::process::Command::new("git")
-            .env("GIT_CONFIG_GLOBAL", "/dev/null")
-            .env("GIT_CONFIG_NOSYSTEM", "1")
-            .args([
-                "-c",
-                "user.name=t",
-                "-c",
-                "user.email=t@t",
-                "-c",
-                "commit.gpgsign=false",
-                "-c",
-                "protocol.file.allow=always",
-            ])
-            .args(args)
-            .current_dir(d)
-            .output()
-            .unwrap();
-        assert!(
-            o.status.success(),
-            "git {args:?}: {}",
-            String::from_utf8_lossy(&o.stderr)
-        );
-        String::from_utf8_lossy(&o.stdout).trim().to_string()
+        crate::git::fixture::run(d, args)
     }
 
     fn fixture(tag: &str) -> (PathBuf, PathBuf) {

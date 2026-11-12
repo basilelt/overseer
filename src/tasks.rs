@@ -1581,30 +1581,7 @@ mod tests {
             crate::procs::now_ms()
         ));
         let git = |dir: &Path, args: &[&str]| {
-            let out = std::process::Command::new("git")
-                .env("GIT_CONFIG_GLOBAL", "/dev/null")
-                .env("GIT_CONFIG_NOSYSTEM", "1")
-                .args([
-                    "-c",
-                    "protocol.file.allow=always",
-                    "-c",
-                    "commit.gpgsign=false",
-                    "-c",
-                    "user.name=t",
-                    "-c",
-                    "user.email=t@t",
-                    "-c",
-                    "init.defaultBranch=main",
-                ])
-                .args(args)
-                .current_dir(dir)
-                .output()
-                .unwrap();
-            assert!(
-                out.status.success(),
-                "{args:?}: {}",
-                String::from_utf8_lossy(&out.stderr)
-            );
+            crate::git::fixture::run(dir, args);
         };
         let (lib, meta) = (base.join("lib"), base.join("meta"));
         for d in [&lib, &meta] {

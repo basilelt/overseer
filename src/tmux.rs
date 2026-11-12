@@ -42,10 +42,7 @@ impl Tmux {
     }
 
     pub fn run(&self, args: &[&str]) -> Option<String> {
-        let out = crate::git::output_within(self.cmd().args(args), TIMEOUT).ok()?;
-        out.status
-            .success()
-            .then(|| String::from_utf8_lossy(&out.stdout).into_owned())
+        crate::git::stdout_ok(self.cmd().args(args), TIMEOUT)
     }
 
     pub fn ok(&self, args: &[&str]) -> Result<(), String> {

@@ -708,18 +708,7 @@ mod tests {
     #[test]
     fn changed_files_ignore_commits_the_local_base_branch_is_behind_on() {
         let sh = |d: &Path, args: &[&str]| {
-            let ok = std::process::Command::new("git")
-                .current_dir(d)
-                .env("GIT_CONFIG_GLOBAL", "/dev/null")
-                .env("GIT_CONFIG_NOSYSTEM", "1")
-                .args(["-c", "user.email=t@example.com", "-c", "user.name=T"])
-                .args(["-c", "commit.gpgsign=false"])
-                .args(args)
-                .output()
-                .unwrap()
-                .status
-                .success();
-            assert!(ok, "git {args:?}");
+            crate::git::fixture::run(d, args);
         };
         let commit = |d: &Path, file: &str| {
             std::fs::write(d.join(file), file).unwrap();
