@@ -175,8 +175,11 @@ fn sandbox_with_its_own_home_installs_and_keeps_its_hooks() {
     assert!(names(&b.settings(), &state));
     drop(d);
     let _ = std::fs::remove_file(&b.sock);
-    std::fs::remove_file(b.home().join(".claude/settings.json")).unwrap();
-    assert!(b.settings().is_empty());
+    let shim = b.shim().display().to_string();
+    let stale = b.settings().replace(&shim, "/old/bin/overseer");
+    assert_ne!(stale, b.settings());
+    std::fs::write(b.home().join(".claude/settings.json"), stale).unwrap();
     let (_d2, _log2) = b.daemon(&state);
-    wait(|| names(&b.settings(), &state));
+    wait(|| !b.settings().contains("/old/bin/overseer"));
+    assert!(names(&b.settings(), &state));
 }
