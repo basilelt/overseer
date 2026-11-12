@@ -111,7 +111,7 @@ export const more = [
   { id: 'review', icon: GitPullRequest, label: label('review.palette'), section: 'views', available: connected, run: () => reviewChanges() },
   { id: 'review-beside', icon: GitPullRequest, label: label('review.beside'), section: 'views', available: connected, run: () => reviewChanges(true) },
   { id: 'browser', icon: Globe, label: label('palette.openBrowser'), section: 'views', run: () => (app.view = 'browser') },
-  { id: 'graph', icon: GitGraph, label: label('palette.openGit'), section: 'views', run: () => app.openProjectTab('graph') },
+  { id: 'graph', icon: GitGraph, label: label('palette.openGit'), section: 'views', available: () => app.connected && app.projects.length > 0, run: () => app.openProjectTab('graph') },
   { id: 'worktrees', icon: FolderTree, label: label('palette.openWorktrees'), section: 'views', run: () => app.openProjectTab('worktrees') },
   { id: 'system', icon: Activity, label: () => st('open'), section: 'views', available: connected, run: () => app.open('system') },
   { id: 'usage', icon: Gauge, label: () => ust('open'), section: 'views', available: connected, run: () => app.open('usage') },

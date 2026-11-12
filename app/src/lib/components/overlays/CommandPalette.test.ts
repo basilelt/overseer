@@ -2,10 +2,11 @@ import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { MOCK_AGENTS } from '../../daemon/mock';
 import type { AgentInfo } from '../../types';
 
-async function rendered(connected: boolean, current?: Record<string, unknown>, all: Record<string, unknown>[] = [], agents: AgentInfo[] = []) {
+async function rendered(connected: boolean, current?: Record<string, unknown>, all: Record<string, unknown>[] = [], agents: AgentInfo[] = [], projects = true) {
   vi.resetModules();
   const { app } = await import('../../state.svelte');
   vi.spyOn(app, 'connected', 'get').mockReturnValue(connected);
+  vi.spyOn(app, 'projects', 'get').mockReturnValue(projects ? ([{ path: '/p' }] as never) : []);
   if (current) {
     vi.spyOn(app, 'currentWorkspace', 'get').mockReturnValue(current as never);
     vi.spyOn(app, 'wsPersistent', 'get').mockReturnValue(true);
@@ -44,8 +45,15 @@ describe('command palette views', () => {
 
   it('still lists the local views when disconnected', async () => {
     const views = section(await rendered(false), 'Views');
-    expect(views).toContain('Open Git (graph and source control)');
+    expect(views).toContain('Open browser');
+    expect(views).toContain('Open the worktrees');
+    expect(views).not.toContain('Open Git (graph and source control)');
     expect(views).not.toContain('Review changes');
+  });
+
+  it('lists the Git graph only when connected with a project, like the phone More sheet', async () => {
+    expect(section(await rendered(true), 'Views')).toContain('Open Git (graph and source control)');
+    expect(section(await rendered(true, undefined, [], [], false), 'Views')).not.toContain('Open Git (graph and source control)');
   });
 
   it('lists Install skills and plugins under Actions only when connected', async () => {

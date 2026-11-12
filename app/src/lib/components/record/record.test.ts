@@ -94,14 +94,14 @@ describe('entry points', () => {
     recorder.dismiss();
   });
 
-  it('lists Record a bug in the phone More menu, disabled while a recording runs', async () => {
+  it('lists Record a bug in the phone More menu while idle only', async () => {
     const { render: ssr } = await import('svelte/server');
     const { default: More } = await import('../mobile/MobileMore.svelte');
-    const row = () => clean(ssr(More, { props: {} }).body).match(/<button class="row[^"]*"([^>]*)>(?:(?!<\/button>)[\s\S])*Record a bug/)?.[1];
+    const html = () => clean(ssr(More, { props: {} }).body);
     const { recorder } = await import('../../record/record.svelte');
-    expect(row()).not.toContain('disabled');
+    expect(html()).toContain('Record a bug');
     recorder.setup();
-    expect(row()).toContain('disabled');
+    expect(html()).not.toContain('Record a bug');
     recorder.dismiss();
   });
 });

@@ -1850,7 +1850,9 @@ Stopped: no live agent process, resumable); the toggle is at the top of the side
   the selected tab shows its full title; when they do not fit, the strip scrolls with the mouse
   wheel or trackpad, and hovering a tab shows its full title. `+` starts any installed agent or a shell in the
   workspace folder. Views (browser, **Review changes**, Git graph, worktrees, System, Usage, PR reviews)
-  open from the **Views** section of the command palette (Cmd/Ctrl+P). Drag tabs
+  open from the **Views** section of the command palette (Cmd/Ctrl+P). The palette and the phone
+  **More** sheet list only the commands that can run now: a command that needs a connection (or a
+  project, or no recording in progress) is hidden, not greyed out. Drag tabs
   to reorder (the sidebar follows), middle-click or `×` to close (this ends the agent or shell; right-click > **Hide tab
   (keep running)** only hides it), split right or down. The
   order is saved in the daemon, so it comes back on another machine.
@@ -2145,7 +2147,7 @@ stage, unstage and discard (confirmed), outgoing and incoming commits, and merge
 opens its diff beside the session. It follows the selected session, and the tab is remembered.
 
 The **Git tab** of the project (command palette, "Open Git (graph and source control)", ⋯ › **Open the
-Git graph**; on a phone **More**, **Git**) shows the graph with an **Uncommitted changes** row on top,
+Git graph**; on a phone **More**, **Git**; both list it only while connected with a project) shows the graph with an **Uncommitted changes** row on top,
 and source control in a column the toolbar button shows (hidden by default), for the worktree picked
 at the top. A commit's detail adds **Merge into <branch>** and **Revert in <branch>**. On a phone the
 tab has **Changes** and **Graph** sub-tabs.

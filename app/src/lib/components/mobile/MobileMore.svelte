@@ -39,12 +39,12 @@
 
   registerMore();
 
-  export const tools: { id: CommandId; icon: Component<{ size?: number }>; label: () => string; needs?: () => boolean; badge?: () => number }[] = [
+  export const tools: { id: CommandId; icon: Component<{ size?: number }>; label: () => string; badge?: () => number }[] = [
     { id: 'notifications', icon: Bell, label: () => t('center.title'), badge: () => center.unread },
     { id: 'ports', icon: Network, label: () => t('ports.title') },
     { id: 'system', icon: Activity, label: () => st('title') },
     { id: 'usage', icon: Gauge, label: () => ust('title') },
-    { id: 'graph', icon: GitBranch, label: () => t('tabs.gitGraph'), needs: () => app.connected && !!app.projects.length },
+    { id: 'graph', icon: GitBranch, label: () => t('tabs.gitGraph') },
     { id: 'prs', icon: GitPullRequestArrow, label: () => gt('title') },
     { id: 'settings', icon: Settings, label: () => t('title.settings') },
     { id: 'palette', icon: Search, label: () => t('mobile.more.search') },
@@ -54,7 +54,6 @@
     { id: 'organize', icon: WandSparkles, label: () => t('org.title') },
     { id: 'tour', icon: Compass, label: () => tt('again') },
   ];
-  const disabled = (tool: (typeof tools)[number]) => !command(tool.id).available() || (tool.needs ? !tool.needs() : false);
 </script>
 
 <script lang="ts">
@@ -114,8 +113,8 @@
 
   <h3>{t('mobile.more.tools')}</h3>
   <div class="card">
-    {#each tools as tool (tool.id)}
-      <button class="row" disabled={disabled(tool)} onclick={() => command(tool.id).run()}><tool.icon size={18} /><span class="label">{tool.label()}</span>{#if tool.badge?.()}<span class="badge">{tool.badge()}</span>{/if}<ChevronRight size={16} /></button>
+    {#each tools.filter((tool) => command(tool.id).available()) as tool (tool.id)}
+      <button class="row" onclick={() => command(tool.id).run()}><tool.icon size={18} /><span class="label">{tool.label()}</span>{#if tool.badge?.()}<span class="badge">{tool.badge()}</span>{/if}<ChevronRight size={16} /></button>
     {/each}
     {#if __SELF_UPDATE__ && apk.enabled && apk.updates}
       {@const pending = pillLabel(apk)}
