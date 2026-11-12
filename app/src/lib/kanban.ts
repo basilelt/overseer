@@ -1,5 +1,6 @@
 import { coarseMinutes, wholeMinutes } from './duration';
-import { TASK_STATUSES, type Task, type TaskMessage, type TaskStatus } from './types';
+import { SESSION_STATUSES, TASK_STATUSES, isRunning } from './task-status';
+import type { Task, TaskMessage, TaskStatus } from './types';
 
 export * from './kanban-core';
 import { isSession, isDone, rankOf, sortColumn, byId, blockers, startable } from './kanban-core';
@@ -67,7 +68,7 @@ export function mergeMessage(list: TaskMessage[], m: TaskMessage): TaskMessage[]
 }
 
 export function organizing(tasks: Task[], project?: string): boolean {
-  return tasks.some((t) => isOrganizer(t) && t.status === 'in_progress' && (!project || t.project === project));
+  return tasks.some((t) => isOrganizer(t) && isRunning(t.status) && (!project || t.project === project));
 }
 
 export function autoSummary(tasks: Task[]): { running: number; queued: number } {
@@ -75,7 +76,7 @@ export function autoSummary(tasks: Task[]): { running: number; queued: number } 
   let queued = 0;
   for (const t of tasks) {
     if (isOrganizer(t)) continue;
-    if (t.status === 'in_progress') running++;
+    if (isRunning(t.status)) running++;
     else if (t.status === 'auto') queued++;
   }
   return { running, queued };
@@ -127,16 +128,16 @@ export function cardStatus(task: Task, next: Set<string>, tasks: Map<string, Tas
     const badges = task.badges ?? [];
     if (badges.includes('needs_input')) return { kind: 'input' };
     if (badges.includes('paused')) return { kind: 'paused' };
-    if (task.status !== 'in_progress') return { kind: 'none' };
+    if (!isRunning(task.status)) return { kind: 'none' };
     return p && p.total > 0 ? { kind: 'progress', pct: pctOf(p), note: p.note } : { kind: 'working', note: p?.note };
   }
-  if (task.status === 'in_progress' && (!p || p.done === 0)) return { kind: task.termId ? 'working' : 'starting', note: p?.note };
+  if (isRunning(task.status) && (!p || p.done === 0)) return { kind: task.termId ? 'working' : 'starting', note: p?.note };
   if (task.status === 'pending' || task.status === 'auto') {
     const waiting = blockers(task, tasks);
     if (waiting.length) return { kind: 'blocked', waiting: waiting.map((d) => d.number) };
   }
   if (task.status === 'auto' && next.has(task.id)) return { kind: 'next' };
-  if (p && p.total > 0 && task.status === 'in_progress') {
+  if (p && p.total > 0 && isRunning(task.status)) {
     return { kind: 'progress', pct: pctOf(p), note: p.note };
   }
   return { kind: 'none' };
@@ -170,8 +171,6 @@ export function dropTarget(x: number, rects: ColRect[]): TaskStatus | null {
 }
 
 export type MoveAction = 'start' | 'reject' | 'patch' | 'complete';
-
-export const SESSION_STATUSES: TaskStatus[] = ['in_progress', 'in_testing', 'merged', 'completed'];
 
 export function canDrop(task: Task, to: TaskStatus): boolean {
   return !isSession(task) || SESSION_STATUSES.includes(to);

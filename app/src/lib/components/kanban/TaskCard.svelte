@@ -16,6 +16,7 @@
   import { app, projectName } from '../../state.svelte';
   import { agentName, findAgent } from '../../agents';
   import AgentGlyph from '../ui/AgentGlyph.svelte';
+  import { isRunning, isTesting } from '../../task-status';
 
   let {
     task,
@@ -71,7 +72,7 @@
 
   const age = $derived(relTime(task.updatedAt));
   const session = $derived(isSession(task));
-  const openable = $derived(task.status === 'in_testing' || (session ? !!task.lineId : task.status === 'in_progress'));
+  const openable = $derived(isTesting(task.status) || (session ? !!task.lineId : isRunning(task.status)));
   const meta = $derived(cardMeta(task, { filtered, defaultBranch: app.allProjects.find((p) => p.path === task.project)?.defaultBranch }));
   const model = $derived(modelLabel(task.model) || agentName(app.agents, task.agent));
   const quad = $derived(showQuadrant ? quadrant(task) : 'none');

@@ -12,6 +12,7 @@
   import { fromOverseer } from '../../quorum';
   import type { Task, TaskMessage } from '../../types';
   import { isSubmitChord } from '../../chord';
+  import { isRunning } from '../../task-status';
 
   let { onclose }: { onclose: () => void } = $props();
 
@@ -20,7 +21,7 @@
   const task = $derived(app.data.tasks.find((x) => x.id === app.overlayArg));
   const parent = $derived(task?.parentId ? app.data.tasks.find((x) => x.id === task.parentId) : undefined);
   const quad = $derived(task ? quadrant(task) : 'none');
-  const live = $derived(!!task && task.status === 'in_progress' && !!task.termId);
+  const live = $derived(!!task && isRunning(task.status) && !!task.termId);
   const errText = (e: unknown) => String((e as Error)?.message ?? e);
 
   let messages = $state<TaskMessage[]>([]);

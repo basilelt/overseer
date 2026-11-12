@@ -1,8 +1,9 @@
 import type { Task, TaskStatus } from './types';
+import { FINISHED_STATUSES, isDone, SESSION_STATUSES } from './task-status';
 
 export const isSession = (t: Task): boolean => t.origin === 'session';
 
-export const isDone = (status: TaskStatus): boolean => status === 'merged' || status === 'completed';
+export { isDone };
 
 export function taskForItem(tasks: Task[], item: { lineId?: string | null; termId?: string | null } | undefined): Task | undefined {
   if (!item) return undefined;
@@ -10,7 +11,7 @@ export function taskForItem(tasks: Task[], item: { lineId?: string | null; termI
 }
 
 export function movableStatuses(task: Task): TaskStatus[] {
-  return isSession(task) ? ['in_progress', 'in_testing', 'merged', 'completed'] : ['in_testing', 'merged', 'completed'];
+  return [...(isSession(task) ? SESSION_STATUSES : FINISHED_STATUSES)];
 }
 
 export const rankOf = (t: Task): number => (Number.isFinite(t.rank) ? t.rank : t.number);

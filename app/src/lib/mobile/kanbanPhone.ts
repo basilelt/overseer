@@ -1,5 +1,6 @@
-import { rankAt, SESSION_STATUSES } from '../kanban';
-import { TASK_STATUSES, type Task, type TaskStatus } from '../types';
+import { rankAt } from '../kanban';
+import { SESSION_STATUSES, TASK_STATUSES } from '../task-status';
+import type { Task, TaskStatus } from '../types';
 
 export type Edge = 'top' | 'bottom';
 

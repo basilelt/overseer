@@ -1,6 +1,7 @@
 import { FEEDBACK_TITLE, isFeedbackTerm } from './feedback-watch';
 import { isEnded, sessionState, type SessionState } from './session-state';
 import type { LocalLine, Task, Term } from './types';
+import { isTesting } from './task-status';
 
 export type GroupId = 'needs_input' | 'needs_testing' | 'running' | 'pushed' | 'ready' | 'paused' | 'stopped';
 export const GROUP_ORDER: GroupId[] = ['needs_input', 'needs_testing', 'running', 'pushed', 'ready', 'paused', 'stopped'];
@@ -53,7 +54,7 @@ function lineTitle(l: LocalLine): string {
 
 export function sidebarItems(lines: LocalLine[], terms: Term[], tasks: Task[], briefs: Record<string, { goal?: string; status?: string }> = {}): SidebarItem[] {
   const own = tasks.filter((t) => t.lineId && t.origin !== 'session');
-  const testing = new Set(own.filter((t) => t.status === 'in_testing').map((t) => t.lineId));
+  const testing = new Set(own.filter((t) => isTesting(t.status)).map((t) => t.lineId));
   const taskByLine = new Map(own.map((t) => [t.lineId!, t]));
   const termByLine = new Map(terms.filter((t) => t.lineId && !t.exited).map((t) => [t.lineId!, t.id]));
   const feedbackLines = new Set(terms.filter((t) => t.lineId && isFeedbackTerm(t)).map((t) => t.lineId!));

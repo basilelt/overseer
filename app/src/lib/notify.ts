@@ -9,6 +9,7 @@ import { allIdle } from './workspaces';
 import { MAX_COOLDOWN_S } from './notify-prefs';
 import { startOs } from './os-notify';
 import { KEYS } from './storage';
+import { isTesting } from './task-status';
 
 export type NoticeKind = 'needsInput' | 'taskTesting' | 'finished' | 'failed' | 'allIdle';
 
@@ -99,7 +100,7 @@ export function notificationsFor(prev: Snapshot, next: Snapshot, prefs: Prefs, p
       out.push({ kind: 'finished', key: `line:${l.line.id}`, title, body: lineTitle(l) === place ? '' : lineTitle(l) });
     }
     for (const { item: task, before } of changes(prev.tasks, next.tasks, byOwnId)) {
-      if (task.status !== 'in_testing' || before?.status === 'in_testing') continue;
+      if (!isTesting(task.status) || (before ? isTesting(before.status) : false)) continue;
       const key = task.lineId ? `line:${task.lineId}` : null;
       out.push({ kind: 'taskTesting', key, title: t('notify.taskTesting', { n: task.number }), body: task.title, target: key ?? `task:${task.id}` });
     }

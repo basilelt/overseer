@@ -1,4 +1,5 @@
 import type { Task, TaskStatus, TokenSplit } from './types';
+import { isFinished as isFinishedStatus } from './task-status';
 
 export type CostBy = 'profile' | 'ticket' | 'task';
 
@@ -15,7 +16,6 @@ export interface CostRow {
   tokens: number;
 }
 
-const FINISHED: readonly TaskStatus[] = ['in_testing', 'merged', 'completed'];
 const MAX_ROWS = 50;
 
 export function tokensOf(c: TokenSplit | null | undefined): number {
@@ -23,7 +23,7 @@ export function tokensOf(c: TokenSplit | null | undefined): number {
 }
 
 export function isFinished(t: Task): boolean {
-  return FINISHED.includes(t.status);
+  return isFinishedStatus(t.status);
 }
 
 export function costRows(tasks: readonly Task[], by: CostBy, profileName: (id: string) => string, noProfile: string): CostRow[] {

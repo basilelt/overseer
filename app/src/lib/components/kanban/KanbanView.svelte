@@ -30,6 +30,7 @@
   import { columnAfterSwipe } from '../../mobile/layout';
   import { edgeMoves, edgeRank, initialColumn, moveChoices, type Edge } from '../../mobile/kanbanPhone';
   import { tick, untrack } from 'svelte';
+  import { isRunning, isTesting } from '../../task-status';
 
   const FALLBACK = ['#64748b', '#0891b2', '#7c3aed', '#db2777', '#65a30d', '#ea580c'];
 
@@ -309,9 +310,9 @@
 
   function open(task: Task) {
     if (suppressClick) return;
-    if (task.status === 'in_testing') app.open('review', task.id);
+    if (isTesting(task.status)) app.open('review', task.id);
     else if (isSession(task) && task.lineId) app.select(`line:${task.lineId}`);
-    else if (task.status === 'in_progress' && (task.lineId || task.termId)) app.select(task.lineId ? `line:${task.lineId}` : `term:${task.termId}`);
+    else if (isRunning(task.status) && (task.lineId || task.termId)) app.select(task.lineId ? `line:${task.lineId}` : `term:${task.termId}`);
   }
 
   async function refresh() {
@@ -611,7 +612,7 @@
     <Modal title={t('mobile.tasks.moveTo', { n: st.number })} onclose={() => (sheetId = null)} width={420}>
       <div class="sheet">
         <div class="stitle">#{st.number} {st.title}</div>
-        {#if st.status === 'in_progress' || st.status === 'in_testing' || (isSession(st) && st.lineId)}
+        {#if isRunning(st.status) || isTesting(st.status) || (isSession(st) && st.lineId)}
           <button class="srow" onclick={() => { sheetId = null; open(st); }}><ArrowRight size={16} />{t('mobile.tasks.open')}</button>
         {/if}
         {#each edgeMoves(sheetColumn, st) as where (where)}

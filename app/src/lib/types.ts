@@ -185,7 +185,6 @@ export interface NewTerm {
 
 export type TaskStatus = 'pending' | 'auto' | 'in_progress' | 'in_testing' | 'merged' | 'completed';
 export type Effort = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
-export const TASK_STATUSES: TaskStatus[] = ['pending', 'auto', 'in_progress', 'in_testing', 'merged', 'completed'];
 
 export type TaskOrigin = 'user' | 'session' | 'agent' | 'organizer' | 'configurator' | 'reviewer';
 
