@@ -3477,6 +3477,7 @@ fn closing_an_idle_codex_session_accepts_its_dim_composer_prompt() {
     send(&mut ws, "busy\r");
     let line = wait_for(|| line_of(&app, &id));
     let lid = line["line"]["id"].as_str().unwrap().to_string();
+    wait(|| line_json(&app, &lid)["local"]["busy"] == true);
     send(&mut ws, "done\r");
     wait(|| line_json(&app, &lid)["local"]["busy"] == false);
 
