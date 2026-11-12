@@ -208,7 +208,7 @@ pub fn fetch(t: &Token) -> Option<(u16, Vec<u8>)> {
 }
 
 fn run(mut c: Command, input: Option<Vec<u8>>) -> Option<(bool, Vec<u8>)> {
-    let mut child = crate::git::Watchdog::guard(&mut c)
+    let mut child = crate::exec::Watchdog::guard(&mut c)
         .stdin(if input.is_some() {
             Stdio::piped()
         } else {
@@ -218,7 +218,7 @@ fn run(mut c: Command, input: Option<Vec<u8>>) -> Option<(bool, Vec<u8>)> {
         .stderr(Stdio::null())
         .spawn()
         .ok()?;
-    let dog = crate::git::Watchdog::start(child.id(), TIMEOUT + Duration::from_secs(1));
+    let dog = crate::exec::Watchdog::start(child.id(), TIMEOUT + Duration::from_secs(1));
     if let (Some(mut stdin), Some(data)) = (child.stdin.take(), input) {
         let _ = stdin.write_all(&data);
     }

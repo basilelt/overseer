@@ -91,9 +91,9 @@ pub fn boot_id() -> Option<String> {
             .filter(|s| !s.is_empty());
     }
     if cfg!(target_os = "macos") {
-        let out = crate::git::output_within(
+        let out = crate::exec::output_within(
             std::process::Command::new("sysctl").args(["-n", "kern.boottime"]),
-            crate::git::PROBE_TIMEOUT,
+            crate::exec::PROBE_TIMEOUT,
         )
         .ok()?;
         return parse_boottime(&String::from_utf8_lossy(&out.stdout));

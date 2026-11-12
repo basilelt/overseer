@@ -360,12 +360,13 @@ mod unix {
         if let Some(f) = file {
             c.arg(f);
         }
-        let out = crate::git::run_within(&mut c, Duration::from_secs(10)).map_err(|e| match e {
-            crate::git::RunError::TimedOut(_) => {
-                format!("{} --takeover-check timed out", bin.display())
-            }
-            e => format!("{}: {e}", bin.display()),
-        })?;
+        let out =
+            crate::exec::run_within(&mut c, Duration::from_secs(10)).map_err(|e| match e {
+                crate::exec::RunError::TimedOut(_) => {
+                    format!("{} --takeover-check timed out", bin.display())
+                }
+                e => format!("{}: {e}", bin.display()),
+            })?;
         let stdout = String::from_utf8_lossy(&out.stdout);
         let parsed = stdout
             .lines()

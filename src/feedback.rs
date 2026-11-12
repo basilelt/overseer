@@ -290,7 +290,7 @@ pub fn args(
 }
 
 fn gh(args: &[String]) -> Res<(bool, String, String)> {
-    use crate::git::RunError;
+    use crate::exec::RunError;
     let out = crate::git::run_gh(args, GH_TIMEOUT).map_err(|e| match e {
         RunError::Spawn(e) if e.kind() == std::io::ErrorKind::NotFound => {
             (424, "gh is not installed on this host".to_string())

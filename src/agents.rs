@@ -756,7 +756,7 @@ fn program(bin: &str) -> std::path::PathBuf {
 }
 
 pub fn version(bin: &str) -> Option<String> {
-    let o = crate::git::output_within(
+    let o = crate::exec::output_within(
         Command::new(program(bin))
             .arg("--version")
             .env("PATH", crate::shellenv::path()),

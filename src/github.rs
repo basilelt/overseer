@@ -1,5 +1,5 @@
 use crate::daemon::Request;
-use crate::git::RunError;
+use crate::exec::RunError;
 use crate::Ctx;
 use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
@@ -96,7 +96,7 @@ pub fn run(bin: &str, dir: Option<&Path>, args: &[&str], timeout: Duration) -> R
         cmd.current_dir(d);
     }
     crate::git::gh_env(crate::git::git_env(cmd.args(args)));
-    let out = crate::git::run_tracked(&mut cmd, timeout, Child::track).map_err(|e| match e {
+    let out = crate::exec::run_tracked(&mut cmd, timeout, Child::track).map_err(|e| match e {
         RunError::Spawn(e) if e.kind() == std::io::ErrorKind::NotFound => (
             424,
             format!("{bin} is not installed on this host"),

@@ -269,7 +269,7 @@ pub fn run_cmd(cmd: &str, args: &[&str]) -> Result<String, String> {
         use std::os::windows::process::CommandExt;
         c.creation_flags(0x0800_0000);
     }
-    crate::git::stdout_or(&mut c, Duration::from_secs(120), cmd, |out| {
+    crate::exec::stdout_or(&mut c, Duration::from_secs(120), cmd, |out| {
         let err = String::from_utf8_lossy(&out.stderr).trim().to_string();
         if err.is_empty() {
             format!("{cmd} exited with {}", out.status)

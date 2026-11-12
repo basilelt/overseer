@@ -110,7 +110,7 @@ fn blobs(wt: &str, specs: &[String]) -> Vec<Option<String>> {
     if specs.is_empty() {
         return vec![];
     }
-    let Ok(mut child) = crate::git::Watchdog::guard(
+    let Ok(mut child) = crate::exec::Watchdog::guard(
         Command::new("git")
             .arg("-C")
             .arg(wt)
@@ -123,7 +123,7 @@ fn blobs(wt: &str, specs: &[String]) -> Vec<Option<String>> {
     .spawn() else {
         return none();
     };
-    let dog = crate::git::Watchdog::start(child.id(), crate::git::TIMEOUT);
+    let dog = crate::exec::Watchdog::start(child.id(), crate::git::TIMEOUT);
     let input: String = specs.iter().map(|s| format!("{s}\n")).collect();
     let mut stdin = child.stdin.take();
     let writer = std::thread::spawn(move || {

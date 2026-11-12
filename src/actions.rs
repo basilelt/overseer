@@ -446,9 +446,9 @@ fn execute_hold(
     let prev_remain = tmux.pane_option(pane, "remain-on-exit");
     tmux.set_pane_option(pane, "remain-on-exit", Some("on"))?;
     let restore_remain = || tmux.set_pane_option(pane, "remain-on-exit", prev_remain.as_deref());
-    let killed = crate::git::output_within(
+    let killed = crate::exec::output_within(
         std::process::Command::new("kill").args(["-TERM", &pid.to_string()]),
-        crate::git::PROBE_TIMEOUT,
+        crate::exec::PROBE_TIMEOUT,
     )
     .is_ok_and(|o| o.status.success());
     if !killed || !wait_exit(ctx, pid, &start) {

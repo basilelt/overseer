@@ -14,6 +14,7 @@ pub mod deliver;
 pub mod discover;
 pub mod dlog;
 pub mod doctor;
+pub mod exec;
 pub mod feedback;
 pub mod files;
 pub mod fsdirs;
@@ -251,9 +252,9 @@ fn raw_hostname() -> Option<String> {
 
 #[cfg(not(unix))]
 fn raw_hostname() -> Option<String> {
-    git::output_within(
+    exec::output_within(
         &mut std::process::Command::new("hostname"),
-        git::PROBE_TIMEOUT,
+        exec::PROBE_TIMEOUT,
     )
     .ok()
     .map(|o| String::from_utf8_lossy(&o.stdout).into_owned())

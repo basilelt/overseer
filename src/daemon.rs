@@ -1683,9 +1683,9 @@ fn command_line(pid: i32) -> Option<String> {
         let raw = std::fs::read(format!("/proc/{pid}/cmdline")).ok()?;
         return Some(String::from_utf8_lossy(&raw).replace('\0', " "));
     }
-    let out = crate::git::output_within(
+    let out = crate::exec::output_within(
         std::process::Command::new("ps").args(["-o", "command=", "-p", &pid.to_string()]),
-        crate::git::PROBE_TIMEOUT,
+        crate::exec::PROBE_TIMEOUT,
     )
     .ok()?;
     Some(String::from_utf8_lossy(&out.stdout).trim().to_string())

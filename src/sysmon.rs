@@ -984,9 +984,9 @@ pub mod mac {
 
     #[cfg(target_os = "macos")]
     fn run(cmd: &str, args: &[&str]) -> String {
-        crate::git::output_within(
+        crate::exec::output_within(
             std::process::Command::new(cmd).args(args),
-            crate::git::PROBE_TIMEOUT,
+            crate::exec::PROBE_TIMEOUT,
         )
         .ok()
         .filter(|o| o.status.success())

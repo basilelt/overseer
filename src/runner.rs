@@ -409,9 +409,9 @@ fn remote_titles(ctx: &Ctx, l: &Line) -> Vec<String> {
         "titles".into(),
         l.id.clone(),
     ]);
-    crate::git::output_within(
+    crate::exec::output_within(
         std::process::Command::new(&argv[0]).args(&argv[1..]),
-        crate::git::PROBE_TIMEOUT,
+        crate::exec::PROBE_TIMEOUT,
     )
     .ok()
     .and_then(|o| serde_json::from_slice::<Vec<String>>(&o.stdout).ok())

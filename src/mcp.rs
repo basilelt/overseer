@@ -160,7 +160,7 @@ fn daemon(
 }
 
 fn git_top() -> Option<String> {
-    let o = crate::git::output_within(
+    let o = crate::exec::output_within(
         std::process::Command::new("git").args(["rev-parse", "--show-toplevel"]),
         crate::git::TIMEOUT,
     )

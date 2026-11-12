@@ -20,9 +20,9 @@ fn item(level: &'static str, name: &'static str, detail: impl Into<String>) -> I
 }
 
 fn version(cmd: &str) -> Option<String> {
-    let out = crate::git::output_within(
+    let out = crate::exec::output_within(
         Command::new(cmd).arg("--version"),
-        crate::git::PROBE_TIMEOUT,
+        crate::exec::PROBE_TIMEOUT,
     )
     .ok()?;
     out.status.success().then(|| {

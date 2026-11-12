@@ -72,7 +72,7 @@ fn exact_or_split(pid: u32, split: std::str::SplitWhitespace<'_>) -> Vec<String>
 }
 
 fn run(cmd: &str, args: &[&str]) -> Option<String> {
-    crate::git::stdout_ok(Command::new(cmd).args(args), crate::git::PROBE_TIMEOUT)
+    crate::exec::stdout_ok(Command::new(cmd).args(args), crate::exec::PROBE_TIMEOUT)
 }
 
 impl Probe for System {

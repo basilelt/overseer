@@ -344,7 +344,7 @@ fn patch_ids(root: &str, args: &[&str]) -> Vec<String> {
     else {
         return vec![];
     };
-    let Ok(o) = crate::git::run_stdin(
+    let Ok(o) = crate::exec::run_stdin(
         Command::new("git")
             .arg("-C")
             .arg(root)

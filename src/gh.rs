@@ -42,7 +42,7 @@ pub fn ci(rollup: &Value) -> &'static str {
 }
 
 fn fetch(repo: &str, branch: &str) -> Value {
-    use crate::git::RunError;
+    use crate::exec::RunError;
     let out = match crate::git::run_gh(
         [
             "pr",

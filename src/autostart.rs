@@ -361,7 +361,7 @@ pub fn run_cmd(cmd: &str, args: &[&str]) -> Result<String, String> {
             format!("/run/user/{}", unsafe { libc::getuid() }),
         );
     }
-    crate::git::stdout_or(&mut c, std::time::Duration::from_secs(60), cmd, |out| {
+    crate::exec::stdout_or(&mut c, std::time::Duration::from_secs(60), cmd, |out| {
         let err = String::from_utf8_lossy(&out.stderr).trim().to_string();
         let out_text = String::from_utf8_lossy(&out.stdout).trim().to_string();
         format!(
