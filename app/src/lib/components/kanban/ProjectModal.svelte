@@ -4,13 +4,12 @@
   import { app } from '../../state.svelte';
   import { saveSettings, settings } from '../../settings.svelte';
   import { t } from '../../i18n.svelte';
+  import { PROJECT_SWATCHES } from './project-colors';
 
   let { onclose }: { onclose: () => void } = $props();
 
-  const SWATCHES = ['#64748b', '#3b82f6', '#16a34a', '#d97706', '#9333ea', '#db2777', '#0891b2', '#dc2626'];
-
   let path = $state('');
-  let color = $state(SWATCHES[1]);
+  let color = $state(PROJECT_SWATCHES[1]);
   let error = $state('');
   let busy = $state(false);
   const trimmed = $derived(path.trim());
@@ -61,7 +60,7 @@
     <div class="field">
       <span>{t('project.color')}</span>
       <div class="swatches" role="radiogroup" aria-label={t('project.color')}>
-        {#each SWATCHES as c (c)}
+        {#each PROJECT_SWATCHES as c (c)}
           <button type="button" role="radio" aria-checked={color === c} aria-label={c} style:background={c} onclick={() => (color = c)}>
             {#if color === c}<Check size={12} />{/if}
           </button>

@@ -31,8 +31,7 @@
   import { edgeMoves, edgeRank, initialColumn, moveChoices, type Edge } from '../../mobile/kanbanPhone';
   import { tick, untrack } from 'svelte';
   import { isRunning, isTesting } from '../../task-status';
-
-  const FALLBACK = ['#64748b', '#0891b2', '#7c3aed', '#db2777', '#65a30d', '#ea580c'];
+  import { fallbackProjectColor } from './project-colors';
 
   let search = $state('');
   let project = $state(app.sidebarMode === 'workspaces' && app.currentWorkspace ? (app.currentWorkspace.path ?? '') : '');
@@ -164,10 +163,7 @@
 
   function colorOf(name: string): string {
     const c = colors.get(name);
-    if (c) return c;
-    let h = 0;
-    for (const ch of name) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
-    return FALLBACK[h % FALLBACK.length];
+    return c ?? fallbackProjectColor(name);
   }
 
   const colLabel = (s: TaskStatus) => t(`kanban.col.${s}` as Key);
