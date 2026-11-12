@@ -36,11 +36,6 @@ pub fn session_dir(home: &Path, id: &str) -> Option<PathBuf> {
         .filter(|d| d.join("CURRENT").is_file())
 }
 
-pub fn is_vibe(arg: &str) -> bool {
-    let base = arg.rsplit(['/', '\\']).next().unwrap_or(arg);
-    matches!(base, "vibe" | "vibe.exe" | "vibe-rs" | "vibe-rs.exe")
-}
-
 #[derive(Clone)]
 pub struct Session {
     pub id: String,
@@ -606,15 +601,6 @@ mod tests {
 
     fn ids(v: &[Value]) -> Vec<String> {
         v.iter().map(id_of).collect()
-    }
-
-    #[test]
-    fn recognises_the_launcher_and_the_rust_binary() {
-        assert!(is_vibe("/home/u/.local/bin/vibe"));
-        assert!(is_vibe("/x/site-packages/vibe/_bin/vibe-rs"));
-        assert!(is_vibe("vibe.exe"));
-        assert!(!is_vibe("vibe-app-server"));
-        assert!(!is_vibe("/usr/bin/vibes"));
     }
 
     #[test]

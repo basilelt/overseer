@@ -754,7 +754,8 @@ fn codex_found(ctx: &Ctx, hooks: &HashMap<String, HookState>) -> Vec<Found> {
             let mut f = Found::new(agents::CODEX, t.id.clone());
             let hook = hooks.get(&t.id);
             if let Some((pid, argv, _)) = j.map(|j| &procs[j]) {
-                let flags = flags_after(argv, codex::is_codex).unwrap_or_default();
+                let flags =
+                    flags_after(argv, |a| agents::runs_as(agents::CODEX, a)).unwrap_or_default();
                 f.alive = Some((*pid, codex::launch_flags(&flags)));
             }
             if let Some(h) = hook {
@@ -783,7 +784,11 @@ fn gemini_found(ctx: &Ctx, hooks: &HashMap<String, HookState>) -> Vec<Found> {
         .probe
         .list()
         .into_iter()
-        .filter(|(_, argv)| argv.iter().take(3).any(|a| gemini::is_gemini(a)))
+        .filter(|(_, argv)| {
+            argv.iter()
+                .take(3)
+                .any(|a| agents::runs_as(agents::GEMINI, a))
+        })
         .collect();
     let procs: Vec<&(u32, Vec<String>)> = all
         .iter()
@@ -820,7 +825,8 @@ fn gemini_found(ctx: &Ctx, hooks: &HashMap<String, HookState>) -> Vec<Found> {
                 });
             if let Some((pid, argv)) = hit {
                 claimed.insert(*pid);
-                let flags = flags_after(argv, gemini::is_gemini).unwrap_or_default();
+                let flags =
+                    flags_after(argv, |a| agents::runs_as(agents::GEMINI, a)).unwrap_or_default();
                 f.alive = Some((*pid, without_prompt(&procs::strip_resume(&flags))));
             }
             if let Some(h) = hooks.get(&s.id) {
@@ -847,7 +853,11 @@ fn vibe_found(ctx: &Ctx, hooks: &HashMap<String, HookState>) -> Vec<Found> {
         .probe
         .list()
         .into_iter()
-        .filter(|(_, argv)| argv.iter().take(3).any(|a| vibe::is_vibe(a)))
+        .filter(|(_, argv)| {
+            argv.iter()
+                .take(3)
+                .any(|a| agents::runs_as(agents::VIBE, a))
+        })
         .collect();
     let tui = |pid: u32| {
         let mut p = Some(pid);
@@ -881,7 +891,7 @@ fn vibe_found(ctx: &Ctx, hooks: &HashMap<String, HookState>) -> Vec<Found> {
                 claimed.insert(t);
                 let flags = procs
                     .get(&t)
-                    .and_then(|argv| flags_after(argv, vibe::is_vibe))
+                    .and_then(|argv| flags_after(argv, |a| agents::runs_as(agents::VIBE, a)))
                     .unwrap_or_default();
                 f.alive = Some((t, without_prompt(&procs::strip_resume(&flags))));
             }

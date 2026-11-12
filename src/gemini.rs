@@ -130,11 +130,6 @@ pub fn find(gemini_dir: &Path, session_id: &str) -> Option<PathBuf> {
         .map(|s| s.path)
 }
 
-pub fn is_gemini(arg: &str) -> bool {
-    let base = arg.rsplit('/').next().unwrap_or(arg);
-    base == "gemini" || arg.contains("/@google/gemini-cli/")
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -145,10 +140,5 @@ mod tests {
         assert_eq!(field(s, "sessionId"), Some("abc-1"));
         assert_eq!(field(s, "kind"), Some("main"));
         assert_eq!(field(s, "missing"), None);
-        assert!(is_gemini("/home/u/.nvm/versions/node/v24/bin/gemini"));
-        assert!(is_gemini(
-            "/x/lib/node_modules/@google/gemini-cli/dist/index.js"
-        ));
-        assert!(!is_gemini("gemini-helper"));
     }
 }

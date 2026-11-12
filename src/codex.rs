@@ -202,11 +202,6 @@ pub fn overseer_mcp(exe: &str, state_dir: &str, task_id: &str) -> Vec<String> {
     .collect()
 }
 
-pub fn is_codex(arg: &str) -> bool {
-    let base = arg.rsplit('/').next().unwrap_or(arg);
-    base == "codex" || base == "codex.js"
-}
-
 // Subcommands codex parses before a prompt that never run a conversation: the Desktop
 // backend, servers and tooling. `resume`, `fork`, `exec` and `review` do, so they stay sessions.
 const NOT_SESSIONS: &[&str] = &[
@@ -276,7 +271,7 @@ fn args(argv: &[String]) -> Option<&[String]> {
     let i = argv
         .iter()
         .take(if runtime { 2 } else { 1 })
-        .position(|a| is_codex(a))?;
+        .position(|a| crate::agents::runs_as(crate::agents::CODEX, a))?;
     Some(&argv[i + 1..])
 }
 

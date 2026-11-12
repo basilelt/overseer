@@ -24,6 +24,42 @@ pub enum Transcript {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Process {
+    ArgContains(&'static str),
+    BinOrScript {
+        bin: &'static str,
+        script: &'static str,
+    },
+    BinOrPackage {
+        bin: &'static str,
+        package: &'static str,
+    },
+    BinOrNative {
+        bins: &'static [&'static str],
+    },
+}
+
+impl Process {
+    pub fn matches(self, arg: &str) -> bool {
+        match self {
+            Process::ArgContains(s) => arg.contains(s),
+            Process::BinOrScript { bin, script } => {
+                let base = arg.rsplit('/').next().unwrap_or(arg);
+                base == bin || base == script
+            }
+            Process::BinOrPackage { bin, package } => {
+                let base = arg.rsplit('/').next().unwrap_or(arg);
+                base == bin || arg.contains(package)
+            }
+            Process::BinOrNative { bins } => {
+                let base = arg.rsplit(['/', '\\']).next().unwrap_or(arg);
+                bins.contains(&base)
+            }
+        }
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Mcp {
     None,
     Claude,
@@ -81,6 +117,7 @@ pub struct Agent {
     pub approval_overrides: &'static [&'static str],
     pub effort_levels: &'static [&'static str],
     pub transcript: Option<Transcript>,
+    pub process: Option<Process>,
     pub metered: bool,
     pub mcp: Mcp,
     pub hooks: Hooks,
@@ -116,6 +153,7 @@ const NONE: Agent = Agent {
     approval_overrides: &[],
     effort_levels: EFFORTS,
     transcript: None,
+    process: None,
     metered: false,
     mcp: Mcp::None,
     hooks: Hooks::Polling,
@@ -152,6 +190,7 @@ pub static AGENTS: &[Agent] = &[
             select_then_accept: b"\x1b[B\r",
         }),
         transcript: Some(Transcript::Claude),
+        process: Some(Process::ArgContains("claude")),
         metered: true,
         mcp: Mcp::Claude,
         hooks: Hooks::Native,
@@ -187,6 +226,10 @@ pub static AGENTS: &[Agent] = &[
     Agent {
         id: "codex",
         transcript: Some(Transcript::Codex),
+        process: Some(Process::BinOrScript {
+            bin: "codex",
+            script: "codex.js",
+        }),
         metered: true,
         mcp: Mcp::Codex,
         hooks: Hooks::Native,
@@ -222,6 +265,10 @@ pub static AGENTS: &[Agent] = &[
     Agent {
         id: "gemini",
         transcript: Some(Transcript::Gemini),
+        process: Some(Process::BinOrPackage {
+            bin: "gemini",
+            package: "/@google/gemini-cli/",
+        }),
         metered: true,
         hooks: Hooks::Native,
         hooks_need_cli: true,
@@ -341,6 +388,9 @@ pub static AGENTS: &[Agent] = &[
     Agent {
         id: "vibe",
         transcript: Some(Transcript::Vibe),
+        process: Some(Process::BinOrNative {
+            bins: &["vibe", "vibe.exe", "vibe-rs", "vibe-rs.exe"],
+        }),
         mcp: Mcp::VibeTrust,
         hooks: Hooks::Native,
         hook_note: Some("Needs Mistral Vibe 3.0 or later. An interrupted turn fires no hook: the line stays busy until the next turn ends."),
@@ -411,7 +461,13 @@ fn base(arg: &str) -> &str {
     arg.rsplit(['/', '\\']).next().unwrap_or(arg)
 }
 
-pub fn of_argv(argv: &[String]) -> Option<&'static Agent> {
+pub fn runs_as(id: &str, arg: &str) -> bool {
+    get(id)
+        .and_then(|a| a.process)
+        .is_some_and(|p| p.matches(arg))
+}
+
+pub fn of_launch_argv(argv: &[String]) -> Option<&'static Agent> {
     let first = argv.first().map(|a| base(a))?;
     AGENTS
         .iter()
@@ -1124,16 +1180,50 @@ mod tests {
     }
 
     #[test]
+    fn launch_binary_and_running_process_rules_side_by_side() {
+        let table: &[(&str, Option<&str>, Option<&str>)] = &[
+            ("/usr/bin/claude", Some("claude"), Some("claude")),
+            ("claude.exe", Some("claude"), Some("claude")),
+            ("/opt/claude-code/cli.js", None, Some("claude")),
+            ("/usr/bin/codex", Some("codex"), Some("codex")),
+            ("codex.exe", Some("codex"), None),
+            ("/x/bin/codex.js", None, Some("codex")),
+            ("C:\\bin\\codex", Some("codex"), None),
+            ("/usr/bin/gemini", Some("gemini"), Some("gemini")),
+            ("gemini.exe", Some("gemini"), None),
+            ("/x/@google/gemini-cli/dist/index.js", None, Some("gemini")),
+            ("/home/u/.local/bin/vibe", Some("vibe"), Some("vibe")),
+            ("vibe.exe", Some("vibe"), Some("vibe")),
+            ("C:\\bin\\vibe", Some("vibe"), Some("vibe")),
+            ("/x/site-packages/vibe/_bin/vibe-rs", None, Some("vibe")),
+            ("vibe-rs.exe", None, Some("vibe")),
+            ("/usr/bin/cursor-agent", Some("cursor"), None),
+            ("gemini-helper", None, None),
+            ("vibe-app-server", None, None),
+            ("/usr/bin/vibes", None, None),
+            ("bash", None, None),
+        ];
+        for (arg, launch, running) in table {
+            let launch_id = of_launch_argv(&s(&[arg])).map(|a| a.id);
+            let running_id = [CLAUDE, CODEX, GEMINI, VIBE]
+                .into_iter()
+                .find(|id| runs_as(id, arg));
+            assert_eq!(launch_id, *launch, "launch {arg}");
+            assert_eq!(running_id, *running, "running {arg}");
+        }
+    }
+
+    #[test]
     fn argv_detection() {
         assert_eq!(
-            of_argv(&s(&["/usr/bin/cursor-agent"])).map(|a| a.id),
+            of_launch_argv(&s(&["/usr/bin/cursor-agent"])).map(|a| a.id),
             Some("cursor")
         );
         assert_eq!(
-            of_argv(&s(&["gemini", "-i", "x"])).map(|a| a.id),
+            of_launch_argv(&s(&["gemini", "-i", "x"])).map(|a| a.id),
             Some("gemini")
         );
-        assert!(of_argv(&s(&["bash"])).is_none());
+        assert!(of_launch_argv(&s(&["bash"])).is_none());
         assert_eq!(id_of("nope"), "other");
         assert!(!task_agent("shell"));
     }

@@ -294,10 +294,6 @@ pub fn titles(claude_dir: &Path, session_id: &str, n: usize) -> Vec<String> {
     out.split_off(skip)
 }
 
-pub fn is_claude(arg: &str) -> bool {
-    arg.contains("claude")
-}
-
 /// Last parsed content of each session file: Claude rewrites it in place, so a scan can read it
 /// torn mid-write, and that one read must not make a live session vanish.
 static LAST_GOOD: OnceLock<Mutex<HashMap<PathBuf, Value>>> = OnceLock::new();
@@ -365,7 +361,9 @@ fn live_in(dir: std::fs::ReadDir, probe: &dyn Probe, seen: &mut HashSet<PathBuf>
             if !same {
                 return None;
             }
-            flags_after(&i.argv, is_claude)
+            flags_after(&i.argv, |a| {
+                crate::agents::runs_as(crate::agents::CLAUDE, a)
+            })
         });
         let launch_id = flags.as_deref().and_then(launch_session);
         let alive = flags.map(|f| launch_flags(&strip_resume(&f)));

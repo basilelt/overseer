@@ -373,7 +373,7 @@ fn in_worktree(ctx: &Ctx, body: &Value, spec: &mut crate::term::Spec) -> Result<
     let agent = body["agent"]
         .as_str()
         .map(crate::agents::id_of)
-        .or_else(|| crate::agents::of_argv(&spec.cmd).map(|a| a.id))
+        .or_else(|| crate::agents::of_launch_argv(&spec.cmd).map(|a| a.id))
         .unwrap_or("shell");
     spec.cwd =
         crate::worktrees::for_term(ctx, &spec.cwd, agent, &opt).map_err(|(c, e)| err(c, e))?;

@@ -616,7 +616,7 @@ pub fn spawn(s: Spec) -> Result<Arc<Term>, String> {
             created_ms: now_ms(),
             exited: false,
             exit_code: None,
-            agent: crate::agents::of_argv(&s.cmd).map(|a| a.id.to_string()),
+            agent: crate::agents::of_launch_argv(&s.cmd).map(|a| a.id.to_string()),
             line_id: s.line_id,
             task_id: s.task_id,
             session: s.session,
