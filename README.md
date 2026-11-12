@@ -119,6 +119,11 @@ Point the app at any host that works with `ssh <host>`: your `~/.ssh/config`, `P
 and carries terminals, events and forwarded ports over a single SSH connection. Nothing listens
 on a TCP port on the server.
 
+Keep each host in its own window, or put this computer and several SSH hosts in one window:
+each host gets a live section in the sidebar, and a click on one of its sessions brings it into
+the main area. One window per host stays the default; pick the other in Settings or when you
+connect.
+
 ### And also
 
 - **Phone and tablet apps** for Android and iOS (iPhone and iPad), synced with the desktop: follow

@@ -33,11 +33,10 @@ describe('StateGroups', () => {
     expect(h.indexOf('T-b')).toBeLessThan(h.indexOf('T-c'));
   });
 
-  it('passes the host to every row and forwards the click and the menu', () => {
-    // Given a host and the source
-    // When rendered and read
-    // Then the chip shows and the handlers are wired
-    expect(html({ host: { name: 'devbox', phase: 'connected' } })).toContain('>devbox<');
+  it('forwards the click and the menu of every row', () => {
+    // Given the source
+    // When read
+    // Then the handlers are wired
     expect(src).toMatch(/onselect=\{\(e\) => onselect\(it\.key, e\)\}/);
     expect(src).toMatch(/onmenu=/);
   });

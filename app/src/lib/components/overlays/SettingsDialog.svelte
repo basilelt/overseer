@@ -628,6 +628,40 @@
       {#if vis('hosts')}
         <section>
           <h3>{t('settings.hosts')}</h3>
+          {#if !app.mobile && row('hosts', 'hostWindows')}
+            <div class="row stacked" class:hit={hit('hosts', 'hostWindows')}>
+              <span>{t('settings.hostWindows')}<small>{t('settings.hostWindowsHint')}</small></span>
+              <div class="host-modes" role="radiogroup" aria-label={t('settings.hostWindows')}>
+                {#each [['shared', 'settings.hostShared', 'settings.hostSharedHint'], ['separate', 'settings.hostSeparate', 'settings.hostSeparateHint']] as const as [mode, label, hint] (mode)}
+                  <label class="host-mode" class:on={settings.hostWindows === mode}>
+                    <input type="radio" name="host-windows" value={mode} checked={settings.hostWindows === mode} onchange={() => saveSettings({ hostWindows: mode })} />
+                    <span><b>{t(label)}</b><small>{t(hint)}</small></span>
+                  </label>
+                {/each}
+              </div>
+              {#if Object.keys(settings.hostChoice).length}
+                <button class="btn" onclick={() => saveSettings({ hostChoice: {} })}>{t('settings.hostChoiceForget', { n: Object.keys(settings.hostChoice).length })}</button>
+              {/if}
+            </div>
+          {/if}
+          {#if !app.mobile && row('hosts', 'hostAsk')}
+            <label class="row" class:hit={hit('hosts', 'hostAsk')}>
+              <span>{t('settings.hostAsk')}<small>{t('settings.hostAskHint')}</small></span>
+              <input type="checkbox" class="switch" checked={settings.hostAsk} onchange={(e) => saveSettings({ hostAsk: e.currentTarget.checked })} />
+            </label>
+          {/if}
+          {#if !app.mobile && row('hosts', 'hostTabColor')}
+            <label class="row" class:hit={hit('hosts', 'hostTabColor')}>
+              <span>{t('settings.hostTabColor')}<small>{t('settings.hostTabColorHint')}</small></span>
+              <input type="checkbox" class="switch" checked={settings.hostTabColor} onchange={(e) => saveSettings({ hostTabColor: e.currentTarget.checked })} />
+            </label>
+          {/if}
+          {#if !app.mobile && row('hosts', 'hostReconnect')}
+            <label class="row" class:hit={hit('hosts', 'hostReconnect')}>
+              <span>{t('settings.hostReconnect')}<small>{t('settings.hostReconnectHint')}</small></span>
+              <input type="checkbox" class="switch" checked={settings.hostReconnect} onchange={(e) => saveSettings({ hostReconnect: e.currentTarget.checked })} />
+            </label>
+          {/if}
           {#if row('hosts', 'hosts')}
             {#if settings.recentHosts.length}
               <ul class="hosts">
@@ -715,6 +749,41 @@
 </Modal>
 
 <style>
+  .host-modes {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 8px;
+    width: 100%;
+  }
+  .host-mode {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 10px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    cursor: pointer;
+  }
+  .host-mode.on {
+    border-color: var(--accent);
+    background: var(--accent-soft);
+  }
+  .host-mode input {
+    margin-top: 2px;
+    accent-color: var(--accent);
+  }
+  .host-mode b {
+    display: block;
+    font-weight: 600;
+    color: var(--text);
+  }
+  .host-mode small {
+    display: block;
+    margin-top: 2px;
+    color: var(--text-2);
+    font-size: 12px;
+    line-height: 1.4;
+  }
   .settings {
     display: grid;
     grid-template-columns: 188px minmax(0, 1fr);

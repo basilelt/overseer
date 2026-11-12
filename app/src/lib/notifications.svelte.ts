@@ -88,7 +88,11 @@ export function runEntry(app: typeof App, e: Entry) {
   const a = e.action;
   if (!a) return;
   app.open(null);
-  if (a.kind === 'line') app.select(a.key);
+  if (a.kind === 'line') {
+    const host = a.host;
+    if (host && host !== app.link?.key && app.others.some((l) => l.key === host)) void app.switchHost(host).then(() => app.select(a.key));
+    else app.select(a.key);
+  }
   else if (a.kind === 'url') app.openUrl(a.url);
   else updater.dialog = true;
 }

@@ -2,19 +2,15 @@
   import type { SidebarItem } from '../../grouping';
   import { t } from '../../i18n.svelte';
   import { age } from '../../time';
-  import { connLabel } from '../../conn-label';
-  import type { ConnState } from '../../types';
-
-  // host is set for SSH sessions only; `now` comes from the shared clock so rows own no timer.
+  // `now` comes from the shared clock so rows own no timer.
   let {
     item,
     now,
     selected = false,
     multi = false,
-    host,
     onselect,
     onmenu,
-  }: { item: SidebarItem; now: number; selected?: boolean; multi?: boolean; host?: { name: string } & Pick<ConnState, 'phase' | 'attempt' | 'version'>; onselect: (e?: MouseEvent) => void; onmenu?: (e: MouseEvent) => void } = $props();
+  }: { item: SidebarItem; now: number; selected?: boolean; multi?: boolean; onselect: (e?: MouseEvent) => void; onmenu?: (e: MouseEvent) => void } = $props();
 
   const label = $derived(t(`session.state.${item.state}`));
 </script>
@@ -25,7 +21,6 @@
   <span class="title">{item.title}</span>
   {#if item.status}<span class="action">{item.status}</span>{/if}
   <span class="age">{age(item.at, now)}</span>
-  {#if host}<span class="host" title={connLabel(host)}><span class="hname">{host.name}</span><span class="hst">{connLabel(host)}</span></span>{/if}
   <span class="chev" aria-hidden="true">›</span>
 </button>
 
@@ -108,33 +103,6 @@
     font-size: 11px;
     color: var(--text-2);
     font-variant-numeric: tabular-nums;
-  }
-  .host {
-    flex: 0 1 auto;
-    min-width: 0;
-    max-width: 40%;
-    overflow: hidden;
-    display: inline-flex;
-    gap: 4px;
-    padding: 0 6px;
-    border-radius: 4px;
-    background: var(--surface-2);
-    font-size: 10px;
-    color: var(--text-2);
-  }
-  .hname {
-    flex: 0 4 auto;
-    min-width: 3ch;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  .hst {
-    flex: 0 1 auto;
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
   }
   .chev {
     flex: none;

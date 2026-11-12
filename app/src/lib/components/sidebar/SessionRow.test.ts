@@ -20,22 +20,13 @@ describe('SessionRow', () => {
   });
 
   it('keeps its content readable and adds the state for screen readers', () => {
-    // Given a paused session on an SSH host
+    // Given a paused session
     // When it renders
     // Then no aria-label hides the content and the state label is in a sr-only span
-    const h = html({ state: 'paused' }, { host: { name: 'devbox', phase: 'connected' } });
+    const h = html({ state: 'paused' });
     expect(h).not.toContain('aria-label');
     expect(h).toContain('class="sr-only">Paused<');
-    for (const s of ['>Fix login<', '>Ran the tests<', '>5m<', '>devbox<']) expect(h).toContain(s);
-  });
-
-  it('fills the placeholders of the host connection text', () => {
-    // Given a host that is reconnecting
-    // When the row renders
-    // Then the attempt is shown and no placeholder remains
-    const h = html({}, { host: { name: 'devbox', phase: 'reconnecting', attempt: 2 } });
-    expect(h).toContain('Reconnecting (attempt 2)');
-    expect(h).not.toContain('{n}');
+    for (const s of ['>Fix login<', '>Ran the tests<', '>5m<']) expect(h).toContain(s);
   });
 
   it('opens the session on click', () => {
@@ -90,14 +81,14 @@ describe('SessionRow', () => {
     expect(html({ state: 'closed' })).toContain('data-hollow');
   });
 
-  it('shows the host chip only for an SSH session, with its connection status', () => {
-    // Given a session on an SSH host and a local one
-    // When they render
-    // Then only the SSH one carries the host name and status
+  it('does not repeat the host on every row: the title bar and host sections already name it', () => {
+    // Given a session on an SSH host
+    // When it renders, even if a caller still passes a host
+    // Then the row carries no host name nor connection status
     const h = html({}, { host: { name: 'devbox', phase: 'connected' } });
-    expect(h).toContain('>devbox<');
-    expect(h).toContain('Connected');
-    expect(html()).not.toContain('class="host');
+    expect(h).not.toContain('devbox');
+    expect(h).not.toContain('Connected');
+    expect(componentSrc).not.toContain('class="host"');
   });
 
   it('uses a dedicated, readable selection token and a text-2 age', () => {
@@ -134,18 +125,13 @@ describe('SessionRow', () => {
   });
 
 
-  it('keeps the chevron in view: the row clips, the chip and its parts can shrink, the name first', () => {
+  it('keeps the chevron in view: the row clips and the title has a minimum', () => {
     // Given the component source
     // When the layout rules are read
-    // Then the row clips, the title has a px minimum and name shrinks faster than status
+    // Then the row clips, the title has a px minimum and the chevron never shrinks
     const rule = (sel: string) => componentSrc.match(new RegExp(`\\${sel} \\{([^}]*)\\}`))![1]!;
     expect(rule('.row')).toContain('overflow: hidden');
     expect(rule('.title')).toMatch(/min-width: \d+px/);
-    expect(rule('.host')).toMatch(/min-width: 0/);
-    expect(rule('.host')).not.toContain('min-content');
-    const shrink = (sel: string) => Number(rule(sel).match(/flex: 0 (\d+) auto/)![1]);
-    expect(shrink('.hname')).toBeGreaterThan(shrink('.hst'));
-    expect(rule('.hst')).toContain('text-overflow: ellipsis');
     expect(rule('.chev')).toContain('flex: none');
   });
 });

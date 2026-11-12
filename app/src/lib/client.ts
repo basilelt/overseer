@@ -20,6 +20,8 @@ export interface DaemonClient {
   attachTerm(termId: string, onData: (bytes: Uint8Array) => void, onClose?: () => void): Promise<TermIO>;
   connect(target: HostTarget, onState: (s: ConnState) => void, opts?: ConnectOptions): Promise<void>;
   disconnect(): Promise<void>;
+  /** Drops the extra host connections a previous page of this window left behind. */
+  dropSlots?(): Promise<void>;
   sshHosts(): Promise<SshHost[]>;
   watchPorts(onState: (s: PortsState) => void): () => void;
   configurePorts(s: PortSettings): Promise<void>;
@@ -81,4 +83,10 @@ export async function getClient(): Promise<DaemonClient> {
 
 export function setClient(c: DaemonClient) {
   current = c;
+}
+
+/** A client of its own for one more host shown in this window. */
+export async function newHostClient(slot: string): Promise<DaemonClient> {
+  if (isDemo() || import.meta.env.VITE_MOCK === '1' || !isTauri()) return new (await import('./mock')).MockDaemon();
+  return new (await import('./tauri-client')).TauriDaemon(slot);
 }

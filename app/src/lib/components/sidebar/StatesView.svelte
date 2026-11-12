@@ -4,7 +4,7 @@
   import { byState } from '../../by-state';
   import { t } from '../../i18n.svelte';
   import { saveSettings, settings } from '../../settings.svelte';
-  import { filterItems, hostFor, toggleOpen, visibleIds } from '../../spaces';
+  import { filterItems, toggleOpen, visibleIds } from '../../spaces';
   import { app } from '../../state.svelte';
   import { TIME_BUCKETS } from '../../time-bucket';
   import { hostKey } from '../../window';
@@ -23,7 +23,6 @@
   const items = $derived(filterItems(app.items, (key) => names.get(app.itemWs.get(key) ?? '') ?? '', q));
   const sections = $derived(byState(items, app.itemWs, now, visibleIds(app.ws.workspaces)));
   const banner = $derived(attention(items, app.itemWs));
-  const host = $derived(hostFor(app.conn));
   const saved = $derived(settings.statesOpen?.[hostKey(app.conn.target)]);
   const opened = $derived(new Set(saved ?? []));
   const empty = $derived(!banner.length && sections.every((s) => !s.count));
@@ -47,11 +46,11 @@
               <span class="n">{b.count}</span>
             </button>
             {#if opened.has(b.bucket)}
-              <StateGroups groups={b.groups} {names} {now} {host} selectedKey={app.selectedKey} onselect={selectSession} onmenu={itemMenuAt} />
+              <StateGroups groups={b.groups} {names} {now} selectedKey={app.selectedKey} onselect={selectSession} onmenu={itemMenuAt} />
             {/if}
           {/each}
         {:else}
-          <StateGroups groups={s.groups} {names} {now} {host} selectedKey={app.selectedKey} onselect={selectSession} onmenu={itemMenuAt} />
+          <StateGroups groups={s.groups} {names} {now} selectedKey={app.selectedKey} onselect={selectSession} onmenu={itemMenuAt} />
         {/if}
       </section>
     {/if}

@@ -157,6 +157,21 @@ describe('runEntry', () => {
     expect(select).toHaveBeenCalledWith('line:a');
   });
 
+  it('brings the host of a background session into the main area before opening it', async () => {
+    const others = app.others;
+    app.others = [{ key: 'ssh:prod' }] as typeof app.others;
+    vi.spyOn(app, 'open').mockImplementation(() => {});
+    const order: string[] = [];
+    vi.spyOn(app, 'switchHost').mockImplementation(async (k) => void order.push(`switch ${k}`));
+    vi.spyOn(app, 'select').mockImplementation((k) => void order.push(`select ${k}`));
+    runEntry(app, entry({ action: { kind: 'line', key: 'line:b', host: 'ssh:prod' } }));
+    await vi.waitFor(() => expect(order).toEqual(['switch ssh:prod', 'select line:b']));
+    order.length = 0;
+    runEntry(app, entry({ action: { kind: 'line', key: 'line:c', host: 'ssh:gone' } }));
+    expect(order).toEqual(['select line:c']);
+    app.others = others;
+  });
+
   it('opens a link through the app link router', () => {
     const openUrl = vi.spyOn(app, 'openUrl').mockImplementation(() => {});
     vi.spyOn(app, 'open').mockImplementation(() => {});

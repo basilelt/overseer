@@ -7,6 +7,8 @@
   import { settings } from '../../settings.svelte';
   import { app } from '../../state.svelte';
   import type { ConnPhase, HostTarget } from '../../types';
+  import { connectHow, hostColor, hostName } from '../../hosts';
+  import { hostKey, openWindow } from '../../window';
 
   let open = $state(false);
 
@@ -23,13 +25,19 @@
   };
 
   const conn = $derived(app.conn);
-  const label = $derived(conn.target.kind === 'local' ? t('host.local') : conn.target.label);
+  const many = $derived(app.hosts.length > 1);
+  const label = $derived(many ? t('hosts.count', { n: app.hosts.length }) : conn.target.kind === 'local' ? t('host.local') : conn.target.label);
+  const here = $derived(new Set(app.hosts.map((l) => l.key)));
   const phaseText = $derived(connLabel(conn));
   const tip = $derived([phaseText, conn.error, app.client?.kind === 'mock' ? t('conn.mock') : ''].filter(Boolean).join(' · '));
 
   function pick(h: HostTarget) {
     open = false;
-    app.connect(h);
+    const how = connectHow(settings, h, { active: hostKey(conn.target), keys: [...here], live: app.connected });
+    if (how === 'ask') app.open('connect', `ask:${JSON.stringify(h)}`);
+    else if (how === 'window') void openWindow(h);
+    else if (how === 'switch') void app.switchHost(hostKey(h));
+    else app.connect(h, how === 'add' ? 'add' : 'replace');
   }
 
   async function disconnect() {
@@ -43,6 +51,7 @@
 <div class="wrap" data-tour="host">
   <button
     class="chip"
+    data-tour="hosts"
     title={tip}
     aria-haspopup="menu"
     aria-expanded={open}
@@ -53,19 +62,32 @@
   >
     {#if conn.target.kind === 'local'}<Monitor size={13} />{:else}<Server size={13} />{/if}
     <span class="label">{label}</span>
-    <span class="dot" class:pulse={PHASE_COLOR[conn.phase] === 'var(--st-working)'} style:background={PHASE_COLOR[conn.phase]}></span>
+    {#if many}
+      <span class="dots">{#each app.hosts as l (l.key)}<span class="dot" style:background={(l === app.link ? conn : l.conn).phase === 'connected' ? hostColor(l.key) : PHASE_COLOR[(l === app.link ? conn : l.conn).phase]}></span>{/each}</span>
+    {:else}
+      <span class="dot" class:pulse={PHASE_COLOR[conn.phase] === 'var(--st-working)'} style:background={PHASE_COLOR[conn.phase]}></span>
+    {/if}
     <ChevronDown size={12} />
   </button>
   {#if open}
     <div class="menu" role="menu">
       <div class="status faint">{tip}</div>
-      {#if !app.mobile}
+      {#if many}
+        <div class="status faint">{t('hosts.inWindow')}</div>
+        {#each app.hosts as l (l.key)}
+          <button role="menuitemradio" aria-checked={l === app.link} class:on={l === app.link} onclick={() => ((open = false), app.switchHost(l.key))}>
+            <span class="dot" style:background={hostColor(l.key)}></span>{hostName(l.target)}
+          </button>
+        {/each}
+        <hr />
+      {/if}
+      {#if !app.mobile && !here.has('local')}
         <button role="menuitem" onclick={() => pick({ kind: 'local', label: 'Local' })}>
           <Monitor size={13} />
           {t('connect.local')}
         </button>
       {/if}
-      {#each settings.recentHosts as h (h.host)}
+      {#each settings.recentHosts.filter((h) => !many || !here.has(hostKey(h))) as h (h.host)}
         <button role="menuitem" onclick={() => pick(h)}><Server size={13} />{h.label}</button>
       {/each}
       <hr />
@@ -103,6 +125,20 @@
     white-space: nowrap;
     color: var(--text);
     font-weight: 500;
+  }
+  .dots {
+    display: inline-flex;
+    gap: 3px;
+  }
+  .dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    flex: none;
+  }
+  .menu .on {
+    font-weight: 600;
+    color: var(--text);
   }
   .pulse {
     animation: pulse 1.2s ease-in-out 6;

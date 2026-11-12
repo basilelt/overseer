@@ -61,6 +61,7 @@
   import X2 from '@lucide/svelte/icons/square-x';
   import Undo2 from '@lucide/svelte/icons/undo-2';
   import { hint, newWindow, runShortcut } from '../../keyboard';
+  import { hostName } from '../../hosts';
   import type { ShortcutId } from '../../shortcuts';
 
   let { onclose }: { onclose: () => void } = $props();
@@ -140,6 +141,8 @@
     action('kanban', 'palette.openKanban', KanbanSquare, () => (app.view = 'kanban')),
     action('agents', 'palette.openAgents', LayoutGrid, () => (app.view = 'agents')),
     action('connect', connected ? 'palette.switchHost' : 'palette.connectHost', Server, () => app.open('connect')),
+    ...((connected || app.hosts.length > 1) && desktop ? [action('add-host', 'palette.addHost', Server, () => app.open('connect', 'add'))] : []),
+    ...app.others.map((l) => ({ id: `host:${l.key}`, label: t('palette.showHost', { name: hostName(l.target) }), icon: Server, section: 'actions', run: () => app.switchHost(l.key) }) as Cmd),
     ...(connected ? [action('disconnect', 'palette.disconnect', Unplug, () => app.disconnect())] : []),
     action('theme', 'palette.toggleTheme', SunMoon, () => saveSettings({ theme: nextTheme[settings.theme] })),
     action('panel', 'palette.togglePanel', PanelRight, () => (app.panelOpen = !app.panelOpen)),

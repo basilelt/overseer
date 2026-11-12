@@ -14,7 +14,9 @@
   import LocalNetworkPanel from './LocalNetworkPanel.svelte';
   import { t, type Key } from '../../i18n.svelte';
   import { app } from '../../state.svelte';
-  import { settings } from '../../settings.svelte';
+  import { saveSettings, settings } from '../../settings.svelte';
+  import { connectHow, preferredChoice, type ConnectHow, type HostChoice } from '../../hosts';
+  import { hostKey, openWindow } from '../../window';
   import { isBusy, steps } from '../../conn';
   import { exitDemo, isDemo, startDemo } from '../../demo';
   import { localNetworkView } from '../../localnet';
@@ -72,13 +74,16 @@
     active = 0;
   });
 
+  // Adding a host swaps the main area to it after a tick: until then app.conn is still the previous host.
+  const mine = $derived(!!lastTarget && hostKey(app.conn.target) === hostKey(lastTarget));
+
   $effect(() => {
     const p = app.conn.phase;
-    if (started && !reached.includes(p)) reached = [...reached, p];
+    if (started && mine && !reached.includes(p)) reached = [...reached, p];
   });
 
   $effect(() => {
-    if (!started || app.conn.phase !== 'connected') return;
+    if (!started || !mine || app.conn.phase !== 'connected') return;
     const id = setTimeout(onclose, 600);
     return () => clearTimeout(id);
   });
@@ -88,12 +93,57 @@
   const lnView = $derived(app.conn.phase === 'error' ? localNetworkView(app.localNet, app.conn.error) : 'none');
   const lnReport = $derived(lnView === 'none' ? null : app.localNet);
 
+  // Opened from "Add a host to this window": the target joins the hosts already here.
+  const forced: HostChoice | undefined = app.overlayArg === 'add' ? 'add' : undefined;
+  let asking = $state<HostTarget | null>(askedFor(app.overlayArg));
+  let remember = $state(false);
+  const first = $derived(preferredChoice(settings));
+  const order = $derived<HostChoice[]>(first === 'add' ? ['window', 'add'] : ['add', 'window']);
+
+  function askedFor(arg: string | null): HostTarget | null {
+    if (!arg?.startsWith('ask:')) return null;
+    try {
+      const h = JSON.parse(arg.slice(4)) as HostTarget;
+      return h && (h.kind === 'local' || (h.kind === 'ssh' && h.host)) ? h : null;
+    } catch {
+      return null;
+    }
+  }
+
   function connect(target: HostTarget | undefined) {
     if (!target || busy) return;
+    const how = connectHow(settings, target, { active: hostKey(app.conn.target), keys: app.hosts.map((l) => l.key), live: app.connected }, forced);
+    if (how === 'ask') {
+      asking = target;
+      remember = false;
+      return;
+    }
+    go(target, how);
+  }
+
+  function go(target: HostTarget, how: Exclude<ConnectHow, 'ask'>) {
+    if (how === 'window') {
+      void openWindow(target);
+      onclose();
+      return;
+    }
+    if (how === 'switch') {
+      void app.switchHost(hostKey(target));
+      onclose();
+      return;
+    }
     lastTarget = target;
     reached = [];
     started = true;
-    app.connect(target);
+    app.connect(target, how === 'add' ? 'add' : 'replace');
+  }
+
+  function choose(c: HostChoice) {
+    const target = asking;
+    if (!target) return;
+    if (remember) saveSettings({ hostChoice: { ...settings.hostChoice, [hostKey(target)]: c } });
+    asking = null;
+    go(target, c);
   }
 
   function onkeydown(e: KeyboardEvent) {
@@ -109,10 +159,28 @@
   const stepLabel = (id: string): string =>
     id === 'installing' && app.conn.version ? t('conn.installing', { version: app.conn.version }) : t(`connect.step.${id}` as Key);
   const focus = (el: HTMLInputElement) => el.focus();
+  const autofocus = (el: HTMLButtonElement, on: boolean) => {
+    if (on) el.focus();
+  };
 </script>
 
 <Modal title={t('connect.title')} {onclose} width={540}>
-  {#if !started}
+  {#if asking}
+    {@const name = asking.kind === 'local' ? t('connect.local') : asking.label}
+    <div class="choose">
+      <div class="target">
+        {#if asking.kind === 'local'}<Monitor size={15} />{:else}<Server size={15} />{/if}
+        <span>{t('connect.choose', { host: name })}</span>
+      </div>
+      <label class="remember"><input type="checkbox" bind:checked={remember} />{t('connect.remember', { host: name })}</label>
+      <div class="actions">
+        <button class="btn" onclick={() => (asking = null)}>{t('common.back')}</button>
+        {#each order as c (c)}
+          <button class="btn" class:primary={c === first} use:autofocus={c === first} onclick={() => choose(c)}>{t(c === 'add' ? 'connect.addHere' : 'connect.newWindow')}</button>
+        {/each}
+      </div>
+    </div>
+  {:else if !started}
     <input class="query" use:focus bind:value={query} {onkeydown} placeholder={t('connect.placeholder')} spellcheck="false" autocomplete="off" />
     <ul role="listbox" aria-label={t('connect.title')}>
       {#each rows as row, i (row.key)}
@@ -227,6 +295,18 @@
   .empty {
     padding: 4px 10px;
     color: var(--text-3);
+  }
+  .choose {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+  .remember {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--text-2);
+    font-size: 13px;
   }
   .progress {
     padding: 4px 0;

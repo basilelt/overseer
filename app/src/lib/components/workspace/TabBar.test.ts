@@ -67,3 +67,11 @@ describe('new tab menu', () => {
     for (const view of ['browser', 'graph', 'worktrees', 'system', 'usage', 'prs', 'reviewKey', 'tabs.reviewChanges']) expect(menu).not.toContain(view);
   });
 });
+
+describe('TabBar host tag', () => {
+  it('names the host on every tab only when the window shows several hosts and the setting is on', () => {
+    expect(bar).toContain('app.hosts.length > 1 && settings.hostTabColor && app.link ? { name: hostName(app.link.target), color: hostColor(app.link.key) } : null');
+    expect(bar).toMatch(/\{#if hostTag\}<span class="host mono" style:--host=\{hostTag\.color\}/);
+    expect(rule('.host')).toContain('max-width: 64px');
+  });
+});

@@ -19,6 +19,8 @@
   import { preload } from '../../idle';
 
   const statesView = preload(() => import('./StatesView.svelte'));
+  // Only windows showing several hosts need it.
+  const hostSections = () => import('./HostSections.svelte');
 
   const unplaced = $derived(app.connected && app.wsPersistent ? unplacedCount(app.data.lines, app.ws.workspaces, app.projects, app.data.tasks) : 0);
   const nudge = $derived(nudgeVisible(unplaced, settings.organizeNudgeAt));
@@ -74,10 +76,17 @@
       <button class="icon-btn" title={t('org.nudgeHide')} aria-label={t('org.nudgeHide')} onclick={() => saveSettings({ organizeNudgeAt: unplaced })}><X size={13} /></button>
     </div>
   {/if}
-  {#if app.sidebarMode === 'workspaces'}
-    <SpacesView {filter} {showArchived} />
+  {#snippet view()}
+    {#if app.sidebarMode === 'workspaces'}
+      <SpacesView {filter} {showArchived} />
+    {:else}
+      {#await statesView() then { default: StatesView }}<StatesView {filter} />{/await}
+    {/if}
+  {/snippet}
+  {#if app.hosts.length > 1}
+    {#await hostSections() then { default: HostSections }}<HostSections {filter} active={view} />{/await}
   {:else}
-    {#await statesView() then { default: StatesView }}<StatesView {filter} />{/await}
+    {@render view()}
   {/if}
   {#if selection.length > 1}
     <div class="selbar" role="toolbar" aria-label={t('ws.selection', { n: selection.length })}>

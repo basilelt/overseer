@@ -67,3 +67,31 @@ describe('openWindow', () => {
     expect(invoke).not.toHaveBeenCalled();
   });
 });
+
+describe('opening a window for one host', () => {
+  const prod = { kind: 'ssh' as const, host: 'prod', label: 'prod' };
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    invoke.mockReset();
+  });
+
+  it('hands the host to the new native window', async () => {
+    vi.stubGlobal('window', { __TAURI_INTERNALS__: {} });
+    invoke.mockResolvedValue('w-3');
+    await openWindow(prod);
+    expect(invoke).toHaveBeenCalledWith('window_new', { connect: prod });
+  });
+
+  it('puts the host in the URL of a browser window, and drops a stale one', async () => {
+    const open = vi.fn();
+    vi.stubGlobal('window', {});
+    vi.stubGlobal('open', open);
+    vi.stubGlobal('location', { href: 'https://sb.local/app?connect=%7B%7D' });
+    await openWindow(prod);
+    await openWindow();
+    const [a, b] = open.mock.calls.map(([u]) => new URL(u as string));
+    expect(JSON.parse(a.searchParams.get('connect')!)).toEqual(prod);
+    expect(b.searchParams.has('connect')).toBe(false);
+  });
+});

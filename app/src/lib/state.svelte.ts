@@ -7,6 +7,8 @@ import { groupItems, sidebarItems, stableItems, type SidebarItem } from './group
 import { applyEvent, deepEqual, mergeFetched, touchedKey, type Snapshot, type Touched } from './reduce';
 import { rememberHost, rememberWorkspace, saveSettings, settings, workspaceFor } from './settings.svelte';
 import { hostKey, isMainWindow } from './window';
+import { HostLink, type LinkChange } from './host-link.svelte';
+import { ordered, restoreHosts } from './hosts';
 import { normalizeUrl } from './browser';
 import { pages } from './session-pages.svelte';
 import type { EntryKind } from './notifications';
@@ -56,6 +58,17 @@ function withAdded(terms: Term[], added: Map<string, Term>): Term[] {
 
 class AppState {
   client = $state.raw<DaemonClient | null>(null);
+  /** The host the main area shows. */
+  link = $state.raw<HostLink | null>(null);
+  /** The other hosts of this window, followed in the background for their sidebar sections. */
+  others = $state.raw<HostLink[]>([]);
+  /** @internal */
+  hostOrder = $state.raw<string[]>([]);
+  hosts = $derived(this.link ? ordered(this.hostOrder, [this.link, ...this.others], (l) => l.key) : this.others);
+  /** @internal */
+  attachOnReady = false;
+  /** @internal */
+  slots = 0;
   conn = $state<ConnState>({ phase: 'idle', target: LOCAL });
   localNet = $state.raw<LocalNetworkReport | null>(null);
   data = $state.raw<Snapshot>({ lines: [], terms: [], tasks: [], activity: {} });
@@ -104,7 +117,8 @@ class AppState {
   currentWorkspace = $derived<Workspace | null>(this.ws.workspaces.find((w) => w.id === this.workspaceId) ?? null);
   aggregates = $derived(aggregatesOf(this.items, this.itemWs));
 
-  private unsubscribe: (() => void) | null = null;
+  /** @internal */
+  unsubscribe: (() => void) | null = null;
   private listeners = new Set<(prev: Snapshot, next: Snapshot, e: DaemonEvent) => void>();
   private toastTimer: ReturnType<typeof setTimeout> | undefined;
   private activityTimers = new Map<string, ReturnType<typeof setTimeout>>();
@@ -127,7 +141,8 @@ class AppState {
     this.os = platform.os;
     if (!platform.mobile) void this.askLocalNetwork();
     const hosts = platform.mobile ? await this.client.savedHosts().catch(() => []) : [];
-    const target = startupTarget({
+    const handed = platform.mobile || isMainWindow() ? null : await import('./handoff').then((m) => m.takeHandoff());
+    const target = handed ?? startupTarget({
       mobile: platform.mobile,
       lastHost: settings.lastHost,
       lastDirect: settings.lastDirect,
@@ -140,7 +155,10 @@ class AppState {
       this.conn = { phase: 'idle', target: platform.mobile ? { kind: 'direct', label: '' } : LOCAL };
       return this.open('connect');
     }
+    if (!platform.mobile) await this.client.dropSlots?.().catch(() => {});
+    const restore = !platform.mobile && isMainWindow() && settings.hostReconnect && !settings.explicitlyDisconnected ? restoreHosts(settings.windowHosts, target) : [];
     await this.connect(target);
+    for (const h of restore) void this.addHost(h, false);
     if (this.conn.phase === 'error' && target.kind !== 'local') this.open('connect');
   }
 
@@ -164,8 +182,23 @@ class AppState {
     }
   }
 
-  async connect(target: HostTarget) {
+  /** `add` keeps the hosts already in the window and shows the target beside them. */
+  async connect(target: HostTarget, how: 'replace' | 'add' = 'replace') {
+    const key = hostKey(target);
+    if (this.link && key !== this.link.key) {
+      if (this.others.some((l) => l.key === key)) return this.switchHost(key);
+      if (how === 'add' && (this.link.ready || this.others.length)) return this.addHost(target, true);
+    }
     const c = this.client ?? (this.client = await getClient());
+    const renewed = this.link?.client !== c;
+    const link = renewed || !this.link ? (this.link = new HostLink(target, c)) : this.link;
+    const prevKey = link.key;
+    link.ready = false;
+    link.target = target;
+    if (renewed && !this.others.length) this.hostOrder = [key];
+    else if (!this.hostOrder.includes(key)) this.hostOrder = this.hostOrder.includes(prevKey) ? this.hostOrder.map((k) => (k === prevKey ? key : k)) : [...this.hostOrder, key];
+    link.listener = this.onActiveState;
+    this.attachOnReady = false;
     this.unsubscribe?.();
     this.cancelWsRetry();
     this.connected = false;
@@ -174,20 +207,15 @@ class AppState {
     this.conn = { phase: 'connecting', target };
     if (target.kind === 'ssh') await this.askLocalNetwork(target.host);
     try {
-      await c.connect(
-        target,
-        (s) => {
-          const resumed = this.conn.phase === 'reconnecting' && s.phase === 'connected';
-          this.conn = s;
-          if (resumed) this.refresh().catch(() => {});
-        },
-        { serverBinDir: settings.serverBinDir || undefined },
-      );
+      await link.connect({ serverBinDir: settings.serverBinDir || undefined });
+      if (this.link !== link) return;
       this.connected = true;
       rememberHost(target, isMainWindow());
+      this.saveHosts();
       this.unsubscribe = c.subscribe((e) => this.onEvent(e));
       await this.refresh();
     } catch (err) {
+      if (this.link !== link) return;
       const error = this.conn.phase === 'error' && this.conn.error ? this.conn.error : String((err as Error)?.message ?? err);
       this.conn = { phase: 'error', target, error, resolved: this.conn.resolved };
       if (target.kind === 'ssh' && isNoRoute(error)) this.localNet = await this.probeLocalNetwork(target.host);
@@ -198,7 +226,18 @@ class AppState {
     await this.client?.restartServer();
   }
 
+  /** @internal */
+  readonly onActiveState = (s: ConnState, prev: ConnState) => {
+    const resumed = this.conn.phase === 'reconnecting' && s.phase === 'connected';
+    this.conn = s;
+    if (s.phase === 'connected' && this.attachOnReady) {
+      this.attachOnReady = false;
+      void this.attach();
+    } else if (resumed || (prev.phase === 'reconnecting' && s.phase === 'connected' && this.connected)) this.refresh().catch(() => {});
+  };
+
   async disconnect() {
+    if (this.others.length && this.link) return this.removeHost(this.link.key);
     if (isMainWindow()) saveSettings({ explicitlyDisconnected: true });
     this.connected = false;
     this.synced = false;
@@ -207,6 +246,13 @@ class AppState {
     this.cancelWsRetry();
     const target = this.conn.target;
     this.conn = { phase: 'idle', target };
+    this.resetHost();
+    await this.client?.disconnect();
+  }
+
+  /** Forgets everything the main area showed of the active host; its connection is left alone. */
+  /** @internal */
+  resetHost() {
     this.data = EMPTY;
     this.agents = [];
     this.profiles = null;
@@ -215,9 +261,61 @@ class AppState {
     this.ws = EMPTY_WS;
     this.workspaceId = NO_WORKSPACE;
     this.wsChosen = false;
+    this.following = null;
+    this.multi = new Set();
+    this.touched.clear();
+    this.added.clear();
+    for (const t of this.activityTimers.values()) clearTimeout(t);
+    this.activityTimers.clear();
     forgetLayouts();
     workspace.layout = EMPTY_LAYOUT;
-    await this.client?.disconnect();
+  }
+
+  /** Shows one more host in this window, in the background or as the active one. */
+  addHost(target: HostTarget, activate: boolean): Promise<void> {
+    return hostOps().then((m) => m.addHost(this, target, activate));
+  }
+
+  /** Makes another host of this window the active one, keeping the current one connected. */
+  switchHost(key: string): Promise<void> {
+    return hostOps().then((m) => m.switchHost(this, key));
+  }
+
+  /** Disconnects one host of this window; the sessions on it keep running. */
+  removeHost(key: string): Promise<void> {
+    return hostOps().then((m) => m.removeHost(this, key));
+  }
+
+  /** Opens a window of its own for one host of this window, then lets go of it here. */
+  moveToWindow(key: string): Promise<void> {
+    return hostOps().then((m) => m.moveToWindow(this, key));
+  }
+
+  /** @internal */
+  async attach() {
+    const link = this.link;
+    if (!link || !this.client) return;
+    this.connected = true;
+    this.unsubscribe?.();
+    this.unsubscribe = this.client.subscribe((e) => this.onEvent(e));
+    await this.refresh();
+  }
+
+  /** @internal */
+  otherListeners = new Set<LinkChange>();
+
+  /** Session changes on the background hosts of this window. */
+  onOtherChange(fn: LinkChange): () => void {
+    this.otherListeners.add(fn);
+    return () => this.otherListeners.delete(fn);
+  }
+
+  /** @internal */
+  saveHosts() {
+    if (!isMainWindow() || this.mobile) return;
+    const list = this.hosts.filter((l) => l.target.kind !== 'direct').map((l) => l.target);
+    if (list.length < 2 && !settings.windowHosts?.length) return;
+    saveSettings({ windowHosts: list.length < 2 ? [] : list });
   }
 
   async refresh() {
@@ -334,7 +432,8 @@ class AppState {
     }
   }
 
-  private cancelWsRetry() {
+  /** @internal */
+  cancelWsRetry() {
     clearTimeout(this.wsRetry);
     this.wsRetry = undefined;
   }
@@ -782,6 +881,9 @@ function withColors(projects: Project[], colors: Record<string, string>): Projec
 
 export const app = new AppState();
 onPresence((p) => p.focused && app.reloadWs());
+
+/** Adding, switching and removing the hosts of a window, loaded once a window gets a second host. */
+const hostOps = () => import('./host-ops');
 
 /** Tab rename, move and full-title code, kept out of the startup bundle. */
 let tabMod: typeof import('./tab-lazy') | null = null;
