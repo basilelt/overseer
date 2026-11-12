@@ -582,7 +582,7 @@ fn walk_jsonl(dir: &Path, depth: u32, out: &mut Vec<PathBuf>) {
 fn discover(d: &Dirs, cutoff: i64) -> Vec<Found> {
     let mut out = vec![];
     let fresh = |p: &Path| mtime_len(p).is_some_and(|(m, _)| m >= cutoff);
-    if let Ok(projects) = std::fs::read_dir(d.claude.join("projects")) {
+    if let Ok(projects) = std::fs::read_dir(crate::claude::projects_dir(&d.claude)) {
         for proj in projects.flatten().filter(|e| e.path().is_dir()) {
             let Ok(rd) = std::fs::read_dir(proj.path()) else {
                 continue;

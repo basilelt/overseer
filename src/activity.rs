@@ -119,10 +119,10 @@ pub fn find_transcript(
 
 fn locate(base: &Path, kind: Transcript, session_id: &str) -> Option<PathBuf> {
     match kind {
-        Transcript::Claude => std::fs::read_dir(base.join("projects"))
+        Transcript::Claude => std::fs::read_dir(crate::claude::projects_dir(base))
             .ok()?
             .flatten()
-            .map(|e| e.path().join(format!("{session_id}.jsonl")))
+            .map(|e| crate::claude::session_file(&e.path(), session_id))
             .find(|p| p.is_file()),
         Transcript::Codex => {
             find_rollout(&base.join("sessions"), &format!("-{session_id}.jsonl"), 4)
@@ -192,7 +192,7 @@ pub fn edit_stats(agent: &str, path: &Path) -> HashMap<String, (u32, u32)> {
 
 fn transcripts(path: &Path) -> Vec<std::path::PathBuf> {
     let mut files = vec![path.to_path_buf()];
-    if let Ok(rd) = std::fs::read_dir(path.with_extension("").join("subagents")) {
+    if let Ok(rd) = std::fs::read_dir(crate::claude::subagents_dir(path)) {
         files.extend(
             rd.flatten()
                 .map(|e| e.path())
@@ -290,7 +290,7 @@ thread_local! {
 pub fn spend(agent: &str, path: &Path) -> Option<Spend> {
     let mut out: Option<Spend> = None;
     let mut files = vec![path.to_path_buf()];
-    sub_transcripts(&path.with_extension("").join("subagents"), 3, &mut files);
+    sub_transcripts(&crate::claude::subagents_dir(path), 3, &mut files);
     for (i, f) in files.iter().enumerate() {
         let Some(s) = with_state(agent, f, |st| st.spend.clone()) else {
             continue;

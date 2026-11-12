@@ -1,4 +1,5 @@
 use crate::activity::{codex_failed, command_label};
+use crate::agents::Transcript;
 use crate::procs::now_ms;
 use crate::util::{format_rfc3339, parse_rfc3339};
 use serde_json::{json, Map, Value};
@@ -122,6 +123,7 @@ impl Sub {
 
 struct Chat {
     agent: String,
+    kind: Option<Transcript>,
     side: bool,
     dir: Option<PathBuf>,
     subs: HashMap<String, Sub>,
@@ -153,13 +155,15 @@ impl Chat {
             .parent()
             .and_then(|d| d.file_name())
             .is_some_and(|n| n == "subagents");
-        let dir = match (agent, side) {
-            ("claude", true) => path.parent().map(Path::to_path_buf),
-            ("claude", false) => Some(path.with_extension("").join("subagents")),
-            _ => None,
+        let kind = crate::agents::transcript_of(agent);
+        let dir = match (kind, side) {
+            (Some(Transcript::Claude), true) => path.parent().map(Path::to_path_buf),
+            (Some(Transcript::Claude), false) => Some(crate::claude::subagents_dir(path)),
+            (Some(Transcript::Codex | Transcript::Gemini | Transcript::Vibe) | None, _) => None,
         };
         Chat {
             agent: agent.to_string(),
+            kind,
             side,
             dir,
             subs: HashMap::new(),
@@ -234,11 +238,11 @@ impl Chat {
 
     fn ingest(&mut self, v: &Value) {
         let at = v["timestamp"].as_str().and_then(parse_rfc3339);
-        match self.agent.as_str() {
-            "codex" => self.codex(v, at),
-            "gemini" => self.gemini(v, at),
-            "vibe" => self.vibe(v),
-            _ => self.claude(v, at),
+        match self.kind {
+            Some(Transcript::Codex) => self.codex(v, at),
+            Some(Transcript::Gemini) => self.gemini(v, at),
+            Some(Transcript::Vibe) => self.vibe(v),
+            Some(Transcript::Claude) | None => self.claude(v, at),
         }
     }
 
@@ -1487,7 +1491,7 @@ pub fn transcript_stamp(path: &Path) -> Option<u64> {
 }
 
 fn refresh(chat: &mut Chat, path: &Path) -> Option<bool> {
-    if chat.agent == "vibe" {
+    if chat.kind == Some(Transcript::Vibe) {
         return refresh_vibe(chat, path);
     }
     let st = stamp(path)?;
@@ -1704,11 +1708,8 @@ pub fn agent_page(main: &Path, agent_id: &str, q: Query) -> Option<Value> {
     {
         return None;
     }
-    let p = main
-        .with_extension("")
-        .join("subagents")
-        .join(format!("agent-{agent_id}.jsonl"));
-    let mut v = page("claude", &p, q)?;
+    let p = crate::claude::subagent_file(&crate::claude::subagents_dir(main), agent_id);
+    let mut v = page(crate::agents::CLAUDE, &p, q)?;
     v["agentId"] = json!(agent_id);
     Some(v)
 }
@@ -1726,7 +1727,7 @@ fn note_running(path: &Path, c: &Chat) {
             .values()
             .filter(|s| s.state == "running")
             .map(|s| match &s.agent_id {
-                Some(a) => dir.join(format!("agent-{a}.jsonl")),
+                Some(a) => crate::claude::subagent_file(dir, a),
                 None => dir.clone(),
             })
             .collect(),
@@ -1867,8 +1868,8 @@ fn scan_skills(dir: &Path, source: &str, out: &mut Vec<Value>) {
 
 pub fn commands(agent: &str, claude_dir: &Path, codex_dir: &Path, cwd: &str) -> Value {
     let mut out = vec![];
-    match agent {
-        "claude" => {
+    match crate::agents::transcript_of(agent) {
+        Some(Transcript::Claude) => {
             if !cwd.is_empty() {
                 scan_dir(
                     &Path::new(cwd).join(".claude/commands"),
@@ -1880,8 +1881,10 @@ pub fn commands(agent: &str, claude_dir: &Path, codex_dir: &Path, cwd: &str) -> 
             }
             scan_dir(&claude_dir.join("commands"), "", 3, "user", &mut out);
         }
-        "codex" => scan_dir(&codex_dir.join("prompts"), "prompts:", 0, "user", &mut out),
-        "vibe" => {
+        Some(Transcript::Codex) => {
+            scan_dir(&codex_dir.join("prompts"), "prompts:", 0, "user", &mut out)
+        }
+        Some(Transcript::Vibe) => {
             if !cwd.is_empty() {
                 for sub in [".vibe/skills", ".agents/skills"] {
                     scan_skills(&Path::new(cwd).join(sub), "project", &mut out);
@@ -1890,7 +1893,7 @@ pub fn commands(agent: &str, claude_dir: &Path, codex_dir: &Path, cwd: &str) -> 
             scan_skills(&crate::vibe::home().join("skills"), "user", &mut out);
             scan_skills(&crate::home().join(".agents/skills"), "user", &mut out);
         }
-        _ => {}
+        Some(Transcript::Gemini) | None => {}
     }
     let mut seen = std::collections::HashSet::new();
     out.retain(|c| seen.insert(c["name"].as_str().unwrap_or("").to_string()));
