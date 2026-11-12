@@ -21,6 +21,13 @@ export function fileCount(s: ScmStatus | null): number {
   return s ? s.staged.length + s.changes.length + s.conflicts.length : 0;
 }
 
+export function commitRequest(s: ScmStatus, message: string, o: { push?: boolean; amend?: boolean; all?: boolean } = {}): CommitOptions {
+  const all = o.all || !s.staged.length;
+  return { message: message.trim(), amend: o.amend, push: o.push, all: all || undefined };
+}
+
+export const showsBranch = (branch: string | null | undefined, folderName: string): boolean => !branch || branch.replaceAll('/', '-') !== folderName;
+
 export class Scm {
   status = $state.raw<ScmStatus | null>(null);
   error = $state<string | null>(null);

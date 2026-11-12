@@ -19,7 +19,7 @@
   import { clipboardFiles, fileInfos, insertText, planDrop, planPaste, refusalMessage, uploadedPath, type Refusal } from '../../uploads';
   import { savePasteAll, uploadList } from '../../upload-pipeline';
   import { requirePath, savePasted } from '../../kanban/task-attachments';
-  import { applySlash, commandsFor, enterAction, lineCount, slashMatches, slashQuery, type SendMode, type SlashCommand } from '../../chat/composer';
+  import { applySlash, commandsFor, enterAction, lineCount, shrank, slashMatches, slashQuery, STALE_SIZE, type SendMode, type SizeMark, type SlashCommand } from '../../chat/composer';
   import { ChatSender } from '../../chat/sender.svelte';
   import { clearComposerHeight, reportComposerHeight } from '../../chat/composer-height';
   import { platformName, isTauri } from '../../platform';
@@ -88,7 +88,7 @@
     autosize();
   });
 
-  let sized = { length: 0, lines: 0 };
+  let sized: SizeMark = { length: 0, lines: 0 };
   let sizeFrame = 0;
   function autosize() {
     cancelAnimationFrame(sizeFrame);
@@ -96,7 +96,7 @@
       const el = box;
       if (!el) return;
       const now = { length: text.length, lines: lineCount(text) };
-      const shrink = now.length < sized.length || now.lines < sized.lines;
+      const shrink = shrank(sized, now);
       sized = now;
       if (shrink) el.style.height = 'auto';
       else if (el.scrollHeight <= el.clientHeight) return;
@@ -126,7 +126,7 @@
     const ro = new ResizeObserver(() => {
       if (el.clientWidth === width) return;
       width = el.clientWidth;
-      sized = { length: Infinity, lines: Infinity };
+      sized = STALE_SIZE;
       autosize();
     });
     ro.observe(el);

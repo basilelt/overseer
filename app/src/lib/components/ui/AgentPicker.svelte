@@ -3,7 +3,7 @@
   import ChevronDown from '@lucide/svelte/icons/chevron-down';
   import Check from '@lucide/svelte/icons/check';
   import RefreshCw from '@lucide/svelte/icons/refresh-cw';
-  import { agentName, canInstall } from '../../agents';
+  import { agentName, canInstall, nextPickable } from '../../agents';
   import { t } from '../../i18n.svelte';
   import { app } from '../../state.svelte';
   import type { AgentInfo, DaemonEnv } from '../../types';
@@ -67,19 +67,11 @@
     }
   }
 
-  function step(from: number, dir: number): number {
-    for (let i = 1; i <= agents.length; i++) {
-      const j = (from + dir * i + agents.length * i) % agents.length;
-      if (agents[j].installed || canInstall(agents[j])) return j;
-    }
-    return from;
-  }
-
   function onListKey(e: KeyboardEvent) {
-    if (e.key === 'ArrowDown') active = step(active, 1);
-    else if (e.key === 'ArrowUp') active = step(active, -1);
-    else if (e.key === 'Home') active = step(-1, 1);
-    else if (e.key === 'End') active = step(agents.length, -1);
+    if (e.key === 'ArrowDown') active = nextPickable(agents, active, 1);
+    else if (e.key === 'ArrowUp') active = nextPickable(agents, active, -1);
+    else if (e.key === 'Home') active = nextPickable(agents, -1, 1);
+    else if (e.key === 'End') active = nextPickable(agents, agents.length, -1);
     else if (e.key === 'Enter' || e.key === ' ') choose(agents[active]);
     else if (e.key === 'Escape' || e.key === 'Tab') {
       open = false;

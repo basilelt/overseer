@@ -24,7 +24,7 @@ describe('settings agent tasks switch', () => {
 
   it('shows the switch off when agents fix what they find', async () => {
     const html = await rendered({ agentTasks: false });
-    expect(input(html)).toBeDefined();
+    expect(input(html)).toContain('type="checkbox"');
     expect(input(html)).not.toMatch(/checked/);
   });
 });

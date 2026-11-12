@@ -147,3 +147,12 @@ export function applySlash(text: string, cmd: SlashCommand): string {
   const rest = text.replace(/^\/\S*\s?/, '');
   return `${cmd.name} ${rest}`;
 }
+
+export interface SizeMark {
+  length: number;
+  lines: number;
+}
+
+export const STALE_SIZE: SizeMark = { length: Infinity, lines: Infinity };
+
+export const shrank = (prev: SizeMark, now: SizeMark): boolean => now.length < prev.length || now.lines < prev.lines;

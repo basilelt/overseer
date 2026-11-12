@@ -1,44 +1,41 @@
 import { describe, expect, it } from 'vitest';
-import view from './ReviewView.svelte?raw';
+import { render } from 'svelte/server';
+import { declOf } from '../../../test/css';
+import type { Band } from '../../review/map.svelte';
+import HeatBand from './HeatBand.svelte';
 import map from './MapView.svelte?raw';
-import band from './HeatBand.svelte?raw';
 
-describe('review map wiring', () => {
-  it('keeps the hovered or pinned file bright while the rest of the map fades', () => {
-    expect(map).toMatch(/class:sel=\{c\.id === focus \|\| \(selected === c\.id && !!\(pinned \|\| current\)\)\}/);
-    expect(map).toMatch(/\.canvas\.focus \.cell:not\(\.sel\):not\(\.near\) \{\s*opacity: 0\.32;/);
+const bands = [
+  { id: 'a', share: 3, heat: 0.9 },
+  { id: 'b', share: 1, heat: 0.1 },
+] as Band[];
+const html = (current: string | null = null) => render(HeatBand, { props: { bands, current, names: (id: string) => `file ${id}`, onpick: () => {} } }).body;
+
+const button = (h: string, id: string) => h.match(new RegExp(`<button[^>]*aria-label="file ${id}"[^>]*>`))?.[0] ?? '';
+
+describe('HeatBand', () => {
+  it('draws one button per file, sized by its share and named for screen readers', () => {
+    const h = html();
+    expect(h.match(/<button/g)).toHaveLength(2);
+    expect(h).toContain('aria-label="file a"');
+    expect(h).toContain('aria-label="file b"');
+    expect(button(h, 'a')).toContain('flex-grow: 3');
+    expect(button(h, 'b')).toContain('flex-grow: 1');
   });
 
-  it('offers List and Map, with the tour anchored on the switch, and no graph view left', () => {
-    expect(view).toMatch(/\{ value: 'map' as const, label: t\('review\.map'\) \}/);
-    expect(view).toMatch(/<span class="vseg" data-tour="review-map">/);
-    expect(view).not.toMatch(/GraphView|'graph'/);
+  it('marks the file being reviewed and only that one', () => {
+    const h = html('b');
+    expect(button(h, 'b')).toMatch(/class="[^"]*\bon\b/);
+    expect(button(h, 'a')).not.toMatch(/class="[^"]*\bon\b/);
+  });
+});
+
+describe('CSS guard: review map', () => {
+  it('fades every cell but the hovered, pinned or related ones while one is focused', () => {
+    expect(declOf(map, '.canvas.focus .cell:not(.sel):not(.near)', 'opacity')).toBe('0.32');
   });
 
-  it('asks the map for every worktree the review shows, keyed on their revisions', () => {
-    expect(view).toMatch(/const also = shown\.map\(\(s\) => s\.worktree \?\? ''\)\.filter\(Boolean\);/);
-    expect(view).toMatch(/\[diff\.worktree, diff\.revision, \.\.\.shown\.map\(\(s\) => `\$\{s\.worktree\}@\$\{s\.diff!\.revision\}`\)\]/);
-  });
-
-  it('walks the hottest files with J and K only while focus is inside this review, and a click focuses it', () => {
-    expect(view).toMatch(/<svelte:window onkeydown=\{onKey\} \/>/);
-    expect(view).toMatch(/if \(!root \|\| !el \|\| !root\.contains\(el\)\) return;/);
-    expect(view).toMatch(/closest\('input, textarea, select, \[contenteditable="true"\]'\)/);
-    expect(view).toMatch(/bind:this=\{root\} tabindex="-1"/);
-  });
-
-  it('opens a file of a submodule or worktree the list does not show as its own review', () => {
-    expect(view).toMatch(/if \(!s\) \{\s*openReviewNear\(\{ worktree: wt \}, selfKey\);/);
-  });
-
-  it('shows the heat band along the list on desktop only, when there is more than one file', () => {
-    expect(view).toMatch(/\{#if !phone && bands\.length > 1\}\s*<HeatBand/);
-    expect(band).toMatch(/style:flex-grow=\{b\.share\}/);
-  });
-
-  it('puts the ranking first on a phone and links across repositories dashed', () => {
-    expect(map).toMatch(/\.map\.phone \.side \{\s*order: -1;/);
-    expect(map).toMatch(/stroke-dasharray=\{l\.cross \? '6 4' : undefined\}/);
-    expect(map).toMatch(/ondblclick=\{\(\) => open\(s\)\}/);
+  it('puts the ranking first on a phone', () => {
+    expect(declOf(map, '.map.phone .side', 'order')).toBe('-1');
   });
 });

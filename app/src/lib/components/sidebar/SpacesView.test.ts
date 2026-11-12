@@ -66,7 +66,7 @@ describe('SpacesView folders and empty state', () => {
     const f = [folder('f1', { collapsed: true })];
     const w = [ws('a', { folderId: 'f1' })];
     expect(chip(view(w, f), 'a')).toBeUndefined();
-    expect(chip(view(w, f, 'Space'), 'a')).toBeDefined();
+    expect(chip(view(w, f, 'Space'), 'a')).toContain('data-workspace-id="a"');
   });
 
   it('indents a nested folder by its depth', () => {

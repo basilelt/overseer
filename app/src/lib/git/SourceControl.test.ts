@@ -1,21 +1,159 @@
 import { describe, expect, it, vi } from 'vitest';
-import app from '../../App.svelte?raw';
-import bar from '../components/workspace/TabBar.svelte?raw';
-import graph from './GitGraphTab.svelte?raw';
-import liveBar from './LiveBar.svelte?raw';
-import rail from '../components/sidebar/SessionRail.svelte?raw';
-import sidebar from '../components/sidebar/Sidebar.svelte?raw';
-import sideGit from './SidebarGit.svelte?raw';
-import sc from './SourceControl.svelte?raw';
-import detail from './CommitDetail.svelte?raw';
+import { render } from 'svelte/server';
+import { declOf } from '../../test/css';
+import { Scm, commitRequest, showsBranch } from './scm.svelte';
+import { gt } from './strings';
+import type { ScmFile, ScmStatus } from './types';
+import SourceControl from './SourceControl.svelte';
+import sourceControl from './SourceControl.svelte?raw';
 
-describe('git button', () => {
-  it('toggles the live review of its session instead of opening the review menu', () => {
-    expect(bar).toMatch(/onclick=\{\(\) => void import\('\.\.\/\.\.\/git\/live-actions'\)\.then\(\(m\) => m\.toggleLiveReview\(pane\.active\)\)\}/);
-    expect(bar).toMatch(/aria-pressed=\{liveOn\(\)\}/);
-    expect(bar).not.toMatch(/reviewMenu|review\.beside|review\.asTab|setReviewMode/);
+const file = (path: string, over: Partial<ScmFile> = {}): ScmFile => ({ path, status: 'M', ...over }) as ScmFile;
+const status = (over: Partial<ScmStatus> = {}): ScmStatus => ({
+  worktree: '/w',
+  project: '/p',
+  branch: 'feat/x',
+  head: 'abc1234',
+  upstream: 'origin/feat/x',
+  base: 'main',
+  ahead: 0,
+  behind: 0,
+  staged: [],
+  changes: [],
+  conflicts: [],
+  outgoing: [],
+  incoming: [],
+  stashes: 0,
+  branches: ['main', 'feat/x'],
+  submodules: [],
+  operation: null,
+  ...over,
+});
+const html = (s: ScmStatus | null, props: Record<string, unknown> = {}, scmOver: Partial<Scm> = {}) => {
+  const scm = new Scm(() => null);
+  scm.status = s;
+  Object.assign(scm, scmOver);
+  return render(SourceControl, { props: { scm, ...props } }).body;
+};
+
+describe('source control states', () => {
+  it('shows a loading line until the status arrives', () => {
+    expect(html(null)).toContain(gt('loading'));
   });
 
+  it('shows the error with a retry button when the first load failed', () => {
+    const h = html(null, {}, { error: 'daemon down' });
+    expect(h).toContain('daemon down');
+    expect(h).toContain(gt('refresh'));
+  });
+
+  it('says the tree is clean when no file changed', () => {
+    expect(html(status())).toContain(gt('sc.clean'));
+  });
+});
+
+describe('source control file lists', () => {
+  it('lists staged files and changes under their own counted sections', () => {
+    const h = html(status({ staged: [file('src/a.ts', { status: 'A' })], changes: [file('src/b.ts'), file('c.ts', { status: '?' })] }));
+    expect(h).toContain(gt('sc.staged'));
+    expect(h).toContain(gt('sc.changes'));
+    expect(h.match(/<div class="file /g)).toHaveLength(3);
+    expect(h).toContain('>b.ts<');
+    expect(h).toContain('>src<');
+    expect(h).not.toContain(gt('sc.clean'));
+  });
+
+  it('shows the conflicts first, outgoing and incoming commits only in the full view', () => {
+    const s = status({ conflicts: [file('x.ts', { status: 'U' })], outgoing: [{ sha: '1234567890', subject: 'out one' }], incoming: [{ sha: 'abcdef0123', subject: 'in one' }] });
+    const full = html(s);
+    expect(full.indexOf(gt('sc.conflicts'))).toBeGreaterThan(-1);
+    expect(full).toContain('out one');
+    expect(full).toContain('in one');
+    const only = html(s, { filesOnly: true });
+    expect(only).toContain(gt('sc.conflicts'));
+    expect(only).not.toContain('out one');
+    expect(only).not.toContain('in one');
+  });
+
+  it('offers a discard button per changed file that only asks first, never discards by itself', () => {
+    const h = html(status({ changes: [file('a.ts')] }));
+    expect(h).toContain(`aria-label="${gt('sc.discardFile', { file: 'a.ts' })}"`);
+    expect(h).not.toContain('role="alertdialog"');
+  });
+});
+
+describe('source control commit box', () => {
+  it('labels the commit button by what it will commit', () => {
+    expect(html(status())).toContain(`${gt('sc.commit')}</button>`);
+    expect(html(status({ changes: [file('a'), file('b')] }))).toContain(gt('sc.commitAll', { n: 2 }));
+    expect(html(status({ staged: [file('a')], changes: [file('b')] }))).toContain(gt('sc.commitN', { n: 1 }));
+  });
+
+  it('keeps the commit button off until there is a message', () => {
+    expect(html(status({ changes: [file('a')] }))).toMatch(/<button class="btn primary main[^"]*"[^>]*disabled/);
+  });
+
+  it('leaves the commit box and the sync buttons to the full view', () => {
+    const s = status({ changes: [file('a')] });
+    expect(html(s)).toContain('<textarea');
+    expect(html(s)).toContain(gt('sc.fetch'));
+    const only = html(s, { filesOnly: true });
+    expect(only).not.toContain('<textarea');
+    expect(only).not.toContain(gt('sc.fetch'));
+  });
+
+  it('announces a merge in progress', () => {
+    expect(html(status({ operation: 'merge' }))).toContain(gt('sc.op.merge'));
+    expect(html(status())).not.toContain('class="op"');
+  });
+});
+
+describe('submodules in source control', () => {
+  const sub = (over: NonNullable<ScmFile['submodule']>) => status({ changes: [file('libs/x', { submodule: over })], submodules: [{ path: 'libs/x', worktree: '/w/libs/x' }] });
+
+  it('stages a submodule pointer only when its commit moved', () => {
+    expect(html(sub({ commit: true, modified: false, untracked: false }))).toContain(gt('sc.stagePointer'));
+    expect(html(sub({ commit: false, modified: true, untracked: false }))).not.toContain(gt('sc.stagePointer'));
+  });
+
+  it('opens a submodule with edits inside, only when the caller can open worktrees', () => {
+    const s = sub({ commit: false, modified: true, untracked: false });
+    expect(html(s, { onopen: () => {} })).toContain(gt('sc.openSub', { name: 'x' }));
+    expect(html(s)).not.toContain(gt('sc.openSub', { name: 'x' }));
+    expect(html(sub({ commit: true, modified: false, untracked: false }), { onopen: () => {} })).not.toContain(gt('sc.openSub', { name: 'x' }));
+  });
+
+  it('gives a submodule no per-file discard', () => {
+    expect(html(sub({ commit: true, modified: false, untracked: false }))).not.toContain('Discard changes');
+    expect(html(sub({ commit: true, modified: false, untracked: false }))).not.toContain(gt('sc.discardFile', { file: 'libs/x' }));
+  });
+});
+
+describe('commit request', () => {
+  it('commits everything when nothing is staged, and only the index when something is', () => {
+    expect(commitRequest(status({ changes: [file('a')] }), '  msg  ').all).toBe(true);
+    expect(commitRequest(status({ staged: [file('a')] }), 'msg').all).toBeUndefined();
+  });
+
+  it('forces all on request, trims the message and forwards amend and push', () => {
+    expect(commitRequest(status({ staged: [file('a')] }), ' m \n', { all: true, amend: true, push: true })).toEqual({ message: 'm', amend: true, push: true, all: true });
+  });
+});
+
+describe('branch label', () => {
+  it('shows the branch unless the worktree folder name already says it', () => {
+    expect(showsBranch('feat/login', 'feat-login')).toBe(false);
+    expect(showsBranch('feat/login', 'login')).toBe(true);
+    expect(showsBranch(null, 'anything')).toBe(true);
+  });
+});
+
+describe('CSS guard: source control on touch screens', () => {
+  it('shows the file actions where there is no hover', () => {
+    expect(declOf(sourceControl, '.acts', 'opacity', '@media (hover: none)')).toBe('1');
+  });
+});
+
+describe('git entry points in the palette', () => {
   it('leaves the review modes to the palette', async () => {
     const { command } = await import('../commands/commands');
     const { registerMore } = await import('../commands/commands-more');
@@ -24,14 +162,6 @@ describe('git button', () => {
     expect(command('review-close').section).toBe('actions');
     expect(command('live-review').label!()).toBe('Open or close the live review');
     expect(command('graph').section).toBe('views');
-  });
-
-  it('swaps the sidebar for the session rail, hides the side panel and adds the git bar, all loaded only when used', () => {
-    expect(app).toMatch(/const live = \$derived\(liveOn\(\)\)/);
-    expect(app).toMatch(/\{#if live\}\s*<Boundary name="rail">\{#await rail\(\) then \{ default: SessionRail \}\}<SessionRail \/>\{\/await\}<\/Boundary>\s*\{:else if app\.sidebarOpen\}/);
-    expect(app).toMatch(/\{#if app\.panelOpen && !live && app\.view === 'agents'/);
-    expect(app).toMatch(/\{#if live\}\s*<Boundary name="live">\{#await liveBar\(\) then \{ default: LiveBar \}\}<LiveBar \/>\{\/await\}<\/Boundary>/);
-    expect(app).not.toMatch(/GitPanel/);
   });
 
   it('opens the Git tab on phone from More', async () => {
@@ -43,155 +173,5 @@ describe('git button', () => {
     command('graph').run();
     expect(open).toHaveBeenCalledWith('graph');
     open.mockRestore();
-  });
-
-});
-
-describe('sidebar git tab', () => {
-  it('sits next to Workspaces and By status, and swaps the session list for source control, loaded only when used', () => {
-    expect(sidebar).toMatch(/aria-selected=\{!app\.sidebarGit && app\.sidebarMode === m\.id\}/);
-    expect(sidebar).toMatch(/aria-selected=\{app\.sidebarGit\}[^>]*onclick=\{\(\) => app\.setSidebarGit\(true\)\}/);
-    expect(sidebar).toMatch(/\{#if app\.sidebarGit\}\s*\{#await gitView\(\) then \{ default: SidebarGit \}\}<SidebarGit \/>\{\/await\}/);
-    expect(sidebar).toMatch(/const gitView = \(\) => import\('\.\.\/\.\.\/git\/SidebarGit\.svelte'\)/);
-    expect(sidebar).toMatch(/\{#if !app\.sidebarGit\}\s*<div class="tools">\s*<label class="filter">/);
-  });
-
-  it('follows the selected session, lets you pick another worktree or submodule, and resets the pick on a new session', () => {
-    expect(sideGit).toMatch(/const session = \$derived\(itemTarget\(app\.selectedKey\)\)/);
-    expect(sideGit).toMatch(/const target = \$derived<ScmTarget \| null>\(picked \? \{ worktree: picked \} : session\)/);
-    expect(sideGit).toMatch(/lastSession = k;\s*untrack\(\(\) => \(picked = null\)\);/);
-    expect(sideGit).toMatch(/worktreeChoices\(related, subs, s\?\.worktree\)/);
-    expect(sideGit).toMatch(/<SourceControl \{scm\} onopen=\{\(w\) => \(picked = w\)\} \/>/);
-  });
-});
-
-describe('session rail', () => {
-  it('lists the sessions of the workspace and opens one in the agent pane, not the review pane', () => {
-    expect(rail).toMatch(/app\.scopeItems\(\)\.filter\(\(i\) => i\.lineId \|\| i\.termId\)/);
-    expect(rail).toMatch(/findIndex\(\(p\) => !p\.tabs\.includes\(beside\.key \?\? ''\)\)/);
-    expect(rail).toMatch(/update\(\(l\) => focusPane\(l, i\)\);\s*app\.select\(key\);/);
-    expect(rail).toMatch(/aria-label=\{it\.title\}/);
-  });
-});
-
-describe('git bar', () => {
-  it('acts on the picked worktree, names it, and lists every worktree of the session with its submodules', () => {
-    expect(liveBar).toMatch(/const target = \$derived\(liveTarget\(\)\)/);
-    expect(liveBar).toMatch(/scm\.setTarget\(target\)/);
-    expect(liveBar).toMatch(/\.related\(t\)/);
-    expect(liveBar).toMatch(/worktreeChoices\(related, subs, s\?\.worktree\)/);
-    expect(liveBar).toMatch(/<span class="nm">\{name\}<\/span>/);
-  });
-
-  it('shows the branch only when the worktree folder does not already say it', () => {
-    expect(liveBar).toMatch(/\{#if !s\.branch \|\| s\.branch\.replaceAll\('\/', '-'\) !== name\}<span class="br mono">/);
-  });
-
-  it('forgets the picked worktree when the session changes', () => {
-    expect(liveBar).toMatch(/if \(k === lastKey\) return;\s*lastKey = k;\s*untrack\(\(\) => \{\s*live\.worktree = null;/);
-  });
-
-  it('runs the action the state calls for, and commits on Enter', () => {
-    expect(liveBar).toMatch(/const primary = \$derived\(primaryAction\(s, message\)\)/);
-    expect(liveBar).toMatch(/if \(k === 'commit' \|\| k === 'merge'\) commit\(\);\s*else if \(k === 'publish' \|\| k === 'push'\) scm\.push\(\);\s*else if \(k === 'pull'\) scm\.pull\(\);/);
-    expect(liveBar).toMatch(/e\.key === 'Enter'/);
-  });
-
-  it('asks before discarding everything, with a Cancel that discards nothing', () => {
-    expect(liveBar).toMatch(/label: gt\('live\.discardAll'\), danger: true, disabled: busy \|\| !total, run: \(\) => \(confirmAll = true\)/);
-    expect(liveBar).toMatch(/<button class="btn ghost" onclick=\{\(\) => \(confirmAll = false\)\}>/);
-    expect(liveBar).toMatch(/async function discardAll\(\) \{\s*confirmAll = false;\s*await scm\.discard\('all'\);/);
-  });
-
-  it('warns when the agent is still running in the worktree', () => {
-    expect(liveBar).toMatch(/i\.lineId === session\.lineId && i\.state === 'running'/);
-    expect(liveBar).toMatch(/\{:else if running && total\}/);
-  });
-
-  it('shows the files in a popover that reuses source control without its commit box or listeners', () => {
-    expect(liveBar).toMatch(/<SourceControl \{scm\} filesOnly onopen=\{\(w\) => \{ live\.worktree = w; filesOpen = false; \}\} \/>/);
-    expect(sc).toMatch(/if \(!filesOnly\) untrack\(\(\) => scm\.connection\(phase\)\);/);
-    expect(sc).toMatch(/onMount\(\(\) => \{\s*if \(filesOnly\) return;/);
-  });
-
-  it('opens the Git graph on the worktree from the more menu', () => {
-    expect(liveBar).toMatch(/app\.gitWorktree = \{ project: s\.project, path: s\.worktree \};\s*app\.openProjectTab\('graph', s\.project\);/);
-  });
-});
-
-describe('submodules in source control', () => {
-  it('stages a submodule only when its commit moved, and opens it otherwise', () => {
-    expect(sc).toMatch(/\{#if f\.submodule\}/);
-    expect(sc).toMatch(/\{#if f\.submodule\.commit\}<button class="btn ghost sm" onclick=\{\(\) => scm\.stage\(\[f\.path\]\)\}/);
-    expect(sc).toMatch(/onclick=\{\(\) => onopen\(sub\.worktree\)\}/);
-  });
-});
-
-describe('source control', () => {
-  it('asks before discarding, with a Cancel that discards nothing', () => {
-    expect(sc).toMatch(/onclick=\{\(\) => \(confirming = \{ files: 'all'/);
-    expect(sc).toMatch(/onclick=\{\(\) => \(confirming = \{ files: \[f\.path\]/);
-    expect(sc).not.toMatch(/onclick=\{\(\) => scm\.discard/);
-    expect(sc).toMatch(/<button class="btn ghost" onclick=\{\(\) => \(confirming = null\)\}>/);
-    expect(sc).toMatch(/async function discard\(\) \{\s*if \(!confirming\) return;\s*const files = confirming\.files;\s*confirming = null;\s*await scm\.discard\(files\);/);
-  });
-
-  it('commits everything when nothing is staged, and on Ctrl+Enter', () => {
-    expect(sc).toMatch(/const all = o\.all \|\| !s\.staged\.length;/);
-    expect(sc).toContain('isSubmitChord(e) && canCommit');
-  });
-
-  it('refreshes on events about its worktree, debounced, and stops listening on destroy', () => {
-    expect(sc).toMatch(/if \(!touches\(scm\.status, e\)\) return;/);
-    expect(sc).toMatch(/timer = setTimeout\(\(\) => scm\.load\(\), 300\)/);
-    expect(sc).toMatch(/return \(\) => \{\s*off\(\);\s*clearTimeout\(timer\);/);
-  });
-
-  it('reloads its status when the connection comes back', () => {
-    expect(sc).toMatch(/const phase = app\.conn\.phase;\s*if \(!filesOnly\) untrack\(\(\) => scm\.connection\(phase\)\);/);
-    expect(liveBar).toMatch(/const phase = app\.conn\.phase;\s*untrack\(\(\) => scm\.connection\(phase\)\);/);
-  });
-
-  it('shows the file actions on touch screens, where there is no hover', () => {
-    expect(sc).toMatch(/@media \(hover: none\) \{\s*\.acts \{\s*opacity: 1;/);
-  });
-});
-
-describe('git tab', () => {
-  it('puts source control beside the graph, with a worktree picker and an uncommitted row', () => {
-    expect(graph).toMatch(/<SourceControl \{scm\} \/>/);
-    expect(graph).toMatch(/<select class="mono" bind:value=\{chosen\}>/);
-    expect(graph).toMatch(/\{#if wip && scm\.status\}\s*<button class="wip"/);
-    expect(graph).toMatch(/scm\.setTarget\(\{ worktree: chosen \}\)/);
-  });
-
-  it('switches to the worktree the git bar opened it from, once', () => {
-    expect(graph).toMatch(/if \(w\?\.project !== projectPath\) return;\s*chosen = w\.path;[\s\S]*?app\.gitWorktree = null;/);
-  });
-
-  it('acts on the selected commit from its detail: merge into the worktree branch and revert', () => {
-    expect(graph).toMatch(/const r = await scm\.merge\(pick\.sha\);/);
-    expect(graph).toMatch(/const r = await scm\.revert\(pick\.sha\);/);
-    expect(graph).toMatch(/\{#snippet extra\(\)\}[\s\S]*?onclick=\{mergePick\}[\s\S]*?onclick=\{revertPick\}[\s\S]*?\{\/snippet\}/);
-    expect(detail).toMatch(/<Cherry size=\{13\} \/>\{gt\('cherryPick'\)\}<\/button>\s*\{@render extra\?\.\(\)\}/);
-  });
-
-  it('hides the source control column while a commit is open, so the graph keeps its width', () => {
-    expect(graph).toMatch(/\{#if phone \? phoneView === 'changes' : showScm && !detail\}/);
-  });
-
-  it('scrolls the changes as one page on phone and keeps descriptions readable in the graph', () => {
-    expect(graph).toMatch(/\.scm\.full \{[^}]*overflow-y: auto;/);
-    expect(graph).toMatch(/\.graph\.phone \.c-author,\s*\.graph\.phone \.c-sha \{\s*display: none;/);
-    expect(graph).toMatch(/\.graph\.phone \.toolbar \{\s*flex-wrap: wrap;/);
-  });
-
-  it('follows the layout live, so a tablet turning across the phone width switches layout', () => {
-    expect(graph).toMatch(/const phone = \$derived\(isPhone\(\)\);/);
-  });
-
-  it('splits changes and graph into tabs on phone', () => {
-    expect(graph).toMatch(/\{#if phone\}\s*<div class="ptabs" role="tablist">/);
-    expect(graph).toMatch(/class:hidden=\{phone && phoneView !== 'graph'\}/);
   });
 });

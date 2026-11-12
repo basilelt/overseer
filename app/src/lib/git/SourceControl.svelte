@@ -12,7 +12,7 @@
   import { app } from '../state.svelte';
   import { openReview, openReviewBeside } from '../review/open';
   import { isPhone } from '../mobile/ui.svelte';
-  import { fileCount, touches, type Scm } from './scm.svelte';
+  import { commitRequest, fileCount, touches, type Scm } from './scm.svelte';
   import { gt } from './strings';
   import type { ScmFile } from './types';
   import { isSubmitChord } from '../chord';
@@ -52,8 +52,7 @@
 
   async function commit(o: { push?: boolean; amend?: boolean; all?: boolean } = {}) {
     if (!s) return;
-    const all = o.all || !s.staged.length;
-    const r = await scm.commit({ message: message.trim(), amend: o.amend, push: o.push, all: all || undefined });
+    const r = await scm.commit(commitRequest(s, message, o));
     if (r) {
       message = '';
       app.notify(gt('sc.committed', { sha: (r.commit ?? '').slice(0, 7) }));

@@ -42,7 +42,7 @@ describe('SessionBar', () => {
     expect(button(queued, 'cancelPause')).not.toContain('disabled');
     expect(button(queued, 'pause')).toBeUndefined();
     const plain = html(view('active', { pid: 1, busy: true }));
-    expect(button(plain, 'pause')).toBeDefined();
+    expect(button(plain, 'pause')).toContain('<button');
     expect(button(plain, 'cancelPause')).toBeUndefined();
   });
 
