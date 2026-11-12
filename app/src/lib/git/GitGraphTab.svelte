@@ -12,7 +12,7 @@
   import { isPhone } from '../mobile/ui.svelte';
   import { Scm, fileCount } from './scm.svelte';
   import SourceControl from './SourceControl.svelte';
-  import Segmented from '../components/kanban/Segmented.svelte';
+  import Segmented from '../components/ui/Segmented.svelte';
   import AgentGlyph from '../components/ui/AgentGlyph.svelte';
   import { app } from '../state.svelte';
   import { customColors, resolvedTheme } from '../settings/settings.svelte';

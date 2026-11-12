@@ -5,7 +5,7 @@
   import Modal from '../ui/Modal.svelte';
   import AgentPicker from '../ui/AgentPicker.svelte';
   import ModelField from '../ui/ModelField.svelte';
-  import Segmented from './Segmented.svelte';
+  import Segmented from '../ui/Segmented.svelte';
   import { app } from '../../state.svelte';
   import { settings } from '../../settings/settings.svelte';
   import { t, type Key } from '../../i18n.svelte';

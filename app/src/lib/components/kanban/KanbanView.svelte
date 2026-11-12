@@ -19,7 +19,7 @@
   import { agentName } from '../../agents';
   import type { Task, TaskStatus } from '../../types';
   import KanbanColumn from './KanbanColumn.svelte';
-  import Segmented from './Segmented.svelte';
+  import Segmented from '../ui/Segmented.svelte';
   import TaskCard from './TaskCard.svelte';
   import Modal from '../ui/Modal.svelte';
   import ArrowUpToLine from '@lucide/svelte/icons/arrow-up-to-line';

@@ -34,7 +34,7 @@
   import Flame from '@lucide/svelte/icons/flame';
   import Commits from './Commits.svelte';
   import ReviewScope from './ReviewScope.svelte';
-  import Segmented from '../kanban/Segmented.svelte';
+  import Segmented from '../ui/Segmented.svelte';
   import FileDiff from './FileDiff.svelte';
   import FileTree from './FileTree.svelte';
   import SubmitBar from './SubmitBar.svelte';
