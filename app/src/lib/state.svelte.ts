@@ -1,5 +1,5 @@
 import { activityDelay } from './activity';
-import { FALLBACK_AGENTS, sessionsAvailable } from './agents';
+import { FALLBACK_AGENTS, isAgentId, isShellId, isShellItem, sessionsAvailable } from './agents';
 import { parentOverlay } from './overlay-route';
 import { onPresence, presence } from './presence';
 import { api, type Api } from './daemon/api';
@@ -706,10 +706,10 @@ class AppState {
     // A repo workspace is assigned too: the term runs in a worktree outside its path until it reports a line.
     const subject = scoped && (!opts.cwd || (scoped.kind !== 'subject' && !!scoped.path && within(opts.cwd, scoped.path))) ? scoped.id : undefined;
     const cwd = opts.cwd ?? (scoped?.kind === 'subject' ? undefined : (scoped?.cwd ?? scoped?.path)) ?? undefined;
-    const worktree = (opts.worktree ?? (agent !== 'shell' && !settings.sessionsInCheckout)) && this.inProject(cwd ?? (subject ? (scoped?.cwd ?? undefined) : undefined));
+    const worktree = (opts.worktree ?? (isAgentId(agent) && !settings.sessionsInCheckout)) && this.inProject(cwd ?? (subject ? (scoped?.cwd ?? undefined) : undefined));
     const size = { cols: 120, rows: 32, ...(worktree ? { worktree: true } : {}) };
-    const profile = agent === 'shell' ? undefined : (opts.profile ?? this.nextProfile ?? undefined);
-    const term = await this.api.createTerm(agent === 'shell' ? { cwd, ...(opts.install ? { install: opts.install } : {}), ...(subject ? { workspaceId: subject } : {}), ...size } : { agent, cwd, ...(subject ? { workspaceId: subject } : {}), model: opts.model || undefined, effort: opts.effort, ...(profile ? { profile } : {}), ...size });
+    const profile = isShellId(agent) ? undefined : (opts.profile ?? this.nextProfile ?? undefined);
+    const term = await this.api.createTerm(isShellId(agent) ? { cwd, ...(opts.install ? { install: opts.install } : {}), ...(subject ? { workspaceId: subject } : {}), ...size } : { agent, cwd, ...(subject ? { workspaceId: subject } : {}), model: opts.model || undefined, effort: opts.effort, ...(profile ? { profile } : {}), ...size });
     if (profile && !opts.profile) this.nextProfile = null;
     this.followSession(term, false);
     return term;
@@ -925,7 +925,7 @@ export function tabLazy() {
 
 onTabClosed((key, end) => {
   const item = app.items.find((i) => i.key === key);
-  const cwd = item?.kind === 'shell' ? app.data.terms.find((t) => t.id === item.termId)?.cwd : undefined;
+  const cwd = item && isShellItem(item) ? app.data.terms.find((t) => t.id === item.termId)?.cwd : undefined;
   if (cwd) rememberShell(key, cwd);
   if (app.connected) void tabLazy().then((m) => m.tabClosed(app, key, end));
 });

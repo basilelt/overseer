@@ -14,7 +14,7 @@ import { cleanTitle } from '../tabs/titles';
 import { cleanNote, NOTES_MAX, type NotesReply } from '../notes';
 import { isDone } from '../kanban/kanban-core';
 import { attachProblem, IMAGE_EXTS, VIDEO_EXTS } from '../feedback/feedback';
-import { AUTO_APPROVE_ARGS } from '../agents';
+import { AUTO_APPROVE_ARGS, isShellId } from '../agents';
 import type { DirListing } from '../dirs';
 import type { Action, Proposal, Result } from '../workspace/organize';
 import type {
@@ -1431,13 +1431,13 @@ export class MockDaemon implements DaemonClient {
     if (!a) throw new DaemonError(400, `unknown agent ${body.agent}`);
     if (!a.installed) throw new DaemonError(400, `${a.name} is not installed`);
     if (body.profile && body.profile !== 'none' && !this.profileStore.profiles.some((p) => p.id === body.profile)) throw new DaemonError(400, `unknown profile ${body.profile}`);
-    const p = a.id === 'shell' ? undefined : resolveProfile(this.profileStore, { explicit: body.profile, cwd: scopeCwd });
+    const p = isShellId(a.id) ? undefined : resolveProfile(this.profileStore, { explicit: body.profile, cwd: scopeCwd });
     const c = p?.agents[a.id] ?? {};
     const model = body.model || c.model || '';
     const effort = body.effort || c.effort;
-    const cmd = a.id === 'shell' ? ['zsh'] : [a.id, ...(this.autoApprove[a.id] ? AUTO_APPROVE_ARGS[a.id] ?? [] : []), ...(model ? ['--model', model] : []), ...(effort && a.efforts.includes(effort) ? ['--effort', effort] : [])];
+    const cmd = isShellId(a.id) ? ['zsh'] : [a.id, ...(this.autoApprove[a.id] ? AUTO_APPROVE_ARGS[a.id] ?? [] : []), ...(model ? ['--model', model] : []), ...(effort && a.efforts.includes(effort) ? ['--effort', effort] : [])];
     const profile = p || model || effort ? { ...(p ? { id: p.id, name: p.name } : {}), ...(model ? { model } : {}), ...(effort ? { effort } : {}) } : undefined;
-    return this.spawn({ ...body, cmd, title: body.title ?? (a.id === 'shell' ? 'zsh' : a.name) }, a.id, profile);
+    return this.spawn({ ...body, cmd, title: body.title ?? (isShellId(a.id) ? 'zsh' : a.name) }, a.id, profile);
   }
 
   private installTerm(body: NewTerm): Term {
@@ -1734,7 +1734,7 @@ export class MockDaemon implements DaemonClient {
     if (!strings(reviewers) || reviewers.length < 1 || reviewers.length > 2) throw new DaemonError(400, 'quorum.reviewers must list 1 or 2 agent ids');
     for (const id of [...workers, ...reviewers]) {
       if (!this.agents.some((a) => a.id === id)) throw new DaemonError(400, `unknown agent ${id}`);
-      if (id === 'shell') throw new DaemonError(400, 'shell cannot join a quorum');
+      if (isShellId(id)) throw new DaemonError(400, 'shell cannot join a quorum');
     }
     for (const [name, list] of [['workers', workers], ['reviewers', reviewers]] as const) {
       const dup = list.find((id, i) => list.indexOf(id) !== i);
@@ -2141,7 +2141,7 @@ export class MockDaemon implements DaemonClient {
     if (!term) throw new DaemonError(404, `unknown term ${termId}`);
     const out = (s: string) => onData(enc.encode(s));
     this.sinks.set(termId, out);
-    const agent = term.agent && term.agent !== 'shell' ? term.agent : null;
+    const agent = term.agent && !isShellId(term.agent) ? term.agent : null;
     const prompt = agent ? '\r\n\x1b[1m>\x1b[0m ' : `\r\n\x1b[32m${term.cwd}\x1b[0m \x1b[2m$\x1b[0m `;
     if (agent) {
       const act = term.lineId ? this.activity[term.lineId] : undefined;

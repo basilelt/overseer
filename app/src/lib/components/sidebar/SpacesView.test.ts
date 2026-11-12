@@ -3,6 +3,7 @@ import { render } from 'svelte/server';
 import { app } from '../../state.svelte';
 import type { Group, Workspace } from '../../types';
 import SpacesView from './SpacesView.svelte';
+import Sidebar from './Sidebar.svelte';
 import src from './SpacesView.svelte?raw';
 import sidebarSrc from './Sidebar.svelte?raw';
 
@@ -132,9 +133,17 @@ describe('Sidebar workspaces layout', () => {
   });
 
   it('counts only listed sessions, leaving plain shells out, in the By status header', () => {
-    expect(sidebarSrc).toContain("app.items.filter((i) => i.kind !== 'shell').length");
-    expect(sidebarSrc).toContain('{listed}</span>');
-    expect(sidebarSrc).not.toContain('{app.items.length}');
+    const before = { data: app.data, sidebarMode: app.sidebarMode, sidebarGit: app.sidebarGit };
+    const term = (id: string, agent: string) => ({ id, pid: 1, cwd: '/w', cmd: [agent], title: id, cols: 80, rows: 24, createdAt: '', exited: false, agent });
+    try {
+      app.data = { ...app.data, lines: [], tasks: [], terms: [term('t1', 'shell'), term('t2', 'claude'), term('t3', 'codex')] } as typeof app.data;
+      app.sidebarMode = 'status';
+      app.sidebarGit = false;
+      expect(app.items.length).toBe(3);
+      expect(render(Sidebar).body).toMatch(/<span class="count faint[^"]*">2<\/span>/);
+    } finally {
+      Object.assign(app, before);
+    }
   });
 });
 

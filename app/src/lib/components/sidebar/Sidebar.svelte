@@ -8,6 +8,7 @@
   import Users from '@lucide/svelte/icons/users';
   import X from '@lucide/svelte/icons/x';
   import { t } from '../../i18n.svelte';
+  import { isAgentItem } from '../../agents';
   import { command } from '../../commands/commands';
   import { hint } from '../../commands/keyboard';
   import { touchContextMenu } from '../../mobile/touch-menu';
@@ -37,7 +38,7 @@
     { id: 'status', label: () => t('ws.byStatus') },
   ];
   const phone = $derived(isPhone());
-  const listed = $derived(app.items.filter((i) => i.kind !== 'shell').length);
+  const listed = $derived(app.items.filter(isAgentItem).length);
   const selection = $derived([...app.multi]);
   const addMenu = () => [
     { label: t('ws.new'), icon: Plus, run: () => command('ws-new').run() },
