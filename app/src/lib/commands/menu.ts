@@ -36,3 +36,9 @@ export function menuRows(items: MenuItem[], expanded: ReadonlySet<number>): Menu
   });
   return rows;
 }
+
+export function pickItem(item: MenuItem, close: () => void, restore: () => void) {
+  close();
+  restore();
+  item.run?.();
+}
