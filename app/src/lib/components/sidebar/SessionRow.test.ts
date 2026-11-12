@@ -14,7 +14,7 @@ describe('SessionRow', () => {
     // When it renders
     // Then it is a focusable button that is not taken out of the tab order
     const h = html();
-    expect(h).toMatch(/^(<!--\[-->)?<button/);
+    expect(h).toMatch(/^(<!--\[-->)?<div class="wrap[^"]*"><button class="row/);
     expect(h).toContain('type="button"');
     expect(h).not.toContain('tabindex="-1"');
   });
@@ -40,6 +40,35 @@ describe('SessionRow', () => {
     expect(sh).toContain('>zsh<');
     expect(html()).toContain('class="dot');
     expect(html()).not.toMatch(/class="row[^"]*\bshell\b/);
+  });
+
+  it('gives an agent session a sticky note button next to the row, not inside it', () => {
+    // Given an agent session without notes, one with two notes, and a plain terminal
+    // When they render
+    // Then the session rows get a sibling note button labelled for adding or counting, the terminal none
+    const empty = html({ lineId: 'ln_1' });
+    const between = empty.slice(empty.indexOf('class="chev'), empty.indexOf('class="note'));
+    expect(between).toContain('</button>');
+    expect(empty).toContain('data-notes="ln_1"');
+    expect(empty).toContain('aria-label="Add a sticky note"');
+    expect(empty).not.toMatch(/class="wrap[^"]*\bnoted\b/);
+    const two = html({ lineId: 'ln_1', notes: 2 });
+    expect(two).toMatch(/class="wrap[^"]*\bnoted\b/);
+    expect(two).toContain('aria-label="2 sticky notes"');
+    expect(html({ lineId: 'ln_1', notes: 1 })).toContain('aria-label="1 sticky note"');
+    expect(html({ key: 'term:t', kind: 'shell', termId: 't' })).not.toContain('data-notes');
+  });
+
+  it('opens the notes without selecting or dragging the row', () => {
+    // Given the component source
+    // When the note button handlers are read
+    // Then pointerdown stops before the row's drag handler and the click toggles the notes at the button
+    expect(componentSrc).toMatch(/class="note"[\s\S]*onpointerdown=\{\(e\) => e\.stopPropagation\(\)\}/);
+    expect(componentSrc).toMatch(/toggleNotes\(item\.lineId!, e\.currentTarget\.getBoundingClientRect\(\)\)/);
+  });
+
+  it('always shows the note button on touch screens, which have no hover', () => {
+    expect(componentSrc).toMatch(/@media \(hover: none\) \{\s*\.wrap\.agent \.note \{\s*opacity: 1;/);
   });
 
   it('opens the session on click', () => {

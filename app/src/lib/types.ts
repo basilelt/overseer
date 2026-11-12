@@ -54,9 +54,18 @@ export interface LineLocal {
   resumeVerified?: boolean;
   title?: string | null;
   titleOverride?: string | null;
+  notes?: Note[];
   termId?: string | null;
   workspaceId?: string | null;
   cwd?: string;
+}
+
+/** A sticky note the user left on a session; only for the user, never sent to the agent. */
+export interface Note {
+  id: string;
+  text: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface LocalLine {

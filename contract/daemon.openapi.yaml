@@ -207,6 +207,59 @@ paths:
               schema: { type: object, properties: { lineId: { type: string }, titleOverride: { type: [string, "null"] } } }
         "400": { description: title missing, or neither a string nor null }
         "404": { description: Unknown line }
+  /lines/{lineId}/notes:
+    post:
+      summary: Add a sticky note to the line; notes are for the user only and never sent to the agent
+      operationId: addLineNote
+      parameters:
+        - { name: lineId, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/NoteText" }
+      responses:
+        "200":
+          description: Changed (also published as line.updated with local.notes)
+          content:
+            application/json:
+              schema: { type: object, properties: { lineId: { type: string }, note: { oneOf: [{ $ref: "#/components/schemas/Note" }, { type: "null" }] }, notes: { type: array, items: { $ref: "#/components/schemas/Note" } } } }
+        "400": { description: "text (string) required · note text required (blank after cleaning)" }
+        "404": { description: Unknown line }
+        "409": { description: "at most 50 notes per session" }
+  /lines/{lineId}/notes/{noteId}:
+    put:
+      summary: Change the text of a sticky note
+      operationId: editLineNote
+      parameters:
+        - { name: lineId, in: path, required: true, schema: { type: string } }
+        - { name: noteId, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/NoteText" }
+      responses:
+        "200":
+          description: Changed (also published as line.updated with local.notes)
+          content:
+            application/json:
+              schema: { type: object, properties: { lineId: { type: string }, note: { oneOf: [{ $ref: "#/components/schemas/Note" }, { type: "null" }] }, notes: { type: array, items: { $ref: "#/components/schemas/Note" } } } }
+        "400": { description: "text (string) required · note text required" }
+        "404": { description: Unknown line or note }
+    delete:
+      summary: Delete a sticky note
+      operationId: deleteLineNote
+      parameters:
+        - { name: lineId, in: path, required: true, schema: { type: string } }
+        - { name: noteId, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: Changed (also published as line.updated with local.notes)
+          content:
+            application/json:
+              schema: { type: object, properties: { lineId: { type: string }, note: { oneOf: [{ $ref: "#/components/schemas/Note" }, { type: "null" }] }, notes: { type: array, items: { $ref: "#/components/schemas/Note" } } } }
+        "404": { description: Unknown line or note }
   /lines/{lineId}/workspace:
     put:
       summary: Assign a line to a workspace, overriding the derived membership (null goes back to it)
@@ -2289,8 +2342,22 @@ components:
             resumeCommand: { type: string }
             title: { type: string }
             titleOverride: { type: [string, "null"], description: "User-set title (PUT /lines/{lineId}/title); clients show it instead of title when set" }
+            notes: { type: array, items: { $ref: "#/components/schemas/Note" }, description: "The user's sticky notes on the session, oldest first (POST /lines/{lineId}/notes)" }
             termId: { type: string, description: Daemon term whose pid is the agent pid or one of its ancestors }
             workspaceId: { type: string, description: "Workspace the line was explicitly assigned to (PUT /lines/{lineId}/workspace)" }
+    Note:
+      type: object
+      required: [id, text, createdAt, updatedAt]
+      properties:
+        id: { type: string }
+        text: { type: string }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    NoteText:
+      type: object
+      required: [text]
+      properties:
+        text: { type: string, description: "Trimmed, newlines and tabs kept, other control characters dropped, capped at 4000 characters" }
     HoldResult:
       type: object
       required: [predicates, action]

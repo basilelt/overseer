@@ -12,13 +12,12 @@
   import { closePaneAt, toggleSplit, update, workspace } from '../workspace.svelte';
   import HostChip from './titlebar/HostChip.svelte';
   import PortsChip from './ports/PortsChip.svelte';
-  import SystemChip from './system/SystemChip.svelte';
-  import UsageChip from './usage/UsageChip.svelte';
   import NewSessionMenu from './titlebar/NewSessionMenu.svelte';
   import UpdatePill from './titlebar/UpdatePill.svelte';
   import { isDemo } from '../demo';
   import NotificationBell from './titlebar/NotificationBell.svelte';
   import { startable } from '../kanban-core';
+  import { preload } from '../idle';
 
   const mac = typeof navigator !== 'undefined' && /mac/i.test(navigator.platform);
   const views: { id: View; label: () => string }[] = [
@@ -36,6 +35,8 @@
       app.notify(String((e as Error).message ?? e), 'error');
     }
   }
+  const systemChip = preload(() => import('./system/SystemChip.svelte'));
+  const usageChip = preload(() => import('./usage/UsageChip.svelte'));
   const demoPill = isDemo() ? () => import('./ui/DemoPill.svelte') : null;
 </script>
 
@@ -62,8 +63,8 @@
   <div class="spacer" data-tauri-drag-region></div>
   {#if demoPill}{#await demoPill() then { default: DemoPill }}<DemoPill />{/await}{/if}
   <UpdatePill />
-  <SystemChip />
-  <UsageChip />
+  {#await systemChip() then { default: SystemChip }}<SystemChip />{/await}
+  {#await usageChip() then { default: UsageChip }}<UsageChip />{/await}
   <PortsChip />
   <HostChip />
   <button class="btn primary run" disabled={!nextAuto} title={t('title.runHint')} onclick={run}>

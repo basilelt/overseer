@@ -20,11 +20,13 @@
   import { preload } from '../../idle';
   import GitBranch from '@lucide/svelte/icons/git-branch';
   import { ui } from '../../mobile/ui.svelte';
+  import { notesUi } from '../../notes.svelte';
 
   const statesView = preload(() => import('./StatesView.svelte'));
   // Only windows showing several hosts need it.
   const hostSections = () => import('./HostSections.svelte');
   const gitView = () => import('../../git/SidebarGit.svelte');
+  const notesView = () => import('./NotesPopover.svelte');
 
   const unplaced = $derived(app.connected && app.wsPersistent ? unplacedCount(app.data.lines, app.ws.workspaces, app.projects, app.data.tasks) : 0);
   const nudge = $derived(nudgeVisible(unplaced, settings.organizeNudgeAt));
@@ -113,6 +115,9 @@
       >
       <button class="icon-btn" title={t('common.close')} aria-label={t('common.close')} onclick={() => (app.multi = new Set())}><X size={14} /></button>
     </div>
+  {/if}
+  {#if notesUi.lineId}
+    {#await notesView() then { default: NotesPopover }}<NotesPopover />{/await}
   {/if}
 </aside>
 

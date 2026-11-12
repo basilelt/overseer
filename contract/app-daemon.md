@@ -179,6 +179,16 @@ when not null. `PUT /v1/lines/{id}/title` `{"title": str | null}` stores it in t
 (persists across restarts), answers 200 `{"lineId","titleOverride"}` · 400 · 404 and publishes
 `line.updated` with `local.titleOverride`. The auto `title` fields are never changed.
 
+Sticky notes (addition): lines carry `local.notes`, the user's notes on the session, oldest first,
+each `{"id","text","createdAt","updatedAt"}`; they are never sent to the agent.
+`POST /v1/lines/{id}/notes` `{"text": str}` adds one, `PUT /v1/lines/{id}/notes/{noteId}`
+`{"text": str}` changes one, `DELETE /v1/lines/{id}/notes/{noteId}` removes one. The text is
+trimmed, keeps newlines and tabs, drops other control characters and is capped at 4000 characters.
+Each answers 200 `{"lineId","note","notes"}` (`note` is null on delete) · 400 `text (string) required`
+or `note text required` · 404 unknown line or note · 409 `at most 50 notes per session`, stores the
+list in the registry in one transaction (persists across restarts) and publishes `line.updated` with
+`local.notes`.
+
 ### Routes
 
 | Route | Body | Result |

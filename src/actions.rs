@@ -1088,6 +1088,20 @@ pub fn set_title(ctx: &Ctx, q: &str, title: Option<&str>) -> Result<Line, (u16, 
     Ok(l)
 }
 
+/// Changes the sticky notes of the session `q`; returns its line id, `f`'s result and the notes now stored.
+pub fn notes<T>(
+    ctx: &Ctx,
+    q: &str,
+    f: impl FnOnce(&mut Vec<serde_json::Value>) -> Result<T, crate::notes::Err>,
+) -> Result<(Line, T, Vec<serde_json::Value>), crate::notes::Err> {
+    let lines = scan(ctx).map_err(|e| (500, e))?;
+    let mut l = find_line(&lines, q).map_err(|e| (404, e))?.clone();
+    let mut reg = Registry::open(&ctx.state_dir).map_err(|e| (500, e))?;
+    let (out, notes) = crate::notes::update(&mut reg, &l.id, f)?;
+    l.notes = notes.clone();
+    Ok((l, out, notes))
+}
+
 pub fn stub(ctx: &Ctx, q: &str) -> Result<(), String> {
     let lines = scan(ctx)?;
     let l = find_line(&lines, q)?;

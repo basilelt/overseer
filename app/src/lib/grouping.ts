@@ -22,6 +22,8 @@ export interface SidebarItem {
   lineId?: string;
   termId?: string;
   taskId?: string;
+  /** How many sticky notes the session carries. */
+  notes?: number;
 }
 
 export interface Group {
@@ -74,6 +76,7 @@ export function sidebarItems(lines: LocalLine[], terms: Term[], tasks: Task[], b
       lineId: l.line.id,
       termId,
       taskId: task?.id,
+      notes: l.local?.notes?.length || undefined,
     });
   }
   for (const t of terms) {
@@ -94,7 +97,7 @@ export function sidebarItems(lines: LocalLine[], terms: Term[], tasks: Task[], b
   return items;
 }
 
-const ITEM_FIELDS: (keyof SidebarItem)[] = ['key', 'kind', 'group', 'state', 'title', 'goal', 'status', 'at', 'lineId', 'termId', 'taskId'];
+const ITEM_FIELDS: (keyof SidebarItem)[] = ['key', 'kind', 'group', 'state', 'title', 'goal', 'status', 'at', 'lineId', 'termId', 'taskId', 'notes'];
 
 function sameItem(a: SidebarItem, b: SidebarItem): boolean {
   for (const f of ITEM_FIELDS) if (a[f] !== b[f]) return false;

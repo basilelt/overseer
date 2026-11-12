@@ -31,6 +31,7 @@ pub mod install;
 pub mod lifecycle;
 pub mod mcp;
 pub mod naming;
+pub mod notes;
 pub mod organize;
 pub mod ports;
 pub mod power;
@@ -149,6 +150,7 @@ pub struct Line {
     pub workspace_id: Option<String>,
     pub hold_pending: bool,
     pub held_at: Option<String>,
+    pub notes: Vec<Value>,
 }
 
 struct Found {
@@ -1329,6 +1331,7 @@ fn scan_now(ctx: &Ctx) -> Result<Vec<Line>, String> {
             busy_known: f.busy_known,
             title: f.title,
             title_override: marks.title_override.clone(),
+            notes: marks.notes.clone(),
             tmux: f.tmux,
             orphan: pane.as_ref().is_some_and(|p| !p.attached),
             pane: pane.map(|p| p.id),
@@ -1474,6 +1477,7 @@ impl Line {
             "resumeCommand": self.resume_command,
             "resumeVerified": agents::get(self.agent).is_some_and(|a| a.resume_verified),
             "titleOverride": self.title_override,
+            "notes": self.notes,
         });
         if let Some(p) = self.pid {
             local["pid"] = json!(p);
