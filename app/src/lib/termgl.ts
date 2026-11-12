@@ -1,5 +1,5 @@
 import type { GhosttyCell } from 'ghostty-web';
-import { KEYS, readItem } from './storage';
+import { readItem, KEY_RENDERER } from './storage';
 
 const BOLD = 1;
 const ITALIC = 2;
@@ -682,7 +682,7 @@ export type GlMode = 'off' | 'gpu' | 'force';
 export function webglMode(search = globalThis.location?.search ?? ''): GlMode {
   let v = new URLSearchParams(search).get('renderer');
   if (!v) {
-    v = readItem(KEYS.renderer);
+    v = readItem(KEY_RENDERER);
   }
   return v === 'webgl' ? 'gpu' : v === 'webgl-force' ? 'force' : 'off';
 }

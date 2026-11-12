@@ -1,9 +1,9 @@
 import { hostId } from './hooks';
 import type { Key } from './i18n.svelte';
 import type { ConnState, SwitchboardStatus } from './types';
-import { KEYS, readItem, writeItem } from './storage';
+import { readItem, writeItem, KEY_SWITCHBOARD_IMPORT } from './storage';
 
-export const DISMISS_KEY = KEYS.switchboardImport;
+export const DISMISS_KEY = KEY_SWITCHBOARD_IMPORT;
 
 export function shouldOffer(s: SwitchboardStatus | null, conn: ConnState, dismissed: boolean, offered: string[]): boolean {
   if (conn.phase !== 'connected' || !s || !s.found || s.imported || dismissed) return false;

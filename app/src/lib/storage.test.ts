@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { KEYS, readItem, readJson, removeItem, writeItem, writeJson } from './storage';
+import { KEY_SETTINGS, KEY_KNOWN_TABS, KEY_SESSION_PAGES, KEY_LIVE_REVIEW, KEY_SWITCHBOARD_IMPORT, KEY_NOTIFY_ASKED, KEY_NOTIFIED, KEY_NOTIFICATIONS_PREFIX, KEY_RENDERER, KEY_REVIEW_MODE, KEY_REVIEW_AUTO_REFRESH, KEY_REVIEW_VIEW, KEY_REVIEW_BASE, KEY_CHAT_MODES, KEY_FEEDBACK_REPORTED, KEY_DRAFTS_CHAT, KEY_DRAFTS_REVIEW, KEY_DRAFTS_TASK, KEY_DEMO, KEY_DEMO_PREFIX, KEY_MOCK_IMPORTED, readItem, readJson, removeItem, writeItem, writeJson } from './storage';
 
 function memoryStorage() {
   const m = new Map<string, string>();
@@ -27,7 +27,29 @@ const broken = {
 
 describe('storage helper', () => {
   it('keeps every persisted key string, legacy sb. ones included', () => {
-    expect(KEYS).toEqual({
+    expect({
+      settings: KEY_SETTINGS,
+      knownTabs: KEY_KNOWN_TABS,
+      sessionPages: KEY_SESSION_PAGES,
+      liveReview: KEY_LIVE_REVIEW,
+      switchboardImport: KEY_SWITCHBOARD_IMPORT,
+      notifyAsked: KEY_NOTIFY_ASKED,
+      notified: KEY_NOTIFIED,
+      notificationsPrefix: KEY_NOTIFICATIONS_PREFIX,
+      renderer: KEY_RENDERER,
+      reviewMode: KEY_REVIEW_MODE,
+      reviewAutoRefresh: KEY_REVIEW_AUTO_REFRESH,
+      reviewView: KEY_REVIEW_VIEW,
+      reviewBase: KEY_REVIEW_BASE,
+      chatModes: KEY_CHAT_MODES,
+      feedbackReported: KEY_FEEDBACK_REPORTED,
+      draftsChat: KEY_DRAFTS_CHAT,
+      draftsReview: KEY_DRAFTS_REVIEW,
+      draftsTask: KEY_DRAFTS_TASK,
+      demo: KEY_DEMO,
+      demoPrefix: KEY_DEMO_PREFIX,
+      mockImported: KEY_MOCK_IMPORTED,
+    }).toEqual({
       settings: 'overseer.settings',
       knownTabs: 'overseer.knownTabs',
       sessionPages: 'overseer.sessionPages',

@@ -1,6 +1,6 @@
 import type { SidebarItem } from './grouping';
 import type { Layout } from './workspace.svelte';
-import { KEYS, readJson, writeJson } from './storage';
+import { readJson, writeJson, KEY_KNOWN_TABS } from './storage';
 
 export interface KnownTabs {
   known: string[];
@@ -9,7 +9,7 @@ export interface KnownTabs {
   shape?: Layout;
 }
 
-const KEY = KEYS.knownTabs;
+const KEY = KEY_KNOWN_TABS;
 
 function loadAll(): Record<string, KnownTabs> {
   const v = readJson(KEY);

@@ -3,9 +3,9 @@ import { beside } from '../review/beside.svelte';
 import { closeSideReview, itemTarget, setReviewMode } from '../review/open';
 import { allTabs, workspace } from '../workspace.svelte';
 import { live, liveOn } from './live.svelte';
-import { KEYS, readItem, removeItem, writeItem } from '../storage';
+import { readItem, removeItem, writeItem, KEY_LIVE_REVIEW } from '../storage';
 
-const STORE = KEYS.liveReview;
+const STORE = KEY_LIVE_REVIEW;
 
 function remember(key: string | null) {
   if (key) writeItem(STORE, key);

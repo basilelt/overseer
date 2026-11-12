@@ -1,6 +1,6 @@
 import type { ReviewApi } from './api';
 import type { MapFile, MapLink, MapRegion, ReviewMap, ReviewTarget } from './types';
-import { KEYS, readItem, writeItem } from '../storage';
+import { readItem, writeItem, KEY_REVIEW_VIEW } from '../storage';
 import { OneShot } from '../timer';
 
 export const SIGNALS = ['logic', 'reach', 'contract', 'struggle', 'untested', 'unseen'] as const;
@@ -282,7 +282,7 @@ export function step(rank: Scored[], current: string | null, dir: 1 | -1): Score
   return rank[(i + dir + rank.length) % rank.length];
 }
 
-const VIEW_KEY = KEYS.reviewView;
+const VIEW_KEY = KEY_REVIEW_VIEW;
 
 export function savedView(): 'list' | 'map' {
   const v = readItem(VIEW_KEY);

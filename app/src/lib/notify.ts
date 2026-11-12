@@ -8,7 +8,7 @@ import type { DaemonEvent, LocalLine } from './types';
 import { allIdle } from './workspaces';
 import { MAX_COOLDOWN_S } from './notify-prefs';
 import { startOs } from './os-notify';
-import { KEYS } from './storage';
+import { KEY_NOTIFIED } from './storage';
 import { isTesting } from './task-status';
 
 export type NoticeKind = 'needsInput' | 'taskTesting' | 'finished' | 'failed' | 'allIdle';
@@ -140,7 +140,7 @@ export interface KV {
   setItem(k: string, v: string): void;
 }
 
-const SEEN_KEY = KEYS.notified;
+const SEEN_KEY = KEY_NOTIFIED;
 const SEEN_MAX = 500;
 const SETTLE_MS = 1500;
 const COOLDOWN_MS = 20_000;

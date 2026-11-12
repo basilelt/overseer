@@ -14,11 +14,11 @@ import { Drafts } from '../drafts';
 import { inFlight, single } from '../inflight';
 import { onPresence, presence } from '../presence';
 import type { Delivery, Related, ReviewDiff, ReviewTarget, SubmitKind, Thread } from './types';
-import { KEYS, readItem, writeItem } from '../storage';
+import { readItem, writeItem, KEY_DRAFTS_REVIEW, KEY_REVIEW_AUTO_REFRESH, KEY_REVIEW_MODE } from '../storage';
 
-const MODE_KEY = KEYS.reviewMode;
-const AUTO_KEY = KEYS.reviewAutoRefresh;
-const reviewDrafts = new Drafts<D.Draft | null>(KEYS.draftsReview, (v) => !v);
+const MODE_KEY = KEY_REVIEW_MODE;
+const AUTO_KEY = KEY_REVIEW_AUTO_REFRESH;
+const reviewDrafts = new Drafts<D.Draft | null>(KEY_DRAFTS_REVIEW, (v) => !v);
 
 function loadAuto(): boolean {
   return readItem(AUTO_KEY) !== '0';

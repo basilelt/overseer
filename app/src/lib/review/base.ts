@@ -1,6 +1,6 @@
-import { KEYS, readJson, writeJson } from '../storage';
+import { readJson, writeJson, KEY_REVIEW_BASE } from '../storage';
 
-const BASE_KEY = KEYS.reviewBase;
+const BASE_KEY = KEY_REVIEW_BASE;
 
 function all(): Record<string, string> {
   const v = readJson(BASE_KEY);

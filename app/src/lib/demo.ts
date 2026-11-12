@@ -1,7 +1,7 @@
-import { KEYS } from './storage';
+import { KEY_DEMO, KEY_DEMO_PREFIX } from './storage';
 
-export const DEMO_KEY = KEYS.demo;
-export const DEMO_PREFIX = KEYS.demoPrefix;
+export const DEMO_KEY = KEY_DEMO;
+export const DEMO_PREFIX = KEY_DEMO_PREFIX;
 
 let real: Storage | undefined;
 

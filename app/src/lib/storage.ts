@@ -1,26 +1,24 @@
-export const KEYS = {
-  settings: 'overseer.settings',
-  knownTabs: 'overseer.knownTabs',
-  sessionPages: 'overseer.sessionPages',
-  liveReview: 'overseer.liveReview',
-  switchboardImport: 'overseer.switchboardImport',
-  notifyAsked: 'overseer.notifyAsked',
-  notified: 'overseer.notified',
-  notificationsPrefix: 'overseer.notifications.',
-  renderer: 'overseer.renderer',
-  reviewMode: 'overseer.review.mode',
-  reviewAutoRefresh: 'overseer.review.autoRefresh',
-  reviewView: 'overseer.review.view',
-  reviewBase: 'overseer.review.base',
-  chatModes: 'sb.chatModes',
-  feedbackReported: 'sb.feedback.reported',
-  draftsChat: 'overseer.drafts.chat',
-  draftsReview: 'overseer.drafts.review',
-  draftsTask: 'overseer.drafts.task',
-  demo: 'overseer.demo',
-  demoPrefix: 'overseer.demo:',
-  mockImported: 'overseer.mockImported',
-} as const;
+export const KEY_SETTINGS = 'overseer.settings';
+export const KEY_KNOWN_TABS = 'overseer.knownTabs';
+export const KEY_SESSION_PAGES = 'overseer.sessionPages';
+export const KEY_LIVE_REVIEW = 'overseer.liveReview';
+export const KEY_SWITCHBOARD_IMPORT = 'overseer.switchboardImport';
+export const KEY_NOTIFY_ASKED = 'overseer.notifyAsked';
+export const KEY_NOTIFIED = 'overseer.notified';
+export const KEY_NOTIFICATIONS_PREFIX = 'overseer.notifications.';
+export const KEY_RENDERER = 'overseer.renderer';
+export const KEY_REVIEW_MODE = 'overseer.review.mode';
+export const KEY_REVIEW_AUTO_REFRESH = 'overseer.review.autoRefresh';
+export const KEY_REVIEW_VIEW = 'overseer.review.view';
+export const KEY_REVIEW_BASE = 'overseer.review.base';
+export const KEY_CHAT_MODES = 'sb.chatModes';
+export const KEY_FEEDBACK_REPORTED = 'sb.feedback.reported';
+export const KEY_DRAFTS_CHAT = 'overseer.drafts.chat';
+export const KEY_DRAFTS_REVIEW = 'overseer.drafts.review';
+export const KEY_DRAFTS_TASK = 'overseer.drafts.task';
+export const KEY_DEMO = 'overseer.demo';
+export const KEY_DEMO_PREFIX = 'overseer.demo:';
+export const KEY_MOCK_IMPORTED = 'overseer.mockImported';
 
 function store(): Storage | null {
   try {

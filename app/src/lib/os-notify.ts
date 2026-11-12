@@ -24,7 +24,7 @@ import {
 import { saveSettings, settings } from './settings.svelte';
 import type { app as App, ToastAction } from './state.svelte';
 import { hostKey } from './window';
-import { readItem, writeItem, KEYS } from './storage';
+import { readItem, writeItem, KEY_NOTIFY_ASKED } from './storage';
 
 type Plugin = typeof import('@tauri-apps/plugin-notification');
 type AppLike = typeof App;
@@ -60,7 +60,7 @@ export function cooldownGate(now: () => number = Date.now, max = 500) {
   };
 }
 
-const ASKED = KEYS.notifyAsked;
+const ASKED = KEY_NOTIFY_ASKED;
 const sent = new Map<number, string>();
 const cooled = cooldownGate();
 let taps: Promise<unknown> | null = null;

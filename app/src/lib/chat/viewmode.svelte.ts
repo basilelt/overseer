@@ -1,8 +1,8 @@
 import { isPhone } from '../mobile/ui.svelte';
 import { tabMode, withMode, type ModeItem, type ViewMode } from './viewmode';
-import { KEYS, readJson, writeJson } from '../storage';
+import { readJson, writeJson, KEY_CHAT_MODES } from '../storage';
 
-const STORE = KEYS.chatModes;
+const STORE = KEY_CHAT_MODES;
 
 function load(): Record<string, ViewMode> {
   const v = readJson(STORE);

@@ -1,7 +1,7 @@
 <script lang="ts" module>
   import { Drafts } from '../../drafts';
 
-  const drafts = new Drafts(KEYS.draftsChat);
+  const drafts = new Drafts(KEY_DRAFTS_CHAT);
 </script>
 
 <script lang="ts">
@@ -23,7 +23,7 @@
   import { ChatSender } from '../../chat/sender.svelte';
   import { clearComposerHeight, reportComposerHeight } from '../../chat/composer-height';
   import { platformName } from '../../platform';
-  import { KEYS } from '../../storage';
+  import { KEY_DRAFTS_CHAT } from '../../storage';
   import { basename } from '../../paths';
 
   let { lineId, agent, local, phone, history = [], onsent }: { lineId: string; agent: string; local: LineLocal | undefined; phone: boolean; history?: string[]; onsent?: (text: string) => void } = $props();

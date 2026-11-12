@@ -1,5 +1,5 @@
 import type { KV } from './notify';
-import { KEYS } from './storage';
+import { KEY_NOTIFICATIONS_PREFIX } from './storage';
 
 export type EntryKind = 'needsInput' | 'taskTesting' | 'finished' | 'failed' | 'allIdle' | 'portForwarded' | 'portClosed' | 'update' | 'upload' | 'error';
 
@@ -30,7 +30,7 @@ export interface EntryInput {
 
 export const MAX_ENTRIES = 100;
 export const SUPERSEDE_MS = 60_000;
-const PREFIX = KEYS.notificationsPrefix;
+const PREFIX = KEY_NOTIFICATIONS_PREFIX;
 
 export function storageKey(host: string): string {
   return PREFIX + host;

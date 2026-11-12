@@ -4,7 +4,7 @@ import type { Kind } from './feedback';
 import type { Recording } from './record';
 import type { DaemonClient, TermIO } from './client';
 import type { Term } from './types';
-import { KEYS, readJson, writeJson } from './storage';
+import { readJson, writeJson, KEY_FEEDBACK_REPORTED } from './storage';
 
 export interface Prefill {
   kind?: Kind;
@@ -20,7 +20,7 @@ export interface Result {
 }
 
 const WATCH_MS = 60 * 60 * 1000;
-const REPORTED_KEY = KEYS.feedbackReported;
+const REPORTED_KEY = KEY_FEEDBACK_REPORTED;
 const REPORTED_MAX = 100;
 
 function loadReported(): string[] {

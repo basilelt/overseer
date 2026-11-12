@@ -1,4 +1,4 @@
-import { KEYS, readJson, writeJson } from './storage';
+import { readJson, writeJson, KEY_SESSION_PAGES } from './storage';
 
 export interface Page {
   id: string;
@@ -21,7 +21,7 @@ export const MAX_HOSTS = 8;
 export const MAX_LIVE = 4;
 export const DEFAULT_RATIO = 0.5;
 
-const KEY = KEYS.sessionPages;
+const KEY = KEY_SESSION_PAGES;
 const ID = /^[A-Za-z0-9_-]{1,32}$/;
 
 const empty = (): SessionWeb => ({ pages: [], active: null, open: true, ratio: DEFAULT_RATIO });
