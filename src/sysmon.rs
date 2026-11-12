@@ -189,7 +189,7 @@ impl Hub {
 
 fn frame(seq: u64, data: &Value) -> Arc<String> {
     let env = json!({"id": seq.to_string(), "type": "system.sample", "at": format_rfc3339(now_ms()), "data": data});
-    Arc::new(format!("id: {seq}\nevent: system.sample\ndata: {env}\n\n"))
+    Arc::new(crate::board::sse_frame(seq, "system.sample", &env))
 }
 
 fn hub() -> &'static Arc<Hub> {
@@ -237,7 +237,7 @@ fn stream(s: &mut dyn Write) {
     loop {
         let out = match rx.recv_timeout(Duration::from_secs(15)) {
             Ok(f) => s.write_all(f.as_bytes()),
-            Err(RecvTimeoutError::Timeout) => s.write_all(b": ping\n\n"),
+            Err(RecvTimeoutError::Timeout) => s.write_all(crate::board::SSE_PING),
             Err(RecvTimeoutError::Disconnected) => return,
         };
         if out.and_then(|_| s.flush()).is_err() {

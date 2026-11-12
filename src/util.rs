@@ -1,5 +1,11 @@
 use std::time::{Duration, Instant};
 
+pub const SHELL_FALLBACK: &str = r#"exec "${SHELL:-/bin/sh}""#;
+
+pub fn safe_session_id(id: &str) -> bool {
+    !(id.is_empty() || id.contains('/') || id.contains(".."))
+}
+
 pub fn ticket(s: &str) -> Option<String> {
     static KEYS: std::sync::OnceLock<Vec<String>> = std::sync::OnceLock::new();
     let keys = KEYS.get_or_init(|| {
@@ -229,6 +235,19 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn session_ids_with_path_parts_are_unsafe() {
+        assert!(safe_session_id("abc-123"));
+        for bad in ["", "a/b", "..", "a..b", "../x"] {
+            assert!(!safe_session_id(bad), "{bad}");
+        }
+    }
+
+    #[test]
+    fn the_shell_fallback_is_the_login_shell_or_sh() {
+        assert_eq!(SHELL_FALLBACK, "exec \"${SHELL:-/bin/sh}\"");
+    }
 
     #[test]
     fn supervised_threads_restart_after_a_panic_and_stop_when_done() {

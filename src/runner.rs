@@ -271,11 +271,12 @@ fn launch(ctx: &Ctx, reg: &Registry, line_id: &str, args: &Value, p: &Plan) -> R
     )?;
     let argv = claude_argv(reg, &ctx.config.start_args, sid)?;
     let cmd = format!(
-        "{}; exec \"${{SHELL:-/bin/sh}}\"",
+        "{}; {}",
         argv.iter()
             .map(|a| crate::util::shell_quote(a))
             .collect::<Vec<_>>()
-            .join(" ")
+            .join(" "),
+        crate::util::SHELL_FALLBACK
     );
     tmux.ok(&[
         "new-session",
@@ -499,8 +500,9 @@ pub fn patch_local(ctx: &Ctx, l: &Line, print: bool) -> Result<String, String> {
     Registry::open(&ctx.state_dir)?.reserve(&line, "dev", ctx.now_ms)?;
     let tmux = ctx.tmux.clone().ok_or("tmux unavailable")?;
     let cmd = format!(
-        "claude --session-id {}; exec \"${{SHELL:-/bin/sh}}\"",
-        crate::util::shell_quote(&sid)
+        "claude --session-id {}; {}",
+        crate::util::shell_quote(&sid),
+        crate::util::SHELL_FALLBACK
     );
     tmux.ok(&[
         "new-session",

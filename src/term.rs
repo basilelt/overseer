@@ -778,7 +778,10 @@ impl Term {
         self.respawn(vec![
             "/bin/sh".into(),
             "-c".into(),
-            "printf '\\r\\n%s\\r\\n\\r\\n' \"$1\"; exec \"${SHELL:-/bin/sh}\"".into(),
+            format!(
+                "printf '\\r\\n%s\\r\\n\\r\\n' \"$1\"; {}",
+                crate::util::SHELL_FALLBACK
+            ),
             "sh".into(),
             note,
         ])

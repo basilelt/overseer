@@ -1,4 +1,5 @@
 use crate::hold::{evaluate, Check, HoldInput};
+use crate::lifecycle::is_stub_wrapper;
 use crate::procs::mem_bytes;
 use crate::registry::Registry;
 use crate::sys::CommandExt;
@@ -141,10 +142,11 @@ pub(crate) fn self_exe() -> String {
 
 pub fn stub_command(ctx: &Ctx, line_id: &str) -> String {
     format!(
-        "trap : INT; OVERSEER_STATE_DIR={} {} stub {}; exec \"${{SHELL:-/bin/sh}}\"",
+        "trap : INT; OVERSEER_STATE_DIR={} {} stub {}; {}",
         shell_quote(&ctx.state_dir.to_string_lossy()),
         shell_quote(&self_exe()),
-        shell_quote(line_id)
+        shell_quote(line_id),
+        crate::util::SHELL_FALLBACK
     )
 }
 
@@ -851,10 +853,6 @@ pub(crate) fn close_line(
     Ok(r)
 }
 
-fn is_stub_wrapper(cmd: &[String]) -> bool {
-    cmd.last().is_some_and(|c| c.contains(" stub "))
-}
-
 // Terms of a line with no agent pid yet: its held stub, or an agent still starting, such as
 // a resumed Claude waiting on its folder trust prompt before any hook reports the session.
 pub fn pending_terms(l: &Line) -> Vec<std::sync::Arc<crate::term::Term>> {
@@ -987,7 +985,7 @@ pub fn resume(ctx: &Ctx, q: &str, dry_run: bool, launch: Launch) -> Result<Resum
         &json!({"action": "resume", "dryRun": false, "result": plan.to_json()}),
     );
     let argv: Vec<String> = plan.argv.iter().map(|a| shell_quote(a)).collect();
-    let cmd = format!("{}; exec \"${{SHELL:-/bin/sh}}\"", argv.join(" "));
+    let cmd = format!("{}; {}", argv.join(" "), crate::util::SHELL_FALLBACK);
     match plan.r#where {
         "tmux-pane" => {
             let pane = plan.pane.clone().unwrap_or_default();

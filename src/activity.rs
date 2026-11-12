@@ -87,7 +87,7 @@ pub fn find_transcript(
     agent: &str,
     session_id: &str,
 ) -> Option<PathBuf> {
-    if session_id.is_empty() || session_id.contains('/') || session_id.contains("..") {
+    if !crate::util::safe_session_id(session_id) {
         return None;
     }
     let kind = crate::agents::transcript_of(agent)?;

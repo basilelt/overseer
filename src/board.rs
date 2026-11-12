@@ -48,13 +48,19 @@ pub fn subscribe(after: Option<u64>) -> (Receiver<Arc<String>>, Vec<Arc<String>>
     (rx, backlog)
 }
 
+pub const SSE_PING: &[u8] = b": ping\n\n";
+
+pub fn sse_frame(id: u64, kind: &str, env: &Value) -> String {
+    format!("id: {id}\nevent: {kind}\ndata: {env}\n\n")
+}
+
 pub fn publish(kind: &str, data: Value) {
     let mut g = BUS.lock().unwrap_or_else(|e| e.into_inner());
     let bus = g.get_or_insert_with(Bus::default);
     bus.next += 1;
     let id = bus.next;
     let env = json!({"id": id.to_string(), "type": kind, "at": format_rfc3339(crate::procs::now_ms()), "data": data});
-    let frame = Arc::new(format!("id: {id}\nevent: {kind}\ndata: {env}\n\n"));
+    let frame = Arc::new(sse_frame(id, kind, &env));
     bus.subs.retain(|s| s.send(frame.clone()).is_ok());
     bus.recent.push_back((id, frame));
     if bus.recent.len() > REPLAY {
@@ -494,7 +500,7 @@ fn sse(r: &Request, s: &mut dyn Write) {
     loop {
         let out = match rx.recv_timeout(Duration::from_secs(15)) {
             Ok(f) => s.write_all(f.as_bytes()),
-            Err(RecvTimeoutError::Timeout) => s.write_all(b": ping\n\n"),
+            Err(RecvTimeoutError::Timeout) => s.write_all(SSE_PING),
             Err(RecvTimeoutError::Disconnected) => return,
         };
         if out.and_then(|_| s.flush()).is_err() {
@@ -637,6 +643,13 @@ pub fn cli(state_dir: &Path) -> Result<String, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn sse_frames_are_id_event_data_and_a_blank_line() {
+        let f = sse_frame(7, "x.y", &json!({"a": 1}));
+        assert_eq!(f, "id: 7\nevent: x.y\ndata: {\"a\":1}\n\n");
+        assert_eq!(SSE_PING, b": ping\n\n");
+    }
 
     #[test]
     fn diff_stamp_changes_with_edits_commits_and_staging() {

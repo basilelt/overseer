@@ -37,7 +37,7 @@ fn head(path: &Path) -> Option<Head> {
     let n = std::fs::File::open(path).ok()?.read(&mut buf).ok()?;
     let s = String::from_utf8_lossy(&buf[..n]);
     let id = field(&s, "sessionId")?.to_string();
-    if id.is_empty() || id.contains('/') || id.contains("..") {
+    if !crate::util::safe_session_id(&id) {
         return None;
     }
     Some(Head {

@@ -647,10 +647,7 @@ mod tests {
             .parse()
             .unwrap();
         let gone = (0..100).any(|_| {
-            let alive = unsafe { libc::kill(child, 0) } == 0
-                && !std::fs::read_to_string(format!("/proc/{child}/stat"))
-                    .unwrap_or_default()
-                    .contains(") Z ");
+            let alive = crate::procs::alive_not_zombie(child);
             if alive {
                 std::thread::sleep(Duration::from_millis(20));
             }

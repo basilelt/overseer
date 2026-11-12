@@ -370,6 +370,14 @@ fn stat_field(pid: u32, n: usize) -> Option<String> {
     after.split_whitespace().nth(n).map(str::to_string)
 }
 
+#[cfg(unix)]
+pub fn alive_not_zombie(pid: i32) -> bool {
+    (unsafe { libc::kill(pid, 0) } == 0)
+        && !std::fs::read_to_string(format!("/proc/{pid}/stat"))
+            .unwrap_or_default()
+            .contains(") Z ")
+}
+
 pub fn now_ms() -> i64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -573,6 +581,13 @@ pub fn strip_resume(flags: &[String]) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(unix)]
+    #[test]
+    fn a_live_pid_is_alive_and_a_missing_one_is_not() {
+        assert!(alive_not_zombie(std::process::id() as i32));
+        assert!(!alive_not_zombie(i32::MAX));
+    }
 
     #[cfg(target_os = "macos")]
     #[test]

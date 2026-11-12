@@ -115,6 +115,10 @@ pub fn is_reboot(stored: Option<&str>, current: Option<&str>) -> bool {
     matches!((stored, current), (Some(a), Some(b)) if a != b)
 }
 
+pub fn is_stub_wrapper(cmd: &[String]) -> bool {
+    cmd.last().is_some_and(|c| c.contains(" stub "))
+}
+
 pub fn snapshot(terms: &[Info], lines: &[Line]) -> Vec<Saved> {
     terms
         .iter()
@@ -125,7 +129,7 @@ pub fn snapshot(terms: &[Info], lines: &[Line]) -> Vec<Saved> {
             let line = lines
                 .iter()
                 .find(|l| l.term_id.as_deref() == Some(i.id.as_str()) && l.alive());
-            if line.is_none() && i.cmd.last().is_some_and(|c| c.contains(" stub ")) {
+            if line.is_none() && is_stub_wrapper(&i.cmd) {
                 return None;
             }
             Some(Saved {
