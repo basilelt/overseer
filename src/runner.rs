@@ -278,7 +278,7 @@ fn launch(ctx: &Ctx, reg: &Registry, line_id: &str, args: &Value, p: &Plan) -> R
 }
 
 fn claude_bin() -> &'static str {
-    crate::agents::get(crate::agents::CLAUDE).map_or("claude", |a| a.bin)
+    crate::agents::get(crate::agents::CLAUDE).map_or(crate::agents::CLAUDE, |a| a.bin)
 }
 
 fn claude_argv(reg: &Registry, start_args: &[String], sid: String) -> Result<Vec<String>, String> {

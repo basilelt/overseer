@@ -1,12 +1,20 @@
 use std::path::PathBuf;
 
-pub const OVERSEER_HOME: &str = ".overseer";
+macro_rules! home_names {
+    ($home:literal, $uploads:literal, $tasks:literal) => {
+        pub const OVERSEER_HOME: &str = $home;
+        pub const UPLOADS_DIR: &str = $uploads;
+        pub const TASKS_DIR: &str = $tasks;
+        pub const SHORT_UPLOADS_REL: &str = concat!($home, "/", $uploads);
+        pub const TASK_UPLOADS_REL: &str = concat!($home, "/", $tasks);
+    };
+}
+
+home_names!(".overseer", "u", "tasks");
 pub const USER_BIN: &str = ".local/bin";
 
 pub const BIN_DIR: &str = "bin";
 pub const SERVER_DIR: &str = "server";
-pub const UPLOADS_DIR: &str = "u";
-pub const TASKS_DIR: &str = "tasks";
 pub const REVIEWS_DIR: &str = "reviews";
 pub const WORKTREES_DIR: &str = "worktrees";
 
@@ -31,9 +39,6 @@ pub const RUNNING_DIR: &str = "running";
 pub const STATIONS_DIR: &str = "stations";
 pub const TMP_DIR: &str = "tmp";
 pub const STATE_UPLOADS_DIR: &str = "uploads";
-
-pub const SHORT_UPLOADS_REL: &str = ".overseer/u";
-pub const TASK_UPLOADS_REL: &str = ".overseer/tasks";
 
 pub const MIGRATED_STATE_FILES: [&str; 5] = [
     PROFILES_FILE,
@@ -77,9 +82,9 @@ mod tests {
     }
 
     #[test]
-    fn relative_upload_paths_agree_with_the_home_names() {
-        assert_eq!(SHORT_UPLOADS_REL, format!("{OVERSEER_HOME}/{UPLOADS_DIR}"));
-        assert_eq!(TASK_UPLOADS_REL, format!("{OVERSEER_HOME}/{TASKS_DIR}"));
+    fn relative_upload_paths_keep_their_values() {
+        assert_eq!(SHORT_UPLOADS_REL, ".overseer/u");
+        assert_eq!(TASK_UPLOADS_REL, ".overseer/tasks");
     }
 
     #[test]

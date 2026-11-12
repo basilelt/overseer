@@ -1,4 +1,4 @@
-use crate::agents::Hooks;
+use crate::agents::{self, Hooks};
 use crate::hooks;
 use crate::http::err;
 use crate::legacy;
@@ -71,7 +71,7 @@ fn link(real: &Path, at: &Path) -> std::io::Result<()> {
 }
 
 pub fn hook_command(bin: &Path, state_dir: &Path, agent: &str, event: &str) -> String {
-    let reply = if agent == "cursor" && event == "beforeSubmitPrompt" {
+    let reply = if agent == agents::CURSOR && event == "beforeSubmitPrompt" {
         r#"'{"continue":true}'"#
     } else {
         "{}"
@@ -343,7 +343,7 @@ struct Spec {
 
 const SPECS: &[Spec] = &[
     Spec {
-        agent: "claude",
+        agent: agents::CLAUDE,
         root: Root::Agent,
         file: CLAUDE_SETTINGS_FILE,
         events: hooks::CLAUDE_EVENTS,
@@ -351,7 +351,7 @@ const SPECS: &[Spec] = &[
         owned: None,
     },
     Spec {
-        agent: "codex",
+        agent: agents::CODEX,
         root: Root::Agent,
         file: "hooks.json",
         events: hooks::CODEX_EVENTS,
@@ -362,7 +362,7 @@ const SPECS: &[Spec] = &[
         owned: None,
     },
     Spec {
-        agent: "gemini",
+        agent: agents::GEMINI,
         root: Root::Agent,
         file: "settings.json",
         events: hooks::GEMINI_EVENTS,
@@ -370,7 +370,7 @@ const SPECS: &[Spec] = &[
         owned: None,
     },
     Spec {
-        agent: "copilot",
+        agent: agents::COPILOT,
         root: Root::Agent,
         file: "hooks/overseer.json",
         events: hooks::COPILOT_EVENTS,
@@ -378,7 +378,7 @@ const SPECS: &[Spec] = &[
         owned: Some(Owned::CopilotJson),
     },
     Spec {
-        agent: "vibe",
+        agent: agents::VIBE,
         root: Root::Agent,
         file: "hooks.toml",
         events: hooks::VIBE_EVENTS,
@@ -386,7 +386,7 @@ const SPECS: &[Spec] = &[
         owned: Some(Owned::VibeToml),
     },
     Spec {
-        agent: "cursor",
+        agent: agents::CURSOR,
         root: Root::Agent,
         file: "hooks.json",
         events: hooks::CURSOR_EVENTS,
@@ -394,7 +394,7 @@ const SPECS: &[Spec] = &[
         owned: None,
     },
     Spec {
-        agent: "opencode",
+        agent: agents::OPENCODE,
         root: Root::XdgConfig("opencode"),
         file: "plugins/overseer.js",
         events: &[],
@@ -402,7 +402,7 @@ const SPECS: &[Spec] = &[
         owned: Some(Owned::Plugin),
     },
     Spec {
-        agent: "amp",
+        agent: agents::AMP,
         root: Root::XdgConfig("amp"),
         file: "plugins/overseer.js",
         events: &[],
@@ -516,7 +516,7 @@ export default function (amp) {
 "#;
 
 pub fn plugin_js(agent: &str, bin: &Path, state_dir: &Path) -> String {
-    let events = if agent == "amp" {
+    let events = if agent == agents::AMP {
         AMP_EVENTS
     } else {
         OPENCODE_EVENTS
@@ -1042,6 +1042,35 @@ pub fn on_daemon_start(state_dir: &Path) {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn specs_and_installable_agents_match_both_ways() {
+        for a in crate::agents::AGENTS
+            .iter()
+            .filter(|a| matches!(a.hooks, Hooks::Native | Hooks::Plugin))
+        {
+            let n = SPECS.iter().filter(|s| s.agent == a.id).count();
+            assert_eq!(
+                n, 1,
+                "{} declares {:?} hooks: needs exactly one spec",
+                a.id, a.hooks
+            );
+        }
+        for s in SPECS {
+            let a = crate::agents::get(s.agent)
+                .unwrap_or_else(|| panic!("spec for unknown agent {}", s.agent));
+            let want = if s.owned.is_some_and(|o| matches!(o, Owned::Plugin)) {
+                Hooks::Plugin
+            } else {
+                Hooks::Native
+            };
+            assert_eq!(
+                a.hooks, want,
+                "{}: spec kind and descriptor disagree",
+                s.agent
+            );
+        }
+    }
+
     #[test]
     fn mechanism_and_note_follow_the_descriptor() {
         let m: Vec<_> = crate::agents::AGENTS

@@ -3,6 +3,7 @@ use crate::deliver::{send, Channel};
 use crate::git::git_out;
 use crate::registry::Registry;
 use crate::registry::{db, sql};
+use crate::status;
 use crate::tasks::{self, bad, Res, Task};
 use crate::util::{format_rfc3339, ulid};
 use crate::Ctx;
@@ -307,7 +308,7 @@ fn overlaps_in(reg: &Registry, id: &str) -> Res<Vec<Value>> {
             || t.project != me.project
             || wt == mine_wt
             || is_organizer(&t)
-            || !matches!(t.status.as_str(), "in_progress" | "in_testing")
+            || !matches!(t.status.as_str(), status::IN_PROGRESS | status::IN_TESTING)
         {
             continue;
         }

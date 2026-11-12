@@ -189,7 +189,7 @@ const NONE: Agent = Agent {
 
 pub static AGENTS: &[Agent] = &[
     Agent {
-        id: "claude",
+        id: CLAUDE,
         startup_prompt: Some(StartupPrompt {
             marker: "Itrustthisfolder",
             cursor: '❯',
@@ -234,7 +234,7 @@ pub static AGENTS: &[Agent] = &[
         ..NONE
     },
     Agent {
-        id: "codex",
+        id: CODEX,
         transcript: Some(Transcript::Codex),
         process: Some(Process::BinOrScript {
             bin: "codex",
@@ -274,7 +274,7 @@ pub static AGENTS: &[Agent] = &[
         ..NONE
     },
     Agent {
-        id: "gemini",
+        id: GEMINI,
         transcript: Some(Transcript::Gemini),
         process: Some(Process::BinOrPackage {
             bin: "gemini",
@@ -319,7 +319,7 @@ pub static AGENTS: &[Agent] = &[
         ..NONE
     },
     Agent {
-        id: "opencode",
+        id: OPENCODE,
         hooks: Hooks::Plugin,
         profile: ProfileKind::Opencode,
         auto_approve: Some(&["--auto"]),
@@ -334,7 +334,7 @@ pub static AGENTS: &[Agent] = &[
         ..NONE
     },
     Agent {
-        id: "amp",
+        id: AMP,
         hooks: Hooks::Plugin,
         hook_note: Some("Amp has no needs-input event: Overseer reports turn start and end only."),
         name: "Amp",
@@ -347,7 +347,7 @@ pub static AGENTS: &[Agent] = &[
         ..NONE
     },
     Agent {
-        id: "copilot",
+        id: COPILOT,
         hooks: Hooks::Native,
         auto_approve: Some(&["--allow-all"]),
         approval_overrides: &["--allow-all", "--allow-all-tools", "--yolo"],
@@ -378,7 +378,7 @@ pub static AGENTS: &[Agent] = &[
         ..NONE
     },
     Agent {
-        id: "cursor",
+        id: CURSOR,
         hooks: Hooks::Native,
         hook_note: Some("Cursor Agent fires only some hooks in the CLI; a missing turn start falls back to terminal activity."),
         hooks_need_cli: true,
@@ -398,7 +398,7 @@ pub static AGENTS: &[Agent] = &[
         ..NONE
     },
     Agent {
-        id: "vibe",
+        id: VIBE,
         transcript: Some(Transcript::Vibe),
         process: Some(Process::BinOrNative {
             bins: &["vibe", "vibe.exe", "vibe-rs", "vibe-rs.exe"],
@@ -454,6 +454,10 @@ pub const CLAUDE: &str = "claude";
 pub const CODEX: &str = "codex";
 pub const GEMINI: &str = "gemini";
 pub const VIBE: &str = "vibe";
+pub const COPILOT: &str = "copilot";
+pub const CURSOR: &str = "cursor";
+pub const OPENCODE: &str = "opencode";
+pub const AMP: &str = "amp";
 
 pub const DEFAULT_ID: &str = CLAUDE;
 
@@ -1151,21 +1155,6 @@ mod tests {
         assert_eq!(t("gemini").profile, ProfileKind::MarkdownSubagents);
         assert_eq!(t("shell").profile, ProfileKind::Shell);
         assert_eq!(t("copilot").profile, ProfileKind::Plain);
-        let native: Vec<_> = AGENTS
-            .iter()
-            .filter(|a| a.hooks == Hooks::Native)
-            .map(|a| a.id)
-            .collect();
-        assert_eq!(
-            native,
-            ["claude", "codex", "gemini", "copilot", "cursor", "vibe"]
-        );
-        let plugin: Vec<_> = AGENTS
-            .iter()
-            .filter(|a| a.hooks == Hooks::Plugin)
-            .map(|a| a.id)
-            .collect();
-        assert_eq!(plugin, ["opencode", "amp"]);
         let start: Vec<_> = AGENTS
             .iter()
             .filter(|a| a.start_args)

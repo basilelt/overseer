@@ -798,7 +798,7 @@ fn json_of(s: &Shared, e: &Entry) -> Value {
     let merged = f.merged_git || pr_merged;
     let in_use = lines.iter().any(|l| l.alive())
         || !terms.is_empty()
-        || task.is_some_and(|t| t.status == "in_progress");
+        || task.is_some_and(|t| t.status == crate::status::IN_PROGRESS);
     let mut last = admin_dir(&e.path)
         .map(|a| {
             [a.join("index"), a.join("logs/HEAD"), a.join("HEAD")]
