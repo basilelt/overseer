@@ -313,6 +313,49 @@ pub fn routes(method: &str, segs: &[&str], body: &Value, state_dir: &Path) -> Op
 mod tests {
     use super::*;
 
+    const FULL_SAVED: &str = r#"{"id":"t","cwd":"/w","title":"T","cols":80,"rows":24,"agent":"claude","session":"s","flags":["--x"],"lineId":"l","taskId":"k","workspaceId":"w1","titleOverride":"O","profile":{"id":"p1","name":"Fast","model":"m","effort":"high"}}"#;
+
+    #[test]
+    fn saved_json_is_pinned() {
+        let sv = Saved {
+            id: "t".into(),
+            cwd: "/w".into(),
+            title: "T".into(),
+            cols: 80,
+            rows: 24,
+            agent: Some("claude".into()),
+            session: Some("s".into()),
+            flags: vec!["--x".into()],
+            line_id: Some("l".into()),
+            task_id: Some("k".into()),
+            workspace_id: Some("w1".into()),
+            title_override: Some("O".into()),
+            profile: Some(crate::profiles::Chip {
+                id: "p1".into(),
+                name: "Fast".into(),
+                model: "m".into(),
+                effort: "high".into(),
+            }),
+        };
+        let want: serde_json::Value = serde_json::from_str(FULL_SAVED).unwrap();
+        assert_eq!(serde_json::to_value(&sv).unwrap(), want);
+        assert_eq!(serde_json::from_str::<Saved>(FULL_SAVED).unwrap(), sv);
+    }
+
+    #[test]
+    fn saved_minimal_json_takes_defaults() {
+        let sv: Saved = serde_json::from_str(r#"{"id":"t","cwd":"/w"}"#).unwrap();
+        assert_eq!(
+            sv,
+            Saved {
+                id: "t".into(),
+                cwd: "/w".into(),
+                ..Default::default()
+            }
+        );
+        assert!(sv.flags.is_empty() && sv.agent.is_none() && sv.cols == 0);
+    }
+
     fn info(id: &str, cmd: &[&str], exited: bool) -> Info {
         Info {
             id: id.into(),

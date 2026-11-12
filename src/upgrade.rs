@@ -525,6 +525,64 @@ mod tests {
         }
     }
 
+    fn chip() -> crate::profiles::Chip {
+        crate::profiles::Chip {
+            id: "p1".into(),
+            name: "Fast".into(),
+            model: "m".into(),
+            effort: "high".into(),
+        }
+    }
+
+    const FULL_TERM: &str = r#"{"id":"t","pid":4,"fd":5,"cwd":"/w","cmd":["a","b"],"title":"T","title_override":"O","cols":80,"rows":24,"created_ms":99,"exited":true,"exit_code":3,"line_id":"l","task_id":"k","agent":"claude","session":"s","flags":["--x"],"sized_by":"web","profile":{"id":"p1","name":"Fast","model":"m","effort":"high"},"workspace_id":"w1","total":7,"last_ms":8,"closed":true,"ring":"ab"}"#;
+
+    #[test]
+    fn saved_term_json_is_pinned() {
+        let st = SavedTerm {
+            id: "t".into(),
+            pid: 4,
+            fd: 5,
+            cwd: "/w".into(),
+            cmd: vec!["a".into(), "b".into()],
+            title: "T".into(),
+            title_override: Some("O".into()),
+            cols: 80,
+            rows: 24,
+            created_ms: 99,
+            exited: true,
+            exit_code: Some(3),
+            line_id: Some("l".into()),
+            task_id: Some("k".into()),
+            agent: Some("claude".into()),
+            session: Some("s".into()),
+            flags: vec!["--x".into()],
+            sized_by: Some("web".into()),
+            profile: Some(chip()),
+            workspace_id: Some("w1".into()),
+            total: 7,
+            last_ms: 8,
+            closed: true,
+            ring: "ab".into(),
+        };
+        let want: Value = serde_json::from_str(FULL_TERM).unwrap();
+        assert_eq!(serde_json::to_value(&st).unwrap(), want);
+        assert_eq!(serde_json::from_str::<SavedTerm>(FULL_TERM).unwrap(), st);
+    }
+
+    #[test]
+    fn saved_term_minimal_json_takes_defaults() {
+        let st: SavedTerm = serde_json::from_str(r#"{"id":"t"}"#).unwrap();
+        assert_eq!(
+            st,
+            SavedTerm {
+                id: "t".into(),
+                ..Default::default()
+            }
+        );
+        assert_eq!(st.fd, 0);
+        assert!(st.cmd.is_empty() && st.profile.is_none() && !st.closed);
+    }
+
     #[test]
     fn state_roundtrips_through_json() {
         let st = sample();
