@@ -3,8 +3,6 @@ import { FINISHED_STATUSES, isDone, SESSION_STATUSES } from './task-status';
 
 export const isSession = (t: Task): boolean => t.origin === 'session';
 
-export { isDone };
-
 export function taskForItem(tasks: Task[], item: { lineId?: string | null; termId?: string | null } | undefined): Task | undefined {
   if (!item) return undefined;
   return tasks.find((t) => (item.lineId && t.lineId === item.lineId) || (item.termId && t.termId === item.termId));

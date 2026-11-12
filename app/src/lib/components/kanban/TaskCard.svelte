@@ -11,13 +11,13 @@
   import FolderGit from '@lucide/svelte/icons/folder-git';
   import LoaderCircle from '@lucide/svelte/icons/loader-circle';
   import { t, type Key } from '../../i18n.svelte';
-  import { cardMeta, isDone, isSession, modelLabel, quadrant, relTime, type CardStatus } from '../../kanban/kanban';
+  import { cardMeta, isSession, modelLabel, quadrant, relTime, type CardStatus } from '../../kanban/kanban';
   import type { Task } from '../../types';
   import { app, projectName } from '../../state.svelte';
   import { CONFIRM_WINDOW_MS } from '../../timing';
   import { agentName, findAgent } from '../../agents';
   import AgentGlyph from '../ui/AgentGlyph.svelte';
-  import { isRunning, isTesting } from '../../kanban/task-status';
+  import { isDone, isRunning, isTesting, isUnstarted } from '../../kanban/task-status';
 
   let {
     task,
@@ -235,7 +235,7 @@
           {#if !session && task.status === 'pending'}
             <button class="act" title={t('kanban.queueAuto')} aria-label={t('kanban.queueAuto')} onclick={act(onqueue)}><svg class="i" width="13" height="13" aria-hidden="true"><use href="#sbi-zap" /></svg></button>
           {/if}
-          {#if !session && (task.status === 'pending' || task.status === 'auto')}
+          {#if !session && isUnstarted(task.status)}
             <button
               class="act"
               title={t('kanban.start')}

@@ -1,9 +1,9 @@
 import { coarseMinutes, wholeMinutes } from '../duration';
-import { SESSION_STATUSES, TASK_STATUSES, isRunning } from './task-status';
+import { SESSION_STATUSES, TASK_STATUSES, isDone, isRunning, isUnstarted } from './task-status';
 import type { Task, TaskMessage, TaskStatus } from '../types';
 
 export * from './kanban-core';
-import { isSession, isDone, rankOf, sortColumn, byId, blockers, startable } from './kanban-core';
+import { isSession, rankOf, sortColumn, byId, blockers, startable } from './kanban-core';
 
 export interface Filter {
   search?: string;
@@ -132,7 +132,7 @@ export function cardStatus(task: Task, next: Set<string>, tasks: Map<string, Tas
     return p && p.total > 0 ? { kind: 'progress', pct: pctOf(p), note: p.note } : { kind: 'working', note: p?.note };
   }
   if (isRunning(task.status) && (!p || p.done === 0)) return { kind: task.termId ? 'working' : 'starting', note: p?.note };
-  if (task.status === 'pending' || task.status === 'auto') {
+  if (isUnstarted(task.status)) {
     const waiting = blockers(task, tasks);
     if (waiting.length) return { kind: 'blocked', waiting: waiting.map((d) => d.number) };
   }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isDone } from './kanban-core';
+import { isDone } from './task-status';
 import { autoSummary, blockers, byId, chainOf, depCandidates, startable, flagPatch, isOrganizer, matrix, mergeMessage, organizing, quadrant, quadrantFlags, canDrop, cardMeta, modelLabel, moveAction, cardStatus, columns, dropTarget, edgeSpeed, insertIndex, isSession, movableStatuses, moveTask, taskForItem, nextUp, rankAt, relTime, revertTask, shiftStatus, sortColumn, shownCount, grown, insertBefore, CARD_PAGE, newTaskId } from './kanban';
 import type { Task, TaskMessage } from '../types';
 

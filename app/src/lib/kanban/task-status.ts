@@ -7,5 +7,6 @@ export const DONE_STATUSES: readonly TaskStatus[] = ['merged', 'completed'];
 
 export const isDone = (status: TaskStatus): boolean => DONE_STATUSES.includes(status);
 export const isFinished = (status: TaskStatus): boolean => FINISHED_STATUSES.includes(status);
+export const isUnstarted = (status: TaskStatus): boolean => status === 'pending' || status === 'auto';
 export const isRunning = (status: TaskStatus): boolean => status === 'in_progress';
 export const isTesting = (status: TaskStatus): boolean => status === 'in_testing';

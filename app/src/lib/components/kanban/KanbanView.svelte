@@ -13,7 +13,7 @@
   import { saveSettings, settings } from '../../settings/settings.svelte';
   import { holdAll } from '../../workspace/wsactions';
   import { t, type Key } from '../../i18n.svelte';
-  import { autoSummary, blockers, byId, canDrop, cardStatus, chainOf, columns, dropTarget, edgeSpeed, insertIndex, isDone, isSession, matrix, moveTask, nextUp, organizing, QUADRANTS, quadrantFlags, rankAt, revertTask, shiftStatus, moveAction, shownCount, grown, newTaskId, CARD_EST, frameLoop, insertBefore, type Quadrant } from '../../kanban/kanban';
+  import { autoSummary, blockers, byId, canDrop, cardStatus, chainOf, columns, dropTarget, edgeSpeed, insertIndex, isSession, matrix, moveTask, nextUp, organizing, QUADRANTS, quadrantFlags, rankAt, revertTask, shiftStatus, moveAction, shownCount, grown, newTaskId, CARD_EST, frameLoop, insertBefore, type Quadrant } from '../../kanban/kanban';
   import { reveal } from '../../reveal';
   import { inFlight, single } from '../../daemon/inflight';
   import { agentName } from '../../agents';
@@ -30,7 +30,7 @@
   import { columnAfterSwipe } from '../../mobile/layout';
   import { edgeMoves, edgeRank, initialColumn, moveChoices, type Edge } from '../../mobile/kanbanPhone';
   import { tick, untrack } from 'svelte';
-  import { isRunning, isTesting } from '../../kanban/task-status';
+  import { isDone, isRunning, isTesting } from '../../kanban/task-status';
   import { fallbackProjectColor } from './project-colors';
 
   let search = $state('');

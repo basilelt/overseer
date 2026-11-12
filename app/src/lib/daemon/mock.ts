@@ -12,7 +12,7 @@ import { resolveProfile, TASK_TYPES } from '../profiles/profiles';
 import { fileKind } from '../files';
 import { cleanTitle } from '../tabs/titles';
 import { cleanNote, NOTES_MAX, type NotesReply } from '../notes';
-import { isDone } from '../kanban/kanban-core';
+import { SESSION_STATUSES, TASK_STATUSES, isDone, isRunning, isUnstarted } from '../kanban/task-status';
 import { attachProblem, IMAGE_EXTS, VIDEO_EXTS } from '../feedback/feedback';
 import { AUTO_APPROVE_ARGS, isShellId } from '../agents';
 import type { DirListing } from '../dirs';
@@ -362,8 +362,8 @@ function seedTasks(now: number): Task[] {
     lineId: lineId ?? null,
     termId: lineId ? `tm_${lineId}` : null,
     branch: lineId ? SEEDS.find((s) => s.id === lineId)?.branch : null,
-    progress: status === 'in_progress' ? { done: 1 + (i % 3), total: 5, note: 'Implementing' } : status === 'in_testing' || status === 'merged' || status === 'completed' ? { done: 5, total: 5 } : null,
-    ...(status === 'pending' || status === 'auto' ? {} : { cost: taskCost(mockCost(agent, lineId ? SEEDS.findIndex((s) => s.id === lineId) : i)), profile: (['economy', 'balanced', 'max'] as const)[i % 3] }),
+    progress: isRunning(status) ? { done: 1 + (i % 3), total: 5, note: 'Implementing' } : status === 'in_testing' || status === 'merged' || status === 'completed' ? { done: 5, total: 5 } : null,
+    ...(isUnstarted(status) ? {} : { cost: taskCost(mockCost(agent, lineId ? SEEDS.findIndex((s) => s.id === lineId) : i)), profile: (['economy', 'balanced', 'max'] as const)[i % 3] }),
     createdAt: iso(60 * 24 * (TASK_SEEDS.length - i) / 3, now),
     updatedAt: iso(30 - i, now),
   }));
@@ -693,7 +693,7 @@ function scaledLines(n: number, now: number): LocalLine[] {
 }
 
 function scaledTasks(n: number, now: number): Task[] {
-  const statuses: TaskStatus[] = ['pending', 'auto', 'in_progress', 'in_testing', 'merged', 'completed'];
+  const statuses = TASK_STATUSES;
   const repos = Object.keys(REPOS);
   return Array.from({ length: n }, (_, i) => ({
     id: `tk_x${i}`,
@@ -1797,7 +1797,7 @@ export class MockDaemon implements DaemonClient {
     const sender = body?.from ? this.findTask(body.from) : null;
     if (sender && sender.project !== t.project) throw new DaemonError(403, `task ${t.id} belongs to another project (${t.project}): agents may only message tasks of their own project. Do not retry.`);
     if (sender && !this.agentMessaging && sender.parentId !== t.id && t.parentId !== sender.id) throw new DaemonError(403, "messages between agents are turned off in Overseer's settings. Do not retry; carry on without them.");
-    const live = t.status === 'in_progress' && !!t.termId;
+    const live = isRunning(t.status) && !!t.termId;
     const m: TaskMessage = {
       id: `msg_${Math.random().toString(36).slice(2, 8)}`,
       taskId: id,
@@ -1817,7 +1817,7 @@ export class MockDaemon implements DaemonClient {
     if (!projects.length) throw new DaemonError(409, 'nothing to organize');
     const started: Task[] = [];
     for (const project of projects) {
-      if (this.tasks.some((t) => t.origin === 'organizer' && t.project === project && t.status === 'in_progress')) continue;
+      if (this.tasks.some((t) => t.origin === 'organizer' && t.project === project && isRunning(t.status))) continue;
       const org = this.createTask({ title: 'Organize board', description: '', project, agent: 'claude', model: '', status: 'in_progress' });
       const task = this.findTask(org.id);
       task.origin = 'organizer';
@@ -1987,16 +1987,16 @@ export class MockDaemon implements DaemonClient {
       if (Array.isArray(patch.dependsOn) && patch.dependsOn.includes(id)) throw new DaemonError(400, 'a task cannot depend on itself');
       if (typeof patch.status === 'string') {
         if (t.origin === 'session') {
-          if (!['in_progress', 'in_testing', 'merged', 'completed'].includes(patch.status)) throw new DaemonError(400, 'a session task follows its session: status must be one of in_progress, in_testing, merged, completed');
-        } else if (patch.status === 'in_progress') {
-          if (t.status !== 'in_progress' && !t.termId) throw new DaemonError(400, 'use POST /v1/tasks/{id}/start to start a task');
-        } else if (!['pending', 'auto', 'in_testing', 'merged', 'completed'].includes(patch.status)) {
+          if (!SESSION_STATUSES.includes(patch.status)) throw new DaemonError(400, 'a session task follows its session: status must be one of in_progress, in_testing, merged, completed');
+        } else if (isRunning(patch.status)) {
+          if (!isRunning(t.status) && !t.termId) throw new DaemonError(400, 'use POST /v1/tasks/{id}/start to start a task');
+        } else if (!TASK_STATUSES.includes(patch.status)) {
           throw new DaemonError(400, 'status must be one of pending, auto, in_testing, merged, completed');
         }
       }
       if ('quorum' in patch) {
         const quorum = this.quorumOf(patch.quorum, patch.agent ?? t.agent);
-        if (t.status !== 'pending' && t.status !== 'auto') throw new DaemonError(409, 'the quorum can only change before the task starts');
+        if (!isUnstarted(t.status)) throw new DaemonError(409, 'the quorum can only change before the task starts');
         if (quorum) patch.quorum = quorum;
         else {
           delete patch.quorum;
@@ -2112,7 +2112,7 @@ export class MockDaemon implements DaemonClient {
         }
       }
     }
-    const running = this.tasks.filter((t) => t.status === 'in_progress');
+    const running = this.tasks.filter((t) => isRunning(t.status));
     const t = running[this.seq % Math.max(1, running.length)];
     if (t?.progress) {
       t.progress = { ...t.progress, done: t.progress.done + 1, note: ['Reading code', 'Implementing', 'Writing tests', 'Running tests', 'Polishing'][t.progress.done % 5] };
