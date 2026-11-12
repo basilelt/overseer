@@ -451,6 +451,20 @@ describe('MockDaemon', () => {
     expect(await a.activity('ln_06')).toMatchObject({ lineId: 'ln_06', transcript: true });
   });
 
+  it('gives sessions of agents with token counts a cost, and their tasks the same total', async () => {
+    const { a } = setup();
+    const act = await a.activity('ln_04');
+    expect(act.cost).toMatchObject({ model: 'claude-opus-5-5', partial: false, pricesAsOf: expect.any(String) });
+    expect(act.cost!.models.map((m) => m.model)).toEqual(['claude-opus-5-5', 'claude-haiku-5-5']);
+    expect(act.cost!.cost).toBeCloseTo(act.cost!.models.reduce((s, m) => s + (m.cost ?? 0), 0), 4);
+    const task = (await a.tasks()).find((t) => t.lineId === 'ln_04')!;
+    expect(task.cost).toMatchObject({ cost: act.cost!.cost, sessions: 1, model: 'claude-opus-5-5' });
+    expect((await a.tasks()).filter((t) => t.status === 'pending').every((t) => !t.cost)).toBe(true);
+    const lines = await a.lines();
+    const copilot = lines.find((l) => l.line.agent === 'copilot')!;
+    expect((await a.activity(copilot.line.id)).cost).toBeUndefined();
+  });
+
   it('creates projects at the repository root and rejects non repositories', async () => {
     const { a } = setup();
     expect(await a.createProject('~/Documents/Github/work/webshop/src/')).toMatchObject({ path: '/home/alice/Documents/Github/work/webshop', name: 'webshop' });
