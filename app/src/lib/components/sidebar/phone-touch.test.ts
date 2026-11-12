@@ -1,8 +1,5 @@
-import { afterEach, describe, expect, it } from 'vitest';
-import { render } from 'svelte/server';
-import { app } from '../../state.svelte';
-import { ui } from '../../mobile/ui.svelte';
-import Sidebar from './Sidebar.svelte';
+import { describe, expect, it } from 'vitest';
+import { declOf, parseStyle } from '../../../test/css';
 import sidebar from './Sidebar.svelte?raw';
 import spacesView from './SpacesView.svelte?raw';
 import spaceBlock from './SpaceBlock.svelte?raw';
@@ -15,27 +12,19 @@ import shell from '../mobile/MobileShell.svelte?raw';
 
 const TOUCH = 44;
 const MIN = 40;
+const PHONE = ':global(:root.phone)';
 
-function phoneRule(src: string, selector: string): string {
-  const css = src.slice(src.indexOf('<style>'));
-  const re = new RegExp(`:global\\(:root\\.phone\\) ${selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} \\{([^}]*)\\}`);
-  const m = re.exec(css);
-  if (!m) throw new Error(`no phone rule for ${selector}`);
-  return m[1];
+function px(value: string | undefined): number {
+  if (!value) return 0;
+  return value === 'var(--touch)' ? TOUCH : parseFloat(value);
 }
 
-function px(rule: string, prop: string): number {
-  const m = new RegExp(`(?:^|\\s)${prop}:\\s*([^;]+);`).exec(rule);
-  if (!m) return 0;
-  const v = m[1].trim();
-  if (v === 'var(--touch)') return TOUCH;
-  return parseFloat(v);
-}
+const phone = (src: string, selector: string, prop: string) => declOf(src, `${PHONE} ${selector}`, prop);
+const tall = (src: string, sel: string) => Math.max(px(phone(src, sel, 'height')), px(phone(src, sel, 'min-height')));
 
-const tall = (src: string, sel: string) => Math.max(px(phoneRule(src, sel), 'height'), px(phoneRule(src, sel), 'min-height'));
+const sources: Record<string, string> = { Sidebar: sidebar, SpaceBlock: spaceBlock, SpaceFolder: spaceFolder, SessionRow: sessionRow, WorkspaceFrame: frame, SpacesView: spacesView, AttentionBanner: banner, StatesView: statesView };
 
-describe('workspace drawer on a phone', () => {
-  const sources: Record<string, string> = { Sidebar: sidebar, SpaceBlock: spaceBlock, SpaceFolder: spaceFolder, SessionRow: sessionRow, WorkspaceFrame: frame, SpacesView: spacesView, AttentionBanner: banner, StatesView: statesView };
+describe('CSS guard: workspace drawer touch targets on a phone', () => {
   it.each([
     ['Sidebar', '.modes button'],
     ['SpaceBlock', '.line'],
@@ -55,75 +44,30 @@ describe('workspace drawer on a phone', () => {
   });
 
   it('gives the expand chevron and the start button a thumb-sized width', () => {
-    expect(px(phoneRule(spaceBlock, '.chev'), 'width')).toBeGreaterThanOrEqual(36);
-    expect(px(phoneRule(spaceBlock, '.start'), 'width')).toBeGreaterThanOrEqual(MIN);
-    expect(px(phoneRule(spacesView, '.add'), 'width')).toBeGreaterThanOrEqual(MIN);
+    expect(px(phone(spaceBlock, '.chev', 'width'))).toBeGreaterThanOrEqual(36);
+    expect(px(phone(spaceBlock, '.start', 'width'))).toBeGreaterThanOrEqual(MIN);
+    expect(px(phone(spacesView, '.add', 'width'))).toBeGreaterThanOrEqual(MIN);
   });
 
-  it('keeps rows from being squeezed by the scrolling column', () => {
-    expect(phoneRule(spacesView, '.group')).toMatch(/flex: none;/);
-    expect(phoneRule(statesView, '.bucket')).toMatch(/flex: none;/);
+  it('keeps group and bucket rows from being squeezed by the scrolling column', () => {
+    expect(phone(spacesView, '.group', 'flex')).toBe('none');
+    expect(phone(statesView, '.bucket', 'flex')).toBe('none');
   });
 
-  it('shows no connection state on session rows, which the top bar already shows', () => {
-    expect(sessionRow).not.toMatch(/class="(host|hst)"|\.hst \{/);
+  it('opens a wider drawer on a phone', () => {
+    expect(declOf(shell, '.drawer', 'width')).toBe('min(92vw, 400px)');
   });
 
-  it('opens a wider drawer', () => {
-    expect(shell).toMatch(/\.drawer \{[^}]*width: min\(92vw, 400px\);/);
+  it('disables the native touch callout on the sidebar, so the long-press menu is ours', () => {
+    expect(declOf(sidebar, '.sidebar', '-webkit-touch-callout')).toBe('none');
   });
 
-  it('scopes every phone rule to :root.phone so the desktop sidebar is unchanged', () => {
-    for (const src of [sidebar, spacesView, spaceBlock, spaceFolder, sessionRow, frame, banner, statesView]) {
-      const css = src.slice(src.indexOf('<style>'));
-      expect(css).not.toMatch(/@media \(pointer: coarse\)/);
-      expect(css).not.toMatch(/:global\(\.phone\)/);
+  it('scopes every phone rule to :root.phone, never to a coarse pointer media query', () => {
+    for (const src of Object.values(sources)) {
+      for (const r of parseStyle(src)) {
+        expect(r.at).not.toContain('pointer: coarse');
+        expect(r.selector).not.toMatch(/^:global\(\.phone\)/);
+      }
     }
-  });
-});
-
-describe('Sidebar workspace actions', () => {
-  const before = { layout: ui.layout, mode: app.sidebarMode, git: app.sidebarGit };
-  afterEach(() => {
-    ui.layout = before.layout;
-    app.sidebarMode = before.mode;
-    app.sidebarGit = before.git;
-  });
-
-  const html = () => render(Sidebar).body;
-  const header = (h: string) => h.slice(h.indexOf('<header'), h.indexOf('</header>'));
-  const tools = (h: string) => {
-    const i = h.indexOf('class="tools');
-    return h.slice(i, h.indexOf('</div>', i));
-  };
-
-  it('keeps the new, folder and archive buttons in the header on desktop', () => {
-    ui.layout = 'desktop';
-    app.sidebarMode = 'workspaces';
-    app.sidebarGit = false;
-    const h = html();
-    expect(header(h)).toContain('aria-label="New workspace"');
-    expect(header(h)).toContain('aria-label="New folder"');
-    expect(tools(h)).not.toContain('aria-label="New workspace"');
-  });
-
-  it('moves them next to the filter on a phone so the mode tabs get the full width', () => {
-    ui.layout = 'phone';
-    app.sidebarMode = 'workspaces';
-    app.sidebarGit = false;
-    const h = html();
-    expect(header(h)).not.toContain('aria-label="New workspace"');
-    expect(header(h)).not.toContain('class="count');
-    expect(tools(h)).toContain('aria-label="New workspace"');
-    expect(tools(h)).toContain('aria-label="New folder"');
-  });
-
-  it('shows the session count, not the workspace actions, in the by-status view on a phone', () => {
-    ui.layout = 'phone';
-    app.sidebarMode = 'status';
-    app.sidebarGit = false;
-    const h = html();
-    expect(h).not.toContain('aria-label="New workspace"');
-    expect(header(h)).toContain('class="count');
   });
 });

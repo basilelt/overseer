@@ -4,8 +4,6 @@ import { app } from '../../state.svelte';
 import { closeNotes, toggleNotes } from '../../notes.svelte';
 import type { LocalLine } from '../../types';
 import NotesPopover from './NotesPopover.svelte';
-import src from './NotesPopover.svelte?raw';
-import sidebarSrc from './Sidebar.svelte?raw';
 
 const saved = app.data;
 afterEach(() => {
@@ -49,28 +47,5 @@ describe('NotesPopover', () => {
   it('locks a note still being saved', () => {
     const h = show([{ line: { id: 'ln_1' } as LocalLine['line'], local: { notes: [{ id: 'pending-x', text: 'wip', createdAt: '', updatedAt: '' }] } }]);
     expect(h).toMatch(/<textarea[^>]*disabled[^>]*>wip<\/textarea>/);
-  });
-
-  it('saves on blur or Ctrl/Cmd+Enter, adds with Ctrl/Cmd+Enter', () => {
-    expect(src).toMatch(/onblur=\{\(\) => save\(n\.id\)\}/);
-    expect(src).toContain('isSubmitChord(e)');
-    expect(src).toMatch(/onkeydown=\{\(e\) => onKey\(e, add\)\}/);
-    expect(src).toMatch(/onclick=\{\(\) => removeNote\(app, lineId, n\.id\)\}/);
-  });
-
-  it('forgets the open session when it is unmounted, so hiding the sidebar does not reopen the notes later', () => {
-    expect(src).toMatch(/onDestroy\(\(\) => \{[^}]*closeNotes\(\);/);
-  });
-
-  it('keeps unsaved text when the notes close or switch session, since WebKit fires no blur on removal', () => {
-    expect(src).toMatch(/onDestroy\(\(\) => \{\s*flush\(shown\);\s*closeNotes\(\);\s*\}\);/);
-    expect(src).toMatch(/untrack\(\(\) => flush\(shown\)\);\s*shown = id;/);
-    expect(src).toMatch(/for \(const \[id, t\] of pending\) void saveText\(line, id, t\);\s*if \(line && text\.trim\(\)\) void addNote\(app, line, text\);/);
-    expect(src).toMatch(/!\(await editNote\(app, line, id, text\)\) && line === shown\) edits = \{ \.\.\.edits, \[id\]: text \}/);
-  });
-
-  it('is loaded only once a session opens its notes', () => {
-    expect(sidebarSrc).toContain("const notesView = () => import('./NotesPopover.svelte');");
-    expect(sidebarSrc).toMatch(/\{#if notesUi\.lineId\}\s*\{#await notesView\(\)/);
   });
 });

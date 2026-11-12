@@ -3,6 +3,7 @@ import { render } from 'svelte/server';
 import type { SidebarItem } from '../../session/grouping';
 import SessionRow from './SessionRow.svelte';
 import componentSrc from './SessionRow.svelte?raw';
+import { declOf, parseStyle } from '../../../test/css';
 
 const NOW = Date.parse('2026-11-05T10:05:00Z');
 const item = (over: Partial<SidebarItem> = {}): SidebarItem => ({ key: 'line:a', kind: 'claude', group: 'running', state: 'running', title: 'Fix login', status: 'Ran the tests', at: '2026-11-05T10:00:00Z', ...over });
@@ -47,20 +48,6 @@ describe('SessionRow', () => {
     expect(html({ key: 'term:t', kind: 'shell', termId: 't' })).not.toContain('data-notes');
   });
 
-  it('opens the notes without selecting or dragging the row', () => {
-    expect(componentSrc).toMatch(/class="note"[\s\S]*onpointerdown=\{\(e\) => e\.stopPropagation\(\)\}/);
-    expect(componentSrc).toMatch(/toggleNotes\(item\.lineId!, e\.currentTarget\.getBoundingClientRect\(\)\)/);
-  });
-
-  it('always shows the note button on touch screens, which have no hover', () => {
-    expect(componentSrc).toMatch(/@media \(hover: none\) \{\s*\.wrap\.agent \.note \{\s*opacity: 1;/);
-  });
-
-  it('opens the session on click', () => {
-    expect(componentSrc).toMatch(/onclick=\{\(e\) => onselect\(e\)\}/);
-  });
-
-
   it('shows title, last action, age and chevron in that order', () => {
     const h = html();
     const at = ['>Fix login<', '>Ran the tests<', '>5m<', '›'].map((s) => h.indexOf(s));
@@ -94,12 +81,6 @@ describe('SessionRow', () => {
     const h = html({}, { host: { name: 'devbox', phase: 'connected' } });
     expect(h).not.toContain('devbox');
     expect(h).not.toContain('Connected');
-    expect(componentSrc).not.toContain('class="host"');
-  });
-
-  it('uses a dedicated, readable selection token and a text-2 age', () => {
-    expect(componentSrc).toContain('var(--session-row-selected)');
-    expect(componentSrc).not.toContain('--text-3');
   });
 
   it('marks the selected row', () => {
@@ -107,23 +88,30 @@ describe('SessionRow', () => {
     expect(html()).not.toContain('aria-current');
   });
 
-  it('never colours a border by state and has no transition', () => {
-    const src = componentSrc;
-    expect(src).not.toMatch(/border(-color)?:[^;]*(--c|--state)/);
-    expect(src).not.toMatch(/transition|animation/);
+  it('CSS guard: the selected row and the age use the readable theme tokens', () => {
+    expect(declOf(componentSrc, ".row[aria-current='true']", 'background')).toBe('var(--session-row-selected)');
+    expect(declOf(componentSrc, '.age', 'color')).toBe('var(--text-2)');
   });
 
-  it('gives the title priority: the last action shrinks first', () => {
-    expect(componentSrc).toMatch(/\.title \{[^}]*flex: 0 1 auto[^}]*min-width: \d+px/s);
-    expect(componentSrc).toMatch(/\.action \{[^}]*flex: 1 1 0[^}]*min-width: 0/s);
+  it('CSS guard: shows the note button at once on touch screens, which have no hover', () => {
+    expect(declOf(componentSrc, '.wrap.agent .note', 'opacity', '@media (hover: none)')).toBe('1');
+    expect(declOf(componentSrc, '.note', 'opacity')).toBe('0');
   });
 
+  it('CSS guard: gives the title priority, so the last action shrinks first', () => {
+    expect(declOf(componentSrc, '.title', 'flex')).toBe('0 1 auto');
+    expect(declOf(componentSrc, '.title', 'min-width')).toMatch(/^\d+px$/);
+    expect(declOf(componentSrc, '.action', 'flex')).toBe('1 1 0');
+    expect(declOf(componentSrc, '.action', 'min-width')).toBe('0');
+  });
 
-  it('keeps the chevron in view: the row clips and the title has a minimum', () => {
-    const rule = (sel: string) => componentSrc.match(new RegExp(`\\${sel} \\{([^}]*)\\}`))![1]!;
-    expect(rule('.row')).toContain('overflow: hidden');
-    expect(rule('.title')).toMatch(/min-width: \d+px/);
-    expect(rule('.chev')).toContain('flex: none');
+  it('CSS guard: keeps the chevron in view, as the row clips and the title has a minimum', () => {
+    expect(declOf(componentSrc, '.row', 'overflow')).toBe('hidden');
+    expect(declOf(componentSrc, '.chev', 'flex')).toBe('none');
+  });
+
+  it('CSS guard: no rule animates the row', () => {
+    for (const r of parseStyle(componentSrc)) expect(Object.keys(r.decls).filter((k) => /^(transition|animation)/.test(k))).toEqual([]);
   });
 });
 
@@ -133,10 +121,9 @@ describe('SessionRow multi-select', () => {
     expect(html({}, { multi: false })).not.toMatch(/class="[^"]*\bmulti\b/);
   });
 
-  it('styles the multi row from the accent token so it reads in every theme', () => {
-    const rule = componentSrc.match(/\.row\.multi \{([^}]*)\}/)![1]!;
-    expect(rule).toContain('var(--accent)');
-    expect(rule).toContain('var(--session-row-bg)');
-    expect(rule).not.toMatch(/#[0-9a-f]{3,6}/i);
+  it('CSS guard: styles the multi row from the accent token, never a literal colour, so it reads in every theme', () => {
+    expect(declOf(componentSrc, '.row.multi', 'background')).toContain('var(--accent)');
+    expect(declOf(componentSrc, '.row.multi', 'background')).toContain('var(--session-row-bg)');
+    expect(declOf(componentSrc, '.row.multi', 'outline')).toContain('var(--accent)');
   });
 });

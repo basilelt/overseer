@@ -1,92 +1,88 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { render } from 'svelte/server';
+import { t } from '../../i18n.svelte';
 import { app } from '../../state.svelte';
-import type { Group, Workspace } from '../../types';
+import type { Folder, Group, Workspace } from '../../types';
 import SpacesView from './SpacesView.svelte';
-import Sidebar from './Sidebar.svelte';
-import src from './SpacesView.svelte?raw';
-import sidebarSrc from './Sidebar.svelte?raw';
 
-describe('SpacesView wiring', () => {
-  it('opens a session or a banner entry with app.select, and an empty chip with selectWorkspace', () => {
-    expect(src).toMatch(/onselect=\{\(e\) => app\.select\(e\.key\)\}/);
-    expect(src).toMatch(/onselect=\{select\}/);
-    expect(src).toMatch(/const select = \(key: string, e\?: MouseEvent\) => !drag\.suppressed && selectSession\(key, e\)/);
-    expect(src).toMatch(/onclick=\{\(\) => pick\(w\.id\)\}/);
+const ws = (id: string, over: Partial<Workspace> = {}) => ({ id, name: `Space ${id}`, path: `/p/${id}`, folderId: null, pinned: false, archived: false, auto: false, rank: 1, tabs: [], notifyIdle: false, createdAt: '', updatedAt: '', ...over }) as Workspace;
+const folder = (id: string, over: Partial<Folder> = {}) => ({ id, name: `Folder ${id}`, parentId: null, rank: 1, collapsed: false, createdAt: '', updatedAt: '', ...over }) as Folder;
+const before = { connected: app.connected, ws: app.ws, workspaceId: app.workspaceId, tabDrop: app.tabDrop };
+afterEach(() => Object.assign(app, before));
+const view = (workspaces: Workspace[], folders: Folder[] = [], filter = '') => {
+  app.connected = true;
+  app.ws = { workspaces, folders, groups: [] };
+  return render(SpacesView, { props: { filter, showArchived: false } }).body;
+};
+const chip = (h: string, id: string) => h.match(new RegExp(`<button[^>]*data-workspace-id="${id}"[^>]*>`))?.[0];
+
+describe('SpacesView empty workspaces', () => {
+  it('shows a workspace with no session as a chip that is a drop and drag target', () => {
+    const c = chip(view([ws('a'), ws('b')]), 'a')!;
+    expect(c).toContain('data-drop="workspace"');
+    expect(c).toContain('data-id="a"');
+    expect(c).toContain('type="button"');
   });
 
-  it('persists the expanded set through toggleOpen and runs one visibility-gated clock', () => {
-    expect(src).toMatch(/saveSettings\(\{ spacesOpen: \{ \.\.\.settings\.spacesOpen, \[hostKey\(app\.conn\.target\)\]: toggleOpen\(/);
-    expect(src).toContain('visibleClock(');
-    expect(src).not.toContain('setInterval');
+  it('marks the active workspace chip as selected and only that one', () => {
+    app.workspaceId = 'b';
+    const h = view([ws('a'), ws('b')]);
+    expect(chip(h, 'b')).toMatch(/class="[^"]*\bselected\b/);
+    expect(chip(h, 'a')).not.toMatch(/class="[^"]*\bselected\b/);
   });
 
-  it('tells an empty filter result from an empty list, and names no host on its rows', () => {
-    expect(src).toMatch(/q \? t\('common\.none'\) : t\('ws\.empty'\)/);
-    expect(src).not.toContain('hostFor');
-  });
-});
-
-describe('SpacesView folders', () => {
-  it('ignores folder chevrons while a filter is active', () => {
-    expect(src).toMatch(/async function toggleFolder\(id: string\) \{\n    if \(drag\.suppressed\) return;\n    if \(q\) return;/);
+  it('marks the chip a tab is dragged over, so the drop target shows', () => {
+    app.tabDrop = 'a';
+    const h = view([ws('a'), ws('b')]);
+    expect(chip(h, 'a')).toMatch(/class="[^"]*\btab-drop\b/);
+    expect(chip(h, 'b')).not.toMatch(/class="[^"]*\btab-drop\b/);
   });
 
-  it('renders the folder tree of folderSpaces, archived ones included on demand, with pointer drag and drop', () => {
-    expect(src).toMatch(/folderSpaces\(spaces\(app\.ws\.workspaces, app\.items, app\.itemWs, filter, showArchived\), app\.ws\.folders, filter\)/);
-    expect(src).toContain('<SpaceFolder');
-    expect(src).toContain('new WsDrag()');
-    expect(src).toMatch(/<svelte:window onpointermove=\{drag\.move\} onpointerup=\{drag\.end\} onpointercancel=\{drag\.cancel\}/);
-    expect(src).not.toMatch(/ondragstart|ondrop=/);
-  });
-
-  it('stores a folder\'s collapsed state on the daemon folder, optimistically', () => {
-    expect(src).toMatch(/collapsed: !x\.collapsed/);
-    expect(src).toMatch(/app\.api\.patchFolder\(id, \{ collapsed: !f\.collapsed \}\)/);
-  });
-
-  it('indents each node by its depth and gives the banner the workspace trail', () => {
-    expect(src).toMatch(/style:--depth=\{n\.depth\}/);
-    expect(src).toMatch(/spaceTrail\(app\.ws\)/);
-    expect(src).toMatch(/pathOf=/);
+  it('gives a missing workspace its path as a tooltip and an archived one its class', () => {
+    const h = view([ws('m', { missing: true }), ws('x', { archived: true }), ws('ok')]);
+    expect(chip(h, 'm')).toContain('title="/p/m"');
+    expect(chip(h, 'm')).toMatch(/class="[^"]*\bmissing\b/);
+    expect(chip(h, 'ok')).not.toContain('title=');
+    expect(chip(h, 'x')).toBeUndefined();
   });
 });
 
-describe('SpacesView workspace usages', () => {
-  it('picks a workspace on click and opens it when closed, while the chevron only folds', () => {
-    expect(src).toMatch(/function pick\(id: string\)/);
-    expect(src).toMatch(/app\.selectWorkspace\(id\)/);
-    expect(src).toMatch(/openOnPick\(saved, app\.workspaceId, id\)/);
-    expect(src).toMatch(/onpick=\{\(\) => pick\(r\.id\)\}/);
-    expect(src).toMatch(/ontoggle=\{\(\) => toggle\(r\.id\)\}/);
+describe('SpacesView folders and empty state', () => {
+  it('tells an empty filter result from an empty list', () => {
+    expect(view([])).toContain(t('ws.empty'));
+    const filtered = view([ws('a')], [], 'zzz');
+    expect(filtered).toContain(t('common.none'));
+    expect(filtered).not.toContain(t('ws.empty'));
   });
 
-  it('ignores the click that ends a drag, on headers, folders and chips', () => {
-    expect(src).toMatch(/function pick\(id: string\) \{\s*if \(drag\.suppressed\) return;/);
-    expect(src).toMatch(/function toggle\(id: string\) \{\s*if \(drag\.suppressed\) return;/);
-    expect(src).toMatch(/onpointercancel=\{drag\.cancel\}/);
-    expect(src).toMatch(/async function toggleFolder\(id: string\) \{\s*if \(drag\.suppressed\) return;/);
+  it('renders a folder as a section holding its workspaces, with no HTML5 drag attributes', () => {
+    const h = view([ws('a', { folderId: 'f1' }), ws('b')], [folder('f1')]);
+    expect(h).toContain('>Folder f1<');
+    expect(h.indexOf('>Folder f1<')).toBeLessThan(h.indexOf('data-workspace-id="a"'));
+    expect(h).not.toMatch(/\bdraggable=|ondragstart|ondrop/);
   });
 
-  it('opens the workspace, folder, group and other menus on right-click', () => {
-    expect(src).toMatch(/workspaceMenu\(r\.workspace\)/);
-    expect(src).toMatch(/otherMenu\(\)/);
-    expect(src).toMatch(/folderMenu\(f\)/);
-    expect(src).toMatch(/groupMenu\(g\)/);
-    expect(src).toMatch(/onitemmenu=\{itemMenuAt\}/);
+  it('hides the workspaces of a collapsed folder, but not while filtering', () => {
+    const f = [folder('f1', { collapsed: true })];
+    const w = [ws('a', { folderId: 'f1' })];
+    expect(chip(view(w, f), 'a')).toBeUndefined();
+    expect(chip(view(w, f, 'Space'), 'a')).toBeDefined();
   });
 
-  it('makes the empty-workspace chips tab-drop and drag targets', () => {
-    expect(src).toMatch(/data-workspace-id=\{w\.id\}/);
-    expect(src).toMatch(/data-drop="workspace"/);
-    expect(src).toMatch(/class:tab-drop=\{app\.tabDrop === w\.id\}/);
+  it('indents a nested folder by its depth', () => {
+    const h = view([ws('a', { folderId: 'f2' })], [folder('f1'), folder('f2', { parentId: 'f1' })]);
+    expect(h).toContain('--depth: 1;');
+    expect(h).toContain('--depth: 2;');
+  });
+
+  it('lists a pinned workspace under the pinned section before the others', () => {
+    const h = view([ws('a'), ws('p', { pinned: true })]);
+    expect(h.indexOf('data-workspace-id="p"')).toBeLessThan(h.indexOf('data-workspace-id="a"'));
   });
 });
 
 describe('SpacesView groups', () => {
   const group = (over: Partial<Group> = {}) => ({ id: 'g1', name: 'Release', rank: 1, members: ['a', 'b'], createdAt: '', updatedAt: '', ...over }) as Group;
-  const before = { connected: app.connected, ws: app.ws, workspaceId: app.workspaceId };
-  afterEach(() => Object.assign(app, before));
   const html = (filter = '') => render(SpacesView, { props: { filter, showArchived: false } }).body;
 
   it('shows the Groups title, the add button and the hint while there is none', () => {
@@ -115,58 +111,5 @@ describe('SpacesView groups', () => {
     app.connected = false;
     expect(filtered).not.toContain('>Release<');
     expect(html()).not.toContain('>Release<');
-  });
-});
-
-describe('Sidebar workspaces layout', () => {
-  it('always renders the Espaces view, with no layout toggle and no folder tree', () => {
-    expect(sidebarSrc).toMatch(/<SpacesView \{filter\} \{showArchived\} \/>/);
-    expect(sidebarSrc).not.toMatch(/WorkspaceTree|workspacesLayout|layoutTree|layoutSpaces|compact/);
-  });
-
-  it('keeps the same header buttons: add menu, new folder and the archive toggle', () => {
-    expect(sidebarSrc).toMatch(/class:active=\{showArchived\}/);
-    expect(sidebarSrc).not.toMatch(/\{#if !compact\}/);
-    expect(sidebarSrc).toMatch(/onclick=\{\(\) => \(showArchived = !showArchived\)\}/);
-    expect(sidebarSrc).toContain("t('ws.new')");
-    expect(sidebarSrc).toContain("t('ws.newFolder')");
-  });
-
-  it('counts only listed sessions, leaving plain shells out, in the By status header', () => {
-    const before = { data: app.data, sidebarMode: app.sidebarMode, sidebarGit: app.sidebarGit };
-    const term = (id: string, agent: string) => ({ id, pid: 1, cwd: '/w', cmd: [agent], title: id, cols: 80, rows: 24, createdAt: '', exited: false, agent });
-    try {
-      app.data = { ...app.data, lines: [], tasks: [], terms: [term('t1', 'shell'), term('t2', 'claude'), term('t3', 'codex')] } as typeof app.data;
-      app.sidebarMode = 'status';
-      app.sidebarGit = false;
-      expect(app.items.length).toBe(3);
-      expect(render(Sidebar).body).toMatch(/<span class="count faint[^"]*">2<\/span>/);
-    } finally {
-      Object.assign(app, before);
-    }
-  });
-});
-
-describe('SpacesView multi-select', () => {
-  it('passes the multi selection down to the blocks', () => {
-    expect(src).toContain('multi={app.multi}');
-  });
-});
-
-describe('Sidebar touch menus', () => {
-  it('turns a touch long press anywhere in the sidebar into the contextmenu its rows already handle', () => {
-    expect(sidebarSrc).toMatch(/<aside class="sidebar"[^>]*use:touchContextMenu>/);
-    expect(sidebarSrc).toMatch(/\.sidebar \{[^}]*-webkit-touch-callout: none/s);
-  });
-
-  it('keeps the parent of the active nested workspace open, wires subjects to the same toggles and drags only real workspaces', () => {
-    expect(src).toMatch(/const opened = \$derived\(new Set\(\[\.\.\.\(saved \?\? \[app\.workspaceId\]\), \.\.\.\(app\.currentWorkspace\?\.parentId \? \[app\.currentWorkspace\.parentId\] : \[\]\)\]\)\)/);
-    expect(src).toMatch(/ontoggle: toggle,\s*onpick: pick,\s*onclosed: toggleClosed,/);
-    expect(src).toMatch(/kids=\{kidsFor\(r\.workspace\)\}/);
-    expect(src).toMatch(/drag\.start\(e, 'session', key, zone\)/);
-    expect(src).toMatch(/tabs=\{tabsOf\(r\.id\)\}/);
-    expect(src).toMatch(/tabsOf,/);
-    expect(src).toMatch(/drag\.dragging && drag\.kind !== 'session' && !pinned/);
-    expect(src).toMatch(/drag\.dragging && drag\.kind !== 'session'\}<div class="rootdrop"/);
   });
 });

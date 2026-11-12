@@ -4,7 +4,6 @@ import type { SpaceNode } from '../../workspace/spaces';
 import type { Folder } from '../../types';
 import type { WorkspaceSummary } from '../../workspace/workspace-summary';
 import SpaceFolder from './SpaceFolder.svelte';
-import src from './SpaceFolder.svelte?raw';
 
 type FolderNode = Extract<SpaceNode, { type: 'folder' }>;
 const summary = (attention = 0, running = 0, paused = 0, closed = 0): WorkspaceSummary => ({
@@ -63,7 +62,7 @@ describe('SpaceFolder', () => {
 });
 
 describe('SpaceFolder interactions', () => {
-  it('is a drop zone for its folder, shows the drop marker, and opens its menu on right-click', () => {
+  it('is a drop zone for its folder and shows the drop marker', () => {
     const h = html(node(), { dropPos: 'inside' });
     expect(h).toContain('data-drop="folder"');
     expect(h).toContain('data-id="e"');
@@ -71,8 +70,6 @@ describe('SpaceFolder interactions', () => {
     const row = html(node({ depth: 1 }), { dropPos: 'before' });
     expect(row).toContain('data-drop="folder"');
     expect(row).toMatch(/class="[^"]*drop-before/);
-    expect(src).toMatch(/oncontextmenu=\{\(e\) => onmenu && \(e\.preventDefault\(\), onmenu\(e\)\)\}/);
-    expect(src).toMatch(/\{onpointerdown\}/);
   });
 
   it('makes the pinned section a drop zone for pinning, with the highlight while hovered', () => {

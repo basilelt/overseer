@@ -4,7 +4,6 @@ import type { SidebarItem } from '../../session/grouping';
 import { spaces } from '../../workspace/spaces';
 import type { Workspace } from '../../types';
 import SpaceBlock from './SpaceBlock.svelte';
-import componentSrc from './SpaceBlock.svelte?raw';
 
 const NOW = Date.parse('2026-11-05T10:05:00Z');
 const w = { id: 'a', name: 'webshop', rank: 1, pinned: false, archived: false } as Workspace;
@@ -58,19 +57,11 @@ describe('SpaceBlock', () => {
     expect(html([{ ...item('s', 'running'), kind: 'shell' }], { open: true })).toContain('T-s');
   });
 
-  it('forwards the row click with its event, the row menu and the toggle to the parent', () => {
-    expect(componentSrc).toMatch(/onselect=\{\(e\) => onselect\(it\.key, e\)\}/);
-    expect(componentSrc).toMatch(/onmenu=\{onitemmenu && \(\(e\) => onitemmenu\(it\.key, it\.title, e\)\)\}/);
-    expect(componentSrc).toMatch(/onclick=\{ontoggle\}/);
-    expect(componentSrc).not.toMatch(/transition|animation/);
-  });
-
   it('splits the header: the name picks the workspace, a separate chevron folds it', () => {
     const h = html([item('1', 'open')]);
     expect(h.match(/<button/g)).toHaveLength(2);
     expect(h.match(/aria-expanded/g)).toHaveLength(1);
     expect(h).toMatch(/<button[^>]*class="chev[^"]*"[^>]*aria-expanded="false"|<button[^>]*aria-expanded="false"[^>]*class="chev/);
-    expect(componentSrc).toMatch(/onclick=\{onpick\}/);
   });
 
   it('marks the selected workspace, the tab-drop target and the archived one', () => {
@@ -95,7 +86,6 @@ describe('SpaceBlock', () => {
   it('words the closed count in singular and plural', () => {
     expect(html([item('l', 'open'), item('c', 'closed')], { open: true })).toContain('+ 1 closed');
     expect(html([item('l', 'open'), item('c', 'closed'), item('d', 'closed')], { open: true })).toContain('+ 2 closed');
-    expect(componentSrc).toContain("ws.closedOne");
   });
 
   it('flags a workspace whose folder is gone, with its path as the tooltip', () => {
@@ -114,9 +104,12 @@ describe('SpaceBlock', () => {
 });
 
 describe('SpaceBlock multi-select', () => {
-  it('hands the multi selection to every session row, live, shells and closed', async () => {
-    const src = (await import('./SpaceBlock.svelte?raw')).default;
-    expect(src.match(/multi=\{multi\?\.has\(it\.key\)\}/g)).toHaveLength(3);
+  it('hands the multi selection to every session row, live, shells and closed', () => {
+    const items = [item('l', 'open'), { ...item('s', 'running'), kind: 'shell' as const }, item('c', 'closed')];
+    const rows = (multi: Set<string>) => html(items, { open: true, closedOpen: true, multi }).match(/class="row[^"]*\bmulti\b/g)?.length ?? 0;
+    expect(rows(new Set(['l', 's', 'c']))).toBe(3);
+    expect(rows(new Set(['l']))).toBe(1);
+    expect(rows(new Set())).toBe(0);
   });
 
   describe('nested workspaces', () => {

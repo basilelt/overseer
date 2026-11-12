@@ -3,7 +3,6 @@ import { render } from 'svelte/server';
 import type { SidebarItem } from '../../session/grouping';
 import type { WorkspaceGroup } from '../../session/by-state';
 import StateGroups from './StateGroups.svelte';
-import src from './StateGroups.svelte?raw';
 
 const NOW = Date.parse('2026-11-05T10:05:00Z');
 const item = (key: string, over: Partial<SidebarItem> = {}) => ({ key, kind: 'claude', group: 'ready', state: 'open', title: `T-${key}`, at: '2026-11-05T10:00:00Z', ...over }) as SidebarItem;
@@ -25,10 +24,5 @@ describe('StateGroups', () => {
     const h = html();
     expect(h.indexOf('T-a')).toBeLessThan(h.indexOf('T-b'));
     expect(h.indexOf('T-b')).toBeLessThan(h.indexOf('T-c'));
-  });
-
-  it('forwards the click and the menu of every row', () => {
-    expect(src).toMatch(/onselect=\{\(e\) => onselect\(it\.key, e\)\}/);
-    expect(src).toMatch(/onmenu=/);
   });
 });

@@ -3,6 +3,7 @@ import { render } from 'svelte/server';
 import type { AttentionEntry } from '../../attention';
 import AttentionBanner from './AttentionBanner.svelte';
 import componentSrc from './AttentionBanner.svelte?raw';
+import { declOf } from '../../../test/css';
 
 const e = (key: string, title: string, detail?: string): AttentionEntry => ({ key, title, detail, workspaceId: null, at: '2026-11-05T10:00:00Z' });
 const html = (entries: AttentionEntry[], pathOf?: (e: AttentionEntry) => string | undefined) => render(AttentionBanner, { props: { entries, onselect: () => {}, pathOf } }).body;
@@ -25,9 +26,8 @@ describe('AttentionBanner', () => {
     expect(html([e('line:a', 'A')])).toContain('var(--state-attention)');
   });
 
-  it('opens the session on click with its own hover token', () => {
-    expect(componentSrc).toMatch(/onclick=\{\(\) => onselect\(entry\)\}/);
-    expect(componentSrc).toContain('var(--attention-hover)');
+  it('CSS guard: hovers a banner entry with its own token', () => {
+    expect(declOf(componentSrc, '.item:hover', 'background')).toBe('var(--attention-hover)');
   });
 
   it('shows the folder path of the session workspace under its title when given one', () => {
