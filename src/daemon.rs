@@ -445,10 +445,7 @@ fn tasks(r: &Request, segs: &[&str], body: &Value, ctx: &Ctx) -> Option<(u16, Va
             200,
             crate::registry::Registry::open(&ctx.state_dir)
                 .map_err(|e| (500, e))
-                .map(|reg| {
-                    json!({"enabled": ctx.config.auto_organize
-                        || crate::task_agents::auto_organize_enabled(&reg)})
-                }),
+                .map(|reg| json!({"enabled": crate::task_agents::auto_organize_on(ctx, &reg)})),
         ),
         ("PUT", ["v1", "tasks", "auto-organize"]) => match body["enabled"].as_bool() {
             None => (400, json!({"error": "enabled must be a boolean"})),

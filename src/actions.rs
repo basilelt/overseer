@@ -4,7 +4,7 @@ use crate::procs::mem_bytes;
 use crate::registry::Registry;
 use crate::sys::CommandExt;
 use crate::sys::OpenOptionsExt;
-use crate::util::{format_rfc3339, shell_quote, ticket_any};
+use crate::util::{format_rfc3339, shell_quote, ticket_exact};
 use crate::{scan, Ctx, Line};
 use serde_json::{json, Value};
 use std::io::Write;
@@ -1038,11 +1038,7 @@ pub fn link(ctx: &Ctx, q: &str, key: &str) -> Result<(String, Option<String>), S
     let l = find_line(&lines, q)?;
     let t = match key {
         "none" | "-" => None,
-        k => Some(
-            ticket_any(k)
-                .filter(|t| t.eq_ignore_ascii_case(k))
-                .ok_or_else(|| format!("'{k}' is not a ticket key (PROJECT-123)"))?,
-        ),
+        k => Some(ticket_exact(k)?),
     };
     Registry::open(&ctx.state_dir)?.set_mark(&l.id, "ticket_override", t.as_deref())?;
     Ok((l.id.clone(), t))

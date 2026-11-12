@@ -32,6 +32,12 @@ pub fn ticket_any(s: &str) -> Option<String> {
     ticket(&s.to_ascii_uppercase())
 }
 
+pub fn ticket_exact(k: &str) -> Result<String, String> {
+    ticket_any(k)
+        .filter(|t| t.eq_ignore_ascii_case(k))
+        .ok_or_else(|| format!("'{k}' is not a ticket key (PROJECT-123)"))
+}
+
 fn ticket_in(s: &str, keys: &[String]) -> Option<String> {
     let b = s.as_bytes();
     let mut i = 0;
@@ -299,6 +305,16 @@ mod tests {
         assert_eq!(ticket("AS-"), None);
         assert_eq!(ticket("AS-x"), None);
         assert_eq!(ticket_any("proj-9").as_deref(), Some("PROJ-9"));
+    }
+
+    #[test]
+    fn exact_ticket_keys_only() {
+        assert_eq!(ticket_exact("proj-9").as_deref(), Ok("PROJ-9"));
+        assert_eq!(
+            ticket_exact("feat/AS-1"),
+            Err("'feat/AS-1' is not a ticket key (PROJECT-123)".to_string())
+        );
+        assert!(ticket_exact("").is_err());
     }
 
     #[test]

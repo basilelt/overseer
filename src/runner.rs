@@ -5,7 +5,7 @@ use crate::registry::Registry;
 use crate::sync::safe_id;
 use crate::sys::OpenOptionsExt;
 use crate::tmux::Tmux;
-use crate::util::{ticket, ticket_any};
+use crate::util::{ticket, ticket_exact};
 use crate::{mkdir_private, scan, Ctx, Line};
 use serde_json::{json, Value};
 use std::io::Write;
@@ -363,9 +363,7 @@ pub fn summary(l: &Line, pr: Option<&str>, titles: &[String]) -> String {
 }
 
 pub fn pick(ctx: &Ctx, key: &str) -> Result<Line, String> {
-    let key = ticket_any(key)
-        .filter(|t| t.eq_ignore_ascii_case(key))
-        .ok_or_else(|| format!("'{key}' is not a ticket key (PROJECT-123)"))?;
+    let key = ticket_exact(key)?;
     let mut all = scan(ctx)?;
     if let Some(u) = crate::remote::user(&ctx.state_dir) {
         match crate::remote::lines(ctx, &u, None) {

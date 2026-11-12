@@ -1420,7 +1420,7 @@ pub fn tick(ctx: &Ctx, lines: &[Line]) {
         crate::session_tasks::sync(ctx, &reg, lines);
     }
     track_cost(ctx, &reg, lines);
-    if ctx.config.auto_organize || crate::task_agents::auto_organize_enabled(&reg) {
+    if crate::task_agents::auto_organize_on(ctx, &reg) {
         crate::task_agents::auto_organize(ctx, &reg);
     }
     loop {

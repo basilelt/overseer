@@ -533,6 +533,10 @@ pub fn auto_organize_enabled(reg: &Registry) -> bool {
     matches!(reg.get(AUTO_ORGANIZE_KEY), Ok(Some(v)) if v == "true")
 }
 
+pub fn auto_organize_on(ctx: &Ctx, reg: &Registry) -> bool {
+    ctx.config.auto_organize || auto_organize_enabled(reg)
+}
+
 pub fn set_auto_organize(reg: &Registry, on: bool) -> Result<(), String> {
     reg.put(AUTO_ORGANIZE_KEY, if on { "true" } else { "false" })
 }

@@ -4144,3 +4144,27 @@ fn rescan_finds_an_agent_installed_into_a_dir_created_after_start() {
     let mut ws = app.ws(s["termId"].as_str().unwrap());
     read_until(&mut ws, "cursor-agent ready");
 }
+
+#[test]
+fn auto_organize_is_on_from_the_config_key_or_the_registry_flag() {
+    let off = App::new("autoorg-off", json!({}));
+    assert_eq!(
+        off.ok("GET", "/v1/tasks/auto-organize", Value::Null)["enabled"],
+        false
+    );
+    off.ok("PUT", "/v1/tasks/auto-organize", json!({"enabled": true}));
+    assert_eq!(
+        off.ok("GET", "/v1/tasks/auto-organize", Value::Null)["enabled"],
+        true
+    );
+    off.ok("PUT", "/v1/tasks/auto-organize", json!({"enabled": false}));
+    assert_eq!(
+        off.ok("GET", "/v1/tasks/auto-organize", Value::Null)["enabled"],
+        false
+    );
+    let on = App::new("autoorg-on", json!({"autoOrganize": true}));
+    assert_eq!(
+        on.ok("GET", "/v1/tasks/auto-organize", Value::Null)["enabled"],
+        true
+    );
+}
