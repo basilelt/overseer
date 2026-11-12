@@ -3,6 +3,8 @@ import type { SysAgent, SysPoint, SysSample } from './types';
 
 import { level, worst, type Level } from '../severity';
 
+import { basename } from '../paths';
+
 export { level, type Level };
 export const WINDOW_MS = 600_000;
 
@@ -118,11 +120,6 @@ export function mergeHistory(prev: SysPoint[], add: SysPoint[], now: number, win
 }
 
 const AGENT_NAMES: Record<string, string> = { claude: 'Claude', codex: 'Codex', gemini: 'Gemini', vibe: 'Vibe', shell: 'Shell' };
-
-export function basename(p: string): string {
-  const parts = p.replace(/[\\/]+$/, '').split(/[\\/]/);
-  return parts[parts.length - 1] || p;
-}
 
 export function agentLabel(a: Pick<SysAgent, 'agent' | 'cwd' | 'title'>, inWord = 'in'): string {
   const name = a.agent ? (AGENT_NAMES[a.agent] ?? a.agent.charAt(0).toUpperCase() + a.agent.slice(1)) : a.title || AGENT_NAMES.shell;

@@ -1,3 +1,5 @@
+import { basename } from './paths';
+
 export const MAX_UPLOAD = 50 * 1024 * 1024;
 export const PROGRESS_FROM = 2 * 1024 * 1024;
 
@@ -32,10 +34,6 @@ export function uploadedPath(r: { path: string; short?: string }): string {
 
 export function bracketed(text: string, on: boolean): string {
   return on && text ? `\x1b[200~${text.replace(/\x1b\[20[01]~/g, '')}\x1b[201~` : text;
-}
-
-export function basename(path: string): string {
-  return path.split(/[\\/]/).filter(Boolean).pop() ?? path;
 }
 
 const isImage = (f: FileInfo) => f.type.startsWith('image/');

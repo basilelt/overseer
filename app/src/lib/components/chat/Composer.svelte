@@ -17,13 +17,14 @@
   import { t } from '../../i18n.svelte';
   import { app } from '../../state.svelte';
   import type { CustomCommand, LineLocal, UploadResult } from '../../types';
-  import { basename, insertText, planDrop, planPaste, PROGRESS_FROM, uploadedPath, type Refusal } from '../../uploads';
+  import { insertText, planDrop, planPaste, PROGRESS_FROM, uploadedPath, type Refusal } from '../../uploads';
   import { requirePath, savePasted } from '../../task-attachments';
   import { applySlash, commandsFor, enterAction, lineCount, slashMatches, slashQuery, type SendMode, type SlashCommand } from '../../chat/composer';
   import { ChatSender } from '../../chat/sender.svelte';
   import { clearComposerHeight, reportComposerHeight } from '../../chat/composer-height';
   import { platformName } from '../../platform';
   import { KEYS } from '../../storage';
+  import { basename } from '../../paths';
 
   let { lineId, agent, local, phone, history = [], onsent }: { lineId: string; agent: string; local: LineLocal | undefined; phone: boolean; history?: string[]; onsent?: (text: string) => void } = $props();
   let back: Recall = { index: -1, draft: '' };

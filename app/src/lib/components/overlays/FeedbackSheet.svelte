@@ -15,12 +15,13 @@
   import { isTauri, DaemonError } from '../../client';
   import { settings } from '../../settings.svelte';
   import { findAgent, pickAgent } from '../../agents';
-  import { basename, MAX_UPLOAD } from '../../uploads';
+  import { MAX_UPLOAD } from '../../uploads';
   import { openExternal } from '../../ports.svelte';
   import { diagBackend, fetchServerLog } from '../../diag.svelte';
   import { feedback, ft, type Result } from '../../feedback.svelte';
   import { APP_LINES, attachProblem, ATTACH_ACCEPT, VIDEO_FREE_MAX, buildBody, clock, buildDiagnostics, buildPrompt, DEFAULT_REPO, findClone, issueTitle, labelsFor, newIssueUrl, SERVER_LINES, validate, wantsDiagnostics, type Kind } from '../../feedback';
   import type { Term } from '../../types';
+  import { basename } from '../../paths';
 
   const prefill = feedback.prefill;
   const repo = $derived((settings.feedbackRepo ?? '').trim() || DEFAULT_REPO);

@@ -1,5 +1,6 @@
 import type { DaemonClient } from './client';
-import { basename, MAX_UPLOAD } from './uploads';
+import { MAX_UPLOAD } from './uploads';
+import { basename } from './paths';
 
 export interface Attachment {
   name: string;

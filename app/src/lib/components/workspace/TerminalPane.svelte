@@ -40,7 +40,8 @@
   import { settle } from '../../settle';
   import { openFile } from '../../preview';
   import type { UploadResult } from '../../types';
-  import { basename, bracketed, insertText, planDrop, planPaste, PROGRESS_FROM, uploadedPath, type Refusal } from '../../uploads';
+  import { bracketed, insertText, planDrop, planPaste, PROGRESS_FROM, uploadedPath, type Refusal } from '../../uploads';
+  import { basename } from '../../paths';
   const accessoryBar = () => import('../mobile/AccessoryBar.svelte');
 
   let { termId, focused }: { termId: string; focused: boolean } = $props();

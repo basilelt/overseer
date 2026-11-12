@@ -3,10 +3,11 @@
   import { app } from '../../state.svelte';
   import { t } from '../../i18n.svelte';
   import { byRank } from '../../workspaces';
-  import { baseName, tildePath, type DirListing } from '../../dirs';
+  import { tildePath, type DirListing } from '../../dirs';
   import FolderOpen from '@lucide/svelte/icons/folder-open';
   import FolderBrowser from './FolderBrowser.svelte';
   import { relativeTo, subjectBody } from '../../subject-form';
+  import { folderName } from '../../paths';
 
   let { onclose }: { onclose: () => void } = $props();
 
@@ -60,7 +61,7 @@
 
   function pick(l: DirListing) {
     path = parent ? relativeTo(parent, l.path) : tildePath(l.path, l.home);
-    if (!name.trim()) name = baseName(l.path);
+    if (!name.trim()) name = folderName(l.path);
     error = '';
     browsing = false;
   }

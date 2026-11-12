@@ -84,6 +84,3 @@ export function hasDetail(t: ChatTool): boolean {
   return !!(t.diff || t.output || t.command || t.detail || t.path);
 }
 
-export function basename(p: string): string {
-  return p.split(/[\\/]/).filter(Boolean).pop() ?? p;
-}
