@@ -7,7 +7,6 @@ import { basename } from '../paths';
 
 import { SHORT_NAMES } from '../agents';
 
-export { level, type Level };
 export const WINDOW_MS = 600_000;
 
 const UNITS = ['B', 'KB', 'MB', 'GB', 'TB', 'PB'];

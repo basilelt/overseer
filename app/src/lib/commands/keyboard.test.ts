@@ -37,8 +37,9 @@ vi.mock('@tauri-apps/api/menu', () => ({
   Menu: { new: async () => ({ setAsAppMenu: menuMock.setAsAppMenu }) },
 }));
 
-import { allowed, answerCloseTab, closeTabKey, hint, isMac, newWindow, runShortcut, startShortcuts } from './keyboard';
-import { selectTabKey } from './commands';
+import { allowed, hint, startShortcuts } from './keyboard';
+import { answerCloseTab, closeTabKey, newWindow, runShortcut, selectTabKey } from './commands';
+import { isMac } from '../platform';
 import { rememberShell } from '../tabs/closed-tabs';
 import { ui } from '../mobile/ui.svelte';
 import { DEFAULT_SETTINGS, settings } from '../settings/settings.svelte';
@@ -742,12 +743,13 @@ describe('on macOS', () => {
     tauriWindow.unlisten.mockClear();
     tauriWindow.focus = null;
     const mod = await import('./keyboard');
-    return { mod, w };
+    const { isMac } = await import('../platform');
+    return { mod, w, isMac };
   }
 
   it('labels shortcuts with the command key', async () => {
-    const { mod } = await loadMac(false);
-    expect(mod.isMac).toBe(true);
+    const { mod, isMac } = await loadMac(false);
+    expect(isMac).toBe(true);
     expect(mod.hint('palette')).toMatch(/⌘/);
   });
 

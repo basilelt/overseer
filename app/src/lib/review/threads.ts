@@ -1,8 +1,6 @@
 import type { Thread, ThreadStatus } from './types';
 import { OPEN } from './unresolved';
 
-export { OPEN, unresolvedByWorktree } from './unresolved';
-
 export type Chip = 'pending' | 'queued' | 'delivered' | 'sent' | 'addressed' | 'resolved' | 'changed' | 'outdated';
 export type Tone = 'neutral' | 'accent' | 'warn' | 'ok' | 'muted';
 

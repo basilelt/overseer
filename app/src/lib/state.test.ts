@@ -1257,7 +1257,7 @@ describe('sessions', () => {
   });
 
   it('starts a shell in the same folder when an ended terminal tab is reopened', async () => {
-    const { runShortcut } = await import('./commands/keyboard');
+    const { runShortcut } = await import('./commands/commands');
     const cwd = app.data.terms.find((x) => x.id === 'tm_shell1')!.cwd;
     workspace.layout = openInFocused(EMPTY_LAYOUT, 'term:tm_shell1');
     closeTabAt(0, 'term:tm_shell1');

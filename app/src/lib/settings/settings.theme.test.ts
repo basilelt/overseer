@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { SOLARIZED_COLORS } from '../theme/theme';
 
 async function load(systemDark: boolean) {
   vi.resetModules();
@@ -134,7 +135,7 @@ describe('custom presets', () => {
     const s = await load(false);
     s.selectPreset('dark', 'solarized');
     const id = s.createPreset('dark', 'Custom');
-    expect(s.settings.customPresets.find((p) => p.id === id)?.colors).toEqual(s.SOLARIZED_COLORS);
+    expect(s.settings.customPresets.find((p) => p.id === id)?.colors).toEqual(SOLARIZED_COLORS);
   });
 
   it('persists presets and the selected palettes across reloads', async () => {

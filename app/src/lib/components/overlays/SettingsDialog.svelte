@@ -15,7 +15,8 @@
   import { adaptChoice, findAgent, hasModel, taskAgents } from '../../agents';
   import { allState, setAll } from '../../auto-approve';
   import { localeName, locales, t, type Key } from '../../i18n.svelte';
-  import { COLOR_TOKENS, saveSettings, settings, type ColorToken, type Mode, type PresetColors, type ThemePref } from '../../settings/settings.svelte';
+  import { saveSettings, settings } from '../../settings/settings.svelte';
+  import { COLOR_TOKENS, type ColorToken, type Mode, type PresetColors, type ThemePref } from '../../theme/theme';
   import { contrastWarnings, fullColors, presetsFor, readableOn } from '../../theme/theme-edit';
   import { createPreset, deletePreset, editPreset, selectPreset } from '../../theme/theme-edit.svelte';
   import { app } from '../../state.svelte';

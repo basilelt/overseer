@@ -13,8 +13,6 @@ import { migrateTheme, modeOf, resolveTheme, COLOR_TOKENS, type ColorOverrides, 
 
 import { readItem, writeJson, KEY_SETTINGS } from '../storage';
 
-export { COLOR_TOKENS, GRAPHITE_COLORS, SOLARIZED_COLORS } from '../theme/theme';
-export type { ColorOverrides, ColorPalette, ColorToken, CustomPreset, Mode, PresetColors, ThemePref } from '../theme/theme';
 
 export interface Settings {
   theme: ThemePref;

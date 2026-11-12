@@ -6,9 +6,9 @@
   import Plus from '@lucide/svelte/icons/plus';
   import Server from '@lucide/svelte/icons/server';
   import { connLabel } from '../../conn-label';
-  import { hostMenu, hostName, openOnHost, toggleFold } from '../../host/host-actions';
+  import { hostMenu, openOnHost, toggleFold } from '../../host/host-actions';
   import type { HostLink } from '../../host/host-link.svelte';
-  import { hostColor } from '../../host/hosts';
+  import { hostColor, hostName } from '../../host/hosts';
   import { itemsOf } from '../../host/host-watch';
   import { t } from '../../i18n.svelte';
   import { settings } from '../../settings/settings.svelte';

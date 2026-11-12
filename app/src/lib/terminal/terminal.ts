@@ -1,7 +1,8 @@
 import type { Ghostty, ITheme } from 'ghostty-web';
 import wasmUrl from 'ghostty-web/ghostty-vt.wasm?url';
 import { installBlankResize, installOnDemandRendering, installWholeLineViewport } from './termrender';
-import { GRAPHITE_COLORS, SOLARIZED_COLORS, settings, type ColorPalette } from '../settings/settings.svelte';
+import { settings } from '../settings/settings.svelte';
+import { GRAPHITE_COLORS, SOLARIZED_COLORS, type ColorPalette } from '../theme/theme';
 
 export const TERM_THEMES: Record<'light' | 'dark', ITheme> = {
   dark: {

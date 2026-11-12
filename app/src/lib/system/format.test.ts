@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { loadLocale, setLocale } from '../i18n.svelte';
-import { agentLabel, chartPaths, chipLevel, chipText, formatBytes, formatPct, formatRate, formatUptime, level, mergeHistory, niceMax } from './format';
+import { agentLabel, chartPaths, chipLevel, chipText, formatBytes, formatPct, formatRate, formatUptime, mergeHistory, niceMax } from './format';
+import { level } from '../severity';
 import { mockSystem } from './mock';
 import { systemSession } from './session';
 import { st } from './strings';

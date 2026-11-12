@@ -11,7 +11,8 @@
   import { t } from '../../i18n.svelte';
   import { app } from '../../state.svelte';
   import { needsInputCount } from '../../notify/notify';
-  import { isReviewKey, reviewTitle } from '../../review/open';
+  import { reviewTitle } from '../../review/open';
+  import { isReviewKey } from '../../review/keys';
   import { MOBILE_TABS, type MobileTab } from '../../mobile/layout';
   import { nextTab, viewForTab, type NavState } from '../../mobile/nav';
   import { ui } from '../../mobile/ui.svelte';

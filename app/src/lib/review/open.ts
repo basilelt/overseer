@@ -9,8 +9,6 @@ import type { ScopeOption } from './scope';
 import type { ReviewTarget } from './types';
 import { isTesting } from '../kanban/task-status';
 
-export { isReviewKey, parseReviewKey, reviewKey };
-
 export function reviewTitle(key: string): string | null {
   const t = parseReviewKey(key);
   return t ? titleOf(t, { lines: app.data.lines, tasks: app.data.tasks, terms: app.data.terms }) : null;

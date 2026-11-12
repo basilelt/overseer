@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import * as D from './draft';
-import { applySuggestion, batch, canSubmit, chips, countByFile, insertSuggestion, parseBody, previewSuggestion, reopenStatus, threadSuggestion, unresolvedByWorktree, withStatus } from './threads';
+import { applySuggestion, batch, canSubmit, chips, countByFile, insertSuggestion, parseBody, previewSuggestion, reopenStatus, threadSuggestion, withStatus } from './threads';
+import { unresolvedByWorktree } from './unresolved';
 import type { Delivery, ReviewComment, Thread } from './types';
 
 const c = (body: string, pending = false, author: 'user' | 'agent' = 'user'): ReviewComment => ({ id: `c${body.length}`, author, body, pending, createdAt: '', updatedAt: '' });

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { agentLevel, authNote, onCredits, windowLevel, barHeights, chipSegments, chipText, countdown, formatCost, formatDuration, formatTokens, level, tzOffset, worst } from './format';
+import { agentLevel, authNote, onCredits, windowLevel, barHeights, chipSegments, chipText, countdown, formatCost, formatDuration, formatTokens, tzOffset } from './format';
+import { level, worst } from '../severity';
 import type { UsageAgent, UsageTotals } from './types';
 import { mockUsage } from './mock';
 import { creditsNote } from './strings';

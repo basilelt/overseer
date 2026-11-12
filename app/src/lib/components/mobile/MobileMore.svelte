@@ -30,7 +30,8 @@
   import { connLabel } from '../../conn-label';
   import { phoneHostDot } from '../../mobile/hosts';
   import { t } from '../../i18n.svelte';
-  import { saveSettings, settings, type ThemePref } from '../../settings/settings.svelte';
+  import { saveSettings, settings } from '../../settings/settings.svelte';
+  import type { ThemePref } from '../../theme/theme';
   import { app } from '../../state.svelte';
   import { command } from '../../commands/commands';
   import { registerMore } from '../../commands/commands-more';

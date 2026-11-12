@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import css from '../../app.css?raw';
 vi.mock('ghostty-web/ghostty-vt.wasm?url', () => ({ default: '' }));
-import { GRAPHITE_COLORS, SOLARIZED_COLORS } from '../settings/settings.svelte';
+import { GRAPHITE_COLORS, SOLARIZED_COLORS } from './theme';
 import { termTheme } from '../terminal/terminal';
 
 const rgb = (hex: string) => hex.slice(1).match(/../g)!.map((c) => parseInt(c, 16));

@@ -1,4 +1,4 @@
-import { answerCloseTab, closeActive, closeTabKey, command, newWindow, runShortcut } from './commands';
+import { closeActive, command, runShortcut } from './commands';
 import { ui } from '../mobile/ui.svelte';
 import { phoneOrMobile } from '../mobile/phone.svelte';
 import { isMac, isTauri } from '../platform';
@@ -7,10 +7,6 @@ import { accelerator, resolveShortcut, shortcutLabel, type ShortcutId } from './
 import { app } from '../state.svelte';
 import { tour } from '../tour/tour.svelte';
 import { windowLabel } from '../window';
-
-export { answerCloseTab, closeTabKey, newWindow, runShortcut };
-
-export { isMac };
 
 const GLOBAL = new Set<ShortcutId>(['palette', 'settings', 'shortcuts', 'kanban', 'toggleSidebar', 'sourceControl', 'togglePanel', 'newWorkspace', 'reconnect', 'fontUp', 'fontDown', 'fontReset', 'newWindow', 'closeWindow']);
 const WITH_OVERLAY = new Set<ShortcutId>(['palette', 'settings', 'shortcuts']);

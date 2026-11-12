@@ -2,7 +2,7 @@
   import Modal from '../ui/Modal.svelte';
   import { app } from '../../state.svelte';
   import { t } from '../../i18n.svelte';
-  import { answerCloseTab } from '../../commands/keyboard';
+  import { answerCloseTab } from '../../commands/commands';
 
   let { onclose, tabKey }: { onclose: () => void; tabKey: string } = $props();
 

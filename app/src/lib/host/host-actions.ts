@@ -10,8 +10,6 @@ import type { MenuItem } from '../commands/menu';
 import { saveSettings, settings } from '../settings/settings.svelte';
 import { app } from '../state.svelte';
 
-export { hostName };
-
 export function toggleFold(key: string) {
   saveSettings({ hostsFolded: toggled(settings.hostsFolded, key) });
 }

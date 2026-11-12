@@ -3,8 +3,6 @@ import type { UsageAgent, UsageBy, UsageLimits, UsageRange, UsageWindow } from '
 
 import { level, worst, type Level } from '../severity';
 
-export { level, worst, type Level };
-
 export function tzOffset(d: Date = new Date()): number {
   return -d.getTimezoneOffset();
 }
