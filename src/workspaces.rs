@@ -1,7 +1,7 @@
 use crate::board::publish;
 use crate::daemon::Request;
 use crate::procs::now_ms;
-use crate::registry::Registry;
+use crate::registry::{db, sql, Registry};
 use crate::tasks::Task;
 use crate::util::{format_rfc3339, ulid};
 use crate::{Ctx, Line};
@@ -160,14 +160,6 @@ impl Group {
             "createdAt": format_rfc3339(self.created_ms), "updatedAt": format_rfc3339(self.updated_ms),
         })
     }
-}
-
-pub fn sql<T>(r: rusqlite::Result<T>) -> Res<T> {
-    r.map_err(|e| (500, e.to_string()))
-}
-
-pub fn db(ctx: &Ctx) -> Res<Registry> {
-    Registry::open(&ctx.state_dir).map_err(|e| (500, e))
 }
 
 pub fn bad(msg: impl Into<String>) -> (u16, String) {

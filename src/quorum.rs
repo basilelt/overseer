@@ -1,5 +1,6 @@
+use crate::registry::db;
 use crate::registry::Registry;
-use crate::tasks::{self, bad, db, Res, Task};
+use crate::tasks::{self, bad, Res, Task};
 use crate::util::ulid;
 use crate::Ctx;
 use serde_json::{json, Value};

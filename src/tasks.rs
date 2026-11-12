@@ -1,7 +1,7 @@
 use crate::board::publish;
 use crate::git::git_out;
 use crate::git::Git;
-use crate::registry::Registry;
+use crate::registry::{db, sql, Registry};
 use crate::status::{self, COMPLETED, IN_PROGRESS, MERGED, PENDING};
 use crate::task_transition::{self, Origin};
 use crate::term::{self, Spec, Term};
@@ -316,14 +316,6 @@ fn track_cost(ctx: &Ctx, reg: &Registry, lines: &[Line]) {
             json!({"task": t.to_json(&ctx.config.station_id)}),
         );
     }
-}
-
-pub(crate) fn sql<T>(r: rusqlite::Result<T>) -> Res<T> {
-    r.map_err(|e| (500, e.to_string()))
-}
-
-pub(crate) fn db(ctx: &Ctx) -> Res<Registry> {
-    Registry::open(&ctx.state_dir).map_err(|e| (500, e))
 }
 
 pub(crate) fn bad(msg: impl Into<String>) -> (u16, String) {

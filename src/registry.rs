@@ -207,6 +207,20 @@ const ADDED_COLUMNS: &[(&str, &str, &str)] = &[
     ("tasks", "task_type", "TEXT"),
 ];
 
+pub fn sql<T>(r: rusqlite::Result<T>) -> Result<T, (u16, String)> {
+    r.map_err(|e| (500, e.to_string()))
+}
+
+pub fn db(ctx: &crate::Ctx) -> Result<Registry, (u16, String)> {
+    Registry::open(&ctx.state_dir).map_err(|e| (500, e))
+}
+
+pub fn db_with(ctx: &crate::Ctx, ddl: &str) -> Result<Registry, (u16, String)> {
+    let reg = db(ctx)?;
+    sql(reg.conn.execute_batch(ddl))?;
+    Ok(reg)
+}
+
 impl Registry {
     pub fn open(state_dir: &Path) -> Result<Self, String> {
         let mut tries = 0;

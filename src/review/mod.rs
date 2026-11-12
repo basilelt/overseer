@@ -10,7 +10,7 @@ pub mod watch;
 
 use crate::board::{decode, publish};
 use crate::daemon::{q, Request};
-use crate::registry::Registry;
+use crate::registry::{sql, Registry};
 use crate::util::{format_rfc3339, ulid};
 use crate::{Ctx, Line};
 use anchor::{capture, locate, Anchor, Found};
@@ -146,18 +146,12 @@ fn trow(r: &Row) -> rusqlite::Result<Thread> {
     })
 }
 
-fn sql<T>(r: rusqlite::Result<T>) -> Res<T> {
-    r.map_err(|e| (500, e.to_string()))
-}
-
 fn bad(m: impl Into<String>) -> (u16, String) {
     (400, m.into())
 }
 
 pub fn open(ctx: &Ctx) -> Res<Registry> {
-    let reg = Registry::open(&ctx.state_dir).map_err(|e| (500, e))?;
-    sql(reg.conn.execute_batch(SCHEMA))?;
-    Ok(reg)
+    crate::registry::db_with(ctx, SCHEMA)
 }
 
 fn save(reg: &Registry, t: &Thread) -> Res<()> {

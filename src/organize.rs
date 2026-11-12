@@ -1,6 +1,6 @@
 use crate::board::publish;
 use crate::daemon::{q, Request};
-use crate::registry::Registry;
+use crate::registry::{self, sql, Registry};
 use crate::task_agents::CONFIGURATOR;
 use crate::tasks::{self, Task};
 use crate::util::{format_rfc3339, ticket, ulid};
@@ -35,21 +35,11 @@ const KINDS: &[&str] = &[
 ];
 const WHY: &[&str] = &["dirty", "todos", "recent"];
 
-fn sql<T>(r: rusqlite::Result<T>) -> Res<T> {
-    r.map_err(|e| (500, e.to_string()))
-}
-
-pub fn ensure(reg: &Registry) -> Res<()> {
-    sql(reg.conn.execute_batch(
-        "CREATE TABLE IF NOT EXISTS proposals (id TEXT PRIMARY KEY, created_ms INTEGER NOT NULL,
-           status TEXT NOT NULL, source TEXT NOT NULL, task_id TEXT, body TEXT NOT NULL, results TEXT)",
-    ))
-}
+pub const SCHEMA: &str = "CREATE TABLE IF NOT EXISTS proposals (id TEXT PRIMARY KEY, created_ms INTEGER NOT NULL,
+           status TEXT NOT NULL, source TEXT NOT NULL, task_id TEXT, body TEXT NOT NULL, results TEXT)";
 
 fn db(ctx: &Ctx) -> Res<Registry> {
-    let reg = Registry::open(&ctx.state_dir).map_err(|e| (500, e))?;
-    ensure(&reg)?;
-    Ok(reg)
+    registry::db_with(ctx, SCHEMA)
 }
 
 fn trunc(s: &str, max: usize) -> String {
@@ -1260,7 +1250,7 @@ mod tests {
         ));
         std::fs::create_dir_all(&dir).unwrap();
         let r = Registry::open(&dir).unwrap();
-        ensure(&r).unwrap();
+        r.conn.execute_batch(SCHEMA).unwrap();
         r
     }
 

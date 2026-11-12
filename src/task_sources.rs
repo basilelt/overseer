@@ -1,7 +1,8 @@
 use crate::daemon::{q, Request};
 use crate::git::Git;
 use crate::registry::Registry;
-use crate::tasks::{bad, db, main_root, sql};
+use crate::registry::{db, sql};
+use crate::tasks::{bad, main_root};
 use crate::util::{ticket, ulid};
 use crate::Ctx;
 use rusqlite::params;
