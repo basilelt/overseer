@@ -26,6 +26,9 @@ expect() {
 }
 
 expect "docs only runs nothing" "" docs/ci.md
+expect "root markdown runs nothing" "" README.md
+expect "issue template runs nothing" "" .github/ISSUE_TEMPLATE/bug.yml
+expect "nested markdown runs nothing" "" sub/notes.md
 expect "daemon source" "rust app windows " src/main.rs
 expect "app source" "app " app/src/main.ts
 expect "tauri source" "app android " app/src-tauri/src/lib.rs
@@ -37,9 +40,34 @@ expect "tap script" "store_guard tap " scripts/update-tap.sh
 expect "version stamp script" "store_guard ci_scripts " scripts/set-version.sh
 expect "version check script" "store_guard ci_scripts " scripts/check-version.sh
 expect "version file list" "store_guard ci_scripts " scripts/version-files.sh
+expect "docs path helper" "store_guard ci_scripts " scripts/docs-paths.sh
 expect "push to next filters like a pull request" "app " app/src/y.ts EVENT=push REF=refs/heads/next
 expect "release push runs everything" "rust app windows android macos_signing macos_procs actionlint store_guard tap ci_scripts " docs/x.md EVENT=push REF=refs/heads/main
 expect "manual run runs everything" "rust app windows android macos_signing macos_procs actionlint store_guard tap ci_scripts " docs/y.md EVENT=workflow_dispatch REF=refs/heads/next
 expect "release gate skip runs nothing" "" src/x.rs EVENT=push SKIP=true
+
+gate=$(cd "$(dirname "$0")" && pwd)/release-gate.sh
+agree() {
+  local want=$1 file=$2 got
+  mkdir -p "$work/$(dirname "$file")"
+  echo "$RANDOM" >>"$work/$file"
+  g add -A
+  g commit -qm "gate $file"
+  got=$(cd "$work" && "$gate" 2>/dev/null | sed -n 's/^release=//p')
+  if [ "$got" = "$want" ]; then
+    echo "ok   release gate releases=$want for $file"
+  else
+    echo "FAIL release gate $file: want release=$want, got '$got'"
+    fail=1
+  fi
+}
+
+agree false docs/guide.md
+agree false README.md
+agree false .github/ISSUE_TEMPLATE/bug.yml
+agree false sub/notes.md
+agree true src/main.rs
+agree true Makefile
+agree true .github/workflows/ci.yml
 
 exit $fail
