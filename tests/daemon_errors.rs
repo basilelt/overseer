@@ -116,7 +116,7 @@ fn every_error_the_mock_copies_is_what_the_daemon_sends() {
     );
 
     let sid = "eeeeeeee-0000-4000-8000-000000000002";
-    let ts = overseer::util::format_rfc3339(overseer::procs::now_ms() - 60_000);
+    let ts = overseer::util::format_rfc3339(overseer::util::now_ms() - 60_000);
     std::fs::write(
         app.fx
             .base
