@@ -47,7 +47,6 @@ describe('switchboard store', () => {
   afterEach(async () => {
     await app.disconnect();
     app.open(null);
-    vi.unstubAllGlobals();
     reset();
   });
 

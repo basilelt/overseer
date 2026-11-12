@@ -13,8 +13,6 @@ beforeAll(() => registerMore());
 const saved = { theme: settings.theme };
 
 afterEach(() => {
-  vi.restoreAllMocks();
-  vi.unstubAllGlobals();
   saveSettings(saved);
   app.view = 'agents';
   app.panelOpen = true;

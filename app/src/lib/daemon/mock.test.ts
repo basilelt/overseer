@@ -572,7 +572,6 @@ describe('MockDaemon', () => {
       expect(a).toMatchObject({ href: expect.stringMatching(/^blob:/), download: 'icon-512.png' });
       expect(a.click).toHaveBeenCalledOnce();
     } finally {
-      vi.unstubAllGlobals();
     }
   });
 

@@ -86,7 +86,6 @@ afterEach(async () => {
   const s = settings as unknown as Record<string, unknown>;
   for (const k of Object.keys(s)) if (!(k in snapshot)) delete s[k];
   Object.assign(s, structuredClone(snapshot));
-  vi.unstubAllGlobals();
 });
 
 describe('one window per host (the default)', () => {

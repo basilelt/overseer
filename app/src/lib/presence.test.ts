@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 type Mod = typeof import('./presence');
 
@@ -41,8 +41,6 @@ describe('presence', () => {
     focusChanged.fail = false;
     p = await import('./presence');
   });
-
-  afterEach(() => vi.unstubAllGlobals());
 
   it('starts visible and focused', () => {
     expect(p.presence()).toEqual({ visible: true, focused: true });

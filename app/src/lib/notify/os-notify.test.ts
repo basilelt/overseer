@@ -67,7 +67,6 @@ describe('dispatch', () => {
   });
   afterEach(() => {
     vi.useRealTimers();
-    vi.unstubAllGlobals();
   });
 
   it('records in-app events and toasts them when toasts are on', () => {
@@ -261,8 +260,6 @@ describe('system notifications', () => {
   });
 
   afterEach(() => {
-    vi.unstubAllGlobals();
-    vi.restoreAllMocks();
     startOs(fakeApp())();
   });
 

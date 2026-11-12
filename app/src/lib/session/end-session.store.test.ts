@@ -24,7 +24,6 @@ describe('ending a shell from its tab', () => {
     await app.disconnect();
     workspace.layout = EMPTY_LAYOUT;
     app.selectedKey = null;
-    vi.restoreAllMocks();
   });
 
   const hasTerm = () => app.data.terms.some((t) => t.id === id);

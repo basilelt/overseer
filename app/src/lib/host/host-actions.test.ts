@@ -21,7 +21,6 @@ describe('host actions', () => {
   });
 
   afterEach(() => {
-    vi.restoreAllMocks();
     Object.assign(app, { link: before.link, others: before.others, conn: before.conn });
     settings.hostsFolded = before.hostsFolded;
   });

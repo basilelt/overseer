@@ -157,8 +157,6 @@ describe('focusSession', () => {
   const COMPOSER = '.chat .composer textarea';
   const TERM = '.keep:not(.hidden) [data-terminal]';
 
-  afterEach(() => vi.unstubAllGlobals());
-
   it('moves focus from the clicked tab to the visible terminal', () => {
     const term = fake('term');
     vi.stubGlobal('document', { get activeElement() { return active.el; } });
@@ -184,8 +182,6 @@ describe('focusSession', () => {
 });
 
 describe('coarsePointer', () => {
-  afterEach(() => vi.unstubAllGlobals());
-
   it('is true on a touch device and false with a mouse', () => {
     vi.stubGlobal('matchMedia', (q: string) => ({ matches: q === '(pointer: coarse)' }));
     expect(coarsePointer()).toBe(true);

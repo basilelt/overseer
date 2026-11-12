@@ -1,12 +1,10 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 async function load(platform: string, ua: string) {
   vi.resetModules();
   vi.stubGlobal('navigator', { platform, userAgent: ua });
   return import('./platform');
 }
-
-afterEach(() => vi.unstubAllGlobals());
 
 describe('platform', () => {
   it('detects a mac from navigator.platform', async () => {

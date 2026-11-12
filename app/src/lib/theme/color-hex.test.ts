@@ -1,7 +1,5 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { toHex6 } from './color-hex';
-
-afterEach(() => vi.unstubAllGlobals());
 
 describe('toHex6', () => {
   it('keeps a six digit hex, lowercased', () => {

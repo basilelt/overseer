@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 async function load(stored: object | null, language = 'en-US') {
   vi.resetModules();
@@ -6,8 +6,6 @@ async function load(stored: object | null, language = 'en-US') {
   vi.stubGlobal('localStorage', { getItem: () => (stored ? JSON.stringify(stored) : null), setItem: () => {} });
   return import('./settings.svelte');
 }
-
-afterEach(() => vi.unstubAllGlobals());
 
 describe('locale setting', () => {
   it('defaults to the system language when it is available', async () => {

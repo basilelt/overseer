@@ -243,7 +243,6 @@ describe('updater strings', () => {
 
 describe('the shared updater', () => {
   afterEach(() => {
-    vi.unstubAllGlobals();
     vi.resetModules();
   });
 

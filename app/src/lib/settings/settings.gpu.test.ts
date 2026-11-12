@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 const KEY = 'overseer.settings';
 
@@ -14,8 +14,6 @@ async function load(initial?: Record<string, string>) {
   const mod = await import('./settings.svelte');
   return { ...mod, store };
 }
-
-afterEach(() => vi.unstubAllGlobals());
 
 describe('gpuTerminal setting', () => {
   it('is off by default', async () => {

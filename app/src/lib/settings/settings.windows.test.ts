@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 const KEY = 'overseer.settings';
 
@@ -23,8 +23,6 @@ async function load(store: ReturnType<typeof storage>) {
   const storageEvent = (key: string, newValue: string | null) => listeners.get('storage')?.({ key, newValue } as unknown as Event);
   return { ...mod, storageEvent };
 }
-
-afterEach(() => vi.unstubAllGlobals());
 
 const box = { kind: 'ssh' as const, host: 'box', label: 'box' };
 const local = { kind: 'local' as const, label: 'Local' };

@@ -151,8 +151,6 @@ beforeEach(() => {
 afterEach(() => {
   Object.assign(settings, savedSettings);
   vi.useRealTimers();
-  vi.unstubAllGlobals();
-  vi.restoreAllMocks();
 });
 
 describe('allowed', () => {

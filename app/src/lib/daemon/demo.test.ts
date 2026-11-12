@@ -35,7 +35,6 @@ beforeEach(() => {
 
 afterEach(() => {
   uninstallDemoStorage();
-  vi.unstubAllGlobals();
 });
 
 describe('isDemo', () => {

@@ -75,7 +75,6 @@ function idleApp() {
 describe('idle budget', () => {
   beforeEach(() => vi.useFakeTimers());
   afterEach(() => {
-    vi.unstubAllGlobals();
     vi.useRealTimers();
   });
 

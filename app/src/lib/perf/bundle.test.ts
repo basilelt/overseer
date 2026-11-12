@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { build, type Rolldown } from 'vite';
 
 const ENTRY_BUDGET_KB = 340;
@@ -38,10 +38,6 @@ describe('production bundle budget', () => {
 describe('APK updater only in the builds that update themselves', () => {
   const updater = (all: Rolldown.OutputChunk[]) => all.flatMap((c) => Object.entries(c.modules)).filter(([id, m]) => /\/mobile\/(apk-update\.svelte\.ts|ApkUpdate\w+\.svelte)$/.test(id) && m.renderedLength > 0).map(([id]) => id);
   const commands = (all: Rolldown.OutputChunk[]) => all.filter((c) => c.code.includes('apk_update_check'));
-
-  afterEach(() => {
-    vi.unstubAllEnvs();
-  });
 
   it('ships it in the GitHub build', { timeout: 120_000 }, async () => {
     const all = await chunks();

@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 type Target = { kind: 'Any' | 'App' } | { kind: 'AnyLabel' | 'Window' | 'Webview' | 'WebviewWindow'; label: string };
 type Listener = { event: string; target: Target; handler: number };
@@ -57,8 +57,6 @@ describe('drop.ts against the real @tauri-apps/api event routing', () => {
     vi.stubGlobal('navigator', { userAgent: 'Mozilla/5.0 (Macintosh)' });
     vi.stubGlobal('document', { elementFromPoint: () => null });
   });
-  afterEach(() => vi.unstubAllGlobals());
-
   for (const route of Object.keys(ROUTES)) {
     it(`delivers a drop emitted on the ${route} route exactly once`, async () => {
       const { dropZone } = await import('./drop');

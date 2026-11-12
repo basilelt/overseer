@@ -5,7 +5,6 @@ vi.mock('./i18n/fr.ts', () => ({ dict: { 'common.cancel': 'Annuler' } }));
 
 afterEach(() => {
   setLocale('en');
-  vi.unstubAllGlobals();
 });
 
 describe('locales', () => {

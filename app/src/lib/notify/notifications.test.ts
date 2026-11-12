@@ -193,7 +193,6 @@ describe('runEntry', () => {
     center.clear();
   });
   afterEach(() => {
-    vi.restoreAllMocks();
     updater.dialog = false;
   });
 
@@ -269,7 +268,6 @@ describe('startCenter', () => {
   });
 
   afterEach(() => {
-    vi.unstubAllGlobals();
     center.setHost('local');
   });
 

@@ -122,7 +122,6 @@ beforeEach(() => {
 
 afterEach(() => {
   settings.notifyMuted = savedMuted;
-  vi.restoreAllMocks();
 });
 
 describe('dialog helpers', () => {

@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Ghostty, Terminal } from 'ghostty-web';
 import { ModeTracker, wheelAction } from './mouse';
 import { anchoredViewport, clampScrollback, DEFAULT_SCROLLBACK_LINES, resetViewport, scrollbackBytes, writeAnchored } from './scroll';
@@ -21,12 +21,13 @@ beforeAll(async () => {
   const wasm = await readFile(new URL('../../../node_modules/ghostty-web/ghostty-vt.wasm', import.meta.url));
   const { instance } = await WebAssembly.instantiate(wasm, { env: { log: () => {} } });
   ghostty = new Ghostty(instance);
+});
+
+beforeEach(() => {
   vi.stubGlobal('window', { setTimeout: () => 0, clearTimeout: () => {} });
   vi.stubGlobal('requestAnimationFrame', () => 0);
   vi.stubGlobal('WheelEvent', { DOM_DELTA_PIXEL: 0, DOM_DELTA_LINE: 1, DOM_DELTA_PAGE: 2 });
 });
-
-afterAll(() => vi.unstubAllGlobals());
 
 function headless(scrollback: number): Terminal {
   const term = new Terminal({ ghostty, cols: COLS, rows: ROWS, scrollback, smoothScrollDuration: 0 });

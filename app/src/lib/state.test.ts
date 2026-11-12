@@ -106,8 +106,6 @@ beforeEach(() => {
 
 afterEach(async () => {
   vi.useRealTimers();
-  vi.restoreAllMocks();
-  vi.unstubAllGlobals();
   await app.disconnect();
   app.mobile = false;
   app.view = 'agents';

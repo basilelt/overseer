@@ -92,8 +92,6 @@ afterEach(() => {
   console.error = origError;
   console.warn = origWarn;
   vi.useRealTimers();
-  vi.unstubAllGlobals();
-  vi.restoreAllMocks();
 });
 
 describe('diagBackend outside Tauri', () => {

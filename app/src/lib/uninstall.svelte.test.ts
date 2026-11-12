@@ -59,8 +59,6 @@ describe('uninstall flow', () => {
 
   afterEach(async () => {
     clean();
-    vi.unstubAllGlobals();
-    vi.restoreAllMocks();
     await app.disconnect();
   });
 

@@ -33,7 +33,6 @@ describe('toggleAutostart', () => {
   });
 
   afterEach(async () => {
-    vi.restoreAllMocks();
     await app.disconnect();
     Object.assign(lifecycle, { status: null, host: null, busy: false });
   });

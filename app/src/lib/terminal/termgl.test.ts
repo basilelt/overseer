@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import * as ghostty from 'ghostty-web';
 import {
   CELL_BYTES,
@@ -18,11 +18,6 @@ import {
   type RowStyle,
 } from './termgl';
 import { cell, fakeGl, grid, host, scrollback } from '../../test/termgl-fake';
-
-afterEach(() => {
-  vi.restoreAllMocks();
-  vi.unstubAllGlobals();
-});
 
 function style(over: Partial<RowStyle> = {}): RowStyle {
   let next = 0;

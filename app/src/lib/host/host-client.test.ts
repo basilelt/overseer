@@ -1,10 +1,8 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { newHostClient } from './host-client';
 import { MockDaemon } from '../daemon/mock';
 
 describe('newHostClient', () => {
-  afterEach(() => vi.unstubAllGlobals());
-
   it('gives the browser and mock builds a mock daemon of their own', async () => {
     const a = await newHostClient('h1');
     const b = await newHostClient('h2');

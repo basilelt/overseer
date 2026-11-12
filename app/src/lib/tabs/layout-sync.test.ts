@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { SidebarItem } from '../session/grouping';
 import { loadKnown, saveKnown } from './known-tabs';
 import { arrangePanes, layoutShape, reconcileLayout, restoreLayout, savedActive } from './layout-sync';
@@ -12,8 +12,6 @@ function memoryStorage() {
   const data = new Map<string, string>();
   return { getItem: (k: string) => data.get(k) ?? null, setItem: (k: string, v: string) => void data.set(k, v) };
 }
-
-afterEach(() => vi.unstubAllGlobals());
 
 describe('closing a session opened from the status list', () => {
   const line = item('line:a', { lineId: 'a', termId: 't1' });

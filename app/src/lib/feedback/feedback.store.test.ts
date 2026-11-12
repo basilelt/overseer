@@ -32,7 +32,6 @@ beforeEach(() => {
 
 afterEach(() => {
   feedback.stopAll();
-  vi.unstubAllGlobals();
 });
 
 describe('feedback resume after reload', () => {

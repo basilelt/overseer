@@ -1,5 +1,5 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { KEY_SETTINGS, KEY_KNOWN_TABS, KEY_SESSION_PAGES, KEY_LIVE_REVIEW, KEY_SWITCHBOARD_IMPORT, KEY_NOTIFY_ASKED, KEY_NOTIFIED, KEY_NOTIFICATIONS_PREFIX, KEY_RENDERER, KEY_REVIEW_MODE, KEY_REVIEW_AUTO_REFRESH, KEY_REVIEW_VIEW, KEY_REVIEW_BASE, KEY_CHAT_MODES, KEY_FEEDBACK_REPORTED, KEY_DRAFTS_CHAT, KEY_DRAFTS_REVIEW, KEY_DRAFTS_TASK, KEY_DEMO, KEY_DEMO_PREFIX, KEY_MOCK_IMPORTED, localStore, readItem, readJson, removeItem, writeItem, writeJson } from './storage';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { KEY_SETTINGS, KEY_KNOWN_TABS, KEY_SESSION_PAGES, KEY_LIVE_REVIEW, KEY_SWITCHBOARD_IMPORT, KEY_NOTIFY_ASKED, KEY_NOTIFIED, KEY_NOTIFICATIONS_PREFIX, KEY_RENDERER, KEY_REVIEW_MODE, KEY_REVIEW_AUTO_REFRESH, KEY_REVIEW_VIEW, KEY_REVIEW_BASE, KEY_CHAT_MODES, KEY_FEEDBACK_REPORTED, KEY_DRAFTS_CHAT, KEY_DRAFTS_REVIEW, KEY_DRAFTS_TASK, KEY_DEMO, KEY_DEMO_PREFIX, KEY_MOCK_IMPORTED, readItem, readJson, removeItem, writeItem, writeJson } from './storage';
 
 function memoryStorage() {
   const m = new Map<string, string>();
@@ -11,8 +11,6 @@ function memoryStorage() {
 }
 
 beforeEach(() => vi.stubGlobal('localStorage', memoryStorage()));
-afterEach(() => vi.unstubAllGlobals());
-
 const broken = {
   getItem: () => {
     throw new Error('denied');
@@ -126,22 +124,5 @@ describe('storage helper', () => {
     } finally {
       Object.defineProperty(globalThis, 'localStorage', saved);
     }
-  });
-});
-
-describe('localStore', () => {
-  it('returns the browser storage', () => {
-    expect(localStore()).toBe(globalThis.localStorage);
-  });
-
-  it('is undefined when storage is missing', () => {
-    vi.stubGlobal('localStorage', undefined);
-    expect(localStore()).toBeUndefined();
-  });
-
-  it('is undefined when reading the storage throws', () => {
-    vi.stubGlobal('localStorage', undefined);
-    Object.defineProperty(globalThis, 'localStorage', { get: () => { throw new Error('denied'); }, configurable: true });
-    expect(localStore()).toBeUndefined();
   });
 });

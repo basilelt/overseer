@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 function realStorage(initial: Record<string, string>) {
   const data = new Map(Object.entries(initial));
@@ -22,8 +22,6 @@ async function load(initial: Record<string, string>) {
   const mod = await import('./settings.svelte');
   return { ...mod, store };
 }
-
-afterEach(() => vi.unstubAllGlobals());
 
 describe('settings inside the demo', () => {
   it('reads the demo-scoped settings, not the real ones, when loaded before the demo boot', async () => {

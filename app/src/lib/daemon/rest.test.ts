@@ -26,7 +26,6 @@ describe('rest', () => {
 
   afterEach(() => {
     vi.useRealTimers();
-    vi.unstubAllGlobals();
   });
 
   it('goes idle after a minute without input and leaves no timer behind', () => {

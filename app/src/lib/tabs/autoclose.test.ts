@@ -60,7 +60,6 @@ describe('closing exited terminals', () => {
     await app.disconnect();
     workspace.layout = EMPTY_LAYOUT;
     app.selectedKey = null;
-    vi.restoreAllMocks();
   });
 
   const exit = (code: number) => m.emit('term.exited', { term: { ...app.data.terms.find((t) => t.id === id)!, exited: true, exitCode: code } });

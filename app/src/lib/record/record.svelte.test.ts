@@ -66,7 +66,6 @@ afterEach(() => {
   recorder.cancel();
   recorder.dismiss();
   vi.useRealTimers();
-  vi.unstubAllGlobals();
 });
 
 async function recording(video = false) {

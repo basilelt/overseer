@@ -34,7 +34,6 @@ import { updater } from '../updater.svelte';
 beforeAll(() => registerMore());
 
 afterEach(() => {
-  vi.restoreAllMocks();
   for (const f of Object.values(m)) f.mockReset();
   app.open(null);
   app.view = 'agents';

@@ -337,7 +337,6 @@ describe('startNotifications', () => {
 
   afterEach(() => {
     vi.useRealTimers();
-    vi.unstubAllGlobals();
   });
 
   it('notifies a line that starts waiting once it settles and badges the title', async () => {

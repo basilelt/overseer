@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const invoke = vi.fn();
 vi.mock('@tauri-apps/api/core', () => ({ invoke: (...a: unknown[]) => invoke(...a) }));
@@ -10,8 +10,6 @@ describe('installed browsers', () => {
     vi.stubGlobal('window', { __TAURI_INTERNALS__: {}, open: vi.fn() });
     invoke.mockReset();
   });
-  afterEach(() => vi.unstubAllGlobals());
-
   it('asks the app once on desktop and never on phones', async () => {
     invoke.mockResolvedValue([{ id: 'firefox', name: 'Firefox' }]);
     expect(await browsers.load(false)).toEqual([]);

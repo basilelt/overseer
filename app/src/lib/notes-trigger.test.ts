@@ -1,10 +1,8 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { FakeEl } from '../test/fake-dom';
 import { isNotesTrigger } from './notes-trigger';
 
 beforeEach(() => vi.stubGlobal('CSS', { escape: (s: string) => s }));
-afterEach(() => vi.unstubAllGlobals());
-
 const as = (el: FakeEl | null) => el as unknown as Element | null;
 
 describe('isNotesTrigger', () => {

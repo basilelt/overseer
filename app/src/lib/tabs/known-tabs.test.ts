@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { SidebarItem } from '../session/grouping';
 import { loadKnown, MAX_KEYS, MAX_KNOWN, mergeKnown, saveKnown, startKnown } from './known-tabs';
 import { workspaceTabs } from '../workspace/workspaces';
@@ -10,8 +10,6 @@ function memoryStorage() {
   const data = new Map<string, string>();
   return { getItem: (k: string) => data.get(k) ?? null, setItem: (k: string, v: string) => void data.set(k, v) };
 }
-
-afterEach(() => vi.unstubAllGlobals());
 
 describe('tabs closed before a relaunch', () => {
   it('does not bring back a closed tab and still opens a member started after the save', () => {

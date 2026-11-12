@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { dismiss, type DismissOptions } from './dismiss';
 
 const handlers = new Map<string, (e: any) => void>();
@@ -21,8 +21,6 @@ function keydown(key: string) {
 }
 
 beforeEach(() => vi.stubGlobal('window', win));
-afterEach(() => vi.unstubAllGlobals());
-
 function mount(options: Partial<DismissOptions> = {}) {
   const onclose = vi.fn();
   const action = dismiss(node, { onclose, ...options });

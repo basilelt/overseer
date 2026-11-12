@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { DEMO_KEY } from './demo';
 
 const invoke = vi.hoisted(() => vi.fn());
@@ -25,10 +25,6 @@ beforeEach(() => {
   invoke.mockReset();
   vi.stubGlobal('localStorage', storage);
   vi.stubGlobal('window', { __TAURI_INTERNALS__: {} });
-});
-
-afterEach(() => {
-  vi.unstubAllGlobals();
 });
 
 describe('getClient', () => {
@@ -124,7 +120,6 @@ describe('mockSelected and isMockClient', () => {
   it('selects the mock for a VITE_MOCK build', async () => {
     vi.stubEnv('VITE_MOCK', '1');
     expect((await fresh()).mockSelected()).toBe(true);
-    vi.unstubAllEnvs();
   });
 
   it('recognises the mock client by its kind', async () => {

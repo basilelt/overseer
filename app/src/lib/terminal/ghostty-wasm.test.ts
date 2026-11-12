@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as mod from 'ghostty-web';
 import { Ghostty, Terminal } from 'ghostty-web';
 import { installBlankResize, installWholeLineViewport } from './termrender';
@@ -9,12 +9,13 @@ beforeAll(async () => {
   const fsModule = 'node:fs/promises';
   const { readFile } = (await import(/* @vite-ignore */ fsModule)) as { readFile(path: URL): Promise<Uint8Array<ArrayBuffer>> };
   wasm = await WebAssembly.compile(await readFile(new URL('../../../node_modules/ghostty-web/ghostty-vt.wasm', import.meta.url)));
+});
+
+beforeEach(() => {
   vi.stubGlobal('window', { setTimeout: () => 0, clearTimeout: () => {} });
   vi.stubGlobal('requestAnimationFrame', () => 0);
   vi.stubGlobal('cancelAnimationFrame', () => {});
 });
-
-afterAll(() => vi.unstubAllGlobals());
 
 async function load(): Promise<Ghostty> {
   return new Ghostty(await WebAssembly.instantiate(wasm, { env: { log: () => {} } }));

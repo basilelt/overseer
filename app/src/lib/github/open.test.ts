@@ -93,8 +93,6 @@ describe('opening PR reviews', () => {
   });
 
   afterEach(() => {
-    vi.restoreAllMocks();
-    vi.unstubAllGlobals();
     Object.assign(workspace, { layout: saved.layout });
     Object.assign(app, saved);
     Object.assign(settings, savedSettings);

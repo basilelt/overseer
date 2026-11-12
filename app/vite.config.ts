@@ -66,6 +66,9 @@ export default defineConfig({
   },
   test: {
     environment: 'node',
+    unstubGlobals: true,
+    unstubEnvs: true,
+    restoreMocks: true,
     setupFiles: ['src/test/pin-locale.ts', 'src/test/pin-platform.ts'],
     include: ['src/**/*.test.ts'],
     css: { include: [/\.css\?raw$/] },

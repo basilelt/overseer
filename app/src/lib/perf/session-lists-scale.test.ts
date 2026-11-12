@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { attention } from '../attention';
 import { byState } from '../session/by-state';
 import type { SidebarItem } from '../session/grouping';
@@ -39,8 +39,6 @@ function scale(run: (f: ReturnType<typeof fixture>) => unknown): [number, number
   });
   return [out[0]!, out[1]!];
 }
-
-afterEach(() => vi.restoreAllMocks());
 
 describe('session lists scale with the session count', () => {
   it('workspaceSummary reads each session a constant number of times', () => {
