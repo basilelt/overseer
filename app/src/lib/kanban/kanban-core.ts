@@ -1,5 +1,5 @@
 import type { Task, TaskStatus } from '../types';
-import { FINISHED_STATUSES, isDone, SESSION_STATUSES } from './task-status';
+import { FINISHED_STATUSES, isDone, isQueued, SESSION_STATUSES } from './task-status';
 
 export const isSession = (t: Task): boolean => t.origin === 'session';
 
@@ -32,5 +32,5 @@ export function blockers(task: Task, tasks: Map<string, Task>): Task[] {
 
 export function startable(tasks: Task[]): Task[] {
   const ids = byId(tasks);
-  return sortColumn(tasks.filter((t) => t.status === 'auto' && !isSession(t) && !blockers(t, ids).length));
+  return sortColumn(tasks.filter((t) => isQueued(t.status) && !isSession(t) && !blockers(t, ids).length));
 }

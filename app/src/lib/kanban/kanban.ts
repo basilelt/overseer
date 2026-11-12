@@ -1,5 +1,5 @@
 import { coarseMinutes, wholeMinutes } from '../duration';
-import { SESSION_STATUSES, TASK_STATUSES, isDone, isRunning, isUnstarted } from './task-status';
+import { SESSION_STATUSES, TASK_STATUSES, isDone, isQueued, isRunning, isUnstarted } from './task-status';
 import type { Task, TaskMessage, TaskStatus } from '../types';
 
 export * from './kanban-core';
@@ -77,7 +77,7 @@ export function autoSummary(tasks: Task[]): { running: number; queued: number } 
   for (const t of tasks) {
     if (isOrganizer(t)) continue;
     if (isRunning(t.status)) running++;
-    else if (t.status === 'auto') queued++;
+    else if (isQueued(t.status)) queued++;
   }
   return { running, queued };
 }
@@ -136,7 +136,7 @@ export function cardStatus(task: Task, next: Set<string>, tasks: Map<string, Tas
     const waiting = blockers(task, tasks);
     if (waiting.length) return { kind: 'blocked', waiting: waiting.map((d) => d.number) };
   }
-  if (task.status === 'auto' && next.has(task.id)) return { kind: 'next' };
+  if (isQueued(task.status) && next.has(task.id)) return { kind: 'next' };
   if (p && p.total > 0 && isRunning(task.status)) {
     return { kind: 'progress', pct: pctOf(p), note: p.note };
   }
@@ -179,7 +179,7 @@ export function canDrop(task: Task, to: TaskStatus): boolean {
 export function moveAction(from: TaskStatus, to: TaskStatus, session = false): MoveAction | null {
   if (from === to) return null;
   if (session) return to === 'completed' ? 'complete' : SESSION_STATUSES.includes(to) ? 'patch' : null;
-  if (to !== 'in_progress') return 'patch';
+  if (!isRunning(to)) return 'patch';
   return from === 'in_testing' || from === 'merged' ? 'reject' : 'start';
 }
 

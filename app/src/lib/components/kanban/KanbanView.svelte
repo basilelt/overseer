@@ -30,7 +30,7 @@
   import { columnAfterSwipe } from '../../mobile/layout';
   import { edgeMoves, edgeRank, initialColumn, moveChoices, type Edge } from '../../mobile/kanbanPhone';
   import { tick, untrack } from 'svelte';
-  import { isDone, isRunning, isTesting } from '../../kanban/task-status';
+  import { isDone, isQueued, isRunning, isTesting } from '../../kanban/task-status';
   import { fallbackProjectColor } from './project-colors';
 
   let search = $state('');
@@ -556,7 +556,7 @@
     {#if phoneCol}
       {@const ptasks = windowed(`p:${phoneCol.status}`, phoneCol.tasks)}
       <div class="pcol" role="tabpanel" tabindex="-1" aria-label={colLabel(phoneCol.status)} ontouchstart={onTouchStart} ontouchend={onTouchEnd} ontouchcancel={() => (touch = null)}>
-        {#if phoneCol.status === 'auto'}
+        {#if isQueued(phoneCol.status)}
           <div class="pextra">
             <span class="chip">{t('kanban.autoChip', { running: summary.running, queued: summary.queued })}</span>
             <span class="pill mono">{settings.defaultModel || t('model.default')}</span>
@@ -669,7 +669,7 @@
         ontoggle={() => toggle(col.status)}
       >
         {#snippet extra()}
-          {#if col.status === 'auto'}
+          {#if isQueued(col.status)}
             <span class="chip">{t('kanban.autoChip', { running: summary.running, queued: summary.queued })}</span>
             <span class="pill mono" title={`${t('kanban.defaultModel')} · ${agentName(app.agents, settings.defaultAgent)}`}>{settings.defaultModel || t('model.default')}</span>
           {/if}

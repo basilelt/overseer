@@ -1,4 +1,4 @@
-export interface CssRule {
+interface CssRule {
   at: string;
   selector: string;
   decls: Record<string, string>;

@@ -17,7 +17,7 @@
   import { CONFIRM_WINDOW_MS } from '../../timing';
   import { agentName, findAgent } from '../../agents';
   import AgentGlyph from '../ui/AgentGlyph.svelte';
-  import { isDone, isRunning, isTesting, isUnstarted } from '../../kanban/task-status';
+  import { isDone, isPending, isRunning, isTesting, isUnstarted } from '../../kanban/task-status';
 
   let {
     task,
@@ -232,7 +232,7 @@
       <span class="age faint">{t(age.key, { n: age.n })}</span>
       {#if !ghost && (!session || onmore)}
         <span class="actions">
-          {#if !session && task.status === 'pending'}
+          {#if !session && isPending(task.status)}
             <button class="act" title={t('kanban.queueAuto')} aria-label={t('kanban.queueAuto')} onclick={act(onqueue)}><svg class="i" width="13" height="13" aria-hidden="true"><use href="#sbi-zap" /></svg></button>
           {/if}
           {#if !session && isUnstarted(task.status)}
