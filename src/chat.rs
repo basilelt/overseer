@@ -143,6 +143,7 @@ struct Chat {
     turn_mid: Option<String>,
     shell: Option<String>,
     line_at: Option<u64>,
+    store: Option<crate::vibe::Store>,
 }
 
 impl Chat {
@@ -180,6 +181,7 @@ impl Chat {
             turn_mid: None,
             shell: None,
             line_at: None,
+            store: None,
         }
     }
 
@@ -235,6 +237,7 @@ impl Chat {
         match self.agent.as_str() {
             "codex" => self.codex(v, at),
             "gemini" => self.gemini(v, at),
+            "vibe" => self.vibe(v),
             _ => self.claude(v, at),
         }
     }
@@ -1089,6 +1092,144 @@ impl Chat {
         }
     }
 
+    fn vibe(&mut self, v: &Value) {
+        let Some(id) = v["id"].as_str().filter(|i| !i.is_empty()) else {
+            return;
+        };
+        let at = v["createdAt"].as_i64();
+        match v["type"].as_str() {
+            Some("message") => {
+                let text: Vec<&str> = v["content"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .filter_map(|c| c["text"].as_str())
+                    .collect();
+                let text = text.join("\n");
+                match v["role"].as_str() {
+                    Some("user") => self.push_user(id, at, &text, 0),
+                    Some("assistant") => {
+                        self.last_msg = None;
+                        self.push_text(id, None, at, &text)
+                    }
+                    _ => {}
+                }
+            }
+            Some("effect") => self.vibe_tool(id, at, v),
+            Some("checkpoint") => match v["kind"].as_str() {
+                Some("model_change") => {
+                    if let Some(m) = v["details"]["model"].as_str() {
+                        self.model = Some(m.to_string());
+                    }
+                }
+                Some("compaction") => {
+                    self.last_msg = None;
+                    self.upsert(
+                        id,
+                        json!({"kind": "notice", "at": at_json(at), "text": "Context compacted"}),
+                    );
+                }
+                _ => {}
+            },
+            Some("error") => {
+                let text = v["message"]
+                    .as_str()
+                    .or(v["error"]["message"].as_str())
+                    .unwrap_or("Error");
+                self.last_msg = None;
+                self.upsert(
+                    id,
+                    json!({"kind": "notice", "at": at_json(at), "text": capped(text, OUTPUT_CAP)}),
+                );
+            }
+            _ => {}
+        }
+    }
+
+    fn vibe_tool(&mut self, id: &str, at: Option<i64>, v: &Value) {
+        let d = &v["detail"];
+        let name = d["toolName"]
+            .as_str()
+            .or(v["title"].as_str())
+            .unwrap_or("tool");
+        let input = &d["input"];
+        let s = |k: &str| input[k].as_str().filter(|x| !x.is_empty());
+        let leaf = name.rsplit('.').next().unwrap_or(name);
+        if name == "vibe.todo" {
+            if input["action"] == "write" {
+                self.push_todos(id, at, todos(&input["todos"], "content"));
+            }
+            return;
+        }
+        let mut t = match (d["kind"].as_str(), name) {
+            (Some("subagent"), _) => {
+                let label = d["agentName"].as_str().or(s("task")).unwrap_or("Subagent");
+                let mut t = tool(name, "task", one_line(label, 160));
+                if let Some(a) = s("agent") {
+                    t.insert("detail".into(), json!(a));
+                }
+                t
+            }
+            (_, "file_system.bash") => {
+                let cmd = s("command").unwrap_or("");
+                let mut t = tool(name, "bash", one_line(cmd, 160));
+                t.insert("command".into(), json!(capped(cmd, DIFF_CAP)));
+                t
+            }
+            (_, "file_system.read_file") => {
+                let p = s("path").or(s("file_path")).unwrap_or("");
+                let mut t = tool(name, "read", format!("Read {}", base(p)));
+                t.insert("path".into(), json!(p));
+                t
+            }
+            (_, "file_system.write_file") => {
+                let p = s("path").or(s("file_path")).unwrap_or("");
+                let mut t = tool(name, "write", format!("Write {}", base(p)));
+                t.insert("path".into(), json!(p));
+                t.insert("diff".into(), diff("", s("content").unwrap_or("")));
+                t
+            }
+            (_, "file_system.edit" | "file_system.search_replace") => {
+                let p = s("file_path").or(s("path")).unwrap_or("");
+                let mut t = tool(name, "edit", format!("Edit {}", base(p)));
+                t.insert("path".into(), json!(p));
+                t.insert(
+                    "diff".into(),
+                    diff(s("old_string").unwrap_or(""), s("new_string").unwrap_or("")),
+                );
+                t
+            }
+            _ if leaf.contains("search") || leaf.contains("fetch") || leaf == "open_url" => tool(
+                name,
+                "web",
+                one_line(s("query").or(s("url")).unwrap_or(leaf), 160),
+            ),
+            _ => {
+                let label = d["display"]["summary"]
+                    .as_str()
+                    .filter(|l| !l.is_empty())
+                    .unwrap_or(name);
+                tool(name, "other", one_line(label, 160))
+            }
+        };
+        let st = &v["state"];
+        let state = match st["status"].as_str() {
+            Some("completed") => "done",
+            Some("failed" | "skipped") => "failed",
+            _ => "running",
+        };
+        t.insert("state".into(), json!(state));
+        let mut tv = Value::Object(t);
+        let out = st["outputText"]
+            .as_str()
+            .filter(|o| !o.is_empty())
+            .or(st["error"]["message"].as_str())
+            .or(st["reason"].as_str())
+            .unwrap_or("");
+        set_output(&mut tv, out);
+        self.push_tool(id, at, tv);
+    }
+
     fn gemini(&mut self, v: &Value, at: Option<i64>) {
         let id = v["id"].as_str().unwrap_or("").to_string();
         if id.is_empty() {
@@ -1228,20 +1369,45 @@ impl Cache {
     }
 }
 
+// Lets tests pause a cold parse and see who waits on it, instead of racing a slow file.
 #[cfg(test)]
-fn cold_counts() -> &'static Mutex<HashMap<PathBuf, usize>> {
-    static C: OnceLock<Mutex<HashMap<PathBuf, usize>>> = OnceLock::new();
-    C.get_or_init(Default::default)
+#[derive(Default)]
+struct Probe {
+    parses: HashMap<PathBuf, usize>,
+    waits: HashMap<PathBuf, usize>,
+    held: HashSet<PathBuf>,
+}
+
+#[cfg(test)]
+fn probe() -> &'static (Mutex<Probe>, Condvar) {
+    static P: OnceLock<(Mutex<Probe>, Condvar)> = OnceLock::new();
+    P.get_or_init(Default::default)
+}
+
+#[cfg(test)]
+fn probe_lock() -> MutexGuard<'static, Probe> {
+    probe().0.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+#[cfg(test)]
+fn probe_wait(path: &Path) {
+    *probe_lock().waits.entry(path.to_path_buf()).or_default() += 1;
+    probe().1.notify_all();
+}
+
+#[cfg(test)]
+fn probe_parse(path: &Path) {
+    let mut p = probe_lock();
+    *p.parses.entry(path.to_path_buf()).or_default() += 1;
+    probe().1.notify_all();
+    while p.held.contains(path) {
+        p = probe().1.wait(p).unwrap_or_else(|e| e.into_inner());
+    }
 }
 
 #[cfg(test)]
 fn cold_parses(path: &Path) -> usize {
-    cold_counts()
-        .lock()
-        .unwrap()
-        .get(path)
-        .copied()
-        .unwrap_or(0)
+    probe_lock().parses.get(path).copied().unwrap_or(0)
 }
 
 fn slots() -> &'static Mutex<Cache> {
@@ -1278,7 +1444,52 @@ fn stamp(path: &Path) -> Option<(u64, i64)> {
     Some((m.len(), t))
 }
 
+fn refresh_vibe(chat: &mut Chat, dir: &Path) -> Option<bool> {
+    use crate::vibe::Change;
+    let change = match chat.store.as_mut() {
+        Some(s) => s.refresh(dir)?,
+        None => {
+            let (s, all) = crate::vibe::load(dir)?;
+            chat.store = Some(s);
+            Change::Append(all)
+        }
+    };
+    if let Some(m) = chat.store.as_ref().and_then(|s| s.model()) {
+        chat.model.get_or_insert_with(|| m.to_string());
+    }
+    match change {
+        Change::Same => Some(false),
+        Change::Append(v) => {
+            for e in &v {
+                chat.ingest(e);
+            }
+            Some(false)
+        }
+        Change::Reset(v) => {
+            let (live, store) = (chat.live, chat.store.take());
+            *chat = Chat::new(&chat.agent, dir);
+            chat.live = live;
+            chat.model = store.as_ref().and_then(|s| s.model()).map(str::to_string);
+            chat.store = store;
+            for e in &v {
+                chat.ingest(e);
+            }
+            Some(true)
+        }
+    }
+}
+
+pub fn transcript_stamp(path: &Path) -> Option<u64> {
+    if path.is_dir() {
+        return Some(crate::vibe::stamp(path));
+    }
+    std::fs::metadata(path).ok().map(|m| m.len())
+}
+
 fn refresh(chat: &mut Chat, path: &Path) -> Option<bool> {
+    if chat.agent == "vibe" {
+        return refresh_vibe(chat, path);
+    }
     let st = stamp(path)?;
     if path.extension().is_some_and(|e| e == "json") {
         if st != chat.stamp {
@@ -1433,7 +1644,7 @@ fn evict(cache: &mut Cache, now: i64) {
 }
 
 pub fn supported(agent: &str) -> bool {
-    matches!(agent, "claude" | "codex" | "gemini")
+    matches!(agent, "claude" | "codex" | "gemini" | "vibe")
 }
 
 pub fn page(agent: &str, path: &Path, q: Query) -> Option<Value> {
@@ -1442,6 +1653,8 @@ pub fn page(agent: &str, path: &Path, q: Query) -> Option<Value> {
     }
     let mut g = lock();
     while g.loading.contains(path) {
+        #[cfg(test)]
+        probe_wait(path);
         g = parsed().wait(g).unwrap_or_else(|e| e.into_inner());
     }
     let fresh = !g.chats.contains_key(path);
@@ -1453,13 +1666,7 @@ pub fn page(agent: &str, path: &Path, q: Query) -> Option<Value> {
     // A cold transcript can take seconds to parse: do it outside the lock so other chats stay served.
     let loaded = if fresh {
         #[cfg(test)]
-        {
-            *cold_counts()
-                .lock()
-                .unwrap()
-                .entry(path.to_path_buf())
-                .or_default() += 1;
-        }
+        probe_parse(path);
         let mut c = Chat::new(agent, path);
         c.live = q.live;
         refresh(&mut c, path)?;
@@ -1633,6 +1840,32 @@ fn scan_dir(dir: &Path, prefix: &str, depth: u32, source: &str, out: &mut Vec<Va
     }
 }
 
+fn scan_skills(dir: &Path, source: &str, out: &mut Vec<Value>) {
+    let Ok(rd) = std::fs::read_dir(dir) else {
+        return;
+    };
+    let mut items: Vec<_> = rd.flatten().collect();
+    items.sort_by_key(|e| e.file_name());
+    for e in items {
+        let name = e.file_name().to_string_lossy().into_owned();
+        let md = e.path().join("SKILL.md");
+        if out.len() >= 300 || name.starts_with('.') || !md.is_file() {
+            continue;
+        }
+        let mut head = String::new();
+        let _ = std::fs::File::open(&md).and_then(|f| f.take(8 << 10).read_to_string(&mut head));
+        if head
+            .lines()
+            .any(|l| l.replace(' ', "") == "user-invocable:false")
+        {
+            continue;
+        }
+        out.push(
+            json!({"name": format!("/{name}"), "description": description(&md), "source": source}),
+        );
+    }
+}
+
 pub fn commands(agent: &str, claude_dir: &Path, codex_dir: &Path, cwd: &str) -> Value {
     let mut out = vec![];
     match agent {
@@ -1649,6 +1882,15 @@ pub fn commands(agent: &str, claude_dir: &Path, codex_dir: &Path, cwd: &str) -> 
             scan_dir(&claude_dir.join("commands"), "", 3, "user", &mut out);
         }
         "codex" => scan_dir(&codex_dir.join("prompts"), "prompts:", 0, "user", &mut out),
+        "vibe" => {
+            if !cwd.is_empty() {
+                for sub in [".vibe/skills", ".agents/skills"] {
+                    scan_skills(&Path::new(cwd).join(sub), "project", &mut out);
+                }
+            }
+            scan_skills(&crate::vibe::home().join("skills"), "user", &mut out);
+            scan_skills(&crate::home().join(".agents/skills"), "user", &mut out);
+        }
         _ => {}
     }
     let mut seen = std::collections::HashSet::new();
@@ -2061,6 +2303,86 @@ mod tests {
     }
 
     #[test]
+    fn vibe_sessions_read_the_store_and_follow_the_journal() {
+        use crate::vibe::fixture::*;
+        let h = tmp("vibe");
+        let first = vec![
+            message("m1", "user", "Fix the login bug", 1_700_000_000_000),
+            effect(
+                "e1",
+                "file_system.read_file",
+                json!({"path": "/w/src/auth.rs"}),
+                "completed",
+                "fn login()",
+                1_700_000_001_000,
+            ),
+            effect(
+                "e2",
+                "file_system.edit",
+                json!({"file_path": "/w/src/auth.rs", "old_string": "a", "new_string": "b"}),
+                "completed",
+                "",
+                1_700_000_002_000,
+            ),
+            effect(
+                "e3",
+                "file_system.bash",
+                json!({"command": "cargo test"}),
+                "failed",
+                "",
+                1_700_000_003_000,
+            ),
+            effect(
+                "e4",
+                "vibe.todo",
+                json!({"action": "write", "todos": [{"id": "1", "content": "Fix it", "status": "in_progress", "priority": "high"}]}),
+                "completed",
+                "",
+                1_700_000_004_000,
+            ),
+        ];
+        let dir =
+            crate::vibe::fixture::session(&h, "s1", meta_json("s1", "/w", None), 1, &[first], "");
+        let v = page("vibe", &dir, tail()).unwrap();
+        assert_eq!(v["model"], "mistral-medium-3.5");
+        let e = entries(&v);
+        assert_eq!(kinds(&v), ["user", "tool", "tool", "tool", "todos"]);
+        assert_eq!(e[0]["text"], "Fix the login bug");
+        assert_eq!(e[0]["at"], format_rfc3339(1_700_000_000_000));
+        assert_eq!(find(&v, "e1")["tool"]["label"], "Read auth.rs");
+        assert_eq!(find(&v, "e1")["tool"]["output"], "fn login()");
+        assert_eq!(
+            find(&v, "e2")["tool"]["diff"],
+            json!({"old": "a", "new": "b"})
+        );
+        assert_eq!(find(&v, "e3")["tool"]["state"], "failed");
+        assert_eq!(find(&v, "e4")["todos"][0]["text"], "Fix it");
+        let c = v["cursor"].as_u64().unwrap();
+        let seg = dir.join("journal").join(format!("{:016}.jsonl", 101));
+        append(
+            &seg,
+            &delta(
+                1,
+                json!([{"op": "append_entry", "entry": effect("e5", "file_system.bash", json!({"command": "ls"}), "running", "", 1_700_000_005_000)}]),
+            ),
+        );
+        append(
+            &seg,
+            &delta(
+                2,
+                json!([{"op": "replace_entry", "id": "e5", "entry": effect("e5", "file_system.bash", json!({"command": "ls"}), "completed", "a.txt", 1_700_000_005_000)}, {"op": "append_entry", "entry": message("m2", "assistant", "Fixed.", 1_700_000_006_000)}]),
+            ),
+        );
+        let v = page("vibe", &dir, after(c)).unwrap();
+        assert_eq!(find(&v, "e5")["tool"]["state"], "done");
+        assert_eq!(find(&v, "m2")["text"], "Fixed.");
+        assert_eq!(find(&v, "m2")["model"], "mistral-medium-3.5");
+        append(&seg, &delta(3, json!([{"op": "remove_entry", "id": "e5"}])));
+        let v = page("vibe", &dir, tail()).unwrap();
+        assert!(entries(&v).iter().all(|e| e["id"] != "e5"));
+    }
+
+    #[test]
     fn gemini_sessions() {
         let d = tmp("gemini");
         let p = copy("activity/gemini.jsonl", &d);
@@ -2465,52 +2787,42 @@ mod tests {
         std::fs::remove_dir_all(&d).unwrap();
     }
 
-    // Given a cold transcript whose read blocks (a FIFO), opened by two callers at once
-    // When the parse is still running for the first one
-    // Then the second waits for it instead of starting its own full parse, and the watcher stays quiet
-    #[cfg(unix)]
+    fn probe_until(what: &str, done: impl Fn(&Probe) -> bool) {
+        let timed_out = probe()
+            .1
+            .wait_timeout_while(probe_lock(), std::time::Duration::from_secs(10), |p| {
+                !done(p)
+            })
+            .unwrap()
+            .1
+            .timed_out();
+        assert!(!timed_out, "timed out waiting for {what}");
+    }
+
+    // Given a cold transcript, opened by two callers while its parse is still running
+    // When the second caller arrives during the first one's parse
+    // Then it waits for that parse instead of starting its own, and the watcher stays quiet
     #[test]
     fn concurrent_cold_pages_parse_once() {
-        use std::ffi::CString;
-        use std::os::unix::ffi::OsStrExt;
-        use std::os::unix::fs::OpenOptionsExt;
-        use std::sync::atomic::{AtomicBool, Ordering};
-        use std::sync::Arc;
-        use std::time::Duration;
         let d = tmp("twice");
         let slow = d.join("slow.json");
-        let path = CString::new(slow.as_os_str().as_bytes()).unwrap();
-        assert_eq!(unsafe { libc::mkfifo(path.as_ptr(), 0o600) }, 0);
+        std::fs::write(&slow, br#"{"messages": []}"#).unwrap();
         slots().lock().unwrap().dropped.insert(slow.clone());
+        probe_lock().held.insert(slow.clone());
         let s = slow.clone();
         let a = std::thread::spawn(move || page("gemini", &s, tail()));
-        std::thread::sleep(Duration::from_millis(150));
+        probe_until("the first cold parse", |p| p.parses.contains_key(&slow));
         let s = slow.clone();
         let b = std::thread::spawn(move || page("gemini", &s, tail()));
-        std::thread::sleep(Duration::from_millis(150));
+        probe_until("the second caller to wait", |p| p.waits.contains_key(&slow));
         assert_eq!(
             changed(&slow),
             None,
             "the watcher announced a chat being loaded"
         );
-        // Feeds every reader that opens the FIFO, without blocking when none is there.
-        let stop = Arc::new(AtomicBool::new(false));
-        let (w, halt) = (slow.clone(), stop.clone());
-        let feeder = std::thread::spawn(move || {
-            while !halt.load(Ordering::Relaxed) {
-                if let Ok(mut f) = std::fs::OpenOptions::new()
-                    .write(true)
-                    .custom_flags(libc::O_NONBLOCK)
-                    .open(&w)
-                {
-                    let _ = f.write_all(br#"{"messages": []}"#);
-                }
-                std::thread::sleep(Duration::from_millis(20));
-            }
-        });
+        probe_lock().held.remove(&slow);
+        probe().1.notify_all();
         let (ra, rb) = (a.join().unwrap(), b.join().unwrap());
-        stop.store(true, Ordering::Relaxed);
-        feeder.join().unwrap();
         assert!(ra.is_some() && rb.is_some());
         assert_eq!(cold_parses(&slow), 1);
         std::fs::remove_dir_all(&d).unwrap();

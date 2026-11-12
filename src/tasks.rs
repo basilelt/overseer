@@ -969,7 +969,7 @@ pub(crate) fn start_with_args(
     }
     let by_flag = agent.prompt.is_some();
     let p = applied(ctx, &t);
-    let mcp = match agent.id {
+    let injected = match agent.id {
         "codex" => crate::codex::overseer_mcp(
             &crate::actions::self_exe(),
             &ctx.state_dir.to_string_lossy(),
@@ -980,10 +980,11 @@ pub(crate) fn start_with_args(
             &ctx.state_dir.to_string_lossy(),
             &t.id,
         ),
+        "vibe" => vec!["--trust".to_string()],
         _ => vec![],
     };
     let mut launch = p.clone();
-    launch.extra.extend(mcp.iter().cloned());
+    launch.extra.extend(injected.iter().cloned());
     launch.extra.extend(extra.iter().cloned());
     let cmd = argv(
         ctx,
@@ -1016,7 +1017,7 @@ pub(crate) fn start_with_args(
         }
         flags.extend(crate::agents::auto_approve_flags(agent.id, &set));
     }
-    flags.extend(mcp);
+    flags.extend(injected);
     let (cols, rows) = size.unwrap_or((120, 32));
     let term = term::spawn(Spec {
         cwd: wt,

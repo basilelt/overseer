@@ -142,6 +142,10 @@ pub fn support(a: &Agent) -> Support {
             subagents: Some(Via::Env),
             ..base
         },
+        "vibe" => Support {
+            model: Some(Via::Env),
+            ..base
+        },
         "shell" => NO,
         _ => base,
     }
@@ -380,6 +384,7 @@ pub fn apply(a: &Agent, p: Option<&Profile>, model: &str, effort: &str) -> Appli
                 env.push(("OPENCODE_CONFIG_CONTENT".into(), cfg));
             }
         }
+        "vibe" if !model.is_empty() => env.push(("VIBE_ACTIVE_MODEL".into(), model.clone())),
         _ => {}
     }
     let chip = (p.is_some() || !model.is_empty() || !effort.is_empty()).then(|| Chip {
@@ -885,6 +890,18 @@ pub fn for_resume(state_dir: &Path, a: &Agent, cwd: &str) -> Applied {
     }
 }
 
+pub fn for_restore(state_dir: &Path, a: &Agent, cwd: &str, saved: Option<&Chip>) -> Applied {
+    let Some(chip) = saved else {
+        return for_resume(state_dir, a, cwd);
+    };
+    let p = Some(chip.id.as_str())
+        .filter(|id| !id.is_empty())
+        .and_then(|id| find(&load(state_dir), id));
+    let mut x = apply(a, p.as_ref(), "", "");
+    x.chip = Some(chip.clone());
+    x
+}
+
 pub fn routes(
     ctx: &crate::Ctx,
     r: &crate::daemon::Request,
@@ -1089,6 +1106,33 @@ mod tests {
             .iter()
             .map(|(k, v)| (k.as_str(), v.as_str()))
             .collect()
+    }
+
+    #[test]
+    fn restore_keeps_the_saved_chip_and_reapplies_its_profile_env() {
+        let d = std::env::temp_dir().join(format!("sb-profiles-{}-restore", std::process::id()));
+        let claude = get("claude").unwrap();
+        let chip = Chip {
+            id: "economy".into(),
+            name: "Economy".into(),
+            model: "sonnet".into(),
+            effort: "low".into(),
+        };
+        let a = for_restore(&d, claude, "/nowhere", Some(&chip));
+        assert_eq!(a.chip.as_ref(), Some(&chip));
+        assert_eq!(env(&a), env(&applied("claude", "economy", "", "")));
+        let gone = Chip {
+            id: "deleted".into(),
+            ..chip.clone()
+        };
+        let a = for_restore(&d, claude, "/nowhere", Some(&gone));
+        assert_eq!(a.chip, Some(gone), "a deleted profile keeps its chip");
+        assert!(a.env.is_empty());
+        assert_eq!(
+            for_restore(&d, claude, "/nowhere", None),
+            for_resume(&d, claude, "/nowhere"),
+            "no saved chip falls back to the project profile"
+        );
     }
 
     #[test]
@@ -1325,6 +1369,33 @@ mod tests {
         let v: Value = serde_json::from_str(v).unwrap();
         assert_eq!(v["small_model"], "anthropic/claude-haiku-4-5");
         assert_eq!(v["agent"]["review"]["model"], "openai/gpt-5.4-mini");
+    }
+
+    #[test]
+    fn vibe_takes_its_profile_model_from_the_environment() {
+        let p = Profile {
+            id: "v".into(),
+            name: "V".into(),
+            builtin: false,
+            agents: BTreeMap::from([(
+                "vibe".to_string(),
+                AgentCfg {
+                    model: "devstral-small".into(),
+                    effort: "high".into(),
+                    ..Default::default()
+                },
+            )]),
+        };
+        let a = apply(get("vibe").unwrap(), Some(&p), "", "");
+        assert_eq!(
+            a.env,
+            [(
+                "VIBE_ACTIVE_MODEL".to_string(),
+                "devstral-small".to_string()
+            )]
+        );
+        assert!(a.effort.is_empty() && a.extra.is_empty());
+        assert!(apply(get("vibe").unwrap(), None, "", "").env.is_empty());
     }
 
     #[test]

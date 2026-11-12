@@ -18,6 +18,7 @@ describe('installScript', () => {
     expect(installScript('ponytail', 'codex')).toBe("npx -y skills add DietrichGebert/ponytail --skill '*' -g -a codex -y");
     expect(installScript('caveman', 'copilot')).toContain('-a github-copilot');
     expect(installScript('caveman', 'agy')).toContain('-a antigravity');
+    expect(installScript('ponytail', 'vibe')).toBe("npx -y skills add DietrichGebert/ponytail --skill '*' -g -a mistral-vibe -y");
   });
 
   it('installs the rtk binary when missing, then wires its hook for the agent', () => {
@@ -27,6 +28,7 @@ describe('installScript', () => {
     expect(s.endsWith('rtk init -g --auto-patch')).toBe(true);
     expect(installScript('rtk', 'codex')!.endsWith('rtk init -g --codex')).toBe(true);
     expect(installScript('rtk', 'cursor')!.endsWith('rtk init -g --agent cursor')).toBe(true);
+    expect(installScript('rtk', 'vibe')!.endsWith('rtk init -g --agent vibe')).toBe(true);
   });
 
   it('returns null where a tool has no install route', () => {

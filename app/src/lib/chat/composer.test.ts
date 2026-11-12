@@ -50,6 +50,9 @@ describe('slash commands', () => {
     expect(slashMatches('comp', cmds)[0].name).toBe('/compact');
     expect(slashMatches('rev', cmds).map((c) => c.name)).toEqual(['/review', '/review-pr']);
     expect(commandsFor('codex', []).some((c) => c.name === '/approvals')).toBe(true);
+    const vibe = commandsFor('vibe', [{ name: '/review', description: 'skill', source: 'user' }]).map((c) => c.name);
+    expect(vibe).toEqual(expect.arrayContaining(['/review', '/compact', '/rewind', '/branch']));
+    expect(vibe).not.toContain('/approvals');
     expect(commandsFor('claude', [{ name: '/clear', description: 'mine', source: 'project' }]).filter((c) => c.name === '/clear')).toHaveLength(1);
   });
 

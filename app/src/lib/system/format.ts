@@ -129,7 +129,7 @@ export function mergeHistory(prev: SysPoint[], add: SysPoint[], now: number, win
   return out.filter((p) => p.t >= now - windowMs);
 }
 
-const AGENT_NAMES: Record<string, string> = { claude: 'Claude', codex: 'Codex', gemini: 'Gemini', shell: 'Shell' };
+const AGENT_NAMES: Record<string, string> = { claude: 'Claude', codex: 'Codex', gemini: 'Gemini', vibe: 'Vibe', shell: 'Shell' };
 
 export function basename(p: string): string {
   const parts = p.replace(/[\\/]+$/, '').split(/[\\/]/);
