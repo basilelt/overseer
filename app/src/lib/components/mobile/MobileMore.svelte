@@ -34,13 +34,13 @@
   import type { ThemePref } from '../../theme/theme';
   import { app } from '../../state.svelte';
   import { command } from '../../commands/commands';
-  import { registerMore } from '../../commands/commands-more';
+  import { registerMore, type CommandId } from '../../commands/commands-more';
   import { apk, at, pillLabel } from '../../mobile/apk-update.svelte';
   import RotateCw from '@lucide/svelte/icons/rotate-cw';
 
   registerMore();
 
-  export const tools: { id: string; icon: Component<{ size?: number }>; label: () => string; needs?: () => boolean; badge?: () => number }[] = [
+  export const tools: { id: CommandId; icon: Component<{ size?: number }>; label: () => string; needs?: () => boolean; badge?: () => number }[] = [
     { id: 'notifications', icon: Bell, label: () => t('center.title'), badge: () => center.unread },
     { id: 'ports', icon: Network, label: () => t('ports.title') },
     { id: 'system', icon: Activity, label: () => st('title') },

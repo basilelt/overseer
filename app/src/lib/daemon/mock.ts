@@ -14,7 +14,7 @@ import { cleanTitle } from '../tabs/titles';
 import { cleanNote, NOTES_MAX, type NotesReply } from '../notes';
 import { SESSION_STATUSES, TASK_STATUSES, isDone, isRunning, isUnstarted } from '../kanban/task-status';
 import { attachProblem, IMAGE_EXTS, VIDEO_EXTS } from '../feedback/feedback';
-import { AUTO_APPROVE_ARGS, isShellId } from '../agents';
+import { isShellId } from '../agents';
 import type { DirListing } from '../dirs';
 import type { Action, Proposal, Result } from '../workspace/organize';
 import type {
@@ -58,6 +58,17 @@ import type {
   LifecyclePatch,
   UninstallReport,
 } from '../types';
+
+const AUTO_APPROVE_ARGS: Record<string, string[]> = {
+  claude: ['--permission-mode', 'auto'],
+  codex: ['--ask-for-approval', 'never'],
+  gemini: ['--approval-mode=yolo'],
+  agy: ['--mode=auto'],
+  opencode: ['--auto'],
+  copilot: ['--allow-all'],
+  cursor: ['--force'],
+  vibe: ['--auto-approve'],
+};
 
 const MIN = 60_000;
 

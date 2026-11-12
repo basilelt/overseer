@@ -35,8 +35,7 @@ import SunMoon from '@lucide/svelte/icons/sun-moon';
 import Unplug from '@lucide/svelte/icons/unplug';
 import Users from '@lucide/svelte/icons/users';
 import WandSparkles from '@lucide/svelte/icons/wand-sparkles';
-import type { Component } from 'svelte';
-import { allCommands, connected, register, type CommandDef } from './commands';
+import { allCommands, connected, register, type CommandDef, type CommandIcon, type CoreId } from './commands';
 import { diag, dt } from '../diag/diag.svelte';
 import { feedback, ft } from '../feedback/feedback.svelte';
 import { toggleLiveReview } from '../git/live-actions';
@@ -60,7 +59,7 @@ import { broadcastTo, createGroup, holdAll } from '../workspace/wsactions';
 
 const label = (key: Key) => () => t(key);
 
-const CORE_LABELS: Record<string, Key> = {
+const CORE_LABELS: Record<CoreId, Key> = {
   'kanban': 'palette.openKanban',
   'panel': 'palette.togglePanel',
   'source-control': 'palette.sourceControl',
@@ -94,7 +93,7 @@ const CORE_LABELS: Record<string, Key> = {
   'close-window': 'keys.closeWindow',
 };
 
-const AGENTS_VIEW = new Set(['split-right', 'split-down', 'tab-new', 'tab-close', 'tab-reopen']);
+const AGENTS_VIEW = new Set<CoreId>(['split-right', 'split-down', 'tab-new', 'tab-close', 'tab-reopen']);
 
 function reviewChanges(side = false) {
   const target = reviewTargetFor(app.selected);
@@ -106,43 +105,45 @@ const nextTheme: Record<ThemePref, ThemePref> = { auto: 'light', light: 'dark', 
 const inWorkspace = () => app.connected && !!app.currentWorkspace;
 const scope = () => ({ kind: 'workspace', id: app.workspaceId }) as const;
 
-const APK: CommandDef = { id: 'apk-updates', label: () => at('check'), available: () => __SELF_UPDATE__ && apk.enabled && apk.updates, run: () => apk.check(true) };
+const APK = { id: 'apk-updates', icon: RefreshCw, label: () => at('check'), available: () => __SELF_UPDATE__ && apk.enabled && apk.updates, run: () => apk.check(true) } as const satisfies CommandDef;
 
-export const more: CommandDef[] = [
-  { id: 'review', label: label('review.palette'), section: 'views', available: connected, run: () => reviewChanges() },
-  { id: 'review-beside', label: label('review.beside'), section: 'views', available: connected, run: () => reviewChanges(true) },
-  { id: 'browser', label: label('palette.openBrowser'), section: 'views', run: () => (app.view = 'browser') },
-  { id: 'graph', label: label('palette.openGit'), section: 'views', run: () => app.openProjectTab('graph') },
-  { id: 'worktrees', label: label('palette.openWorktrees'), section: 'views', run: () => app.openProjectTab('worktrees') },
-  { id: 'system', label: () => st('open'), section: 'views', available: connected, run: () => app.open('system') },
-  { id: 'usage', label: () => ust('open'), section: 'views', available: connected, run: () => app.open('usage') },
-  { id: 'prs', label: () => gt('open'), section: 'views', available: connected, run: () => openPrReviews() },
-  { id: 'review-close', label: label('review.close'), available: () => !!beside.key, run: () => closeSideReview() },
-  { id: 'agents', label: label('palette.openAgents'), run: () => (app.view = 'agents') },
-  { id: 'connect', label: () => t(app.connected ? 'palette.switchHost' : 'palette.connectHost'), run: () => app.open('connect') },
-  { id: 'add-host', label: label('palette.addHost'), available: () => app.connected || app.hosts.length > 1, run: () => app.open('connect', 'add') },
-  { id: 'disconnect', label: label('palette.disconnect'), available: connected, run: () => app.disconnect() },
-  { id: 'theme', label: label('palette.toggleTheme'), run: () => saveSettings({ theme: nextTheme[settings.theme] }) },
-  { id: 'live-review', label: label('palette.toggleLiveReview'), run: () => toggleLiveReview() },
-  { id: 'skills', label: label('palette.skills'), available: connected, run: () => app.open('settings', 'skills') },
-  { id: 'logs', label: () => dt('show'), run: () => diag.open('live') },
-  { id: 'feedback', label: () => ft('title'), run: () => feedback.show() },
-  { id: 'record', label: () => rt('palette'), available: () => recorder.phase === 'idle', run: () => recorder.setup() },
-  { id: 'tour', label: () => tt('palette'), run: () => replayTour() },
-  { id: 'organize', label: label('org.palette'), available: connected, run: () => organizer.show() },
-  { id: 'ws-broadcast', label: label('palette.broadcastWorkspace'), available: inWorkspace, run: () => broadcastTo(scope()) },
-  { id: 'ws-hold', label: label('palette.holdWorkspace'), available: inWorkspace, run: () => holdAll(scope(), 'hold') },
-  { id: 'ws-resume', label: label('palette.resumeWorkspace'), available: inWorkspace, run: () => holdAll(scope(), 'resume') },
-  { id: 'group-new', label: label('palette.groupFromSelection'), available: () => app.connected && app.multi.size > 0, run: () => createGroup([...app.multi]) },
-  { id: 'sel-broadcast', label: label('palette.broadcastSelection'), available: () => app.connected && app.multi.size > 0, run: () => broadcastTo({ kind: 'items', keys: [...app.multi] }) },
-  { id: 'ports', label: label('palette.ports'), available: connected, run: () => app.open('ports') },
-  { id: 'forward-port', label: label('palette.forwardPort'), available: () => app.connected && app.conn.target.kind !== 'local', run: () => app.open('ports', 'forward') },
-  { id: 'updates', label: () => ut('check'), available: () => updater.enabled && !app.mobile, run: () => updater.check(true) },
-  { id: 'notifications', label: label('center.title'), run: () => app.open('notifications') },
+export const more = [
+  { id: 'review', icon: GitPullRequest, label: label('review.palette'), section: 'views', available: connected, run: () => reviewChanges() },
+  { id: 'review-beside', icon: GitPullRequest, label: label('review.beside'), section: 'views', available: connected, run: () => reviewChanges(true) },
+  { id: 'browser', icon: Globe, label: label('palette.openBrowser'), section: 'views', run: () => (app.view = 'browser') },
+  { id: 'graph', icon: GitGraph, label: label('palette.openGit'), section: 'views', run: () => app.openProjectTab('graph') },
+  { id: 'worktrees', icon: FolderTree, label: label('palette.openWorktrees'), section: 'views', run: () => app.openProjectTab('worktrees') },
+  { id: 'system', icon: Activity, label: () => st('open'), section: 'views', available: connected, run: () => app.open('system') },
+  { id: 'usage', icon: Gauge, label: () => ust('open'), section: 'views', available: connected, run: () => app.open('usage') },
+  { id: 'prs', icon: GitPullRequestArrow, label: () => gt('open'), section: 'views', available: connected, run: () => openPrReviews() },
+  { id: 'review-close', icon: GitPullRequest, label: label('review.close'), available: () => !!beside.key, run: () => closeSideReview() },
+  { id: 'agents', icon: LayoutGrid, label: label('palette.openAgents'), run: () => (app.view = 'agents') },
+  { id: 'connect', icon: Server, label: () => t(app.connected ? 'palette.switchHost' : 'palette.connectHost'), run: () => app.open('connect') },
+  { id: 'add-host', icon: Server, label: label('palette.addHost'), available: () => app.connected || app.hosts.length > 1, run: () => app.open('connect', 'add') },
+  { id: 'disconnect', icon: Unplug, label: label('palette.disconnect'), available: connected, run: () => app.disconnect() },
+  { id: 'theme', icon: SunMoon, label: label('palette.toggleTheme'), run: () => saveSettings({ theme: nextTheme[settings.theme] }) },
+  { id: 'live-review', icon: GitGraph, label: label('palette.toggleLiveReview'), run: () => toggleLiveReview() },
+  { id: 'skills', icon: Puzzle, label: label('palette.skills'), available: connected, run: () => app.open('settings', 'skills') },
+  { id: 'logs', icon: ScrollText, label: () => dt('show'), run: () => diag.open('live') },
+  { id: 'feedback', icon: MessageSquarePlus, label: () => ft('title'), run: () => feedback.show() },
+  { id: 'record', icon: Clapperboard, label: () => rt('palette'), available: () => recorder.phase === 'idle', run: () => recorder.setup() },
+  { id: 'tour', icon: Compass, label: () => tt('palette'), run: () => replayTour() },
+  { id: 'organize', icon: WandSparkles, label: label('org.palette'), available: connected, run: () => organizer.show() },
+  { id: 'ws-broadcast', icon: Megaphone, label: label('palette.broadcastWorkspace'), available: inWorkspace, run: () => broadcastTo(scope()) },
+  { id: 'ws-hold', icon: Pause, label: label('palette.holdWorkspace'), available: inWorkspace, run: () => holdAll(scope(), 'hold') },
+  { id: 'ws-resume', icon: Play, label: label('palette.resumeWorkspace'), available: inWorkspace, run: () => holdAll(scope(), 'resume') },
+  { id: 'group-new', icon: Users, label: label('palette.groupFromSelection'), available: () => app.connected && app.multi.size > 0, run: () => createGroup([...app.multi]) },
+  { id: 'sel-broadcast', icon: Megaphone, label: label('palette.broadcastSelection'), available: () => app.connected && app.multi.size > 0, run: () => broadcastTo({ kind: 'items', keys: [...app.multi] }) },
+  { id: 'ports', icon: EthernetPort, label: label('palette.ports'), available: connected, run: () => app.open('ports') },
+  { id: 'forward-port', icon: EthernetPort, label: label('palette.forwardPort'), available: () => app.connected && app.conn.target.kind !== 'local', run: () => app.open('ports', 'forward') },
+  { id: 'updates', icon: RefreshCw, label: () => ut('check'), available: () => updater.enabled && !app.mobile, run: () => updater.check(true) },
+  { id: 'notifications', icon: Bell, label: label('center.title'), run: () => app.open('notifications') },
   ...(__SELF_UPDATE__ ? [APK] : []),
-];
+] as const satisfies readonly CommandDef[];
 
-const ICONS: Record<string, Component<{ size?: number }>> = {
+export type CommandId = CoreId | (typeof more)[number]['id'];
+
+const CORE_ICONS: Record<CoreId, CommandIcon | null> = {
   'kanban': KanbanSquare,
   'panel': PanelRight,
   'source-control': GitGraph,
@@ -159,46 +160,32 @@ const ICONS: Record<string, Component<{ size?: number }>> = {
   'tab-close': X2,
   'tab-reopen': Undo2,
   'palette': Search,
-  'apk-updates': RefreshCw,
-  'review': GitPullRequest,
-  'review-beside': GitPullRequest,
-  'browser': Globe,
-  'graph': GitGraph,
-  'worktrees': FolderTree,
-  'system': Activity,
-  'usage': Gauge,
-  'prs': GitPullRequestArrow,
-  'review-close': GitPullRequest,
-  'agents': LayoutGrid,
-  'connect': Server,
-  'add-host': Server,
-  'disconnect': Unplug,
-  'theme': SunMoon,
-  'live-review': GitGraph,
-  'skills': Puzzle,
-  'logs': ScrollText,
-  'feedback': MessageSquarePlus,
-  'record': Clapperboard,
-  'tour': Compass,
-  'organize': WandSparkles,
-  'ws-broadcast': Megaphone,
-  'ws-hold': Pause,
-  'ws-resume': Play,
-  'group-new': Users,
-  'sel-broadcast': Megaphone,
-  'ports': EthernetPort,
-  'forward-port': EthernetPort,
-  'updates': RefreshCw,
-  'notifications': Bell,
+  'reconnect': null,
+  'tab-next': null,
+  'tab-prev': null,
+  'tab-index': null,
+  'focus-left': null,
+  'focus-right': null,
+  'focus-up': null,
+  'focus-down': null,
+  'term-find': null,
+  'term-copy': null,
+  'term-paste': null,
+  'font-up': null,
+  'font-down': null,
+  'font-reset': null,
+  'close-window': null,
 };
+
+const isCore = (id: string): id is CoreId => id in CORE_LABELS;
 
 export function registerMore() {
   register(more);
   for (const c of allCommands()) {
-    c.icon = ICONS[c.id];
     c.section ??= 'actions';
-    const key = CORE_LABELS[c.id];
-    if (key) c.label = label(key);
+    if (!isCore(c.id)) continue;
+    c.icon = CORE_ICONS[c.id] ?? undefined;
+    c.label = label(CORE_LABELS[c.id]);
     if (AGENTS_VIEW.has(c.id)) c.agentsView = true;
   }
 }

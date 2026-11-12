@@ -137,7 +137,7 @@ const always = () => true;
 export const connected = () => app.connected;
 const persistent = () => app.connected && app.wsPersistent;
 
-const core: CommandDef[] = [
+const core = [
   { id: 'kanban', shortcut: 'kanban', run: () => (app.view = 'kanban'), toggle: () => (app.view = app.view === 'kanban' ? 'agents' : 'kanban') },
   { id: 'panel', shortcut: 'togglePanel', run: () => (app.panelOpen = !app.panelOpen) },
   { id: 'source-control', shortcut: 'sourceControl', run: () => app.toggleSourceControl() },
@@ -169,12 +169,14 @@ const core: CommandDef[] = [
   { id: 'font-down', shortcut: 'fontDown', run: () => fontSize(-1) },
   { id: 'font-reset', shortcut: 'fontReset', run: () => fontSize(null) },
   { id: 'close-window', shortcut: 'closeWindow', run: () => closeWindow() },
-];
+] as const satisfies readonly CommandDef[];
+
+export type CoreId = (typeof core)[number]['id'];
 
 const byId = new Map<string, Command>();
 const byShortcut = new Map<ShortcutId, Command>();
 
-export function register(list: CommandDef[]) {
+export function register(list: readonly CommandDef[]) {
   for (const d of list) {
     const c: Command = { available: always, ...d };
     byId.set(c.id, c);
