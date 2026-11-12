@@ -71,7 +71,7 @@ start)
       && GIT_CONFIG_GLOBAL=/dev/null git -c user.name=qa -c user.email=qa@example.com commit -qm init)
   fi
   sed "s/__QA_PORT__/$PORT/" "$R/scripts/qa/shim.js" > "$D/shim.js"
-  env -i PATH="$daemon_path" HOME="$D/home" SHELL=/bin/sh TERM=xterm-256color LANG=C.UTF-8 \
+  env -i PATH="$daemon_path" HOME="$D/home" SHELL="${QA_SHELL:-/bin/sh}" TERM=xterm-256color LANG=C.UTF-8 \
     XDG_RUNTIME_DIR="$D/run" CLAUDE_CONFIG_DIR="$D/home/.claude" CODEX_HOME="$D/home/.codex" \
     OVERSEER_STATE_DIR="$D/state" OVERSEER_TMUX_SOCKET="$D/tmux.sock" OVERSEER_LOGIN_ENV=0 \
     GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 GIT_AUTHOR_NAME=qa GIT_AUTHOR_EMAIL=qa@example.com \
