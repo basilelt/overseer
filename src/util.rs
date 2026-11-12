@@ -28,6 +28,17 @@ pub fn fnv1a(bytes: &[u8]) -> u64 {
     h
 }
 
+pub fn percent_encode(s: &str) -> String {
+    s.bytes()
+        .map(|b| match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'.' | b'_' | b'~' => {
+                (b as char).to_string()
+            }
+            _ => format!("%{b:02X}"),
+        })
+        .collect()
+}
+
 pub fn ticket_any(s: &str) -> Option<String> {
     ticket(&s.to_ascii_uppercase())
 }
@@ -262,6 +273,12 @@ mod tests {
     #[test]
     fn the_shell_fallback_is_the_login_shell_or_sh() {
         assert_eq!(SHELL_FALLBACK, "exec \"${SHELL:-/bin/sh}\"");
+    }
+
+    #[test]
+    fn percent_encode_keeps_unreserved_and_escapes_the_rest() {
+        assert_eq!(percent_encode("aZ09-._~"), "aZ09-._~");
+        assert_eq!(percent_encode("a b/é&"), "a%20b%2F%C3%A9%26");
     }
 
     #[test]

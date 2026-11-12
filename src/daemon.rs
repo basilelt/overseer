@@ -229,13 +229,20 @@ pub fn dry_run(r: &Request) -> bool {
     r.not_false("dryRun")
 }
 
+fn publish_line_updated(l: &crate::Line, local: Value) {
+    crate::board::publish(
+        "line.updated",
+        json!({"line": l.to_json()["line"], "local": local}),
+    );
+}
+
+const TEXT_REQUIRED: &str = "text (string) required";
+const NOTE_TEXT_REQUIRED: &str = "note text required";
+
 fn notes_reply(r: Result<(crate::Line, Value, Vec<Value>), crate::notes::Err>) -> (u16, Value) {
     match r {
         Ok((l, note, notes)) => {
-            crate::board::publish(
-                "line.updated",
-                json!({"line": l.to_json()["line"], "local": {"notes": notes}}),
-            );
+            publish_line_updated(&l, json!({"notes": notes}));
             (200, json!({"lineId": l.id, "note": note, "notes": notes}))
         }
         Err((code, e)) => err(code, e),
@@ -1101,10 +1108,7 @@ pub fn handle(ctx: &Ctx, r: &Request) -> (u16, Value) {
             let title = actions::clean_title(raw.as_str());
             match actions::set_title(ctx, id, title.as_deref()) {
                 Ok(l) => {
-                    crate::board::publish(
-                        "line.updated",
-                        json!({"line": l.to_json()["line"], "local": {"titleOverride": title}}),
-                    );
+                    publish_line_updated(&l, json!({"titleOverride": title}));
                     (200, json!({"lineId": l.id, "titleOverride": title}))
                 }
                 Err((code, e)) => err(code, e),
@@ -1112,10 +1116,10 @@ pub fn handle(ctx: &Ctx, r: &Request) -> (u16, Value) {
         }
         ("POST", ["v1", "lines", id, "notes"]) => {
             let Some(text) = body["text"].as_str() else {
-                return err(400, "text (string) required");
+                return err(400, TEXT_REQUIRED);
             };
             let Some(text) = crate::notes::clean_note(Some(text)) else {
-                return err(400, "note text required");
+                return err(400, NOTE_TEXT_REQUIRED);
             };
             let now = now_ms();
             notes_reply(actions::notes(ctx, id, |n| {
@@ -1124,10 +1128,10 @@ pub fn handle(ctx: &Ctx, r: &Request) -> (u16, Value) {
         }
         ("PUT", ["v1", "lines", id, "notes", note]) => {
             let Some(text) = body["text"].as_str() else {
-                return err(400, "text (string) required");
+                return err(400, TEXT_REQUIRED);
             };
             let Some(text) = crate::notes::clean_note(Some(text)) else {
-                return err(400, "note text required");
+                return err(400, NOTE_TEXT_REQUIRED);
             };
             let now = now_ms();
             notes_reply(actions::notes(ctx, id, |n| {

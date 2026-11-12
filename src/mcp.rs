@@ -1,3 +1,4 @@
+use crate::util::percent_encode as encode;
 use serde_json::{json, Value};
 use std::io::{BufRead, Write};
 
@@ -139,17 +140,6 @@ fn pick(v: &Value, keys: &[&str]) -> Value {
         }
     }
     o
-}
-
-fn encode(s: &str) -> String {
-    s.bytes()
-        .map(|b| match b {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'.' | b'_' | b'~' => {
-                (b as char).to_string()
-            }
-            _ => format!("%{b:02X}"),
-        })
-        .collect()
 }
 
 fn daemon(

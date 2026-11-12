@@ -181,21 +181,10 @@ pub fn to_line(row: &Value) -> Option<Line> {
     })
 }
 
-fn query_escape(v: &str) -> String {
-    v.bytes()
-        .map(|b| match b {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'.' | b'_' | b'~' => {
-                (b as char).to_string()
-            }
-            _ => format!("%{b:02X}"),
-        })
-        .collect()
-}
-
 pub fn lines(ctx: &Ctx, u: &User, owner: Option<&str>) -> Result<Vec<(Line, Value)>, String> {
     let mut path = "/v1/lines?includeHungUp=true".to_string();
     if let Some(o) = owner {
-        path.push_str(&format!("&owner={}", query_escape(o)));
+        path.push_str(&format!("&owner={}", crate::util::percent_encode(o)));
     }
     let v = get_ok(u, &path)?;
     Ok(v.as_array()
