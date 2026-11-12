@@ -121,7 +121,6 @@ impl AppState {
         }
     }
 
-    /// Drops every extra host connection of a window, keeping its own.
     pub fn drop_slots(&self, label: &str) {
         let gone = self.take_connections(label, false);
         for w in gone {
