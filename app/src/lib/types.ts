@@ -238,6 +238,7 @@ export interface Task {
   badges?: TaskBadge[];
   profile?: string | null;
   taskType?: TaskType | null;
+  cost?: TaskCost | null;
   quorum?: Quorum | null;
   votes?: TaskVotes | null;
   createdAt: string;
@@ -336,6 +337,45 @@ export interface Activity {
   editedFiles: string[];
   lastAssistantText: string;
   transcript?: boolean;
+  cost?: SessionCost | null;
+}
+
+export interface TokenSplit {
+  input: number;
+  cacheWrite: number;
+  cacheRead: number;
+  output: number;
+}
+
+export interface ModelCost extends TokenSplit {
+  model: string;
+  cost: number | null;
+}
+
+export interface ModelSwitch {
+  at: string;
+  from: string;
+  to: string;
+  cacheWrite: number;
+  cost: number | null;
+}
+
+export interface SessionCost extends TokenSplit {
+  cost: number | null;
+  partial: boolean;
+  model?: string | null;
+  effort?: string | null;
+  pricesAsOf: string;
+  models: ModelCost[];
+  switches: ModelSwitch[];
+}
+
+export interface TaskCost extends TokenSplit {
+  cost: number | null;
+  partial: boolean;
+  sessions: number;
+  model?: string | null;
+  effort?: string | null;
 }
 
 export interface Diff {

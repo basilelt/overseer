@@ -57,7 +57,8 @@ The user's 11 Claude subagents all set `model: opus` in frontmatter, so the plai
   on the session tab and in the activity panel. `profiles.changed` tells clients to refetch.
 - The app estimates a relative cost per profile and agent from list prices (2026-10-29), blending
   main (65 %), subagent (30 %) and background (5 %) models with an effort factor, against the CLI
-  defaults. It is labelled an estimate; real usage can replace it once usage tracking lands.
+  defaults. It is labelled an estimate. The real cost per session and task (ADR 0040) is what
+  to compare profiles with once they have run.
 
 ## Rejected
 - Writing `~/.claude/settings.json`, `~/.codex/config.toml` or Codex `-p` profile files: global

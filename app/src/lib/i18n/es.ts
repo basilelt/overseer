@@ -1474,8 +1474,6 @@ export const dict: Partial<Dict> = {
   'usage.unavailable': 'Este servidor no informa del uso de agentes. Actualízalo a la última versión.',
   'usage.paused': 'En pausa mientras la ventana está en segundo plano',
   'usage.chip': 'Uso de agentes hoy. Abrir el panel de uso',
-  'usage.sessionLine': '{tokens} tokens · {cost} · {n} solicitudes',
-  'usage.last30': 'últimos 30 días',
   'usage.untitled': 'Sesión {id}',
   'tour.welcomeTitle': 'Te damos la bienvenida a Overseer',
   'tour.welcomeBody': 'Ejecuta y supervisa tus agentes de programación en paralelo, en este equipo o en un servidor por SSH, con sus terminales, tareas y revisiones en un solo lugar.',

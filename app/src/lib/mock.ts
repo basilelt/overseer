@@ -6,7 +6,7 @@ import { MockGit } from './git/mockGit';
 import { MockScm } from './git/mockScm';
 import { bigDiff, bigPatch, MockReview } from './review/mock';
 import { chatPage, mockScreen, MOCK_COMMANDS, seedAgentChat, seedChat } from './chat/mock';
-import type { Effort, HookResult, HooksStatus, SwitchboardStatus, Profile, ProfileChip, ProfilesStore, SourceItem, SourceItems, SubagentDef, TaskSource, TaskType, Quorum } from './types';
+import type { Effort, HookResult, HooksStatus, SwitchboardStatus, Profile, ProfileChip, ProfilesStore, SourceItem, SourceItems, SubagentDef, TaskSource, TaskType, Quorum, SessionCost, TaskCost } from './types';
 import { mockSystem } from './system/mock';
 import { resolveProfile, TASK_TYPES } from './profiles';
 import { fileKind } from './files';
@@ -236,6 +236,46 @@ function scatteredLines(now: number): LocalLine[] {
   });
 }
 
+const MOCK_MODELS: Partial<Record<Agent, [string, string, number, number, number, number]>> = {
+  claude: ['claude-opus-5-5', 'claude-haiku-5-5', 4, 20, 0.2, 5],
+  codex: ['gpt-5-codex', 'gpt-5-mini', 1.25, 10, 0.125, 0],
+  gemini: ['gemini-2.5-pro', 'gemini-2.5-flash', 1.25, 10, 0.31, 0],
+};
+
+export function mockCost(agent: Agent, i: number): SessionCost | null {
+  const m = MOCK_MODELS[agent];
+  if (!m) return null;
+  const [main, sub, pin, pout, pread, pwrite] = m;
+  const k = 1 + (i % 4);
+  const split = (n: number) => ({ input: 900 * n, cacheWrite: pwrite ? 40_000 * n : 0, cacheRead: 1_800_000 * n, output: 28_000 * n });
+  const price = (t: ReturnType<typeof split>, f: number) => Math.round(((t.input * pin + t.cacheWrite * pwrite + t.cacheRead * pread + t.output * pout) / 1e6) * f * 10_000) / 10_000;
+  const a = split(k);
+  const b = split(k / 4);
+  const models = [
+    { model: main, ...a, cost: price(a, 1) },
+    { model: sub, ...b, cost: price(b, 0.2) },
+  ];
+  const sum = (key: 'input' | 'cacheWrite' | 'cacheRead' | 'output') => a[key] + b[key];
+  return {
+    input: sum('input'),
+    cacheWrite: sum('cacheWrite'),
+    cacheRead: sum('cacheRead'),
+    output: sum('output'),
+    cost: Math.round((models[0].cost + models[1].cost) * 10_000) / 10_000,
+    partial: false,
+    model: main,
+    effort: (['medium', 'high', 'xhigh', 'low'] as const)[i % 4],
+    pricesAsOf: '2026-11-11',
+    models,
+    switches: i % 3 === 0 && pwrite ? [{ at: iso(30 + i), from: 'claude-sonnet-5-5', to: main, cacheWrite: 60_000, cost: 0.3 }] : [],
+  };
+}
+
+function taskCost(c: SessionCost | null): TaskCost | null {
+  if (!c) return null;
+  return { input: c.input, cacheWrite: c.cacheWrite, cacheRead: c.cacheRead, output: c.output, cost: c.cost, partial: c.partial, sessions: 1, model: c.model, effort: c.effort };
+}
+
 function seedActivity(): Record<string, Activity> {
   const out: Record<string, Activity> = {};
   for (const s of SEEDS) {
@@ -263,6 +303,7 @@ function seedActivity(): Record<string, Activity> {
       lastAssistantText: s.needsInput
         ? `${s.status} I can do either; the cap before shipping matches the spec in ${s.ticket ?? 'the ticket'}.`
         : `${s.status}.`,
+      cost: mockCost(s.agent, SEEDS.indexOf(s)),
     };
   }
   return out;
@@ -303,6 +344,7 @@ function seedTasks(now: number): Task[] {
     termId: lineId ? `tm_${lineId}` : null,
     branch: lineId ? SEEDS.find((s) => s.id === lineId)?.branch : null,
     progress: status === 'in_progress' ? { done: 1 + (i % 3), total: 5, note: 'Implementing' } : status === 'in_testing' || status === 'merged' || status === 'completed' ? { done: 5, total: 5 } : null,
+    ...(status === 'pending' || status === 'auto' ? {} : { cost: taskCost(mockCost(agent, lineId ? SEEDS.findIndex((s) => s.id === lineId) : i)), profile: (['economy', 'balanced', 'max'] as const)[i % 3] }),
     createdAt: iso(60 * 24 * (TASK_SEEDS.length - i) / 3, now),
     updatedAt: iso(30 - i, now),
   }));
