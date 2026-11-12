@@ -277,11 +277,18 @@ fn launch(ctx: &Ctx, reg: &Registry, line_id: &str, args: &Value, p: &Plan) -> R
     deliver(ctx, &tmux, &p.session, line_id, &s("prompt"))
 }
 
+fn claude_bin() -> &'static str {
+    crate::agents::get(crate::agents::CLAUDE).map_or("claude", |a| a.bin)
+}
+
 fn claude_argv(reg: &Registry, start_args: &[String], sid: String) -> Result<Vec<String>, String> {
-    let mut argv = vec!["claude".to_string()];
+    let mut argv = vec![claude_bin().to_string()];
     argv.extend(start_args.iter().cloned());
-    if crate::agents::auto_approve_enabled(reg, "claude")? {
-        argv.extend(crate::agents::auto_approve_flags("claude", start_args));
+    if crate::agents::auto_approve_enabled(reg, crate::agents::CLAUDE)? {
+        argv.extend(crate::agents::auto_approve_flags(
+            crate::agents::CLAUDE,
+            start_args,
+        ));
     }
     argv.extend(["--session-id".into(), sid]);
     Ok(argv)
@@ -487,7 +494,8 @@ pub fn patch_local(ctx: &Ctx, l: &Line, print: bool) -> Result<String, String> {
     Registry::open(&ctx.state_dir)?.reserve(&line, "dev", ctx.now_ms)?;
     let tmux = ctx.tmux.clone().ok_or("tmux unavailable")?;
     let cmd = format!(
-        "claude --session-id {}; {}",
+        "{} --session-id {}; {}",
+        claude_bin(),
         crate::util::shell_quote(&sid),
         crate::util::SHELL_FALLBACK
     );
@@ -529,6 +537,11 @@ mod claude_argv_tests {
 
     fn v(a: &[&str]) -> Vec<String> {
         a.iter().map(|s| (*s).to_string()).collect()
+    }
+
+    #[test]
+    fn the_claude_binary_name_comes_from_the_descriptor() {
+        assert_eq!(claude_bin(), "claude");
     }
 
     #[test]

@@ -139,7 +139,7 @@ pub fn original_marker(cmd: &str, marker: &str) -> Option<Option<String>> {
 }
 
 pub fn settings_path() -> PathBuf {
-    crate::agents::config_dir("claude").join("settings.json")
+    crate::agents::config_dir("claude").join(crate::install::CLAUDE_SETTINGS_FILE)
 }
 
 pub struct Plan {
@@ -290,16 +290,10 @@ pub fn routes(method: &str, segs: &[&str], body: &Value, state_dir: &Path) -> Op
 }
 
 fn spawn(original: &str) -> std::io::Result<std::process::Child> {
-    let mut c = if cfg!(windows) {
-        let mut c = Command::new("sh");
-        c.arg("-c").arg(original);
-        c
-    } else {
-        let mut c = Command::new("/bin/sh");
-        c.arg("-c").arg(original);
-        c
-    };
-    c.stdin(Stdio::piped())
+    let mut c = Command::new(if cfg!(windows) { "sh" } else { "/bin/sh" });
+    c.arg("-c")
+        .arg(original)
+        .stdin(Stdio::piped())
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit())
         .spawn()

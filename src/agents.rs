@@ -388,7 +388,12 @@ pub fn is_shell(id: &str) -> bool {
     id == SHELL
 }
 
-pub const DEFAULT_ID: &str = "claude";
+pub const CLAUDE: &str = "claude";
+pub const CODEX: &str = "codex";
+pub const GEMINI: &str = "gemini";
+pub const VIBE: &str = "vibe";
+
+pub const DEFAULT_ID: &str = CLAUDE;
 
 pub fn default_agent() -> &'static Agent {
     get(DEFAULT_ID).unwrap_or(&AGENTS[0])

@@ -6,6 +6,8 @@ use serde_json::{json, Map, Value};
 use std::path::{Path, PathBuf};
 
 pub const MARKER: &str = "#overseer-hook";
+pub const TMP_EXT: &str = "sb-tmp";
+pub const CLAUDE_SETTINGS_FILE: &str = "settings.json";
 pub const HOOK_TIMEOUT_SECS: u64 = 5;
 pub const SESSION_END_TIMEOUT_SECS: u64 = 3;
 
@@ -50,7 +52,7 @@ pub fn ensure_shim(shim: &Path, real: &Path, replace: bool) -> std::io::Result<b
     if let Some(dir) = shim.parent() {
         crate::mkdir_private(dir)?;
     }
-    let tmp = shim.with_extension("sb-tmp");
+    let tmp = shim.with_extension(TMP_EXT);
     let _ = std::fs::remove_file(&tmp);
     link(real, &tmp)?;
     std::fs::rename(&tmp, shim)?;
@@ -342,7 +344,7 @@ const SPECS: &[Spec] = &[
     Spec {
         agent: "claude",
         root: Root::Agent,
-        file: "settings.json",
+        file: CLAUDE_SETTINGS_FILE,
         events: hooks::CLAUDE_EVENTS,
         format: Format::Groups(HOOK_TIMEOUT_SECS),
         owned: None,
@@ -685,7 +687,7 @@ pub(crate) fn atomic_write(path: &Path, text: &str) -> Result<(), String> {
     if let Some(parent) = path.parent() {
         crate::mkdir_private(parent).map_err(|e| format!("{}: {e}", parent.display()))?;
     }
-    let tmp = PathBuf::from(format!("{}.sb-tmp", path.display()));
+    let tmp = PathBuf::from(format!("{}.{TMP_EXT}", path.display()));
     std::fs::write(&tmp, text).map_err(|e| format!("{}: {e}", tmp.display()))?;
     if let Ok(m) = std::fs::metadata(path) {
         let _ = std::fs::set_permissions(&tmp, m.permissions());
@@ -739,7 +741,7 @@ pub fn write(
     if let Some(parent) = target.parent() {
         crate::mkdir_private(parent).map_err(|e| e.to_string())?;
     }
-    let tmp = PathBuf::from(format!("{}.sb-tmp", target.display()));
+    let tmp = PathBuf::from(format!("{}.{TMP_EXT}", target.display()));
     std::fs::write(&tmp, &p.after_text).map_err(|e| format!("{}: {e}", tmp.display()))?;
     if let Ok(m) = std::fs::metadata(&target) {
         let _ = std::fs::set_permissions(&tmp, m.permissions());

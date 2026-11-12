@@ -320,7 +320,7 @@ pub fn load_config(state_dir: &Path) -> Config {
             .unwrap_or_default(),
         worktree_dir: s("worktreeDir")
             .map(|p| expand(&p))
-            .unwrap_or_else(|| paths::default_worktrees_dir()),
+            .unwrap_or_else(paths::default_worktrees_dir),
         start_args: strs("startArgs"),
         memory_policy: (v["memoryPolicy"]["enabled"] == true).then(|| {
             v["memoryPolicy"]["thresholdPercent"]
@@ -378,9 +378,9 @@ impl<'a> Ctx<'a> {
         let state_dir = default_state_dir();
         Ctx {
             claude_dir: agents::config_dir("claude"),
-            codex_dir: agents::config_dir("codex"),
-            gemini_dir: agents::config_dir("gemini"),
-            vibe_dir: agents::config_dir("vibe"),
+            codex_dir: agents::config_dir(agents::CODEX),
+            gemini_dir: agents::config_dir(agents::GEMINI),
+            vibe_dir: agents::config_dir(agents::VIBE),
             snapshot: std::env::var_os("OVERSEER_TMUX_SNAPSHOT")
                 .filter(|v| !v.is_empty())
                 .map(PathBuf::from)
@@ -489,7 +489,7 @@ fn claude_found_from(
         );
         let f = by_sid
             .entry(t.session_id.clone())
-            .or_insert_with(|| Found::new("claude", t.session_id.clone()));
+            .or_insert_with(|| Found::new(agents::CLAUDE, t.session_id.clone()));
         f.cwd = cwd;
         f.branch = t.branch;
         f.activity_ms = activity;
@@ -527,7 +527,7 @@ fn claude_found_from(
         let Some(args) = l.alive else {
             let f = by_sid
                 .entry(l.session_id.clone())
-                .or_insert_with(|| Found::new("claude", l.session_id.clone()));
+                .or_insert_with(|| Found::new(agents::CLAUDE, l.session_id.clone()));
             f.cwd = live_cwd(&f.cwd, [l.cwd.clone()]);
             f.activity_ms = f.activity_ms.max(l.updated_ms);
             continue;
@@ -549,7 +549,7 @@ fn claude_found_from(
         taken.insert(key.clone());
         let f = by_sid
             .entry(key.clone())
-            .or_insert_with(|| Found::new("claude", key.clone()));
+            .or_insert_with(|| Found::new(agents::CLAUDE, key.clone()));
         if f.session_id != l.session_id {
             f.session_id = l.session_id.clone();
             if let Some((cwd, branch, activity, title)) = seen.get(&l.session_id) {
@@ -591,7 +591,7 @@ fn claude_found_from(
         };
         let f = by_sid
             .entry(key.clone())
-            .or_insert_with(|| Found::new("claude", key.clone()));
+            .or_insert_with(|| Found::new(agents::CLAUDE, key.clone()));
         f.session_id = now.clone();
         f.cwd = cwd;
         f.branch = branch;
@@ -751,7 +751,7 @@ fn codex_found(ctx: &Ctx, hooks: &HashMap<String, HookState>) -> Vec<Found> {
         .into_iter()
         .zip(owner)
         .map(|(t, j)| {
-            let mut f = Found::new("codex", t.id.clone());
+            let mut f = Found::new(agents::CODEX, t.id.clone());
             let hook = hooks.get(&t.id);
             if let Some((pid, argv, _)) = j.map(|j| &procs[j]) {
                 let flags = flags_after(argv, codex::is_codex).unwrap_or_default();
@@ -799,7 +799,7 @@ fn gemini_found(ctx: &Ctx, hooks: &HashMap<String, HookState>) -> Vec<Found> {
     sessions
         .into_iter()
         .map(|s| {
-            let mut f = Found::new("gemini", s.id.clone());
+            let mut f = Found::new(agents::GEMINI, s.id.clone());
             let first_in_cwd = s.cwd.as_ref().is_some_and(|c| cwd_taken.insert(c.clone()));
             let hit = procs
                 .iter()
@@ -864,7 +864,7 @@ fn vibe_found(ctx: &Ctx, hooks: &HashMap<String, HookState>) -> Vec<Found> {
     sessions
         .into_iter()
         .map(|s| {
-            let mut f = Found::new("vibe", s.id.clone());
+            let mut f = Found::new(agents::VIBE, s.id.clone());
             let leased = s
                 .pid
                 .filter(|p| ctx.probe.info(*p).is_some())

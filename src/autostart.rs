@@ -226,7 +226,7 @@ fn write_atomic(path: &Path, text: &str) -> Result<(), String> {
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
     }
-    let tmp = path.with_extension("sb-tmp");
+    let tmp = path.with_extension(crate::install::TMP_EXT);
     std::fs::write(&tmp, text)
         .and_then(|_| std::fs::rename(&tmp, path))
         .map_err(|e| format!("{}: {e}", path.display()))
