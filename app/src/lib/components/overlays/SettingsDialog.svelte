@@ -160,13 +160,27 @@
 
   $effect(() => {
     if (!app.connected || app.conn.phase !== 'connected') return;
-    untrack(() =>
+    untrack(() => {
       app.api
         .autoOrganize()
         .then((r) => saveSettings({ autoOrganize: r.enabled }))
-        .catch(() => {}),
-    );
+        .catch(() => {});
+      app.api
+        .agentMessaging()
+        .then((r) => saveSettings({ agentMessaging: r.enabled }))
+        .catch(() => {});
+    });
   });
+  async function setAgentMessaging(el: HTMLInputElement) {
+    const on = el.checked;
+    try {
+      const r = await app.api.setAgentMessaging(on);
+      saveSettings({ agentMessaging: r.enabled });
+    } catch (e) {
+      el.checked = !on;
+      app.notify(String((e as Error)?.message ?? e), 'error');
+    }
+  }
   async function setAutoOrganize(el: HTMLInputElement) {
     const on = el.checked;
     try {
@@ -545,6 +559,12 @@
             <label class="row" class:hit={hit('defaults', 'autoOrganize')}>
               <span>{t('settings.autoOrganize')}<small>{t('settings.autoOrganizeHint')}</small></span>
               <input type="checkbox" class="switch" checked={settings.autoOrganize} onchange={(e) => setAutoOrganize(e.currentTarget)} />
+            </label>
+          {/if}
+          {#if row('defaults', 'agentMessaging')}
+            <label class="row" class:hit={hit('defaults', 'agentMessaging')}>
+              <span>{t('settings.agentMessaging')}<small>{t('settings.agentMessagingHint')}</small></span>
+              <input type="checkbox" class="switch" data-tour="agent-messaging" checked={settings.agentMessaging} onchange={(e) => setAgentMessaging(e.currentTarget)} />
             </label>
           {/if}
         </section>

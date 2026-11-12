@@ -78,5 +78,5 @@
   {#await pickUp() then { default: PickUp }}<PickUp items={organizer.proposal.pickUp} />{/await}
 {/if}
 {#if app.menu}
-  {#await menu() then { default: Menu }}<Menu {...app.menu} onclose={() => (app.menu = null)} />{/await}
+  {#await menu() then { default: Menu }}{#key app.menu}<Menu {...app.menu} onclose={() => (app.menu = null)} />{/key}{/await}
 {/if}

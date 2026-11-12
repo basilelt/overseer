@@ -117,6 +117,7 @@ impl Fx {
             claude_dir: self.base.join("claude"),
             codex_dir: self.base.join("codex"),
             gemini_dir: self.base.join("gemini"),
+            vibe_dir: self.base.join("vibe"),
             state_dir: self.base.join("state"),
             snapshot: self.base.join("snapshot.json"),
             now_ms: overseer::procs::now_ms(),

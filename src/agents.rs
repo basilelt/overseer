@@ -159,6 +159,19 @@ pub static AGENTS: &[Agent] = &[
         ..NONE
     },
     Agent {
+        id: "vibe",
+        name: "Mistral Vibe",
+        bin: "vibe",
+        install: "uv tool install mistral-vibe",
+        sessions: true,
+        turns: true,
+        models: Some(&[]),
+        prompt: Some("--"),
+        resume: Some(&["{flags}", "--resume", "{id}"]),
+        cont: Some(&["--continue"]),
+        ..NONE
+    },
+    Agent {
         id: "shell",
         name: "Shell",
         models: Some(&[]),
@@ -216,6 +229,7 @@ pub fn auto_approve_args(id: &str) -> Option<&'static [&'static str]> {
         "opencode" => Some(&["--auto"]),
         "copilot" => Some(&["--allow-all"]),
         "cursor" => Some(&["--force"]),
+        "vibe" => Some(&["--auto-approve"]),
         _ => None,
     }
 }
@@ -239,6 +253,7 @@ fn approval_overrides(id: &str) -> &'static [&'static str] {
         "opencode" => &["--auto"],
         "copilot" => &["--allow-all", "--allow-all-tools", "--yolo"],
         "cursor" => &["--force", "-f", "--yolo"],
+        "vibe" => &["--auto-approve", "--yolo", "--agent", "--smart-approve"],
         _ => &[],
     }
 }

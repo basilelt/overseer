@@ -20,9 +20,23 @@ describe('new session menu', () => {
   });
 });
 
+describe('agents that are not installed', () => {
+  it('lists the installed agents and folds the missing ones behind one row', () => {
+    expect(list).toMatch(/\{#each split\.installed as a/);
+    expect(list).toMatch(/\{#if split\.missing\.length\}/);
+    expect(list).toMatch(/aria-expanded=\{more\} onclick=\{\(\) => \(more = !more\)\}/);
+    expect(list).toMatch(/\{#if more\}\s*\{#each split\.missing as a/);
+  });
+
+  it('starts folded each time the menu opens, since the list mounts on open', () => {
+    expect(list).toMatch(/let more = \$state\(false\);/);
+    expect(button).toMatch(/\{#if open\}\s*\{#await list\(\)/);
+  });
+});
+
 describe('installing from the new session menu', () => {
   it('installs an absent agent with an install command instead of disabling it', () => {
-    expect(list).toContain('disabled={!a.installed && !canInstall(a)}');
+    expect(list).toContain('disabled={!canInstall(a)}');
     expect(list).toContain('a.installed ? app.newSession(a.id) : app.installAgent(a.id)');
   });
 

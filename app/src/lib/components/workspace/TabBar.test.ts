@@ -76,8 +76,7 @@ describe('new tab menu', () => {
 
   it('installs an absent agent from its entry instead of greying it out', () => {
     const menu = actions.slice(actions.indexOf('export function newSessionItems'), actions.indexOf('export function startIn'));
-    expect(menu).toMatch(/disabled: !a\.installed && !canInstall\(a\)/);
-    expect(menu).toMatch(/run: a\.installed \? start\(a\.id\) : install\(a\.id\)/);
+    expect(menu).toMatch(/more: missing\.map\(.*disabled: !canInstall\(a\).*run: install\(a\.id\)/);
     expect(menu).toContain('app.installAgent');
     expect(menu).toContain("label: canInstall(a) ? t('palette.installAgent', { name: a.name }) : a.name");
   });

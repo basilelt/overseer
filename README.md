@@ -36,8 +36,8 @@
 </p>
 
 Overseer is a desktop app (Linux, macOS, Windows), a phone and tablet app (Android, iOS) and a small
-daemon. It works with Claude Code, Codex, Gemini CLI, Antigravity, opencode, Amp, Copilot CLI and
-Cursor Agent. Each agent session is a **line**: one agent, in one worktree, on one machine, for
+daemon. It works with Claude Code, Codex, Gemini CLI, Antigravity, opencode, Amp, Copilot CLI, Cursor
+Agent and Mistral Vibe. Each agent session is a **line**: one agent, in one worktree, on one machine, for
 one owner. The daemon owns the terminals, so closing the app, losing Wi-Fi or putting the laptop
 to sleep stops nothing; open the app again and every session is where you left it.
 
@@ -167,8 +167,11 @@ on a TCP port on the server.
   apply to new sessions.
 - **Skills and plugins in one click**: install RTK (trims shell output before the agent reads it),
   Caveman (terse replies) or Ponytail (simplest code that works) for Claude Code, Codex, Gemini CLI,
-  opencode, Copilot CLI, Cursor Agent, Amp or Antigravity, from Settings → Agents or the command
+  opencode, Copilot CLI, Cursor Agent, Amp, Antigravity or Mistral Vibe, from Settings → Agents or the command
   palette. The install runs in a terminal you can watch.
+- **Agents stay in their project**: task agents message each other only within the same
+  project, so they coordinate on shared files without spending tokens on unrelated repositories.
+  Settings → Defaults → Agents message each other turns their messages off entirely.
 - **Usage and system monitor**: agent quotas, token usage, CPU and RAM in the title bar.
 - **Real cost per session and task**: what each session cost, from the token counts in its
   transcript, per model with cache reads and writes apart and model switches shown as their own
