@@ -16,6 +16,7 @@
   import { liveOn } from './lib/git/live.svelte';
   import { api } from './lib/daemon/api';
   import { isTauri } from './lib/platform';
+  import { blockStrayMiddlePaste } from './lib/middle-paste';
   import { themeReport } from './lib/terminal/terminal';
   import { colorPalette, customColors, resolvedTheme, saveSettings, setSystemDark, settings } from './lib/settings/settings.svelte';
   import Resizer from './lib/components/ui/Resizer.svelte';
@@ -170,7 +171,7 @@
   const connBanner = preload(() => import('./lib/components/ui/ConnBanner.svelte'), 1000);
 </script>
 
-<svelte:window onkeydown={onKey} oncontextmenu={onContextMenu} />
+<svelte:window onkeydown={onKey} oncontextmenu={onContextMenu} onmouseupcapture={blockStrayMiddlePaste} />
 
 {#if isPhone()}
   <Boundary name="mobile">{#await mobileShell() then { default: MobileShell }}<MobileShell />{/await}</Boundary>
