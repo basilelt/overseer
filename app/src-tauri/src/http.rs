@@ -3,6 +3,7 @@ use std::time::Duration;
 use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, BufReader};
 
 const MAX_HEAD: usize = 64 * 1024;
+const BODY_BUF: usize = 8192;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Head {
@@ -367,6 +368,36 @@ mod tests {
         let (_h, c) = serve(b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n4\r\n[1,2\r\n3;ext=1\r\n,3]\r\n0\r\nX-Trailer: y\r\n\r\n").await;
         let res = request(c, "GET", "/v1/lines", None).await.unwrap();
         assert_eq!(json_body(&res.body), serde_json::json!([1, 2, 3]));
+    }
+
+    #[tokio::test]
+    async fn a_declared_size_far_beyond_the_body_is_an_error_not_an_allocation() {
+        for reply in [
+            &b"HTTP/1.1 200 OK\r\nContent-Length: 4611686018427387904\r\n\r\nshort"[..],
+            &b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n4000000000000000\r\nshort"[..],
+        ] {
+            let (_h, c) = serve(reply).await;
+            let err = request(c, "GET", "/v1/lines", None).await.unwrap_err();
+            assert_eq!(err.kind(), std::io::ErrorKind::UnexpectedEof);
+        }
+    }
+
+    #[tokio::test]
+    async fn bodies_larger_than_the_read_buffer_arrive_whole() {
+        let body = "x".repeat(3 * BODY_BUF + 7);
+        let plain = format!(
+            "HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{body}",
+            body.len()
+        );
+        let chunked = format!(
+            "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n{:x}\r\n{body}\r\n2\r\nyz\r\n0\r\n\r\n",
+            body.len()
+        );
+        for (reply, want) in [(plain, body.clone()), (chunked, format!("{body}yz"))] {
+            let (_h, c) = serve(reply.leak().as_bytes()).await;
+            let res = request(c, "GET", "/v1/file", None).await.unwrap();
+            assert_eq!(String::from_utf8(res.body).unwrap(), want);
+        }
     }
 
     #[tokio::test]
