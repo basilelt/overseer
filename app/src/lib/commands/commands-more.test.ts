@@ -30,6 +30,7 @@ import { recorder } from '../record/record.svelte';
 import { beside } from '../review/beside.svelte';
 import { app } from '../state.svelte';
 import { updater } from '../updater.svelte';
+import { ui } from '../mobile/ui.svelte';
 
 beforeAll(() => registerMore());
 
@@ -162,5 +163,28 @@ describe('tool commands', () => {
     expect(check).toHaveBeenCalledWith(true);
     vi.spyOn(app, 'mobile', 'get').mockReturnValue(true);
     expect(command('updates').available()).toBe(false);
+  });
+});
+
+describe('commands that have no phone layout', () => {
+  const desktopOnly = ['split-right', 'split-down', 'panel', 'source-control', 'browser'];
+
+  afterEach(() => {
+    ui.layout = 'desktop';
+    vi.restoreAllMocks();
+  });
+
+  it('lists them on the desktop layout', () => {
+    for (const id of desktopOnly) expect(command(id).available(), id).toBe(true);
+  });
+
+  it('hides them on the phone layout, where they would do nothing or leave an empty pane', () => {
+    ui.layout = 'phone';
+    for (const id of desktopOnly) expect(command(id).available(), id).toBe(false);
+  });
+
+  it('hides them in the mobile app whatever the window width', () => {
+    vi.spyOn(app, 'mobile', 'get').mockReturnValue(true);
+    for (const id of desktopOnly) expect(command(id).available(), id).toBe(false);
   });
 });
