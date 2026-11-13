@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { AttentionEntry } from '../../attention';
   import { t } from '../../i18n.svelte';
+  import { itemMenuAt } from '../../workspace/wsactions';
 
   let { entries, onselect, pathOf }: { entries: AttentionEntry[]; onselect: (entry: AttentionEntry) => void; pathOf?: (entry: AttentionEntry) => string | undefined } = $props();
 </script>
@@ -10,8 +11,8 @@
     <div class="head">{t('session.state.attention')}</div>
     {#each entries as entry (entry.key)}
       {@const path = pathOf?.(entry)}
-      <button class="item" type="button" data-key={entry.key} onclick={() => onselect(entry)}>
-        <span class="dot" style:--c="var(--state-attention)" aria-hidden="true"></span>
+      <button class="item" type="button" onclick={() => onselect(entry)} oncontextmenu={(e) => itemMenuAt(entry.key, entry.title, e)}>
+        <span class="dot" aria-hidden="true"></span>
         <span class="title">{entry.title}</span>
         {#if entry.detail}<span class="detail">{entry.detail}</span>{/if}
         {#if path}<span class="path">{path}</span>{/if}
@@ -56,7 +57,7 @@
     width: 8px;
     height: 8px;
     border-radius: 50%;
-    background: var(--c);
+    background: var(--state-attention);
   }
   .title {
     flex: none;
