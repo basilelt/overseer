@@ -39,6 +39,6 @@ node "$work/tour.mjs" "$chrome" "$port" "$work/frames"
 
 mkdir -p "$root/docs/media"
 ffmpeg -loglevel error -y -framerate 0.4 -i "$work/frames/%02d.png" \
-  -vf "scale=960:-1:flags=lanczos,split[a][b];[a]palettegen=max_colors=128:stats_mode=diff[p];[b][p]paletteuse=dither=none" \
+  -vf "scale=880:-1:flags=lanczos,split[a][b];[a]palettegen=max_colors=64:stats_mode=diff[p];[b][p]paletteuse=dither=none" \
   -loop 0 "$root/docs/media/tour.gif"
 echo "docs/media/tour.gif: $(ls "$work/frames" | wc -l) frames"
