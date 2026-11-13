@@ -129,10 +129,10 @@ export function cellAt(clientX: number, clientY: number, rect: { left: number; t
   return { col: Math.max(1, Math.min(cols, col)), row: Math.max(1, Math.min(rows, row)) };
 }
 
-export function clickMove(col: number, row: number, cursor: { x: number; y: number }, widthAt: (x: number) => number, m: TermModes): string | null {
+export function clickMove(col: number, row: number, cursor: { x: number; y: number }, widthAt: (x: number) => number, m: TermModes, end = Infinity): string | null {
   if (m.tracking || !m.lineEditor || row !== cursor.y || col === cursor.x) return null;
   const from = Math.min(col, cursor.x);
-  const to = Math.max(col, cursor.x);
+  const to = col > cursor.x ? Math.min(col, Math.max(end, cursor.x)) : cursor.x;
   let n = 0;
   for (let x = from; x < to; x++) if (widthAt(x) !== 0) n++;
   if (!n) return null;

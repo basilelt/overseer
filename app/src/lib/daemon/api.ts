@@ -55,6 +55,8 @@ export function api(c: DaemonClient) {
     setAgentMessaging: (enabled: boolean) => c.request<{ enabled: boolean }>('PUT', '/v1/tasks/agent-messaging', { enabled }),
     agentTasks: () => c.request<{ enabled: boolean }>('GET', '/v1/tasks/agent-tasks'),
     setAgentTasks: (enabled: boolean) => c.request<{ enabled: boolean }>('PUT', '/v1/tasks/agent-tasks', { enabled }),
+    autoConcurrency: () => c.request<{ value: number }>('GET', '/v1/tasks/auto-concurrency'),
+    setAutoConcurrency: (value: number) => c.request<{ value: number }>('PUT', '/v1/tasks/auto-concurrency', { value }),
     organize: (project?: string) => c.request<{ started: Task[] }>('POST', '/v1/tasks/organize', project ? { project } : {}),
     projects: () => c.request<Project[]>('GET', '/v1/projects'),
     createProject: (path: string) => c.request<Project>('POST', '/v1/projects', { path }),

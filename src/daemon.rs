@@ -501,6 +501,21 @@ fn tasks(r: &Request, segs: &[&str], body: &Value, ctx: &Ctx) -> Option<(u16, Va
                     .map(|_| json!({"enabled": on})),
             ),
         },
+        ("GET", ["v1", "tasks", "auto-concurrency"]) => res(
+            200,
+            crate::registry::Registry::open(&ctx.state_dir)
+                .map_err(|e| (500, e))
+                .map(|reg| {
+                    json!({"value": crate::task_agents::auto_concurrency(&reg, ctx.config.auto_concurrency)})
+                }),
+        ),
+        ("PUT", ["v1", "tasks", "auto-concurrency"]) => res(
+            200,
+            crate::registry::Registry::open(&ctx.state_dir)
+                .map_err(|e| (500, e))
+                .and_then(|reg| crate::task_agents::set_auto_concurrency(&reg, &body["value"]))
+                .map(|n| json!({"value": n})),
+        ),
         ("POST", ["v1", "tasks"]) => res(201, tasks::create(ctx, body).map(|t| t.to_json(st))),
         ("GET", ["v1", "tasks", id]) => res(
             200,

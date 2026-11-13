@@ -15,7 +15,7 @@ esac
 if [[ "$cut" != 30 ]]; then
   node audio.mjs reel.wav
   "$py" render.py --out overseer-showreel.mp4 --webm overseer-showreel.webm --audio reel.wav \
-    --samples "$samples" --jobs "$jobs" --poster poster.jpg --poster-t 14.2
+    --samples "$samples" --jobs "$jobs" --poster poster.jpg --poster-t 14.65
 fi
 if [[ "$cut" != 15 ]]; then
   node audio.mjs reel30.wav 30

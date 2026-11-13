@@ -4,7 +4,7 @@
   import Modal from '../ui/Modal.svelte';
   import { app, projectName } from '../../state.svelte';
   import { t, type Key } from '../../i18n.svelte';
-  import { flagPatch, isSession, mergeMessage, quadrant, quadrantFlags } from '../../kanban/kanban';
+  import { flagPatch, hearsMessages, isSession, mergeMessage, quadrant, quadrantFlags } from '../../kanban/kanban';
   import { onDestroy, untrack } from 'svelte';
   import DepPicker from './DepPicker.svelte';
   import QuorumChips from './QuorumChips.svelte';
@@ -12,7 +12,6 @@
   import { fromOverseer } from '../../kanban/quorum';
   import type { Task, TaskMessage } from '../../types';
   import { isSubmitChord } from '../../chord';
-  import { isRunning } from '../../kanban/task-status';
 
   let { onclose }: { onclose: () => void } = $props();
 
@@ -21,7 +20,7 @@
   const task = $derived(app.data.tasks.find((x) => x.id === app.overlayArg));
   const parent = $derived(task?.parentId ? app.data.tasks.find((x) => x.id === task.parentId) : undefined);
   const quad = $derived(task ? quadrant(task) : 'none');
-  const live = $derived(!!task && isRunning(task.status) && !!task.termId);
+  const live = $derived(!!task && hearsMessages(task, app.data.terms));
   const errText = (e: unknown) => String((e as Error)?.message ?? e);
 
   let messages = $state<TaskMessage[]>([]);

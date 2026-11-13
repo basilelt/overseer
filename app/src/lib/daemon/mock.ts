@@ -759,6 +759,7 @@ export class MockDaemon implements DaemonClient {
   autoOrganize = false;
   agentMessaging = true;
   agentTasks = true;
+  autoConcurrencyValue = 2;
   lidPower = { enabled: false, active: false, supported: true, error: null as string | null };
   autoApprove: Record<string, boolean> = Object.fromEntries(Object.keys(AUTO_APPROVE_ARGS).map((id) => [id, true]));
   messages: TaskMessage[];
@@ -941,6 +942,13 @@ export class MockDaemon implements DaemonClient {
     if (method === 'PUT' && path === '/v1/tasks/auto-organize') {
       this.autoOrganize = body?.enabled === true;
       return { enabled: this.autoOrganize };
+    }
+    if (method === 'GET' && path === '/v1/tasks/auto-concurrency') return { value: this.autoConcurrencyValue };
+    if (method === 'PUT' && path === '/v1/tasks/auto-concurrency') {
+      const v = body?.value;
+      if (typeof v !== 'number' || !Number.isInteger(v) || v < 1 || v > 16) throw new DaemonError(400, 'value must be an integer from 1 to 16');
+      this.autoConcurrencyValue = v;
+      return { value: v };
     }
     if (method === 'GET' && path === '/v1/tasks/agent-tasks') return { enabled: this.agentTasks };
     if (method === 'PUT' && path === '/v1/tasks/agent-tasks') {

@@ -107,7 +107,11 @@ desktop)
   linux_only desktop
   [ -f "$D/daemon.pid" ] || { echo "run $0 start first" >&2; exit 1; }
   "$0" desktop-stop
-  mkdir -p "$D/apphome"
+  mkdir -p "$D/home" "$D/run" "$D/appbin"
+  for f in "$R"/tests/stubs/*; do
+    [ "${f##*/}" = ssh ] || ln -sf "$f" "$D/appbin/${f##*/}"
+  done
+  app_path=$D/appbin:${daemon_path#"$R/tests/stubs:"}
   [ -f "$MESA_EGL" ] || MESA_EGL=
   setsid env ${MESA_EGL:+__EGL_VENDOR_LIBRARY_FILENAMES="$MESA_EGL"} Xvfb ":$DISPLAY_NUM" -screen 0 1440x900x24 -nolisten tcp >> "$D/xvfb.log" 2>&1 &
   echo $! > "$D/xvfb.pid"
@@ -118,7 +122,7 @@ desktop)
     unshare -rn true 2>/dev/null || { echo "port 1420 is taken by another dev server" >&2; exit 1; }
     ns="unshare -rn"
   fi
-  export R D DISPLAY_NUM MESA_EGL APP_BIN
+  export R D DISPLAY_NUM MESA_EGL APP_BIN BIN app_path QA_SHELL
   setsid $ns sh -c '
     ip link set lo up 2>/dev/null || true
     cd "$R/app" && nice -n 10 ./node_modules/.bin/vite --port 1420 --strictPort >> "$D/vite.log" 2>&1 &
@@ -128,9 +132,13 @@ desktop)
       [ $i -lt 100 ] || { echo "vite did not start, see $D/vite.log" >&2; exit 1; }
       sleep 0.2
     done
-    exec env -i PATH=/usr/bin:/bin DISPLAY=":$DISPLAY_NUM" HOME="$D/apphome" XDG_CONFIG_HOME="$D/apphome/.config" \
-      XDG_DATA_HOME="$D/apphome/.local/share" XDG_CACHE_HOME="$D/apphome/.cache" XDG_RUNTIME_DIR="$D/run" \
-      OVERSEER_STATE_DIR="$D/state" LANG=C.UTF-8 WEBKIT_DISABLE_DMABUF_RENDERER=1 GDK_BACKEND=x11 NO_AT_BRIDGE=1 \
+    exec env -i PATH="$app_path" DISPLAY=":$DISPLAY_NUM" HOME="$D/home" SHELL="${QA_SHELL:-/bin/sh}" TERM=xterm-256color LANG=C.UTF-8 \
+      XDG_RUNTIME_DIR="$D/run" CLAUDE_CONFIG_DIR="$D/home/.claude" CODEX_HOME="$D/home/.codex" \
+      OVERSEER_STATE_DIR="$D/state" OVERSEER_TMUX_SOCKET="$D/tmux.sock" OVERSEER_LOGIN_ENV=0 \
+      GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 GIT_AUTHOR_NAME=qa GIT_AUTHOR_EMAIL=qa@example.com \
+      GIT_COMMITTER_NAME=qa GIT_COMMITTER_EMAIL=qa@example.com \
+      SB_BIN="$BIN" SB_STUB_LOG="$D/stub.log" SB_INHIBIT_LOG="$D/inhibit.log" \
+      WEBKIT_DISABLE_DMABUF_RENDERER=1 GDK_BACKEND=x11 NO_AT_BRIDGE=1 \
       ${MESA_EGL:+__EGL_VENDOR_LIBRARY_FILENAMES="$MESA_EGL"} \
       "$APP_BIN"
   ' >> "$D/app.log" 2>&1 &
@@ -157,7 +165,7 @@ desktop-stop)
   stop_group "$D/xvfb.pid"
   ;;
 crash)
-  kill -9 "$(cat "$D/daemon.pid")"
+  kill -9 "$(cat "$D/state/daemon.pid" 2>/dev/null || cat "$D/daemon.pid")"
   ;;
 stop)
   "$0" desktop-stop

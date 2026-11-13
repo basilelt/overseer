@@ -1934,7 +1934,6 @@ export const en = {
   'tour.palette.phone': 'Search sessions and run any command from More.',
   'tour.paletteKey.title': 'Palette shortcut',
   'tour.paletteKey.body': '{mod}+P opens the command palette. In a terminal on Linux and Windows it is Ctrl+Shift+P, so Ctrl+P still reaches your shell history.',
-  'tour.paletteKey.phone': 'Search sessions and run any command from More.',
   'tour.organize.title': 'Organize my sessions',
   'tour.organize.body': 'Too many sessions? Organize my sessions proposes workspaces, groups and clean-up, by rules offline or with an agent. You review every change, then pick up where you left off.',
   'tour.organize.phone': 'Find Organize my sessions in More: it proposes workspaces, groups and clean-up, and shows where to pick up.',

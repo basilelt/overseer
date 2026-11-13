@@ -441,4 +441,18 @@
       transform: translateY(100%);
     }
   }
+  @media (max-height: 500px) and (orientation: landscape) {
+    .subtitle {
+      display: none;
+    }
+    .bottom button {
+      flex-direction: row;
+      gap: 6px;
+      min-height: 40px;
+    }
+    .top {
+      padding-top: calc(var(--safe-top) + 2px);
+      padding-bottom: 2px;
+    }
+  }
 </style>

@@ -233,7 +233,9 @@
       const { col, row } = cellAt(e.clientX, e.clientY, rect, tm.cols, tm.rows);
       const buf = tm.buffer.active;
       const line = buf.getLine(buf.length - tm.rows + buf.cursorY);
-      const keys = clickMove(col - 1, row - 1, { x: buf.cursorX, y: buf.cursorY }, (x) => line?.getCell(x)?.getWidth() ?? 1, modes.modes());
+      let end = tm.cols;
+      while (end > 0 && (line?.getCell(end - 1)?.getCodepoint() ?? 0) <= 32) end--;
+      const keys = clickMove(col - 1, row - 1, { x: buf.cursorX, y: buf.cursorY }, (x) => line?.getCell(x)?.getWidth() ?? 1, modes.modes(), end);
       if (keys) io.write(keys);
     };
     el.addEventListener('click', onClick);

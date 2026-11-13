@@ -532,6 +532,19 @@ class AppState {
     return tabMod ? tabMod.moveToWorkspace(this, key, workspaceId) : tabLazy().then((m) => m.moveToWorkspace(this, key, workspaceId));
   }
 
+  private probedProjects = new Set<string>();
+
+  private probeProject(path: unknown) {
+    if (typeof path !== 'string' || !path.startsWith('/') || this.projects.some((p) => p.path === path) || this.probedProjects.has(path)) return;
+    this.probedProjects.add(path);
+    void this.api
+      .projects()
+      .then((list) => {
+        if (this.connected && list.some((p) => !this.projects.some((x) => x.path === p.path))) this.projects = list;
+      })
+      .catch(() => this.probedProjects.delete(path));
+  }
+
   addProject(p: Project) {
     if (!this.projects.some((x) => x.path === p.path)) this.projects = [...this.projects, p];
   }
@@ -588,6 +601,8 @@ class AppState {
       if (e.data?.lineId) for (const l of this.chatListeners) l(e.data);
       return;
     }
+    if (e.type === 'task.created') this.probeProject(e.data?.task?.project ?? e.data?.project);
+    else if (e.type === 'line.created') this.probeProject(String(e.data?.line?.repo ?? '').replace(/^local:/, ''));
     const prev = this.data;
     const next = applyEvent(prev, e);
     if (this.refreshing) {
