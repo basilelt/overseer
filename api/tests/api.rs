@@ -219,6 +219,17 @@ fn contains(hay: &[u8], needle: &str) -> bool {
 struct Sse(TcpStream, String);
 
 impl Sse {
+    fn ended(&mut self) -> bool {
+        let mut buf = [0u8; 4096];
+        loop {
+            match self.0.read(&mut buf) {
+                Ok(0) => return true,
+                Ok(_) => {}
+                Err(_) => return false,
+            }
+        }
+    }
+
     fn next(&mut self) -> Option<(i64, String, Value)> {
         loop {
             while let Some(i) = self.1.find("\n\n") {
@@ -589,6 +600,37 @@ fn sse_replays_from_last_event_id_then_streams_live() {
     assert_eq!(created.next().unwrap().0, 3);
     assert!(created.next().is_none());
     assert!(srv.http("GET", "/v1/events", None, None).0 == 401);
+}
+
+#[test]
+fn revoking_a_user_ends_their_open_event_streams_and_no_others() {
+    let srv = Srv::start();
+    let t = srv.enrol("vm", "vm");
+    let (bob, carol) = (srv.user("bob"), srv.user("carol"));
+    let mut s = srv.station("vm", &t).unwrap();
+    s.hello("vm", 0);
+    let mut b = srv.sse(&bob, "", Some(0));
+    let mut c = srv.sse(&carol, "", Some(0));
+    let mut a = srv.sse(ADMIN, "", Some(0));
+    for live in [&mut b, &mut c, &mut a] {
+        assert_eq!(live.next().unwrap().1, "station.online");
+    }
+    assert_eq!(
+        srv.http("DELETE", "/v1/users/bob/token", Some(ADMIN), None)
+            .0,
+        204
+    );
+    assert!(b.ended(), "the revoked user's stream stayed open");
+    s.send(json!({ "kind": "snapshot", "seq": 1, "lines": [
+        line("vm-1", "vm", "alice", "active", None),
+    ]}));
+    s.recv();
+    for live in [&mut c, &mut a] {
+        assert_eq!(live.next().unwrap().1, "line.created");
+    }
+    let bob = srv.user("bob");
+    let mut b = srv.sse(&bob, "", Some(1));
+    assert_eq!(b.next().unwrap().1, "line.created");
 }
 
 #[test]
