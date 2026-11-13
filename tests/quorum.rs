@@ -422,6 +422,10 @@ fn a_rejected_worker_goes_back_to_work_and_its_next_turn_starts_round_two() {
             .as_str()
         )
     );
+    assert_eq!(
+        app.ok("GET", &format!("/v1/tasks/{}", id(&r)), Value::Null)["status"],
+        "completed"
+    );
     turn(&mut ws);
     wait_for(|| (get()["votes"]["round"] == 2).then_some(()));
     assert_eq!(get()["status"], "in_testing");
