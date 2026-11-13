@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { moveMenu, tabClosed } from './tab-edits';
+import { DaemonError } from '../daemon/client';
 
 function fakeApp(lineId: string | null, termId: string | null, fail?: Error) {
   const close = vi.fn(async () => {
@@ -40,6 +41,52 @@ describe('tabClosed on a session', () => {
     await tabClosed(app, 'line:ln_1', true);
     expect(notify).toHaveBeenCalledWith('agent pid 1 did not exit', 'error');
     expect(refresh).toHaveBeenCalled();
+  });
+});
+
+describe('tabClosed on a shell that exited', () => {
+  const exitedApp = (deleteTerm: () => Promise<unknown>) => {
+    const app = {
+      items: [{ key: 'term:tm_1', lineId: null, termId: 'tm_1' }],
+      data: { terms: [{ id: 'tm_1', exited: true }, { id: 'tm_2', exited: false }] },
+      api: { deleteTerm: vi.fn(deleteTerm) },
+      notify: vi.fn(),
+    };
+    return app;
+  };
+
+  it('removes the terminal from the daemon and from the board', async () => {
+    const app = exitedApp(async () => ({}));
+    await tabClosed(app as never, 'term:tm_1', true);
+    expect(app.api.deleteTerm).toHaveBeenCalledWith('tm_1');
+    expect(app.data.terms.map((t) => t.id)).toEqual(['tm_2']);
+  });
+
+  it('sends one delete when the same terminal is closed twice before the first answers', async () => {
+    let answer!: () => void;
+    const app = exitedApp(() => new Promise((r) => (answer = () => r({}))));
+    const first = tabClosed(app as never, 'term:tm_1', true);
+    const second = tabClosed(app as never, 'term:tm_1', true);
+    answer();
+    await Promise.all([first, second]);
+    expect(app.api.deleteTerm).toHaveBeenCalledTimes(1);
+  });
+
+  it('treats a terminal another window already deleted as gone, without an error', async () => {
+    const app = exitedApp(async () => {
+      throw new DaemonError(404, 'no term tm_1');
+    });
+    await tabClosed(app as never, 'term:tm_1', true);
+    expect(app.data.terms.map((t) => t.id)).toEqual(['tm_2']);
+    expect(app.notify).not.toHaveBeenCalled();
+  });
+
+  it('keeps the terminal when the delete fails for another reason', async () => {
+    const app = exitedApp(async () => {
+      throw new DaemonError(500, 'boom');
+    });
+    await tabClosed(app as never, 'term:tm_1', true);
+    expect(app.data.terms.map((t) => t.id)).toEqual(['tm_1', 'tm_2']);
   });
 });
 
