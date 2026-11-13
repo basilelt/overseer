@@ -7,7 +7,6 @@ import type { app as App } from '../state.svelte';
 import type { DaemonEvent, LocalLine } from '../types';
 import { allIdle } from '../workspace/workspaces';
 import { MAX_COOLDOWN_S } from './notify-prefs';
-import { startOs } from './os-notify';
 import { KEY_NOTIFIED, localStore } from '../storage';
 import { isTesting } from '../kanban/task-status';
 
@@ -220,7 +219,14 @@ async function setBadge(count: number) {
 export function startNotifications(app: typeof App): () => void {
   let lastCount = -1;
   let idle = new Map<string, boolean>();
-  const untap = startOs(app);
+  let stopOs: (() => void) | null = null;
+  let osDone = false;
+  if (isTauri())
+    void import('./os-send')
+      .then((m) => {
+        if (!osDone) stopOs = m.startOs(app);
+      })
+      .catch(() => {});
   const placeOf = placeIn(app);
   const gate = notifyGate(
     (n, id) => app.notice({ id, kind: n.kind, title: n.title, body: n.body || undefined, action: n.key ? { kind: 'line', key: n.key } : undefined, target: n.target ?? n.key ?? undefined }),
@@ -262,6 +268,7 @@ export function startNotifications(app: typeof App): () => void {
     stopped = true;
     for (const g of gates.values()) g.stop();
     gate.stop();
-    untap();
+    osDone = true;
+    stopOs?.();
   };
 }
