@@ -167,20 +167,89 @@ describe('ReviewStore loading', () => {
     expect(reload).not.toHaveBeenCalled();
   });
 
-  it('reloads only the changed files a watcher event names, after the debounce', async () => {
+  async function watched() {
     const s = new ReviewStore({ worktree: MOCK_WORKTREE });
     s.start();
     await vi.waitFor(() => expect(s.live).toBe(true), { interval: 1 });
     vi.useFakeTimers();
     const reload = vi.spyOn(s, 'reloadDiff').mockResolvedValue();
+    return { s, reload };
+  }
+
+  function gateDiffRequests() {
+    const real = d.request.bind(d);
+    const gates: (() => void)[] = [];
+    vi.spyOn(d, 'request').mockImplementation(async <T,>(method: string, path: string, body?: unknown) => {
+      if (method === 'GET' && path.startsWith('/v1/review?')) await new Promise<void>((r) => gates.push(r));
+      return real<T>(method, path, body);
+    });
+    return gates;
+  }
+
+  it('reloads every file the watcher events named during the debounce, once', async () => {
+    const { s, reload } = await watched();
     d.emit('review.changed', { worktree: MOCK_WORKTREE, files: ['a'] });
     vi.advanceTimersByTime(200);
     d.emit('review.changed', { worktree: MOCK_WORKTREE, files: ['b'] });
     vi.advanceTimersByTime(299);
     expect(reload).not.toHaveBeenCalled();
     vi.advanceTimersByTime(1);
-    expect(reload).toHaveBeenCalledExactlyOnceWith(['b']);
+    expect(reload).toHaveBeenCalledExactlyOnceWith(['a', 'b']);
     s.stop();
+  });
+
+  it('forgets the pending files once they were reloaded', async () => {
+    const { s, reload } = await watched();
+    d.emit('review.changed', { worktree: MOCK_WORKTREE, files: ['a'] });
+    vi.advanceTimersByTime(300);
+    expect(reload).toHaveBeenLastCalledWith(['a']);
+    d.emit('review.changed', { worktree: MOCK_WORKTREE, files: ['b'] });
+    vi.advanceTimersByTime(300);
+    expect(reload).toHaveBeenCalledTimes(2);
+    expect(reload).toHaveBeenLastCalledWith(['b']);
+    s.stop();
+  });
+
+  it('reloads everything when one of the debounced events names no files', async () => {
+    const { s, reload } = await watched();
+    d.emit('review.changed', { worktree: MOCK_WORKTREE, files: ['a'] });
+    d.emit('review.changed', { worktree: MOCK_WORKTREE });
+    d.emit('review.changed', { worktree: MOCK_WORKTREE, files: ['b'] });
+    vi.advanceTimersByTime(300);
+    expect(reload).toHaveBeenCalledExactlyOnceWith(undefined);
+    s.stop();
+  });
+
+  it('keeps the newest diff when an older reload answers last', async () => {
+    const s = await loaded();
+    const gates = gateDiffRequests();
+    const first = s.reloadDiff();
+    const second = s.setBase('origin/main');
+    await vi.waitFor(() => expect(gates.length).toBe(2));
+    gates[1]();
+    await second;
+    const rev = s.revision;
+    const diff = s.diff;
+    gates[0]();
+    await first;
+    expect(s.revision).toBe(rev);
+    expect(s.diff).toBe(diff);
+  });
+
+  it('finishes the first load when a reload overtakes it', async () => {
+    const s = new ReviewStore({ worktree: MOCK_WORKTREE });
+    const gates = gateDiffRequests();
+    const first = s.load();
+    await vi.waitFor(() => expect(gates.length).toBe(1));
+    const second = s.reloadDiff();
+    await vi.waitFor(() => expect(gates.length).toBe(2));
+    gates[1]();
+    await second;
+    gates[0]();
+    await first;
+    expect(s.live).toBe(true);
+    expect(s.diff).not.toBeNull();
+    expect(s.loading).toBe(false);
   });
 
   it('marks the review stale instead of reloading while live refresh is paused', async () => {
