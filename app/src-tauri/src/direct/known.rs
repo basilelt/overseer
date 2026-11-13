@@ -84,8 +84,7 @@ pub fn check(text: &str, host: &str, port: u16, key: &PublicKey) -> Verdict {
     let Ok(mine) = key_text(key) else {
         return Verdict::Unknown;
     };
-    let alg = key.algorithm();
-    let mut same_alg_other_key = false;
+    let mut pinned = false;
     for (hosts, a, b64) in entries(text) {
         if !hosts.split(',').any(|h| h == want) {
             continue;
@@ -93,11 +92,9 @@ pub fn check(text: &str, host: &str, port: u16, key: &PublicKey) -> Verdict {
         if format!("{a} {b64}") == mine {
             return Verdict::Trusted;
         }
-        if a == alg.as_str() {
-            same_alg_other_key = true;
-        }
+        pinned = true;
     }
-    if same_alg_other_key {
+    if pinned {
         Verdict::Changed
     } else {
         Verdict::Unknown
