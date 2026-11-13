@@ -168,7 +168,8 @@ export function formatCombo(c: Combo, mac: boolean): string {
 }
 
 export function shortcutLabel(id: ShortcutId, opts: ShortcutOptions): string {
-  const c = bindings(opts).find((b) => b.id === id)?.combos[0];
+  const combos = bindings(opts).find((b) => b.id === id)?.combos ?? [];
+  const c = combos.find((x) => x.outsideTerminal) ?? combos[0];
   return c ? formatCombo(c, opts.mac) : '';
 }
 

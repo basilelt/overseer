@@ -170,6 +170,9 @@ describe('shortcut labels', () => {
     expect(shortcutLabel('splitRight', { mac: false, ctrlWClosesTab: true })).toBe('Ctrl+Shift+E');
     expect(shortcutLabel('splitRight', { mac: true, ctrlWClosesTab: true })).toBe('⌘D');
     expect(shortcutLabel('closeTab', { mac: false, ctrlWClosesTab: false })).toBe('');
+    expect(shortcutLabel('palette', { mac: false, ctrlWClosesTab: true })).toBe('Ctrl+P');
+    expect(shortcutLabel('shortcuts', { mac: false, ctrlWClosesTab: true })).toBe('Ctrl+/');
+    expect(shortcutLabel('palette', { mac: true, ctrlWClosesTab: true })).toBe('⌘P');
   });
 });
 
