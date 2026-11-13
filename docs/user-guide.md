@@ -1128,6 +1128,12 @@ daemon keeps its environment: the new one applies from its next start (the next 
 it is never restarted for this since that would end its terms. **Rescan** in the agent picker
 runs the detection again (`POST /v1/agents/rescan`), for instance after installing an agent.
 
+The **+** menus (tab bar and title bar) list only the agents that are installed; the others are
+folded under one **Not installed (N)** row at the bottom, which unfolds in place. An agent with a
+known install command shows **Install** there: click it and the command runs in a new terminal,
+then Overseer rescans, so the agent is ready to start. On a phone the palette lists **Install
+<agent>** for each missing agent.
+
 **Auto-approve** in Settings → Agents chooses which supported CLIs Overseer starts with their
 native automatic permission mode. It is on by default for Claude Code, Codex, Gemini CLI,
 Antigravity, opencode, Copilot CLI, Cursor Agent and Mistral Vibe (`--auto-approve`). The settings are stored on the connected
