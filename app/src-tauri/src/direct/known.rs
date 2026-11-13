@@ -84,8 +84,7 @@ pub fn check(text: &str, host: &str, port: u16, key: &PublicKey) -> Verdict {
     let Ok(mine) = key_text(key) else {
         return Verdict::Unknown;
     };
-    let alg = key.algorithm();
-    let mut same_alg_other_key = false;
+    let mut pinned = false;
     for (hosts, a, b64) in entries(text) {
         if !hosts.split(',').any(|h| h == want) {
             continue;
@@ -93,11 +92,9 @@ pub fn check(text: &str, host: &str, port: u16, key: &PublicKey) -> Verdict {
         if format!("{a} {b64}") == mine {
             return Verdict::Trusted;
         }
-        if a == alg.as_str() {
-            same_alg_other_key = true;
-        }
+        pinned = true;
     }
-    if same_alg_other_key {
+    if pinned {
         Verdict::Changed
     } else {
         Verdict::Unknown
@@ -177,9 +174,19 @@ mod tests {
         );
         assert_eq!(check(&text, "box.lan", 22, &k), Verdict::Trusted);
         assert_eq!(check(&text, "alias", 22, &k), Verdict::Trusted);
+    }
+
+    #[test]
+    fn a_key_of_another_algorithm_than_the_trusted_one_is_a_change() {
+        let k = key();
+        let line = key_text(&k).unwrap();
+        let other = "box.lan ecdsa-sha2-nistp256 AAAAE2Vj\n";
+        assert_eq!(check(other, "box.lan", 22, &k), Verdict::Changed);
+        assert_eq!(check(other, "box.lan", 2222, &k), Verdict::Unknown);
+        assert_eq!(check(other, "elsewhere", 22, &k), Verdict::Unknown);
         assert_eq!(
-            check("box.lan ecdsa-sha2-nistp256 AAAAE2Vj\n", "box.lan", 22, &k),
-            Verdict::Unknown
+            check(&format!("{other}box.lan {line}\n"), "box.lan", 22, &k),
+            Verdict::Trusted
         );
     }
 }
