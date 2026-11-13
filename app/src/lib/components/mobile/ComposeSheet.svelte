@@ -9,7 +9,8 @@
   import { app } from '../../state.svelte';
   import Modal from '../ui/Modal.svelte';
   import { isNativeAndroid, native } from '../../mobile/native';
-  import { insertText, MAX_UPLOAD } from '../../uploads';
+  import { insertText } from '../../uploads';
+  import { attachImages } from '../../mobile/compose-attach';
   import { isSubmitChord } from '../../chord';
 
   let { targetKey, onclose }: { targetKey: string | null; onclose: () => void } = $props();
@@ -45,21 +46,6 @@
     }
   }
 
-  async function attach(files: File[]): Promise<string[]> {
-    const paths: string[] = [];
-    for (const f of files) {
-      if (f.size > MAX_UPLOAD) throw new Error(t('upload.tooLarge', { name: f.name }));
-      paths.push(await app.requireClient().savePaste(f.name || 'paste.png', new Uint8Array(await f.arrayBuffer())));
-    }
-    if (!paths.length) {
-      const clip = await native.clipboardImage();
-      if (clip) paths.push(clip);
-    }
-    const done: string[] = [];
-    for (const p of paths) done.push((await app.requireClient().uploadFile(p)).path);
-    return done;
-  }
-
   async function onpaste(e: ClipboardEvent) {
     const dt = e.clipboardData;
     const files = Array.from(dt?.files ?? []).filter((f) => f.type.startsWith('image/'));
@@ -69,9 +55,9 @@
     const [from, to] = [el.selectionStart, el.selectionEnd];
     sending = true;
     try {
-      const paths = await attach(files);
-      if (!paths.length) return app.notify(t('mobile.term.pasteFailed'));
-      text = text.slice(0, from) + insertText(paths) + text.slice(to);
+      const paths = await attachImages(files, { client: app.requireClient(), clipboardImage: native.clipboardImage, notify: (...a) => app.notify(...a) });
+      if (paths.length) text = text.slice(0, from) + insertText(paths) + text.slice(to);
+      else if (!files.length) app.notify(t('mobile.term.pasteFailed'));
     } catch (err) {
       app.notify(t('upload.pasteFailed', { name: t('mobile.term.clipboard'), error: String((err as Error)?.message ?? err) }), 'error');
     } finally {
