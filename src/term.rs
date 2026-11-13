@@ -1290,10 +1290,13 @@ pub fn link_lines(lines: &[crate::Line]) {
 }
 
 pub fn plain(text: &str) -> String {
-    text.to_string()
+    text.chars()
+        .filter(|&c| matches!(c, '\n' | '\r' | '\t') || !c.is_control())
+        .collect()
 }
 
 pub fn insert(t: &Term, text: &str) -> std::io::Result<()> {
+    let text = plain(text);
     let screen = t.screen();
     let bracketed = screen.windows(8).any(|w| w == b"\x1b[?2004h");
     let body = if bracketed {

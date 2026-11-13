@@ -134,7 +134,7 @@ pub fn insert(ch: &Channel, text: &str, tmux: Option<&Tmux>, buffer: &str) -> Re
         Channel::Term(t) => term::insert(t, text).map_err(|e| e.to_string()),
         Channel::Pane(p) => {
             let tmux = tmux.ok_or("tmux is not available")?;
-            tmux.load_buffer(buffer, text)?;
+            tmux.load_buffer(buffer, &term::plain(text))?;
             tmux.ok(&["paste-buffer", "-p", "-d", "-b", buffer, "-t", p])
         }
     }
