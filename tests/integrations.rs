@@ -421,7 +421,11 @@ fn patch_local_refuses_a_line_whose_branch_is_not_a_branch_name() {
     ] {
         let o = t.sb(args);
         assert!(!o.status.success(), "{}", out(&o));
-        assert!(err(&o).contains("is not a valid branch name"), "{}", err(&o));
+        assert!(
+            err(&o).contains("is not a valid branch name"),
+            "{}",
+            err(&o)
+        );
     }
     assert!(!marker.exists());
     assert!(!wt_root.exists());
