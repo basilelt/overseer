@@ -1054,6 +1054,7 @@ export const en = {
   'uninstall.failed': 'unknown error',
   'uninstall.kind.service': 'Boot service',
   'uninstall.kind.linger': 'Linger',
+  'uninstall.kind.power': 'Lid keep-awake',
   'uninstall.kind.hook': 'Agent hooks',
   'uninstall.kind.statusline': 'Statusline',
   'uninstall.kind.backup': 'Backup',

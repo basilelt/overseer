@@ -2253,7 +2253,7 @@ exits: Resume then reopens the session it was last in (`lines.session_now`). Two
 Overseer writes outside its own folders, so deleting the app alone leaves things behind: hook
 entries in the agents' config files (for example `~/.claude/settings.json`), the statusline
 wrapper, the boot service (a systemd user unit, or `~/Library/LaunchAgents/dev.overseer.daemon.plist`)
-and its linger setting, `~/.overseer` (the `bin/` shim, `server/`, `u/`, `tasks/`, `reviews/`), the
+its linger setting, the lid keep-awake setting when it was on (macOS `pmset disablesleep`, the Windows lid close action; both are system-wide and put back, macOS asking for your administrator password), `~/.overseer` (the `bin/` shim, `server/`, `u/`, `tasks/`, `reviews/`), the
 config backups it made, worktrees and `task/*` branches it created, the state dir
 (`~/.local/state/overseer` on Linux, `~/Library/Application Support/overseer` on macOS,
 `%LOCALAPPDATA%\overseer` on Windows, or `$OVERSEER_STATE_DIR`) and the app's own data.
