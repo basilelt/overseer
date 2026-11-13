@@ -39,6 +39,14 @@ await test('does not list a handled command as deliberately null', () => {
 await test('does not null a command the frontend no longer has', () => {
   assert.deepEqual([...nulls].filter((n) => !commands.includes(n)), []);
 });
+await test('keeps the saved direct hosts a phone adds, replaces one by id and deletes it', async () => {
+  assert.equal(JSON.stringify(await invoke('direct_hosts')), '[]');
+  await invoke('direct_host_save', { host: { id: 'h1', name: 'a' } });
+  await invoke('direct_host_save', { host: { id: 'h2', name: 'b' } });
+  assert.equal(JSON.stringify(await invoke('direct_host_save', { host: { id: 'h1', name: 'a2' } })), JSON.stringify([{ id: 'h2', name: 'b' }, { id: 'h1', name: 'a2' }]));
+  assert.equal(JSON.stringify(await invoke('direct_host_delete', { id: 'h2' })), JSON.stringify([{ id: 'h1', name: 'a2' }]));
+  assert.equal(JSON.stringify(await invoke('direct_hosts')), JSON.stringify([{ id: 'h1', name: 'a2' }]));
+});
 await test('rejects a command it does not know', async () => {
   await assert.rejects(invoke('renamed_command'), /unknown Tauri command renamed_command/);
   assert.ok(sandbox.__qaLog.includes('unhandled renamed_command'));
