@@ -1516,7 +1516,6 @@ export const dict: Partial<Dict> = {
   'tour.palette.title': 'Paleta de comandos',
   'tour.palette.phone': 'Busca sesiones y ejecuta cualquier comando desde Más.',
   'tour.paletteKey.title': 'Atajo de la paleta',
-  'tour.paletteKey.phone': 'Busca sesiones y ejecuta cualquier comando desde Más.',
   'tour.organize.title': 'Organizar mis sesiones',
   'tour.organize.body': '¿Demasiadas sesiones? Organizar mis sesiones propone espacios de trabajo, grupos y limpieza, mediante reglas sin conexión o con un agente. Revisas cada cambio y luego retomas donde lo dejaste.',
   'tour.organize.phone': 'Encuentra Organizar mis sesiones en Más: propone espacios de trabajo, grupos y limpieza, y muestra dónde retomar.',
