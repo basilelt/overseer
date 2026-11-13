@@ -1,5 +1,6 @@
-import { describe, expect, it, vi } from 'vitest';
-import { moveMenu, tabClosed } from './tab-edits';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { closeTabAsking, moveMenu, tabClosed, tabMenu } from './tab-edits';
+import { EMPTY_LAYOUT, forgetLayouts, layoutFromTabs, update, workspace } from '../workspace/workspace.svelte';
 import { DaemonError } from '../daemon/client';
 
 function fakeApp(lineId: string | null, termId: string | null, fail?: Error) {
@@ -102,5 +103,40 @@ describe('moveMenu', () => {
     expect(items.map((i) => [i.label, !!i.checked])).toEqual([['endurance', true], ['endurance › Onboarding', false]]);
     items[1]!.run!();
     expect(app.moveToWorkspace).toHaveBeenCalledWith('line:l', 'n');
+  });
+});
+
+describe('closing a tab by its x, middle click or menu', () => {
+  const asking = (items: object[], terms: object[] = []) => ({ items, data: { terms }, open: vi.fn(), canMoveToWorkspace: () => false }) as never as { items: object[]; data: { terms: object[] }; open: ReturnType<typeof vi.fn> };
+
+  afterEach(() => {
+    update(() => EMPTY_LAYOUT);
+    forgetLayouts();
+  });
+
+  it('asks before ending a live session, like Ctrl+W, and keeps its tab', () => {
+    update(() => layoutFromTabs(['line:a', 'browser:b'], 'browser:b'));
+    const app = asking([{ key: 'line:a', lineId: 'a' }]);
+    closeTabAsking(app as never, 0, 'line:a');
+    expect(app.open).toHaveBeenCalledWith('closeTab', 'line:a');
+    expect(workspace.layout.panes[0].tabs).toEqual(['line:a', 'browser:b']);
+    expect(workspace.layout.focused).toBe(0);
+  });
+
+  it('closes a tab that holds no live session at once', () => {
+    update(() => layoutFromTabs(['browser:a', 'term:t']));
+    const app = asking([{ key: 'term:t', termId: 't' }], [{ id: 't', exited: true }]);
+    closeTabAsking(app as never, 0, 'browser:a');
+    closeTabAsking(app as never, 0, 'term:t');
+    expect(app.open).not.toHaveBeenCalled();
+    expect(workspace.layout.panes[0].tabs).toEqual([]);
+  });
+
+  it('puts the same question behind the Close entry of the tab menu', () => {
+    update(() => layoutFromTabs(['term:t']));
+    const app = asking([{ key: 'term:t', termId: 't' }], [{ id: 't', exited: false }]);
+    const close = tabMenu(app as never, {} as MouseEvent, 0, 'term:t', true).find((m) => m.label === 'Close');
+    close!.run!();
+    expect(app.open).toHaveBeenCalledWith('closeTab', 'term:t');
   });
 });

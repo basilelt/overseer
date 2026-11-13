@@ -9,7 +9,7 @@
   import { app } from '../../state.svelte';
   import { tabLabel } from '../../tabs/tab-label';
   import { closeTabKey, command, selectTabKey } from '../../commands/commands';
-  import { tabInfo, type TabInfo } from '../../tabs/tabs';
+  import { endsSession, tabInfo, type TabInfo } from '../../tabs/tabs';
   import { activeTabs, workspace } from '../../workspace/workspace.svelte';
   import { longPress } from '../../mobile/longpress';
   import Pin from '@lucide/svelte/icons/pin';
@@ -45,7 +45,7 @@
         run: () => void app.api.pin(line.line.id, !pinned).catch((err) => app.notify(String((err as Error)?.message ?? err), 'error')),
       });
     }
-    items.push({ label: t('common.close'), icon: X, run: () => closeTabKey(tab.key, true, true) });
+    items.push({ label: t('common.close'), icon: X, run: () => (endsSession(tab.key, app.items, app.data.terms) ? app.open('closeTab', tab.key) : closeTabKey(tab.key, true, true)) });
     navigator.vibrate?.(10);
     app.openMenu(e, label(tab), items);
   }
