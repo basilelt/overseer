@@ -6,6 +6,8 @@ pub mod askpass;
 mod browser;
 #[cfg(desktop)]
 mod browsers;
+#[cfg(target_os = "linux")]
+mod clipguard;
 mod commands;
 mod conn;
 /// Held by tests that change the process environment (PATH, OVERSEER_SOCKET) and by tests that
@@ -59,6 +61,8 @@ pub fn run() {
             macos::create_main_window(app)?;
             diag::log_start(app.handle());
             diag::start_watchdog(app.handle().clone());
+            #[cfg(target_os = "linux")]
+            clipguard::install();
             #[cfg(all(unix, desktop))]
             diag::quit_on_signals(app.handle().clone());
             Ok(())
@@ -73,7 +77,15 @@ pub fn run() {
             }
         })
         .on_window_event(|w, e| match e {
-            tauri::WindowEvent::Focused(f) if w.label() == MAIN => diag::focus(*f),
+            tauri::WindowEvent::Focused(f) => {
+                #[cfg(target_os = "linux")]
+                if *f {
+                    clipguard::recheck();
+                }
+                if w.label() == MAIN {
+                    diag::focus(*f);
+                }
+            }
             tauri::WindowEvent::Destroyed => {
                 if w.label() == MAIN {
                     diag::focus(false);
