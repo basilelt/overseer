@@ -149,6 +149,13 @@ impl Ports {
         self.inner.lock().unwrap().watchers.remove(&id);
     }
 
+    pub fn unwatch_all(&self) -> usize {
+        let mut g = self.inner.lock().unwrap();
+        let n = g.watchers.len();
+        g.watchers.clear();
+        n
+    }
+
     pub fn reset(&self) {
         let mut g = self.inner.lock().unwrap();
         g.generation += 1;

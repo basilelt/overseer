@@ -59,6 +59,15 @@ impl WindowConn {
         true
     }
 
+    fn drop_streams(&self) -> usize {
+        let subs = std::mem::take(&mut *self.subs.lock().unwrap());
+        let terms = std::mem::take(&mut *self.terms.lock().unwrap());
+        for t in subs.values() {
+            t.abort();
+        }
+        subs.len() + terms.len() + self.ports.unwatch_all()
+    }
+
     pub fn shutdown(&self) {
         let subs = {
             let mut subs = self.subs.lock().unwrap();
@@ -118,6 +127,21 @@ impl AppState {
         }
         for w in gone {
             w.shutdown();
+        }
+    }
+
+    /// A page that loads again has lost the callbacks of the previous one: stop what still feeds them.
+    pub fn page_reloaded(&self, label: &str) {
+        self.drop_slots(label);
+        let own = self.windows.lock().unwrap().get(label).cloned();
+        let dropped = own.map_or(0, |w| w.drop_streams());
+        if dropped > 0 {
+            crate::diag::info(
+                "conn",
+                format!(
+                    "page of {label} loaded again, dropped {dropped} stream(s) of the previous one"
+                ),
+            );
         }
     }
 
@@ -797,6 +821,7 @@ pub async fn ssh_hosts() -> Vec<crate::sshconfig::SshHost> {
 #[cfg(test)]
 mod tests {
     use super::{create_unique, paste_name, raw_body, AppState};
+    use std::sync::atomic::{AtomicU32, Ordering};
     use std::sync::Arc;
 
     #[test]
@@ -868,6 +893,38 @@ mod tests {
         assert!(finished(&late_abort).await);
         assert!(!Arc::ptr_eq(&other, &s.window("w-2")));
         s.close("missing");
+    }
+
+    #[tokio::test]
+    async fn a_reloaded_page_stops_the_streams_of_the_previous_one() {
+        use super::conn_key;
+        let s = AppState::default();
+        let main = s.window("main");
+        let slot = s.window(&conn_key("main", Some("ssh:prod")));
+        let (tx, mut rx) = tokio::sync::mpsc::channel(1);
+        assert!(main.add_term(1, tx));
+        let sub = tauri::async_runtime::spawn(std::future::pending::<()>());
+        let abort = sub.inner().abort_handle();
+        main.add_sub(2, sub);
+        let seen = Arc::new(AtomicU32::new(0));
+        let count = seen.clone();
+        main.ports.watch(
+            3,
+            Box::new(move |_| {
+                count.fetch_add(1, Ordering::Relaxed);
+            }),
+        );
+        s.page_reloaded("main");
+        assert!(rx.recv().await.is_none());
+        assert!(finished(&abort).await);
+        assert!(slot.is_closed() && !main.is_closed());
+        main.ports.reset();
+        assert_eq!(seen.load(Ordering::Relaxed), 1);
+        let (tx, _rx) = tokio::sync::mpsc::channel(1);
+        assert!(main.add_term(4, tx));
+        assert!(Arc::ptr_eq(&main, &s.window("main")));
+        s.page_reloaded("browser-1");
+        assert!(!s.windows.lock().unwrap().contains_key("browser-1"));
     }
 
     #[test]
