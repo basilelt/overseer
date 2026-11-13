@@ -125,6 +125,34 @@ fn has(rows: &[(String, String)], kind: &str, ends: &str) -> bool {
 }
 
 #[test]
+fn the_statusline_dry_run_writes_nothing_under_the_shared_temp_dir() {
+    let fx = Fx::new("un-shared-tmp", 0);
+    let h = home(&fx);
+    put(&h.join(".claude/settings.json"), SETTINGS);
+    let shared = fx.base.join("shared-tmp");
+    let victim = fx.base.join("victim");
+    put(&victim, "keep");
+    std::fs::create_dir_all(shared.join("overseer-statusline")).unwrap();
+    for n in ["sb-diff-a", "sb-diff-b"] {
+        std::os::unix::fs::symlink(&victim, shared.join("overseer-statusline").join(n)).unwrap();
+    }
+    let before = snapshot(&shared);
+    let mut c = std::process::Command::new(env!("CARGO_BIN_EXE_overseer"));
+    fx.env(&mut c);
+    let o = c
+        .env("TMPDIR", &shared)
+        .args(["statusline-tap", "install"])
+        .output()
+        .unwrap();
+    let out = String::from_utf8_lossy(&o.stdout);
+    assert!(o.status.success(), "{out}");
+    assert!(out.contains("settings.json (merged)"), "{out}");
+    assert!(out.contains("#overseer-statusline"), "{out}");
+    assert_eq!(std::fs::read_to_string(&victim).unwrap(), "keep");
+    assert_eq!(snapshot(&shared), before);
+}
+
+#[test]
 fn dry_run_lists_everything_and_touches_nothing() {
     let fx = Fx::new("un-dry", 0);
     populate(&fx);

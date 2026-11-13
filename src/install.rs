@@ -1042,6 +1042,26 @@ pub fn on_daemon_start(state_dir: &Path) {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(unix)]
+    #[test]
+    fn diff_does_not_write_through_files_planted_in_its_scratch_dir() {
+        let d = std::env::temp_dir().join(format!("sb-diff-planted-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        let scratch = d.join("scratch");
+        std::fs::create_dir_all(&scratch).unwrap();
+        let victim = d.join("victim");
+        std::fs::write(&victim, "keep").unwrap();
+        for n in ["sb-diff-a", "sb-diff-b"] {
+            std::os::unix::fs::symlink(&victim, scratch.join(n)).unwrap();
+        }
+        let out = diff(Path::new("settings.json"), "one\n", "two\n", &scratch);
+        assert!(out.contains("settings.json (merged)"), "{out}");
+        assert!(out.contains("-one\n+two\n"), "{out}");
+        assert_eq!(std::fs::read_to_string(&victim).unwrap(), "keep");
+        assert_eq!(std::fs::read_dir(&scratch).unwrap().count(), 2);
+        let _ = std::fs::remove_dir_all(d);
+    }
+
     #[test]
     fn specs_and_installable_agents_match_both_ways() {
         for a in crate::agents::AGENTS
