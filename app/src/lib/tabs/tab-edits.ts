@@ -140,13 +140,21 @@ export function tabClosed(app: App, key: string, end: boolean) {
 
 const ending = new Set<string>();
 
+const dropping = new Set<string>();
+
 function dropTerm(app: App, id: string) {
+  if (dropping.has(id)) return Promise.resolve();
+  dropping.add(id);
+  const forget = () => {
+    app.data = { ...app.data, terms: app.data.terms.filter((x) => x.id !== id) };
+  };
   return app.api
     .deleteTerm(id)
-    .then(() => {
-      app.data = { ...app.data, terms: app.data.terms.filter((x) => x.id !== id) };
+    .then(forget)
+    .catch((e) => {
+      if ((e as { status?: number })?.status === 404) forget();
     })
-    .catch(() => {});
+    .finally(() => dropping.delete(id));
 }
 
 export function reapEnded(app: App, terms = app.data.terms) {

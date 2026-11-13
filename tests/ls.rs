@@ -346,10 +346,39 @@ fn ids_are_stable_and_launch_args_survive_process_death() {
     }
     let l1 = find(&second, S1);
     assert_eq!((l1.state, l1.held_reason), ("held", Some("lost")));
+    assert!(!l1.busy, "a line whose process is gone is not busy");
     assert_eq!(
         l1.resume_command,
         format!("cd {} && claude --model opus --resume {S1}", fx.wt_login)
     );
+}
+
+#[test]
+fn a_line_whose_agent_died_mid_turn_is_held_and_not_busy() {
+    let fx = Fx::new();
+    let at = std::time::SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_millis() as i64
+        + 60_000;
+    let agents = [("claude", S2), ("codex", CX)];
+    for (agent, sid) in agents {
+        let rec = serde_json::json!({"agent": agent, "event": "UserPromptSubmit", "sessionId": sid, "at": at, "pid": 4343});
+        overseer::hooks::append_spool(&fx.state(), &rec).unwrap();
+    }
+    let alive = fx.scan(&fx.probe());
+    for (_, sid) in agents {
+        assert!(find(&alive, sid).busy, "{sid}");
+    }
+    let gone = fx.scan(&Fake(vec![(999, "1", argv("sleep 1"), None)]));
+    for (_, sid) in agents {
+        let l = find(&gone, sid);
+        assert_eq!((l.state, l.held_reason), ("held", Some("lost")), "{sid}");
+        assert!(
+            !l.busy,
+            "a held line keeps no busy flag from its last turn: {sid}"
+        );
+    }
 }
 
 #[test]
