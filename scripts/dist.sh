@@ -1,9 +1,10 @@
 #!/bin/sh
 set -eu
-version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
+. "$(dirname "$0")/platforms.sh"
+version=$("$(dirname "$0")/version.sh")
 mkdir -p dist
 built=0
-for t in ${DIST_TARGETS:-x86_64-unknown-linux-musl aarch64-unknown-linux-musl}; do
+for t in ${DIST_TARGETS:-$LINUX_X64 $LINUX_ARM64}; do
   arch=${t%%-*}
   var=$(echo "$t" | tr 'a-z-' 'A-Z_')
   if ! rustup target list --installed | grep -qx "$t"; then

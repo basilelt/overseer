@@ -1,25 +1,37 @@
-import { describe, expect, it } from 'vitest';
-import source from './TaskModal.svelte?raw';
+import { afterEach, describe, expect, it } from 'vitest';
+import { render } from 'svelte/server';
+import { t } from '../../i18n.svelte';
+import { app } from '../../state.svelte';
+import type { Profile, ProfilesStore } from '../../types';
+import TaskModal from './TaskModal.svelte';
+
+const builtin = { id: 'balanced', name: 'Balanced', builtin: true, agents: {} } as Profile;
+const store = (over: Partial<ProfilesStore> = {}): ProfilesStore => ({ default: 'balanced', profiles: [builtin], scopes: {}, support: {}, ...over });
+const before = { profiles: app.profiles };
+afterEach(() => Object.assign(app, before));
+
+const html = (profiles: ProfilesStore | null) => {
+  app.profiles = profiles;
+  return render(TaskModal, { props: { onclose: () => {} } }).body;
+};
 
 describe('task type in the add task form', () => {
-  it('resolves the model and effort with the task type', () => {
-    expect(source).toContain('resolveProfile(app.profiles, { explicit: profile, taskType: taskType || undefined, cwd: project })');
-  });
-
-  it('refills model and effort when the type changes unless a profile is picked', () => {
-    expect(source).toMatch(/function setTaskType\(ty: TaskType \| ''\) \{\s*taskType = ty;\s*if \(!profile\) reset\(\);/);
-  });
-
-  it('takes the type of an imported ticket', () => {
-    expect(source).toContain('if (fill.taskType && app.profiles?.taskTypes) setTaskType(fill.taskType);');
+  it('offers the task type with every type listed when the daemon knows task types', () => {
+    const h = html(store({ taskTypes: ['fix', 'feature'] }));
+    expect(h).toContain('data-tour="task-type"');
+    expect(h).toContain(`>${t('taskType.unset')}<`);
+    for (const ty of ['fix', 'feature', 'engineering', 'refactor', 'triage'] as const) expect(h).toContain(`<option value="${ty}"`);
   });
 
   it('keeps only the profile field on a daemon without task types', () => {
-    expect(source).toMatch(/\{#if app\.profiles\?\.taskTypes\}[\s\S]*\{:else if app\.profiles\}\s*<div class="field">\s*<span>\{t\('profile\.label'\)\}<\/span>\s*<ProfileSelect value=\{profile\} cwd=\{project\} \{agent\} onchange=\{setProfile\} \/>/);
+    const h = html(store());
+    expect(h).not.toContain('data-tour="task-type"');
+    expect(h).toContain(t('profile.label'));
   });
 
-  it('sends the type and shows the profile it implies', () => {
-    expect(source).toContain('...(taskType ? { taskType } : {}),');
-    expect(source).toContain('<ProfileSelect value={profile} cwd={project} {taskType} {agent} onchange={setProfile} />');
+  it('shows neither field when the daemon has no profiles', () => {
+    const h = html(null);
+    expect(h).not.toContain('data-tour="task-type"');
+    expect(h).not.toContain(t('profile.label'));
   });
 });

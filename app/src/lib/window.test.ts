@@ -24,8 +24,6 @@ describe('host key', () => {
 });
 
 describe('isMainWindow', () => {
-  afterEach(() => vi.unstubAllGlobals());
-
   it('is true for the first window and false for extra ones', () => {
     vi.stubGlobal('location', { search: '' });
     expect(isMainWindow()).toBe(true);
@@ -38,7 +36,6 @@ describe('isMainWindow', () => {
 
 describe('openWindow', () => {
   afterEach(() => {
-    vi.unstubAllGlobals();
     invoke.mockReset();
   });
 
@@ -72,7 +69,6 @@ describe('opening a window for one host', () => {
   const prod = { kind: 'ssh' as const, host: 'prod', label: 'prod' };
 
   afterEach(() => {
-    vi.unstubAllGlobals();
     invoke.mockReset();
   });
 

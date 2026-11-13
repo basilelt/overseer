@@ -1,14 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { baseName, crumbs, shortPath, tildePath } from './dirs';
-
-describe('baseName', () => {
-  it('takes the last segment and ignores trailing slashes', () => {
-    expect(baseName('/home/me/src/app/')).toBe('app');
-    expect(baseName(' ~/src/my-project ')).toBe('my-project');
-    expect(baseName('~')).toBe('~');
-    expect(baseName('/')).toBe('');
-  });
-});
+import { crumbs, shortPath, tildePath } from './dirs';
 
 describe('tildePath', () => {
   it('writes the home directory as ~', () => {

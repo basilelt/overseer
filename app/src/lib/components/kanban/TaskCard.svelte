@@ -11,11 +11,13 @@
   import FolderGit from '@lucide/svelte/icons/folder-git';
   import LoaderCircle from '@lucide/svelte/icons/loader-circle';
   import { t, type Key } from '../../i18n.svelte';
-  import { cardMeta, isDone, isSession, modelLabel, quadrant, relTime, type CardStatus } from '../../kanban';
+  import { cardMeta, isSession, modelLabel, quadrant, relTime, type CardStatus } from '../../kanban/kanban';
   import type { Task } from '../../types';
   import { app, projectName } from '../../state.svelte';
+  import { armedConfirm } from '../../armed-confirm.svelte';
   import { agentName, findAgent } from '../../agents';
   import AgentGlyph from '../ui/AgentGlyph.svelte';
+  import { isDone, isPending, isRunning, isTesting, isUnstarted } from '../../kanban/task-status';
 
   let {
     task,
@@ -63,15 +65,14 @@
     onkeydown?: (e: KeyboardEvent) => void;
   } = $props();
 
-  let confirming = $state(false);
+  const confirm = armedConfirm();
   let editing = $state(false);
   let draft = $state('');
   let openTimer: ReturnType<typeof setTimeout> | undefined;
-  let confirmTimer: ReturnType<typeof setTimeout> | undefined;
 
   const age = $derived(relTime(task.updatedAt));
   const session = $derived(isSession(task));
-  const openable = $derived(task.status === 'in_testing' || (session ? !!task.lineId : task.status === 'in_progress'));
+  const openable = $derived(isTesting(task.status) || (session ? !!task.lineId : isRunning(task.status)));
   const meta = $derived(cardMeta(task, { filtered, defaultBranch: app.allProjects.find((p) => p.path === task.project)?.defaultBranch }));
   const model = $derived(modelLabel(task.model) || agentName(app.agents, task.agent));
   const quad = $derived(showQuadrant ? quadrant(task) : 'none');
@@ -109,14 +110,7 @@
 
   function askDelete(e: MouseEvent) {
     e.stopPropagation();
-    if (confirming) {
-      clearTimeout(confirmTimer);
-      confirming = false;
-      ondelete?.();
-      return;
-    }
-    confirming = true;
-    confirmTimer = setTimeout(() => (confirming = false), 3000);
+    if (confirm.press()) ondelete?.();
   }
 
   function act(fn?: () => void) {
@@ -230,10 +224,10 @@
       <span class="age faint">{t(age.key, { n: age.n })}</span>
       {#if !ghost && (!session || onmore)}
         <span class="actions">
-          {#if !session && task.status === 'pending'}
+          {#if !session && isPending(task.status)}
             <button class="act" title={t('kanban.queueAuto')} aria-label={t('kanban.queueAuto')} onclick={act(onqueue)}><svg class="i" width="13" height="13" aria-hidden="true"><use href="#sbi-zap" /></svg></button>
           {/if}
-          {#if !session && (task.status === 'pending' || task.status === 'auto')}
+          {#if !session && isUnstarted(task.status)}
             <button
               class="act"
               title={t('kanban.start')}
@@ -256,12 +250,12 @@
           {#if !session}
             <button
               class="act del"
-              class:confirm={confirming}
-              title={confirming ? t('kanban.deleteConfirm', { n: task.number }) : t('common.delete')}
-              aria-label={confirming ? t('kanban.deleteConfirm', { n: task.number }) : t('common.delete')}
+              class:confirm={confirm.armed}
+              title={confirm.armed ? t('kanban.deleteConfirm', { n: task.number }) : t('common.delete')}
+              aria-label={confirm.armed ? t('kanban.deleteConfirm', { n: task.number }) : t('common.delete')}
               onclick={askDelete}
             >
-              <svg class="i" width="13" height="13" aria-hidden="true"><use href="#sbi-trash" /></svg>{#if confirming}<span>{t('common.confirm')}</span>{/if}
+              <svg class="i" width="13" height="13" aria-hidden="true"><use href="#sbi-trash" /></svg>{#if confirm.armed}<span>{t('common.confirm')}</span>{/if}
             </button>
           {/if}
           {#if onmore}

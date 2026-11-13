@@ -1,3 +1,4 @@
+use crate::agents::Transcript;
 use crate::usage::{Meter, Tokens};
 use crate::util::{format_rfc3339, parse_rfc3339};
 use serde_json::{json, Value};
@@ -86,15 +87,15 @@ pub fn find_transcript(
     agent: &str,
     session_id: &str,
 ) -> Option<PathBuf> {
-    if session_id.is_empty() || session_id.contains('/') || session_id.contains("..") {
+    if !crate::util::safe_session_id(session_id) {
         return None;
     }
-    let base = match agent {
-        "claude" => claude_dir,
-        "codex" => codex_dir,
-        "gemini" => gemini_dir,
-        "vibe" => return crate::vibe::find(&crate::vibe::home(), session_id),
-        _ => return None,
+    let kind = crate::agents::transcript_of(agent)?;
+    let base = match kind {
+        Transcript::Claude => claude_dir,
+        Transcript::Codex => codex_dir,
+        Transcript::Gemini => gemini_dir,
+        Transcript::Vibe => return crate::vibe::find(&crate::vibe::home(), session_id),
     };
     let key = (base.join(agent), session_id.to_string());
     let known = located()
@@ -107,7 +108,7 @@ pub fn find_transcript(
         Some(Err(at)) if at.elapsed() < MISS_RETRY => return None,
         _ => {}
     }
-    let found = locate(base, agent, session_id);
+    let found = locate(base, kind, session_id);
     let mut map = located().lock().unwrap_or_else(|e| e.into_inner());
     if map.len() >= 4096 {
         map.clear();
@@ -116,16 +117,18 @@ pub fn find_transcript(
     found
 }
 
-fn locate(base: &Path, agent: &str, session_id: &str) -> Option<PathBuf> {
-    match agent {
-        "claude" => std::fs::read_dir(base.join("projects"))
+fn locate(base: &Path, kind: Transcript, session_id: &str) -> Option<PathBuf> {
+    match kind {
+        Transcript::Claude => std::fs::read_dir(crate::claude::projects_dir(base))
             .ok()?
             .flatten()
-            .map(|e| e.path().join(format!("{session_id}.jsonl")))
+            .map(|e| crate::claude::session_file(&e.path(), session_id))
             .find(|p| p.is_file()),
-        "codex" => find_rollout(&base.join("sessions"), &format!("-{session_id}.jsonl"), 4),
-        "gemini" => crate::gemini::find(base, session_id),
-        _ => None,
+        Transcript::Codex => {
+            find_rollout(&base.join("sessions"), &format!("-{session_id}.jsonl"), 4)
+        }
+        Transcript::Gemini => crate::gemini::find(base, session_id),
+        Transcript::Vibe => None,
     }
 }
 
@@ -189,7 +192,7 @@ pub fn edit_stats(agent: &str, path: &Path) -> HashMap<String, (u32, u32)> {
 
 fn transcripts(path: &Path) -> Vec<std::path::PathBuf> {
     let mut files = vec![path.to_path_buf()];
-    if let Ok(rd) = std::fs::read_dir(path.with_extension("").join("subagents")) {
+    if let Ok(rd) = std::fs::read_dir(crate::claude::subagents_dir(path)) {
         files.extend(
             rd.flatten()
                 .map(|e| e.path())
@@ -226,6 +229,7 @@ pub fn touched(agent: &str, path: &Path) -> (Vec<String>, Vec<String>) {
 }
 
 fn with_state<R>(agent: &str, path: &Path, f: impl FnOnce(&State) -> R) -> Option<R> {
+    let kind = crate::agents::transcript_of(agent);
     if path.is_dir() {
         let stamp = crate::vibe::stamp(path);
         let mut cache = cache().lock().unwrap_or_else(|e| e.into_inner());
@@ -257,7 +261,7 @@ fn with_state<R>(agent: &str, path: &Path, f: impl FnOnce(&State) -> R) -> Optio
                 st.summary = Some(t.to_string());
             }
             for m in v["messages"].as_array().into_iter().flatten() {
-                st.ingest(agent, m);
+                st.ingest(kind, m);
                 let turns = st.meter.gemini(m);
                 st.count(turns, false);
             }
@@ -269,8 +273,8 @@ fn with_state<R>(agent: &str, path: &Path, f: impl FnOnce(&State) -> R) -> Optio
             #[cfg(test)]
             INGESTED.with(|n| n.set(n.get() + 1));
             if let Ok(v) = serde_json::from_slice::<Value>(line) {
-                st.ingest(agent, &v);
-                let turns = st.meter.line(agent, line);
+                st.ingest(kind, &v);
+                let turns = st.meter.line(kind, line);
                 st.count(turns, v["isSidechain"] == true);
             }
         })?;
@@ -286,7 +290,7 @@ thread_local! {
 pub fn spend(agent: &str, path: &Path) -> Option<Spend> {
     let mut out: Option<Spend> = None;
     let mut files = vec![path.to_path_buf()];
-    sub_transcripts(&path.with_extension("").join("subagents"), 3, &mut files);
+    sub_transcripts(&crate::claude::subagents_dir(path), 3, &mut files);
     for (i, f) in files.iter().enumerate() {
         let Some(s) = with_state(agent, f, |st| st.spend.clone()) else {
             continue;
@@ -516,16 +520,16 @@ impl State {
         }
     }
 
-    fn ingest(&mut self, agent: &str, v: &Value) {
+    fn ingest(&mut self, kind: Option<Transcript>, v: &Value) {
         let ts = v["timestamp"]
             .as_str()
             .and_then(parse_rfc3339)
             .unwrap_or(self.last_ts);
         self.last_ts = self.last_ts.max(ts);
-        match agent {
-            "codex" => self.codex(v, ts),
-            "gemini" => self.gemini(v, ts),
-            _ => self.claude(v, ts),
+        match kind {
+            Some(Transcript::Codex) => self.codex(v, ts),
+            Some(Transcript::Gemini) => self.gemini(v, ts),
+            Some(Transcript::Claude) | Some(Transcript::Vibe) | None => self.claude(v, ts),
         }
     }
 
@@ -1013,7 +1017,7 @@ mod tests {
         let d = std::env::temp_dir().join(format!(
             "sb-activity-{tag}-{}-{}",
             std::process::id(),
-            crate::procs::now_ms()
+            crate::util::now_ms()
         ));
         std::fs::create_dir_all(&d).unwrap();
         d

@@ -1,6 +1,9 @@
-use crate::board::{git_out, publish};
+use crate::board::publish;
+use crate::git::git_out;
 use crate::git::Git;
-use crate::registry::Registry;
+use crate::registry::{col_at, columns, db, insert_row, sql, update_row, Registry};
+use crate::status::{self, COMPLETED, IN_PROGRESS, MERGED, PENDING};
+use crate::task_transition::{self, Origin};
 use crate::term::{self, Spec, Term};
 use crate::util::{format_rfc3339, ticket_any, ulid};
 use crate::{Ctx, Line};
@@ -12,7 +15,44 @@ use std::sync::{Arc, Mutex};
 
 pub(crate) type Res<T> = Result<T, (u16, String)>;
 
-const COLS: &str = "id, number, title, description, project, status, agent, model, effort, ticket_key, line_id, term_id, branch, worktree_path, progress, error, started_ms, created_ms, updated_ms, rank, origin, manual_status, session_state, badge, profile, title_source, urgent, important, parent_id, depends_on, inherit_branch, quorum, votes, cost, task_type";
+columns!(
+    COLUMNS,
+    COLS = id,
+    number,
+    title,
+    description,
+    project,
+    status,
+    agent,
+    model,
+    effort,
+    ticket_key,
+    line_id,
+    term_id,
+    branch,
+    worktree_path,
+    progress,
+    error,
+    started_ms,
+    created_ms,
+    updated_ms,
+    rank,
+    origin,
+    manual_status,
+    session_state,
+    badge,
+    profile,
+    title_source,
+    urgent,
+    important,
+    parent_id,
+    depends_on,
+    inherit_branch,
+    quorum,
+    votes,
+    cost,
+    task_type
+);
 
 pub const TITLE_USER: &str = "user";
 pub const TITLE_AUTO: &str = "auto";
@@ -59,49 +99,57 @@ pub struct Task {
     pub task_type: Option<String>,
 }
 
+macro_rules! at {
+    ($n:literal) => {
+        col_at!(COLUMNS, $n)
+    };
+}
+
 fn row(r: &Row) -> rusqlite::Result<Task> {
-    let created: i64 = r.get(17)?;
+    let created: i64 = r.get(at!("created_ms"))?;
     Ok(Task {
-        id: r.get(0)?,
-        number: r.get(1)?,
-        title: r.get(2)?,
-        description: r.get(3)?,
-        project: r.get(4)?,
-        status: r.get(5)?,
-        agent: r.get(6)?,
-        model: r.get(7)?,
-        effort: r.get(8)?,
-        ticket_key: r.get(9)?,
-        line_id: r.get(10)?,
-        term_id: r.get(11)?,
-        branch: r.get(12)?,
-        worktree_path: r.get(13)?,
+        id: r.get(at!("id"))?,
+        number: r.get(at!("number"))?,
+        title: r.get(at!("title"))?,
+        description: r.get(at!("description"))?,
+        project: r.get(at!("project"))?,
+        status: r.get(at!("status"))?,
+        agent: r.get(at!("agent"))?,
+        model: r.get(at!("model"))?,
+        effort: r.get(at!("effort"))?,
+        ticket_key: r.get(at!("ticket_key"))?,
+        line_id: r.get(at!("line_id"))?,
+        term_id: r.get(at!("term_id"))?,
+        branch: r.get(at!("branch"))?,
+        worktree_path: r.get(at!("worktree_path"))?,
         progress: r
-            .get::<_, Option<String>>(14)?
+            .get::<_, Option<String>>(at!("progress"))?
             .and_then(|s| serde_json::from_str(&s).ok()),
-        error: r.get(15)?,
-        started_ms: r.get(16)?,
+        error: r.get(at!("error"))?,
+        started_ms: r.get(at!("started_ms"))?,
         created_ms: created,
-        updated_ms: r.get(18)?,
-        rank: r.get::<_, Option<f64>>(19)?.unwrap_or(created as f64),
-        origin: r.get(20)?,
-        manual_status: r.get(21)?,
-        session_state: r.get(22)?,
-        badge: r.get(23)?,
-        profile: r.get(24)?,
-        title_source: r.get(25)?,
-        urgent: r.get(26)?,
-        important: r.get(27)?,
-        parent_id: r.get(28)?,
+        updated_ms: r.get(at!("updated_ms"))?,
+        rank: r
+            .get::<_, Option<f64>>(at!("rank"))?
+            .unwrap_or(created as f64),
+        origin: r.get(at!("origin"))?,
+        manual_status: r.get(at!("manual_status"))?,
+        session_state: r.get(at!("session_state"))?,
+        badge: r.get(at!("badge"))?,
+        profile: r.get(at!("profile"))?,
+        title_source: r.get(at!("title_source"))?,
+        urgent: r.get(at!("urgent"))?,
+        important: r.get(at!("important"))?,
+        parent_id: r.get(at!("parent_id"))?,
         depends_on: r
-            .get::<_, Option<String>>(29)?
+            .get::<_, Option<String>>(at!("depends_on"))?
             .and_then(|s| serde_json::from_str(&s).ok())
             .unwrap_or_default(),
-        inherit_branch: r.get(30)?,
-        quorum: json_col(r, 31)?,
-        votes: json_col(r, 32)?,
-        cost: json_col(r, 33)?,
-        task_type: r.get(34)?,
+        inherit_branch: r.get(at!("inherit_branch"))?,
+        quorum: json_col(r, at!("quorum"))?,
+        votes: json_col(r, at!("votes"))?,
+        cost: json_col(r, at!("cost"))?,
+        task_type: r.get(at!("task_type"))?,
     })
 }
 
@@ -175,6 +223,10 @@ impl Task {
             .and_then(term::get)
             .filter(|t| !t.exited())
     }
+
+    pub(crate) fn is_running(&self) -> bool {
+        self.status == IN_PROGRESS && self.live_term().is_some()
+    }
 }
 
 const COST_BUSY_MS: i64 = 60_000;
@@ -217,7 +269,7 @@ fn cost_total(c: &Value) -> Option<Value> {
 
 fn track_cost(ctx: &Ctx, reg: &Registry, lines: &[Line]) {
     let Ok(tasks) = all(reg) else { return };
-    let now = crate::procs::now_ms();
+    let now = crate::util::now_ms();
     let mut budget = COST_PER_TICK;
     let mut seen = COST_SEEN.lock().unwrap_or_else(|e| e.into_inner());
     let seen = seen.get_or_insert_with(HashMap::new);
@@ -311,14 +363,6 @@ fn track_cost(ctx: &Ctx, reg: &Registry, lines: &[Line]) {
     }
 }
 
-pub(crate) fn sql<T>(r: rusqlite::Result<T>) -> Res<T> {
-    r.map_err(|e| (500, e.to_string()))
-}
-
-pub(crate) fn db(ctx: &Ctx) -> Res<Registry> {
-    Registry::open(&ctx.state_dir).map_err(|e| (500, e))
-}
-
 pub(crate) fn bad(msg: impl Into<String>) -> (u16, String) {
     (400, msg.into())
 }
@@ -343,49 +387,52 @@ pub fn get(reg: &Registry, id: &str) -> Res<Task> {
     .ok_or_else(|| (404, format!("no task {id}")))
 }
 
-fn save(ctx: &Ctx, reg: &Registry, t: &mut Task) -> Res<()> {
+pub(crate) fn save(ctx: &Ctx, reg: &Registry, t: &mut Task) -> Res<()> {
     store(reg, t, &ctx.config.station_id)
 }
 
+pub(crate) fn logged<T>(what: &str, r: Res<T>) -> bool {
+    match r {
+        Ok(_) => true,
+        Err((_, e)) => {
+            crate::dlog::line("warn", &format!("{what}: {e}"));
+            false
+        }
+    }
+}
+
 pub(crate) fn store(reg: &Registry, t: &mut Task, station: &str) -> Res<()> {
-    t.updated_ms = crate::procs::now_ms();
-    sql(reg.conn.execute(
-        "UPDATE tasks SET title = ?2, description = ?3, status = ?4, agent = ?5, model = ?6, effort = ?7,
-           ticket_key = ?8, line_id = ?9, term_id = ?10, branch = ?11, worktree_path = ?12, progress = ?13,
-           error = ?14, started_ms = ?15, updated_ms = ?16, rank = ?17, manual_status = ?18,
-           session_state = ?19, badge = ?20, profile = ?21, title_source = ?22, urgent = ?23, important = ?24,
-           depends_on = ?25, inherit_branch = ?26, quorum = ?27, votes = ?28, task_type = ?29 WHERE id = ?1",
-        params![
-            t.id,
-            t.title,
-            t.description,
-            t.status,
-            t.agent,
-            t.model,
-            t.effort,
-            t.ticket_key,
-            t.line_id,
-            t.term_id,
-            t.branch,
-            t.worktree_path,
-            t.progress.as_ref().map(Value::to_string),
-            t.error,
-            t.started_ms,
-            t.updated_ms,
-            t.rank,
-            t.manual_status,
-            t.session_state,
-            t.badge,
-            t.profile,
-            t.title_source,
-            t.urgent,
-            t.important,
-            deps_json(&t.depends_on),
-            t.inherit_branch,
-            t.quorum.as_ref().map(Value::to_string),
-            t.votes.as_ref().map(Value::to_string),
-            t.task_type,
-        ],
+    t.updated_ms = crate::util::now_ms();
+    sql(update_row!(
+        reg.conn, "tasks", id = t.id;
+        title = t.title,
+        description = t.description,
+        status = t.status,
+        agent = t.agent,
+        model = t.model,
+        effort = t.effort,
+        ticket_key = t.ticket_key,
+        line_id = t.line_id,
+        term_id = t.term_id,
+        branch = t.branch,
+        worktree_path = t.worktree_path,
+        progress = t.progress.as_ref().map(Value::to_string),
+        error = t.error,
+        started_ms = t.started_ms,
+        updated_ms = t.updated_ms,
+        rank = t.rank,
+        manual_status = t.manual_status,
+        session_state = t.session_state,
+        badge = t.badge,
+        profile = t.profile,
+        title_source = t.title_source,
+        urgent = t.urgent,
+        important = t.important,
+        depends_on = deps_json(&t.depends_on),
+        inherit_branch = t.inherit_branch,
+        quorum = t.quorum.as_ref().map(Value::to_string),
+        votes = t.votes.as_ref().map(Value::to_string),
+        task_type = t.task_type,
     ))?;
     publish("task.updated", json!({"task": t.to_json(station)}));
     Ok(())
@@ -435,9 +482,7 @@ fn deps_json(d: &[String]) -> Option<String> {
     (!d.is_empty()).then(|| json!(d).to_string())
 }
 
-pub fn is_done(status: &str) -> bool {
-    matches!(status, "merged" | "completed")
-}
+use crate::status::is_done;
 
 pub fn blockers<'a>(t: &Task, tasks: &'a [Task]) -> Vec<&'a Task> {
     t.depends_on
@@ -606,7 +651,7 @@ pub fn create(ctx: &Ctx, b: &Value) -> Res<Task> {
         .ok_or_else(|| bad("project required"))?;
     let (project, _) = main_root(&mut Git::default(), path)
         .ok_or_else(|| bad(format!("{path} is not in a git repository")))?;
-    let mut status = pick(b, "status", &["pending", "auto"], "pending")?;
+    let mut status = pick(b, "status", &status::TASK_CREATE_SETTABLE, PENDING)?;
     let reg = db(ctx)?;
     let parent = match &b["parentId"] {
         Value::Null => None,
@@ -624,13 +669,13 @@ pub fn create(ctx: &Ctx, b: &Value) -> Res<Task> {
         Some(p) => crate::quorum::child_agent(p, asked)?,
         None => asked,
     }
-    .unwrap_or("claude");
+    .unwrap_or(crate::agents::DEFAULT_ID);
     let quorum = crate::quorum::parse(&b["quorum"], agent)?;
     if quorum.is_some() && parent.is_some() {
         return Err(bad("a subtask cannot run a quorum"));
     }
     if parent.as_ref().is_some_and(|p| p.quorum.is_some()) {
-        status = "auto";
+        status = status::AUTO;
     }
     let profile = profile_of(ctx, &b["profile"])?;
     let task_type = task_type_of(&b["taskType"])?;
@@ -657,7 +702,7 @@ pub fn create(ctx: &Ctx, b: &Value) -> Res<Task> {
     let origin = pick(b, "origin", &["user", "agent"], "user")?;
     let parent_id = parent.map(|p| p.id);
     let depends_on = deps_of(&reg, "", &project, &b["dependsOn"])?;
-    let now = crate::procs::now_ms();
+    let now = crate::util::now_ms();
     let mut t = Task {
         id: ulid(now),
         title: title.into(),
@@ -711,43 +756,38 @@ pub(crate) fn insert(reg: &Registry, t: &mut Task, station: &str) -> Res<bool> {
         [&t.project],
         |r| r.get(0),
     ))?;
-    let n = sql(tx.execute(
-        "INSERT INTO tasks (id, number, title, description, project, status, agent, model, effort, ticket_key,
-           line_id, branch, worktree_path, progress, created_ms, updated_ms, rank, origin, session_state, badge, profile, title_source, urgent, important, parent_id, depends_on, inherit_branch, quorum, votes, task_type)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29, ?30)
-         ON CONFLICT DO NOTHING",
-        params![
-            t.id,
-            t.number,
-            t.title,
-            t.description,
-            t.project,
-            t.status,
-            t.agent,
-            t.model,
-            t.effort,
-            t.ticket_key,
-            t.line_id,
-            t.branch,
-            t.worktree_path,
-            t.progress.as_ref().map(Value::to_string),
-            t.created_ms,
-            t.updated_ms,
-            t.rank,
-            t.origin,
-            t.session_state,
-            t.badge,
-            t.profile,
-            t.title_source,
-            t.urgent,
-            t.important,
-            t.parent_id,
-            deps_json(&t.depends_on),
-            t.inherit_branch,
-            t.quorum.as_ref().map(Value::to_string),
-            t.votes.as_ref().map(Value::to_string),
-            t.task_type,
-        ],
+    let n = sql(insert_row!(
+        tx, "INSERT INTO", "tasks", " ON CONFLICT DO NOTHING";
+        id = t.id,
+        number = t.number,
+        title = t.title,
+        description = t.description,
+        project = t.project,
+        status = t.status,
+        agent = t.agent,
+        model = t.model,
+        effort = t.effort,
+        ticket_key = t.ticket_key,
+        line_id = t.line_id,
+        branch = t.branch,
+        worktree_path = t.worktree_path,
+        progress = t.progress.as_ref().map(Value::to_string),
+        created_ms = t.created_ms,
+        updated_ms = t.updated_ms,
+        rank = t.rank,
+        origin = t.origin,
+        session_state = t.session_state,
+        badge = t.badge,
+        profile = t.profile,
+        title_source = t.title_source,
+        urgent = t.urgent,
+        important = t.important,
+        parent_id = t.parent_id,
+        depends_on = deps_json(&t.depends_on),
+        inherit_branch = t.inherit_branch,
+        quorum = t.quorum.as_ref().map(Value::to_string),
+        votes = t.votes.as_ref().map(Value::to_string),
+        task_type = t.task_type,
     ))?;
     if n == 0 {
         return Ok(false);
@@ -798,29 +838,25 @@ pub fn patch(ctx: &Ctx, id: &str, b: &Value) -> Res<Task> {
             "description" => t.description = s()?.to_string(),
             "model" => t.model = s()?.trim().to_string(),
             "status" if t.from_session() => {
-                let s = pick(b, k, &["in_progress", "in_testing", "merged", "completed"], "")
-                    .map_err(|_| bad("a session task follows its session: status must be one of in_progress, in_testing, merged, completed"))?;
+                let s = pick(b, k, &status::SESSION_TASK_SETTABLE, "").map_err(|_| {
+                    bad(format!(
+                        "a session task follows its session: status must be one of {}",
+                        status::SESSION_TASK_SETTABLE.join(", ")
+                    ))
+                })?;
                 t.status = s.into();
                 t.manual_status = Some(s.into());
             }
-            "status" if v == "in_progress" && t.status != "in_progress" => {
+            "status" if v == status::IN_PROGRESS && t.status != status::IN_PROGRESS => {
                 if t.live_term().is_none() {
                     return Err(bad("use POST /v1/tasks/{id}/start to start a task"));
                 }
-                t.status = "in_progress".into();
-                t.started_ms = Some(crate::procs::now_ms());
+                t.status = status::IN_PROGRESS.into();
+                t.started_ms = Some(crate::util::now_ms());
                 seen_busy(|s| s.remove(&t.id));
             }
-            "status" if v == "in_progress" => {}
-            "status" => {
-                t.status = pick(
-                    b,
-                    k,
-                    &["pending", "auto", "in_testing", "merged", "completed"],
-                    "",
-                )?
-                .into()
-            }
+            "status" if v == status::IN_PROGRESS => {}
+            "status" => t.status = pick(b, k, &status::TASK_PATCH_SETTABLE, "")?.into(),
             "agent" => {
                 t.agent = agent_of(b, k)?
                     .ok_or_else(|| bad("agent must not be null"))?
@@ -843,7 +879,7 @@ pub fn patch(ctx: &Ctx, id: &str, b: &Value) -> Res<Task> {
             "ticketKey" => t.ticket_key = ticket_of(v)?,
             "progress" => t.progress = progress(v)?,
             "quorum" => {
-                if !matches!(was.as_str(), "pending" | "auto") {
+                if !status::is_unstarted(&was) {
                     return Err((
                         409,
                         "the quorum can only change before the task starts".into(),
@@ -857,27 +893,8 @@ pub fn patch(ctx: &Ctx, id: &str, b: &Value) -> Res<Task> {
     if t.quorum.is_some() {
         crate::quorum::check_orchestrator(&t.agent)?;
     }
-    leave_merged(&mut t, &was);
-    if t.status == "completed" && was != "completed" {
-        t.session_state = None;
-    }
-    save(ctx, &reg, &mut t)?;
-    if t.status == "in_testing" && was != "in_testing" {
-        crate::task_agents::spawn_overlap_alert(ctx, &t);
-        crate::quorum::on_ready(ctx, &t);
-    }
+    task_transition::enter(ctx, &reg, &mut t, &was, Origin::Patch)?;
     Ok(t)
-}
-
-fn leave_merged(t: &mut Task, was: &str) {
-    if was == "merged" && t.status != "merged" {
-        if let Some(b) = &t.branch {
-            crate::worktrees::forget_landed(b);
-        }
-        if !t.from_session() && !is_done(&t.status) {
-            t.session_state = None;
-        }
-    }
 }
 
 pub fn delete(ctx: &Ctx, id: &str) -> Res<Value> {
@@ -911,7 +928,7 @@ pub fn delete(ctx: &Ctx, id: &str) -> Res<Value> {
 }
 
 fn remove(reg: &Registry, id: &str) -> Res<Vec<Task>> {
-    let now = crate::procs::now_ms();
+    let now = crate::util::now_ms();
     let dependents: Vec<Task> = all(reg)?
         .into_iter()
         .filter(|d| d.id != id && d.depends_on.iter().any(|x| x == id))
@@ -937,26 +954,6 @@ fn remove(reg: &Registry, id: &str) -> Res<Vec<Task>> {
     Ok(dependents)
 }
 
-pub fn slug(s: &str) -> String {
-    let mut out = String::new();
-    for c in s.chars().flat_map(char::to_lowercase) {
-        if c.is_ascii_alphanumeric() {
-            out.push(c);
-        } else if !out.ends_with('-') && !out.is_empty() {
-            out.push('-');
-        }
-        if out.len() >= 40 {
-            break;
-        }
-    }
-    let out = out.trim_matches('-').to_string();
-    if out.is_empty() {
-        "task".into()
-    } else {
-        out
-    }
-}
-
 fn dep_base(reg: &Registry, t: &Task) -> Option<String> {
     let [d] = t.depends_on.as_slice() else {
         return None;
@@ -980,7 +977,7 @@ fn worktree(ctx: &Ctx, reg: &Registry, t: &mut Task) -> Res<String> {
     let branch = t
         .branch
         .clone()
-        .unwrap_or_else(|| format!("task/{}-{}", t.number, slug(&t.title)));
+        .unwrap_or_else(|| crate::layout::task_branch(t.number, &t.title));
     let base = dep_base(reg, t);
     let (root, path, branch) = crate::worktrees::create(
         ctx,
@@ -1006,7 +1003,7 @@ fn in_place(t: &mut Task) -> String {
 }
 
 pub fn applied(ctx: &Ctx, t: &Task) -> crate::profiles::Applied {
-    let a = crate::agents::get(&t.agent).unwrap_or(&crate::agents::AGENTS[0]);
+    let a = crate::agents::get(&t.agent).unwrap_or(crate::agents::default_agent());
     crate::profiles::for_task(&ctx.state_dir, a, t)
 }
 
@@ -1019,7 +1016,7 @@ pub fn argv(
     auto_approve: bool,
 ) -> Vec<String> {
     let a = crate::agents::get(&t.agent).unwrap_or(&crate::agents::AGENTS[0]);
-    let mut extra: Vec<String> = if a.id == "claude" {
+    let mut extra: Vec<String> = if a.start_args {
         ctx.config.start_args.clone()
     } else {
         vec![]
@@ -1048,7 +1045,7 @@ fn reserve(
         .map(|i| i.repo)
         .unwrap_or_else(|| "unknown".into());
     let l = Line {
-        id: format!("{}-{}", ctx.config.station_id, ulid(crate::procs::now_ms())),
+        id: format!("{}-{}", ctx.config.station_id, ulid(crate::util::now_ms())),
         agent,
         session_id: session.into(),
         owner: ctx.config.owner.clone(),
@@ -1136,19 +1133,19 @@ pub(crate) fn start_with_args(
     }
     let by_flag = agent.prompt.is_some();
     let p = applied(ctx, &t);
-    let injected = match agent.id {
-        "codex" => crate::codex::overseer_mcp(
+    let injected = match agent.mcp {
+        crate::agents::Mcp::Codex => crate::codex::overseer_mcp(
             &crate::actions::self_exe(),
             &ctx.state_dir.to_string_lossy(),
             &t.id,
         ),
-        "claude" => crate::claude::overseer_mcp(
+        crate::agents::Mcp::Claude => crate::claude::overseer_mcp(
             &crate::actions::self_exe(),
             &ctx.state_dir.to_string_lossy(),
             &t.id,
         ),
-        "vibe" => vec!["--trust".to_string()],
-        _ => vec![],
+        crate::agents::Mcp::VibeTrust => vec!["--trust".to_string()],
+        crate::agents::Mcp::None => vec![],
     };
     let mut launch = p.clone();
     launch.extra.extend(injected.iter().cloned());
@@ -1178,7 +1175,7 @@ pub(crate) fn start_with_args(
     flags.extend(p.extra.iter().cloned());
     if auto_approve {
         let mut set = launch.extra.clone();
-        if agent.id == "claude" {
+        if agent.start_args {
             set.extend(ctx.config.start_args.iter().cloned());
         }
         flags.extend(crate::agents::auto_approve_flags(agent.id, &set));
@@ -1203,10 +1200,10 @@ pub(crate) fn start_with_args(
     })
     .map_err(|e| (409, e))?;
     t.term_id = Some(term.info().id);
-    t.status = "in_progress".into();
+    t.status = status::IN_PROGRESS.into();
     t.error = None;
     t.session_state = None;
-    t.started_ms = Some(crate::procs::now_ms());
+    t.started_ms = Some(crate::util::now_ms());
     seen_busy(|s| s.remove(&t.id));
     save(ctx, &reg, &mut t)?;
     crate::task_agents::mark_delivered(&reg, &waiting);
@@ -1222,9 +1219,12 @@ pub(crate) fn start_with_args(
         }
         text.push_str(&crate::task_agents::backlog(&late));
     }
-    let own_dir = t.origin.as_deref() == Some(crate::task_agents::CONFIGURATOR);
+    let startup = match t.origin.as_deref() == Some(crate::task_agents::CONFIGURATOR) {
+        true => crate::deliver::StartupPrompt::AnswerForUser,
+        false => crate::deliver::StartupPrompt::WaitForUser,
+    };
     if !text.is_empty() {
-        std::thread::spawn(move || crate::deliver::when_started(&term, &text, own_dir));
+        std::thread::spawn(move || crate::deliver::when_started(&term, &text, startup));
     }
     Ok(t)
 }
@@ -1250,7 +1250,7 @@ pub fn review(ctx: &Ctx, id: &str, b: &Value) -> Res<Value> {
                     "a session task takes feedback in its session tab".into(),
                 ));
             }
-            t.status = "in_progress".into();
+            t.status = status::IN_PROGRESS.into();
         }
         "approve" => {
             if let Some(text) = pr_followup(b["merge"] == true, b["approvePr"] == true) {
@@ -1263,7 +1263,7 @@ pub fn review(ctx: &Ctx, id: &str, b: &Value) -> Res<Value> {
                 crate::deliver::send(&crate::deliver::Channel::Term(term), &text, None, "")
                     .map_err(|e| (500, e))?;
             }
-            t.status = "completed".into();
+            t.status = COMPLETED.into();
             t.session_state = Some(REVIEWED.into());
         }
         "reject" => match (t.live_term(), message) {
@@ -1272,14 +1272,14 @@ pub fn review(ctx: &Ctx, id: &str, b: &Value) -> Res<Value> {
                     crate::deliver::send(&crate::deliver::Channel::Term(term), m, None, "")
                         .map_err(|e| (500, e))?;
                 }
-                t.status = "in_progress".into();
-                t.started_ms = Some(crate::procs::now_ms());
+                t.status = status::IN_PROGRESS.into();
+                t.started_ms = Some(crate::util::now_ms());
                 seen_busy(|s| s.remove(&t.id));
             }
             (None, Some(_)) => {
                 return Err((409, "the agent is not running; start the task again".into()))
             }
-            (None, None) => t.status = "pending".into(),
+            (None, None) => t.status = PENDING.into(),
         },
         _ => {
             let wt = t
@@ -1299,18 +1299,17 @@ pub fn review(ctx: &Ctx, id: &str, b: &Value) -> Res<Value> {
                 .and_then(|_| git_out(&wt, &["rev-parse", "HEAD"]))
                 .map_err(|e| (409, e))?;
             out["commit"] = json!(sha.trim());
-            t.status = "completed".into();
+            t.status = COMPLETED.into();
             t.session_state = Some(REVIEWED.into());
         }
     }
-    leave_merged(&mut t, &was);
     if t.from_session() {
         t.manual_status = Some(t.status.clone());
-        if t.status == "completed" {
+        if t.status == COMPLETED {
             t.session_state = None;
         }
     }
-    save(ctx, &reg, &mut t)?;
+    task_transition::enter(ctx, &reg, &mut t, &was, Origin::Review)?;
     out["task"] = t.to_json(&ctx.config.station_id);
     Ok(out)
 }
@@ -1333,8 +1332,8 @@ const REVIEW_MERGE_WINDOW_MS: i64 = 6 * 3_600_000;
 fn merge_candidate(t: &Task, now: i64) -> bool {
     !t.from_session()
         && match t.status.as_str() {
-            "in_testing" => true,
-            "completed" => {
+            status::IN_TESTING => true,
+            COMPLETED => {
                 t.session_state.as_deref() == Some(REVIEWED)
                     && now - t.updated_ms < REVIEW_MERGE_WINDOW_MS
                     && t.worktree_path
@@ -1354,7 +1353,7 @@ pub fn tick(ctx: &Ctx, lines: &[Line]) {
     };
     for mut t in tasks
         .into_iter()
-        .filter(|t| t.status == "in_progress" && !t.from_session())
+        .filter(|t| t.status == status::IN_PROGRESS && !t.from_session())
     {
         let term = t.term_id.as_deref().and_then(term::get);
         let mut changed = false;
@@ -1386,7 +1385,11 @@ pub fn tick(ctx: &Ctx, lines: &[Line]) {
             _ => None,
         };
         let one_shot = crate::task_agents::is_organizer(&t) || crate::quorum::is_reviewer(&t);
-        let done = if one_shot { "completed" } else { "in_testing" };
+        let done = if one_shot {
+            COMPLETED
+        } else {
+            status::IN_TESTING
+        };
         if let Some(err) = ended {
             t.status = done.into();
             t.error = err;
@@ -1397,14 +1400,7 @@ pub fn tick(ctx: &Ctx, lines: &[Line]) {
         }
         if changed {
             seen_busy(|s| s.remove(&t.id));
-            let _ = save(ctx, &reg, &mut t);
-            if t.status == "in_testing" {
-                crate::task_agents::spawn_overlap_alert(ctx, &t);
-                crate::quorum::on_ready(ctx, &t);
-            }
-            if t.status == "completed" {
-                crate::quorum::reviewer_ended(ctx, &reg, &t);
-            }
+            let _ = task_transition::enter(ctx, &reg, &mut t, IN_PROGRESS, Origin::Reconcile);
             if turn && one_shot {
                 if let Some(x) = term.as_ref().filter(|x| !x.exited()) {
                     let _ = x.kill();
@@ -1413,20 +1409,22 @@ pub fn tick(ctx: &Ctx, lines: &[Line]) {
         }
     }
     if let Ok(tasks) = all(&reg) {
-        let now = crate::procs::now_ms();
+        let now = crate::util::now_ms();
         for mut t in tasks.into_iter().filter(|t| merge_candidate(t, now)) {
             let busy = t
                 .line_id
                 .as_deref()
                 .is_some_and(|id| lines.iter().any(|l| l.id == id && l.busy));
             if !busy
-                && t.branch.as_deref().is_some_and(|b| {
-                    crate::worktrees::landed(&t.project, b, ctx.config.worktree_fetch)
-                })
+                && crate::worktrees::branch_landed(
+                    &t.project,
+                    t.branch.as_deref(),
+                    ctx.config.worktree_fetch,
+                )
             {
-                t.status = "merged".into();
-                t.session_state = Some("merged".into());
-                let _ = save(ctx, &reg, &mut t);
+                let was = std::mem::replace(&mut t.status, MERGED.into());
+                t.session_state = Some(MERGED.into());
+                let _ = task_transition::enter(ctx, &reg, &mut t, &was, Origin::Landed);
             }
         }
     }
@@ -1434,7 +1432,7 @@ pub fn tick(ctx: &Ctx, lines: &[Line]) {
         crate::session_tasks::sync(ctx, &reg, lines);
     }
     track_cost(ctx, &reg, lines);
-    if ctx.config.auto_organize || crate::task_agents::auto_organize_enabled(&reg) {
+    if crate::task_agents::auto_organize_on(ctx, &reg) {
         crate::task_agents::auto_organize(ctx, &reg);
     }
     loop {
@@ -1444,10 +1442,7 @@ pub fn tick(ctx: &Ctx, lines: &[Line]) {
         let running = tasks
             .iter()
             .filter(|t| {
-                t.status == "in_progress"
-                    && !crate::task_agents::is_organizer(t)
-                    && t.quorum.is_none()
-                    && t.live_term().is_some()
+                t.is_running() && !crate::task_agents::is_organizer(t) && t.quorum.is_none()
             })
             .count();
         if running >= ctx.config.auto_concurrency {
@@ -1455,7 +1450,9 @@ pub fn tick(ctx: &Ctx, lines: &[Line]) {
         }
         let Some(next) = tasks
             .iter()
-            .filter(|t| t.status == "auto" && !t.from_session() && blockers(t, &tasks).is_empty())
+            .filter(|t| {
+                t.status == status::AUTO && !t.from_session() && blockers(t, &tasks).is_empty()
+            })
             .min_by(|a, b| {
                 (a.rank, a.created_ms)
                     .partial_cmp(&(b.rank, b.created_ms))
@@ -1466,9 +1463,12 @@ pub fn tick(ctx: &Ctx, lines: &[Line]) {
         };
         if let Err((_, e)) = start(ctx, &next.id, None) {
             let mut n = next.clone();
-            n.status = "pending".into();
+            n.status = PENDING.into();
             n.error = Some(e);
-            let _ = save(ctx, &reg, &mut n);
+            logged(
+                "task not saved after a failed start",
+                save(ctx, &reg, &mut n),
+            );
         }
     }
 }
@@ -1561,7 +1561,7 @@ pub fn add_project(ctx: &Ctx, b: &Value) -> Res<(bool, Value)> {
     let reg = db(ctx)?;
     let n = sql(reg.conn.execute(
         "INSERT OR IGNORE INTO projects (path, added_ms) VALUES (?1, ?2)",
-        params![root, crate::procs::now_ms()],
+        params![root, crate::util::now_ms()],
     ))?;
     Ok((n > 0, project_json(&root, &repo, false)))
 }
@@ -1571,39 +1571,13 @@ mod tests {
 
     #[test]
     fn a_worktree_of_a_submodule_maps_to_the_submodule_checkout() {
-        // Given a repo with a real submodule and a git worktree made from that submodule
-        // When the main root of the worktree is asked
-        // Then it is the submodule checkout inside the repo, not the worktree itself
         let base = std::env::temp_dir().join(format!(
             "sb-submod-{}-{}",
             std::process::id(),
-            crate::procs::now_ms()
+            crate::util::now_ms()
         ));
         let git = |dir: &Path, args: &[&str]| {
-            let out = std::process::Command::new("git")
-                .env("GIT_CONFIG_GLOBAL", "/dev/null")
-                .env("GIT_CONFIG_NOSYSTEM", "1")
-                .args([
-                    "-c",
-                    "protocol.file.allow=always",
-                    "-c",
-                    "commit.gpgsign=false",
-                    "-c",
-                    "user.name=t",
-                    "-c",
-                    "user.email=t@t",
-                    "-c",
-                    "init.defaultBranch=main",
-                ])
-                .args(args)
-                .current_dir(dir)
-                .output()
-                .unwrap();
-            assert!(
-                out.status.success(),
-                "{args:?}: {}",
-                String::from_utf8_lossy(&out.stderr)
-            );
+            crate::git::fixture::run(dir, args);
         };
         let (lib, meta) = (base.join("lib"), base.join("meta"));
         for d in [&lib, &meta] {
@@ -1641,7 +1615,7 @@ mod tests {
         let base = std::env::temp_dir().join(format!(
             "sb-modwt-{}-{}",
             std::process::id(),
-            crate::procs::now_ms()
+            crate::util::now_ms()
         ));
         let common = base.join(".git/modules/x");
         std::fs::create_dir_all(&common).unwrap();
@@ -1668,6 +1642,15 @@ mod tests {
         let _ = std::fs::remove_dir_all(&base);
     }
     use super::*;
+
+    #[test]
+    fn a_failed_save_is_reported_as_failed_and_a_good_one_as_done() {
+        assert!(logged("save", Ok::<(), (u16, String)>(())));
+        assert!(!logged(
+            "save",
+            Err::<(), _>((500, "disk full".to_string()))
+        ));
+    }
 
     #[test]
     fn cost_is_recomputed_only_when_the_session_moved() {
@@ -1707,10 +1690,13 @@ mod tests {
 
     #[test]
     fn slugs() {
-        assert_eq!(slug("Fix the Login page!"), "fix-the-login-page");
-        assert_eq!(slug("  ##  "), "task");
-        assert_eq!(slug("Été 2026 — élan"), "t-2026-lan");
-        assert!(slug(&"word ".repeat(30)).len() <= 40);
+        assert_eq!(
+            crate::layout::task_slug("Fix the Login page!"),
+            "fix-the-login-page"
+        );
+        assert_eq!(crate::layout::task_slug("  ##  "), "task");
+        assert_eq!(crate::layout::task_slug("Été 2026 — élan"), "t-2026-lan");
+        assert!(crate::layout::task_slug(&"word ".repeat(30)).len() <= 40);
     }
 
     #[test]
@@ -1882,32 +1868,5 @@ mod tests {
             t.status = s.into();
             assert!(!merge_candidate(&t, now), "{s}");
         }
-    }
-
-    #[test]
-    fn leaving_merged_clears_the_marker_for_every_exit() {
-        for to in ["in_progress", "pending", "in_testing"] {
-            let mut t = Task {
-                status: to.into(),
-                session_state: Some("merged".into()),
-                ..Default::default()
-            };
-            leave_merged(&mut t, "merged");
-            assert_eq!(t.session_state, None, "{to}");
-        }
-        let mut t = Task {
-            status: "completed".into(),
-            session_state: Some("merged".into()),
-            ..Default::default()
-        };
-        leave_merged(&mut t, "merged");
-        assert_eq!(t.session_state.as_deref(), Some("merged"));
-        let mut t = Task {
-            status: "in_progress".into(),
-            session_state: Some("x".into()),
-            ..Default::default()
-        };
-        leave_merged(&mut t, "in_testing");
-        assert_eq!(t.session_state.as_deref(), Some("x"));
     }
 }

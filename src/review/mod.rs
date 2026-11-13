@@ -8,9 +8,10 @@ pub mod symbols;
 pub mod triage;
 pub mod watch;
 
-use crate::board::{decode, publish};
-use crate::daemon::{q, Request};
-use crate::registry::Registry;
+use crate::board::publish;
+use crate::http::{err, q, Request};
+use crate::registry::{col_at, columns, insert_row, sql, Registry};
+use crate::util::percent_decode;
 use crate::util::{format_rfc3339, ulid};
 use crate::{Ctx, Line};
 use anchor::{capture, locate, Anchor, Found};
@@ -78,7 +79,29 @@ CREATE TABLE IF NOT EXISTS review_viewed (
 );
 ";
 
-const TCOLS: &str = "id, worktree, path, side, line, end_line, orig_line, orig_end_line, code, ctx_before, ctx_after, status, outdated, changed, sent, line_id, task_id, delivery_id, created_ms, updated_ms";
+columns!(
+    TCOLUMNS,
+    TCOLS = id,
+    worktree,
+    path,
+    side,
+    line,
+    end_line,
+    orig_line,
+    orig_end_line,
+    code,
+    ctx_before,
+    ctx_after,
+    status,
+    outdated,
+    changed,
+    sent,
+    line_id,
+    task_id,
+    delivery_id,
+    created_ms,
+    updated_ms
+);
 
 static LINES: Mutex<Vec<Line>> = Mutex::new(vec![]);
 static DELIVER: Mutex<()> = Mutex::new(());
@@ -123,31 +146,28 @@ fn unhash(v: &[u64]) -> String {
 
 fn trow(r: &Row) -> rusqlite::Result<Thread> {
     Ok(Thread {
-        id: r.get(0)?,
-        worktree: r.get(1)?,
-        path: r.get(2)?,
-        side: r.get(3)?,
-        line: r.get::<_, i64>(4)? as usize,
-        end: r.get::<_, i64>(5)? as usize,
-        orig_line: r.get::<_, i64>(6)? as usize,
-        orig_end: r.get::<_, i64>(7)? as usize,
-        code: serde_json::from_str(&r.get::<_, String>(8)?).unwrap_or_default(),
-        before: hashes(&r.get::<_, String>(9)?),
-        after: hashes(&r.get::<_, String>(10)?),
-        status: r.get(11)?,
-        outdated: r.get(12)?,
-        changed: r.get(13)?,
-        sent: r.get(14)?,
-        line_id: r.get(15)?,
-        task_id: r.get(16)?,
-        delivery_id: r.get(17)?,
-        created_ms: r.get(18)?,
-        updated_ms: r.get(19)?,
+        id: r.get(col_at!(TCOLUMNS, "id"))?,
+        worktree: r.get(col_at!(TCOLUMNS, "worktree"))?,
+        path: r.get(col_at!(TCOLUMNS, "path"))?,
+        side: r.get(col_at!(TCOLUMNS, "side"))?,
+        line: r.get::<_, i64>(col_at!(TCOLUMNS, "line"))? as usize,
+        end: r.get::<_, i64>(col_at!(TCOLUMNS, "end_line"))? as usize,
+        orig_line: r.get::<_, i64>(col_at!(TCOLUMNS, "orig_line"))? as usize,
+        orig_end: r.get::<_, i64>(col_at!(TCOLUMNS, "orig_end_line"))? as usize,
+        code: serde_json::from_str(&r.get::<_, String>(col_at!(TCOLUMNS, "code"))?)
+            .unwrap_or_default(),
+        before: hashes(&r.get::<_, String>(col_at!(TCOLUMNS, "ctx_before"))?),
+        after: hashes(&r.get::<_, String>(col_at!(TCOLUMNS, "ctx_after"))?),
+        status: r.get(col_at!(TCOLUMNS, "status"))?,
+        outdated: r.get(col_at!(TCOLUMNS, "outdated"))?,
+        changed: r.get(col_at!(TCOLUMNS, "changed"))?,
+        sent: r.get(col_at!(TCOLUMNS, "sent"))?,
+        line_id: r.get(col_at!(TCOLUMNS, "line_id"))?,
+        task_id: r.get(col_at!(TCOLUMNS, "task_id"))?,
+        delivery_id: r.get(col_at!(TCOLUMNS, "delivery_id"))?,
+        created_ms: r.get(col_at!(TCOLUMNS, "created_ms"))?,
+        updated_ms: r.get(col_at!(TCOLUMNS, "updated_ms"))?,
     })
-}
-
-fn sql<T>(r: rusqlite::Result<T>) -> Res<T> {
-    r.map_err(|e| (500, e.to_string()))
 }
 
 fn bad(m: impl Into<String>) -> (u16, String) {
@@ -155,20 +175,32 @@ fn bad(m: impl Into<String>) -> (u16, String) {
 }
 
 pub fn open(ctx: &Ctx) -> Res<Registry> {
-    let reg = Registry::open(&ctx.state_dir).map_err(|e| (500, e))?;
-    sql(reg.conn.execute_batch(SCHEMA))?;
-    Ok(reg)
+    crate::registry::db_with(ctx, SCHEMA)
 }
 
 fn save(reg: &Registry, t: &Thread) -> Res<()> {
-    sql(reg.conn.execute(
-        &format!("INSERT OR REPLACE INTO review_threads ({TCOLS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20)"),
-        params![
-            t.id, t.worktree, t.path, t.side, t.line as i64, t.end as i64, t.orig_line as i64,
-            t.orig_end as i64, serde_json::to_string(&t.code).unwrap_or_default(), unhash(&t.before),
-            unhash(&t.after), t.status, t.outdated, t.changed, t.sent, t.line_id, t.task_id,
-            t.delivery_id, t.created_ms, t.updated_ms
-        ],
+    sql(insert_row!(
+        reg.conn, "INSERT OR REPLACE INTO", "review_threads", "";
+        id = t.id,
+        worktree = t.worktree,
+        path = t.path,
+        side = t.side,
+        line = t.line as i64,
+        end_line = t.end as i64,
+        orig_line = t.orig_line as i64,
+        orig_end_line = t.orig_end as i64,
+        code = serde_json::to_string(&t.code).unwrap_or_default(),
+        ctx_before = unhash(&t.before),
+        ctx_after = unhash(&t.after),
+        status = t.status,
+        outdated = t.outdated,
+        changed = t.changed,
+        sent = t.sent,
+        line_id = t.line_id,
+        task_id = t.task_id,
+        delivery_id = t.delivery_id,
+        created_ms = t.created_ms,
+        updated_ms = t.updated_ms,
     ))
     .map(|_| ())
 }
@@ -224,7 +256,7 @@ fn add_comment(
     body: &str,
     pending: bool,
 ) -> Res<()> {
-    let now = crate::procs::now_ms();
+    let now = crate::util::now_ms();
     sql(reg.conn.execute(
         "INSERT INTO review_comments (id, thread_id, author, body, pending, created_ms, updated_ms)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6)",
@@ -397,7 +429,7 @@ fn local_branch(wt: &str, b: &str) -> Res<String> {
 }
 
 fn target_q(ctx: &Ctx, r: &Request) -> Res<Target> {
-    let d = |k| q(r, k).map(decode);
+    let d = |k| q(r, k).map(percent_decode);
     let mut t = resolve(
         ctx,
         d("worktree").as_deref(),
@@ -858,7 +890,7 @@ pub fn reanchor(reg: &Registry, wt: &str) {
         };
         if (line, end, outdated, changed) != (t.line, t.end, t.outdated, t.changed) {
             (t.line, t.end, t.outdated, t.changed) = (line, end, outdated, changed);
-            t.updated_ms = crate::procs::now_ms();
+            t.updated_ms = crate::util::now_ms();
             if save(reg, &t).is_ok() {
                 emit(reg, &t);
             }
@@ -888,7 +920,7 @@ fn create(ctx: &Ctx, b: &Value) -> Res<Value> {
     if let Some(tid) = b["threadId"].as_str() {
         let mut t = thread(&reg, tid)?;
         add_comment(&reg, &t.id, "user", body, true)?;
-        t.updated_ms = crate::procs::now_ms();
+        t.updated_ms = crate::util::now_ms();
         save(&reg, &t)?;
         emit(&reg, &t);
         return to_json(&reg, &t);
@@ -926,7 +958,7 @@ fn create(ctx: &Ctx, b: &Value) -> Res<Value> {
         .task_id
         .clone()
         .or_else(|| task_of(ctx, &tg.worktree).map(|t| t.id));
-    let now = crate::procs::now_ms();
+    let now = crate::util::now_ms();
     let t = Thread {
         id: format!("rt-{}", ulid(now)),
         worktree: tg.worktree.clone(),
@@ -968,7 +1000,7 @@ fn comment_by_id(reg: &Registry, id: &str) -> Res<Option<Comment>> {
 
 fn patch(ctx: &Ctx, id: &str, b: &Value) -> Res<Value> {
     let reg = open(ctx)?;
-    let now = crate::procs::now_ms();
+    let now = crate::util::now_ms();
     if let Some(c) = comment_by_id(&reg, id)? {
         let body = b["body"]
             .as_str()
@@ -1076,7 +1108,7 @@ fn apply(ctx: &Ctx, id: &str) -> Res<Value> {
         out.push_str(eol);
     }
     std::fs::write(&full, out).map_err(|e| (500, e.to_string()))?;
-    let now = crate::procs::now_ms();
+    let now = crate::util::now_ms();
     if let Some(a) = capture(&lines, t.line, (t.line + n).saturating_sub(1).max(t.line)) {
         if n > 0 {
             t.code = a.code;
@@ -1119,7 +1151,7 @@ fn submit(ctx: &Ctx, b: &Value) -> Res<Value> {
     if let Some(l) = via {
         tg.line_id = Some(l.id.clone());
     }
-    let now = crate::procs::now_ms();
+    let now = crate::util::now_ms();
     let did = format!("rd-{}", ulid(now));
     let fmt: Vec<deliver::Item> = items
         .iter()
@@ -1251,7 +1283,7 @@ fn attempt(ctx: &Ctx, reg: &Registry, id: &str, lines: &[Line]) -> bool {
     if st == "queued" && why == reason && label == prev_target {
         return true;
     }
-    let now = crate::procs::now_ms();
+    let now = crate::util::now_ms();
     let _ = reg.conn.execute(
         "UPDATE review_deliveries SET status = ?2, reason = ?3, target = ?4, updated_ms = ?5,
            text = CASE WHEN ?2 = 'delivered' THEN '' ELSE text END WHERE id = ?1",
@@ -1277,7 +1309,7 @@ pub fn tick(ctx: &Ctx, lines: &[Line]) {
         QUEUE.push(crate::deliver::Job {
             target: String::new(),
             text: String::new(),
-            at_ms: crate::procs::now_ms(),
+            at_ms: crate::util::now_ms(),
             id,
         });
     }
@@ -1306,7 +1338,7 @@ fn list(ctx: &Ctx, r: &Request) -> Res<Value> {
     if let Some(w) = &wt {
         watch::touch(w);
     }
-    let status = q(r, "status").map(decode);
+    let status = r.param("status");
     let wanted: Vec<&str> = status
         .as_deref()
         .map(|s| s.split(',').collect())
@@ -1348,20 +1380,18 @@ fn set_viewed(ctx: &Ctx, b: &Value) -> Res<Value> {
 pub fn routes(r: &Request, segs: &[&str], body: &Value, ctx: &Ctx) -> Option<(u16, Value)> {
     let out = |code: u16, v: Res<Value>| match v {
         Ok(v) => (code, v),
-        Err((c, e)) => (c, json!({"error": e})),
+        Err((c, e)) => err(c, e),
     };
     Some(match (r.method.as_str(), segs) {
         ("GET", ["v1", "review"]) => out(
             200,
-            target_q(ctx, r).and_then(|t| review(ctx, &t, q(r, "base").map(decode).as_deref())),
+            target_q(ctx, r).and_then(|t| review(ctx, &t, r.param("base").as_deref())),
         ),
         ("GET", ["v1", "review", "file"]) => out(
             200,
             target_q(ctx, r).and_then(|t| {
-                let p = q(r, "path")
-                    .map(decode)
-                    .ok_or_else(|| bad("path required"))?;
-                let lines = match q(r, "rev").map(decode) {
+                let p = r.param("path").ok_or_else(|| bad("path required"))?;
+                let lines = match r.param("rev") {
                     Some(rev) if crate::worktrees::valid_sha(&rev) => {
                         diff::lines_at(&t.worktree, &rev, rel(&p)?)
                             .ok_or_else(|| (404, format!("{p} is not in {rev}")))?
@@ -1374,8 +1404,7 @@ pub fn routes(r: &Request, segs: &[&str], body: &Value, ctx: &Ctx) -> Option<(u1
         ),
         ("GET", ["v1", "review", "graph"]) => out(
             200,
-            target_q(ctx, r)
-                .and_then(|t| graph::route(ctx, &t, q(r, "base").map(decode).as_deref())),
+            target_q(ctx, r).and_then(|t| graph::route(ctx, &t, r.param("base").as_deref())),
         ),
         ("GET", ["v1", "review", "map"]) => out(
             200,
@@ -1384,7 +1413,7 @@ pub fn routes(r: &Request, segs: &[&str], body: &Value, ctx: &Ctx) -> Option<(u1
                     .query
                     .iter()
                     .filter(|(k, _)| k == "with")
-                    .map(|(_, v)| decode(v))
+                    .map(|(_, v)| percent_decode(v))
                     .collect();
                 map::route(ctx, &t, &with)
             }),
@@ -1413,22 +1442,7 @@ mod tests {
     use super::*;
 
     fn run(d: &Path, args: &[&str]) -> String {
-        let out = std::process::Command::new("git")
-            .current_dir(d)
-            .env("GIT_CONFIG_GLOBAL", "/dev/null")
-            .env("GIT_CONFIG_NOSYSTEM", "1")
-            .args(["-c", "user.email=t@example.com", "-c", "user.name=T"])
-            .args([
-                "-c",
-                "commit.gpgsign=false",
-                "-c",
-                "protocol.file.allow=always",
-            ])
-            .args(args)
-            .output()
-            .unwrap();
-        assert!(out.status.success(), "git {args:?}");
-        String::from_utf8_lossy(&out.stdout).trim().to_string()
+        crate::git::fixture::run(d, args)
     }
 
     fn tmp(tag: &str) -> std::path::PathBuf {

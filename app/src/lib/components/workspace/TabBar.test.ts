@@ -1,91 +1,132 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { render } from 'svelte/server';
+import { declOf, parseStyle } from '../../../test/css';
+import { HostLink } from '../../host/host-link.svelte';
+import { MockDaemon } from '../../daemon/mock';
+import { settings } from '../../settings/settings.svelte';
+import { app } from '../../state.svelte';
+import { newSessionItems } from '../../workspace/wsactions';
+import type { AgentInfo, LocalLine } from '../../types';
+import TabBar from './TabBar.svelte';
 import bar from './TabBar.svelte?raw';
-import actions from '../../wsactions.ts?raw';
 
-function rule(selector: string): string {
-  const style = bar.slice(bar.indexOf('<style'));
-  const at = style.search(new RegExp(`\\n\\s*${selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*[,{]`));
-  expect(at).toBeGreaterThan(-1);
-  return style.slice(at, style.indexOf('}', at));
-}
+const before = { data: app.data, link: app.link, others: app.others, agents: app.agents, hostTabColor: settings.hostTabColor, defaultAgent: settings.defaultAgent };
+afterEach(() => {
+  Object.assign(app, { data: before.data, link: before.link, others: before.others, agents: before.agents });
+  settings.hostTabColor = before.hostTabColor;
+  settings.defaultAgent = before.defaultAgent;
+  vi.restoreAllMocks();
+});
 
-describe('tab strip', () => {
-  it('keeps tabs at their own width so the strip scrolls instead of squeezing them', () => {
-    expect(rule('.tab')).toMatch(/^\s*flex:\s*none;/m);
-    expect(rule('.tabs')).toMatch(/overflow-x:\s*auto/);
+const cost = { input: 1, cacheWrite: 0, cacheRead: 0, output: 1, cost: 1.234, partial: false, model: 'm', effort: 'high', pricesAsOf: '2026-11-11', models: [], switches: [] };
+const line = (): LocalLine => ({ line: { id: 'l1', agent: 'claude', state: 'active', lastActivityAt: '2026-11-05T10:00:00Z' }, local: { title: 'Fix login' } });
+const html = (activity: Record<string, unknown> = {}) => {
+  app.data = { ...app.data, lines: [line()], activity: activity as never };
+  return render(TabBar, { props: { pane: { tabs: ['line:l1'], active: 'line:l1' }, index: 0, focused: true, canClose: true } }).body;
+};
+
+describe('tab strip content', () => {
+  it('shows the session cost on its tab only when the transcript has one', () => {
+    expect(html()).not.toMatch(/class="[^"]*\bcost\b/);
+    expect(html({ l1: { workLog: [], todos: [], editedFiles: [], needsInput: false, lastAssistantText: '', cost } })).toMatch(/<span[^>]*class="[^"]*\bcost\b[^"]*"[^>]*>\$1\.23</);
   });
 
-  it('caps an inactive tab and lets the active one show its full title', () => {
-    expect(rule('.tab')).toMatch(/^\s*max-width:\s*\d+px;/m);
-    expect(rule('.tab.active')).toMatch(/max-width:\s*none/);
+  it('puts the tab number and the close button in one slot, so hovering does not change the width', () => {
+    const h = html();
+    expect(h).toMatch(/<span class="slot[^"]*"><span class="num[^"]*">1<\/span><button class="x[^"]*"/);
   });
 
-  it('hides the scrollbar, which WebKitGTK draws over the titles', () => {
-    expect(rule('.tabs')).toMatch(/scrollbar-width:\s*none/);
-    expect(rule('.tabs::-webkit-scrollbar')).toMatch(/display:\s*none/);
-    expect(bar).not.toMatch(/\.tabs:hover/);
-  });
-
-  it('shows the session cost on its tab, shrinking before the title does', () => {
-    expect(bar).toMatch(/\{#if costOf\(tab\)\}.*<span class="chip cost mono" title=\{t\('cost\.tab'/);
-    expect(rule('.chip.cost')).toMatch(/flex:\s*0 8 auto/);
-  });
-
-  it('lays no overlay over the strip on hover', () => {
-    expect(bar).not.toMatch(/TabFullTitle|onpointerenter/);
-  });
-
-  it('puts the number and the close button in one slot, so hovering does not change the width', () => {
-    expect(bar).toMatch(/<span class="slot"><span class="num[^"]*">.*?<\/span><button class="x"/);
-    expect(rule('.slot > *')).toMatch(/grid-area:\s*1 \/ 1/);
-    expect(rule('.tab:hover .num')).toMatch(/visibility:\s*hidden/);
-    expect(rule('.x')).not.toMatch(/z-index/);
-  });
-
-  it('moves the pane toolbar under the tabs in a narrow pane instead of squeezing the strip', () => {
-    expect(rule('.tabbar-box')).toMatch(/container-type:\s*inline-size/);
-    expect(bar).toMatch(/@container \(max-width:\s*\d+px\)/);
-    expect(bar.slice(bar.indexOf('@container'))).toMatch(/\.tabs\s*\{[^}]*flex:\s*1 0 100%/);
-    expect(rule('.actions')).toMatch(/flex:\s*none/);
-  });
-
-  it('keeps the toolbar off the tab strip with a separator instead of letting a clipped tab touch the toggle', () => {
-    expect(rule('.actions')).toMatch(/margin-left:\s*6px/);
-    expect(rule('.actions')).toMatch(/border-left:\s*1px solid var\(--border\)/);
-    expect(bar.slice(bar.indexOf('@container'))).toMatch(/\.actions\s*\{[^}]*border-left:\s*0/);
-  });
-
-  it('wraps the toolbar buttons in a very narrow pane so none is clipped', () => {
-    expect(bar.slice(bar.indexOf('@container'))).toMatch(/\.actions\s*\{[^}]*flex-wrap:\s*wrap[^}]*min-height:\s*34px/);
-  });
-
-  it('hands keyboard focus to the session after a mouse click on its tab, never on touch or Enter', () => {
-    expect(bar).toMatch(/e\.detail > 0 && !coarsePointer\(\) && tabInfo\(key, app\.items\)\?\.item/);
-    expect(bar).toMatch(/requestAnimationFrame\(\(\) => focusSession\(pane\)\)/);
-    expect(bar).toMatch(/onkeydown=\{\(e\) => e\.key === 'Enter' && activate\(key\)\}/);
+  it('names the host on every tab only when the window shows several hosts and the setting is on', () => {
+    const local = new HostLink({ kind: 'local', label: 'Local' }, new MockDaemon({ live: false }));
+    const prod = new HostLink({ kind: 'ssh', host: 'prod', label: 'prod' }, new MockDaemon({ live: false }));
+    Object.assign(app, { link: local, others: [prod] });
+    settings.hostTabColor = true;
+    expect(html()).toMatch(/class="host mono[^"]*"[^>]*>Local</);
+    settings.hostTabColor = false;
+    expect(html()).not.toContain('class="host mono');
+    settings.hostTabColor = true;
+    Object.assign(app, { others: [] });
+    expect(html()).not.toContain('class="host mono');
   });
 });
 
 describe('new tab menu', () => {
-  it('only starts sessions; views live in the command palette', () => {
-    expect(bar).toContain("t('tabs.new'), newSessionItems())");
-    const menu = actions.slice(actions.indexOf('export function newSessionItems'), actions.indexOf('export function startIn'));
-    expect(menu).toContain('app.newSession');
-    for (const view of ['browser', 'graph', 'worktrees', 'system', 'usage', 'prs', 'reviewKey', 'tabs.reviewChanges']) expect(menu).not.toContain(view);
+  const agent = (id: string, over: Partial<AgentInfo> = {}): AgentInfo => ({ id, name: id.toUpperCase(), installed: true, efforts: [], resume: false, verified: true, sessions: true, turns: true, ...over });
+
+  it('only starts sessions: agents, the checkout switch and a shell, no view', () => {
+    app.agents = [agent('claude'), agent('codex'), agent('shell')];
+    const items = newSessionItems().filter((i) => !i.separator);
+    expect(items.map((i) => i.agent)).toEqual(['claude', 'codex', undefined, 'shell']);
+    expect(items[2].checked).toBe(settings.sessionsInCheckout);
   });
 
-  it('installs an absent agent from its entry instead of greying it out', () => {
-    const menu = actions.slice(actions.indexOf('export function newSessionItems'), actions.indexOf('export function startIn'));
-    expect(menu).toMatch(/more: missing\.map\(.*disabled: !canInstall\(a\).*run: install\(a\.id\)/);
-    expect(menu).toContain('app.installAgent');
-    expect(menu).toContain("label: canInstall(a) ? t('palette.installAgent', { name: a.name }) : a.name");
+  it('marks the default agent', () => {
+    app.agents = [agent('claude'), agent('codex')];
+    settings.defaultAgent = 'codex';
+    const items = newSessionItems();
+    expect(items.find((i) => i.agent === 'codex')?.default).toBe(true);
+    expect(items.find((i) => i.agent === 'claude')?.default).toBe(false);
+  });
+
+  it('installs an absent agent from its entry instead of greying it out, and greys out one with no install command', () => {
+    app.agents = [agent('claude'), agent('aider', { installed: false, installable: true, install: 'pip install aider' }), agent('goose', { installed: false })];
+    const group = newSessionItems().find((i) => i.more)!;
+    const [aider, goose] = group.more!;
+    expect(aider.disabled).toBe(false);
+    expect(aider.hint).toBe('pip install aider');
+    expect(goose.disabled).toBe(true);
+    const install = vi.spyOn(app, 'installAgent').mockResolvedValue(undefined as never);
+    aider.run!();
+    expect(install).toHaveBeenCalledWith('aider');
   });
 });
 
-describe('TabBar host tag', () => {
-  it('names the host on every tab only when the window shows several hosts and the setting is on', () => {
-    expect(bar).toContain('app.hosts.length > 1 && settings.hostTabColor && app.link ? { name: hostName(app.link.target), color: hostColor(app.link.key) } : null');
-    expect(bar).toMatch(/\{#if hostTag\}<span class="host mono" style:--host=\{hostTag\.color\}/);
-    expect(rule('.host')).toContain('max-width: 64px');
+describe('CSS guard: tab strip', () => {
+  it('keeps tabs at their own width so the strip scrolls instead of squeezing them', () => {
+    expect(declOf(bar, '.tab', 'flex')).toBe('none');
+    expect(declOf(bar, '.tabs', 'overflow-x')).toBe('auto');
+  });
+
+  it('caps an inactive tab and lets the active one show its full title', () => {
+    expect(declOf(bar, '.tab', 'max-width')).toMatch(/^\d+px$/);
+    expect(declOf(bar, '.tab.active', 'max-width')).toBe('none');
+  });
+
+  it('hides the scrollbar, which WebKitGTK draws over the titles', () => {
+    expect(declOf(bar, '.tabs', 'scrollbar-width')).toBe('none');
+    expect(declOf(bar, '.tabs::-webkit-scrollbar', 'display')).toBe('none');
+    expect(parseStyle(bar).some((r) => r.selector === '.tabs:hover')).toBe(false);
+  });
+
+  it('lets the session cost shrink before the title does', () => {
+    expect(declOf(bar, '.chip.cost', 'flex')).toBe('0 8 auto');
+  });
+
+  it('stacks the number and the close button in one grid cell, hiding the number on hover', () => {
+    expect(declOf(bar, '.slot > *', 'grid-area')).toBe('1 / 1');
+    expect(declOf(bar, '.tab:hover .num', 'visibility')).toBe('hidden');
+    expect(declOf(bar, '.x', 'z-index')).toBeUndefined();
+  });
+
+  it('moves the pane toolbar under the tabs in a narrow pane instead of squeezing the strip', () => {
+    expect(declOf(bar, '.tabbar-box', 'container-type')).toBe('inline-size');
+    expect(declOf(bar, '.actions', 'flex')).toBe('none');
+    const narrow = parseStyle(bar).filter((r) => r.at.startsWith('@container'));
+    expect(narrow.find((r) => r.selector === '.tabs')?.decls.flex).toBe('1 0 100%');
+    expect(narrow.find((r) => r.selector === '.actions')?.decls['border-left']).toBe('0');
+  });
+
+  it('keeps the toolbar off the tab strip with a separator', () => {
+    expect(declOf(bar, '.actions', 'margin-left')).toBe('6px');
+    expect(declOf(bar, '.actions', 'border-left')).toBe('1px solid var(--border)');
+  });
+
+  it('wraps the toolbar buttons in a very narrow pane so none is clipped', () => {
+    const actions = parseStyle(bar).filter((r) => r.at.startsWith('@container') && r.selector === '.actions');
+    expect(actions.some((r) => r.decls['flex-wrap'] === 'wrap' && r.decls['min-height'] === '34px')).toBe(true);
+  });
+
+  it('limits the host tag width', () => {
+    expect(declOf(bar, '.host', 'max-width')).toBe('64px');
   });
 });

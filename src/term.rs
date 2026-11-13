@@ -1,6 +1,8 @@
 use crate::board::publish;
-use crate::daemon::{header, respond_raw, Request, Stream};
-use crate::procs::{now_ms, Probe};
+use crate::daemon::Stream;
+use crate::http::{header, respond_raw, Request};
+use crate::procs::Probe;
+use crate::util::now_ms;
 use crate::util::{format_rfc3339, ulid};
 use portable_pty::{native_pty_system, ChildKiller, CommandBuilder, MasterPty, PtySize};
 use serde_json::{json, Value};
@@ -46,6 +48,60 @@ pub struct Info {
     pub profile: Option<crate::profiles::Chip>,
     pub workspace_id: Option<String>,
     pub resume: Option<(String, String)>,
+}
+
+impl From<Info> for crate::upgrade::SavedTerm {
+    fn from(i: Info) -> Self {
+        Self {
+            id: i.id,
+            pid: i.pid,
+            cwd: i.cwd,
+            cmd: i.cmd,
+            title: i.title,
+            title_override: i.title_override,
+            cols: i.cols,
+            rows: i.rows,
+            created_ms: i.created_ms,
+            exited: i.exited,
+            exit_code: i.exit_code,
+            line_id: i.line_id,
+            task_id: i.task_id,
+            agent: i.agent,
+            session: i.session,
+            flags: i.flags,
+            sized_by: i.sized_by,
+            profile: i.profile,
+            workspace_id: i.workspace_id,
+            ..Default::default()
+        }
+    }
+}
+
+impl From<crate::upgrade::SavedTerm> for Info {
+    fn from(s: crate::upgrade::SavedTerm) -> Self {
+        Self {
+            id: s.id,
+            pid: s.pid,
+            cwd: s.cwd,
+            cmd: s.cmd,
+            title: s.title,
+            title_override: s.title_override,
+            cols: s.cols,
+            rows: s.rows,
+            created_ms: s.created_ms,
+            exited: s.exited,
+            exit_code: s.exit_code,
+            line_id: s.line_id,
+            task_id: s.task_id,
+            agent: s.agent,
+            session: s.session,
+            flags: s.flags,
+            sized_by: s.sized_by,
+            profile: s.profile,
+            workspace_id: s.workspace_id,
+            resume: None,
+        }
+    }
 }
 
 struct Sub {
@@ -562,7 +618,7 @@ pub fn spawn(s: Spec) -> Result<Arc<Term>, String> {
             created_ms: now_ms(),
             exited: false,
             exit_code: None,
-            agent: crate::agents::of_argv(&s.cmd).map(|a| a.id.to_string()),
+            agent: crate::agents::of_launch_argv(&s.cmd).map(|a| a.id.to_string()),
             line_id: s.line_id,
             task_id: s.task_id,
             session: s.session,
@@ -692,7 +748,9 @@ impl Term {
     fn may_fall_back(&self) -> bool {
         let i = lock(&self.info);
         cfg!(unix)
-            && i.agent.as_deref().is_some_and(|a| a != "shell")
+            && i.agent
+                .as_deref()
+                .is_some_and(|a| !crate::agents::is_shell(a))
             && i.task_id.is_none()
             && !self.killed.load(Ordering::SeqCst)
     }
@@ -722,7 +780,10 @@ impl Term {
         self.respawn(vec![
             "/bin/sh".into(),
             "-c".into(),
-            "printf '\\r\\n%s\\r\\n\\r\\n' \"$1\"; exec \"${SHELL:-/bin/sh}\"".into(),
+            format!(
+                "printf '\\r\\n%s\\r\\n\\r\\n' \"$1\"; {}",
+                crate::util::SHELL_FALLBACK
+            ),
             "sh".into(),
             note,
         ])
@@ -1026,30 +1087,12 @@ impl Term {
         let mut ring = crate::upgrade::hex(a);
         ring.push_str(&crate::upgrade::hex(b));
         crate::upgrade::SavedTerm {
-            id: i.id,
-            pid: i.pid,
             fd,
-            cwd: i.cwd,
-            cmd: i.cmd,
-            title: i.title,
-            title_override: i.title_override,
-            cols: i.cols,
-            rows: i.rows,
-            created_ms: i.created_ms,
-            exited: i.exited,
-            exit_code: i.exit_code,
-            line_id: i.line_id,
-            task_id: i.task_id,
-            agent: i.agent,
-            session: i.session,
-            flags: i.flags,
-            sized_by: i.sized_by,
-            profile: i.profile,
-            workspace_id: i.workspace_id,
             total: o.total,
             last_ms: o.last_ms,
             closed: o.closed,
             ring,
+            ..i.into()
         }
     }
 
@@ -1117,38 +1160,20 @@ pub fn adopt(s: crate::upgrade::SavedTerm) -> Result<Arc<Term>, String> {
     } else {
         (Master::Gone, Box::new(std::io::sink()), None)
     };
-    let pid = s.pid;
+    let (pid, id, closed, total, last_ms) = (s.pid, s.id.clone(), s.closed, s.total, s.last_ms);
     let mut scan = crate::termtheme::Scanner::default();
     scan.feed(&ring, None);
     let term = Arc::new(Term {
         info: Mutex::new(Info {
-            id: s.id.clone(),
-            pid,
-            cwd: s.cwd,
-            cmd: s.cmd,
-            title: s.title,
-            title_override: s.title_override,
-            cols: s.cols,
-            rows: s.rows,
-            created_ms: s.created_ms,
             exited: !live,
-            exit_code: s.exit_code,
-            line_id: s.line_id,
-            task_id: s.task_id,
-            agent: s.agent,
-            session: s.session,
-            flags: s.flags,
-            sized_by: s.sized_by,
-            profile: s.profile,
-            workspace_id: s.workspace_id,
-            resume: None,
+            ..s.into()
         }),
         out: Mutex::new(Out {
             ring: ring.into(),
             subs: vec![],
-            closed: !live || s.closed,
-            total: s.total,
-            last_ms: s.last_ms,
+            closed: !live || closed,
+            total,
+            last_ms,
             scan,
             ..Default::default()
         }),
@@ -1160,7 +1185,7 @@ pub fn adopt(s: crate::upgrade::SavedTerm) -> Result<Arc<Term>, String> {
         killed: AtomicBool::new(false),
         thread: Mutex::new(None),
     });
-    lock(&TERMS).insert(s.id, term.clone());
+    lock(&TERMS).insert(id, term.clone());
     if live {
         let (done_tx, done_rx) = channel::<()>();
         if let Some(r) = reader {
@@ -1200,7 +1225,6 @@ pub fn get(id: &str) -> Option<Arc<Term>> {
     lock(&TERMS).get(id).cloned()
 }
 
-/// The workspace a term is assigned to, read without cloning its whole info.
 pub fn workspace_of(id: &str) -> Option<String> {
     get(id)?.workspace_id()
 }
@@ -1274,12 +1298,6 @@ pub fn insert(t: &Term, text: &str) -> std::io::Result<()> {
         text.replace(['\r', '\n'], " ")
     };
     t.input(body.as_bytes())
-}
-
-pub fn paste(t: &Term, text: &str) -> std::io::Result<()> {
-    insert(t, text)?;
-    std::thread::sleep(Duration::from_millis(300));
-    t.input(b"\r")
 }
 
 pub fn ws(id: &str, req: &Request, mut s: impl Stream) {
@@ -1425,6 +1443,42 @@ fn ws_output<S: Stream>(ws: &mut WebSocket<S>, t: &Term, ctl: &Ctl, rx: &Chunks)
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn info_survives_the_saved_term_round_trip() {
+        let info = Info {
+            id: "t".into(),
+            pid: 4,
+            cwd: "/w".into(),
+            cmd: vec!["a".into()],
+            title: "T".into(),
+            title_override: Some("O".into()),
+            cols: 80,
+            rows: 24,
+            created_ms: 9,
+            exited: true,
+            exit_code: Some(2),
+            line_id: Some("l".into()),
+            task_id: Some("k".into()),
+            agent: Some("claude".into()),
+            session: Some("s".into()),
+            flags: vec!["--x".into()],
+            sized_by: Some("web".into()),
+            profile: Some(crate::profiles::Chip {
+                id: "p".into(),
+                ..Default::default()
+            }),
+            workspace_id: Some("w".into()),
+            resume: None,
+        };
+        let saved = crate::upgrade::SavedTerm::from(info);
+        let again = crate::upgrade::SavedTerm::from(Info::from(saved.clone()));
+        assert_eq!(again, saved);
+        assert_eq!(saved.fd, 0);
+        assert_eq!(saved.agent.as_deref(), Some("claude"));
+        assert_eq!(saved.workspace_id.as_deref(), Some("w"));
+        assert!(saved.exited && saved.exit_code == Some(2));
+    }
+
     use super::*;
 
     #[test]

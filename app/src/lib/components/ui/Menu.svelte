@@ -1,13 +1,16 @@
 <script lang="ts">
+  import { dismiss } from '../../dismiss';
+  import { captureFocus } from '../../focus';
   import Check from '@lucide/svelte/icons/check';
   import ChevronRight from '@lucide/svelte/icons/chevron-right';
-  import { menuRows, type MenuItem } from '../../menu';
+  import { menuRows, pickItem, type MenuItem } from '../../commands/menu';
   import AgentGlyph from './AgentGlyph.svelte';
-  import { ui } from '../../mobile/ui.svelte';
+  import { isPhone } from '../../mobile/ui.svelte';
   import { untrack } from 'svelte';
 
   let { items, x, y, label, onclose }: { items: MenuItem[]; x: number; y: number; label: string; onclose: () => void } = $props();
 
+  const restore = captureFocus();
   let menu: HTMLDivElement | undefined = $state();
   let pos = $state({ left: 0, top: 0 });
   let expanded = $state(new Set<number>());
@@ -33,8 +36,7 @@
   }
 
   function pick(it: MenuItem) {
-    onclose();
-    it.run?.();
+    pickItem(it, onclose, restore);
   }
 
   function onKey(e: KeyboardEvent) {
@@ -42,18 +44,18 @@
     const i = all.indexOf(document.activeElement as HTMLElement);
     if (e.key === 'ArrowDown') all[(i + 1) % all.length]?.focus();
     else if (e.key === 'ArrowUp') all[(i - 1 + all.length) % all.length]?.focus();
-    else if (e.key === 'Escape') onclose();
+    else if (e.key === 'Escape') (onclose(), restore());
     else return;
     e.preventDefault();
     e.stopPropagation();
   }
 </script>
 
-<svelte:window onpointerdown={(e) => menu && !menu.contains(e.target as Node) && onclose()} onblur={onclose} onkeydown={(e) => e.key === 'Escape' && onclose()} />
+<svelte:window onblur={onclose} />
 
-{#if ui.layout === 'phone'}<div class="scrim" role="presentation"></div>{/if}
-<div class="menu" role="menu" tabindex="-1" aria-label={label} bind:this={menu} style:left="{pos.left}px" style:top="{pos.top}px" onkeydown={onKey}>
-  {#if ui.layout === 'phone' && label}<div class="sheet-title">{label}</div>{/if}
+{#if isPhone()}<div class="scrim" role="presentation"></div>{/if}
+<div class="menu" role="menu" tabindex="-1" aria-label={label} bind:this={menu} use:dismiss={{ onclose, escape: true, restore }} style:left="{pos.left}px" style:top="{pos.top}px" onkeydown={onKey}>
+  {#if isPhone() && label}<div class="sheet-title">{label}</div>{/if}
   {#each rows as { item: it, index, child }, i (i)}
     {#if it.separator}
       <hr />
@@ -83,7 +85,7 @@
     background: var(--surface);
     border-radius: var(--radius);
     box-shadow: var(--shadow);
-    z-index: 60;
+    z-index: var(--z-popover);
     outline: none;
   }
   button {
@@ -151,7 +153,7 @@
   .scrim {
     position: fixed;
     inset: 0;
-    z-index: 59;
+    z-index: var(--z-popover-scrim);
     background: var(--overlay);
   }
   .sheet-title {

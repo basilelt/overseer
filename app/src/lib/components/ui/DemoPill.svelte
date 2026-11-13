@@ -1,6 +1,6 @@
 <script lang="ts">
   import LogOut from '@lucide/svelte/icons/log-out';
-  import { exitDemo, isDemo } from '../../demo';
+  import { exitDemo, isDemo } from '../../daemon/demo';
   import { t } from '../../i18n.svelte';
 
   let { compact = false }: { compact?: boolean } = $props();

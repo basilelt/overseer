@@ -31,7 +31,6 @@ check "QA_DISPLAY accepts a leading colon" 97 "$(QA_DISPLAY=:97 "$root/scripts/q
 check "daemon PATH has the stubs first and Homebrew when present" "$root/tests/stubs" \
   "$("$root/scripts/qa/sandbox.sh" daemon-path | cut -d: -f1)"
 
-# The stub keeps startedAt across status writes and reports task hooks.
 cfg=$work/cfg
 mkdir -p "$cfg" "$work/home"
 printf '#!/bin/sh\necho "$@" >> "%s/hooks"\n' "$work" > "$work/overseer"
@@ -49,7 +48,6 @@ wait "$stub"
 check "stub task and untask emit TaskCreated and TaskCompleted" "2" \
   "$(grep -c 'hook claude Task\(Created\|Completed\)' "$work/hooks")"
 
-# drive.py finds a browser in the macOS Playwright cache.
 mkdir -p "$work/pw/playwright" "$work/cache/chromium_headless_shell-9/chrome-headless-shell-mac-arm64"
 : > "$work/pw/playwright/__init__.py"
 echo 'sync_playwright = None' > "$work/pw/playwright/sync_api.py"
@@ -61,5 +59,12 @@ ln -s "$work/cache" "$work/mac/Library/Caches/ms-playwright"
 got=$(HOME=$work/mac PLAYWRIGHT_BROWSERS_PATH= PYTHONPATH="$work/pw:$root/scripts/qa" \
   python3 -c 'import drive; print(drive.newest_chromium())')
 check "drive.py searches ~/Library/Caches/ms-playwright" "$work/mac/Library/Caches/ms-playwright/chromium_headless_shell-9/chrome-headless-shell-mac-arm64/chrome-headless-shell" "$got"
+
+if command -v node > /dev/null; then
+  node "$root/scripts/qa/shim.test.mjs" | tee "$work/shim.out"
+  grep -q '^FAIL' "$work/shim.out" && fail=1
+else
+  echo "skip shim tests: node not installed"
+fi
 
 exit $fail

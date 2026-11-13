@@ -1,12 +1,13 @@
 import { findAgent, pickAgent } from '../agents';
 import { app } from '../state.svelte';
-import { settings } from '../settings.svelte';
-import { newTabKey } from '../tabs';
+import { settings } from '../settings/settings.svelte';
+import { newTabKey } from '../tabs/tabs';
 import { reviewKey } from '../review/keys';
 import { saveBase } from '../review/base';
-import { ui } from '../mobile/ui.svelte';
-import { focusPane, openInFocused, split, update, type Layout } from '../workspace.svelte';
+import { ui, isPhone } from '../mobile/ui.svelte';
+import { focusPane, openInFocused, split, update, type Layout } from '../workspace/workspace.svelte';
 import { gt } from './strings';
+import { githubApi } from './api';
 import type { ReviewRequest, StartedReview } from './types';
 import type { Term } from '../types';
 import { hostKey } from '../window';
@@ -16,7 +17,7 @@ export const PR_REVIEWS_KEY = newTabKey('prs', 'github');
 export function openPrReviews() {
   app.open(null);
   app.view = 'agents';
-  if (ui.layout === 'phone') ui.tab = 'agents';
+  if (isPhone()) ui.tab = 'agents';
   update((l) => openInFocused(l, PR_REVIEWS_KEY));
   app.selectedKey = PR_REVIEWS_KEY;
 }
@@ -33,7 +34,7 @@ function show(term: Term, worktree: string, base: string) {
   if (!app.data.terms.some((t) => t.id === term.id)) app.data = { ...app.data, terms: [...app.data.terms, term] };
   const key = `term:${term.id}`;
   app.view = 'agents';
-  update((l) => beside(l, reviewKey({ worktree }), key, ui.layout === 'phone'));
+  update((l) => beside(l, reviewKey({ worktree }), key, isPhone()));
   app.selectedKey = key;
 }
 
@@ -67,14 +68,13 @@ export function whenTerm(title: string, known: Set<string>, then: (t: Term) => v
 }
 
 export async function startReview(pr: ReviewRequest): Promise<StartedReview | null> {
-  const client = app.client;
-  if (!client) throw new Error('not connected');
+  const client = app.requireClient();
   const agentId = pickAgent(app.agents, settings.defaultAgent);
   const agent = findAgent(app.agents, agentId);
   const same = agentId === settings.defaultAgent;
   const [owner, name] = pr.repo.split('/');
   const known = new Set(app.data.terms.map((t) => t.id));
-  const res = await client.request<StartedReview | { pending: true; title: string }>('POST', `/v1/github/review-requests/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/${pr.number}/review`, {
+  const res = await githubApi(client).startReview(owner, name, pr.number, {
     agent: agentId,
     model: same ? settings.defaultModel || undefined : undefined,
     effort: same && agent?.efforts?.includes(settings.defaultEffort) ? settings.defaultEffort : undefined,

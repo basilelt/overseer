@@ -1,4 +1,4 @@
-import { allTabs, dropKey, split, type Layout, type Pane } from '../workspace.svelte';
+import { allTabs, dropKey, split, type Layout, type Pane } from '../workspace/workspace.svelte';
 
 export type ReviewMode = 'side' | 'tab' | 'off';
 

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { groupItems, type SidebarItem } from '../../grouping';
+import { groupItems, type SidebarItem } from '../../session/grouping';
 import { CARD_H, flatten, HEADER_H, moveSelection, windowRows } from './virtual';
-import { stateOfGroup } from '../../test-fixtures';
+import { stateOfGroup } from '../../../test/fixtures';
 
 const item = (key: string, group: SidebarItem['group'], title = key): SidebarItem => ({ key, kind: 'claude', group, state: stateOfGroup(group), title, at: '2026-10-29T10:00:00Z' });
 const groups = groupItems([item('a', 'running'), item('b', 'running', 'Bravo'), item('c', 'paused')]);

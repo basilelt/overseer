@@ -1,6 +1,7 @@
-use crate::board::{decode, git_out, publish};
-use crate::daemon::{q, Request};
-use crate::git::git;
+use crate::board::publish;
+use crate::git::{git, git_out};
+use crate::http::{q, res, Request};
+use crate::util::percent_decode;
 use crate::util::{format_rfc3339, ticket};
 use crate::worktrees::{self, valid_sha, Res};
 use crate::Ctx;
@@ -180,17 +181,9 @@ fn overlays(ctx: &Ctx, root: &str, repo: &str, all: &[Ref]) -> Vec<Value> {
             m.entry("worktree").or_insert(json!(w));
         }
     }
-    let wd = ctx.config.worktree_dir.to_string_lossy().into_owned();
-    let wdc = ctx
-        .config
-        .worktree_dir
-        .canonicalize()
-        .map(|p| p.to_string_lossy().into_owned())
-        .unwrap_or_else(|_| wd.clone());
+    let managed_root = crate::layout::ManagedRoot::new(&ctx.config.worktree_dir);
     for e in &entries {
-        let managed =
-            e.path.starts_with(&format!("{wd}/")) || e.path.starts_with(&format!("{wdc}/"));
-        if let (true, Some(b)) = (managed, &e.branch) {
+        if let (true, Some(b)) = (managed_root.holds_entry(&e.path), &e.branch) {
             let i = slot(&mut by, b);
             by[i].1.entry("worktree").or_insert(json!(e.path));
         }
@@ -273,13 +266,13 @@ pub fn graph(ctx: &Ctx, path: &str, r: &Request) -> Res<Value> {
         .clamp(1, 2000);
     let skip = q(r, "before")
         .map(|s| {
-            decode(s)
+            percent_decode(s)
                 .parse::<usize>()
                 .map_err(|_| (400, "bad before cursor".to_string()))
         })
         .transpose()?
         .unwrap_or(0);
-    let sel = q(r, "refs").map(decode).unwrap_or_default();
+    let sel = r.param("refs").unwrap_or_default();
     let all = refs(&root);
     let base = worktrees::default_branch(&root);
     let ov = overlays(ctx, &root, &repo, &all);
@@ -583,18 +576,11 @@ pub fn watch_loop() {
     }
 }
 
-fn res(code: u16, r: Res<Value>) -> (u16, Value) {
-    match r {
-        Ok(v) => (code, v),
-        Err((c, e)) => (c, json!({ "error": e })),
-    }
-}
-
 pub fn routes(ctx: &Ctx, r: &Request, segs: &[&str], body: &Value) -> Option<(u16, Value)> {
     Some(match (r.method.as_str(), segs) {
-        ("GET", ["v1", "projects", p, "graph"]) => res(200, graph(ctx, &decode(p), r)),
-        ("GET", ["v1", "projects", p, "commits", sha]) => res(200, commit(&decode(p), sha)),
-        ("POST", ["v1", "projects", p, "branches"]) => res(201, branch(&decode(p), body)),
+        ("GET", ["v1", "projects", p, "graph"]) => res(200, graph(ctx, &percent_decode(p), r)),
+        ("GET", ["v1", "projects", p, "commits", sha]) => res(200, commit(&percent_decode(p), sha)),
+        ("POST", ["v1", "projects", p, "branches"]) => res(201, branch(&percent_decode(p), body)),
         _ => return None,
     })
 }

@@ -8,32 +8,38 @@
   import CircleCheck from '@lucide/svelte/icons/circle-check';
   import Clapperboard from '@lucide/svelte/icons/clapperboard';
   import Replay from '../record/Replay.svelte';
-  import { fileName, formatLog } from '../../record';
-  import { rt } from '../../record.svelte';
+  import { fileName, formatLog } from '../../record/record';
+  import { rt } from '../../record/record.svelte';
   import Modal from '../ui/Modal.svelte';
+  import { api } from '../../daemon/api';
+  import { feedbackApi } from '../../feedback/feedback-api';
   import { app } from '../../state.svelte';
-  import { isTauri, DaemonError } from '../../client';
-  import { settings } from '../../settings.svelte';
-  import { findAgent, pickAgent } from '../../agents';
-  import { basename, MAX_UPLOAD } from '../../uploads';
-  import { openExternal } from '../../ports.svelte';
-  import { diagBackend, fetchServerLog } from '../../diag.svelte';
-  import { feedback, ft, type Result } from '../../feedback.svelte';
-  import { APP_LINES, attachProblem, ATTACH_ACCEPT, VIDEO_FREE_MAX, buildBody, clock, buildDiagnostics, buildPrompt, DEFAULT_REPO, findClone, issueTitle, labelsFor, newIssueUrl, SERVER_LINES, validate, wantsDiagnostics, type Kind } from '../../feedback';
+  import { DaemonError } from '../../daemon/client';
+  import { isTauri } from '../../platform';
+  import { settings } from '../../settings/settings.svelte';
+  import { findAgent, pickAgent, isAgentId } from '../../agents';
+  import { MAX_UPLOAD } from '../../uploads';
+  import { openExternal } from '../../ports/ports.svelte';
+  import { diagBackend, fetchServerLog } from '../../diag/diag.svelte';
+  import { feedback, ft, type Result } from '../../feedback/feedback.svelte';
+  import { DRAFT_ID, feedbackDrafts, initialForm, ownsText } from '../../feedback/draft';
+  import { APP_LINES, attachProblem, ATTACH_ACCEPT, VIDEO_FREE_MAX, buildBody, clock, buildDiagnostics, buildPrompt, DEFAULT_REPO, findClone, issueTitle, labelsFor, newIssueUrl, SERVER_LINES, validate, wantsDiagnostics, type Kind } from '../../feedback/feedback';
   import type { Term } from '../../types';
+  import { basename } from '../../paths';
 
   const prefill = feedback.prefill;
   const repo = $derived((settings.feedbackRepo ?? '').trim() || DEFAULT_REPO);
   const agentId = $derived(pickAgent(app.agents, settings.defaultAgent));
   const agent = $derived(findAgent(app.agents, agentId));
-  const canAgent = $derived(app.connected && !!agent?.installed && agent.id !== 'shell');
+  const canAgent = $derived(app.connected && !!agent?.installed && isAgentId(agent.id));
   const host = $derived(app.conn.target.kind === 'local' ? 'local' : app.conn.target.label || app.conn.target.kind);
 
-  let kind = $state<Kind>(prefill?.kind ?? 'bug');
-  let title = $state(prefill?.title ?? '');
-  let description = $state(prefill?.description ?? '');
+  const initial = initialForm(prefill, feedbackDrafts.get(DRAFT_ID));
+  let kind = $state<Kind>(initial.kind);
+  let title = $state(initial.title);
+  let description = $state(initial.description);
   let attachments = $state<{ name: string; path: string }[]>([]);
-  let includeDiag = $state(wantsDiagnostics(prefill?.kind ?? 'bug'));
+  let includeDiag = $state(wantsDiagnostics(initial.kind));
   let investigate = $state(false);
   let showPreview = $state(false);
   let diagText = $state<string | null>(null);
@@ -55,13 +61,18 @@
   const kinds: Kind[] = ['bug', 'idea', 'other'];
   const placeholder = $derived(ft(kind === 'bug' ? 'descriptionBug' : kind === 'idea' ? 'descriptionIdea' : 'descriptionOther'));
 
+  $effect(() => {
+    const d = { kind, title, description };
+    if (ownsText(prefill) && !feedback.result) feedbackDrafts.set(DRAFT_ID, d);
+  });
+
   const msg = (e: unknown) => String((e as Error)?.message ?? e);
 
   async function loadDiagnostics() {
     const client = app.client;
     const [info, version, appTail, server] = await Promise.all([
       diagBackend.info().catch(() => null),
-      client && app.connected ? client.request<{ version?: string; os?: string; arch?: string }>('GET', '/v1/version').catch(() => null) : Promise.resolve(null),
+      client && app.connected ? api(client).version().catch(() => null) : Promise.resolve(null),
       prefill?.crash ? Promise.resolve({ lines: prefill.crash.appLog }) : diagBackend.tail(APP_LINES).catch(() => ({ lines: [] as string[] })),
       fetchServerLog(client, app.connected, SERVER_LINES),
     ]);
@@ -197,7 +208,7 @@
     try {
       const cwd = findClone(app.projects, repo);
       const same = agentId === settings.defaultAgent;
-      const res = await client.request<{ term: Term }>('POST', '/v1/feedback/start', {
+      const res = await feedbackApi(client).startFeedback({
         agent: agentId,
         model: same ? settings.defaultModel || undefined : undefined,
         effort: same && agent.efforts?.includes(settings.defaultEffort) ? settings.defaultEffort : undefined,
@@ -211,6 +222,7 @@
       const term = res.term;
       app.followSession(term);
       void feedback.watch(client, term.id, found);
+      feedbackDrafts.delete(DRAFT_ID);
       feedback.close();
       app.notify(ft('started', { agent: agent.name }));
     } catch (e) {
@@ -227,7 +239,8 @@
     if (!client) return;
     busy = true;
     try {
-      const res = await client.request<{ url: string; attachWarning?: string }>('POST', '/v1/feedback/direct', { repo, title: fullTitle, body: sentBody, labels: labelsFor(kind), attachments });
+      const res = await feedbackApi(client).directFeedback({ repo, title: fullTitle, body: sentBody, labels: labelsFor(kind), attachments });
+      feedbackDrafts.delete(DRAFT_ID);
       feedback.showResult({ url: res.url, comment: false });
       if (res.attachWarning) app.notify(ft('attachPartial', { error: res.attachWarning }), 'error');
     } catch (e) {

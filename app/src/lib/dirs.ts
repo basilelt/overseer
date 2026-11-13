@@ -1,3 +1,4 @@
+import { trimSlashes as trim } from './paths';
 export interface DirEntry {
   name: string;
   path: string;
@@ -15,12 +16,6 @@ export interface DirListing {
 export interface Crumb {
   label: string;
   path: string;
-}
-
-const trim = (p: string) => (p.length > 1 ? p.replace(/\/+$/, '') : p);
-
-export function baseName(path: string): string {
-  return trim(path.trim()).split('/').pop() ?? '';
 }
 
 export function shortPath(p: string): string {

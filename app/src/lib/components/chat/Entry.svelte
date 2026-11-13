@@ -7,6 +7,7 @@
   import { hhmm } from '../../chat/time';
   import { t } from '../../i18n.svelte';
   import { app } from '../../state.svelte';
+  import { COPIED_FLASH_MS } from '../../timing';
   import type { ChatEntry } from '../../types';
   import Markdown from './Markdown.svelte';
   import ToolStep from './ToolStep.svelte';
@@ -22,7 +23,7 @@
     try {
       await app.client?.copyText(entry.text ?? '');
       copied = true;
-      setTimeout(() => (copied = false), 1200);
+      setTimeout(() => (copied = false), COPIED_FLASH_MS);
     } catch (e) {
       app.notify(String((e as Error)?.message ?? e), 'error');
     }

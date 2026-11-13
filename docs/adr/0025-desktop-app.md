@@ -42,7 +42,7 @@ remote machine as on the local one (like VS Code Remote-SSH). Sessions must outl
   Settings folder, then on `PATH`. A missing binary is an error state, never a crash.
 - **Built-in browser**: a Tauri child webview (`unstable` feature) placed over a measured
   placeholder, hidden while a dialog is open (native views draw above HTML).
-- **Mock daemon**: `app/src/lib/mock.ts` implements the same client interface in memory (12 lines,
+- **Mock daemon**: `app/src/lib/daemon/mock.ts` implements the same client interface in memory (12 lines,
   14 tasks, activity, diffs, fake terminal, connection phases). Used with `VITE_MOCK=1` or when the
   page runs outside Tauri, and by the unit tests.
 - **Design**: neutral light and dark themes, `auto` by default (follows the OS), every color a CSS

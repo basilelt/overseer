@@ -6,7 +6,6 @@
   import { app } from '../../state.svelte';
   import type { LocalLine } from '../../types';
 
-  // Pause, resume, interrupt and close live in the chat header (SessionBar); only Pin and the PR stay here.
   let { line }: { line: LocalLine } = $props();
 
   let busy = $state(false);

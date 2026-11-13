@@ -45,6 +45,8 @@ mod updater;
 mod window;
 mod ws;
 
+pub(crate) const MAIN: &str = "main";
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     diag::install_panic_hook(env!("CARGO_PKG_VERSION").to_string());
@@ -62,9 +64,9 @@ pub fn run() {
             Ok(())
         })
         .on_window_event(|w, e| match e {
-            tauri::WindowEvent::Focused(f) if w.label() == "main" => diag::focus(*f),
+            tauri::WindowEvent::Focused(f) if w.label() == MAIN => diag::focus(*f),
             tauri::WindowEvent::Destroyed => {
-                if w.label() == "main" {
+                if w.label() == MAIN {
                     diag::focus(false);
                     diag::visibility(false);
                 }

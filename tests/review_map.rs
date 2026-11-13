@@ -1,20 +1,8 @@
 mod common;
 
-use common::{git, Fx, Reap};
+use common::{enc_uri_component, git, Fx, Reap};
 use serde_json::Value;
 use std::path::{Path, PathBuf};
-
-fn enc(s: &str) -> String {
-    let mut out = String::new();
-    for b in s.bytes() {
-        if b.is_ascii_alphanumeric() || b"-_.!~*'()".contains(&b) {
-            out.push(b as char);
-        } else {
-            out.push_str(&format!("%{b:02X}"));
-        }
-    }
-    out
-}
 
 fn write(dir: &Path, f: &str, text: &str) {
     let p = dir.join(f);
@@ -129,7 +117,11 @@ fn maps_every_worktree_of_the_review_with_its_submodule_and_links() {
     let m = setup("rmap");
     let wt = m.fx.wt.to_string_lossy().into_owned();
     let api = m.api.to_string_lossy().into_owned();
-    let (code, v) = m.get(&format!("worktree={}&with={}", enc(&wt), enc(&api)));
+    let (code, v) = m.get(&format!(
+        "worktree={}&with={}",
+        enc_uri_component(&wt),
+        enc_uri_component(&api)
+    ));
     assert_eq!(code, 200, "{v}");
     assert!(v.get("error").is_none(), "{v}");
     let regions = v["regions"].as_array().unwrap();
@@ -176,11 +168,18 @@ fn maps_every_worktree_of_the_review_with_its_submodule_and_links() {
 fn rejects_a_bad_extra_worktree_like_the_review() {
     let m = setup("rmap-bad");
     let wt = m.fx.wt.to_string_lossy().into_owned();
-    let (code, v) = m.get(&format!("worktree={}&with=relative%2Fdir", enc(&wt)));
+    let (code, v) = m.get(&format!(
+        "worktree={}&with=relative%2Fdir",
+        enc_uri_component(&wt)
+    ));
     assert_eq!(code, 400);
     assert_eq!(v["error"], "relative/dir is not an absolute path");
     let gone = m.fx.base.join("gone").to_string_lossy().into_owned();
-    let (code, v) = m.get(&format!("worktree={}&with={}", enc(&wt), enc(&gone)));
+    let (code, v) = m.get(&format!(
+        "worktree={}&with={}",
+        enc_uri_component(&wt),
+        enc_uri_component(&gone)
+    ));
     assert_eq!(code, 410);
     assert_eq!(
         v["error"],
@@ -194,7 +193,7 @@ fn rejects_a_bad_extra_worktree_like_the_review() {
 fn opens_a_submodule_as_its_own_map() {
     let m = setup("rmap-sub");
     let sub = m.fx.wt.join("vendor/lib").to_string_lossy().into_owned();
-    let (code, v) = m.get(&format!("worktree={}", enc(&sub)));
+    let (code, v) = m.get(&format!("worktree={}", enc_uri_component(&sub)));
     assert_eq!(code, 200, "{v}");
     let r = &v["regions"][0];
     assert_eq!(r["name"], "lib");

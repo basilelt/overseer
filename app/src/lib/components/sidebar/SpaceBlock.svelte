@@ -1,7 +1,6 @@
 <script lang="ts" module>
   import type { Workspace } from '../../types';
 
-  /** What a block needs to show and act on its nested workspaces. */
   export interface ChildHooks {
     isOpen: (id: string) => boolean;
     isClosedOpen: (id: string) => boolean;
@@ -14,7 +13,6 @@
     onmenu: (e: MouseEvent, w: Workspace) => void;
     onstart: (e: MouseEvent, w: Workspace) => void;
     onnew?: () => void;
-    /** Tab order of a nested workspace. */
     tabsOf?: (id: string) => string[];
   }
 </script>
@@ -25,8 +23,8 @@
   import Hash from '@lucide/svelte/icons/hash';
   import Plus from '@lucide/svelte/icons/plus';
   import { t } from '../../i18n.svelte';
-  import type { SpaceRow } from '../../spaces';
-  import { workspaceSessions, type WorkspaceSessions } from '../../workspace-sessions';
+  import type { SpaceRow } from '../../workspace/spaces';
+  import { workspaceSessions, type WorkspaceSessions } from '../../workspace/workspace-sessions';
   import SessionRow from './SessionRow.svelte';
   import StatePills from './StatePills.svelte';
   import WorkspaceFrame from './WorkspaceFrame.svelte';
@@ -59,13 +57,10 @@
     closedOpen: boolean;
     selectedKey: string | null;
     multi?: ReadonlySet<string>;
-    /** This workspace is the active one. */
     selected?: boolean;
-    /** A dragged tab hovers the header. */
     tabDrop?: boolean;
     dropPos?: 'before' | 'after' | 'inside' | null;
     kids?: ChildHooks;
-    /** The chevron only folds; the name picks the workspace. */
     ontoggle: () => void;
     onpick: () => void;
     onclosed: () => void;
@@ -74,9 +69,7 @@
     onitemmenu?: (key: string, title: string, e: MouseEvent) => void;
     onpointerdown?: (e: PointerEvent) => void;
     onsessiondown?: (e: PointerEvent, key: string, zone: string) => void;
-    /** Tab order of this workspace, which its live sessions and shells follow. */
     tabs?: string[];
-    /** Where a dragged session would land relative to this row. */
     rowDrop?: (key: string) => 'before' | 'after' | 'inside' | null;
   } = $props();
 
@@ -84,7 +77,6 @@
   const name = $derived(row.name ?? t('ws.other'));
   const archived = $derived(!!row.workspace?.archived);
   const missing = $derived(!!row.workspace?.missing);
-  // "Other" has no id: it cannot receive a tab or be dragged.
   const id = $derived(row.workspace ? row.id : undefined);
   const children = $derived(open ? (row.children ?? []) : []);
 

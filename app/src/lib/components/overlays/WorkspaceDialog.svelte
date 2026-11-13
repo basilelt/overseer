@@ -2,15 +2,15 @@
   import Modal from '../ui/Modal.svelte';
   import { app } from '../../state.svelte';
   import { t } from '../../i18n.svelte';
-  import { byRank } from '../../workspaces';
-  import { baseName, tildePath, type DirListing } from '../../dirs';
+  import { byRank } from '../../workspace/workspaces';
+  import { tildePath, type DirListing } from '../../dirs';
   import FolderOpen from '@lucide/svelte/icons/folder-open';
   import FolderBrowser from './FolderBrowser.svelte';
-  import { relativeTo, subjectBody } from '../../subject-form';
+  import { relativeTo, subjectBody } from '../../workspace/subject-form';
+  import { folderName } from '../../paths';
 
   let { onclose }: { onclose: () => void } = $props();
 
-  // Opened with a workspace id: a subject (sub-folder, submodule or path-less) nested in that workspace.
   const parent = app.overlayArg ? app.ws.workspaces.find((w) => w.id === app.overlayArg && !w.parentId && !!w.path) : undefined;
   let startAtRoot = $state(true);
 
@@ -60,7 +60,7 @@
 
   function pick(l: DirListing) {
     path = parent ? relativeTo(parent, l.path) : tildePath(l.path, l.home);
-    if (!name.trim()) name = baseName(l.path);
+    if (!name.trim()) name = folderName(l.path);
     error = '';
     browsing = false;
   }

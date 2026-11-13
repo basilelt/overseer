@@ -1,7 +1,7 @@
 <script lang="ts" module>
   import { Drafts } from '../../drafts';
 
-  const drafts = new Drafts('overseer.drafts.chat');
+  const drafts = new Drafts(KEY_DRAFTS_CHAT);
 </script>
 
 <script lang="ts">
@@ -11,17 +11,20 @@
   import Paperclip from '@lucide/svelte/icons/paperclip';
   import SendHorizontal from '@lucide/svelte/icons/send-horizontal';
   import X from '@lucide/svelte/icons/x';
-  import { onMount } from 'svelte';
-  import { isTauri } from '../../client';
+  import { onMount, tick } from 'svelte';
+  import { keepFocus } from '../../focus';
   import { dictationHintKey, dictationMode, startDictation } from '../../dictation';
   import { t } from '../../i18n.svelte';
   import { app } from '../../state.svelte';
-  import type { CustomCommand, LineLocal, UploadResult } from '../../types';
-  import { basename, insertText, planDrop, planPaste, PROGRESS_FROM, uploadedPath, type Refusal } from '../../uploads';
-  import { requirePath, savePasted } from '../../task-attachments';
-  import { applySlash, commandsFor, enterAction, lineCount, slashMatches, slashQuery, type SendMode, type SlashCommand } from '../../chat/composer';
+  import type { CustomCommand, LineLocal } from '../../types';
+  import { clipboardFiles, fileInfos, insertText, planDrop, planPaste, refusalMessage, uploadedPath, type Refusal } from '../../uploads';
+  import { savePasteAll, uploadFailures, uploadList } from '../../upload-pipeline';
+  import { requirePath, savePasted } from '../../kanban/task-attachments';
+  import { applySlash, commandsFor, enterAction, lineCount, shrank, slashMatches, slashQuery, STALE_SIZE, type SendMode, type SizeMark, type SlashCommand } from '../../chat/composer';
   import { ChatSender } from '../../chat/sender.svelte';
   import { clearComposerHeight, reportComposerHeight } from '../../chat/composer-height';
+  import { platformName, isTauri } from '../../platform';
+  import { KEY_DRAFTS_CHAT } from '../../storage';
 
   let { lineId, agent, local, phone, history = [], onsent }: { lineId: string; agent: string; local: LineLocal | undefined; phone: boolean; history?: string[]; onsent?: (text: string) => void } = $props();
   let back: Recall = { index: -1, draft: '' };
@@ -41,7 +44,7 @@
   const query = $derived(dismissed ? null : slashQuery(text, caret));
   const matches = $derived<SlashCommand[]>(query === null ? [] : slashMatches(query, commandsFor(agent, custom ?? [])));
   const message = (e: unknown) => String((e as Error)?.message ?? e);
-  const os = typeof navigator !== 'undefined' ? navigator.platform : '';
+  const os = platformName();
   const dictation = $derived(dictationMode(app.os, os, isTauri(), phone));
 
   async function dictate() {
@@ -86,7 +89,7 @@
     autosize();
   });
 
-  let sized = { length: 0, lines: 0 };
+  let sized: SizeMark = { length: 0, lines: 0 };
   let sizeFrame = 0;
   function autosize() {
     cancelAnimationFrame(sizeFrame);
@@ -94,7 +97,7 @@
       const el = box;
       if (!el) return;
       const now = { length: text.length, lines: lineCount(text) };
-      const shrink = now.length < sized.length || now.lines < sized.lines;
+      const shrink = shrank(sized, now);
       sized = now;
       if (shrink) el.style.height = 'auto';
       else if (el.scrollHeight <= el.clientHeight) return;
@@ -124,7 +127,7 @@
     const ro = new ResizeObserver(() => {
       if (el.clientWidth === width) return;
       width = el.clientWidth;
-      sized = { length: Infinity, lines: Infinity };
+      sized = STALE_SIZE;
       autosize();
     });
     ro.observe(el);
@@ -146,7 +149,7 @@
 
   async function send(mode: SendMode) {
     const id = lineId;
-    const out = await sender.send(text, id, local, mode);
+    const out = await keepFocus(box, () => sender.send(text, id, local, mode), tick);
     if (out.kind === 'failed') return app.notify(t('mobile.compose.failed', { reason: out.reason }), 'error');
     if (out.kind !== 'sent' && out.kind !== 'queued') return;
     if (out.kind === 'sent') onsent?.(out.text);
@@ -207,39 +210,30 @@
     if (!text.startsWith('/')) dismissed = false;
   }
 
-  const refuse = (r: Refusal) => app.notify(t(r.reason === 'folder' ? 'upload.folder' : 'upload.tooLarge', { name: r.name }), 'error');
+  const refuse = (r: Refusal) => app.notify(refusalMessage(r), 'error');
 
   async function uploadAll(paths: string[]): Promise<string[]> {
-    const done: UploadResult[] = [];
-    for (const p of paths) {
-      const name = basename(p);
-      try {
-        let big = false;
-        const r = await app.client!.uploadFile(p, ({ sent, total }) => total > PROGRESS_FROM && ((big = true), app.progress(t('upload.progress', { name }), sent / total)));
-        requirePath(r?.path);
-        done.push(r);
-        if (big) app.notice({ kind: 'upload', title: t('upload.done', { name, path: uploadedPath(r) }) });
-      } catch (e) {
-        app.notify(t('upload.failed', { name, error: message(e) }), 'error', undefined, 'upload');
-      }
-    }
+    const failures = uploadFailures();
+    const done = await uploadList((p, onProgress) => app.requireClient().uploadFile(p, onProgress), paths, {
+      progress: (name, fraction) => app.progress(t('upload.progress', { name }), fraction),
+      validate: (r) => void requirePath(r?.path),
+      done: (name, r, large) => {
+        if (large) app.notice({ kind: 'upload', title: t('upload.done', { name, path: uploadedPath(r) }) });
+      },
+      fail: failures.fail,
+    });
+    const failure = failures.summary();
+    if (failure) app.notify(failure, 'error', undefined, 'upload');
     return done.map(uploadedPath);
   }
 
   async function addFiles(files: File[]) {
     if (!files.length) return;
-    const plan = planPaste({ text: '', files: files.map((f) => ({ name: f.name, type: f.type, size: f.size })) }, remote);
+    const plan = planPaste({ text: '', files: fileInfos(files) }, remote);
     if (plan.kind === 'reject') return refuse(plan);
     if (plan.kind !== 'save') return;
-    const saved: string[] = [];
-    for (const f of files) {
-      const name = f.name || 'paste.png';
-      try {
-        saved.push(await savePasted(app.client!, name, new Uint8Array(await f.arrayBuffer())));
-      } catch (e) {
-        return app.notify(t('upload.pasteFailed', { name, error: message(e) }), 'error');
-      }
-    }
+    const saved = await savePasteAll(files, (name, bytes) => savePasted(app.requireClient(), name, bytes), (name, e) => app.notify(t('upload.pasteFailed', { name, error: message(e) }), 'error'));
+    if (!saved) return;
     const paths = await uploadAll(saved);
     if (paths.length) insert(insertText(paths));
   }
@@ -247,12 +241,7 @@
   function onpaste(e: ClipboardEvent) {
     const dt = e.clipboardData;
     if (!dt) return;
-    const files = Array.from(dt.files);
-    if (!files.length)
-      for (const item of Array.from(dt.items)) {
-        const f = item.kind === 'file' ? item.getAsFile() : null;
-        if (f) files.push(f);
-      }
+    const files = clipboardFiles(dt);
     if (!files.length) return;
     e.preventDefault();
     void addFiles(files);

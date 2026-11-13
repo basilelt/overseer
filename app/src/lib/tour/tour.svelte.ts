@@ -1,4 +1,4 @@
-import { saveSettings, settings } from '../settings.svelte';
+import { saveSettings, settings } from '../settings/settings.svelte';
 import { compareVersions, modeFor, seenVersion, STEPS, stepsFor, TOUR_VERSION, visibleSteps, type KeyAction, type Mode, type Step } from './steps';
 
 export type Phase = null | 'welcome' | 'tour';

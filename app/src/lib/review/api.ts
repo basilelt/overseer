@@ -1,4 +1,4 @@
-import type { DaemonClient } from '../client';
+import type { DaemonClient } from '../daemon/client';
 import type { Bases, Branches, NewThread, Related, ReviewDiff, ReviewMap, ReviewTarget, SubmitKind, SubmitResult, Thread } from './types';
 
 const enc = encodeURIComponent;

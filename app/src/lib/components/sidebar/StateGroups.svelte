@@ -1,10 +1,9 @@
 <script lang="ts">
-  import type { WorkspaceGroup } from '../../by-state';
+  import type { WorkspaceGroup } from '../../session/by-state';
   import { t } from '../../i18n.svelte';
   import SessionRow from './SessionRow.svelte';
   import WorkspaceFrame from './WorkspaceFrame.svelte';
 
-  // One frame per workspace, its sessions in the order given; the unassigned group is named "Other sessions".
   let {
     groups,
     names,

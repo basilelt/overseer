@@ -1,16 +1,17 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { FALLBACK_AGENTS } from './agents';
-import { DaemonError, setClient } from './client';
+import { DaemonError, setClient } from './daemon/client';
 import { t } from './i18n.svelte';
-import { MOCK_AGENTS, MockDaemon } from './mock';
-import { center } from './notifications.svelte';
+import { MOCK_AGENTS, MockDaemon } from './daemon/mock';
+import { center } from './notify/notifications.svelte';
 import { setPresence } from './presence';
-import { pages } from './session-pages.svelte';
+import { pages } from './session/session-pages.svelte';
 import { ui } from './mobile/ui.svelte';
-import { settings, workspaceFor } from './settings.svelte';
+import { settings, workspaceFor } from './settings/settings.svelte';
 import { app, NO_WORKSPACE, projectName, statusLine } from './state.svelte';
-import { allTabs, closeTabAt, EMPTY_LAYOUT, openInFocused, workspace } from './workspace.svelte';
+import { allTabs, closeTabAt, EMPTY_LAYOUT, openInFocused, workspace } from './workspace/workspace.svelte';
 import type { Activity, ConnState, DaemonEvent, HostTarget, PlatformInfo, Project, SavedHost, Term, Workspace } from './types';
+import { flush } from '../test/flush';
 
 type Handler = (body: unknown) => unknown;
 
@@ -106,8 +107,6 @@ beforeEach(() => {
 
 afterEach(async () => {
   vi.useRealTimers();
-  vi.restoreAllMocks();
-  vi.unstubAllGlobals();
   await app.disconnect();
   app.mobile = false;
   app.view = 'agents';
@@ -232,7 +231,7 @@ describe('connecting', () => {
     m.onState!({ phase: 'connected', target: local });
     await vi.waitFor(() => expect(m.hits(/GET \/v1\/lines$/)).toHaveLength(1));
     m.onState!({ phase: 'connected', target: local });
-    await new Promise((r) => setTimeout(r, 0));
+    await flush();
     expect(m.hits(/GET \/v1\/lines$/)).toHaveLength(1);
   });
 
@@ -296,6 +295,13 @@ describe('connecting', () => {
     expect(app.workspaceId).toBe(NO_WORKSPACE);
     expect(workspace.layout).toBe(EMPTY_LAYOUT);
     expect(settings.explicitlyDisconnected).toBe(true);
+  });
+
+  it('tells the workspace view to rebuild its layout from the saved tabs after disconnect', async () => {
+    await connect();
+    const before = workspace.epoch;
+    await app.disconnect();
+    expect(workspace.epoch).toBeGreaterThan(before);
   });
 
   it('stops listening to daemon events after disconnect', async () => {
@@ -436,6 +442,17 @@ describe('refresh', () => {
     app.client = null;
     try {
       expect(() => app.api).toThrow('not connected');
+    } finally {
+      app.client = client;
+    }
+  });
+
+  it('hands out the connected client, or refuses with the standard error', () => {
+    const client = app.client;
+    expect(app.requireClient()).toBe(client);
+    app.client = null;
+    try {
+      expect(() => app.requireClient()).toThrow('not connected');
     } finally {
       app.client = client;
     }
@@ -750,7 +767,6 @@ describe('workspaces', () => {
   });
 
   it('opens a top-level workspace, not a nested one listed first, when none is remembered or busy', async () => {
-    // Given a daemon whose first workspace is nested, with no session anywhere and nothing remembered
     const at = '2026-11-01T00:00:00Z';
     const base = { station: 'atlas', kind: 'dir' as const, cwd: null, folderId: null, pinned: false, archived: false, auto: true, rank: 1, tabs: [], notifyIdle: false, createdAt: at, updatedAt: at };
     (m as unknown as { workspaces: unknown[] }).workspaces = [
@@ -761,9 +777,7 @@ describe('workspaces', () => {
     (m as unknown as { terms: unknown[] }).terms = [];
     settings.workspaceByHost = {};
     settings.workspaceId = undefined;
-    // When the app connects
     await connect();
-    // Then the top-level workspace opens
     expect(app.workspaceId).toBe('w_proj');
   });
 
@@ -904,14 +918,11 @@ describe('sessions', () => {
   });
 
   it('starts a session of a nested workspace in its start dir and assigns it there', async () => {
-    // Given a nested sub-folder that starts at the repo root, and a submodule that starts in its own folder
     const webshop = app.ws.workspaces.find((w) => w.id === 'ws_webshop')!.path!;
-    // When a shell starts in each
     app.selectWorkspace('ws_webshop_invoicing');
     await app.newSession('shell');
     app.selectWorkspace('ws_webshop_design');
     await app.newSession('shell');
-    // Then the first runs at the root and the second in the submodule, each assigned to its nested workspace
     const [a, b] = m.bodies['POST /v1/terms'].slice(-2) as { cwd: string; workspaceId: string }[];
     expect(a).toMatchObject({ cwd: webshop, workspaceId: 'ws_webshop_invoicing' });
     expect(b).toMatchObject({ cwd: `${webshop}/vendor/design-system`, workspaceId: 'ws_webshop_design' });
@@ -1065,9 +1076,6 @@ describe('sessions', () => {
     };
 
     it('sends the workspaceId and no cwd, and still starts agents in a worktree of the subject cwd repo', async () => {
-      // Given a subject whose cwd is a project repository, selected in the sidebar
-      // When an agent and a shell are started
-      // Then both bodies carry workspaceId and no cwd, and only the agent asks for a worktree
       const id = await subject();
       await app.newSession('claude');
       await app.newSession('shell');
@@ -1078,9 +1086,6 @@ describe('sessions', () => {
     });
 
     it('lets an explicit cwd win and sends no workspaceId', async () => {
-      // Given a selected subject
-      // When a session starts with an explicit cwd
-      // Then the body has that cwd and no workspaceId
       await subject();
       await app.newSession('shell', { cwd: '/tmp' });
       expect(m.bodies['POST /v1/terms']).toEqual([{ cwd: '/tmp', cols: 120, rows: 32 }]);
@@ -1258,7 +1263,7 @@ describe('sessions', () => {
   });
 
   it('starts a shell in the same folder when an ended terminal tab is reopened', async () => {
-    const { runShortcut } = await import('./keyboard');
+    const { runShortcut } = await import('./commands/commands');
     const cwd = app.data.terms.find((x) => x.id === 'tm_shell1')!.cwd;
     workspace.layout = openInFocused(EMPTY_LAYOUT, 'term:tm_shell1');
     closeTabAt(0, 'term:tm_shell1');
@@ -1269,7 +1274,7 @@ describe('sessions', () => {
   });
 
   it('offers Hide tab and Close for a session tab, and only Close for a non-session tab', async () => {
-    const { tabMenu } = await import('./tab-edits');
+    const { tabMenu } = await import('./tabs/tab-edits');
     const line = app.items.find((i) => i.lineId)!;
     workspace.layout = openInFocused(openInFocused(EMPTY_LAYOUT, line.key), 'browser:x');
     const e = {} as MouseEvent;
@@ -1279,7 +1284,7 @@ describe('sessions', () => {
     expect(labels(items).slice(-2)).toEqual([t('tab.hide'), t('common.close')]);
     items.find((i) => i.label === t('tab.hide'))!.run!();
     expect(allTabs(workspace.layout)).toEqual(['browser:x']);
-    await new Promise((r) => setTimeout(r, 0));
+    await flush();
     expect(m.hits(/^POST \/v1\/lines/)).toEqual([]);
   });
 
@@ -1289,7 +1294,7 @@ describe('sessions', () => {
     workspace.layout = openInFocused(EMPTY_LAYOUT, 'term:tm_shell1');
     app.connected = false;
     closeTabAt(0, 'term:tm_shell1');
-    await new Promise((r) => setTimeout(r, 0));
+    await flush();
     expect(m.calls).toEqual([]);
     app.connected = true;
     expect(app.data.terms).toBe(terms);

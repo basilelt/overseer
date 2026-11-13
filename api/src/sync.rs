@@ -8,7 +8,7 @@ use serde_json::{json, Value};
 use std::sync::Arc;
 use tokio::sync::mpsc;
 
-const TERMINAL: [&str; 3] = ["succeeded", "refused", "failed"];
+use crate::wire::*;
 
 pub async fn upgrade(
     State(app): State<Arc<App>>,
@@ -82,10 +82,10 @@ impl App {
             );
         }
         let ack = |seq: i64, resync: bool| {
-            json!({ "kind": "ack", "seq": seq, "resync": resync }).to_string()
+            json!({ "kind": FRAME_ACK, "seq": seq, FRAME_RESYNC: resync }).to_string()
         };
         match v["kind"].as_str() {
-            Some("hello") => {
+            Some(FRAME_HELLO) => {
                 let theirs = v["lastAckedSeq"].as_i64().unwrap_or(0);
                 let mut out = vec![ack(last, last == 0 || theirs > last)];
                 out.extend(
@@ -96,23 +96,31 @@ impl App {
                 );
                 out
             }
-            Some("snapshot") => match v["seq"].as_i64().filter(|s| *s >= 1) {
+            Some(FRAME_SNAPSHOT) => match v["seq"].as_i64().filter(|s| *s >= 1) {
                 Some(seq) => {
-                    self.apply(&db, station, seq, &v["lines"], &Value::Null);
-                    vec![ack(seq, false)]
+                    if self.apply(&db, station, seq, &v["lines"], &Value::Null) {
+                        vec![ack(seq, false)]
+                    } else {
+                        let out = vec![ack(last, true)];
+                        self.kick(station);
+                        out
+                    }
                 }
                 None => vec![],
             },
-            Some("delta") => match v["seq"].as_i64() {
+            Some(FRAME_DELTA) => match v["seq"].as_i64() {
                 Some(seq) if seq <= last => vec![ack(last, false)],
                 Some(seq) if seq == last + 1 => {
-                    self.apply(&db, station, seq, &v["upsert"], &v["remove"]);
-                    vec![ack(seq, false)]
+                    if self.apply(&db, station, seq, &v["upsert"], &v["remove"]) {
+                        vec![ack(seq, false)]
+                    } else {
+                        vec![ack(last, true)]
+                    }
                 }
                 Some(_) => vec![ack(last, true)],
                 None => vec![],
             },
-            Some("heartbeat") => {
+            Some(FRAME_HEARTBEAT) => {
                 let _ = db.execute(
                     "UPDATE stations SET active_count = ?2, mem_used = ?3, mem_total = ?4 WHERE id = ?1",
                     params![
@@ -124,7 +132,7 @@ impl App {
                 );
                 vec![self.stations_frame(&db, station)]
             }
-            Some("command_result") => {
+            Some(FRAME_COMMAND_RESULT) => {
                 self.complete(&db, station, &v["command"]);
                 vec![]
             }
@@ -167,35 +175,47 @@ impl App {
                 v
             })
             .collect();
-        json!({ "kind": "stations", "stations": stations }).to_string()
+        json!({ "kind": FRAME_STATIONS, "stations": stations }).to_string()
     }
 
-    fn apply(&self, db: &Connection, station: &str, seq: i64, upsert: &Value, remove: &Value) {
-        let Ok(tx) = db.unchecked_transaction() else {
-            return;
-        };
-        for l in upsert.as_array().into_iter().flatten() {
-            if !self.upsert_line(&tx, station, l) {
-                eprintln!("overseer-api: {station} sent an invalid line, skipped");
+    fn apply(
+        &self,
+        db: &Connection,
+        station: &str,
+        seq: i64,
+        upsert: &Value,
+        remove: &Value,
+    ) -> bool {
+        let run = || -> rusqlite::Result<()> {
+            let tx = db.unchecked_transaction()?;
+            for l in upsert.as_array().into_iter().flatten() {
+                if !self.upsert_line(&tx, station, l)? {
+                    eprintln!("overseer-api: {station} sent an invalid line, skipped");
+                }
             }
-        }
-        for id in remove
-            .as_array()
-            .into_iter()
-            .flatten()
-            .filter_map(Value::as_str)
-        {
-            let _ = tx.execute(
-                "DELETE FROM lines WHERE id = ?1 AND station_id = ?2",
-                params![id, station],
-            );
-        }
-        let _ = tx.execute(
-            "UPDATE stations SET last_seq = ?2 WHERE id = ?1",
-            params![station, seq],
-        );
-        if let Err(e) = tx.commit() {
-            eprintln!("overseer-api: cannot apply seq {seq} from {station}: {e}");
+            for id in remove
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(Value::as_str)
+            {
+                tx.execute(
+                    "DELETE FROM lines WHERE id = ?1 AND station_id = ?2",
+                    params![id, station],
+                )?;
+            }
+            tx.execute(
+                "UPDATE stations SET last_seq = ?2 WHERE id = ?1",
+                params![station, seq],
+            )?;
+            tx.commit()
+        };
+        match run() {
+            Ok(()) => true,
+            Err(e) => {
+                eprintln!("overseer-api: cannot apply seq {seq} from {station}: {e}");
+                false
+            }
         }
     }
 
@@ -203,7 +223,7 @@ impl App {
         let (Some(id), Some(status)) = (c["id"].as_str(), c["status"].as_str()) else {
             return;
         };
-        if status != "delivered" && !TERMINAL.contains(&status) {
+        if status != STATUS_DELIVERED && !STATUS_TERMINAL.contains(&status) {
             return;
         }
         let Ok((owner, body)) = db.query_row(
@@ -221,14 +241,14 @@ impl App {
             return;
         };
         let old = cmd["status"].as_str().unwrap_or_default();
-        if TERMINAL.contains(&old) || old == status {
+        if STATUS_TERMINAL.contains(&old) || old == status {
             return;
         }
         cmd["status"] = json!(status);
         if let Some(r) = c["reason"].as_str() {
             cmd["reason"] = json!(r);
         }
-        if TERMINAL.contains(&status) {
+        if STATUS_TERMINAL.contains(&status) {
             cmd["completedAt"] = c["completedAt"]
                 .as_str()
                 .map(|s| json!(s))
@@ -238,7 +258,7 @@ impl App {
             "UPDATE commands SET status = ?2, body = ?3 WHERE id = ?1",
             params![id, status, cmd.to_string()],
         );
-        if TERMINAL.contains(&status) {
+        if STATUS_TERMINAL.contains(&status) {
             self.emit(db, "command.completed", cmd);
         }
     }

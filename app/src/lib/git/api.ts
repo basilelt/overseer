@@ -1,4 +1,4 @@
-import type { DaemonClient } from '../client';
+import type { DaemonClient } from '../daemon/client';
 import type { CleanupPlan, CommitDetail, CommitOptions, GraphPage, NewWorktree, RefsFilter, ScmResult, ScmStatus, ScmTarget, Worktree, WorktreeList } from './types';
 
 const enc = encodeURIComponent;

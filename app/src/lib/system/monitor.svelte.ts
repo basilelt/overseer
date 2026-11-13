@@ -1,5 +1,6 @@
 import { untrack } from 'svelte';
-import { DaemonError, type DaemonClient } from '../client';
+import { systemApi } from './api';
+import { DaemonError, type DaemonClient } from '../daemon/client';
 import { ui } from '../mobile/ui.svelte';
 import { mergeHistory } from './format';
 import type { SysPoint, SysResponse, SysSample } from './types';
@@ -114,7 +115,7 @@ export class SystemMonitor {
     this.inflight = true;
     let next = this.period();
     try {
-      const r = await this.client.request<SysResponse>('GET', last == null ? '/v1/system' : `/v1/system?since=${last}`);
+      const r = await systemApi(this.client).system(last);
       if (gen !== this.generation) return;
       if (r.intervalMs > 0) this.intervalMs = r.intervalMs;
       if (r.current) this.current = r.current;

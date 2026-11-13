@@ -1,4 +1,3 @@
-// At most one run per key: a second call while the first is pending is skipped, not queued.
 export class Flights {
   private busy = new Set<string>();
 

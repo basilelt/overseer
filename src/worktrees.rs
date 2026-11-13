@@ -1,11 +1,14 @@
-use crate::board::{decode, git_out, publish};
+use crate::board::publish;
+use crate::git::git_out;
 use crate::git::{git, Git};
+use crate::http::res;
+use crate::util::percent_decode;
 use crate::util::{format_rfc3339, ticket};
 use crate::{Ctx, Line};
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::Command;
 use std::sync::Mutex;
 use std::time::{Duration, Instant, UNIX_EPOCH};
 
@@ -25,45 +28,13 @@ fn conflict(m: impl Into<String>) -> (u16, String) {
     (409, m.into())
 }
 
-pub fn fnv(s: &str) -> String {
-    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
-    for b in s.bytes() {
-        h ^= u64::from(b);
-        h = h.wrapping_mul(0x0100_0000_01b3);
-    }
-    format!("{:08x}", h >> 32)
-}
-
 pub fn project(path: &str) -> Res<(String, String)> {
     crate::tasks::main_root(&mut Git::default(), path)
         .ok_or_else(|| bad(format!("{path} is not in a git repository")))
 }
 
 pub fn store(ctx: &Ctx, root: &str) -> PathBuf {
-    let name = Path::new(root)
-        .file_name()
-        .map(|n| crate::tasks::slug(&n.to_string_lossy()))
-        .unwrap_or_else(|| "repo".into());
-    ctx.config
-        .worktree_dir
-        .join(format!("{name}-{}", fnv(root)))
-}
-
-pub fn dir_name(branch: &str) -> String {
-    let mut out = String::new();
-    for c in branch.chars() {
-        if c.is_ascii_alphanumeric() || c == '.' || c == '_' {
-            out.push(c);
-        } else if !out.ends_with('-') {
-            out.push('-');
-        }
-    }
-    let out = out.trim_matches(|c| c == '-' || c == '.').to_string();
-    if out.is_empty() {
-        "worktree".into()
-    } else {
-        out
-    }
+    crate::layout::store_dir(&ctx.config.worktree_dir, root)
 }
 
 fn has_ref(dir: &str, r: &str) -> bool {
@@ -210,6 +181,14 @@ pub fn landed(root: &str, branch: &str, fetch: bool) -> bool {
     hit.is_some_and(|h| h.1)
 }
 
+pub fn branch_landed(project: &str, branch: Option<&str>, fetch: bool) -> bool {
+    branch.is_some_and(|b| landed(project, b, fetch))
+}
+
+pub fn branch_landed_cached(project: &str, branch: Option<&str>) -> Option<bool> {
+    branch.and_then(|b| landed_cached(project, b))
+}
+
 pub fn landed_cached(root: &str, branch: &str) -> Option<bool> {
     LANDED
         .lock()
@@ -263,21 +242,18 @@ fn landing(root: &str, branch: &str, pr: &Value, fetch: bool) -> (bool, String) 
     (branch_merged_into(root, branch, &base), base)
 }
 
-pub fn task_landed(ctx: &Ctx, id: &str) -> Res<Value> {
-    let reg = crate::registry::Registry::open(&ctx.state_dir).map_err(|e| (500, e))?;
-    let t = crate::tasks::get(&reg, id)?;
-    let branch = t
-        .branch
+pub fn task_landed(ctx: &Ctx, project: &str, branch: Option<String>) -> Res<Value> {
+    let branch = branch
         .filter(|b| !b.is_empty())
         .ok_or_else(|| bad("the task has no branch: nothing to mark as merged"))?;
-    let pr = pr_of(&t.project, &branch, true);
+    let pr = pr_of(project, &branch, true);
     let fetch = ctx.config.worktree_fetch;
     if fetch {
-        fetch_base(&t.project, &default_branch_cached(&t.project));
+        fetch_base(project, &default_branch_cached(project));
     }
-    let (landed, base) = landing(&t.project, &branch, &pr, fetch);
+    let (landed, base) = landing(project, &branch, &pr, fetch);
     let landed =
-        landed || (base != default_branch_cached(&t.project) && branch_merged(&t.project, &branch));
+        landed || (base != default_branch_cached(project) && branch_merged(project, &branch));
     if landed {
         forget_landed(&branch);
     }
@@ -353,40 +329,26 @@ fn squashed(root: &str, base: &str, tip: &str) -> bool {
 }
 
 fn patch_ids(root: &str, args: &[&str]) -> Vec<String> {
-    use std::io::Write;
     let Some(diff) = crate::git::run_in("git", root, args, crate::git::TIMEOUT)
         .ok()
         .filter(|o| o.status.success() && !o.stdout.is_empty())
     else {
         return vec![];
     };
-    let Ok(mut c) = crate::git::Watchdog::guard(
+    let Ok(o) = crate::exec::run_stdin(
         Command::new("git")
             .arg("-C")
             .arg(root)
             .args(["patch-id", "--stable"]),
-    )
-    .stdin(Stdio::piped())
-    .stdout(Stdio::piped())
-    .stderr(Stdio::null())
-    .spawn() else {
+        diff.stdout,
+        crate::git::TIMEOUT,
+    ) else {
         return vec![];
     };
-    let dog = crate::git::Watchdog::start(c.id(), crate::git::TIMEOUT);
-    if let Some(mut i) = c.stdin.take() {
-        std::thread::spawn(move || i.write_all(&diff.stdout));
-    }
-    let out = c.wait_with_output();
-    if dog.finish() {
-        return vec![];
-    }
-    out.map(|o| {
-        String::from_utf8_lossy(&o.stdout)
-            .lines()
-            .filter_map(|l| l.split_whitespace().next().map(str::to_string))
-            .collect()
-    })
-    .unwrap_or_default()
+    String::from_utf8_lossy(&o.stdout)
+        .lines()
+        .filter_map(|l| l.split_whitespace().next().map(str::to_string))
+        .collect()
 }
 
 pub fn start_point(root: &str, name: &str) -> String {
@@ -449,22 +411,21 @@ pub fn create(ctx: &Ctx, path: &str, n: &New) -> Res<(String, String, String)> {
             b.to_string()
         }
         None => {
-            let prefix = match n.agent {
-                Some(a) => format!("sb/{}/", crate::tasks::slug(a)),
-                None => "sb/".into(),
-            };
+            let prefix = crate::layout::session_branch_prefix(n.agent);
             let s =
                 n.slug
-                    .map(crate::tasks::slug)
+                    .map(crate::layout::task_slug)
                     .filter(|s| n.slug.is_some_and(|x| !x.trim().is_empty()) && !s.is_empty())
                     .unwrap_or_else(|| match n.agent {
-                        Some(_) => short_time(crate::procs::now_ms()),
+                        Some(_) => short_time(crate::util::now_ms()),
                         None => git(&root, &["rev-parse", "--short", &start])
                             .unwrap_or_else(|| "wt".into()),
                     });
             let mut b = format!("{prefix}{s}");
             let mut i = 2;
-            while has_ref(&root, &format!("refs/heads/{b}")) || store.join(dir_name(&b)).exists() {
+            while has_ref(&root, &format!("refs/heads/{b}"))
+                || store.join(crate::layout::branch_dir_name(&b)).exists()
+            {
                 b = format!("{prefix}{s}-{i}");
                 i += 1;
                 if i > 100 {
@@ -475,7 +436,7 @@ pub fn create(ctx: &Ctx, path: &str, n: &New) -> Res<(String, String, String)> {
             b
         }
     };
-    let dir = store.join(dir_name(&branch));
+    let dir = store.join(crate::layout::branch_dir_name(&branch));
     if dir.exists() {
         return Err(conflict(format!("{} already exists", dir.display())));
     }
@@ -565,12 +526,7 @@ pub fn entries(root: &str) -> Vec<Entry> {
     res
 }
 
-fn inside(child: &str, dir: &str) -> bool {
-    child == dir
-        || child
-            .strip_prefix(dir)
-            .is_some_and(|rest| rest.starts_with('/'))
-}
+use crate::layout::inside;
 
 fn canon(p: &Path) -> String {
     p.canonicalize()
@@ -756,7 +712,7 @@ struct Shared<'a> {
     base_name: &'a str,
     base: &'a str,
     store: String,
-    managed_root: Vec<String>,
+    managed_root: crate::layout::ManagedRoot,
     stale_ms: i64,
     now_ms: i64,
     known: &'a Known,
@@ -779,11 +735,7 @@ fn json_of(s: &Shared, e: &Entry) -> Value {
         .collect();
     let kind = if main {
         "main"
-    } else if !tasks.is_empty()
-        || s.managed_root
-            .iter()
-            .any(|m| inside(&e.path, m) || inside(&canon_path, m))
-    {
+    } else if !tasks.is_empty() || s.managed_root.holds_checkout(&e.path, &canon_path) {
         "managed"
     } else {
         "orphan"
@@ -846,7 +798,7 @@ fn json_of(s: &Shared, e: &Entry) -> Value {
     let merged = f.merged_git || pr_merged;
     let in_use = lines.iter().any(|l| l.alive())
         || !terms.is_empty()
-        || task.is_some_and(|t| t.status == "in_progress");
+        || task.is_some_and(|t| t.status == crate::status::IN_PROGRESS);
     let mut last = admin_dir(&e.path)
         .map(|a| {
             [a.join("index"), a.join("logs/HEAD"), a.join("HEAD")]
@@ -909,11 +861,7 @@ pub fn list(ctx: &Ctx, path: &str) -> Res<Value> {
     let base_name = default_branch(&root);
     let base = start_point(&root, &base_name);
     let store = store(ctx, &root);
-    let wd = &ctx.config.worktree_dir;
-    let mut managed_root = vec![wd.to_string_lossy().into_owned()];
-    if let Ok(c) = wd.canonicalize() {
-        managed_root.push(c.to_string_lossy().into_owned());
-    }
+    let managed_root = crate::layout::ManagedRoot::new(&ctx.config.worktree_dir);
     let shared = Shared {
         root: &root,
         repo: &repo,
@@ -922,7 +870,7 @@ pub fn list(ctx: &Ctx, path: &str) -> Res<Value> {
         store: store.to_string_lossy().into_owned(),
         managed_root,
         stale_ms: ctx.config.worktree_stale_days.max(0) * DAY_MS,
-        now_ms: crate::procs::now_ms(),
+        now_ms: crate::util::now_ms(),
         known: &known,
         paths: all.iter().map(|e| e.path.clone()).collect(),
     };
@@ -1203,15 +1151,8 @@ pub fn for_term(ctx: &Ctx, cwd: &str, agent: &str, opt: &Value) -> Res<String> {
     Ok(path)
 }
 
-fn res(code: u16, r: Res<Value>) -> (u16, Value) {
-    match r {
-        Ok(v) => (code, v),
-        Err((c, e)) => (c, json!({ "error": e })),
-    }
-}
-
 pub fn routes(ctx: &Ctx, method: &str, segs: &[&str], body: &Value) -> Option<(u16, Value)> {
-    let id = |s: &str| decode(s);
+    let id = |s: &str| percent_decode(s);
     Some(match (method, segs) {
         ("GET", ["v1", "projects", p, "worktrees"]) => res(200, list(ctx, &id(p))),
         ("POST", ["v1", "worktrees"]) => {
@@ -1282,10 +1223,7 @@ mod tests {
             .parse()
             .unwrap();
         let gone = (0..100).any(|_| {
-            let alive = unsafe { libc::kill(child, 0) } == 0
-                && !std::fs::read_to_string(format!("/proc/{child}/stat"))
-                    .unwrap_or_default()
-                    .contains(") Z ");
+            let alive = crate::procs::alive_not_zombie(child);
             if alive {
                 std::thread::sleep(Duration::from_millis(20));
             }
@@ -1302,12 +1240,24 @@ mod tests {
 
     #[test]
     fn names() {
-        assert_eq!(dir_name("task/7-fix-login"), "task-7-fix-login");
-        assert_eq!(dir_name("sb/claude/1029-0930"), "sb-claude-1029-0930");
-        assert_eq!(dir_name("feat/AS-12_x..y"), "feat-AS-12_x..y");
-        assert_eq!(dir_name("//"), "worktree");
-        assert_eq!(fnv("/home/u/src/x").len(), 8);
-        assert_ne!(fnv("/a"), fnv("/b"));
+        assert_eq!(
+            crate::layout::branch_dir_name("task/7-fix-login"),
+            "task-7-fix-login"
+        );
+        assert_eq!(
+            crate::layout::branch_dir_name("sb/claude/1029-0930"),
+            "sb-claude-1029-0930"
+        );
+        assert_eq!(
+            crate::layout::branch_dir_name("feat/AS-12_x..y"),
+            "feat-AS-12_x..y"
+        );
+        assert_eq!(crate::layout::branch_dir_name("//"), "worktree");
+        assert_eq!(crate::layout::store_hash("/home/u/src/x").len(), 8);
+        assert_ne!(
+            crate::layout::store_hash("/a"),
+            crate::layout::store_hash("/b")
+        );
         assert_eq!(short_time(0), "0101-0000");
     }
 
@@ -1349,21 +1299,10 @@ mod tests {
     }
 
     fn sh(d: &Path, args: &[&str]) {
-        let ok = Command::new("git")
-            .current_dir(d)
-            .env("GIT_CONFIG_GLOBAL", "/dev/null")
-            .env("GIT_CONFIG_NOSYSTEM", "1")
-            .args(["-c", "user.email=t@example.com", "-c", "user.name=T"])
-            .args(["-c", "commit.gpgsign=false"])
-            .env("GIT_AUTHOR_DATE", "2020-01-02T00:00:00Z")
-            .env("GIT_COMMITTER_DATE", "2020-01-02T00:00:00Z")
-            .args(args)
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status()
-            .unwrap()
-            .success();
-        assert!(ok, "git {args:?}");
+        let mut c = crate::git::fixture::cmd(d);
+        c.env("GIT_AUTHOR_DATE", "2020-01-02T00:00:00Z")
+            .env("GIT_COMMITTER_DATE", "2020-01-02T00:00:00Z");
+        crate::git::fixture::checked(c, args);
     }
 
     fn commit(d: &Path, file: &str, body: &str) {

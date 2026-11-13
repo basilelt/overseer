@@ -42,10 +42,7 @@ impl Tmux {
     }
 
     pub fn run(&self, args: &[&str]) -> Option<String> {
-        let out = crate::git::output_within(self.cmd().args(args), TIMEOUT).ok()?;
-        out.status
-            .success()
-            .then(|| String::from_utf8_lossy(&out.stdout).into_owned())
+        crate::exec::stdout_ok(self.cmd().args(args), TIMEOUT)
     }
 
     pub fn ok(&self, args: &[&str]) -> Result<(), String> {
@@ -57,12 +54,12 @@ impl Tmux {
     pub fn load_buffer(&self, name: &str, text: &str) -> Result<(), String> {
         use std::io::Write;
         let mut c = self.cmd();
-        let mut child = crate::git::Watchdog::guard(c.args(["load-buffer", "-b", name, "-"]))
+        let mut child = crate::exec::Watchdog::guard(c.args(["load-buffer", "-b", name, "-"]))
             .stdin(Stdio::piped())
             .stdout(Stdio::null())
             .spawn()
             .map_err(|e| format!("tmux load-buffer: {e}"))?;
-        let dog = crate::git::Watchdog::start(child.id(), TIMEOUT);
+        let dog = crate::exec::Watchdog::start(child.id(), TIMEOUT);
         let wrote = child
             .stdin
             .take()

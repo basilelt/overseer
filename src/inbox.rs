@@ -1,5 +1,6 @@
 use crate::actions::{self, log_action, Launch, Report};
 use crate::sync::{complete, inbox};
+use crate::wire::*;
 use crate::{mkdir_private, scan, Ctx};
 use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
@@ -7,7 +8,9 @@ use std::path::{Path, PathBuf};
 pub const DISABLED: &str = "disabled: acceptRemoteCommands is false on this station";
 
 pub fn running(state_dir: &Path) -> PathBuf {
-    state_dir.join("commands").join("running")
+    state_dir
+        .join(crate::paths::COMMANDS_DIR)
+        .join(crate::paths::RUNNING_DIR)
 }
 
 #[derive(Debug)]
@@ -74,7 +77,7 @@ fn recover(ctx: &Ctx, dir: &Path) -> Vec<Outcome> {
             ctx,
             &cmd,
             id,
-            "failed",
+            STATUS_FAILED,
             Some("interrupted before completion".into()),
         ));
         let _ = std::fs::remove_file(&f);
@@ -117,67 +120,63 @@ pub fn process(ctx: &Ctx) -> Vec<Outcome> {
 
 fn report(r: Result<Report, String>) -> (&'static str, Option<String>) {
     match r {
-        Err(e) => ("refused", Some(e)),
-        Ok(r) if r.error.is_some() => ("failed", r.error),
-        Ok(r) if !r.ok() => {
-            let failed: Vec<String> = r
-                .checks
-                .iter()
-                .filter(|c| !c.ok)
-                .map(|c| format!("{}: {}", c.name, c.detail))
-                .collect();
-            ("refused", Some(failed.join("; ")))
-        }
-        Ok(r) => ("succeeded", Some(r.action.to_string())),
+        Err(e) => (STATUS_REFUSED, Some(e)),
+        Ok(r) => r.outcome(),
     }
 }
 
 pub fn execute(ctx: &Ctx, cmd: &Value) -> (&'static str, Option<String>) {
     if !ctx.config.accept_remote_commands {
-        return ("refused", Some(DISABLED.into()));
+        return (STATUS_REFUSED, Some(DISABLED.into()));
     }
     let line = cmd["lineId"].as_str().unwrap_or_default();
     let kind = cmd["kind"].as_str().unwrap_or_default();
     let args = &cmd["args"];
     let dry = args["dryRun"].as_bool().unwrap_or(true);
-    if kind == "start" {
+    if kind == CMD_START {
         return crate::runner::start(ctx, line, args, dry);
     }
     match scan(ctx) {
-        Err(e) => return ("failed", Some(e)),
+        Err(e) => return (STATUS_FAILED, Some(e)),
         Ok(lines) if line.is_empty() || !lines.iter().any(|l| l.id == line) => {
             return (
-                "refused",
+                STATUS_REFUSED,
                 Some(format!("line {line} is not on this station")),
             )
         }
         Ok(_) => {}
     }
     match kind {
-        "hold" => report(actions::hold(ctx, line, !dry)),
-        "close" => report(actions::close(ctx, line, !dry, false, false)),
-        "resume" => match actions::resume(ctx, line, dry, Launch::Detached) {
-            Ok(p) if dry => ("succeeded", Some(format!("would resume in {}", p.r#where))),
-            Ok(p) => ("succeeded", Some(format!("resumed in {}", p.r#where))),
-            Err(e) => ("refused", Some(e)),
+        CMD_HOLD => report(actions::hold(ctx, line, !dry)),
+        CMD_CLOSE => report(actions::close(ctx, line, !dry, false, false)),
+        CMD_RESUME => match actions::resume(ctx, line, dry, Launch::Detached) {
+            Ok(p) if dry => (
+                STATUS_SUCCEEDED,
+                Some(format!("would resume in {}", p.r#where)),
+            ),
+            Ok(p) => (STATUS_SUCCEEDED, Some(format!("resumed in {}", p.r#where))),
+            Err(e) => (STATUS_REFUSED, Some(e)),
         },
-        "link" => match args["ticketKey"].as_str() {
-            None => ("refused", Some("link needs args.ticketKey".into())),
-            Some(_) if dry => ("succeeded", Some("would link".into())),
+        CMD_LINK => match args["ticketKey"].as_str() {
+            None => (STATUS_REFUSED, Some("link needs args.ticketKey".into())),
+            Some(_) if dry => (STATUS_SUCCEEDED, Some("would link".into())),
             Some(k) => match actions::link(ctx, line, k) {
                 Ok((_, t)) => (
-                    "succeeded",
+                    STATUS_SUCCEEDED,
                     Some(format!(
                         "linked to {}",
                         t.as_deref().unwrap_or("branch ticket")
                     )),
                 ),
-                Err(e) => ("refused", Some(e)),
+                Err(e) => (STATUS_REFUSED, Some(e)),
             },
         },
-        "relaunch" => {
+        CMD_RELAUNCH => {
             crate::runner::relaunch(ctx, line, args["message"].as_str().unwrap_or_default(), dry)
         }
-        _ => ("refused", Some(format!("unknown command kind '{kind}'"))),
+        _ => (
+            STATUS_REFUSED,
+            Some(format!("unknown command kind '{kind}'")),
+        ),
     }
 }

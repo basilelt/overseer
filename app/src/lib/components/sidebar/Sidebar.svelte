@@ -8,22 +8,23 @@
   import Users from '@lucide/svelte/icons/users';
   import X from '@lucide/svelte/icons/x';
   import { t } from '../../i18n.svelte';
-  import { hint } from '../../keyboard';
+  import { isAgentItem } from '../../agents';
+  import { command } from '../../commands/commands';
+  import { hint } from '../../commands/keyboard';
   import { touchContextMenu } from '../../mobile/touch-menu';
   import { app, type SidebarMode } from '../../state.svelte';
-  import { broadcastTo, createFolder, groupPicker, rescanFolders } from '../../wsactions';
+  import { broadcastTo, groupPicker } from '../../workspace/wsactions';
   import WandSparkles from '@lucide/svelte/icons/wand-sparkles';
-  import { saveSettings, settings } from '../../settings.svelte';
-  import { organizer } from '../../organize.svelte';
-  import { nudgeVisible, unplacedCount } from '../../organize';
+  import { saveSettings, settings } from '../../settings/settings.svelte';
+  import { organizer } from '../../workspace/organize.svelte';
+  import { nudgeVisible, unplacedCount } from '../../workspace/organize';
   import SpacesView from './SpacesView.svelte';
   import { preload } from '../../idle';
   import GitBranch from '@lucide/svelte/icons/git-branch';
-  import { ui } from '../../mobile/ui.svelte';
+  import { isPhone } from '../../mobile/ui.svelte';
   import { notesUi } from '../../notes.svelte';
 
   const statesView = preload(() => import('./StatesView.svelte'));
-  // Only windows showing several hosts need it.
   const hostSections = () => import('./HostSections.svelte');
   const gitView = () => import('../../git/SidebarGit.svelte');
   const notesView = () => import('./NotesPopover.svelte');
@@ -36,20 +37,20 @@
     { id: 'workspaces', label: () => t('ws.title') },
     { id: 'status', label: () => t('ws.byStatus') },
   ];
-  const phone = $derived(ui.layout === 'phone');
-  const listed = $derived(app.items.filter((i) => i.kind !== 'shell').length);
+  const phone = $derived(isPhone());
+  const listed = $derived(app.items.filter(isAgentItem).length);
   const selection = $derived([...app.multi]);
   const addMenu = () => [
-    { label: t('ws.new'), icon: Plus, run: () => app.open('workspaceNew') },
-    { label: t('ws.rescan'), icon: RefreshCw, run: () => rescanFolders() },
+    { label: t('ws.new'), icon: Plus, run: () => command('ws-new').run() },
+    { label: t('ws.rescan'), icon: RefreshCw, run: () => command('rescan-folders').run() },
   ];
 </script>
 
 {#snippet wsActions()}
-    <button class="icon-btn" title={t('ws.new')} aria-label={t('ws.new')} disabled={!app.connected || !app.wsPersistent} aria-haspopup="menu" onclick={(e) => app.openMenu(e, t('ws.new'), addMenu())}
+    <button class="icon-btn" title={t('ws.new')} aria-label={t('ws.new')} disabled={!command('ws-new').available()} aria-haspopup="menu" onclick={(e) => app.openMenu(e, t('ws.new'), addMenu())}
       ><Plus size={14} /></button
     >
-    <button class="icon-btn" title={t('ws.newFolder')} aria-label={t('ws.newFolder')} disabled={!app.connected || !app.wsPersistent} onclick={() => createFolder()}
+    <button class="icon-btn" title={t('ws.newFolder')} aria-label={t('ws.newFolder')} disabled={!command('folder-new').available()} onclick={() => command('folder-new').run()}
       ><FolderPlus size={14} /></button
     >
     <button

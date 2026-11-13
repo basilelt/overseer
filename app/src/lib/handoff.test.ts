@@ -8,7 +8,6 @@ const prod = { kind: 'ssh' as const, host: 'prod', label: 'prod' };
 
 describe('takeHandoff', () => {
   afterEach(() => {
-    vi.unstubAllGlobals();
     invoke.mockReset();
   });
 

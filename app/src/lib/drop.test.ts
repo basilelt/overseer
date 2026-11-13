@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { dropPoint, pickZone, type DropZone } from './drop';
 
 type DragEvent = { payload: { type: 'enter' | 'over' | 'drop' | 'leave'; position: { x: number; y: number }; paths: string[] } };
@@ -122,8 +122,6 @@ describe('dropZone', () => {
       },
     });
   });
-  afterEach(() => vi.unstubAllGlobals());
-
   it('highlights the zone under the pointer as it moves and clears on leave', async () => {
     const { dropZone } = await load();
     const a = tracked(leftF, 1);
@@ -211,10 +209,11 @@ describe('dropZone', () => {
     const { dropZone } = await load();
     dropZone(tracked(leftF, 1).z);
     await vi.waitFor(() => expect(webview.calls).toBe(1));
-    await new Promise((r) => setTimeout(r, 0));
     webview.fail = false;
-    dropZone(tracked(rightF, 1).z);
-    await vi.waitFor(() => expect(webview.handler).not.toBeNull());
+    await vi.waitFor(() => {
+      dropZone(tracked(rightF, 1).z);
+      expect(webview.handler).not.toBeNull();
+    });
     expect(webview.calls).toBe(2);
   });
 });

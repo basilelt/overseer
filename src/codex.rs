@@ -78,7 +78,7 @@ fn from_db(db: &Path, state_dir: &Path) -> Option<Vec<Thread>> {
     let rows = match cached {
         Some(r) => r,
         None => {
-            let tmp = state_dir.join("tmp").join(format!(
+            let tmp = state_dir.join(crate::paths::TMP_DIR).join(format!(
                 "codex-{}-{}",
                 std::process::id(),
                 COPIES.fetch_add(1, Ordering::Relaxed)
@@ -202,11 +202,6 @@ pub fn overseer_mcp(exe: &str, state_dir: &str, task_id: &str) -> Vec<String> {
     .collect()
 }
 
-pub fn is_codex(arg: &str) -> bool {
-    let base = arg.rsplit('/').next().unwrap_or(arg);
-    base == "codex" || base == "codex.js"
-}
-
 // Subcommands codex parses before a prompt that never run a conversation: the Desktop
 // backend, servers and tooling. `resume`, `fork`, `exec` and `review` do, so they stay sessions.
 const NOT_SESSIONS: &[&str] = &[
@@ -276,7 +271,7 @@ fn args(argv: &[String]) -> Option<&[String]> {
     let i = argv
         .iter()
         .take(if runtime { 2 } else { 1 })
-        .position(|a| is_codex(a))?;
+        .position(|a| crate::agents::runs_as(crate::agents::CODEX, a))?;
     Some(&argv[i + 1..])
 }
 
@@ -375,9 +370,6 @@ mod tests {
 
     #[test]
     fn same_command_in_two_terminals_is_two_sessions() {
-        // Given `codex resume --last` started from two different shells
-        // When wrappers are folded
-        // Then both processes are kept, neither being the other's parent
         let argv = |s: &str| s.split(' ').map(str::to_string).collect::<Vec<_>>();
         let procs = vec![
             (10, argv("codex resume --last")),
@@ -389,9 +381,6 @@ mod tests {
 
     #[test]
     fn only_conversations_are_sessions() {
-        // Given codex command lines, interactive, one-shot and tooling
-        // When each is classified
-        // Then conversations are sessions and the Desktop backend, servers and tooling are not
         for cmd in [
             "codex",
             "codex --model o3",

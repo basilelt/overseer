@@ -1,4 +1,5 @@
-import { isTauri } from './client';
+import * as CMD from './daemon/tauri-commands';
+import { isTauri } from './platform';
 import type { HostTarget } from './types';
 
 function asTarget(v: unknown): HostTarget | null {
@@ -9,12 +10,11 @@ function asTarget(v: unknown): HostTarget | null {
   return null;
 }
 
-/** The host this window was opened for, if any. */
 export async function takeHandoff(search: string = globalThis.location?.search ?? ''): Promise<HostTarget | null> {
   if (isTauri()) {
     try {
       const { invoke } = await import('@tauri-apps/api/core');
-      return asTarget(await invoke('window_handoff'));
+      return asTarget(await invoke(CMD.windowHandoff));
     } catch {
       return null;
     }

@@ -1,6 +1,7 @@
 mod common;
 
-use common::{bin, output, read_until, send, wait, wait_for, App, Fx};
+use common::{bin, line_json, output, read_until, send, strs, wait, wait_for, App, Fx};
+use overseer::util::percent_encode as enc;
 use serde_json::{json, Value};
 use std::io::ErrorKind;
 use std::os::unix::net::UnixStream;
@@ -727,9 +728,6 @@ fn auto_runner_waits_for_dependencies_and_starts_from_their_branch() {
 
 #[test]
 fn term_title_override_is_set_and_cleared() {
-    // Given a running plain terminal
-    // When a client renames it, then clears the custom title
-    // Then the term reports the custom title next to its auto title, and none once cleared
     let app = App::new("termtitle", json!({}));
     let wt = app.fx.wt.to_string_lossy().into_owned();
     let t = app.ok("POST", "/v1/terms", json!({"cwd": wt, "cmd": ["/bin/sh"]}));
@@ -807,7 +805,7 @@ fn events_cover_terms_and_tasks() {
 fn resume_target_term_starts_the_resume_argv() {
     let fx_sid = "aaaaaaaa-0000-4000-8000-000000000000";
     let app = App::new("resume", json!({}));
-    let ts = overseer::util::format_rfc3339(overseer::procs::now_ms() - 60_000);
+    let ts = overseer::util::format_rfc3339(overseer::util::now_ms() - 60_000);
     std::fs::write(
         app.fx
             .base
@@ -955,21 +953,8 @@ fn claude_term(app: &App, cmd: Value, sid: &str) -> (String, String) {
     (tid, line)
 }
 
-fn line_json(app: &App, line: &str) -> Value {
-    app.ok("GET", "/v1/lines?all=true", Value::Null)
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|l| l["line"]["id"] == line)
-        .cloned()
-        .unwrap()
-}
-
 #[test]
 fn holding_a_busy_line_after_the_turn_waits_for_the_turn_to_end() {
-    // Given a claude session that is mid-turn
-    // When it is held with afterTurn=true, then its turn ends
-    // Then the hold stays pending (still alive) and applies on the busy to idle transition
     let sid = "dddddddd-0000-4000-8000-000000000001";
     let app = App::new("holdafter", json!({}));
     let (tid, line) = claude_term(&app, json!(["claude", "--session-id", sid]), sid);
@@ -1005,9 +990,6 @@ fn holding_a_busy_line_after_the_turn_waits_for_the_turn_to_end() {
 
 #[test]
 fn a_pending_hold_can_be_cancelled_and_never_applies() {
-    // Given a busy claude session with a pending hold
-    // When the pending hold is cancelled with DELETE and the turn ends
-    // Then the line is never held
     let sid = "dddddddd-0000-4000-8000-000000000002";
     let app = App::new("holdcancel", json!({}));
     let (tid, line) = claude_term(&app, json!(["claude", "--session-id", sid]), sid);
@@ -1042,9 +1024,6 @@ fn a_pending_hold_can_be_cancelled_and_never_applies() {
 
 #[test]
 fn after_turn_holds_an_idle_line_now_and_still_refuses_a_pinned_one() {
-    // Given an idle claude session
-    // When it is held with afterTurn=true, once pinned and once not
-    // Then the pinned line is refused (nothing pending) and the other is held at once
     let sid = "dddddddd-0000-4000-8000-000000000004";
     let app = App::new("holdidle", json!({}));
     let (tid, line) = claude_term(&app, json!(["claude", "--session-id", sid]), sid);
@@ -1089,9 +1068,6 @@ fn gone(pid: i32) -> bool {
 
 #[test]
 fn holding_a_line_stops_the_processes_its_agent_left_behind() {
-    // Given an idle agent whose MCP-like children outlive it, one of them ignoring SIGTERM
-    // When the line is held
-    // Then both children are gone, and the term still runs the held stub
     let sid = "dddddddd-0000-4000-8000-000000000005";
     let app = App::with_env(
         "holdtree",
@@ -1125,9 +1101,6 @@ fn holding_a_line_stops_the_processes_its_agent_left_behind() {
 
 #[test]
 fn a_pending_hold_blocked_for_good_is_dropped_and_the_refusal_is_recorded() {
-    // Given a busy session with a pending hold
-    // When the line is pinned meanwhile and its turn ends
-    // Then the pending hold is dropped (not held, nothing queued) and the refusal is logged
     let sid = "dddddddd-0000-4000-8000-000000000006";
     let app = App::new("holdblocked", json!({}));
     let (tid, line) = claude_term(&app, json!(["claude", "--session-id", sid]), sid);
@@ -1161,9 +1134,6 @@ fn a_pending_hold_blocked_for_good_is_dropped_and_the_refusal_is_recorded() {
 
 #[test]
 fn a_pending_hold_is_refused_when_the_subagents_never_finish() {
-    // Given a claude session whose turn ended while a subagent still runs, with a pending hold
-    // When the subagent never stops and the bounded subagent wait (2 s) passes
-    // Then the pending hold is dropped and the refusal is logged
     let sid = "dddddddd-0000-4000-8000-000000000007";
     let app = App::with_env(
         "holdsublost",
@@ -1199,9 +1169,6 @@ fn a_pending_hold_is_refused_when_the_subagents_never_finish() {
 
 #[test]
 fn a_pending_hold_waits_for_the_subagents_after_the_turn_ended() {
-    // Given a claude session whose turn ended while one subagent still runs, with a pending hold
-    // When twice the grace period (2 s) passes, then the subagent stops
-    // Then local.subagents shows 1, the hold stays pending meanwhile and applies after the stop
     let sid = "dddddddd-0000-4000-8000-000000000006";
     let app = App::with_env("holdsub", json!({}), &[("OVERSEER_HOLD_GRACE_MS", "2000")]);
     let (tid, line) = claude_term(&app, json!(["claude", "--session-id", sid]), sid);
@@ -1235,9 +1202,6 @@ fn a_pending_hold_waits_for_the_subagents_after_the_turn_ended() {
 
 #[test]
 fn holding_without_after_turn_still_refuses_a_busy_line() {
-    // Given a busy claude session
-    // When it is held without afterTurn
-    // Then the hold is refused as before and nothing is pending
     let sid = "dddddddd-0000-4000-8000-000000000003";
     let app = App::new("holdbusy", json!({}));
     let (tid, line) = claude_term(&app, json!(["claude", "--session-id", sid]), sid);
@@ -1262,10 +1226,6 @@ fn holding_without_after_turn_still_refuses_a_busy_line() {
 
 #[test]
 fn closing_an_agent_session_with_shell_leaves_a_shell_in_its_term() {
-    // Given a claude session that is the root process of its term
-    // When the session is closed as the panel does, with shell=true
-    // Then the term keeps running a shell that shows how to resume the session,
-    // detached from the line, and killing the term still ends it
     let sid = "cccccccc-0000-4000-8000-000000000000";
     let app = App::new("closeshell", json!({}));
     let (tid, line) = claude_term(&app, json!(["claude", "--session-id", sid]), sid);
@@ -1299,9 +1259,6 @@ fn closing_an_agent_session_with_shell_leaves_a_shell_in_its_term() {
 
 #[test]
 fn closing_a_resumed_session_with_shell_prints_the_resume_note() {
-    // Given a claude session that was held and resumed, so it runs under the stub wrapper
-    // When it is closed as the panel does, with shell=true
-    // Then the term shows the closed note and a shell, like a never-held session
     let sid = "cccccccc-0000-4000-8000-000000000001";
     let app = App::new("closeresumed", json!({}));
     let (tid, line) = claude_term(&app, json!(["claude", "--session-id", sid]), sid);
@@ -1347,9 +1304,6 @@ fn closing_a_resumed_session_with_shell_prints_the_resume_note() {
 
 #[test]
 fn closing_an_agent_session_without_shell_still_ends_its_term() {
-    // Given a claude session that is the root process of its term
-    // When the session is closed without shell=true, as closing its tab does
-    // Then the term exits
     let sid = "dddddddd-0000-4000-8000-000000000000";
     let app = App::new("closenoshell", json!({}));
     let (tid, line) = claude_term(&app, json!(["claude", "--session-id", sid]), sid);
@@ -1366,9 +1320,6 @@ fn closing_an_agent_session_without_shell_still_ends_its_term() {
 
 #[test]
 fn closing_an_agent_session_started_from_a_shell_keeps_that_shell() {
-    // Given a claude session started from the shell of a term
-    // When the session is closed with shell=true
-    // Then the shell keeps running in the term, detached from the line
     let sid = "eeeeeeee-0000-4000-8000-000000000000";
     let app = App::new("closenested", json!({}));
     let (tid, line) = claude_term(
@@ -1602,7 +1553,7 @@ fn chat_images_are_served_from_the_transcript() {
         .collect();
     let dir = app.fx.base.join(format!("home/.claude/projects/{proj}"));
     std::fs::create_dir_all(&dir).unwrap();
-    let ts = overseer::util::format_rfc3339(overseer::procs::now_ms());
+    let ts = overseer::util::format_rfc3339(overseer::util::now_ms());
     let first = json!({"type": "user", "uuid": "u0", "sessionId": sid, "timestamp": ts,
         "message": {"content": "hello"}})
     .to_string()
@@ -1682,7 +1633,7 @@ fn transcript_growth_emits_line_activity() {
     let chat0 = app.ok("GET", &format!("/v1/lines/{line}/chat"), Value::Null);
     assert_eq!(chat0["lineId"], line);
     let cursor0 = chat0["cursor"].as_u64().unwrap();
-    let ts = overseer::util::format_rfc3339(overseer::procs::now_ms());
+    let ts = overseer::util::format_rfc3339(overseer::util::now_ms());
     let entry = json!({"type": "assistant", "sessionId": sid, "timestamp": ts, "message": {"content": [
         {"type": "tool_use", "id": "toolu_1", "name": "Edit", "input": {"file_path": format!("{wt}/a.txt")}}]}});
     let mut f = std::fs::OpenOptions::new()
@@ -1857,14 +1808,6 @@ fn line_of(app: &App, term: &str) -> Option<Value> {
         .iter()
         .find(|l| l["local"]["termId"] == term)
         .cloned()
-}
-
-fn strs(v: &Value) -> Vec<String> {
-    v.as_array()
-        .unwrap()
-        .iter()
-        .map(|a| a.as_str().unwrap().to_string())
-        .collect()
 }
 
 #[test]
@@ -2385,42 +2328,12 @@ fn task_rank_and_added_projects() {
     );
 }
 
-fn enc(s: &str) -> String {
-    s.bytes()
-        .map(|b| match b {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'.' | b'_' | b'~' => {
-                (b as char).to_string()
-            }
-            _ => format!("%{b:02X}"),
-        })
-        .collect()
-}
-
-fn read_events(s: &mut UnixStream, buf: &mut String, want: &[&str]) {
-    use std::io::Read;
-    let end = Instant::now() + Duration::from_secs(15);
-    while !want.iter().all(|w| buf.contains(w)) {
-        assert!(Instant::now() < end, "missing {want:?} in {buf}");
-        let mut b = [0u8; 4096];
-        if let Ok(n) = s.read(&mut b) {
-            buf.push_str(&String::from_utf8_lossy(&b[..n]));
-        }
-    }
-}
-
 #[test]
 fn worktrees_graph_and_events_through_the_daemon() {
-    use std::io::Write;
     let app = App::new("worktrees", json!({"autoConcurrency": 0}));
     let wt = app.fx.wt.to_string_lossy().into_owned();
     let p = enc(&wt);
-    let mut s = UnixStream::connect(&app.fx.sock).unwrap();
-    s.set_read_timeout(Some(Duration::from_millis(200)))
-        .unwrap();
-    s.write_all(b"GET /v1/events HTTP/1.1\r\nHost: unix\r\n\r\n")
-        .unwrap();
-    let mut buf = String::new();
-    read_events(&mut s, &mut buf, &["retry:"]);
+    let (mut s, mut buf) = app.events(Duration::from_secs(15));
 
     let t = app.ok(
         "POST",
@@ -2517,7 +2430,7 @@ fn worktrees_graph_and_events_through_the_daemon() {
     std::fs::write(Path::new(&wpath).join("x.txt"), "x\n").unwrap();
     common::git(Path::new(&wpath), &["add", "-A"]);
     common::git(Path::new(&wpath), &["commit", "-q", "-m", "agent work"]);
-    read_events(
+    common::read_events(
         &mut s,
         &mut buf,
         &[
@@ -2525,6 +2438,7 @@ fn worktrees_graph_and_events_through_the_daemon() {
             "event: worktree.removed",
             "event: git.changed",
         ],
+        Duration::from_secs(15),
     );
 
     let task = app.ok("POST", "/v1/tasks", json!({"title": "here", "project": wt}));
@@ -2653,7 +2567,7 @@ fn agent_sessions_become_tasks_that_follow_them() {
     let wt = app.fx.wt.to_string_lossy().into_owned();
     let sid = "eeeeeeee-0000-4000-8000-000000000001";
     let prompt = "Fix the flaky login test in the checkout flow please";
-    let ts = overseer::util::format_rfc3339(overseer::procs::now_ms() - 60_000);
+    let ts = overseer::util::format_rfc3339(overseer::util::now_ms() - 60_000);
     std::fs::write(
         app.fx
             .base
@@ -3057,11 +2971,9 @@ fn profiles_list_and_apply_gemini_and_antigravity_subagent_models_over_http() {
         "/v1/profiles/apply-files",
         json!({"profile": "google-agents", "cwd": wt, "dryRun": false, "files": files}),
     );
-    assert!(applied["files"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .all(|f| f["written"] == true));
+    let written = applied["files"].as_array().unwrap();
+    assert!(!written.is_empty(), "{applied}");
+    assert!(written.iter().all(|f| f["written"] == true));
     for file in applied["files"].as_array().unwrap() {
         let backup = file["backup"].as_str().unwrap();
         let previous = std::fs::read_to_string(backup).unwrap();
@@ -3162,9 +3074,6 @@ fn a_daemon_killed_like_an_oom_kill_restores_its_sessions_when_it_restarts() {
 
 #[test]
 fn a_pin_or_title_is_visible_in_the_very_next_lines_read() {
-    // Given a codex session in a term
-    // When it is pinned and renamed, each time reading /v1/lines right after the PUT returns
-    // Then that read already shows the new value, every time
     let app = App::new("pinvisible", json!({}));
     let wt = app.fx.wt.to_string_lossy().into_owned();
     let t = app.ok(
@@ -3214,9 +3123,6 @@ fn a_pin_or_title_is_visible_in_the_very_next_lines_read() {
 
 #[test]
 fn a_term_rename_survives_a_daemon_kill_right_after_it() {
-    // Given a shell term
-    // When it is renamed and the daemon dies immediately, without waiting for any scan
-    // Then the restarted daemon restores the shell with its new title
     let fx = Fx::new("rename-crash", 0);
     let call = |m: &str, t: &str, b: Value| {
         let body = if b.is_null() {
@@ -3401,6 +3307,7 @@ fn organize_routes_build_record_and_apply_proposals() {
     assert_eq!(r["results"][0]["status"], "done", "{r}");
     assert_eq!(r["results"][1]["status"], "done", "{r}");
     let again = app.ok("POST", &apply, json!({"actionIds": ["a1", "a2"]}));
+    assert_eq!(again["results"].as_array().unwrap().len(), 2, "{again}");
     assert!(
         again["results"]
             .as_array()
@@ -3494,10 +3401,6 @@ fn ctrl_c_interrupts_the_job_and_exit_reports_the_sigint_status() {
 
 #[test]
 fn an_agent_that_quits_leaves_a_shell_with_its_session_in_the_tab() {
-    // Given a codex session started in a term, linked to its line
-    // When codex quits on its own
-    // Then the term keeps running a shell that shows the session and how to resume it,
-    // and killing the term still ends it
     let app = App::new("agentquit", json!({}));
     let wt = app.fx.wt.to_string_lossy().into_owned();
     let t = app.ok(
@@ -3533,9 +3436,6 @@ fn an_agent_that_quits_leaves_a_shell_with_its_session_in_the_tab() {
 
 #[test]
 fn an_agent_that_quits_right_after_starting_a_turn_still_leaves_its_session() {
-    // Given a codex session whose first turn just started, before any scan linked it to the term
-    // When codex quits at once
-    // Then the shell note still carries the session and how to resume it
     let app = App::new("agentquitfast", json!({}));
     let wt = app.fx.wt.to_string_lossy().into_owned();
     let t = app.ok(
@@ -3554,9 +3454,6 @@ fn an_agent_that_quits_right_after_starting_a_turn_still_leaves_its_session() {
 
 #[test]
 fn closing_an_idle_codex_session_accepts_its_dim_composer_prompt() {
-    // Given a Codex session at its idle composer, whose prompt marker is dim gray
-    // When the app checks and closes the selected agent through the real daemon
-    // Then the prompt passes the safety check and the line is closed
     let app = App::new("closecodex", json!({}));
     let wt = app.fx.wt.to_string_lossy().into_owned();
     let t = app.ok(
@@ -3590,9 +3487,6 @@ fn closing_an_idle_codex_session_accepts_its_dim_composer_prompt() {
 
 #[test]
 fn ending_a_busy_agent_session_needs_force_and_then_ends_its_term() {
-    // Given a codex session in a term that is busy with a turn
-    // When the session is closed as ending its tab does, first without and then with force=true
-    // Then the plain close is refused and keeps the term running, and the forced one ends the term
     let app = App::new("endbusy", json!({}));
     let wt = app.fx.wt.to_string_lossy().into_owned();
     let t = app.ok(
@@ -3630,9 +3524,6 @@ fn ending_a_busy_agent_session_needs_force_and_then_ends_its_term() {
 
 #[test]
 fn killing_an_agent_term_closes_it_without_a_shell() {
-    // Given a codex session running in a term
-    // When the term is killed, as closing its tab does
-    // Then the term exits and no shell is started in it
     let app = App::new("agentkill", json!({}));
     let wt = app.fx.wt.to_string_lossy().into_owned();
     let t = app.ok("POST", "/v1/terms", json!({"cwd": wt, "agent": "codex"}));
@@ -3966,9 +3857,6 @@ fn resume_line(app: &App, line: &str) -> Value {
 
 #[test]
 fn resuming_again_while_the_agent_waits_on_its_trust_prompt_reuses_its_term() {
-    // Given a stopped claude session whose resume stops at the folder trust prompt, before any hook
-    // When Resume is pressed again while that prompt is shown
-    // Then the same term comes back, no second agent starts, and trusting it brings the session back
     let sid = "cccccccc-0000-4000-8000-000000000071";
     let app = App::new("resumetrust", json!({}));
     let (tid, line) = claude_term(&app, json!(["claude", "--session-id", sid]), sid);
@@ -3998,9 +3886,6 @@ fn resuming_again_while_the_agent_waits_on_its_trust_prompt_reuses_its_term() {
 
 #[test]
 fn resuming_a_paused_session_twice_does_not_press_enter_on_its_trust_prompt() {
-    // Given a paused claude session resumed from its held stub, now at the folder trust prompt
-    // When Resume is pressed a second time
-    // Then no Enter reaches the prompt (it would answer "No, exit"), and the agent still waits on it
     let sid = "cccccccc-0000-4000-8000-000000000072";
     let app = App::new("resumeheldtrust", json!({}));
     let (tid, line) = claude_term(&app, json!(["claude", "--session-id", sid]), sid);
@@ -4031,9 +3916,6 @@ fn resuming_a_paused_session_twice_does_not_press_enter_on_its_trust_prompt() {
 
 #[test]
 fn closing_a_session_still_at_its_trust_prompt_ends_the_starting_agent() {
-    // Given a stopped claude session resumed into a term that waits on the folder trust prompt
-    // When the session is closed
-    // Then that term ends instead of being left behind with an agent nobody sees
     let sid = "cccccccc-0000-4000-8000-000000000073";
     let app = App::new("closetrust", json!({}));
     let (tid, line) = claude_term(&app, json!(["claude", "--session-id", sid]), sid);
@@ -4057,9 +3939,6 @@ fn closing_a_session_still_at_its_trust_prompt_ends_the_starting_agent() {
 
 #[test]
 fn two_quick_resumes_of_a_paused_session_press_enter_on_its_stub_once() {
-    // Given a paused claude session whose agent will stop at the folder trust prompt
-    // When Resume is pressed twice in a row, before the stub has started the agent
-    // Then only the first press reaches the stub, so the prompt still waits for an answer
     let sid = "cccccccc-0000-4000-8000-000000000074";
     let app = App::new("resumeheldtwice", json!({}));
     let (tid, line) = claude_term(&app, json!(["claude", "--session-id", sid]), sid);
@@ -4088,9 +3967,6 @@ fn two_quick_resumes_of_a_paused_session_press_enter_on_its_stub_once() {
     );
 }
 
-// Given a daemon started before an installer created ~/.local/bin
-// When the agent lands there and the app asks for a rescan
-// Then the agent is detected, /v1/env shows the dir and new terms find the agent
 #[test]
 fn rescan_finds_an_agent_installed_into_a_dir_created_after_start() {
     let app = App::new("rescan-new-dir", json!({}));
@@ -4143,4 +4019,28 @@ fn rescan_finds_an_agent_installed_into_a_dir_created_after_start() {
     let s = app.ok("POST", &format!("/v1/tasks/{id}/start"), json!({}));
     let mut ws = app.ws(s["termId"].as_str().unwrap());
     read_until(&mut ws, "cursor-agent ready");
+}
+
+#[test]
+fn auto_organize_is_on_from_the_config_key_or_the_registry_flag() {
+    let off = App::new("autoorg-off", json!({}));
+    assert_eq!(
+        off.ok("GET", "/v1/tasks/auto-organize", Value::Null)["enabled"],
+        false
+    );
+    off.ok("PUT", "/v1/tasks/auto-organize", json!({"enabled": true}));
+    assert_eq!(
+        off.ok("GET", "/v1/tasks/auto-organize", Value::Null)["enabled"],
+        true
+    );
+    off.ok("PUT", "/v1/tasks/auto-organize", json!({"enabled": false}));
+    assert_eq!(
+        off.ok("GET", "/v1/tasks/auto-organize", Value::Null)["enabled"],
+        false
+    );
+    let on = App::new("autoorg-on", json!({"autoOrganize": true}));
+    assert_eq!(
+        on.ok("GET", "/v1/tasks/auto-organize", Value::Null)["enabled"],
+        true
+    );
 }

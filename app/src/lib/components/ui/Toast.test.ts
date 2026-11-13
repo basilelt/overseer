@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
+import { declOf } from '../../../test/css';
 import toast from './Toast.svelte?raw';
 
-describe('toast position', () => {
+describe('CSS guard: toast position', () => {
   it('clears the composer on every layout', () => {
-    const style = toast.slice(toast.indexOf('<style'));
-    expect(style).toMatch(/\.toast \{[^}]*bottom:\s*calc\(16px \+ var\(--composer-h, 0px\)\)/);
+    expect(declOf(toast, '.toast', 'bottom')).toBe('calc(16px + var(--composer-h, 0px))');
   });
 });

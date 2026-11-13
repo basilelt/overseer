@@ -1,4 +1,5 @@
 <script lang="ts">
+  import * as CMD from '../../daemon/tauri-commands';
   import { t, type Key } from '../../i18n.svelte';
   import { app } from '../../state.svelte';
   import { diagnostics, terminalCommand, unstableIdentity, type LocalNetworkView } from '../../localnet';
@@ -26,7 +27,7 @@
   async function relaunch() {
     try {
       const { invoke } = await import('@tauri-apps/api/core');
-      await invoke('update_relaunch', { reason: 'relaunch for local network access' });
+      await invoke(CMD.updateRelaunch, { reason: 'relaunch for local network access' });
     } catch {}
   }
 

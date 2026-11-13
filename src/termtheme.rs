@@ -1,3 +1,4 @@
+use crate::http::err;
 use serde_json::{json, Value};
 use std::sync::RwLock;
 
@@ -228,7 +229,7 @@ pub fn routes(method: &str, segs: &[&str], body: &Value) -> Option<(u16, Value)>
                 }
                 (200, json!({"dark": t.dark}))
             }
-            Err(e) => (400, json!({"error": e})),
+            Err(e) => err(400, e),
         },
         _ => return None,
     })

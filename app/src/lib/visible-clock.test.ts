@@ -9,9 +9,6 @@ afterEach(() => {
 
 describe('visibleClock', () => {
   it('ticks every period while visible and stops on cleanup', () => {
-    // Given a started clock
-    // When 60s pass, then it is stopped and 60s more pass
-    // Then it ticked twice, then never again
     vi.useFakeTimers();
     const tick = vi.fn();
     const stop = visibleClock(tick, 30_000);
@@ -25,9 +22,6 @@ describe('visibleClock', () => {
   });
 
   it('pauses while hidden and refreshes when shown again', () => {
-    // Given a started clock
-    // When the window hides and shows again
-    // Then no timer runs while hidden and a fresh tick fires on return
     vi.useFakeTimers();
     const tick = vi.fn();
     const stop = visibleClock(tick, 30_000);

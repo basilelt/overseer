@@ -1,4 +1,4 @@
-import type { DaemonClient } from './client';
+import type { DaemonClient } from './daemon/client';
 import type { Snapshot } from './reduce';
 import type { Note } from './types';
 
@@ -43,7 +43,6 @@ interface Host {
   notify: (msg: string, kind?: 'error') => void;
 }
 
-/** Runs one note change: optimistic `local` view, then the daemon's list, or the previous list back on failure. */
 async function change(app: Host, lineId: string, local: (prev: Note[]) => Note[], call: (api: ReturnType<typeof notesApi>) => Promise<NotesReply>): Promise<boolean> {
   const prev = notesOf(app.data, lineId);
   app.data = withNotes(app.data, lineId, local(prev));
@@ -67,7 +66,6 @@ export function addNote(app: Host, lineId: string, raw: string): Promise<boolean
   return change(app, lineId, (p) => [...p, draft], (api) => api.add(lineId, text));
 }
 
-/** Saves an edited note; a blank text deletes it, an unchanged one does nothing. */
 export function editNote(app: Host, lineId: string, id: string, raw: string): Promise<boolean> {
   const text = cleanNote(raw);
   if (!text) return removeNote(app, lineId, id);

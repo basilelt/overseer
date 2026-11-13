@@ -128,6 +128,7 @@ export const en = {
   'upload.done': 'Uploaded {name} → {path}',
   'upload.doneMany': 'Uploaded {n} files',
   'upload.failed': "Couldn't upload {name}: {error}",
+  'upload.failedMany': "Couldn't upload {n} files, last error: {error}",
   'upload.pasteFailed': "Couldn't paste {name}: {error}",
   'upload.tooLarge': '{name} is over the 50 MB limit',
   'upload.folder': '{name} is a folder; only files can be sent to a remote host',

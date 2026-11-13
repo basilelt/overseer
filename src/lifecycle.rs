@@ -1,4 +1,5 @@
 use crate::autostart;
+use crate::http::err;
 use crate::registry::Registry;
 use crate::term::Info;
 use crate::Line;
@@ -57,6 +58,26 @@ pub struct Saved {
     pub profile: Option<crate::profiles::Chip>,
 }
 
+impl From<&Info> for Saved {
+    fn from(i: &Info) -> Self {
+        Self {
+            id: i.id.clone(),
+            cwd: i.cwd.clone(),
+            title: i.title.clone(),
+            cols: i.cols,
+            rows: i.rows,
+            agent: i.agent.clone(),
+            session: i.session.clone(),
+            flags: i.flags.clone(),
+            line_id: i.line_id.clone(),
+            task_id: i.task_id.clone(),
+            workspace_id: i.workspace_id.clone(),
+            title_override: i.title_override.clone(),
+            profile: i.profile.clone(),
+        }
+    }
+}
+
 #[derive(Debug, PartialEq)]
 pub struct Restore {
     pub saved: Saved,
@@ -71,9 +92,9 @@ pub fn boot_id() -> Option<String> {
             .filter(|s| !s.is_empty());
     }
     if cfg!(target_os = "macos") {
-        let out = crate::git::output_within(
+        let out = crate::exec::output_within(
             std::process::Command::new("sysctl").args(["-n", "kern.boottime"]),
-            crate::git::PROBE_TIMEOUT,
+            crate::exec::PROBE_TIMEOUT,
         )
         .ok()?;
         return parse_boottime(&String::from_utf8_lossy(&out.stdout));
@@ -95,6 +116,10 @@ pub fn is_reboot(stored: Option<&str>, current: Option<&str>) -> bool {
     matches!((stored, current), (Some(a), Some(b)) if a != b)
 }
 
+pub fn is_stub_wrapper(cmd: &[String]) -> bool {
+    cmd.last().is_some_and(|c| c.contains(" stub "))
+}
+
 pub fn snapshot(terms: &[Info], lines: &[Line]) -> Vec<Saved> {
     terms
         .iter()
@@ -105,23 +130,16 @@ pub fn snapshot(terms: &[Info], lines: &[Line]) -> Vec<Saved> {
             let line = lines
                 .iter()
                 .find(|l| l.term_id.as_deref() == Some(i.id.as_str()) && l.alive());
-            if line.is_none() && i.cmd.last().is_some_and(|c| c.contains(" stub ")) {
+            if line.is_none() && is_stub_wrapper(&i.cmd) {
                 return None;
             }
             Some(Saved {
-                id: i.id.clone(),
-                cwd: i.cwd.clone(),
-                title: i.title.clone(),
-                cols: i.cols,
-                rows: i.rows,
                 agent: line.map(|l| l.agent.to_string()),
                 session: line.map(|l| l.session_id.clone()),
                 flags: line.map(|l| l.launch_args.clone()).unwrap_or_default(),
                 line_id: line.map(|l| l.id.clone()).or_else(|| i.line_id.clone()),
-                task_id: i.task_id.clone(),
-                workspace_id: i.workspace_id.clone(),
-                title_override: i.title_override.clone(),
                 profile: line.and(i.profile.clone()),
+                ..Saved::from(i)
             })
         })
         .collect()
@@ -273,20 +291,17 @@ pub fn routes(method: &str, segs: &[&str], body: &Value, state_dir: &Path) -> Op
     }
     let reg = match Registry::open(state_dir) {
         Ok(r) => r,
-        Err(e) => return Some((500, json!({"error": e}))),
+        Err(e) => return Some(err(500, e)),
     };
     match method {
         "GET" => Some((200, payload(state_dir, &reg))),
         "PATCH" => {
             if let Some(v) = body.get("afterReboot") {
                 let Some(m) = v.as_str().and_then(AfterReboot::parse) else {
-                    return Some((
-                        400,
-                        json!({"error": "afterReboot must be agents, shells or nothing"}),
-                    ));
+                    return Some(err(400, "afterReboot must be agents, shells or nothing"));
                 };
                 if let Err(e) = reg.put(AFTER_KEY, m.as_str()) {
-                    return Some((500, json!({"error": e})));
+                    return Some(err(500, e));
                 }
             }
             let env = autostart::Env::current(state_dir);
@@ -312,6 +327,49 @@ pub fn routes(method: &str, segs: &[&str], body: &Value, state_dir: &Path) -> Op
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    const FULL_SAVED: &str = r#"{"id":"t","cwd":"/w","title":"T","cols":80,"rows":24,"agent":"claude","session":"s","flags":["--x"],"lineId":"l","taskId":"k","workspaceId":"w1","titleOverride":"O","profile":{"id":"p1","name":"Fast","model":"m","effort":"high"}}"#;
+
+    #[test]
+    fn saved_json_is_pinned() {
+        let sv = Saved {
+            id: "t".into(),
+            cwd: "/w".into(),
+            title: "T".into(),
+            cols: 80,
+            rows: 24,
+            agent: Some("claude".into()),
+            session: Some("s".into()),
+            flags: vec!["--x".into()],
+            line_id: Some("l".into()),
+            task_id: Some("k".into()),
+            workspace_id: Some("w1".into()),
+            title_override: Some("O".into()),
+            profile: Some(crate::profiles::Chip {
+                id: "p1".into(),
+                name: "Fast".into(),
+                model: "m".into(),
+                effort: "high".into(),
+            }),
+        };
+        let want: serde_json::Value = serde_json::from_str(FULL_SAVED).unwrap();
+        assert_eq!(serde_json::to_value(&sv).unwrap(), want);
+        assert_eq!(serde_json::from_str::<Saved>(FULL_SAVED).unwrap(), sv);
+    }
+
+    #[test]
+    fn saved_minimal_json_takes_defaults() {
+        let sv: Saved = serde_json::from_str(r#"{"id":"t","cwd":"/w"}"#).unwrap();
+        assert_eq!(
+            sv,
+            Saved {
+                id: "t".into(),
+                cwd: "/w".into(),
+                ..Default::default()
+            }
+        );
+        assert!(sv.flags.is_empty() && sv.agent.is_none() && sv.cols == 0);
+    }
 
     fn info(id: &str, cmd: &[&str], exited: bool) -> Info {
         Info {
@@ -345,7 +403,11 @@ mod tests {
             session_id: sid.into(),
             term_id: Some(term.into()),
             pid: alive.then_some(42),
-            state: if alive { "active" } else { "idle" },
+            state: if alive {
+                crate::wire::STATE_ACTIVE
+            } else {
+                crate::wire::STATE_IDLE
+            },
             launch_args: vec!["--model".into(), "opus".into()],
             ..Default::default()
         }
@@ -492,7 +554,7 @@ mod tests {
         let d = std::env::temp_dir().join(format!(
             "sb-lifecycle-{}-{}",
             std::process::id(),
-            crate::procs::now_ms()
+            crate::util::now_ms()
         ));
         std::fs::create_dir_all(&d).unwrap();
         let reg = Registry::open(&d).unwrap();

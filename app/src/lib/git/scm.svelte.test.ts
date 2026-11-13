@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
-import { DaemonError } from '../client';
-import { MockDaemon } from '../mock';
+import { DaemonError } from '../daemon/client';
+import { MockDaemon } from '../daemon/mock';
 import type { DaemonEvent } from '../types';
 import { gitApi, scmBody, scmQuery, type GitApi } from './api';
 import { Scm, fileCount, targetKey, touches } from './scm.svelte';

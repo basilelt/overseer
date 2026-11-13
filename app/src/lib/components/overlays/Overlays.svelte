@@ -1,13 +1,13 @@
 <script lang="ts">
   import { app } from '../../state.svelte';
   import { preload } from '../../idle';
-  import { ui } from '../../mobile/ui.svelte';
-  import { diag } from '../../diag.svelte';
-  import { feedback } from '../../feedback.svelte';
-  import { organizer } from '../../organize.svelte';
-  import { mainOverlay, type MainOverlay } from '../../overlay-route';
-  import { rec } from '../../record-state.svelte';
+  import { diag } from '../../diag/diag.svelte';
+  import { feedback } from '../../feedback/feedback.svelte';
+  import { organizer } from '../../workspace/organize.svelte';
+  import { mainOverlay, parentOverlay, type MainOverlay } from '../../overlay-route';
+  import { rec } from '../../record/record-state.svelte';
   import type { Component } from 'svelte';
+  import { phoneOrMobile } from '../../mobile/phone.svelte';
 
   const close = () => app.open(null);
   const menu = preload(() => import('../ui/Menu.svelte'));
@@ -44,9 +44,9 @@
     closeTab: () => import('./CloseTabDialog.svelte'),
     shortcuts: () => import('./ShortcutsSheet.svelte'),
   };
-  const main = $derived(mainOverlay({ overlay: app.overlay, overlayArg: app.overlayArg, hasFile: !!app.fileArg, phone: app.mobile || ui.layout === 'phone' }));
+  const main = $derived(mainOverlay({ overlay: app.overlay, overlayArg: app.overlayArg, hasFile: !!app.fileArg, phone: phoneOrMobile() }));
   function propsOf(k: MainOverlay): Record<string, unknown> {
-    if (k === 'uninstall') return { onclose: () => app.closeOverlay() };
+    if (parentOverlay(k)) return { onclose: () => app.closeOverlay() };
     if (k === 'mobileConnect') return { onclose: close, initial: app.overlayArg };
     if (k === 'profiles') return { onclose: close, scope: app.overlayArg };
     if (k === 'switchboardImport') return { onclose: close, from: app.overlayArg };

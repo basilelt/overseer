@@ -1,7 +1,10 @@
-use crate::board::{git_out, publish};
+use crate::board::publish;
 use crate::deliver::{send, Channel};
+use crate::git::git_out;
 use crate::registry::Registry;
-use crate::tasks::{self, bad, db, sql, Res, Task};
+use crate::registry::{db, sql};
+use crate::status;
+use crate::tasks::{self, bad, Res, Task};
 use crate::util::{format_rfc3339, ulid};
 use crate::Ctx;
 use rusqlite::{params, Row};
@@ -205,7 +208,7 @@ pub fn allow_agent_message(reg: &Registry, from: &Task, to: &Task) -> Res<()> {
 
 fn post(reg: &Registry, id: &str, from: Option<String>, body: &str) -> Res<Message> {
     let target = tasks::get(reg, id)?;
-    let now = crate::procs::now_ms();
+    let now = crate::util::now_ms();
     let mut m = Message {
         id: ulid(now),
         task_id: id.into(),
@@ -305,7 +308,7 @@ fn overlaps_in(reg: &Registry, id: &str) -> Res<Vec<Value>> {
             || t.project != me.project
             || wt == mine_wt
             || is_organizer(&t)
-            || !matches!(t.status.as_str(), "in_progress" | "in_testing")
+            || !matches!(t.status.as_str(), status::IN_PROGRESS | status::IN_TESTING)
         {
             continue;
         }
@@ -427,7 +430,7 @@ keeping the current relative order inside a quadrant (ranks are floats, lower fi
 pub fn organizable(tasks: &[Task], project: Option<&str>) -> Vec<String> {
     let mut out: Vec<String> = vec![];
     for t in tasks {
-        if crate::tasks::is_done(&t.status)
+        if crate::status::is_done(&t.status)
             || is_organizer(t)
             || t.from_session()
             || project.is_some_and(|p| p != t.project)
@@ -452,7 +455,7 @@ pub fn organize_due(tasks: &[Task], project: &str, live_organizer: bool, now_ms:
             .max()
     };
     let Some(work) = newest(&|t| {
-        !crate::tasks::is_done(&t.status)
+        !crate::status::is_done(&t.status)
             && matches!(t.origin.as_deref(), None | Some("user" | "agent"))
     }) else {
         return false;
@@ -461,12 +464,9 @@ pub fn organize_due(tasks: &[Task], project: &str, live_organizer: bool, now_ms:
 }
 
 fn live_organizer(tasks: &[Task], project: &str) -> bool {
-    tasks.iter().any(|t| {
-        t.project == project
-            && is_organizer(t)
-            && t.status == "in_progress"
-            && t.live_term().is_some()
-    })
+    tasks
+        .iter()
+        .any(|t| t.project == project && is_organizer(t) && t.is_running())
 }
 
 fn organize_one(ctx: &Ctx, reg: &Registry, project: &str) -> Res<Task> {
@@ -474,21 +474,22 @@ fn organize_one(ctx: &Ctx, reg: &Registry, project: &str) -> Res<Task> {
     if tasks::all(reg).is_ok_and(|all| live_organizer(&all, project)) {
         return Err((409, "an organizer is already running".into()));
     }
-    let claude = crate::agents::get("claude").ok_or_else(|| bad("claude agent unknown"))?;
+    let claude =
+        crate::agents::get(crate::agents::DEFAULT_ID).ok_or_else(|| bad("claude agent unknown"))?;
     if !crate::agents::is_installed(claude) {
         return Err((
             409,
             format!("{} is not installed ({})", claude.name, claude.bin),
         ));
     }
-    let now = crate::procs::now_ms();
+    let now = crate::util::now_ms();
     let mut t = Task {
         id: ulid(now),
         title: "Organize board".into(),
         description: organizer_prompt(project, agent_messaging_enabled(reg)),
         project: project.into(),
         status: "pending".into(),
-        agent: "claude".into(),
+        agent: crate::agents::DEFAULT_ID.into(),
         effort: "high".into(),
         origin: Some(ORGANIZER.into()),
         created_ms: now,
@@ -531,6 +532,10 @@ pub fn auto_organize_enabled(reg: &Registry) -> bool {
     matches!(reg.get(AUTO_ORGANIZE_KEY), Ok(Some(v)) if v == "true")
 }
 
+pub fn auto_organize_on(ctx: &Ctx, reg: &Registry) -> bool {
+    ctx.config.auto_organize || auto_organize_enabled(reg)
+}
+
 pub fn set_auto_organize(reg: &Registry, on: bool) -> Result<(), String> {
     reg.put(AUTO_ORGANIZE_KEY, if on { "true" } else { "false" })
 }
@@ -539,7 +544,7 @@ pub fn auto_organize(ctx: &Ctx, reg: &Registry) {
     let Ok(all) = tasks::all(reg) else {
         return;
     };
-    let now = crate::procs::now_ms();
+    let now = crate::util::now_ms();
     for p in organizable(&all, None) {
         if failed(|m| backed_off(m.get(&p).copied(), now)) {
             continue;
@@ -560,7 +565,7 @@ mod tests {
         let dir = std::env::temp_dir().join(format!(
             "sb-task-agents-{tag}-{}-{}",
             std::process::id(),
-            crate::procs::now_ms()
+            crate::util::now_ms()
         ));
         std::fs::create_dir_all(&dir).unwrap();
         Registry::open(&dir).unwrap()
@@ -707,18 +712,7 @@ mod tests {
     #[test]
     fn changed_files_ignore_commits_the_local_base_branch_is_behind_on() {
         let sh = |d: &Path, args: &[&str]| {
-            let ok = std::process::Command::new("git")
-                .current_dir(d)
-                .env("GIT_CONFIG_GLOBAL", "/dev/null")
-                .env("GIT_CONFIG_NOSYSTEM", "1")
-                .args(["-c", "user.email=t@example.com", "-c", "user.name=T"])
-                .args(["-c", "commit.gpgsign=false"])
-                .args(args)
-                .output()
-                .unwrap()
-                .status
-                .success();
-            assert!(ok, "git {args:?}");
+            crate::git::fixture::run(d, args);
         };
         let commit = |d: &Path, file: &str| {
             std::fs::write(d.join(file), file).unwrap();
@@ -728,7 +722,7 @@ mod tests {
         let d = std::env::temp_dir().join(format!(
             "sb-overlap-base-{}-{}",
             std::process::id(),
-            crate::procs::now_ms()
+            crate::util::now_ms()
         ));
         let up = d.join("up");
         std::fs::create_dir_all(&up).unwrap();

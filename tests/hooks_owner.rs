@@ -162,7 +162,7 @@ fn sandbox_with_its_own_home_installs_and_keeps_its_hooks() {
     let b = Sbx::new("sandbox");
     let state = b.other_state();
     assert!(b.settings().is_empty());
-    let (d, log) = b.daemon(&state);
+    let (d, _log) = b.daemon(&state);
     wait(|| b.shim().exists());
     let (code, body) = exchange(
         UnixStream::connect(&b.sock).unwrap(),
@@ -175,14 +175,11 @@ fn sandbox_with_its_own_home_installs_and_keeps_its_hooks() {
     assert!(names(&b.settings(), &state));
     drop(d);
     let _ = std::fs::remove_file(&b.sock);
-    let (_d2, log2) = b.daemon(&state);
-    let _ = wait_quiet(&log2);
+    let shim = b.shim().display().to_string();
+    let stale = b.settings().replace(&shim, "/old/bin/overseer");
+    assert_ne!(stale, b.settings());
+    std::fs::write(b.home().join(".claude/settings.json"), stale).unwrap();
+    let (_d2, _log2) = b.daemon(&state);
+    wait(|| !b.settings().contains("/old/bin/overseer"));
     assert!(names(&b.settings(), &state));
-    let text = std::fs::read_to_string(&log).unwrap() + &std::fs::read_to_string(&log2).unwrap();
-    assert!(!text.contains("not repairing hooks"), "{text}");
-}
-
-fn wait_quiet(_log: &Path) -> bool {
-    std::thread::sleep(std::time::Duration::from_millis(500));
-    true
 }

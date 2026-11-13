@@ -23,10 +23,18 @@ describe('idle preload', () => {
     expect(h.cancelIdleCallback).toHaveBeenCalled();
   });
 
-  it('falls back to a short timer without requestIdleCallback', () => {
-    const h = { setTimeout: vi.fn(() => 1), clearTimeout: vi.fn() };
-    whenIdle(() => {}, 5000, h);
-    expect(h.setTimeout).toHaveBeenCalledWith(expect.any(Function), 1500);
+  it('falls back to a timer without requestIdleCallback, no later than the given timeout, and cancels it', () => {
+    vi.useFakeTimers();
+    const h = { setTimeout: (fn: () => void, ms: number) => setTimeout(fn, ms), clearTimeout: (id: ReturnType<typeof setTimeout>) => clearTimeout(id) };
+    const fn = vi.fn();
+    const cancelled = vi.fn();
+    whenIdle(fn, 5000, h);
+    whenIdle(cancelled, 5000, h)();
+    expect(fn).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(5000);
+    expect(fn).toHaveBeenCalledOnce();
+    expect(cancelled).not.toHaveBeenCalled();
+    vi.useRealTimers();
   });
 
   it('loads once, on idle or on first use, and retries after a failure', async () => {

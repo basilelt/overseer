@@ -163,7 +163,10 @@ pub fn target<'a>(
     }
     let t = term::all().into_iter().filter(|t| !t.exited()).find(|t| {
         let i = t.info();
-        i.agent.as_deref().is_some_and(|a| a != "shell") && same_dir(&i.cwd, wt)
+        i.agent
+            .as_deref()
+            .is_some_and(|a| !crate::agents::is_shell(a))
+            && same_dir(&i.cwd, wt)
     });
     if let Some(t) = t {
         return (linked(&t), Some(Channel::Term(t)));

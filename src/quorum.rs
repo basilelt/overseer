@@ -1,5 +1,7 @@
+use crate::registry::db;
 use crate::registry::Registry;
-use crate::tasks::{self, bad, db, Res, Task};
+use crate::status;
+use crate::tasks::{self, bad, Res, Task};
 use crate::util::ulid;
 use crate::Ctx;
 use serde_json::{json, Value};
@@ -7,7 +9,6 @@ use std::sync::Mutex;
 
 pub const REVIEWER: &str = "reviewer";
 pub const PREFIX: &str = "Quorum: ";
-pub const ORCHESTRATORS: [&str; 2] = ["claude", "codex"];
 const MAX_REASON: usize = 2000;
 const NO_VOTE: &str = "ended without voting";
 static LOCK: Mutex<()> = Mutex::new(());
@@ -21,7 +22,7 @@ fn ids(q: &Value, key: &str, max: usize, err: &str) -> Res<Vec<&'static str>> {
     for v in list {
         let id = v.as_str().unwrap_or_default();
         let a = crate::agents::get(id).ok_or_else(|| bad(format!("unknown agent {id}")))?;
-        if a.id == "shell" {
+        if !a.coding() {
             return Err(bad("shell cannot join a quorum"));
         }
         if out.contains(&a.id) {
@@ -55,7 +56,7 @@ pub fn parse(v: &Value, orchestrator: &str) -> Res<Option<Value>> {
 }
 
 pub fn check_orchestrator(agent: &str) -> Res<()> {
-    if ORCHESTRATORS.contains(&agent) {
+    if crate::agents::get(agent).is_some_and(|a| a.orchestrator) {
         Ok(())
     } else {
         Err(bad("the quorum orchestrator must be claude or codex"))
@@ -173,13 +174,18 @@ fn tell(ctx: &Ctx, to: &str, body: String) {
 
 fn stop_reviewers(ctx: &Ctx, reg: &Registry, worker: &str) {
     for mut r in tasks::all(reg).unwrap_or_default().into_iter().filter(|r| {
-        is_reviewer(r) && r.parent_id.as_deref() == Some(worker) && !tasks::is_done(&r.status)
+        is_reviewer(r)
+            && r.parent_id.as_deref() == Some(worker)
+            && !crate::status::is_done(&r.status)
     }) {
         if let Some(term) = r.live_term() {
             let _ = term.kill();
         }
-        r.status = "completed".into();
-        let _ = tasks::store(reg, &mut r, &ctx.config.station_id);
+        r.status = status::COMPLETED.into();
+        tasks::logged(
+            "reviewer task not saved as completed",
+            tasks::store(reg, &mut r, &ctx.config.station_id),
+        );
     }
 }
 
@@ -222,13 +228,13 @@ pub fn on_ready(ctx: &Ctx, worker: &Task) {
         .unwrap_or_else(|| "the base branch".into());
     let mut started = vec![];
     for (i, agent) in reviewers.iter().enumerate() {
-        let now = crate::procs::now_ms();
+        let now = crate::util::now_ms();
         let mut r = Task {
             id: ulid(now + i as i64),
             title: format!("Review #{} (round {round})", w.number),
             description: reviewer_prompt(&root, &w, round, &base),
             project: w.project.clone(),
-            status: "auto".into(),
+            status: status::AUTO.into(),
             agent: agent.clone(),
             effort: effort_for(agent).into(),
             origin: Some(REVIEWER.into()),
@@ -264,7 +270,7 @@ fn voter_role(w: &Task, from: &Task) -> Res<&'static str> {
     }
     if is_reviewer(from)
         && from.parent_id.as_deref() == Some(w.id.as_str())
-        && !tasks::is_done(&from.status)
+        && !crate::status::is_done(&from.status)
     {
         return Ok(REVIEWER);
     }
@@ -332,9 +338,9 @@ fn record(
     state["votes"] = json!(votes);
     state["outcome"] = json!(decided);
     let round = state["round"].as_u64().unwrap_or(1);
-    if decided == Some("rejected") && w.status == "in_testing" && w.live_term().is_some() {
-        w.status = "in_progress".into();
-        w.started_ms = Some(crate::procs::now_ms());
+    if decided == Some("rejected") && w.status == status::IN_TESTING && w.live_term().is_some() {
+        w.status = status::IN_PROGRESS.into();
+        w.started_ms = Some(crate::util::now_ms());
     }
     tasks::store(reg, &mut w, &ctx.config.station_id)?;
     if let Some(o) = decided {
@@ -406,7 +412,7 @@ pub fn reviewer_ended(ctx: &Ctx, reg: &Registry, r: &Task) {
         return;
     }
     let mut open = r.clone();
-    open.status = "in_progress".into();
+    open.status = status::IN_PROGRESS.into();
     let _ = record(ctx, reg, w, &open, false, NO_VOTE);
 }
 

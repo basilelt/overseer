@@ -1,10 +1,11 @@
 <script lang="ts">
   import Gauge from '@lucide/svelte/icons/gauge';
   import { app } from '../../state.svelte';
-  import { settings } from '../../settings.svelte';
+  import { settings } from '../../settings/settings.svelte';
   import { agentName } from '../../agents';
   import { chipFeed } from '../../usage/store.svelte';
-  import { authNote, chipSegments, countdown, onCredits, worst } from '../../usage/format';
+  import { authNote, chipSegments, countdown, onCredits } from '../../usage/format';
+  import { worst } from '../../severity';
   import { creditsNote, ust } from '../../usage/strings';
 
   const session = $derived(app.connected && app.conn.phase === 'connected' && app.client ? `${app.conn.target.kind}:${app.conn.target.host ?? ''}` : null);

@@ -4,12 +4,13 @@
   import Save from '@lucide/svelte/icons/save';
   import FolderOpen from '@lucide/svelte/icons/folder-open';
   import Bug from '@lucide/svelte/icons/bug';
-  import { feedback, ft } from '../../feedback.svelte';
+  import { feedback, ft } from '../../feedback/feedback.svelte';
   import Modal from '../ui/Modal.svelte';
   import { app } from '../../state.svelte';
-  import { isTauri } from '../../client';
-  import { diag, diagBackend, dt as tx, fetchServerLog } from '../../diag.svelte';
-  import { describeExit, filterLines, formatBundle, iso, parseLines, type DiagInfo, type LevelFilter, type ServerLog } from '../../diag';
+  import { isTauri } from '../../platform';
+  import { diag, diagBackend, dt as tx, fetchServerLog } from '../../diag/diag.svelte';
+  import { describeExit, filterLines, iso, parseLines, type DiagInfo, type LevelFilter, type ServerLog } from '../../diag/diag';
+  import { formatBundle } from '../../diag/diag-bundle';
 
   type Tab = 'crash' | 'app' | 'server';
 

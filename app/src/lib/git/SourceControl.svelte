@@ -12,9 +12,10 @@
   import { app } from '../state.svelte';
   import { openReview, openReviewBeside } from '../review/open';
   import { isPhone } from '../mobile/ui.svelte';
-  import { fileCount, touches, type Scm } from './scm.svelte';
+  import { commitRequest, fileCount, touches, type Scm } from './scm.svelte';
   import { gt } from './strings';
   import type { ScmFile } from './types';
+  import { isSubmitChord } from '../chord';
 
   let { scm, filesOnly = false, onopen }: { scm: Scm; filesOnly?: boolean; onopen?: (worktree: string) => void } = $props();
 
@@ -51,8 +52,7 @@
 
   async function commit(o: { push?: boolean; amend?: boolean; all?: boolean } = {}) {
     if (!s) return;
-    const all = o.all || !s.staged.length;
-    const r = await scm.commit({ message: message.trim(), amend: o.amend, push: o.push, all: all || undefined });
+    const r = await scm.commit(commitRequest(s, message, o));
     if (r) {
       message = '';
       app.notify(gt('sc.committed', { sha: (r.commit ?? '').slice(0, 7) }));
@@ -98,7 +98,7 @@
   }
 
   function onKey(e: KeyboardEvent) {
-    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey) && canCommit) {
+    if (isSubmitChord(e) && canCommit) {
       e.preventDefault();
       commit();
     }

@@ -3,7 +3,6 @@ import { bucketByTime, TIME_BUCKETS, timeBucket } from './time-bucket';
 
 // Local-time stamps: the buckets are calendar days of the viewer, so the tests build them the same way.
 const at = (y: number, m: number, d: number, h = 0, min = 0, s = 0) => new Date(y, m - 1, d, h, min, s).toISOString();
-// Friday 2026-11-06 14:30; its week started on Monday 2026-11-02.
 const now = new Date(2026, 10, 6, 14, 30).getTime();
 
 describe('timeBucket', () => {

@@ -1,4 +1,4 @@
-import type { Group, GroupId, SidebarItem } from '../../grouping';
+import type { Group, GroupId, SidebarItem } from '../../session/grouping';
 
 export type Row = { type: 'header'; id: GroupId; count: number; collapsed: boolean } | { type: 'card'; item: SidebarItem };
 

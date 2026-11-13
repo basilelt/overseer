@@ -1,30 +1,10 @@
+import { splitMinutes, wholeMinutes } from '../duration';
 import type { UsageAgent, UsageBy, UsageLimits, UsageRange, UsageWindow } from './types';
 
-export type Level = 'ok' | 'warn' | 'crit';
-
-export const WARN_PCT = 80;
-export const CRIT_PCT = 95;
+import { level, worst, type Level } from '../severity';
 
 export function tzOffset(d: Date = new Date()): number {
   return -d.getTimezoneOffset();
-}
-
-export function usagePath(range: UsageRange, by: UsageBy, tz: number, line?: string, claudeLimits = false): string {
-  const q = new URLSearchParams({ range, by, tzOffset: String(tz) });
-  if (line) q.set('line', line);
-  if (claudeLimits) q.set('claudeLimits', '1');
-  return `/v1/usage?${q}`;
-}
-
-export function level(pct: number | null | undefined): Level {
-  if (pct == null || !Number.isFinite(pct)) return 'ok';
-  if (pct >= CRIT_PCT) return 'crit';
-  if (pct >= WARN_PCT) return 'warn';
-  return 'ok';
-}
-
-export function worst(levels: Level[]): Level {
-  return levels.includes('crit') ? 'crit' : levels.includes('warn') ? 'warn' : 'ok';
 }
 
 export function formatTokens(n: number | null | undefined): string {
@@ -50,12 +30,11 @@ export function formatPct(p: number): string {
 }
 
 export function formatDuration(ms: number): string {
-  const m = Math.floor(Math.max(0, ms) / 60_000);
-  if (m < 1) return '<1m';
-  const h = Math.floor(m / 60);
-  const d = Math.floor(h / 24);
-  if (d > 0) return `${d}d ${h % 24}h`;
-  if (h > 0) return `${h}h ${String(m % 60).padStart(2, '0')}m`;
+  const total = wholeMinutes(Math.max(0, ms));
+  if (total < 1) return '<1m';
+  const { d, h, m } = splitMinutes(total);
+  if (d > 0) return `${d}d ${h}h`;
+  if (h > 0) return `${h}h ${String(m).padStart(2, '0')}m`;
   return `${m}m`;
 }
 

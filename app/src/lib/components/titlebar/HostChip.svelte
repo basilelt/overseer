@@ -2,32 +2,21 @@
   import ChevronDown from '@lucide/svelte/icons/chevron-down';
   import Monitor from '@lucide/svelte/icons/monitor';
   import Server from '@lucide/svelte/icons/server';
-  import { connLabel } from '../../conn-label';
+  import { connLabel, hostChipDot, HOST_WORKING_DOT } from '../../conn-label';
   import { t } from '../../i18n.svelte';
   import { preload } from '../../idle';
+  import { isMockClient } from '../../daemon/client';
   import { app } from '../../state.svelte';
-  import type { ConnPhase } from '../../types';
 
   let open = $state(false);
   const menu = preload(() => import('./HostMenu.svelte'));
 
-  const PHASE_COLOR: Record<ConnPhase, string> = {
-    idle: 'var(--st-held)',
-    connecting: 'var(--st-working)',
-    checking: 'var(--st-working)',
-    downloading: 'var(--st-working)',
-    installing: 'var(--st-working)',
-    starting: 'var(--st-working)',
-    reconnecting: 'var(--st-working)',
-    connected: 'var(--st-input)',
-    error: 'var(--st-failed)',
-  };
-
   const conn = $derived(app.conn);
+  const dot = $derived(hostChipDot(conn.phase));
   const many = $derived(app.hosts.length > 1);
   const label = $derived(many ? t('hosts.count', { n: app.hosts.length }) : conn.target.kind === 'local' ? t('host.local') : conn.target.label);
   const phaseText = $derived(connLabel(conn));
-  const tip = $derived([phaseText, conn.error, app.client?.kind === 'mock' ? t('conn.mock') : ''].filter(Boolean).join(' · '));
+  const tip = $derived([phaseText, conn.error, isMockClient(app.client) ? t('conn.mock') : ''].filter(Boolean).join(' · '));
 
 </script>
 
@@ -47,7 +36,7 @@
   >
     {#if conn.target.kind === 'local'}<Monitor size={13} />{:else}<Server size={13} />{/if}
     <span class="label">{label}</span>
-    <span class="dot" class:pulse={PHASE_COLOR[conn.phase] === 'var(--st-working)'} style:background={PHASE_COLOR[conn.phase]}></span>
+    <span class="dot" class:pulse={dot === HOST_WORKING_DOT} style:background={dot}></span>
     <ChevronDown size={12} />
   </button>
   {#if open}

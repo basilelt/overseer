@@ -1,26 +1,21 @@
-import { ui } from '../mobile/ui.svelte';
+import { isPhone } from '../mobile/ui.svelte';
 import { tabMode, withMode, type ModeItem, type ViewMode } from './viewmode';
+import { readJson, writeJson, KEY_CHAT_MODES } from '../storage';
 
-const STORE = 'sb.chatModes';
+const STORE = KEY_CHAT_MODES;
 
 function load(): Record<string, ViewMode> {
-  try {
-    const v = JSON.parse(globalThis.localStorage?.getItem(STORE) ?? '{}');
-    return v && typeof v === 'object' ? v : {};
-  } catch {
-    return {};
-  }
+  const v = readJson(STORE);
+  return v && typeof v === 'object' ? (v as Record<string, ViewMode>) : {};
 }
 
 const state = $state<{ saved: Record<string, ViewMode> }>({ saved: load() });
 
 export function modeOf(item: (ModeItem & { key?: string }) | undefined): ViewMode {
-  return tabMode(state.saved, ui.layout === 'phone' ? 'phone' : 'desktop', item);
+  return tabMode(state.saved, isPhone() ? 'phone' : 'desktop', item);
 }
 
 export function setMode(item: ModeItem & { key?: string }, mode: ViewMode) {
-  state.saved = withMode(state.saved, ui.layout === 'phone' ? 'phone' : 'desktop', item, mode);
-  try {
-    globalThis.localStorage?.setItem(STORE, JSON.stringify(state.saved));
-  } catch {}
+  state.saved = withMode(state.saved, isPhone() ? 'phone' : 'desktop', item, mode);
+  writeJson(STORE, state.saved);
 }

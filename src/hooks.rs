@@ -1,6 +1,7 @@
-use crate::procs::{now_ms, Probe};
+use crate::procs::Probe;
 use crate::registry::{HookState, Registry};
 use crate::sys::OpenOptionsExt;
+use crate::util::now_ms;
 use serde_json::{json, Value};
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::Path;
@@ -57,6 +58,8 @@ pub const VIBE_EVENTS: &[&str] = &[
     "notification",
     "session_end",
 ];
+
+pub const VIBE_MAIN_ONLY: &[&str] = &["pre_agent", "post_agent"];
 
 pub const CURSOR_EVENTS: &[&str] = &["sessionStart", "beforeSubmitPrompt", "stop", "sessionEnd"];
 
@@ -191,7 +194,7 @@ pub fn apply(h: &mut HookState, ev: &Value) {
 
 pub fn session_key(agent: &str, ev: &Value) -> Option<String> {
     let term = ev["termId"].as_str().filter(|t| !t.is_empty());
-    let by_session = matches!(agent, "claude" | "codex" | "gemini" | "vibe");
+    let by_session = crate::agents::get(agent).is_some_and(|a| a.sessions());
     match (ev["sessionId"].as_str(), term) {
         (Some(s), _) if by_session => Some(s.to_string()),
         (_, Some(t)) => Some(term_key(t)),
@@ -399,9 +402,6 @@ mod tests {
 
     #[test]
     fn a_lost_subagent_stop_is_cleared_by_stop_never_but_by_session_end_and_start() {
-        // Given a session whose turn ended with a subagent and a task still counted
-        // When Stop arrives, then SessionEnd, and separately SessionStart
-        // Then Stop keeps the counts and both SessionEnd and SessionStart reset them
         let ev = |e: &str| json!({"event": e, "at": 1});
         let mut h = HookState::default();
         for e in ["UserPromptSubmit", "SubagentStart", "TaskCreated", "Stop"] {

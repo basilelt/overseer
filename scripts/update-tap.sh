@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+. "$(dirname "$0")/platforms.sh"
 
 if [ $# -ne 2 ]; then
   echo "usage: $0 <version> <tap-dir>" >&2
@@ -34,10 +35,10 @@ sha() {
 
 dmg_arm=Overseer_${version}_aarch64.dmg
 dmg_intel=Overseer_${version}_x64.dmg
-mac_arm=overseer-$version-aarch64-apple-darwin
-mac_intel=overseer-$version-x86_64-apple-darwin
-linux_arm=overseer-$version-aarch64-unknown-linux-musl
-linux_intel=overseer-$version-x86_64-unknown-linux-musl
+mac_arm=overseer-$version-$DARWIN_ARM64
+mac_intel=overseer-$version-$DARWIN_X64
+linux_arm=overseer-$version-$LINUX_ARM64
+linux_intel=overseer-$version-$LINUX_X64
 
 declare -A url sum
 for n in "$mac_arm" "$mac_intel" "$linux_arm" "$linux_intel"; do

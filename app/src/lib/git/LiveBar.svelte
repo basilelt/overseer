@@ -13,13 +13,14 @@
   import { folder } from '../review/scope';
   import { worktreeChoices } from './worktrees';
   import type { Related } from '../review/types';
-  import type { MenuItem } from '../menu';
+  import type { MenuItem } from '../commands/menu';
   import { gitApi } from './api';
   import { live, liveTarget, sessionTarget } from './live.svelte';
-  import { Scm, fileCount, primaryAction, touches } from './scm.svelte';
+  import { Scm, commitRequest, fileCount, primaryAction, showsBranch, touches } from './scm.svelte';
   import SourceControl from './SourceControl.svelte';
   import { gt } from './strings';
   import type { ScmSubmodule } from './types';
+  import { isSubmitChord } from '../chord';
 
   const scm = new Scm(
     () => (app.client ? gitApi(app.client) : null),
@@ -114,8 +115,7 @@
 
   async function commit(o: { push?: boolean; amend?: boolean; all?: boolean } = {}) {
     if (!s) return;
-    const all = o.all || !s.staged.length;
-    const r = await scm.commit({ message: message.trim(), amend: o.amend, push: o.push, all: all || undefined });
+    const r = await scm.commit(commitRequest(s, message, o));
     if (r) {
       message = '';
       app.notify(gt('sc.committed', { sha: (r.commit ?? '').slice(0, 7) }));
@@ -140,7 +140,7 @@
   });
 
   function onKey(e: KeyboardEvent) {
-    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey || !e.shiftKey) && (primary.kind === 'commit' || primary.kind === 'merge') && primary.enabled) {
+    if ((isSubmitChord(e) || (e.key === 'Enter' && !e.shiftKey)) && (primary.kind === 'commit' || primary.kind === 'merge') && primary.enabled) {
       e.preventDefault();
       commit();
     }
@@ -215,7 +215,7 @@
     <button class="wt" title={s.worktree} aria-haspopup="menu" onclick={worktreeMenu} disabled={busy}>
       <GitBranch size={13} />
       <span class="nm">{name}</span>
-      {#if !s.branch || s.branch.replaceAll('/', '-') !== name}<span class="br mono">{s.branch ?? gt('sc.detached')}</span>{/if}
+      {#if showsBranch(s.branch, name)}<span class="br mono">{s.branch ?? gt('sc.detached')}</span>{/if}
       <ChevronDown size={12} />
     </button>
     <button class="files-btn" class:on={filesOpen} aria-expanded={filesOpen} onclick={() => (filesOpen = !filesOpen)} disabled={!total}>

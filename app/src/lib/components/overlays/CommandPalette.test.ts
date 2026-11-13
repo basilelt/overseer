@@ -1,11 +1,12 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
-import { MOCK_AGENTS } from '../../mock';
+import { MOCK_AGENTS } from '../../daemon/mock';
 import type { AgentInfo } from '../../types';
 
-async function rendered(connected: boolean, current?: Record<string, unknown>, all: Record<string, unknown>[] = [], agents: AgentInfo[] = []) {
+async function rendered(connected: boolean, current?: Record<string, unknown>, all: Record<string, unknown>[] = [], agents: AgentInfo[] = [], projects = true) {
   vi.resetModules();
   const { app } = await import('../../state.svelte');
   vi.spyOn(app, 'connected', 'get').mockReturnValue(connected);
+  vi.spyOn(app, 'projects', 'get').mockReturnValue(projects ? ([{ path: '/p' }] as never) : []);
   if (current) {
     vi.spyOn(app, 'currentWorkspace', 'get').mockReturnValue(current as never);
     vi.spyOn(app, 'wsPersistent', 'get').mockReturnValue(true);
@@ -44,8 +45,15 @@ describe('command palette views', () => {
 
   it('still lists the local views when disconnected', async () => {
     const views = section(await rendered(false), 'Views');
-    expect(views).toContain('Open Git (graph and source control)');
+    expect(views).toContain('Open browser');
+    expect(views).not.toContain('Open the worktrees');
+    expect(views).not.toContain('Open Git (graph and source control)');
     expect(views).not.toContain('Review changes');
+  });
+
+  it.each(['Open Git (graph and source control)', 'Open the worktrees'])('lists "%s" only when connected with a project, like the phone More sheet', async (entry) => {
+    expect(section(await rendered(true), 'Views')).toContain(entry);
+    expect(section(await rendered(true, undefined, [], [], false), 'Views')).not.toContain(entry);
   });
 
   it('lists Install skills and plugins under Actions only when connected', async () => {
@@ -69,5 +77,20 @@ describe('command palette views', () => {
     expect(actions).not.toContain('Install Codex');
     expect(actions).not.toContain('New Amp session');
     expect(await rendered(false, undefined, [], MOCK_AGENTS)).not.toContain('Install Amp');
+  });
+
+  it('shows the shortcut of a listed command, but none for source control', async () => {
+    const body = await rendered(true);
+    const row = (label: string) => body.match(new RegExp(`<li[^>]*role="option"[^>]*>(?:(?!</li>)[\\s\\S])*${label}(?:(?!</li>)[\\s\\S])*</li>`))?.[0] ?? '';
+    expect(row('Open tasks board')).toContain('Ctrl+Shift+K');
+    expect(row('Toggle sidebar')).toContain('Ctrl+Shift+B');
+    expect(row('Show or hide source control in the sidebar')).not.toContain('class="keys');
+    expect(row('Show or hide source control in the sidebar')).not.toBe('');
+  });
+
+  it('keeps the entries of a disconnected palette to the ones that need no host', async () => {
+    const body = await rendered(false);
+    for (const label of ['Open browser', 'Toggle theme', 'Show logs', 'Keyboard shortcuts']) expect(body).toContain(label);
+    for (const label of ['Disconnect', 'Ports: show forwarded ports', 'Organize my sessions', 'New workspace from a folder']) expect(body).not.toContain(label);
   });
 });

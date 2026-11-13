@@ -1,5 +1,5 @@
 <script lang="ts" module>
-  import { routeTermUrls } from '../../termlinks';
+  import { routeTermUrls } from '../../terminal/termlinks';
   import { app as shared } from '../../state.svelte';
 
   if (typeof window !== 'undefined') routeTermUrls(window, (url, termId, shift) => (shared.openUrl(url, { termId }, { shift, inTerminal: true }), true));
@@ -14,33 +14,38 @@
   import ChevronUp from '@lucide/svelte/icons/chevron-up';
   import ChevronDown from '@lucide/svelte/icons/chevron-down';
   import X from '@lucide/svelte/icons/x';
-  import { findHit, viewportFor, type Hit } from '../../termfind';
-  import { isTauri, type TermIO } from '../../client';
+  import { findHit, viewportFor, type Hit } from '../../terminal/termfind';
+  import { type TermIO } from '../../daemon/client';
+  import { isTauri } from '../../platform';
   import { t } from '../../i18n.svelte';
-  import { attachIme } from '../../ime';
-  import { keyToInput } from '../../keys';
-  import { cellAt, clickMove, ModeTracker, WheelAccumulator, wheelAction } from '../../mouse';
-  import { resetViewport, scrollbackBytes, writeAnchored } from '../../scroll';
-  import { fontChain, fontFamilies, lineMetrics, sameMetrics, SYMBOL_SAMPLE } from '../../fonts';
+  import { attachIme } from '../../terminal/ime';
+  import { keyToInput } from '../../commands/keys';
+  import { cellAt, clickMove, ModeTracker, WheelAccumulator, wheelAction } from '../../terminal/mouse';
+  import { resetViewport, scrollbackBytes, writeAnchored } from '../../terminal/scroll';
+  import { fontChain, fontFamilies, lineMetrics, sameMetrics, SYMBOL_SAMPLE } from '../../theme/fonts';
   import { applyMods, NO_MODS, type Mods } from '../../mobile/accessory';
   import { attachRetryMs } from '../../conn';
-  import { termLink, type TermLink } from '../../termlink';
-  import { replayGuard } from '../../termreplay';
-  import { LONG_PRESS_MS, movedTooFar, pinchFontSize, touchDistance } from '../../mobile/gestures';
+  import { termLink, type TermLink } from '../../terminal/termlink';
+  import { replayGuard } from '../../terminal/termreplay';
+  import { LONG_PRESS_MS, pinchFontSize, pressTimer, touchDistance } from '../../mobile/gestures';
   import { canResize, fitTo, isAgentTerm, shouldReassert, sizedElsewhere } from '../../mobile/termsize';
-  import { ui } from '../../mobile/ui.svelte';
+  import { ui, isPhone } from '../../mobile/ui.svelte';
   import { isNativeAndroid, native } from '../../mobile/native';
-  import { colorPalette, customColors, resolvedTheme, saveSettings, settings } from '../../settings.svelte';
+  import { colorPalette, customColors, resolvedTheme, saveSettings, settings } from '../../settings/settings.svelte';
   import { app } from '../../state.svelte';
-  import { loadGhostty, termTheme } from '../../terminal';
-  import { pathRanges } from '../../termlinks';
-  import { scheduler, type PaintTarget } from '../../termrender';
-  import { finishSelectionOnInterruption, routeCopies } from '../../selection-copy';
-  import { guardAutoScroll } from '../../selection-scroll';
+  import { loadGhostty, termTheme } from '../../terminal/terminal';
+  import { pathRanges } from '../../terminal/termlinks';
+  import { scheduler, type PaintTarget } from '../../terminal/termrender';
+  import { finishSelectionOnInterruption, routeCopies } from '../../terminal/selection-copy';
+  import { hint as keyHint } from '../../commands/keyboard';
+  import { termMenuItems } from '../../terminal/termmenu';
+  import { readClip } from '../../terminal/clipboard';
+  import { guardAutoScroll } from '../../terminal/selection-scroll';
   import { settle } from '../../settle';
   import { openFile } from '../../preview';
-  import type { UploadResult } from '../../types';
-  import { basename, bracketed, insertText, planDrop, planPaste, PROGRESS_FROM, uploadedPath, type Refusal } from '../../uploads';
+  import { bracketed, clipboardFiles, fileInfos, insertText, planDrop, planPaste, refusalMessage, uploadedPath, type Refusal } from '../../uploads';
+  import { preload } from '../../idle';
+  const pipeline = preload(() => import('../../upload-pipeline'));
   const accessoryBar = () => import('../mobile/AccessoryBar.svelte');
 
   let { termId, focused }: { termId: string; focused: boolean } = $props();
@@ -106,7 +111,7 @@
   let unseen = $state(false);
   let writing = false;
 
-  const phone = $derived(ui.layout === 'phone');
+  const phone = $derived(isPhone());
   const fixed = $derived(phone && !!info && !canResize('phone', isAgentTerm(info)));
   const hint = $derived(sizedElsewhere(info, mine, phone ? 'phone' : 'desktop'));
   const fontSize = $derived(phone ? (settings.phoneFontSize ?? 12) : settings.fontSize);
@@ -172,19 +177,19 @@
       }
       term?.focus();
     };
-    const refuse = (r: Refusal) => app.notify(t(r.reason === 'folder' ? 'upload.folder' : 'upload.tooLarge', { name: r.name }), 'error');
+    const refuse = (r: Refusal) => app.notify(refusalMessage(r), 'error');
+
+    const loadPipeline = () => pipeline().catch((e) => void app.notify(message(e), 'error', undefined, 'upload'));
 
     const uploadAll = async (paths: string[]): Promise<string[]> => {
-      const done: UploadResult[] = [];
-      let failure: string | null = null;
-      for (const p of paths) {
-        const name = basename(p);
-        try {
-          done.push(await app.client!.uploadFile(p, ({ sent, total }) => total > PROGRESS_FROM && app.progress(t('upload.progress', { name }), sent / total)));
-        } catch (e) {
-          failure = t('upload.failed', { name, error: message(e) });
-        }
-      }
+      const lib = await loadPipeline();
+      if (!lib) return [];
+      const failures = lib.uploadFailures();
+      const done = await lib.uploadList((p, onProgress) => app.requireClient().uploadFile(p, onProgress), paths, {
+        progress: (name, fraction) => app.progress(t('upload.progress', { name }), fraction),
+        fail: failures.fail,
+      });
+      const failure = failures.summary();
       if (failure) app.notify(failure, 'error', undefined, 'upload');
       else if (done.length) {
         const text = done.length === 1 ? t('upload.done', { name: done[0].name, path: done[0].short ?? done[0].path }) : t('upload.doneMany', { n: done.length });
@@ -195,16 +200,9 @@
     };
 
     const pasteFiles = async (files: File[]) => {
-      const saved: string[] = [];
-      for (const f of files) {
-        const name = f.name || 'paste.png';
-        try {
-          saved.push(await app.client!.savePaste(name, new Uint8Array(await f.arrayBuffer())));
-        } catch (e) {
-          return app.notify(t('upload.pasteFailed', { name, error: message(e) }), 'error');
-        }
-      }
-      send(insertText(await uploadAll(saved)));
+      const lib = await loadPipeline();
+      const saved = lib && (await lib.savePasteAll(files, (name, bytes) => app.requireClient().savePaste(name, bytes), (name, e) => app.notify(t('upload.pasteFailed', { name, error: message(e) }), 'error')));
+      if (saved) send(insertText(await uploadAll(saved)));
     };
 
     pastePath = async (path: string) => send(insertText(remote ? await uploadAll([path]) : [path]));
@@ -212,19 +210,14 @@
     const onPaste = (e: ClipboardEvent) => {
       const dt = e.clipboardData;
       if (!dt || !io) return;
-      const files = Array.from(dt.files);
-      if (!files.length)
-        for (const item of Array.from(dt.items)) {
-          const f = item.kind === 'file' ? item.getAsFile() : null;
-          if (f) files.push(f);
-        }
+      const files = clipboardFiles(dt);
       if (!files.length && !dt.getData('text/plain') && isNativeAndroid()) {
         e.preventDefault();
         e.stopImmediatePropagation();
         void pasteImage();
         return;
       }
-      const plan = planPaste({ text: dt.getData('text/plain'), files: files.map((f) => ({ name: f.name, type: f.type, size: f.size })) }, remote);
+      const plan = planPaste({ text: dt.getData('text/plain'), files: fileInfos(files) }, remote);
       if (plan.kind === 'native') return;
       e.preventDefault();
       e.stopImmediatePropagation();
@@ -247,7 +240,7 @@
 
     pickFiles = (files: File[]) => {
       if (!files.length) return;
-      const plan = planPaste({ text: '', files: files.map((f) => ({ name: f.name, type: f.type, size: f.size })) }, remote);
+      const plan = planPaste({ text: '', files: fileInfos(files) }, remote);
       if (plan.kind === 'reject') return refuse(plan);
       if (plan.kind === 'save') void pasteFiles(files);
     };
@@ -313,7 +306,7 @@
         };
         applyFont();
         link = termLink({
-          open: (onData, onClose) => app.client!.attachTerm(termId, onData, onClose),
+          open: (onData, onClose) => app.requireClient().attachTerm(termId, onData, onClose),
           reset: () => {
             if (term) resetViewport(term);
             scrolledBack = false;
@@ -442,14 +435,10 @@
 
   function touchGestures(): () => void {
     let pinch: { distance: number; size: number; live: number } | null = null;
-    let press: { x: number; y: number; timer: ReturnType<typeof setTimeout> } | null = null;
-    const cancelPress = () => {
-      if (press) clearTimeout(press.timer);
-      press = null;
-    };
+    const press = pressTimer(LONG_PRESS_MS);
     const start = (e: TouchEvent) => {
       if (!phone) return;
-      cancelPress();
+      press.cancel();
       if (e.touches.length === 2) {
         pinch = { distance: touchDistance(e.touches[0], e.touches[1]), size: fontSize, live: fontSize };
         return;
@@ -459,23 +448,21 @@
       const box = el.getBoundingClientRect();
       const at = { x: tch.clientX - box.left, y: tch.clientY - box.top };
       copyAt = null;
-      const timer = setTimeout(() => {
+      press.start(tch.clientX, tch.clientY, () => {
         copyAt = at;
-        press = null;
-      }, LONG_PRESS_MS);
-      press = { x: tch.clientX, y: tch.clientY, timer };
+      });
     };
     const move = (e: TouchEvent) => {
       if (pinch && e.touches.length === 2) {
         e.preventDefault();
         pinch.live = pinchFontSize(pinch.size, pinch.distance, touchDistance(e.touches[0], e.touches[1]));
         if (term && term.options.fontSize !== pinch.live) term.options.fontSize = pinch.live;
-      } else if (press && e.touches.length === 1 && movedTooFar(e.touches[0].clientX - press.x, e.touches[0].clientY - press.y)) {
-        cancelPress();
+      } else if (e.touches.length === 1) {
+        press.move(e.touches[0].clientX, e.touches[0].clientY);
       }
     };
     const end = (e: TouchEvent) => {
-      cancelPress();
+      press.cancel();
       if (pinch && e.touches.length < 2) {
         const size = pinch.live;
         pinch = null;
@@ -488,7 +475,7 @@
     el.addEventListener('touchend', end, { passive: true });
     el.addEventListener('touchcancel', end, { passive: true });
     return () => {
-      cancelPress();
+      press.cancel();
       el.removeEventListener('touchstart', start);
       el.removeEventListener('touchmove', move);
       el.removeEventListener('touchend', end);
@@ -528,13 +515,29 @@
 
   async function paste() {
     if (await pasteImage()) return;
-    try {
-      const text = (await app.client?.pasteText()) ?? '';
-      if (!text) return app.notify(t('mobile.term.pasteFailed'));
-      write(term?.hasBracketedPaste() ? `\x1b[200~${text}\x1b[201~` : text);
-    } catch {
-      app.notify(t('mobile.term.pasteFailed'));
-    }
+    const clip = await readClip({
+      text: async () => (await app.client?.pasteText()) ?? '',
+      image: async () => (await import('../../terminal/clipboard-image')).clipboardImage(),
+    });
+    if (clip.kind === 'text') write(term?.hasBracketedPaste() ? `\x1b[200~${clip.text}\x1b[201~` : clip.text);
+    else if (clip.kind === 'image') pickFiles?.([clip.file]);
+    else app.notify(t('mobile.term.pasteFailed'));
+  }
+
+  function onTermMenu(e: MouseEvent) {
+    if (phone) return;
+    e.preventDefault();
+    const tm = term;
+    app.openMenu(
+      e,
+      '',
+      termMenuItems({
+        hasSelection: !!tm?.hasSelection(),
+        copy: () => void (tm && app.client?.copyText(tm.getSelection()).catch(() => {})),
+        paste: () => void paste(),
+        hint: keyHint,
+      }),
+    );
   }
 
   let finding = $state(false);
@@ -648,7 +651,7 @@
 </script>
 
 <div class="pane" class:phone class:fixed bind:this={pane}>
-  <div class="term" data-terminal data-term-id={termId} bind:this={el}></div>
+  <div class="term" data-terminal data-term-id={termId} bind:this={el} oncontextmenu={onTermMenu} role="presentation"></div>
   {#if finding}
     <div class="find" class:miss={findMiss} role="search">
       <input bind:value={findQuery} oninput={() => ((hit = null), (findMiss = false))} onkeydown={onFindKey} placeholder={t('term.find')} aria-label={t('term.find')} spellcheck="false" />

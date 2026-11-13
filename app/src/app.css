@@ -70,6 +70,21 @@
   --mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
   --radius: 6px;
   --radius-lg: 10px;
+  --z-shell-scrim: 40;
+  --z-shell: 41;
+  --z-modal: 50;
+  --z-popover-scrim: 59;
+  --z-popover: 60;
+  --z-picker: 70;
+  --z-tour: 80;
+  --z-tour-card: 81;
+  --z-record: 90;
+  --z-toast: 100;
+  --z-dropdown: 40;
+  --z-drag: 60;
+  --z-screen: 60;
+  --z-update: 70;
+  --z-crash: 80;
   --ease: 140ms cubic-bezier(0.2, 0, 0, 1);
   --titlebar-h: 40px;
 }

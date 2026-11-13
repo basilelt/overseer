@@ -1,4 +1,5 @@
-import { isTauri } from './client';
+import * as CMD from './daemon/tauri-commands';
+import { isTauri } from './platform';
 import type { HostTarget } from './types';
 
 export const MAIN_WINDOW = 'main';
@@ -21,11 +22,10 @@ export function hostKey(t: Pick<HostTarget, 'kind' | 'host'>): string {
 
 let opened = 1;
 
-/** Opens another window, connected to `target` when given. */
 export async function openWindow(target?: HostTarget): Promise<void> {
   if (isTauri()) {
     const { invoke } = await import('@tauri-apps/api/core');
-    await (target ? invoke('window_new', { connect: target }) : invoke('window_new'));
+    await (target ? invoke(CMD.windowNew, { connect: target }) : invoke(CMD.windowNew));
     return;
   }
   const url = new URL(globalThis.location.href);

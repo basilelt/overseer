@@ -6,8 +6,8 @@
   import Modal from '../ui/Modal.svelte';
   import { app } from '../../state.svelte';
   import { t, type Key } from '../../i18n.svelte';
-  import { organizer } from '../../organize.svelte';
-  import { checkedIds, describe, grouped, initialChecks, tally, type Action, type Proposal, type Result } from '../../organize';
+  import { organizer } from '../../workspace/organize.svelte';
+  import { checkedIds, describe, grouped, initialChecks, tally, type Action, type Proposal, type Result } from '../../workspace/organize';
 
   let { proposal }: { proposal: Proposal } = $props();
 

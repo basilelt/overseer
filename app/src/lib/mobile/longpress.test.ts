@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { LONG_PRESS_MS, longPress } from './longpress';
+import { LONG_PRESS_MS } from './gestures';
+import { longPress } from './longpress';
 
 function pointer(type: string, x = 0, y = 0): PointerEvent {
   return Object.assign(new Event(type, { cancelable: true }), { clientX: x, clientY: y }) as unknown as PointerEvent;

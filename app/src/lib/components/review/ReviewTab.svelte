@@ -1,7 +1,7 @@
 <script lang="ts">
   import { parseReviewKey } from '../../review/keys';
   import type { ReviewTarget } from '../../review/types';
-  import type { TabInfo } from '../../tabs';
+  import type { TabInfo } from '../../tabs/tabs';
   import ReviewView from './ReviewView.svelte';
   import { beside } from '../../review/beside.svelte';
 

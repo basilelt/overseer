@@ -1,6 +1,4 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import mobileSource from './MobileConnect.svelte?raw';
-import desktopSource from '../overlays/ConnectDialog.svelte?raw';
 
 const store = new Map<string, string>();
 
@@ -41,17 +39,5 @@ describe.each(['mobile', 'desktop'] as const)('the %s connect screen', (file) =>
     const html = await screen(file, { demo: true, client: 'mock' });
     expect(html).toContain('Exit demo');
     expect(html).not.toContain('Try the demo');
-  });
-});
-
-describe('connect screen actions', () => {
-  it('enters the demo from the host list and from a failed connection on the phone', () => {
-    expect(mobileSource.match(/onclick=\{\(\) => startDemo\(app\.client\)\}/g)).toHaveLength(2);
-    expect(mobileSource).toMatch(/onclick=\{\(\) => exitDemo\(\)\}/);
-  });
-
-  it('enters the demo from the host list and from a failed connection on the desktop', () => {
-    expect(desktopSource).toMatch(/onclick=\{\(\) => \(demo \? exitDemo\(\) : startDemo\(app\.client\)\)\}/);
-    expect(desktopSource).toMatch(/\{#if canDemo\}<button class="btn" onclick=\{\(\) => startDemo\(app\.client\)\}>/);
   });
 });

@@ -1,13 +1,13 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { attention } from '../attention';
-import { byState } from '../by-state';
-import type { SidebarItem } from '../grouping';
-import type { SessionState } from '../session-state';
+import { byState } from '../session/by-state';
+import type { SidebarItem } from '../session/grouping';
+import type { SessionState } from '../session/session-state';
 import type { Folder, Workspace } from '../types';
-import { folderSpaces, spaceTrail, spaces } from '../spaces';
+import { folderSpaces, spaceTrail, spaces } from '../workspace/spaces';
 import { bucketByTime, timeBucket } from '../time-bucket';
-import { workspaceSessions } from '../workspace-sessions';
-import { workspaceSummary } from '../workspace-summary';
+import { workspaceSessions } from '../workspace/workspace-sessions';
+import { workspaceSummary } from '../workspace/workspace-summary';
 
 // Work is counted, never timed: every read of an item field, and every date parse.
 const STATES: SessionState[] = ['attention', 'running', 'open', 'paused', 'closed'];
@@ -40,22 +40,14 @@ function scale(run: (f: ReturnType<typeof fixture>) => unknown): [number, number
   return [out[0]!, out[1]!];
 }
 
-afterEach(() => vi.restoreAllMocks());
-
 describe('session lists scale with the session count', () => {
   it('workspaceSummary reads each session a constant number of times', () => {
-    // Given 100 and 1000 sessions in mixed states
-    // When the workspace summary is computed
-    // Then the reads per session are identical and the work grows exactly 10x
     const [small, big] = scale((f) => workspaceSummary(f.items));
     expect(big / small).toBe(10);
     expect(small / 100).toBeLessThanOrEqual(3);
   });
 
   it('attention, byState and workspaceSessions stay linearithmic, never quadratic', () => {
-    // Given 100 and 1000 sessions in mixed states, spread over 7 workspaces
-    // When each list is built
-    // Then 10x the sessions costs well under the 100x of a quadratic pass
     for (const run of [(f: ReturnType<typeof fixture>) => attention(f.items, f.wsOf), (f: ReturnType<typeof fixture>) => byState(f.items, f.wsOf, now, new Set(['w1', 'w2'])), (f: ReturnType<typeof fixture>) => workspaceSessions(f.items, now), (f: ReturnType<typeof fixture>) => workspaceSessions(f.items, now, Array.from({ length: f.items.length }, (_, i) => `k${f.items.length - 1 - i}`)), (f: ReturnType<typeof fixture>) => spaces(Array.from({ length: 7 }, (_, i) => ({ id: `w${i}`, name: `ws${i}`, rank: i, pinned: false, archived: false }) as Workspace), f.items, f.wsOf, 't')]) {
       const [small, big] = scale(run);
       expect(big / small).toBeGreaterThanOrEqual(10);
@@ -64,9 +56,6 @@ describe('session lists scale with the session count', () => {
   });
 
   it('folderSpaces and spaceTrail scale with workspaces and folders, never quadratic', () => {
-    // Given n workspaces (some archived and shown, a quarter nested in another) over n/5 folders nested three deep, and n sessions, for n = 100 and 1000
-    // When the folder tree and every workspace trail are built
-    // Then 10x the input costs between 10x and 20x the reads of folder, workspace and session fields
     const reads = [100, 1000].map((n) => {
       const f = fixture(n);
       let count = 0;
@@ -90,9 +79,6 @@ describe('session lists scale with the session count', () => {
   });
 
   it('parses each date once: timeBucket, bucketByTime, byState and workspaceSessions', () => {
-    // Given 1000 sessions with dates
-    // When the closed ones are bucketed by interval
-    // Then every row costs a single date parse
     const parse = vi.spyOn(Date, 'parse');
     const f = fixture(1000);
     const closed = f.items.filter((i) => i.state === 'closed');

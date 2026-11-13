@@ -9,36 +9,27 @@ import { isSince, loadBase, saveBase } from './base';
 import { worktreeOf } from './keys';
 import { inRepo } from './repo';
 import { upsert, withStatus } from './threads';
-import { DaemonError } from '../client';
+import { DaemonError } from '../daemon/client';
 import { Drafts } from '../drafts';
-import { inFlight, single } from '../inflight';
+import { inFlight, single } from '../daemon/inflight';
 import { onPresence, presence } from '../presence';
 import type { Delivery, Related, ReviewDiff, ReviewTarget, SubmitKind, Thread } from './types';
+import { readItem, writeItem, KEY_DRAFTS_REVIEW, KEY_REVIEW_AUTO_REFRESH, KEY_REVIEW_MODE } from '../storage';
 
-const MODE_KEY = 'overseer.review.mode';
-const AUTO_KEY = 'overseer.review.autoRefresh';
-const reviewDrafts = new Drafts<D.Draft | null>('overseer.drafts.review', (v) => !v);
+const MODE_KEY = KEY_REVIEW_MODE;
+const AUTO_KEY = KEY_REVIEW_AUTO_REFRESH;
+const reviewDrafts = new Drafts<D.Draft | null>(KEY_DRAFTS_REVIEW, (v) => !v);
 
 function loadAuto(): boolean {
-  try {
-    return globalThis.localStorage?.getItem(AUTO_KEY) !== '0';
-  } catch {
-    return true;
-  }
+  return readItem(AUTO_KEY) !== '0';
 }
 
 function saveAuto(on: boolean) {
-  try {
-    globalThis.localStorage?.setItem(AUTO_KEY, on ? '1' : '0');
-  } catch {}
+  writeItem(AUTO_KEY, on ? '1' : '0');
 }
 
 function loadMode(): Mode {
-  try {
-    return globalThis.localStorage?.getItem(MODE_KEY) === 'split' ? 'split' : 'unified';
-  } catch {
-    return 'unified';
-  }
+  return readItem(MODE_KEY) === 'split' ? 'split' : 'unified';
 }
 
 export class ReviewStore {
@@ -95,8 +86,7 @@ export class ReviewStore {
   }
 
   get api(): ReviewApi {
-    if (!app.client) throw new Error('not connected');
-    return reviewApi(app.client);
+    return reviewApi(app.requireClient());
   }
 
   get worktree(): string | null {
@@ -292,9 +282,7 @@ export class ReviewStore {
 
   setMode(m: Mode) {
     this.mode = m;
-    try {
-      globalThis.localStorage?.setItem(MODE_KEY, m);
-    } catch {}
+    writeItem(MODE_KEY, m);
   }
 
   async fetchLines(path: string, force = false) {

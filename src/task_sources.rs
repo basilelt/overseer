@@ -1,7 +1,8 @@
-use crate::daemon::{q, Request};
 use crate::git::Git;
+use crate::http::{err, q, Request};
 use crate::registry::Registry;
-use crate::tasks::{bad, db, main_root, sql};
+use crate::registry::{db, sql};
+use crate::tasks::{bad, main_root};
 use crate::util::{ticket, ulid};
 use crate::Ctx;
 use rusqlite::params;
@@ -46,12 +47,12 @@ pub fn routes(ctx: &Ctx, r: &Request, segs: &[&str], body: &Value) -> Option<(u1
         }
         _ => return None,
     };
-    Some(out.unwrap_or_else(|(c, e)| (c, json!({ "error": e }))))
+    Some(out.unwrap_or_else(|(c, e)| err(c, e)))
 }
 
 fn project(r: &Request) -> Res<String> {
     q(r, "project")
-        .map(crate::board::decode)
+        .map(crate::util::percent_decode)
         .as_deref()
         .map(str::trim)
         .filter(|p| Path::new(p).is_absolute())
@@ -150,7 +151,7 @@ pub fn insert(reg: &Registry, project: &str, kind: &str, target: &str) -> Res<So
     {
         return Err((409, "this source is already added".into()));
     }
-    let now = crate::procs::now_ms();
+    let now = crate::util::now_ms();
     let s = Source {
         id: ulid(now),
         kind: kind.into(),

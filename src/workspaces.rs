@@ -1,8 +1,8 @@
 use crate::board::publish;
-use crate::daemon::Request;
-use crate::procs::now_ms;
-use crate::registry::Registry;
+use crate::http::{err, Request};
+use crate::registry::{col_at, columns, db, sql, update_row, Registry};
 use crate::tasks::Task;
+use crate::util::now_ms;
 use crate::util::{format_rfc3339, ulid};
 use crate::{Ctx, Line};
 use rusqlite::{params, OptionalExtension, Row};
@@ -11,9 +11,44 @@ use std::path::Path;
 
 pub type Res<T> = Result<T, (u16, String)>;
 
-const WS_COLS: &str = "id, name, path, folder_id, pinned, archived, auto, rank, tabs, notify_idle, created_ms, updated_ms, kind, cwd, parent_id";
-const FOLDER_COLS: &str = "id, name, parent_id, rank, collapsed, created_ms, updated_ms";
-const GROUP_COLS: &str = "id, name, rank, members, notify_idle, created_ms, updated_ms";
+columns!(
+    WS_COLUMNS,
+    WS_COLS = id,
+    name,
+    path,
+    folder_id,
+    pinned,
+    archived,
+    auto,
+    rank,
+    tabs,
+    notify_idle,
+    created_ms,
+    updated_ms,
+    kind,
+    cwd,
+    parent_id
+);
+columns!(
+    FOLDER_COLUMNS,
+    FOLDER_COLS = id,
+    name,
+    parent_id,
+    rank,
+    collapsed,
+    created_ms,
+    updated_ms
+);
+columns!(
+    GROUP_COLUMNS,
+    GROUP_COLS = id,
+    name,
+    rank,
+    members,
+    notify_idle,
+    created_ms,
+    updated_ms
+);
 
 #[derive(Clone, Debug)]
 pub struct Workspace {
@@ -70,52 +105,55 @@ fn subject_path(id: &str) -> String {
 }
 
 fn ws_row(r: &Row) -> rusqlite::Result<Workspace> {
-    let subject = r.get::<_, String>(12)? == "subject";
+    let subject = r.get::<_, String>(col_at!(WS_COLUMNS, "kind"))? == "subject";
     Ok(Workspace {
-        id: r.get(0)?,
-        name: r.get(1)?,
-        path: if subject { String::new() } else { r.get(2)? },
+        id: r.get(col_at!(WS_COLUMNS, "id"))?,
+        name: r.get(col_at!(WS_COLUMNS, "name"))?,
+        path: if subject {
+            String::new()
+        } else {
+            r.get(col_at!(WS_COLUMNS, "path"))?
+        },
         subject,
-        cwd: r.get(13)?,
-        parent_id: r.get(14)?,
-        folder_id: r.get(3)?,
-        pinned: r.get(4)?,
-        archived: r.get(5)?,
-        auto: r.get(6)?,
-        rank: r.get(7)?,
-        tabs: strings(r.get(8)?),
-        notify_idle: r.get(9)?,
-        created_ms: r.get(10)?,
-        updated_ms: r.get(11)?,
+        cwd: r.get(col_at!(WS_COLUMNS, "cwd"))?,
+        parent_id: r.get(col_at!(WS_COLUMNS, "parent_id"))?,
+        folder_id: r.get(col_at!(WS_COLUMNS, "folder_id"))?,
+        pinned: r.get(col_at!(WS_COLUMNS, "pinned"))?,
+        archived: r.get(col_at!(WS_COLUMNS, "archived"))?,
+        auto: r.get(col_at!(WS_COLUMNS, "auto"))?,
+        rank: r.get(col_at!(WS_COLUMNS, "rank"))?,
+        tabs: strings(r.get(col_at!(WS_COLUMNS, "tabs"))?),
+        notify_idle: r.get(col_at!(WS_COLUMNS, "notify_idle"))?,
+        created_ms: r.get(col_at!(WS_COLUMNS, "created_ms"))?,
+        updated_ms: r.get(col_at!(WS_COLUMNS, "updated_ms"))?,
     })
 }
 
 fn folder_row(r: &Row) -> rusqlite::Result<Folder> {
     Ok(Folder {
-        id: r.get(0)?,
-        name: r.get(1)?,
-        parent_id: r.get(2)?,
-        rank: r.get(3)?,
-        collapsed: r.get(4)?,
-        created_ms: r.get(5)?,
-        updated_ms: r.get(6)?,
+        id: r.get(col_at!(FOLDER_COLUMNS, "id"))?,
+        name: r.get(col_at!(FOLDER_COLUMNS, "name"))?,
+        parent_id: r.get(col_at!(FOLDER_COLUMNS, "parent_id"))?,
+        rank: r.get(col_at!(FOLDER_COLUMNS, "rank"))?,
+        collapsed: r.get(col_at!(FOLDER_COLUMNS, "collapsed"))?,
+        created_ms: r.get(col_at!(FOLDER_COLUMNS, "created_ms"))?,
+        updated_ms: r.get(col_at!(FOLDER_COLUMNS, "updated_ms"))?,
     })
 }
 
 fn group_row(r: &Row) -> rusqlite::Result<Group> {
     Ok(Group {
-        id: r.get(0)?,
-        name: r.get(1)?,
-        rank: r.get(2)?,
-        members: strings(r.get(3)?),
-        notify_idle: r.get(4)?,
-        created_ms: r.get(5)?,
-        updated_ms: r.get(6)?,
+        id: r.get(col_at!(GROUP_COLUMNS, "id"))?,
+        name: r.get(col_at!(GROUP_COLUMNS, "name"))?,
+        rank: r.get(col_at!(GROUP_COLUMNS, "rank"))?,
+        members: strings(r.get(col_at!(GROUP_COLUMNS, "members"))?),
+        notify_idle: r.get(col_at!(GROUP_COLUMNS, "notify_idle"))?,
+        created_ms: r.get(col_at!(GROUP_COLUMNS, "created_ms"))?,
+        updated_ms: r.get(col_at!(GROUP_COLUMNS, "updated_ms"))?,
     })
 }
 
 impl Workspace {
-    /// Where a new session of this workspace starts.
     pub fn start_dir(&self) -> &str {
         self.cwd.as_deref().unwrap_or(&self.path)
     }
@@ -160,14 +198,6 @@ impl Group {
             "createdAt": format_rfc3339(self.created_ms), "updatedAt": format_rfc3339(self.updated_ms),
         })
     }
-}
-
-pub fn sql<T>(r: rusqlite::Result<T>) -> Res<T> {
-    r.map_err(|e| (500, e.to_string()))
-}
-
-pub fn db(ctx: &Ctx) -> Res<Registry> {
-    Registry::open(&ctx.state_dir).map_err(|e| (500, e))
 }
 
 pub fn bad(msg: impl Into<String>) -> (u16, String) {
@@ -247,21 +277,17 @@ fn by_path(reg: &Registry, path: &str) -> Res<Option<Workspace>> {
 
 fn save(ctx: &Ctx, reg: &Registry, w: &mut Workspace, kind: &str) -> Res<()> {
     w.updated_ms = now_ms();
-    sql(reg.conn.execute(
-        "UPDATE workspaces SET name = ?2, folder_id = ?3, pinned = ?4, archived = ?5, rank = ?6, tabs = ?7,
-           notify_idle = ?8, updated_ms = ?9, cwd = ?10 WHERE id = ?1",
-        params![
-            w.id,
-            w.name,
-            w.folder_id,
-            w.pinned,
-            w.archived,
-            w.rank,
-            json!(w.tabs).to_string(),
-            w.notify_idle,
-            w.updated_ms,
-            w.cwd
-        ],
+    sql(update_row!(
+        reg.conn, "workspaces", id = w.id;
+        name = w.name,
+        folder_id = w.folder_id,
+        pinned = w.pinned,
+        archived = w.archived,
+        rank = w.rank,
+        tabs = json!(w.tabs).to_string(),
+        notify_idle = w.notify_idle,
+        updated_ms = w.updated_ms,
+        cwd = w.cwd,
     ))?;
     publish(
         kind,
@@ -565,7 +591,6 @@ pub fn ensure_submodules(ctx: &Ctx, reg: &Registry, parents: &[Workspace]) -> Re
     Ok(())
 }
 
-/// Runs submodule detection over every top-level workspace (start, rescan, every scan).
 pub fn scan_submodules(ctx: &Ctx) -> Res<()> {
     let reg = db(ctx)?;
     let top = all(&reg)?;
@@ -949,8 +974,6 @@ impl Index {
     }
 }
 
-/// The body of a term start for a workspace: validates `workspaceId` and defaults
-/// the cwd to the workspace's start directory.
 pub fn start_body(ctx: &Ctx, body: &Value) -> Res<Value> {
     let Some(id) = body["workspaceId"].as_str() else {
         return Ok(body.clone());
@@ -1013,7 +1036,7 @@ fn assign_term(ctx: &Ctx, id: &str, b: &Value) -> Res<Value> {
 fn out<T>(code: u16, r: Res<T>, f: impl FnOnce(T) -> Value) -> (u16, Value) {
     match r {
         Ok(v) => (code, f(v)),
-        Err((c, e)) => (c, json!({ "error": e })),
+        Err((c, e)) => err(c, e),
     }
 }
 
@@ -1032,10 +1055,13 @@ pub fn route(r: &Request, segs: &[&str], body: &Value, ctx: &Ctx) -> Option<(u16
         }),
         ("POST", ["v1", "workspaces"]) => match create(ctx, body) {
             Ok((created, w)) => (if created { 201 } else { 200 }, w.to_json(st)),
-            Err((c, e)) => (c, json!({ "error": e })),
+            Err((c, e)) => err(c, e),
         },
         ("PATCH", ["v1", "workspaces", id]) => out(200, patch(ctx, id, body), ws),
-        ("DELETE", ["v1", "workspaces", id]) => out(200, reg().and_then(|g| delete(&g, id)), |v| v),
+        ("DELETE", ["v1", "workspaces", id]) => {
+            crate::daemon::mark(crate::daemon::Effect::Rescan);
+            out(200, reg().and_then(|g| delete(&g, id)), |v| v)
+        }
         ("GET", ["v1", "folders"]) => out(200, reg().and_then(|g| folders(&g)), |v| {
             Value::Array(v.iter().map(Folder::to_json).collect())
         }),
@@ -1065,8 +1091,14 @@ pub fn route(r: &Request, segs: &[&str], body: &Value, ctx: &Ctx) -> Option<(u16
             out(200, reg().and_then(|g| delete_group(&g, id)), |v| v)
         }
         ("POST", ["v1", "broadcast"]) => out(200, crate::broadcast::post(ctx, body), |v| v),
-        ("PUT", ["v1", "lines", id, "workspace"]) => out(200, assign_line(ctx, id, body), |v| v),
-        ("PUT", ["v1", "terms", id, "workspace"]) => out(200, assign_term(ctx, id, body), |v| v),
+        ("PUT", ["v1", "lines", id, "workspace"]) => {
+            crate::daemon::mark(crate::daemon::Effect::Persist);
+            out(200, assign_line(ctx, id, body), |v| v)
+        }
+        ("PUT", ["v1", "terms", id, "workspace"]) => {
+            crate::daemon::mark(crate::daemon::Effect::Persist);
+            out(200, assign_term(ctx, id, body), |v| v)
+        }
         _ => return None,
     })
 }
@@ -1281,9 +1313,6 @@ mod tests {
 
     #[test]
     fn an_explicit_assignment_beats_derived_membership_and_unknown_ids_fall_back() {
-        // Given a task-linked line and a shell term, both explicitly assigned to /home/u
-        // When membership is resolved, then again once the assigned workspace is unknown
-        // Then the assignment wins over task and path, and an unknown id falls back to them
         let mut ix = Index {
             workspaces: vec![ws("/home/u"), ws("/home/u/src/app"), ws("/home/u/src/lib")],
             tasks: vec![Task {
@@ -1316,9 +1345,6 @@ mod tests {
 
     #[test]
     fn a_subject_never_matches_by_path_but_wins_when_assigned() {
-        // Given a dir workspace holding a line's cwd and a subject sharing that cwd
-        // When membership is resolved before and after assigning the line and a term to the subject
-        // Then the subject is never derived from the cwd and the assignment beats the dir workspace
         let mut subject = ws("subject:s1");
         subject.id = "s1".into();
         subject.path = String::new();
@@ -1350,9 +1376,6 @@ mod tests {
 
     #[test]
     fn a_subject_starts_in_its_cwd_and_a_dir_in_its_path() {
-        // Given a subject with a cwd and a dir workspace
-        // When their start directory is asked
-        // Then the subject answers its cwd and the dir its path, and the subject json has no path
         let mut s = ws("");
         s.subject = true;
         s.cwd = Some("/tmp".into());
@@ -1366,9 +1389,6 @@ mod tests {
 
     #[test]
     fn unassigning_a_line_clears_its_term_before_the_mark() {
-        // Given a term assignment and a line mark to clear
-        // When both are cleared through the helper
-        // Then the term is cleared first, so a scan in between cannot re-inherit it
         let order = std::cell::RefCell::new(vec![]);
         unassign_in_order(
             || order.borrow_mut().push("term"),

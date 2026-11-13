@@ -2,17 +2,6 @@ import type { AgentInfo, Effort } from './types';
 
 const ALL_EFFORTS: Effort[] = ['low', 'medium', 'high', 'max'];
 
-export const AUTO_APPROVE_ARGS: Record<string, string[]> = {
-  claude: ['--permission-mode', 'auto'],
-  codex: ['--ask-for-approval', 'never'],
-  gemini: ['--approval-mode=yolo'],
-  agy: ['--mode=auto'],
-  opencode: ['--auto'],
-  copilot: ['--allow-all'],
-  cursor: ['--force'],
-  vibe: ['--auto-approve'],
-};
-
 const NAMES: Record<string, string> = {
   claude: 'Claude Code',
   codex: 'Codex',
@@ -25,6 +14,8 @@ const NAMES: Record<string, string> = {
   vibe: 'Mistral Vibe',
   shell: 'Shell',
 };
+
+export const SHORT_NAMES: Record<string, string> = { claude: 'Claude', codex: 'Codex', gemini: 'Gemini', vibe: 'Vibe', shell: 'Shell' };
 
 export const FALLBACK_AGENTS: AgentInfo[] = [
   { id: 'claude', name: NAMES.claude, installed: true, models: ['opus', 'sonnet', 'haiku'], efforts: ALL_EFFORTS, resume: true, verified: true, sessions: true, turns: true },
@@ -48,8 +39,14 @@ export function splitInstalled(agents: AgentInfo[]): { installed: AgentInfo[]; m
   return { installed: agents.filter((a) => a.installed), missing: agents.filter((a) => !a.installed) };
 }
 
+export const SHELL_ID = 'shell';
+export const isShellId = (id: string | null | undefined): boolean => id === SHELL_ID;
+export const isAgentId = (id: string): boolean => id !== SHELL_ID;
+export const isShellItem = (i: { kind: string }): boolean => i.kind === SHELL_ID;
+export const isAgentItem = (i: { kind: string }): boolean => i.kind !== SHELL_ID;
+
 export function taskAgents(agents: AgentInfo[]): AgentInfo[] {
-  return ordered(agents.filter((a) => a.id !== 'shell'));
+  return ordered(agents.filter((a) => isAgentId(a.id)));
 }
 
 export function hasModel(a: AgentInfo | undefined): boolean {

@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { chartPaths, type Level } from '../../system/format';
+  import { chartPaths } from '../../system/format';
+  import type { Level } from '../../severity';
 
   let {
     times,

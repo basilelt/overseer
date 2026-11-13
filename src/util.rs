@@ -1,4 +1,8 @@
-use std::time::{Duration, Instant};
+pub const SHELL_FALLBACK: &str = r#"exec "${SHELL:-/bin/sh}""#;
+
+pub fn safe_session_id(id: &str) -> bool {
+    !(id.is_empty() || id.contains('/') || id.contains(".."))
+}
 
 pub fn ticket(s: &str) -> Option<String> {
     static KEYS: std::sync::OnceLock<Vec<String>> = std::sync::OnceLock::new();
@@ -13,8 +17,58 @@ pub fn ticket(s: &str) -> Option<String> {
     ticket_in(s, keys)
 }
 
+pub fn fnv1a(bytes: &[u8]) -> u64 {
+    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+    for b in bytes {
+        h ^= u64::from(*b);
+        h = h.wrapping_mul(0x0100_0000_01b3);
+    }
+    h
+}
+
+pub fn percent_encode(s: &str) -> String {
+    s.bytes()
+        .map(|b| match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'.' | b'_' | b'~' => {
+                (b as char).to_string()
+            }
+            _ => format!("%{b:02X}"),
+        })
+        .collect()
+}
+
+pub fn percent_decode(s: &str) -> String {
+    let b = s.as_bytes();
+    let mut out = Vec::with_capacity(b.len());
+    let mut i = 0;
+    while i < b.len() {
+        match b[i] {
+            b'%' if i + 3 <= b.len() => match s
+                .get(i + 1..i + 3)
+                .and_then(|h| u8::from_str_radix(h, 16).ok())
+            {
+                Some(x) => {
+                    out.push(x);
+                    i += 2;
+                }
+                None => out.push(b'%'),
+            },
+            b'+' => out.push(b' '),
+            c => out.push(c),
+        }
+        i += 1;
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
 pub fn ticket_any(s: &str) -> Option<String> {
     ticket(&s.to_ascii_uppercase())
+}
+
+pub fn ticket_exact(k: &str) -> Result<String, String> {
+    ticket_any(k)
+        .filter(|t| t.eq_ignore_ascii_case(k))
+        .ok_or_else(|| format!("'{k}' is not a ticket key (PROJECT-123)"))
 }
 
 fn ticket_in(s: &str, keys: &[String]) -> Option<String> {
@@ -158,6 +212,13 @@ pub fn format_rfc3339(ms: i64) -> String {
     )
 }
 
+pub fn now_ms() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0)
+}
+
 pub fn ulid(ms: i64) -> String {
     const A: &[u8] = b"0123456789ABCDEFGHJKMNPQRSTVWXYZ";
     let mut rnd = [0u8; 10];
@@ -178,9 +239,6 @@ pub fn ulid(ms: i64) -> String {
         .collect()
 }
 
-const SUPERVISE_MAX_BACKOFF: Duration = Duration::from_secs(60);
-const SUPERVISE_HEALTHY: Duration = Duration::from_secs(300);
-
 pub fn panic_text(p: &(dyn std::any::Any + Send)) -> String {
     p.downcast_ref::<&str>()
         .map(|s| s.to_string())
@@ -188,69 +246,41 @@ pub fn panic_text(p: &(dyn std::any::Any + Send)) -> String {
         .unwrap_or_else(|| "unknown panic".into())
 }
 
-pub fn supervise<F>(name: &'static str, f: F) -> bool
-where
-    F: Fn() + Send + 'static,
-{
-    supervise_with(name, Duration::from_secs(1), f)
-}
-
-pub fn supervise_with<F>(name: &'static str, first: Duration, f: F) -> bool
-where
-    F: Fn() + Send + 'static,
-{
-    std::thread::Builder::new()
-        .name(name.into())
-        .spawn(move || {
-            let mut backoff = first;
-            loop {
-                let began = Instant::now();
-                let Err(p) = std::panic::catch_unwind(std::panic::AssertUnwindSafe(&f)) else {
-                    return;
-                };
-                if began.elapsed() >= SUPERVISE_HEALTHY {
-                    backoff = first;
-                }
-                crate::dlog::line(
-                    "error",
-                    &format!(
-                        "overseer daemon: {name} thread panicked ({}); restarting in {} ms",
-                        panic_text(p.as_ref()),
-                        backoff.as_millis()
-                    ),
-                );
-                std::thread::sleep(backoff);
-                backoff = (backoff * 2).min(SUPERVISE_MAX_BACKOFF);
-            }
-        })
-        .is_ok()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn supervised_threads_restart_after_a_panic_and_stop_when_done() {
-        use std::sync::atomic::{AtomicUsize, Ordering};
-        use std::sync::Arc;
-        let runs = Arc::new(AtomicUsize::new(0));
-        let (tx, rx) = std::sync::mpsc::channel();
-        let r = runs.clone();
-        assert!(supervise_with(
-            "sb-test-sup",
-            Duration::from_millis(5),
-            move || {
-                let n = r.fetch_add(1, Ordering::SeqCst) + 1;
-                if n < 3 {
-                    panic!("boom {n}");
-                }
-                let _ = tx.send(n);
-            }
-        ));
-        assert_eq!(rx.recv_timeout(Duration::from_secs(5)), Ok(3));
-        std::thread::sleep(Duration::from_millis(50));
-        assert_eq!(runs.load(Ordering::SeqCst), 3);
+    fn session_ids_with_path_parts_are_unsafe() {
+        assert!(safe_session_id("abc-123"));
+        for bad in ["", "a/b", "..", "a..b", "../x"] {
+            assert!(!safe_session_id(bad), "{bad}");
+        }
+    }
+
+    #[test]
+    fn the_shell_fallback_is_the_login_shell_or_sh() {
+        assert_eq!(SHELL_FALLBACK, "exec \"${SHELL:-/bin/sh}\"");
+    }
+
+    #[test]
+    fn percent_encode_keeps_unreserved_and_escapes_the_rest() {
+        assert_eq!(percent_encode("aZ09-._~"), "aZ09-._~");
+        assert_eq!(percent_encode("a b/é&"), "a%20b%2F%C3%A9%26");
+    }
+
+    #[test]
+    fn percent_decode_inverts_encode_and_reads_plus_as_space() {
+        assert_eq!(percent_decode("a%20b%67"), "a bg");
+        assert_eq!(percent_decode("a+b"), "a b");
+        assert_eq!(percent_decode("100%"), "100%");
+        assert_eq!(percent_decode("%zz%4"), "%zz%4");
+        let s = "a b/é&~";
+        assert_eq!(percent_decode(&percent_encode(s)), s);
+    }
+
+    #[test]
+    fn panic_text_reads_str_string_and_other_payloads() {
         assert_eq!(panic_text(&"x"), "x");
         assert_eq!(panic_text(&String::from("y")), "y");
         assert_eq!(panic_text(&5u8), "unknown panic");
@@ -271,6 +301,16 @@ mod tests {
         assert_eq!(ticket("AS-"), None);
         assert_eq!(ticket("AS-x"), None);
         assert_eq!(ticket_any("proj-9").as_deref(), Some("PROJ-9"));
+    }
+
+    #[test]
+    fn exact_ticket_keys_only() {
+        assert_eq!(ticket_exact("proj-9").as_deref(), Ok("PROJ-9"));
+        assert_eq!(
+            ticket_exact("feat/AS-1"),
+            Err("'feat/AS-1' is not a ticket key (PROJECT-123)".to_string())
+        );
+        assert!(ticket_exact("").is_err());
     }
 
     #[test]

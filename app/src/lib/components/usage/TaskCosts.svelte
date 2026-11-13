@@ -2,8 +2,8 @@
   import { app } from '../../state.svelte';
   import { t } from '../../i18n.svelte';
   import { agentName } from '../../agents';
-  import { findProfile } from '../../profiles';
-  import { costRows, type CostBy } from '../../cost';
+  import { findProfile } from '../../profiles/profiles';
+  import { costRows, type CostBy } from '../../kanban/cost';
   import { formatCost } from '../../usage/format';
   import AgentGlyph from '../ui/AgentGlyph.svelte';
 

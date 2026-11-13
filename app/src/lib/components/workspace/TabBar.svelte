@@ -5,9 +5,7 @@
 </script>
 
 <script lang="ts">
-  import { hostColor, hostName } from '../../hosts';
-  import { ust } from '../../usage/strings';
-  import { gt } from '../../github/strings';
+  import { hostColor, hostName } from '../../host/hosts';
   import Columns2 from '@lucide/svelte/icons/columns-2';
   import Rows2 from '@lucide/svelte/icons/rows-2';
   import X from '@lucide/svelte/icons/x';
@@ -16,25 +14,26 @@
   import Globe from '@lucide/svelte/icons/globe';
   import GitBranch from '@lucide/svelte/icons/git-branch';
   import Megaphone from '@lucide/svelte/icons/megaphone';
-  import { st } from '../../system/strings';
-  import { settings } from '../../settings.svelte';
-  import { projectName } from '../../state.svelte';
-  import { coarsePointer, focusSession, stripScroll, tabInfo, type TabInfo } from '../../tabs';
-  import { broadcastTo, newSessionItems } from '../../wsactions';
-  import { wsDropTarget } from '../../workspaces';
+  import { settings } from '../../settings/settings.svelte';
+  import { tabLabel } from '../../tabs/tab-label';
+  import { coarsePointer, focusSession, stripScroll, tabInfo, type TabInfo } from '../../tabs/tabs';
+  import { broadcastTo, newSessionItems } from '../../workspace/wsactions';
+  import { wsDropTarget } from '../../workspace/workspaces';
   import { t, type Key } from '../../i18n.svelte';
   import { app, tabLazy } from '../../state.svelte';
+  import { armedConfirm } from '../../armed-confirm.svelte';
   import { whenIdle } from '../../idle';
-  import { closePaneAt, closeTabAt, openInFocused, reorderTab, split, update, type Pane } from '../../workspace.svelte';
-  import AgentIcon, { GROUP_COLOR } from '../sidebar/AgentIcon.svelte';
+  import { closePaneAt, closeTabAt, openInFocused, reorderTab, split, update, type Pane } from '../../workspace/workspace.svelte';
+  import AgentIcon from '../sidebar/AgentIcon.svelte';
   import ReviewBadge from '../review/ReviewBadge.svelte';
-  import { itemTarget, reviewTitle } from '../../review/open';
+  import { itemTarget } from '../../review/open';
   import { liveOn } from '../../git/live.svelte';
   import { chatCapable } from '../../chat/viewmode';
   import ModeToggle from '../chat/ModeToggle.svelte';
-  import { chipLabel, chipShort } from '../../profiles';
+  import { chipLabel, chipShort } from '../../profiles/profiles';
   import { formatCost } from '../../usage/format';
-  import { pages } from '../../session-pages.svelte';
+  import { pages } from '../../session/session-pages.svelte';
+  import { GROUP_COLOR } from '../../workspace/ws-color';
 
   let { pane, index, focused, canClose }: { pane: Pane; index: number; focused: boolean; canClose: boolean } = $props();
 
@@ -80,23 +79,7 @@
   const costOf = (tab: TabInfo) => (tab.item?.lineId ? app.data.activity[tab.item.lineId]?.cost : undefined);
   const effortLabel = (e: string) => t('profile.effortOf', { effort: t(`effort.${e}` as Key).toLowerCase() });
 
-  function label(tab: TabInfo): string {
-    if (tab.item) return tab.item.title;
-    if (tab.kind === 'browser') {
-      try {
-        return tab.arg ? new URL(tab.arg).host || tab.arg : t('tabs.browser');
-      } catch {
-        return tab.arg || t('tabs.browser');
-      }
-    }
-    if (tab.kind === 'review') return t('tabs.review', { title: reviewTitle(tab.key) ?? tab.arg });
-    if (tab.kind === 'graph') return t('tabs.graphOf', { name: projectName(app.projects, tab.arg) });
-    if (tab.kind === 'worktrees') return t('tabs.worktreesOf', { name: projectName(app.projects, tab.arg) });
-    if (tab.kind === 'system') return st('title');
-    if (tab.kind === 'usage') return ust('title');
-    if (tab.kind === 'prs') return gt('title');
-    return tab.key;
-  }
+  const label = (tab: TabInfo) => tabLabel(tab);
 
   function openAdd(e?: MouseEvent) {
     const r = plus?.getBoundingClientRect();
@@ -161,7 +144,6 @@
 
   let suppress = false;
 
-  // The rename input loads in the first idle moment, or on first use if sooner.
   let Extra = $state.raw<typeof import('./TabTitleExtra.svelte').default | null>(null);
   const loadExtra = () => (Extra ? Promise.resolve() : tabLazy().then((m) => void (Extra = m.TabTitleExtra)));
   $effect(() => whenIdle(() => void loadExtra().catch(() => {})));
@@ -178,7 +160,8 @@
     }
     app.multi = new Set();
     activate(key);
-    if (e.detail > 0 && !coarsePointer() && tabInfo(key, app.items)?.item) {
+    const info = tabInfo(key, app.items);
+    if (e.detail > 0 && !coarsePointer() && (info?.item || info?.kind === 'review')) {
       const pane = (e.currentTarget as HTMLElement | null)?.closest('.pane');
       requestAnimationFrame(() => focusSession(pane));
     }
@@ -193,25 +176,17 @@
   const term = $derived(activeItem?.termId ? app.data.terms.find((x) => x.id === activeItem.termId) : undefined);
   const killable = $derived(!!term && !term.exited);
 
-  let confirming = $state(false);
+  const confirm = armedConfirm();
   let killing = $state(false);
-  let confirmTimer: ReturnType<typeof setTimeout> | undefined;
 
   $effect(() => {
     term?.id;
-    confirming = false;
-    clearTimeout(confirmTimer);
+    confirm.reset();
   });
 
   async function kill() {
     if (!term || !killable) return;
-    if (!confirming) {
-      confirming = true;
-      confirmTimer = setTimeout(() => (confirming = false), 3000);
-      return;
-    }
-    clearTimeout(confirmTimer);
-    confirming = false;
+    if (!confirm.press()) return;
     killing = true;
     try {
       await app.api.killTerm(term.id);
@@ -244,7 +219,6 @@
     if (Extra) editing = edit;
     else void loadExtra().then(() => (editing = edit));
   }
-  // Several hosts in this window: every tab says which one it runs on.
   const hostTag = $derived(app.hosts.length > 1 && settings.hostTabColor && app.link ? { name: hostName(app.link.target), color: hostColor(app.link.key) } : null);
 </script>
 
@@ -323,14 +297,14 @@
     {#if term}
       <button
         class="icon-btn kill"
-        class:confirm={confirming}
+        class:confirm={confirm.armed}
         disabled={!killable || killing}
-        title={!killable ? t('term.killExited') : confirming ? t('term.killConfirm') : t('term.kill')}
-        aria-label={confirming ? t('term.killConfirm') : t('term.kill')}
+        title={!killable ? t('term.killExited') : confirm.armed ? t('term.killConfirm') : t('term.kill')}
+        aria-label={confirm.armed ? t('term.killConfirm') : t('term.kill')}
         onclick={kill}
-        onblur={() => (confirming = false)}
+        onblur={confirm.reset}
       >
-        <OctagonX size={14} />{#if confirming}<span>{t('term.killConfirmShort')}</span>{/if}
+        <OctagonX size={14} />{#if confirm.armed}<span>{t('term.killConfirmShort')}</span>{/if}
       </button>
     {/if}
     <button class="icon-btn" title={t('term.splitRight')} aria-label={t('term.splitRight')} onclick={() => update((l) => split(l, 'horizontal'))}
@@ -469,7 +443,6 @@
   .slot > * {
     grid-area: 1 / 1;
   }
-  /* While renaming, the input takes the title's place. */
   .label:has(:global(.name-input)) > .name {
     display: none;
   }

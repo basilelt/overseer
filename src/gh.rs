@@ -1,6 +1,5 @@
 use serde_json::{json, Value};
 use std::collections::HashMap;
-use std::process::Command;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
@@ -43,16 +42,19 @@ pub fn ci(rollup: &Value) -> &'static str {
 }
 
 fn fetch(repo: &str, branch: &str) -> Value {
-    use crate::git::RunError;
-    let out = match crate::git::run_within(
-        Command::new("gh")
-            .args(["pr", "list", "--state", "all", "--limit", "1"])
-            .arg(format!("--repo={repo}"))
-            .arg(format!("--head={branch}"))
-            .arg("--json=number,url,state,isDraft,title,baseRefName,statusCheckRollup")
-            .env("GH_PROMPT_DISABLED", "1")
-            .env("GH_NO_UPDATE_NOTIFIER", "1")
-            .env("NO_COLOR", "1"),
+    use crate::exec::RunError;
+    let out = match crate::git::run_gh(
+        [
+            "pr",
+            "list",
+            "--state",
+            "all",
+            "--limit",
+            "1",
+            &format!("--repo={repo}"),
+            &format!("--head={branch}"),
+            "--json=number,url,state,isDraft,title,baseRefName,statusCheckRollup",
+        ],
         TIMEOUT,
     ) {
         Ok(o) => o,

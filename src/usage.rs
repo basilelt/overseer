@@ -1,5 +1,7 @@
 use crate::activity::read_lines;
+use crate::agents::Transcript;
 use crate::claude_limits::{outcome, read_creds, Auth, Outcome, Token, ACTIVE_MS, REFRESH_MS};
+use crate::http::err;
 use crate::util::{format_rfc3339, parse_rfc3339};
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
@@ -500,17 +502,25 @@ pub(crate) struct Meter {
 }
 
 impl Meter {
-    pub(crate) fn line(&mut self, agent: &str, line: &[u8]) -> Vec<(String, Tokens, bool)> {
+    pub(crate) fn line(
+        &mut self,
+        kind: Option<Transcript>,
+        line: &[u8],
+    ) -> Vec<(String, Tokens, bool)> {
         let mut b = Batch::default();
-        match agent {
-            "codex" => codex_line(&mut self.c, line, &mut b),
-            "gemini" => {
+        match kind {
+            Some(Transcript::Codex) => codex_line(&mut self.c, line, &mut b),
+            Some(Transcript::Gemini) => {
                 if let Ok(v) = serde_json::from_slice::<Value>(line) {
                     gemini_msg(&mut self.c, &v, &mut b);
                 }
             }
-            _ if !contains(line, "\"usage\"") => return vec![],
-            _ => claude_line(&mut self.c, true, line, &mut b),
+            Some(Transcript::Claude) | Some(Transcript::Vibe) | None => {
+                if !contains(line, "\"usage\"") {
+                    return vec![];
+                }
+                claude_line(&mut self.c, true, line, &mut b)
+            }
         }
         Self::turns(b)
     }
@@ -573,7 +583,7 @@ fn walk_jsonl(dir: &Path, depth: u32, out: &mut Vec<PathBuf>) {
 fn discover(d: &Dirs, cutoff: i64) -> Vec<Found> {
     let mut out = vec![];
     let fresh = |p: &Path| mtime_len(p).is_some_and(|(m, _)| m >= cutoff);
-    if let Ok(projects) = std::fs::read_dir(d.claude.join("projects")) {
+    if let Ok(projects) = std::fs::read_dir(crate::claude::projects_dir(&d.claude)) {
         for proj in projects.flatten().filter(|e| e.path().is_dir()) {
             let Ok(rd) = std::fs::read_dir(proj.path()) else {
                 continue;
@@ -738,11 +748,11 @@ impl Index {
                 })
                 .map_err(|e| e.to_string())?;
             for (path, agent, session, cwd, sub, cursor) in rows.flatten() {
-                let agent = match agent.as_str() {
-                    "claude" => "claude",
-                    "codex" => "codex",
-                    "gemini" => "gemini",
-                    _ => continue,
+                let Some(agent) = crate::agents::get(&agent)
+                    .filter(|a| a.metered)
+                    .map(|a| a.id)
+                else {
+                    continue;
                 };
                 files.insert(
                     PathBuf::from(path),
@@ -882,14 +892,17 @@ impl Index {
                 return Ok(false);
             };
             let (agent, sub) = (t.agent, t.sub);
-            let end = read_lines(&mut f, c.offset, len, |line| match agent {
-                "codex" => codex_line(&mut c, line, &mut b),
-                "gemini" => {
+            let kind = crate::agents::transcript_of(agent);
+            let end = read_lines(&mut f, c.offset, len, |line| match kind {
+                Some(Transcript::Codex) => codex_line(&mut c, line, &mut b),
+                Some(Transcript::Gemini) => {
                     if let Ok(v) = serde_json::from_slice::<Value>(line) {
                         gemini_msg(&mut c, &v, &mut b);
                     }
                 }
-                _ => claude_line(&mut c, sub, line, &mut b),
+                Some(Transcript::Claude) | Some(Transcript::Vibe) | None => {
+                    claude_line(&mut c, sub, line, &mut b)
+                }
             });
             if let Some(e) = end {
                 c.offset = e;
@@ -1231,12 +1244,13 @@ pub fn query(
         .map(|(d, s)| json!({"day": day_label(*d), "usage": s.json()}))
         .collect();
     let mut agent_names: Vec<String> = seen_agents.into_iter().collect();
-    for a in ["claude", "codex", "gemini"] {
+    for agent in crate::agents::AGENTS.iter().filter(|a| a.metered) {
+        let a = agent.id;
         if !agent_names.iter().any(|x| x == a)
             && (kv_get::<Limits>(conn, &format!("limits.{a}")).is_some()
                 || kv_get::<LimitHit>(conn, &format!("hit.{a}")).is_some()
                 || (q.oauth && kv_get::<Auth>(conn, &format!("oauth.{a}.auth")).is_some())
-                || (a == "claude" && q.tap.is_some()))
+                || (agent.transcript == Some(Transcript::Claude) && q.tap.is_some()))
         {
             agent_names.push(a.to_string());
         }
@@ -1252,7 +1266,9 @@ pub fn query(
             json!({
                 "agent": a,
                 "today": today,
-                "limits": limits_json(conn, a, q.now, q.oauth, q.tap.as_ref().filter(|_| a == "claude")),
+                "limits": limits_json(conn, a, q.now, q.oauth, q.tap
+                    .as_ref()
+                    .filter(|_| crate::agents::get(a).is_some_and(|x| x.oauth_limits))),
             })
         })
         .collect();
@@ -1402,7 +1418,7 @@ pub fn init(state_dir: &Path, claude: PathBuf, codex: PathBuf, gemini: PathBuf) 
                 codex,
                 gemini,
             }),
-            db: state_dir.join("usage.db"),
+            db: state_dir.join(crate::paths::USAGE_DB),
             started: false,
             poked: false,
             full: true,
@@ -1443,7 +1459,7 @@ fn demand(now: i64, oauth: bool) -> Option<(PathBuf, bool)> {
         s.indexing = true;
         let dirs = s.dirs.take()?;
         let db = s.db.clone();
-        if !crate::util::supervise("usage", move || worker(db.clone(), dirs.clone())) {
+        if !crate::dlog::supervise("usage", move || worker(db.clone(), dirs.clone())) {
             return None;
         }
     } else if stale {
@@ -1464,7 +1480,7 @@ fn worker(db: PathBuf, dirs: Dirs) {
     };
     let first = !idx.indexed;
     let pace = first.then_some(Duration::from_millis(2));
-    match idx.sweep(crate::procs::now_ms(), true, pace) {
+    match idx.sweep(crate::util::now_ms(), true, pace) {
         Ok(_) => crate::board::publish("usage.updated", json!({})),
         Err(e) => crate::dlog::line("error", &format!("usage: {e}")),
     }
@@ -1480,7 +1496,7 @@ fn worker(db: PathBuf, dirs: Dirs) {
         let full = {
             let mut g = SHARED.lock().unwrap_or_else(|e| e.into_inner());
             loop {
-                let now = crate::procs::now_ms();
+                let now = crate::util::now_ms();
                 match g.as_mut() {
                     Some(s) if s.poked && demanded(s, now) => {
                         s.poked = false;
@@ -1494,7 +1510,7 @@ fn worker(db: PathBuf, dirs: Dirs) {
             }
         };
         std::thread::sleep(Duration::from_millis(DEBOUNCE_MS));
-        let swept = match idx.sweep(crate::procs::now_ms(), full, None) {
+        let swept = match idx.sweep(crate::util::now_ms(), full, None) {
             Ok(c) => c,
             Err(e) => {
                 crate::dlog::line("error", &format!("usage: {e}"));
@@ -1511,7 +1527,7 @@ fn worker(db: PathBuf, dirs: Dirs) {
 }
 
 fn claude_limits_due(idx: &Index, tap: Option<&Limits>) -> bool {
-    let now = crate::procs::now_ms();
+    let now = crate::util::now_ms();
     if crate::claude_limits::tap_covers(tap.map(|t| t.at), now) {
         return false;
     }
@@ -1541,43 +1557,35 @@ fn claude_limits_due(idx: &Index, tap: Option<&Limits>) -> bool {
     }
 }
 
-pub fn api(r: &crate::daemon::Request, lines: &[crate::Line]) -> (u16, Value) {
-    let now = crate::procs::now_ms();
-    let Some(range) = Range::parse(crate::daemon::q(r, "range")) else {
-        return (400, json!({"error": "range must be today, 7d or 30d"}));
+pub fn api(r: &crate::http::Request, lines: &[crate::Line]) -> (u16, Value) {
+    let now = crate::util::now_ms();
+    let Some(range) = Range::parse(crate::http::q(r, "range")) else {
+        return err(400, "range must be today, 7d or 30d");
     };
-    let by = crate::daemon::q(r, "by").unwrap_or("agent");
+    let by = crate::http::q(r, "by").unwrap_or("agent");
     if !matches!(by, "agent" | "project" | "model" | "session") {
-        return (
-            400,
-            json!({"error": "by must be agent, project, model or session"}),
-        );
+        return err(400, "by must be agent, project, model or session");
     }
-    let tz = match crate::daemon::q(r, "tzOffset").map(|s| s.parse::<i64>()) {
+    let tz = match crate::http::q(r, "tzOffset").map(|s| s.parse::<i64>()) {
         None => 0,
         Some(Ok(m)) if (-14 * 60..=14 * 60).contains(&m) => m,
-        _ => {
-            return (
-                400,
-                json!({"error": "tzOffset must be minutes east of UTC"}),
-            )
-        }
+        _ => return err(400, "tzOffset must be minutes east of UTC"),
     };
-    let wanted = crate::daemon::q(r, "line");
+    let wanted = crate::http::q(r, "line");
     let session = match wanted {
         None => None,
         Some(id) => match lines.iter().find(|l| l.id == id) {
             Some(l) => Some((l.agent, l.session_id.as_str())),
-            None => return (404, json!({"error": format!("no line {id}")})),
+            None => return err(404, format!("no line {id}")),
         },
     };
-    let oauth = crate::daemon::q(r, "claudeLimits") == Some("1");
+    let oauth = r.is_one("claudeLimits");
     let Some((db, indexing)) = demand(now, oauth) else {
-        return (503, json!({"error": "usage is not available"}));
+        return err(503, "usage is not available");
     };
     let conn = match open_db(&db) {
         Ok(c) => c,
-        Err(e) => return (500, json!({"error": e})),
+        Err(e) => return err(500, e),
     };
     let map: HashMap<(String, String), LineInfo> = lines
         .iter()
@@ -1606,7 +1614,7 @@ pub fn api(r: &crate::daemon::Request, lines: &[crate::Line]) -> (u16, Value) {
             v["indexing"] = json!(indexing);
             (200, v)
         }
-        Err(e) => (500, json!({"error": e})),
+        Err(e) => err(500, e),
     }
 }
 
@@ -1624,7 +1632,7 @@ mod tests {
         let d = std::env::temp_dir().join(format!(
             "sb-usage-{tag}-{}-{}",
             std::process::id(),
-            crate::procs::now_ms()
+            crate::util::now_ms()
         ));
         std::fs::create_dir_all(&d).unwrap();
         d
@@ -1646,9 +1654,6 @@ mod tests {
 
     #[test]
     fn many_threads_opening_a_fresh_database_at_once_all_get_a_connection() {
-        // Given a state dir without a usage database, as on the first request after a start
-        // When the indexer and several api requests open it at the same moment
-        // Then none of them fails with "database is locked"
         for round in 0..20 {
             let db = tmp(&format!("race{round}")).join("usage.db");
             let gate = std::sync::Barrier::new(8);
@@ -1706,7 +1711,7 @@ mod tests {
     }
 
     fn real_now() -> i64 {
-        crate::procs::now_ms()
+        crate::util::now_ms()
     }
 
     #[test]
@@ -2245,7 +2250,7 @@ mod tests {
             );
         }
         init(&d, d.join("claude"), d.join("codex"), d.join("gemini"));
-        let req = |q: &[(&str, &str)]| crate::daemon::Request {
+        let req = |q: &[(&str, &str)]| crate::http::Request {
             method: "GET".into(),
             path: "/v1/usage".into(),
             query: q

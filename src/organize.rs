@@ -1,6 +1,6 @@
 use crate::board::publish;
-use crate::daemon::{q, Request};
-use crate::registry::Registry;
+use crate::http::{err, q, Request};
+use crate::registry::{self, sql, Registry};
 use crate::task_agents::CONFIGURATOR;
 use crate::tasks::{self, Task};
 use crate::util::{format_rfc3339, ticket, ulid};
@@ -33,24 +33,13 @@ const KINDS: &[&str] = &[
     "set_task_status",
     "track",
 ];
-const TASK_STATUSES: &[&str] = &["pending", "in_testing", "merged", "completed"];
 const WHY: &[&str] = &["dirty", "todos", "recent"];
 
-fn sql<T>(r: rusqlite::Result<T>) -> Res<T> {
-    r.map_err(|e| (500, e.to_string()))
-}
-
-pub fn ensure(reg: &Registry) -> Res<()> {
-    sql(reg.conn.execute_batch(
-        "CREATE TABLE IF NOT EXISTS proposals (id TEXT PRIMARY KEY, created_ms INTEGER NOT NULL,
-           status TEXT NOT NULL, source TEXT NOT NULL, task_id TEXT, body TEXT NOT NULL, results TEXT)",
-    ))
-}
+pub const SCHEMA: &str = "CREATE TABLE IF NOT EXISTS proposals (id TEXT PRIMARY KEY, created_ms INTEGER NOT NULL,
+           status TEXT NOT NULL, source TEXT NOT NULL, task_id TEXT, body TEXT NOT NULL, results TEXT)";
 
 fn db(ctx: &Ctx) -> Res<Registry> {
-    let reg = Registry::open(&ctx.state_dir).map_err(|e| (500, e))?;
-    ensure(&reg)?;
-    Ok(reg)
+    registry::db_with(ctx, SCHEMA)
 }
 
 fn trunc(s: &str, max: usize) -> String {
@@ -244,10 +233,10 @@ pub fn validate(plan: &Value, w: &World) -> Result<Value, Vec<String>> {
                     .find(|t| t.id == id)
                     .ok_or(format!("no task {id}"))?;
                 let st = s("status").unwrap_or("");
-                if !TASK_STATUSES.contains(&st) {
+                if !crate::status::PROPOSAL_SETTABLE.contains(&st) {
                     return Err(format!(
                         "status must be one of {}",
-                        TASK_STATUSES.join(", ")
+                        crate::status::PROPOSAL_SETTABLE.join(", ")
                     ));
                 }
                 n["taskId"] = json!(id);
@@ -368,7 +357,7 @@ pub fn deterministic(i: &Input) -> Value {
         reasons: Map::new(),
     };
     let local = |l: &Line| l.station_id.is_empty() || l.station_id == i.station;
-    let live = |l: &&Line| l.state != "hung-up" && !l.duplicate;
+    let live = |l: &&Line| l.state != crate::wire::STATE_HUNG_UP && !l.duplicate;
     let repo_root = |l: &Line| {
         let path = if l.worktree_path.is_empty() {
             &l.cwd
@@ -487,7 +476,8 @@ pub fn deterministic(i: &Input) -> Value {
             );
         }
     }
-    let open = |t: &Task| !crate::tasks::is_done(&t.status) && !crate::task_agents::is_organizer(t);
+    let open =
+        |t: &Task| !crate::status::is_done(&t.status) && !crate::task_agents::is_organizer(t);
     for t in i.tasks.iter().filter(|t| open(t)) {
         let running = t.status == "in_progress" && !t.from_session();
         if !running && t.branch.is_some() && (i.landed)(t) == Some(true) {
@@ -544,7 +534,7 @@ fn pick_up(i: &Input) -> Vec<Value> {
         .lines
         .iter()
         .filter(|l| {
-            l.state != "hung-up"
+            l.state != crate::wire::STATE_HUNG_UP
                 && !l.duplicate
                 && !l.busy
                 && !l.cwd_missing
@@ -557,7 +547,7 @@ fn pick_up(i: &Input) -> Vec<Value> {
     let done = |l: &Line| {
         i.tasks.iter().any(|t| {
             t.line_id.as_deref() == Some(l.id.as_str())
-                && (crate::tasks::is_done(&t.status) || (i.landed)(t) == Some(true))
+                && (crate::status::is_done(&t.status) || (i.landed)(t) == Some(true))
         })
     };
     let mut out: Vec<(usize, i64, Value)> = cands
@@ -628,7 +618,7 @@ pub fn list(reg: &Registry) -> Res<Vec<Value>> {
 }
 
 pub fn store(reg: &Registry, plan: &Value, source: &str, task: Option<&str>) -> Res<Value> {
-    let now = crate::procs::now_ms();
+    let now = crate::util::now_ms();
     let id = ulid(now);
     sql(reg.conn.execute(
         "INSERT INTO proposals (id, created_ms, status, source, task_id, body) VALUES (?1, ?2, 'pending_review', ?3, ?4, ?5)",
@@ -660,9 +650,9 @@ fn index(ctx: &Ctx, lines: &[Line]) -> Res<workspaces::Index> {
 
 fn world_check(ctx: &Ctx, reg: &Registry, plan: &Value) -> Result<Value, (u16, Value)> {
     let lines = crate::daemon::lines(ctx);
-    let ws = workspaces::all(reg).map_err(|(c, e)| (c, json!({"error": e})))?;
-    let folders = workspaces::folders(reg).map_err(|(c, e)| (c, json!({"error": e})))?;
-    let tasks = tasks::all(reg).map_err(|(c, e)| (c, json!({"error": e})))?;
+    let ws = workspaces::all(reg).map_err(|(c, e)| err(c, e))?;
+    let folders = workspaces::folders(reg).map_err(|(c, e)| err(c, e))?;
+    let tasks = tasks::all(reg).map_err(|(c, e)| err(c, e))?;
     let remote = |id: &str| crate::board::remote_station(ctx, id).is_some();
     validate(
         plan,
@@ -683,18 +673,14 @@ fn world_check(ctx: &Ctx, reg: &Registry, plan: &Value) -> Result<Value, (u16, V
 }
 
 pub fn build(ctx: &Ctx) -> Result<Value, (u16, Value)> {
-    let e = |(c, e): (u16, String)| (c, json!({ "error": e }));
+    let e = |(c, e): (u16, String)| err(c, e);
     let lines = crate::daemon::lines(ctx);
     let ix = index(ctx, &lines).map_err(e)?;
     let reg = db(ctx).map_err(e)?;
     let folders = workspaces::folders(&reg).map_err(e)?;
     let groups = workspaces::groups(&reg).map_err(e)?;
     let member = |l: &Line| ix.of_line(l).map(|w| w.id.clone());
-    let landed = |t: &Task| {
-        t.branch
-            .as_deref()
-            .and_then(|b| crate::worktrees::landed_cached(&t.project, b))
-    };
+    let landed = |t: &Task| crate::worktrees::branch_landed_cached(&t.project, t.branch.as_deref());
     let activity = |l: &Line| {
         crate::activity::find_transcript(
             &ctx.claude_dir,
@@ -731,16 +717,16 @@ pub fn build(ctx: &Ctx) -> Result<Value, (u16, Value)> {
 }
 
 fn record(ctx: &Ctx, b: &Value) -> Result<Value, (u16, Value)> {
-    let e = |(c, e): (u16, String)| (c, json!({ "error": e }));
+    let e = |(c, e): (u16, String)| err(c, e);
     let reg = db(ctx).map_err(e)?;
     let task = match b["taskId"].as_str() {
         None => None,
         Some(id) => {
             let t = tasks::get(&reg, id).map_err(e)?;
             if t.origin.as_deref() != Some(CONFIGURATOR) {
-                return Err((
+                return Err(err(
                     403,
-                    json!({"error": "only the session configurator may propose an organization"}),
+                    "only the session configurator may propose an organization",
                 ));
             }
             Some(t.id)
@@ -968,7 +954,7 @@ pub fn run_action(
             }
             let l = line().ok_or(format!("no line {}", s("lineId")))?;
             if k == "close" {
-                if l.state == "hung-up" {
+                if l.state == crate::wire::STATE_HUNG_UP {
                     return Ok(skipped("already closed"));
                 }
                 if l.busy || l.needs_input {
@@ -976,7 +962,7 @@ pub fn run_action(
                 }
                 ops.close(l)?;
             } else {
-                if l.held_reason.is_some() || l.state == "held" {
+                if l.held_reason.is_some() || l.state == crate::wire::STATE_HELD {
                     return Ok(skipped("already held"));
                 }
                 if !l.alive() {
@@ -1109,18 +1095,17 @@ Call propose_organization exactly once with the whole plan, then reply with a on
 fn start(ctx: &Ctx, b: &Value) -> Res<Value> {
     let agent = crate::feedback::agent_for(b)?;
     let reg = db(ctx)?;
-    if tasks::all(&reg)?.iter().any(|t| {
-        t.origin.as_deref() == Some(CONFIGURATOR)
-            && t.status == "in_progress"
-            && t.live_term().is_some()
-    }) {
+    if tasks::all(&reg)?
+        .iter()
+        .any(|t| t.origin.as_deref() == Some(CONFIGURATOR) && t.is_running())
+    {
         return Err((409, "a session configurator is already running".into()));
     }
     let dir = ctx.state_dir.join("organize");
     crate::mkdir_private(&dir).map_err(|e| (500, format!("{}: {e}", dir.display())))?;
     let dir = std::path::absolute(&dir).unwrap_or(dir);
     let s = |k: &str| b[k].as_str().unwrap_or("").trim().to_string();
-    let now = crate::procs::now_ms();
+    let now = crate::util::now_ms();
     let mut t = Task {
         id: ulid(now),
         title: "Organize sessions".into(),
@@ -1139,7 +1124,7 @@ fn start(ctx: &Ctx, b: &Value) -> Res<Value> {
         ..Default::default()
     };
     tasks::insert(&reg, &mut t, &ctx.config.station_id)?;
-    let claude = agent.id == "claude";
+    let claude = agent.mcp == crate::agents::Mcp::Claude;
     match tasks::start_with(ctx, &t.id, None, true) {
         Ok(started) => Ok(json!({
             "task": started.to_json(&ctx.config.station_id),
@@ -1178,7 +1163,7 @@ pub fn trim_session(l: &Line, ix: &workspaces::Index) -> Value {
 }
 
 fn sessions(ctx: &Ctx, r: &Request) -> Res<Value> {
-    let dec = |k: &str| q(r, k).map(crate::board::decode);
+    let dec = |k: &str| q(r, k).map(crate::util::percent_decode);
     let limit = dec("limit")
         .and_then(|v| v.parse::<usize>().ok())
         .unwrap_or(100)
@@ -1216,7 +1201,7 @@ fn layout(ctx: &Ctx) -> Res<Value> {
 fn out(code: u16, r: Res<Value>) -> (u16, Value) {
     match r {
         Ok(v) => (code, v),
-        Err((c, e)) => (c, json!({ "error": e })),
+        Err((c, e)) => err(c, e),
     }
 }
 
@@ -1247,7 +1232,7 @@ pub fn routes(ctx: &Ctx, r: &Request, segs: &[&str], body: &Value) -> Option<(u1
             tasks::projects(ctx, &crate::daemon::lines(ctx)).map(Value::from),
         ),
         ("GET", ["v1", "organize", "layout"]) => out(200, layout(ctx)),
-        _ => (404, json!({"error": "not found"})),
+        _ => err(404, "not found"),
     })
 }
 
@@ -1262,11 +1247,11 @@ mod tests {
         let dir = std::env::temp_dir().join(format!(
             "sb-organize-{tag}-{}-{}",
             std::process::id(),
-            crate::procs::now_ms()
+            crate::util::now_ms()
         ));
         std::fs::create_dir_all(&dir).unwrap();
         let r = Registry::open(&dir).unwrap();
-        ensure(&r).unwrap();
+        r.conn.execute_batch(SCHEMA).unwrap();
         r
     }
 

@@ -1,4 +1,4 @@
-import { DaemonError } from '../client';
+import { DaemonError } from '../daemon/client';
 import type { EventType, LocalLine } from '../types';
 import type { ScmCommit, ScmFile, ScmResult, ScmStatus } from './types';
 

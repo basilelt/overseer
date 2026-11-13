@@ -3,8 +3,9 @@
   import ChevronRight from '@lucide/svelte/icons/chevron-right';
   import { t } from '../../i18n.svelte';
   import { app } from '../../state.svelte';
-  import { allTabs, workspace } from '../../workspace.svelte';
-  import { isReviewKey, openReview, reviewKey, reviewTitle, testingReviews } from '../../review/open';
+  import { allTabs, workspace } from '../../workspace/workspace.svelte';
+  import { openReview, reviewTitle, testingReviews } from '../../review/open';
+  import { isReviewKey, reviewKey } from '../../review/keys';
   import ReviewBadge from '../review/ReviewBadge.svelte';
 
   const testing = $derived(testingReviews());

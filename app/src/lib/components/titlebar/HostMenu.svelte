@@ -2,11 +2,11 @@
   import Monitor from '@lucide/svelte/icons/monitor';
   import Server from '@lucide/svelte/icons/server';
   import { t } from '../../i18n.svelte';
-  import { settings } from '../../settings.svelte';
+  import { settings } from '../../settings/settings.svelte';
   import { app } from '../../state.svelte';
   import type { HostTarget } from '../../types';
-  import { connectHow } from '../../host-choice';
-  import { hostColor, hostName } from '../../hosts';
+  import { connectHow } from '../../host/host-choice';
+  import { hostColor, hostName } from '../../host/hosts';
   import { hostKey, openWindow } from '../../window';
 
   let { tip, onclose }: { tip: string; onclose: () => void } = $props();
@@ -65,7 +65,7 @@
     background: var(--surface);
     border-radius: var(--radius);
     box-shadow: var(--shadow);
-    z-index: 40;
+    z-index: var(--z-dropdown);
   }
   .menu button {
     display: flex;

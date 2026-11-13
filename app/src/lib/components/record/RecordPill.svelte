@@ -4,11 +4,12 @@
   import X from '@lucide/svelte/icons/x';
   import { app } from '../../state.svelte';
   import { ui } from '../../mobile/ui.svelte';
-  import { clock, LOG } from '../../record';
-  import { recorder, rt } from '../../record.svelte';
+  import { clock, LOG } from '../../record/record';
+  import { recorder, rt } from '../../record/record.svelte';
+  import { phoneOrMobile } from '../../mobile/phone.svelte';
 
   $effect(() => {
-    const v = app.mobile || ui.layout === 'phone' ? ui.tab : app.view;
+    const v = phoneOrMobile() ? ui.tab : app.view;
     untrack(() => recorder.note('view', LOG.view(v)));
   });
 
@@ -18,7 +19,7 @@
   });
 </script>
 
-<div class="pill" class:phone={app.mobile || ui.layout === 'phone'} data-rec-skip role="status">
+<div class="pill" class:phone={phoneOrMobile()} data-rec-skip data-rec-pill role="status">
   <span class="dot" aria-hidden="true"></span>
   <span class="mono">{rt('recording', { time: clock(recorder.elapsed) })}</span>
   <span class="faint">· {rt('actions', { n: recorder.count })}</span>
@@ -32,7 +33,7 @@
     left: 50%;
     bottom: calc(16px + env(safe-area-inset-bottom, 0px));
     transform: translateX(-50%);
-    z-index: 900;
+    z-index: var(--z-record);
     display: flex;
     align-items: center;
     gap: 8px;

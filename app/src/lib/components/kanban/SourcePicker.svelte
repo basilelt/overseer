@@ -4,14 +4,14 @@
   import RefreshCw from '@lucide/svelte/icons/refresh-cw';
   import { app } from '../../state.svelte';
   import { t } from '../../i18n.svelte';
-  import { fillFrom, filterItems, sourcesApi } from '../../task-sources';
+  import { fillFrom, filterItems, sourcesApi } from '../../kanban/task-sources';
   import type { SourceItems, TaskSourceKind } from '../../types';
 
   const NAMES: Record<TaskSourceKind, string> = { github: 'GitHub', gitlab: 'GitLab', jira: 'Jira' };
 
   let { project, onpick }: { project: string; onpick: (fill: ReturnType<typeof fillFrom>) => void } = $props();
 
-  const api = sourcesApi(app.client!);
+  const api = sourcesApi(app.requireClient());
   let data = $state<SourceItems | null>(null);
   let loading = $state(false);
   let error = $state('');

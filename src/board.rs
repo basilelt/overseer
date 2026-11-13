@@ -1,5 +1,6 @@
 use crate::actions::{find_line, log_action};
-use crate::daemon::{dry_run, q, respond_raw, Request};
+use crate::git::git_out;
+use crate::http::{dry_run, err, q, respond_raw, Request};
 use crate::sys::OpenOptionsExt;
 use crate::util::{format_rfc3339, parse_rfc3339};
 use crate::{scan, Ctx, Line, RECENT_MS};
@@ -8,7 +9,6 @@ use std::collections::{HashMap, VecDeque};
 use std::io::Write;
 use std::net::{SocketAddr, TcpListener};
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use std::sync::mpsc::{channel, Receiver, RecvTimeoutError, Sender};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -48,13 +48,19 @@ pub fn subscribe(after: Option<u64>) -> (Receiver<Arc<String>>, Vec<Arc<String>>
     (rx, backlog)
 }
 
+pub const SSE_PING: &[u8] = b": ping\n\n";
+
+pub fn sse_frame(id: u64, kind: &str, env: &Value) -> String {
+    format!("id: {id}\nevent: {kind}\ndata: {env}\n\n")
+}
+
 pub fn publish(kind: &str, data: Value) {
     let mut g = BUS.lock().unwrap_or_else(|e| e.into_inner());
     let bus = g.get_or_insert_with(Bus::default);
     bus.next += 1;
     let id = bus.next;
-    let env = json!({"id": id.to_string(), "type": kind, "at": format_rfc3339(crate::procs::now_ms()), "data": data});
-    let frame = Arc::new(format!("id: {id}\nevent: {kind}\ndata: {env}\n\n"));
+    let env = json!({"id": id.to_string(), "type": kind, "at": format_rfc3339(crate::util::now_ms()), "data": data});
+    let frame = Arc::new(sse_frame(id, kind, &env));
     bus.subs.retain(|s| s.send(frame.clone()).is_ok());
     bus.recent.push_back((id, frame));
     if bus.recent.len() > REPLAY {
@@ -76,7 +82,7 @@ struct Station {
 }
 
 fn stations(ctx: &Ctx) -> Vec<Station> {
-    let Ok(dir) = std::fs::read_dir(ctx.state_dir.join("stations")) else {
+    let Ok(dir) = std::fs::read_dir(ctx.state_dir.join(crate::paths::STATIONS_DIR)) else {
         return vec![];
     };
     let mut out: Vec<Station> = dir
@@ -126,7 +132,8 @@ fn yard_url(ctx: &Ctx) -> Option<String> {
 fn entries(ctx: &Ctx, lines: &[Line], all: bool) -> (Vec<Value>, Vec<Value>) {
     let now = ctx.now_ms;
     let local: Vec<&Line> = lines.iter().filter(|l| all || l.recent(now)).collect();
-    let count = |it: &mut dyn Iterator<Item = &str>| it.filter(|s| *s == "active").count();
+    let count =
+        |it: &mut dyn Iterator<Item = &str>| it.filter(|s| *s == crate::wire::STATE_ACTIVE).count();
     let mut sts = vec![json!({
         "stationId": ctx.config.station_id, "local": true, "online": true,
         "lastSeenAt": format_rfc3339(now),
@@ -177,7 +184,7 @@ fn entries(ctx: &Ctx, lines: &[Line], all: bool) -> (Vec<Value>, Vec<Value>) {
                 .as_str()
                 .and_then(parse_rfc3339)
                 .unwrap_or(0);
-            if !all && l["state"] != "active" && now - at > RECENT_MS {
+            if !all && l["state"] != crate::wire::STATE_ACTIVE && now - at > RECENT_MS {
                 continue;
             }
             l["stationId"] = json!(s.id);
@@ -224,7 +231,7 @@ pub fn observe(ctx: &Ctx, lines: &[Line]) {
                         "line.state_changed",
                         json!({"line": l, "local": local, "from": s, "to": state}),
                     );
-                    if state == "hung-up" {
+                    if state == crate::wire::STATE_HUNG_UP {
                         publish("line.hung_up", json!({"line": l}));
                     }
                 }
@@ -281,28 +288,6 @@ fn change_key(entry: &Value) -> String {
         local.remove("rssBytes");
     }
     v.to_string()
-}
-
-pub fn git_out(dir: &str, args: &[&str]) -> Result<String, String> {
-    let out = crate::git::output_within(
-        Command::new("git")
-            .arg("-C")
-            .arg(dir)
-            .args(["-c", "color.ui=never", "-c", "core.quotepath=off"])
-            .args(args)
-            .env("GIT_TERMINAL_PROMPT", "0"),
-        crate::git::limit_for(args),
-    )
-    .map_err(|e| format!("git {}: {e}", args.first().unwrap_or(&"")))?;
-    if out.status.success() {
-        Ok(String::from_utf8_lossy(&out.stdout).into_owned())
-    } else {
-        Err(format!(
-            "git {}: {}",
-            args.first().unwrap_or(&""),
-            String::from_utf8_lossy(&out.stderr).trim()
-        ))
-    }
 }
 
 fn worktree_line(ctx: &Ctx, id: &str, fresh: bool) -> Result<Line, (u16, String)> {
@@ -427,7 +412,7 @@ fn change(ctx: &Ctx, r: &Request, id: &str, kind: &str) -> Result<Value, (u16, S
     if kind == "commit" && message.is_empty() {
         return Err((400, "message required".into()));
     }
-    if l.busy || l.state == "active" {
+    if l.busy || l.state == crate::wire::STATE_ACTIVE {
         return Err((
             409,
             format!(
@@ -472,30 +457,6 @@ fn change(ctx: &Ctx, r: &Request, id: &str, kind: &str) -> Result<Value, (u16, S
     Ok(v)
 }
 
-pub fn decode(s: &str) -> String {
-    let b = s.as_bytes();
-    let mut out = Vec::with_capacity(b.len());
-    let mut i = 0;
-    while i < b.len() {
-        match b[i] {
-            b'%' if i + 3 <= b.len() => match s
-                .get(i + 1..i + 3)
-                .and_then(|h| u8::from_str_radix(h, 16).ok())
-            {
-                Some(x) => {
-                    out.push(x);
-                    i += 2;
-                }
-                None => out.push(b'%'),
-            },
-            b'+' => out.push(b' '),
-            c => out.push(c),
-        }
-        i += 1;
-    }
-    String::from_utf8_lossy(&out).into_owned()
-}
-
 fn sse(r: &Request, s: &mut dyn Write) {
     let after = r
         .headers
@@ -516,7 +477,7 @@ fn sse(r: &Request, s: &mut dyn Write) {
     loop {
         let out = match rx.recv_timeout(Duration::from_secs(15)) {
             Ok(f) => s.write_all(f.as_bytes()),
-            Err(RecvTimeoutError::Timeout) => s.write_all(b": ping\n\n"),
+            Err(RecvTimeoutError::Timeout) => s.write_all(SSE_PING),
             Err(RecvTimeoutError::Disconnected) => return,
         };
         if out.and_then(|_| s.flush()).is_err() {
@@ -528,9 +489,7 @@ fn sse(r: &Request, s: &mut dyn Write) {
 pub fn serve(ctx: &Ctx, r: &Request, s: &mut dyn Write) -> bool {
     let segs: Vec<&str> = r.path.trim_matches('/').split('/').collect();
     let json = |s: &mut dyn Write, res: Result<Value, (u16, String)>| {
-        let (code, v) = res
-            .map(|v| (200, v))
-            .unwrap_or_else(|(c, e)| (c, json!({"error": e})));
+        let (code, v) = res.map(|v| (200, v)).unwrap_or_else(|(c, e)| err(c, e));
         respond_raw(s, code, "application/json", v.to_string().as_bytes());
     };
     match (r.method.as_str(), segs.as_slice()) {
@@ -542,12 +501,9 @@ pub fn serve(ctx: &Ctx, r: &Request, s: &mut dyn Write) -> bool {
             respond_raw(s, 200, "text/css; charset=utf-8", CSS.as_bytes())
         }
         ("GET", ["v1", "events"]) => sse(r, s),
-        ("GET", ["v1", "board"]) => json(
-            s,
-            board(ctx, q(r, "all") == Some("true")).map_err(|e| (500, e)),
-        ),
+        ("GET", ["v1", "board"]) => json(s, board(ctx, r.is_true("all")).map_err(|e| (500, e))),
         ("GET", ["v1", "pr"]) => {
-            let (repo, branch) = (q(r, "repo").map(decode), q(r, "branch").map(decode));
+            let (repo, branch) = (r.param("repo"), r.param("branch"));
             match (repo, branch) {
                 (Some(repo), Some(branch)) => json(s, Ok(crate::gh::pr_info(&repo, &branch))),
                 _ => json(s, Err((400, "repo and branch required".into()))),
@@ -563,7 +519,7 @@ pub fn serve(ctx: &Ctx, r: &Request, s: &mut dyn Write) -> bool {
 }
 
 pub fn url_file(state_dir: &Path) -> PathBuf {
-    state_dir.join("board.json")
+    state_dir.join(crate::paths::BOARD_FILE)
 }
 
 pub fn token() -> Result<String, String> {
@@ -616,7 +572,7 @@ pub fn serve_http(addr: &str, state_dir: &Path) -> Result<String, String> {
         .open(&f)
         .and_then(|mut w| w.write_all(json!({"url": url}).to_string().as_bytes()))
         .map_err(|e| format!("{}: {e}", f.display()))?;
-    crate::util::supervise("board", move || {
+    crate::dlog::supervise("board", move || {
         for st in l.incoming() {
             match st {
                 Ok(st) => {
@@ -659,6 +615,13 @@ pub fn cli(state_dir: &Path) -> Result<String, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn sse_frames_are_id_event_data_and_a_blank_line() {
+        let f = sse_frame(7, "x.y", &json!({"a": 1}));
+        assert_eq!(f, "id: 7\nevent: x.y\ndata: {\"a\":1}\n\n");
+        assert_eq!(SSE_PING, b": ping\n\n");
+    }
 
     #[test]
     fn diff_stamp_changes_with_edits_commits_and_staging() {

@@ -1,0 +1,198 @@
+import type { SidebarItem } from '../session/grouping';
+import { STATE_URGENCY } from '../session/session-state';
+import type { Folder, Workspace } from '../types';
+import { byRank, isGhost, type WsData } from './workspaces';
+import { workspaceSummary, type WorkspaceSummary } from './workspace-summary';
+import { isShellItem } from '../agents';
+
+export interface SpaceRow {
+  /** '' for the sessions outside any workspace. */
+  id: string;
+  name: string | null;
+  workspace: Workspace | null;
+  items: SidebarItem[];
+  summary: WorkspaceSummary;
+  children?: SpaceRow[];
+}
+
+export interface Spaces {
+  rows: SpaceRow[];
+  empty: Workspace[];
+}
+
+const isVisible = (w: Workspace, showArchived = false) => !isGhost(w) && (showArchived || !w.archived);
+
+export const visibleIds = (workspaces: Workspace[]): Set<string> => new Set(workspaces.filter((w) => isVisible(w)).map((w) => w.id));
+
+export function filterItems(items: SidebarItem[], wsName: (key: string) => string, filter: string): SidebarItem[] {
+  const q = filter.trim().toLowerCase();
+  if (!q) return items;
+  return items.filter((i) => i.title.toLowerCase().includes(q) || wsName(i.key).toLowerCase().includes(q));
+}
+
+export function spaces(workspaces: Workspace[], items: SidebarItem[], wsOf: ReadonlyMap<string, string>, filter: string, showArchived = false): Spaces {
+  const q = filter.trim().toLowerCase();
+  const order = (a: Workspace, b: Workspace) => Number(b.pinned) - Number(a.pinned) || a.rank - b.rank || a.name.localeCompare(b.name);
+  const shown = workspaces.filter((w) => isVisible(w, showArchived));
+  const tops = new Set(shown.filter((w) => !w.parentId).map((w) => w.id));
+  const live = shown.filter((w) => !w.parentId).sort(order);
+  const kids = new Map<string, Workspace[]>();
+  for (const w of shown) if (w.parentId && tops.has(w.parentId)) push(kids, w.parentId, w);
+  for (const list of kids.values()) list.sort(order);
+  const visible = new Set([...tops, ...[...kids.values()].flat().map((w) => w.id)]);
+  const by = new Map<string, SidebarItem[]>();
+  for (const it of items) {
+    if (isShellItem(it) && it.state === 'closed') continue;
+    const w = wsOf.get(it.key);
+    push(by, w !== undefined && visible.has(w) ? w : '', it);
+  }
+  const named = (w: Workspace | null) => !!w && [w.name, w.path, w.cwd].some((x) => x?.toLowerCase().includes(q));
+  const narrow = (w: Workspace | null, mine: SidebarItem[], parentNamed = false) => (!q || parentNamed || named(w) ? mine : mine.filter((i) => i.title.toLowerCase().includes(q)));
+  const rows: SpaceRow[] = [];
+  const empty: Workspace[] = [];
+  for (const w of live) {
+    const all = by.get(w.id) ?? [];
+    const mine = narrow(w, all);
+    const wNamed = !!q && named(w);
+    const children: SpaceRow[] = [];
+    let childAll = 0;
+    for (const c of kids.get(w.id) ?? []) {
+      const call = by.get(c.id) ?? [];
+      childAll += call.length;
+      const cmine = narrow(c, call, wNamed);
+      if (q && !cmine.length && !(wNamed || named(c))) continue;
+      children.push({ id: c.id, name: c.name, workspace: c, items: cmine, summary: workspaceSummary(cmine) });
+    }
+    const busy = mine.length || children.length;
+    if (busy) {
+      const row: SpaceRow = { id: w.id, name: w.name, workspace: w, items: mine, summary: sum([workspaceSummary(mine), ...children.map((c) => c.summary)]) };
+      if (children.length) row.children = children;
+      rows.push(row);
+    } else if (!all.length && !childAll && (!q || wNamed)) empty.push(w);
+  }
+  const others = narrow(null, by.get('') ?? []);
+  if (others.length) rows.push({ id: '', name: null, workspace: null, items: others, summary: workspaceSummary(others) });
+  return { rows, empty };
+}
+
+export type SpaceNode =
+  /** folder null is the pinned section; depth 0 is a section title. */
+  | { type: 'folder'; key: string; folder: Folder | null; depth: number; open: boolean; folders: number; spaces: number; summary: WorkspaceSummary }
+  | { type: 'space'; key: string; row: SpaceRow; depth: number }
+  | { type: 'empty'; key: string; workspaces: Workspace[]; depth: number };
+
+interface Agg {
+  summary: WorkspaceSummary;
+  spaces: number;
+}
+
+function push<K, V>(m: Map<K, V[]>, k: K, v: V) {
+  const list = m.get(k);
+  if (list) list.push(v);
+  else m.set(k, [v]);
+}
+
+function sum(parts: WorkspaceSummary[]): WorkspaceSummary {
+  const counts: WorkspaceSummary['counts'] = { attention: 0, running: 0, open: 0, paused: 0, closed: 0 };
+  let total = 0;
+  for (const p of parts) {
+    total += p.total;
+    for (const s of STATE_URGENCY) counts[s] += p.counts[s];
+  }
+  return { total, counts, urgent: STATE_URGENCY.find((s) => counts[s] > 0) ?? null };
+}
+
+export function folderSpaces(view: Spaces, folders: Folder[], filter: string): SpaceNode[] {
+  const q = filter.trim() !== '';
+  const known = new Set(folders.map((f) => f.id));
+  const kids = new Map<string | null, Folder[]>();
+  for (const f of folders) push(kids, f.parentId && f.parentId !== f.id && known.has(f.parentId) ? f.parentId : null, f);
+  for (const list of kids.values()) list.sort(byRank);
+  const reach = new Set<string>();
+  const stack = [...(kids.get(null) ?? [])];
+  for (let f = stack.pop(); f; f = stack.pop()) {
+    reach.add(f.id);
+    stack.push(...(kids.get(f.id) ?? []));
+  }
+  const at = (w: Workspace) => (w.folderId && reach.has(w.folderId) ? w.folderId : null);
+  const rowsIn = new Map<string | null, SpaceRow[]>();
+  const emptyIn = new Map<string | null, Workspace[]>();
+  const pinnedRows: SpaceRow[] = [];
+  const pinnedEmpty: Workspace[] = [];
+  for (const r of view.rows) {
+    if (r.workspace?.pinned) pinnedRows.push(r);
+    else push(rowsIn, r.workspace ? at(r.workspace) : null, r);
+  }
+  for (const w of view.empty) {
+    if (w.pinned) pinnedEmpty.push(w);
+    else push(emptyIn, at(w), w);
+  }
+  const aggs = new Map<string, Agg>();
+  const agg = (f: Folder): Agg => {
+    const done = aggs.get(f.id);
+    if (done) return done;
+    const rows = rowsIn.get(f.id) ?? [];
+    const subs = (kids.get(f.id) ?? []).map(agg);
+    const a: Agg = {
+      summary: sum([...rows.map((r) => r.summary), ...subs.map((x) => x.summary)]),
+      spaces: rows.length + (emptyIn.get(f.id)?.length ?? 0) + subs.reduce((n, x) => n + x.spaces, 0),
+    };
+    aggs.set(f.id, a);
+    return a;
+  };
+  const out: SpaceNode[] = [];
+  const level = (rows: SpaceRow[] | undefined, empty: Workspace[] | undefined, depth: number, key: string, between?: () => void) => {
+    for (const row of rows ?? []) out.push({ type: 'space', key: `w:${row.id}`, row, depth });
+    between?.();
+    if (empty?.length) out.push({ type: 'empty', key: `e:${key}`, workspaces: empty, depth });
+  };
+  const emit = (f: Folder, depth: number) => {
+    const a = agg(f);
+    if (q && !a.spaces) return;
+    const subs = (kids.get(f.id) ?? []).filter((c) => !q || agg(c).spaces > 0);
+    const open = q || !f.collapsed;
+    out.push({ type: 'folder', key: `f:${f.id}`, folder: f, depth, open, folders: subs.length, spaces: a.spaces, summary: a.summary });
+    if (open) level(rowsIn.get(f.id), emptyIn.get(f.id), depth + 1, f.id, () => subs.forEach((c) => emit(c, depth + 1)));
+  };
+  if (pinnedRows.length || pinnedEmpty.length) {
+    out.push({ type: 'folder', key: 'f:*', folder: null, depth: 0, open: true, folders: 0, spaces: pinnedRows.length + pinnedEmpty.length, summary: sum(pinnedRows.map((r) => r.summary)) });
+    level(pinnedRows, pinnedEmpty, 0, '*');
+  }
+  for (const f of kids.get(null) ?? []) emit(f, 0);
+  level(rowsIn.get(null), emptyIn.get(null), 0, '');
+  return out;
+}
+
+export function spaceTrail(data: WsData): (workspaceId: string | null | undefined) => string | undefined {
+  const ws = new Map(data.workspaces.map((w) => [w.id, w]));
+  const fs = new Map(data.folders.map((f) => [f.id, f]));
+  return (id) => {
+    const own = id ? ws.get(id) : undefined;
+    if (!own) return undefined;
+    const parent = own.parentId ? ws.get(own.parentId) : undefined;
+    const w = parent ?? own;
+    const names = parent ? [parent.name, own.name] : [own.name];
+    const seen = new Set<string>();
+    for (let f = w.folderId ? fs.get(w.folderId) : undefined; f && !seen.has(f.id); f = f.parentId ? fs.get(f.parentId) : undefined) {
+      seen.add(f.id);
+      names.unshift(f.name);
+    }
+    return names.join(' › ');
+  };
+}
+
+// The saved expanded list after toggling id: unset starts from the fallback; ids of gone workspaces are dropped,
+// but never while the list is still empty (loading, or no persistence) since that would wipe the host's choices.
+export function toggleOpen(saved: string[] | undefined, id: string, known: ReadonlySet<string>, fallback: string): string[] {
+  const next = new Set((saved ?? [fallback]).filter((x) => known.size <= 1 || known.has(x)));
+  if (!next.delete(id)) next.add(id);
+  return [...next];
+}
+
+// The expanded list after picking id, or null when nothing changes. An unset list stands for "the active workspace only":
+// picking another one pins that default first, otherwise the previous workspace would fold as the active one changes.
+export function openOnPick(saved: string[] | undefined, active: string, id: string): string[] | null {
+  const open = saved ?? [active];
+  if (open.includes(id)) return null;
+  return [...open, id];
+}

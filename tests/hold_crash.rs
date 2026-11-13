@@ -1,24 +1,11 @@
 mod common;
 
-use common::{read_until, send, wait, wait_for, App};
+use common::{line_json, read_until, send, wait, wait_for, App};
 use serde_json::{json, Value};
 use std::time::Duration;
 
-fn line_json(app: &App, line: &str) -> Value {
-    app.ok("GET", "/v1/lines?all=true", Value::Null)
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|l| l["line"]["id"] == line)
-        .cloned()
-        .unwrap()
-}
-
 #[test]
 fn a_pending_hold_survives_a_daemon_crash_and_applies_when_the_turn_ends() {
-    // Given a busy claude session with a pending hold
-    // When the daemon is killed with SIGKILL and restarted, which restores the session
-    // Then the hold is not dropped: the restored agent is idle, so it applies and the line is held
     let sid = "dddddddd-0000-4000-8000-000000000009";
     let mut app = App::with_env("holdcrash", json!({}), &[("SB_STUB_BOOT", "3")]);
     let wt = app.fx.wt.to_string_lossy().into_owned();

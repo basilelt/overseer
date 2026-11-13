@@ -1,4 +1,5 @@
 use crate::agents::Agent;
+use crate::agents::ProfileKind;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::BTreeMap;
@@ -190,8 +191,8 @@ pub fn support(a: &Agent) -> Support {
         effort: a.effort.map(|_| Via::Flag),
         ..NO
     };
-    match a.id {
-        "claude" => Support {
+    match a.profile {
+        ProfileKind::Claude => Support {
             subagent_model: Some(Via::Env),
             small_model: Some(Via::Env),
             subagents: Some(Via::File),
@@ -199,26 +200,26 @@ pub fn support(a: &Agent) -> Support {
             force: true,
             ..base
         },
-        "codex" => Support {
+        ProfileKind::Codex => Support {
             subagent_model: Some(Via::Flag),
             subagent_effort: Some(Via::Flag),
             ..base
         },
-        "gemini" | "agy" => Support {
+        ProfileKind::MarkdownSubagents => Support {
             subagents: Some(Via::File),
             ..base
         },
-        "opencode" => Support {
+        ProfileKind::Opencode => Support {
             small_model: Some(Via::Env),
             subagents: Some(Via::Env),
             ..base
         },
-        "vibe" => Support {
+        ProfileKind::Vibe => Support {
             model: Some(Via::Env),
             ..base
         },
-        "shell" => NO,
-        _ => base,
+        ProfileKind::Shell => NO,
+        ProfileKind::Plain => base,
     }
 }
 
@@ -328,7 +329,7 @@ pub fn builtins() -> Vec<Profile> {
 }
 
 pub fn path(state_dir: &Path) -> PathBuf {
-    state_dir.join("profiles.json")
+    state_dir.join(crate::paths::PROFILES_FILE)
 }
 
 pub fn load(state_dir: &Path) -> Store {
@@ -422,8 +423,8 @@ pub fn apply(a: &Agent, p: Option<&Profile>, model: &str, effort: &str) -> Appli
     let effort = pick(effort, &c.effort, s.effort.is_some());
     let mut env = vec![];
     let mut extra = vec![];
-    match a.id {
-        "claude" => {
+    match a.profile {
+        ProfileKind::Claude => {
             if !c.subagent_model.is_empty() {
                 env.push((
                     "CLAUDE_CODE_SUBAGENT_MODEL".into(),
@@ -440,7 +441,7 @@ pub fn apply(a: &Agent, p: Option<&Profile>, model: &str, effort: &str) -> Appli
                 ));
             }
         }
-        "codex" => {
+        ProfileKind::Codex => {
             if !c.subagent_model.is_empty() {
                 extra.extend([
                     "-c".to_string(),
@@ -459,13 +460,17 @@ pub fn apply(a: &Agent, p: Option<&Profile>, model: &str, effort: &str) -> Appli
                 ]);
             }
         }
-        "opencode" => {
+        ProfileKind::Opencode => {
             if let Some(cfg) = opencode_config(c) {
                 env.push(("OPENCODE_CONFIG_CONTENT".into(), cfg));
             }
         }
-        "vibe" if !model.is_empty() => env.push(("VIBE_ACTIVE_MODEL".into(), model.clone())),
-        _ => {}
+        ProfileKind::Vibe => {
+            if !model.is_empty() {
+                env.push(("VIBE_ACTIVE_MODEL".into(), model.clone()));
+            }
+        }
+        ProfileKind::MarkdownSubagents | ProfileKind::Plain | ProfileKind::Shell => {}
     }
     let chip = (p.is_some() || !model.is_empty() || !effort.is_empty()).then(|| Chip {
         id: p.map(|p| p.id.clone()).unwrap_or_default(),
@@ -539,7 +544,7 @@ pub fn validate(s: &Store) -> Res<()> {
             ));
         }
         for (agent, c) in &p.agents {
-            let Some(a) = crate::agents::get(agent).filter(|a| a.id != "shell") else {
+            let Some(a) = crate::agents::get(agent).filter(|a| a.coding()) else {
                 return Err((400, format!("profile {}: unknown agent {agent}", p.id)));
             };
             let what = format!("profile {} / {}", p.id, a.name);
@@ -582,9 +587,9 @@ pub fn validate(s: &Store) -> Res<()> {
                     return Err((400, format!("{what}: invalid subagent name {name:?}")));
                 }
                 check_model(&sub.model, &what)?;
-                if agent == "agy"
-                    && !sub.model.is_empty()
-                    && !["inherit", "flash", "pro"].contains(&sub.model.as_str())
+                if !sub.model.is_empty()
+                    && a.subagent_models
+                        .is_some_and(|ok| !ok.contains(&sub.model.as_str()))
                 {
                     return Err((
                         400,
@@ -644,7 +649,7 @@ pub fn save(state_dir: &Path, s: &Store) -> Res<()> {
 pub fn to_json(s: &Store) -> Value {
     let agents: serde_json::Map<String, Value> = crate::agents::AGENTS
         .iter()
-        .filter(|a| a.id != "shell")
+        .filter(|a| a.coding())
         .map(|a| (a.id.to_string(), support_json(&support(a))))
         .collect();
     json!({
@@ -904,7 +909,7 @@ pub fn plan_files(defs: &[SubagentDef], c: &AgentCfg) -> Vec<FileEdit> {
         let mut after = text.clone();
         let mut changes = vec![];
         let mut fields = vec![("model", &sub.model, &d.model)];
-        if d.agent == "claude" {
+        if crate::agents::get(d.agent).is_some_and(|a| a.subagent_effort) {
             fields.push(("effort", &sub.effort, &d.effort));
         }
         for (key, want, have) in fields {
@@ -1002,11 +1007,11 @@ pub fn for_restore(state_dir: &Path, a: &Agent, cwd: &str, saved: Option<&Chip>)
 
 pub fn routes(
     ctx: &crate::Ctx,
-    r: &crate::daemon::Request,
+    r: &crate::http::Request,
     segs: &[&str],
     body: &Value,
 ) -> Option<(u16, Value)> {
-    let q = |k: &str| crate::daemon::q(r, k).map(crate::board::decode);
+    let q = |k: &str| r.param(k);
     let res = |r: Res<Value>| match r {
         Ok(v) => (200, v),
         Err((c, e)) => (c, json!({ "error": e })),
@@ -1096,7 +1101,7 @@ fn apply_files(ctx: &crate::Ctx, body: &Value) -> Res<Value> {
         .iter()
         .filter_map(Value::as_str)
         .collect();
-    let stamp = crate::install::stamp(crate::procs::now_ms());
+    let stamp = crate::install::stamp(crate::util::now_ms());
     let results: Vec<Value> = plan
         .iter()
         .filter(|e| wanted.contains(&e.path.to_string_lossy().as_ref()))

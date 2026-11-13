@@ -4,18 +4,18 @@
   import { onMount } from 'svelte';
   import { attention } from '../../attention';
   import { t } from '../../i18n.svelte';
-  import { saveSettings, settings } from '../../settings.svelte';
-  import { folderSpaces, openOnPick, spaceTrail, spaces, toggleOpen } from '../../spaces';
+  import { saveSettings, settings } from '../../settings/settings.svelte';
+  import { folderSpaces, openOnPick, spaceTrail, spaces, toggleOpen } from '../../workspace/spaces';
   import { hostKey } from '../../window';
   import { visibleClock } from '../../visible-clock';
   import { app, NO_WORKSPACE } from '../../state.svelte';
-  import { aggregate, byRank } from '../../workspaces';
-  import { WsDrag } from '../../ws-drag.svelte';
-  import { WS_COLOR } from '../../ws-color';
-  import { loadKnown } from '../../known-tabs';
-  import { tabOrder } from '../../tab-order';
-  import { allTabs, savedLayouts, workspace } from '../../workspace.svelte';
-  import { createGroup, folderMenu, groupMenu, itemMenuAt, otherMenu, selectSession, startIn, workspaceMenu } from '../../wsactions';
+  import { aggregate, byRank } from '../../workspace/workspaces';
+  import { WsDrag } from '../../workspace/ws-drag.svelte';
+  import { WS_COLOR } from '../../workspace/ws-color';
+  import { loadKnown } from '../../tabs/known-tabs';
+  import { tabOrder } from '../../tabs/tab-order';
+  import { allTabs, savedLayouts, workspace } from '../../workspace/workspace.svelte';
+  import { createGroup, folderMenu, groupMenu, itemMenuAt, otherMenu, selectSession, startIn, workspaceMenu } from '../../workspace/wsactions';
   import type { Workspace } from '../../types';
   import AttentionBanner from './AttentionBanner.svelte';
   import SpaceBlock from './SpaceBlock.svelte';
@@ -34,7 +34,6 @@
   const trail = $derived(spaceTrail(app.ws));
   const hk = $derived(hostKey(app.conn.target));
   const saved = $derived(settings.spacesOpen?.[hk]);
-  // The parent of the active nested workspace stays open, so the active one is always in view.
   const opened = $derived(new Set([...(saved ?? [app.workspaceId]), ...(app.currentWorkspace?.parentId ? [app.currentWorkspace.parentId] : [])]));
   const q = $derived(filter.trim());
   const groups = $derived(app.ws.groups.slice().sort(byRank));
@@ -50,7 +49,6 @@
     saveSettings({ spacesOpen: { ...settings.spacesOpen, [hostKey(app.conn.target)]: toggleOpen(saved, id, new Set(['', ...app.ws.workspaces.map((w) => w.id)]), app.workspaceId) } });
   }
 
-  // Selects the workspace and opens it, so its tab bar and "+" show and its sessions are in view.
   function pick(id: string) {
     if (drag.suppressed) return;
     const next = openOnPick(saved, app.workspaceId, id);
@@ -58,7 +56,6 @@
     if (next) saveSettings({ spacesOpen: { ...settings.spacesOpen, [hostKey(app.conn.target)]: next } });
   }
 
-  // The daemon keeps the folded state per host. Flipped locally first so the click feels instant.
   async function toggleFolder(id: string) {
     if (drag.suppressed) return;
     if (q) return;
@@ -200,7 +197,6 @@
     gap: 2px;
     padding: 0 0 8px;
   }
-  /* 14px per level, on a faint guide line under the parent's chevron. */
   .node {
     padding-left: calc(var(--depth) * 14px);
   }

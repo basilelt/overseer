@@ -1,11 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
-import { groupItems, sidebarItems } from '../grouping';
-import * as machine from '../session-state';
+import { groupItems, sidebarItems } from '../session/grouping';
+import * as machine from '../session/session-state';
 import type { LocalLine } from '../types';
-import { aggregate } from '../workspaces';
+import { aggregate } from '../workspace/workspaces';
 
-vi.mock('../session-state', async (orig) => {
-  const actual = await orig<typeof import('../session-state')>();
+vi.mock('../session/session-state', async (orig) => {
+  const actual = await orig<typeof import('../session/session-state')>();
   return { ...actual, sessionState: vi.fn(actual.sessionState) };
 });
 
@@ -25,9 +25,6 @@ function work(n: number) {
 
 describe('sidebar derivation scales linearly with the session count', () => {
   it('runs the state machine a constant number of times per line', () => {
-    // Given 100 and 1000 sessions in mixed states
-    // When the sidebar items, groups and workspace aggregate are derived
-    // Then the state machine runs the same number of times per line and the work grows 10x
     const small = work(100);
     const big = work(1000);
     expect(big / small).toBeCloseTo(10, 5);

@@ -4,7 +4,7 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Mutex;
 use tauri::{AppHandle, Manager};
 
-pub const MAIN: &str = "main";
+use crate::MAIN;
 
 static NEXT: AtomicU32 = AtomicU32::new(2);
 static HANDOFF: Mutex<Option<HashMap<String, Value>>> = Mutex::new(None);

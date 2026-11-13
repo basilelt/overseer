@@ -1,8 +1,10 @@
 <script lang="ts">
-  import type { SidebarItem } from '../../grouping';
+  import type { SidebarItem } from '../../session/grouping';
   import { t } from '../../i18n.svelte';
   import { age } from '../../time';
-  import AgentIcon, { GROUP_COLOR, STATE_COLOR } from './AgentIcon.svelte';
+  import AgentIcon from './AgentIcon.svelte';
+  import { isShellItem } from '../../agents';
+  import { GROUP_COLOR, STATE_COLOR } from '../../workspace/ws-color';
 
   let { item, selected, now, onselect }: { item: SidebarItem; selected: boolean; now: number; onselect: (e?: MouseEvent) => void } = $props();
 </script>
@@ -23,7 +25,7 @@
     <span class="st" title={t(`session.state.${item.state}`)} style:--c={STATE_COLOR[item.state]}><span class="sd"></span>{t(`session.state.${item.state}`)}</span>
     <span class="age faint">{age(item.at, now)}</span>
   </div>
-  {#if item.goal && item.kind === 'shell'}<div class="line muted mono path">{item.goal}</div>
+  {#if item.goal && isShellItem(item)}<div class="line muted mono path">{item.goal}</div>
   {:else if item.goal}<div class="line muted"><span class="faint">{t('card.goal')}</span> {item.goal}</div>{/if}
   {#if item.status}<div class="line faint">{item.status}</div>{/if}
 </button>

@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { MockDaemon } from '../mock';
+import { MockDaemon } from '../daemon/mock';
 import type { BroadcastRequest, BroadcastResponse, LocalLine } from '../types';
 import { ChatSender } from './sender.svelte';
+import { quietMock } from '../../test/quiet-mock';
 
 describe('chat sender', () => {
   let m: MockDaemon;
@@ -12,7 +13,7 @@ describe('chat sender', () => {
   const busy = (on: boolean) => (line.local = { ...line.local!, busy: on });
 
   beforeEach(() => {
-    m = new MockDaemon({ live: false, delayMs: 0 });
+    m = quietMock();
     line = m.lines.find((l) => l.local && !l.local.busy && !l.local.needsInput && l.line.state !== 'held' && l.line.state !== 'hung-up')!;
     sender = new ChatSender((req) => m.request<BroadcastResponse>('POST', '/v1/broadcast', req));
   });

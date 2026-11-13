@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { linkItems } from './linkmenu';
+import { linkItems } from './terminal/linkmenu';
 import { isWebLink, resolveLink, type LinkPrefs } from './links';
 
 const prefs = (p: Partial<LinkPrefs> = {}): LinkPrefs => ({ linkTarget: 'overseer', linkBrowser: '', linkAsk: false, ...p });

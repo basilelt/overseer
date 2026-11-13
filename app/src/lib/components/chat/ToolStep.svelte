@@ -10,10 +10,11 @@
   import Wrench from '@lucide/svelte/icons/wrench';
   import { getContext, type Component } from 'svelte';
   import { t } from '../../i18n.svelte';
-  import { basename, clip, hasDetail, miniDiff, toolSummary } from '../../chat/tools';
+  import { clip, hasDetail, miniDiff, toolSummary } from '../../chat/tools';
   import { fileKind } from '../../files';
   import { openFile } from '../../preview';
   import type { ChatTool, ToolKind } from '../../types';
+  import { basename } from '../../paths';
 
   let { tool }: { tool: ChatTool } = $props();
   const lineOf = getContext<(() => string) | undefined>('chat-line');

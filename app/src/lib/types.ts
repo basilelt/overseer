@@ -40,7 +40,6 @@ export interface LineLocal {
   needsInput?: boolean;
   pinned?: boolean;
   heldReason?: null | 'user' | 'lost';
-  // When the session was held, and whether a pause waits for the current turn to end.
   heldAt?: string | null;
   holdPending?: boolean | null;
   // Running subagents and background tasks reported by hooks; 0 when unknown.
@@ -185,7 +184,6 @@ export interface NewTerm {
 
 export type TaskStatus = 'pending' | 'auto' | 'in_progress' | 'in_testing' | 'merged' | 'completed';
 export type Effort = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
-export const TASK_STATUSES: TaskStatus[] = ['pending', 'auto', 'in_progress', 'in_testing', 'merged', 'completed'];
 
 export type TaskOrigin = 'user' | 'session' | 'agent' | 'organizer' | 'configurator' | 'reviewer';
 
@@ -413,8 +411,6 @@ export interface Version {
   arch?: string;
   protocol?: number;
 }
-
-export const PROTOCOL = 1;
 
 export type EventType =
   | 'line.created'

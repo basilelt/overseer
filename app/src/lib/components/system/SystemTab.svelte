@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { TabInfo } from '../../tabs';
+  import type { TabInfo } from '../../tabs/tabs';
   import SystemView from './SystemView.svelte';
 
   let {}: { tabKey: string; tab: TabInfo; focused: boolean } = $props();

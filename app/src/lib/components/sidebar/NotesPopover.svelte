@@ -1,15 +1,20 @@
 <script lang="ts">
+  import { dismiss } from '../../dismiss';
+  import { captureFocus } from '../../focus';
+  import { isNotesTrigger } from '../../notes-trigger';
   import StickyNote from '@lucide/svelte/icons/sticky-note';
   import Trash2 from '@lucide/svelte/icons/trash-2';
   import X from '@lucide/svelte/icons/x';
   import { t } from '../../i18n.svelte';
   import { app } from '../../state.svelte';
-  import { ui } from '../../mobile/ui.svelte';
+  import { isPhone } from '../../mobile/ui.svelte';
   import { addNote, editNote, notesOf, removeNote } from '../../notes';
   import { closeNotes, notesUi } from '../../notes.svelte';
   import { age } from '../../time';
   import { onDestroy, untrack } from 'svelte';
+  import { isSubmitChord } from '../../chord';
 
+  const restore = captureFocus();
   let box: HTMLDivElement | undefined = $state();
   let pos = $state({ left: 0, top: 0 });
   let draft = $state('');
@@ -17,7 +22,7 @@
   const lineId = $derived(notesUi.lineId!);
   const notes = $derived(notesOf(app.data, lineId));
   const title = $derived(app.items.find((i) => i.lineId === lineId)?.title ?? '');
-  const phone = $derived(ui.layout === 'phone');
+  const phone = $derived(isPhone());
 
   $effect(() => {
     if (!box) return;
@@ -70,22 +75,17 @@
   const rowsFor = (text: string) => Math.min(8, text.split('\n').reduce((n, l) => n + Math.max(1, Math.ceil(l.length / 38)), 0));
 
   function onKey(e: KeyboardEvent, run: () => void) {
-    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+    if (isSubmitChord(e)) {
       e.preventDefault();
       run();
     }
   }
 
-  function outside(e: PointerEvent) {
-    const el = e.target as Element | null;
-    if (box && !box.contains(el) && !el?.closest?.(`[data-notes="${CSS.escape(lineId)}"]`)) closeNotes();
-  }
+  const trigger = (el: Element | null) => isNotesTrigger(el, lineId);
 </script>
 
-<svelte:window onpointerdown={outside} onkeydown={(e) => e.key === 'Escape' && (e.stopPropagation(), closeNotes())} />
-
 {#if phone}<div class="scrim" role="presentation"></div>{/if}
-<div class="notes" role="dialog" aria-label={t('notes.title')} bind:this={box} style:left="{pos.left}px" style:top="{pos.top}px">
+<div class="notes" role="dialog" aria-label={t('notes.title')} bind:this={box} use:dismiss={{ onclose: closeNotes, escape: 'stop', restore, keep: trigger }} style:left="{pos.left}px" style:top="{pos.top}px">
   <header>
     <StickyNote size={14} />
     <span class="ttl">{t('notes.title')}</span>
@@ -122,7 +122,7 @@
 <style>
   .notes {
     position: fixed;
-    z-index: 60;
+    z-index: var(--z-popover);
     display: flex;
     flex-direction: column;
     gap: 8px;
@@ -217,7 +217,7 @@
   .scrim {
     position: fixed;
     inset: 0;
-    z-index: 59;
+    z-index: var(--z-popover-scrim);
     background: var(--overlay);
   }
   :global(.phone) .notes {

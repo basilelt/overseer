@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { DaemonError } from '../client';
-import { tabInfo } from '../tabs';
-import { EMPTY_LAYOUT, openInFocused } from '../workspace.svelte';
+import { DaemonError } from '../daemon/client';
+import { tabInfo } from '../tabs/tabs';
+import { EMPTY_LAYOUT, openInFocused } from '../workspace/workspace.svelte';
 import { ghError, groupByRepo, reviewState, sizeLabel, sizeTone } from './format';
 import { beside, newTerm, PR_REVIEWS_KEY } from './open.svelte';
 import type { ReviewRequest } from './types';

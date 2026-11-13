@@ -1,4 +1,4 @@
-import { within } from '../workspaces';
+import { within } from '../workspace/workspaces';
 import type { GraphCommit, GraphPage, GraphRef, Overlay, Worktree } from './types';
 
 export const ROW_H = 28;

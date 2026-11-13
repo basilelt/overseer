@@ -28,7 +28,7 @@
   const short = $derived(sha.slice(0, 7));
   const url = $derived(commitUrl(repo, sha));
   const err = (e: unknown) => String((e as Error)?.message ?? e);
-  const api = () => gitApi(app.client!);
+  const api = () => gitApi(app.requireClient());
 
   $effect(() => {
     const s = sha;

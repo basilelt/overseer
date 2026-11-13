@@ -7,15 +7,11 @@ case $kind in
   *) echo "usage: $0 release|debug OUT.apk" >&2; exit 2 ;;
 esac
 [ -n "$out" ] || { echo "usage: $0 release|debug OUT.apk" >&2; exit 2; }
+. "$(dirname "$0")/android-common.sh"
 root=$(cd "$(dirname "$0")/.." && pwd)
 dir=$root/app/src-tauri/gen/android/app/build/outputs/apk
-apks=$(find "$dir" -type f -name "*-$kind*.apk" 2>/dev/null)
-count=$(printf '%s' "$apks" | grep -c . || true)
-if [ "$count" -ne 1 ]; then
-  echo "::error title=android apk::expected one $kind APK under $dir, found $count"
-  printf '%s\n' "$apks"
-  exit 1
-fi
+find_one "android apk" "$kind APK" "$dir" "*-$kind*.apk"
+apks=$found
 case $apks in
   *unsigned*) echo "::error title=android apk::$apks is unsigned"; exit 1 ;;
 esac
@@ -23,12 +19,12 @@ apksigner=$(command -v apksigner || ls -d "$ANDROID_HOME"/build-tools/*/apksigne
 certs=$("$apksigner" verify --verbose --print-certs "$apks" 2>&1)
 printf '%s\n' "$certs" | grep -iE 'verified using|certificate'
 if [ -n "${ANDROID_CERT_SHA256:-}" ]; then
-  want=$(printf '%s' "$ANDROID_CERT_SHA256" | tr -d ': ' | tr 'A-F' 'a-f')
+  want=$(printf '%s' "$ANDROID_CERT_SHA256" | norm_fp)
   if ! printf '%s' "$want" | grep -qE '^[0-9a-f]{64}$'; then
     echo "::error title=android apk::ANDROID_CERT_SHA256 is not a SHA-256 fingerprint"
     exit 1
   fi
-  if ! printf '%s\n' "$certs" | tr -d ': ' | tr 'A-F' 'a-f' | grep -q "$want"; then
+  if ! printf '%s\n' "$certs" | norm_fp | grep -q "$want"; then
     printf '%s\n' "$certs"
     echo "::error title=android apk::APK not signed by the expected key ($ANDROID_CERT_SHA256)"
     exit 1
@@ -43,7 +39,4 @@ if ! unzip -p "$apks" 'classes*.dex' | grep -aq 'io/github/basilelt/overseer/Apk
   echo "::error title=android apk::$apks does not contain ApkInstallerPlugin, so its in-app updater cannot install updates"
   exit 1
 fi
-mkdir -p "$(dirname "$out")"
-cp "$apks" "$out"
-(cd "$(dirname "$out")" && sha256sum "$(basename "$out")" >"$(basename "$out").sha256")
-ls -l "$out"
+publish "$apks" "$out"

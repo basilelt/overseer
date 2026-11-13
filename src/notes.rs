@@ -7,7 +7,6 @@ pub const NOTES_MAX: usize = 50;
 
 pub type Err = (u16, String);
 
-/// A note as stored: newlines kept, other control characters dropped, trimmed and capped; blank is none.
 pub fn clean_note(raw: Option<&str>) -> Option<String> {
     let s: String = raw?
         .chars()
@@ -56,7 +55,6 @@ pub fn remove(notes: &mut Vec<Value>, id: &str) -> Result<(), Err> {
     Ok(())
 }
 
-/// Read-modify-write of one line's notes in a single immediate transaction, so two clients never drop each other's notes.
 pub fn update<T>(
     reg: &mut Registry,
     line_id: &str,
@@ -147,13 +145,10 @@ mod tests {
 
     #[test]
     fn notes_stay_out_of_what_agents_and_the_team_see() {
-        // Given a session line carrying a note
-        // When it is turned into the board line synced to the team and the session list agents read over MCP
-        // Then only the station-local part shown to the user carries the note
         let l = crate::Line {
             id: "l1".into(),
             agent: "claude",
-            state: "idle",
+            state: crate::wire::STATE_IDLE,
             notes: vec![json!({"id": "n", "text": "private", "createdAt": "", "updatedAt": ""})],
             ..Default::default()
         };

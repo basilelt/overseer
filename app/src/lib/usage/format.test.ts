@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { agentLevel, authNote, onCredits, windowLevel, barHeights, chipSegments, chipText, countdown, formatCost, formatDuration, formatTokens, level, tzOffset, usagePath, worst } from './format';
+import { agentLevel, authNote, onCredits, windowLevel, barHeights, chipSegments, chipText, countdown, formatCost, formatDuration, formatTokens, tzOffset } from './format';
+import { level, worst } from '../severity';
 import type { UsageAgent, UsageTotals } from './types';
 import { mockUsage } from './mock';
 import { creditsNote } from './strings';
@@ -120,11 +121,6 @@ describe('Claude plan limits', () => {
     expect(authNote(stale.limits)).toBeNull();
     expect(authNote({ ...stale.limits, windows: [] })).toBe('authUnavailable');
   });
-
-  it('asks the daemon for Claude limits only when enabled', () => {
-    expect(usagePath('today', 'agent', 0)).not.toContain('claudeLimits');
-    expect(usagePath('today', 'agent', 0, undefined, true)).toBe('/v1/usage?range=today&by=agent&tzOffset=0&claudeLimits=1');
-  });
 });
 
 describe('usage formatting', () => {
@@ -162,8 +158,6 @@ describe('usage formatting', () => {
   it('sends the timezone as minutes east of UTC', () => {
     expect(tzOffset({ getTimezoneOffset: () => -120 } as Date)).toBe(120);
     expect(tzOffset({ getTimezoneOffset: () => 300 } as Date)).toBe(-300);
-    expect(usagePath('7d', 'project', 120)).toBe('/v1/usage?range=7d&by=project&tzOffset=120');
-    expect(usagePath('30d', 'session', -330, 'L1')).toBe('/v1/usage?range=30d&by=session&tzOffset=-330&line=L1');
   });
 
   it('scales bars to the busiest day and keeps tiny days visible', () => {

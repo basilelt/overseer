@@ -221,8 +221,24 @@ fn parsed() -> &'static Mutex<Parsed> {
     C.get_or_init(Default::default)
 }
 
+pub fn projects_dir(claude_dir: &Path) -> PathBuf {
+    claude_dir.join("projects")
+}
+
+pub fn session_file(project_dir: &Path, session_id: &str) -> PathBuf {
+    project_dir.join(format!("{session_id}.jsonl"))
+}
+
+pub fn subagents_dir(transcript: &Path) -> PathBuf {
+    transcript.with_extension("").join("subagents")
+}
+
+pub fn subagent_file(subagents_dir: &Path, agent_id: &str) -> PathBuf {
+    subagents_dir.join(format!("agent-{agent_id}.jsonl"))
+}
+
 pub fn transcripts(claude_dir: &Path) -> Vec<Transcript> {
-    let root = claude_dir.join("projects");
+    let root = projects_dir(claude_dir);
     let Ok(projects) = std::fs::read_dir(&root) else {
         return vec![];
     };
@@ -267,12 +283,11 @@ pub fn transcripts(claude_dir: &Path) -> Vec<Transcript> {
 }
 
 pub fn titles(claude_dir: &Path, session_id: &str, n: usize) -> Vec<String> {
-    let name = format!("{session_id}.jsonl");
-    let Some(path) = std::fs::read_dir(claude_dir.join("projects"))
+    let Some(path) = std::fs::read_dir(projects_dir(claude_dir))
         .into_iter()
         .flatten()
         .flatten()
-        .map(|p| p.path().join(&name))
+        .map(|p| session_file(&p.path(), session_id))
         .find(|p| p.is_file())
     else {
         return vec![];
@@ -292,10 +307,6 @@ pub fn titles(claude_dir: &Path, session_id: &str, n: usize) -> Vec<String> {
     }
     let skip = out.len().saturating_sub(n);
     out.split_off(skip)
-}
-
-pub fn is_claude(arg: &str) -> bool {
-    arg.contains("claude")
 }
 
 /// Last parsed content of each session file: Claude rewrites it in place, so a scan can read it
@@ -365,7 +376,9 @@ fn live_in(dir: std::fs::ReadDir, probe: &dyn Probe, seen: &mut HashSet<PathBuf>
             if !same {
                 return None;
             }
-            flags_after(&i.argv, is_claude)
+            flags_after(&i.argv, |a| {
+                crate::agents::runs_as(crate::agents::CLAUDE, a)
+            })
         });
         let launch_id = flags.as_deref().and_then(launch_session);
         let alive = flags.map(|f| launch_flags(&strip_resume(&f)));
@@ -390,6 +403,19 @@ fn live_in(dir: std::fs::ReadDir, probe: &dyn Probe, seen: &mut HashSet<PathBuf>
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn transcript_path_shapes() {
+        let main = Path::new("/c/projects/-w/s1.jsonl");
+        assert_eq!(projects_dir(Path::new("/c")), Path::new("/c/projects"));
+        assert_eq!(session_file(Path::new("/c/projects/-w"), "s1"), main);
+        let subs = subagents_dir(main);
+        assert_eq!(subs, Path::new("/c/projects/-w/s1/subagents"));
+        assert_eq!(
+            subagent_file(&subs, "a1"),
+            Path::new("/c/projects/-w/s1/subagents/agent-a1.jsonl")
+        );
+    }
 
     fn v(a: &[&str]) -> Vec<String> {
         a.iter().map(|s| s.to_string()).collect()
@@ -485,9 +511,6 @@ mod tests {
 
     #[test]
     fn a_session_file_read_mid_rewrite_keeps_the_session_live() {
-        // Given a live claude session whose sessions file was read once
-        // When a scan reads it torn by an in-place rewrite, then the process exits
-        // Then the session stays live with its last status, and is gone once the process is
         let dir = std::env::temp_dir().join(format!("sb-claude-torn-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(dir.join("sessions")).unwrap();

@@ -28,7 +28,7 @@
     box-shadow: var(--shadow);
     border-radius: var(--radius);
     padding: 8px 14px;
-    z-index: 100;
+    z-index: var(--z-toast);
     width: max-content;
     max-width: min(480px, calc(100vw - 32px));
     display: flex;
@@ -62,6 +62,12 @@
   }
   :global(:root.phone) .toast {
     bottom: calc(72px + var(--safe-bottom) + var(--kb, 0px) + var(--composer-h, 0px) + 8px);
+  }
+  :global(:root:has([data-rec-pill])) .toast {
+    bottom: calc(56px + var(--composer-h, 0px));
+  }
+  :global(:root.phone:has([data-rec-pill])) .toast {
+    bottom: calc(116px + var(--safe-bottom) + var(--kb, 0px) + var(--composer-h, 0px) + 8px);
   }
   :global(:root.phone:has([role='menu'])) .toast {
     bottom: auto;

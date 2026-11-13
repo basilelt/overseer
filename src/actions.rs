@@ -1,9 +1,10 @@
 use crate::hold::{evaluate, Check, HoldInput};
+use crate::lifecycle::is_stub_wrapper;
 use crate::procs::mem_bytes;
 use crate::registry::Registry;
 use crate::sys::CommandExt;
 use crate::sys::OpenOptionsExt;
-use crate::util::{format_rfc3339, shell_quote, ticket_any};
+use crate::util::{format_rfc3339, shell_quote, ticket_exact};
 use crate::{scan, Ctx, Line};
 use serde_json::{json, Value};
 use std::io::Write;
@@ -95,6 +96,38 @@ impl Report {
         self.error.is_none() && (self.pending || self.checks.iter().all(|c| c.ok))
     }
 
+    pub fn http_status(&self) -> u16 {
+        if self.ok() {
+            200
+        } else {
+            409
+        }
+    }
+
+    pub fn exit_code(&self) -> u8 {
+        if self.ok() {
+            0
+        } else {
+            3
+        }
+    }
+
+    pub fn outcome(&self) -> (&'static str, Option<String>) {
+        if self.error.is_some() {
+            return (crate::wire::STATUS_FAILED, self.error.clone());
+        }
+        if !self.ok() {
+            let failed: Vec<String> = self
+                .checks
+                .iter()
+                .filter(|c| !c.ok)
+                .map(|c| format!("{}: {}", c.name, c.detail))
+                .collect();
+            return (crate::wire::STATUS_REFUSED, Some(failed.join("; ")));
+        }
+        (crate::wire::STATUS_SUCCEEDED, Some(self.action.to_string()))
+    }
+
     pub fn to_json(&self) -> Value {
         let mut v = json!({
             "lineId": self.line_id,
@@ -141,10 +174,11 @@ pub(crate) fn self_exe() -> String {
 
 pub fn stub_command(ctx: &Ctx, line_id: &str) -> String {
     format!(
-        "trap : INT; OVERSEER_STATE_DIR={} {} stub {}; exec \"${{SHELL:-/bin/sh}}\"",
+        "trap : INT; OVERSEER_STATE_DIR={} {} stub {}; {}",
         shell_quote(&ctx.state_dir.to_string_lossy()),
         shell_quote(&self_exe()),
-        shell_quote(line_id)
+        shell_quote(line_id),
+        crate::util::SHELL_FALLBACK
     )
 }
 
@@ -222,7 +256,7 @@ fn terminate(_pid: u32, t: &std::sync::Arc<crate::term::Term>) -> bool {
 
 fn record_held(ctx: &Ctx, reg: &Registry, l: &Line, pid: u32) -> Result<(), String> {
     reg.set_mark(&l.id, "held_by_user", Some(&pid.to_string()))?;
-    reg.set_mark(&l.id, "state", Some("held"))?;
+    reg.set_mark(&l.id, "state", Some(crate::wire::STATE_HELD))?;
     reg.set_mark(&l.id, "held_at", Some(&format_rfc3339(ctx.now_ms)))?;
     reg.set_mark(&l.id, "hold_pending", None)
 }
@@ -233,7 +267,6 @@ fn revert_held(reg: &Registry, l: &Line) {
     let _ = reg.set_mark(&l.id, "state", Some(l.state));
 }
 
-/// Start stamp of a process: (start, start_ms) as the probe reports them.
 type Stamp = (Option<String>, Option<i64>);
 
 fn stamp(probe: &dyn crate::procs::Probe, pid: u32) -> Option<Stamp> {
@@ -297,7 +330,6 @@ fn send_signal(pid: u32, sig: i32) {
     unsafe { libc::kill(pid as i32, sig) };
 }
 
-/// SIGTERM what the agent left behind, SIGKILL what survives the hold timeout.
 #[cfg(unix)]
 fn stop_tree(ctx: &Ctx, tree: &[(u32, Option<Stamp>)]) -> Vec<String> {
     let signalled = signal_tree(ctx.probe, tree, libc::SIGTERM, &send_signal);
@@ -414,9 +446,9 @@ fn execute_hold(
     let prev_remain = tmux.pane_option(pane, "remain-on-exit");
     tmux.set_pane_option(pane, "remain-on-exit", Some("on"))?;
     let restore_remain = || tmux.set_pane_option(pane, "remain-on-exit", prev_remain.as_deref());
-    let killed = crate::git::output_within(
+    let killed = crate::exec::output_within(
         std::process::Command::new("kill").args(["-TERM", &pid.to_string()]),
-        crate::git::PROBE_TIMEOUT,
+        crate::exec::PROBE_TIMEOUT,
     )
     .is_ok_and(|o| o.status.success());
     if !killed || !wait_exit(ctx, pid, &start) {
@@ -517,8 +549,6 @@ pub(crate) fn hold_line(
 /// Predicates that fail only while the agent is mid-turn and are re-checked when it ends.
 const TURN_CHECKS: [&str; 4] = ["atPrompt", "inputEmpty", "noToolRunning", "notNeedsInput"];
 
-/// Hold now when every predicate passes; otherwise queue the hold for the end of the turn
-/// when only turn-bound predicates fail. Other failures (pinned, not alive...) are refused.
 pub fn hold_after_turn(ctx: &Ctx, q: &str, apply: bool) -> Result<Report, String> {
     let lines = scan(ctx)?;
     let l = find_line(&lines, q)?;
@@ -590,7 +620,6 @@ pub(crate) enum Pending {
     Blocked(Vec<Check>),
 }
 
-/// What a pending hold does once the scan sees the line.
 pub(crate) fn pending_verdict(l: &Line, checks: &[Check]) -> Pending {
     if l.busy_known && l.busy || l.needs_input {
         return Pending::Wait;
@@ -655,12 +684,10 @@ fn elapsed_over(key: String, now_ms: Option<i64>, limit: i64) -> bool {
     }
 }
 
-/// True once the line has been blocked for the grace period; `None` forgets it.
 fn blocked_long_enough(id: &str, now_ms: Option<i64>) -> bool {
     elapsed_over(id.to_string(), now_ms, grace_ms())
 }
 
-/// True once the line has waited on subagents for the bounded wait; `None` forgets it.
 fn subagents_waited_too_long(id: &str, now_ms: Option<i64>) -> bool {
     elapsed_over(format!("sub:{id}"), now_ms, subagent_wait_ms())
 }
@@ -704,7 +731,6 @@ fn checks_json(checks: &[Check]) -> Value {
     )
 }
 
-/// The pending hold was dropped: tell the app why and keep a trace in the action log.
 fn refuse_pending(ctx: &Ctx, l: &Line, failed: Value, error: Option<&str>) {
     let rec = json!({"lineId": l.id, "failed": failed, "error": error});
     log_action(
@@ -826,7 +852,7 @@ pub(crate) fn close_line(
         if apply {
             let reg = Registry::open(&ctx.state_dir)?;
             reg.set_mark(&l.id, "closed_at", Some(&format_rfc3339(ctx.now_ms)))?;
-            reg.set_mark(&l.id, "state", Some("hung-up"))?;
+            reg.set_mark(&l.id, "state", Some(crate::wire::STATE_HUNG_UP))?;
             for t in pending_terms(l) {
                 if t.kill().is_ok() {
                     r.steps.push(format!("closed held term {}", t.info().id));
@@ -851,10 +877,6 @@ pub(crate) fn close_line(
     Ok(r)
 }
 
-fn is_stub_wrapper(cmd: &[String]) -> bool {
-    cmd.last().is_some_and(|c| c.contains(" stub "))
-}
-
 // Terms of a line with no agent pid yet: its held stub, or an agent still starting, such as
 // a resumed Claude waiting on its folder trust prompt before any hook reports the session.
 pub fn pending_terms(l: &Line) -> Vec<std::sync::Arc<crate::term::Term>> {
@@ -867,7 +889,10 @@ pub fn pending_terms(l: &Line) -> Vec<std::sync::Arc<crate::term::Term>> {
             let i = t.info();
             !i.exited
                 && i.line_id.as_deref() == Some(l.id.as_str())
-                && (is_stub_wrapper(&i.cmd) || i.agent.as_deref().is_some_and(|a| a != "shell"))
+                && (is_stub_wrapper(&i.cmd)
+                    || i.agent
+                        .as_deref()
+                        .is_some_and(|a| !crate::agents::is_shell(a)))
         })
         .collect()
 }
@@ -984,7 +1009,7 @@ pub fn resume(ctx: &Ctx, q: &str, dry_run: bool, launch: Launch) -> Result<Resum
         &json!({"action": "resume", "dryRun": false, "result": plan.to_json()}),
     );
     let argv: Vec<String> = plan.argv.iter().map(|a| shell_quote(a)).collect();
-    let cmd = format!("{}; exec \"${{SHELL:-/bin/sh}}\"", argv.join(" "));
+    let cmd = format!("{}; {}", argv.join(" "), crate::util::SHELL_FALLBACK);
     match plan.r#where {
         "tmux-pane" => {
             let pane = plan.pane.clone().unwrap_or_default();
@@ -1037,11 +1062,7 @@ pub fn link(ctx: &Ctx, q: &str, key: &str) -> Result<(String, Option<String>), S
     let l = find_line(&lines, q)?;
     let t = match key {
         "none" | "-" => None,
-        k => Some(
-            ticket_any(k)
-                .filter(|t| t.eq_ignore_ascii_case(k))
-                .ok_or_else(|| format!("'{k}' is not a ticket key (PROJECT-123)"))?,
-        ),
+        k => Some(ticket_exact(k)?),
     };
     Registry::open(&ctx.state_dir)?.set_mark(&l.id, "ticket_override", t.as_deref())?;
     Ok((l.id.clone(), t))
@@ -1068,7 +1089,6 @@ pub fn pin(ctx: &Ctx, q: &str, on: bool) -> Result<String, String> {
 
 pub const TITLE_MAX: usize = 80;
 
-/// User-typed tab title as stored: one trimmed line, capped; blank means "back to the auto title".
 pub fn clean_title(raw: Option<&str>) -> Option<String> {
     let one: String = raw?
         .chars()
@@ -1088,7 +1108,6 @@ pub fn set_title(ctx: &Ctx, q: &str, title: Option<&str>) -> Result<Line, (u16, 
     Ok(l)
 }
 
-/// Changes the sticky notes of the session `q`; returns its line id, `f`'s result and the notes now stored.
 pub fn notes<T>(
     ctx: &Ctx,
     q: &str,
@@ -1153,9 +1172,9 @@ pub fn status(ctx: &Ctx, lines: &[Line]) -> Value {
         "version": env!("CARGO_PKG_VERSION"),
         "apiConnected": false,
         "outboxPending": 0,
-        "activeCount": count("active"),
-        "idleCount": count("idle"),
-        "heldCount": count("held"),
+        "activeCount": count(crate::wire::STATE_ACTIVE),
+        "idleCount": count(crate::wire::STATE_IDLE),
+        "heldCount": count(crate::wire::STATE_HELD),
         "aliveCount": lines.iter().filter(|l| l.alive()).count(),
         "orphans": lines.iter().filter(|l| l.orphan).map(|l| l.id.clone()).collect::<Vec<_>>(),
         "duplicates": lines.iter().filter(|l| l.duplicate).map(|l| l.id.clone()).collect::<Vec<_>>(),
@@ -1181,7 +1200,7 @@ pub fn memory_policy(ctx: &Ctx, lines: &[Line], st: &Value, threshold: f64) -> V
     let over = used.is_some_and(|u| u > threshold);
     let mut idle: Vec<&Line> = lines
         .iter()
-        .filter(|l| over && l.state == "idle" && l.alive())
+        .filter(|l| over && l.state == crate::wire::STATE_IDLE && l.alive())
         .collect();
     idle.sort_by_key(|l| l.last_activity_ms);
     let candidates: Vec<Value> = idle
@@ -1262,6 +1281,36 @@ pub fn status_line(v: &Value) -> String {
 mod tests {
     use super::*;
 
+    fn report(ok: bool, error: Option<&str>, pending: bool) -> Report {
+        Report {
+            line_id: "l".into(),
+            checks: vec![crate::hold::Check {
+                name: "idle",
+                ok,
+                detail: "busy".into(),
+            }],
+            action: "hold",
+            steps: vec![],
+            error: error.map(String::from),
+            pending,
+        }
+    }
+
+    #[test]
+    fn a_report_maps_to_one_status_exit_code_and_command_outcome() {
+        let done = report(true, None, false);
+        assert_eq!((done.http_status(), done.exit_code()), (200, 0));
+        assert_eq!(done.outcome(), ("succeeded", Some("hold".into())));
+        let refused = report(false, None, false);
+        assert_eq!((refused.http_status(), refused.exit_code()), (409, 3));
+        assert_eq!(refused.outcome(), ("refused", Some("idle: busy".into())));
+        let queued = report(false, None, true);
+        assert_eq!((queued.http_status(), queued.exit_code()), (200, 0));
+        let failed = report(true, Some("boom"), false);
+        assert_eq!((failed.http_status(), failed.exit_code()), (409, 3));
+        assert_eq!(failed.outcome(), ("failed", Some("boom".into())));
+    }
+
     fn line(id: &str, sid: &str) -> Line {
         Line {
             id: id.into(),
@@ -1290,9 +1339,6 @@ mod tests {
     #[test]
     #[cfg(unix)]
     fn a_reused_pid_is_not_signalled_even_without_a_start_tick_stamp() {
-        // Given a descendant recorded on a platform that only reports start_ms (macOS)
-        // When its pid is reused by a process that started later, or is unchanged
-        // Then only the unchanged process is signalled
         let probe = Reuse(std::cell::Cell::new(1_000));
         let tree = vec![(7, stamp(&probe, 7))];
         let sent = std::cell::RefCell::new(vec![]);
@@ -1323,9 +1369,6 @@ mod tests {
 
     #[test]
     fn a_pending_hold_waits_mid_turn_and_while_the_agent_asks_for_input() {
-        // Given a live line with a pending hold
-        // When the turn runs, or the agent waits for the user
-        // Then it keeps waiting, whatever the checks say
         let mut l = pending_line();
         l.busy = true;
         assert_eq!(pending_verdict(&l, &[failing("atPrompt")]), Pending::Wait);
@@ -1339,9 +1382,6 @@ mod tests {
 
     #[test]
     fn a_pending_hold_waits_while_a_subagent_runs_after_the_turn() {
-        // Given an idle line with a pending hold and one running subagent
-        // When noToolRunning fails because of it, then the subagent count drops to 0
-        // Then it waits instead of being blocked, and runs once the count is 0
         let mut l = pending_line();
         l.hook = Some(crate::registry::HookState {
             subagents: 1,
@@ -1357,17 +1397,11 @@ mod tests {
 
     #[test]
     fn a_pending_hold_runs_once_the_turn_ended_and_every_check_passes() {
-        // Given a pending hold on an idle line
-        // When no check fails
-        // Then it runs
         assert_eq!(pending_verdict(&pending_line(), &[]), Pending::Run);
     }
 
     #[test]
     fn a_pending_hold_is_blocked_by_failures_that_outlast_the_turn() {
-        // Given a pending hold on an idle line
-        // When a tool, a pin or an unknown turn state blocks it, or only typed input does
-        // Then the lasting failures block it and typed input only waits
         let l = pending_line();
         let tool = [failing("noToolRunning")];
         assert!(matches!(pending_verdict(&l, &tool), Pending::Blocked(f) if f.len() == 1));
@@ -1384,9 +1418,6 @@ mod tests {
 
     #[test]
     fn the_grace_period_can_be_overridden_by_a_valid_number_of_milliseconds() {
-        // Given the grace env override
-        // When it is unset, valid, negative or not a number
-        // Then only a valid non-negative value replaces the default
         assert_eq!(parse_grace(None), BLOCK_GRACE_MS);
         assert_eq!(parse_grace(Some("2000")), 2_000);
         assert_eq!(parse_grace(Some("-1")), BLOCK_GRACE_MS);
@@ -1395,9 +1426,6 @@ mod tests {
 
     #[test]
     fn forgetting_a_pending_hold_restarts_the_grace_and_subagent_clocks() {
-        // Given a line blocked and waiting on subagents since t=1000
-        // When its pending clocks are forgotten (cancelled or queued again)
-        // Then the next check starts a fresh clock instead of expiring at once
         blocked_long_enough("forget-1", Some(1_000));
         subagents_waited_too_long("forget-1", Some(1_000));
         forget_pending_clocks("forget-1");
@@ -1414,9 +1442,6 @@ mod tests {
 
     #[test]
     fn the_subagent_wait_is_bounded_and_independent_of_the_grace_clock() {
-        // Given a line waiting on subagents since t=1000
-        // When it is checked before and after the bounded wait, and the grace clock is reset
-        // Then it expires only after the wait, and the grace reset does not restart it
         assert!(!subagents_waited_too_long("subwait-1", Some(1_000)));
         blocked_long_enough("subwait-1", None);
         assert!(!subagents_waited_too_long(
@@ -1434,9 +1459,6 @@ mod tests {
 
     #[test]
     fn a_blocked_hold_is_only_dropped_after_the_grace_period() {
-        // Given a line first seen blocked at t=1000
-        // When it is checked before and after the grace, and after being unblocked
-        // Then it expires only after the grace and the clock restarts once forgotten
         assert!(!blocked_long_enough("grace-1", Some(1_000)));
         assert!(!blocked_long_enough(
             "grace-1",
@@ -1450,9 +1472,6 @@ mod tests {
 
     #[test]
     fn only_one_hold_per_line_is_in_flight() {
-        // Given a hold in flight for a line
-        // When another starts for the same line, or the first ends
-        // Then the second is refused until the first is dropped
         let a = Inflight::begin("inflight-1").unwrap();
         assert!(Inflight::begin("inflight-1").is_none());
         assert!(Inflight::begin("inflight-2").is_some());
@@ -1462,9 +1481,6 @@ mod tests {
 
     #[test]
     fn custom_title_is_trimmed_capped_and_cleared_when_blank() {
-        // Given raw titles typed by a user, including blanks, control characters and a long one
-        // When each is normalised for storage
-        // Then blanks clear the title, control characters become spaces and length is capped
         assert_eq!(
             clean_title(Some("  Payments  ")).as_deref(),
             Some("Payments")
@@ -1488,9 +1504,6 @@ mod tests {
 
     #[test]
     fn a_stub_wrapper_command_is_recognised_whoever_the_agent_pid_is() {
-        // Given the held stub wrapper command and the plain agent command
-        // When asking whether the term runs a stub wrapper
-        // Then only the wrapper counts, so a resumed agent running under it can be held again
         let wrapper = vec![
             "/bin/sh".into(),
             "-c".into(),
@@ -1504,9 +1517,6 @@ mod tests {
 
     #[test]
     fn resume_is_refused_while_another_process_runs_the_same_conversation() {
-        // Given a held line on session S and another line whose live process is in S
-        // When resuming the held line, and resuming it once that process is gone
-        // Then the first resume is refused naming the running line, the second is allowed
         let held = line("vm-held", "S");
         let mut other = line("vm-other", "S");
         other.pid = Some(42);

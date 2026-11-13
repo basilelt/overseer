@@ -41,8 +41,6 @@ export function tabForView(view: 'agents' | 'kanban' | 'browser', selectedKey: s
   return 'agents';
 }
 
-export const MIN_TOUCH = 44;
-
 export function columnAfterSwipe(index: number, count: number, direction: -1 | 0 | 1): number {
   return Math.max(0, Math.min(count - 1, index + direction));
 }

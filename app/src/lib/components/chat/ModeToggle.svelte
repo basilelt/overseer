@@ -2,7 +2,7 @@
   import MessageSquare from '@lucide/svelte/icons/message-square';
   import SquareTerminal from '@lucide/svelte/icons/square-terminal';
   import { t } from '../../i18n.svelte';
-  import type { SidebarItem } from '../../grouping';
+  import type { SidebarItem } from '../../session/grouping';
   import { modeOf, setMode } from '../../chat/viewmode.svelte';
 
   let { item }: { item: SidebarItem } = $props();

@@ -4,13 +4,13 @@
   import Modal from '../ui/Modal.svelte';
   import { app } from '../../state.svelte';
   import { t } from '../../i18n.svelte';
-  import { settings } from '../../settings.svelte';
-  import { findAgent, pickAgent } from '../../agents';
-  import { organizer } from '../../organize.svelte';
+  import { settings } from '../../settings/settings.svelte';
+  import { findAgent, pickAgent, isAgentId } from '../../agents';
+  import { organizer } from '../../workspace/organize.svelte';
 
   const agentId = $derived(pickAgent(app.agents, settings.defaultAgent));
   const agent = $derived(findAgent(app.agents, agentId));
-  const canAgent = $derived(app.connected && !!agent?.installed && agent.id !== 'shell');
+  const canAgent = $derived(app.connected && !!agent?.installed && isAgentId(agent.id));
 
   function withAgent() {
     if (!agent) return;

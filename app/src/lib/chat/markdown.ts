@@ -166,7 +166,6 @@ export function parseMarkdown(src: string): Block[] {
   return blocks;
 }
 
-// Keyed by the entry text itself (already held by the chat), so a tab switch re-renders without re-parsing.
 const parsed = new Lru<string, Block[]>(400);
 
 export function parseMarkdownCached(src: string): Block[] {

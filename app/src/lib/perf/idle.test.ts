@@ -3,7 +3,7 @@ import { setPresence, type Presence } from '../presence';
 import { tickWhile } from '../chat/clock.svelte';
 import { SystemMonitor } from '../system/monitor.svelte';
 import { mockSystem } from '../system/mock';
-import { FrameScheduler, type PaintTarget } from '../termrender';
+import { FrameScheduler, type PaintTarget } from '../terminal/termrender';
 import { UsageFeed } from '../usage/store.svelte';
 import { mockUsage } from '../usage/mock';
 
@@ -75,7 +75,6 @@ function idleApp() {
 describe('idle budget', () => {
   beforeEach(() => vi.useFakeTimers());
   afterEach(() => {
-    vi.unstubAllGlobals();
     vi.useRealTimers();
   });
 

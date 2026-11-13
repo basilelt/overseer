@@ -1,23 +1,19 @@
 import { app } from '../state.svelte';
 import { beside } from '../review/beside.svelte';
 import { closeSideReview, itemTarget, setReviewMode } from '../review/open';
-import { allTabs, workspace } from '../workspace.svelte';
+import { allTabs, workspace } from '../workspace/workspace.svelte';
 import { live, liveOn } from './live.svelte';
+import { readItem, removeItem, writeItem, KEY_LIVE_REVIEW } from '../storage';
 
-const STORE = 'overseer.liveReview';
+const STORE = KEY_LIVE_REVIEW;
 
 function remember(key: string | null) {
-  try {
-    if (key) localStorage.setItem(STORE, key);
-    else localStorage.removeItem(STORE);
-  } catch {}
+  if (key) writeItem(STORE, key);
+  else removeItem(STORE);
 }
 
 export function restoreLiveReview(): boolean {
-  let key: string | null = null;
-  try {
-    key = localStorage.getItem(STORE);
-  } catch {}
+  const key = readItem(STORE);
   if (!key || !allTabs(workspace.layout).includes(key)) return false;
   beside.key = key;
   app.liveReview = true;

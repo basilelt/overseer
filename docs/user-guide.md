@@ -841,8 +841,13 @@ write access to the repository to attach files.
 Palette > **Record a bug** (phone: More > Record a bug) records what you do while you show a
 problem. The setup dialog offers **Record the screen too** where the webview can capture the
 screen (`getDisplayMedia` and `MediaRecorder`; a browser asks which screen or window to share);
-elsewhere, such as iOS and Android, only the action log is recorded. While it runs, a red pill at
-the bottom shows the time and the number of actions, with **Stop** and a discard button. The log
+elsewhere, such as iOS, Android and the Linux desktop app (WebKitGTK cannot capture), the option
+is not offered and only the action log is recorded. If the webview rejects the
+request, Overseer asks once more in the plain form; if the screen still cannot be captured, the
+recording goes on with the action log only and says so. Declining
+the share prompt cancels the recording as before. While it runs, a red pill at
+the bottom shows the time and the number of actions, with **Stop** and a discard button; a
+notification shows above the pill, never under it. The log
 has the start, clicks (the control's label, never a field's content), shortcuts (Ctrl/Cmd/Alt
 combinations, Escape, function keys, arrows), "typed in <field>" once per field without the text,
 view and dialog changes, uncaught errors and error toasts, each with its time since the start.
@@ -1053,8 +1058,10 @@ In the app:
   ```
 
   (bash and fish do this by default or ignore it; Overseer never edits your dotfiles.)
-- **Images and files**: paste an image (Cmd/Ctrl+V with a screenshot on the clipboard) or drop
-  files on a terminal. The app uploads them to the daemon (`POST /v1/uploads`, 50 MB per file)
+- **Images and files**: paste an image (Cmd+V, or Ctrl+Shift+V on Linux and Windows, with a screenshot
+  on the clipboard; right-click a terminal for Copy and Paste; the desktop app shows no other
+  webview menu with Back, Forward or Reload, only the native menu in text fields and an app Copy
+  over selected text) or drop files on a terminal. The app uploads them to the daemon (`POST /v1/uploads`, 50 MB per file)
   which stores each one as `~/.overseer/u/<6-character id>.<ext>` (mode `0600`, deleted after 7
   days), then types the path followed by a space as a bracketed paste when the program asked for
   it. Other files are typed short, `~/.overseer/u/a1b2c3.pdf`; images keep their absolute path
@@ -1065,7 +1072,7 @@ In the app:
   "~/.overseer/u/a1b2c3.png", "name", "size"}`.
 - **Font**: Settings → Terminal → Font family takes any installed font by name (suggestions:
   MesloLGS NF, JetBrainsMono Nerd Font, FiraCode Nerd Font, Hack Nerd Font, SF Mono, Menlo;
-  several comma-separated), with the font size and the line height (1–2). The default is the
+  several comma-separated), with the font size (8–28) and the line height (1–2). The default is the
   bundled JetBrains Mono. The bundled "Symbols Nerd Font Mono" (Nerd Fonts 3.5.1, MIT, 1.2 MB
   woff2) always ends the chain, so Nerd Font and powerline icons of oh-my-zsh, powerlevel10k or
   starship prompts render with any font.
@@ -1850,7 +1857,10 @@ Stopped: no live agent process, resumable); the toggle is at the top of the side
   the selected tab shows its full title; when they do not fit, the strip scrolls with the mouse
   wheel or trackpad, and hovering a tab shows its full title. `+` starts any installed agent or a shell in the
   workspace folder. Views (browser, **Review changes**, Git graph, worktrees, System, Usage, PR reviews)
-  open from the **Views** section of the command palette (Cmd/Ctrl+P). Drag tabs
+  open from the **Views** section of the command palette (Cmd/Ctrl+P). The palette and the phone
+  **More** sheet list only the commands that can run now: a command that needs a connection (or a
+  project, or no recording in progress) is hidden, not greyed out. A destructive button (end a terminal, delete a task, restart the server
+  from the phone **More** sheet) arms on the first press and acts on a second press within 3 seconds. Drag tabs
   to reorder (the sidebar follows), middle-click or `×` to close (this ends the agent or shell; right-click > **Hide tab
   (keep running)** only hides it), split right or down. The
   order is saved in the daemon, so it comes back on another machine.
@@ -1993,7 +2003,8 @@ A GitHub-style review of what an agent changed, while it works (ADR 0030, contra
   collapsed entry (`old → new` commits) with **Review this submodule**, which opens its own
   review from the old commit; files inside submodules are never listed, and a submodule with
   only uncommitted changes is skipped, so large submodules cost nothing. File tree, unified or split diff, syntax highlighting, unchanged lines folded
-  (click to expand), a Viewed box per file (unticked again when the file changes). The view
+  (click to expand), a Viewed box per file (unticked again when the file changes). J and K walk
+  the files after a click anywhere in the review pane, its toolbar included, except on a text field. The view
   follows the agent's edits live: the daemon watches the worktree (file system events, polling as a fallback) and sends
   `review.changed`.
 - **Triage**: every changed line is sorted into moved code, formatting, reordered imports,
@@ -2145,7 +2156,7 @@ stage, unstage and discard (confirmed), outgoing and incoming commits, and merge
 opens its diff beside the session. It follows the selected session, and the tab is remembered.
 
 The **Git tab** of the project (command palette, "Open Git (graph and source control)", ⋯ › **Open the
-Git graph**; on a phone **More**, **Git**) shows the graph with an **Uncommitted changes** row on top,
+Git graph**; on a phone **More**, **Git**; both list it only while connected with a project) shows the graph with an **Uncommitted changes** row on top,
 and source control in a column the toolbar button shows (hidden by default), for the worktree picked
 at the top. A commit's detail adds **Merge into <branch>** and **Revert in <branch>**. On a phone the
 tab has **Changes** and **Graph** sub-tabs.

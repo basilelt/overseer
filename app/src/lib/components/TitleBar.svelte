@@ -5,21 +5,22 @@
   import Play from '@lucide/svelte/icons/play';
   import Settings from '@lucide/svelte/icons/settings';
   import MessageSquarePlus from '@lucide/svelte/icons/message-square-plus';
-  import { feedback, ft } from '../feedback.svelte';
+  import { feedback, ft } from '../feedback/feedback.svelte';
   import { t } from '../i18n.svelte';
-  import { hint } from '../keyboard';
+  import { command } from '../commands/commands';
+  import { hint } from '../commands/keyboard';
+  import { isMac as mac } from '../platform';
   import { app, type View } from '../state.svelte';
-  import { closePaneAt, toggleSplit, update, workspace } from '../workspace.svelte';
+  import { closePaneAt, toggleSplit, update, workspace } from '../workspace/workspace.svelte';
   import HostChip from './titlebar/HostChip.svelte';
   import PortsChip from './ports/PortsChip.svelte';
   import NewSessionMenu from './titlebar/NewSessionMenu.svelte';
   import UpdatePill from './titlebar/UpdatePill.svelte';
-  import { isDemo } from '../demo';
+  import { isDemo } from '../daemon/demo';
   import NotificationBell from './titlebar/NotificationBell.svelte';
-  import { startable } from '../kanban-core';
+  import { startable } from '../kanban/kanban-core';
   import { preload } from '../idle';
 
-  const mac = typeof navigator !== 'undefined' && /mac/i.test(navigator.platform);
   const views: { id: View; label: () => string }[] = [
     { id: 'agents', label: () => t('title.agents') },
     { id: 'kanban', label: () => t('title.kanban') },
@@ -51,7 +52,7 @@
       onclick={() => (workspace.layout.panes.length > 1 ? closePaneAt(1) : update(toggleSplit))}><Columns2 size={15} /></button
     >
     <NewSessionMenu />
-    <button class="icon-btn" data-tour="palette" title={`${t('title.palette')} (${hint('palette')})`} aria-label={t('title.palette')} onclick={() => app.open('palette')}
+    <button class="icon-btn" data-tour="palette" title={`${t('title.palette')} (${hint('palette')})`} aria-label={t('title.palette')} onclick={() => command('palette').run()}
       ><Search size={15} /></button
     >
   </div>
@@ -76,11 +77,11 @@
     class:active={app.panelOpen}
     title={t('title.panel')}
     aria-label={t('title.panel')}
-    onclick={() => (app.panelOpen = !app.panelOpen)}><PanelRight size={15} /></button
+    onclick={() => command('panel').run()}><PanelRight size={15} /></button
   >
   <NotificationBell />
   <button class="icon-btn" data-tour="feedback" title={ft('title')} aria-label={ft('title')} onclick={() => feedback.show()}><MessageSquarePlus size={15} /></button>
-  <button class="icon-btn" data-tour="settings" title={t('title.settings')} aria-label={t('title.settings')} onclick={() => app.open('settings')}
+  <button class="icon-btn" data-tour="settings" title={t('title.settings')} aria-label={t('title.settings')} onclick={() => command('settings').run()}
     ><Settings size={15} /></button
   >
 </header>

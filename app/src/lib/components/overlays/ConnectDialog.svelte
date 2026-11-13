@@ -13,20 +13,23 @@
   import AuthPrompt from './AuthPrompt.svelte';
   import LocalNetworkPanel from './LocalNetworkPanel.svelte';
   import { t, type Key } from '../../i18n.svelte';
+  import { isMockClient } from '../../daemon/client';
   import { app } from '../../state.svelte';
-  import { saveSettings, settings } from '../../settings.svelte';
-  import { connectHow, preferredChoice, type ConnectHow, type HostChoice } from '../../host-choice';
+  import { CONNECT_CLOSE_DELAY_MS } from '../../timing';
+  import { saveSettings, settings } from '../../settings/settings.svelte';
+  import { connectHow, preferredChoice, type ConnectHow, type HostChoice } from '../../host/host-choice';
   import { hostKey, openWindow } from '../../window';
   import { isBusy, steps } from '../../conn';
-  import { exitDemo, isDemo, startDemo } from '../../demo';
+  import { exitDemo, isDemo, startDemo } from '../../daemon/demo';
   import { localNetworkView } from '../../localnet';
   import { fuzzy } from '../../fuzzy';
+  import { loadSshHosts } from '../../host/ssh-hosts';
   import type { ConnPhase, HostTarget, SshHost } from '../../types';
 
   let { onclose }: { onclose: () => void } = $props();
 
   const demo = isDemo();
-  const canDemo = $derived(!demo && !!app.client && app.client.kind !== 'mock');
+  const canDemo = $derived(!demo && !!app.client && !isMockClient(app.client));
 
   interface Row {
     key: string;
@@ -44,10 +47,7 @@
   let lastTarget = $state<HostTarget | null>(resuming ? app.conn.target : null);
 
   onMount(() => {
-    app.client
-      ?.sshHosts()
-      .then((h) => (hosts = h))
-      .catch(() => {});
+    void loadSshHosts(app.client, app.mobile).then((h) => (hosts = h));
   });
 
   const rows = $derived.by<Row[]>(() => {
@@ -84,7 +84,7 @@
 
   $effect(() => {
     if (!started || !mine || app.conn.phase !== 'connected') return;
-    const id = setTimeout(onclose, 600);
+    const id = setTimeout(onclose, CONNECT_CLOSE_DELAY_MS);
     return () => clearTimeout(id);
   });
 
@@ -93,7 +93,6 @@
   const lnView = $derived(app.conn.phase === 'error' ? localNetworkView(app.localNet, app.conn.error) : 'none');
   const lnReport = $derived(lnView === 'none' ? null : app.localNet);
 
-  // Opened from "Add a host to this window": the target joins the hosts already here.
   const forced: HostChoice | undefined = app.overlayArg === 'add' ? 'add' : undefined;
   let asking = $state<HostTarget | null>(askedFor(app.overlayArg));
   let remember = $state(false);

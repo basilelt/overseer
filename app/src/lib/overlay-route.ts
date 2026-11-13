@@ -24,6 +24,31 @@ export type MainOverlay =
 
 const PLAIN = new Set<string>(['palette', 'settings', 'task', 'taskDetail', 'project', 'review', 'broadcast', 'holdAll', 'name', 'workspaceNew', 'profiles', 'ports', 'system', 'usage', 'notifications', 'switchboardImport', 'uninstall']);
 
+type Opened = Exclude<MainOverlay, 'mobileConnect'>;
+
+const PARENT = new Map<string, Opened>([['uninstall', 'settings']]);
+
+export function parentOverlay(o: string | null): Opened | null {
+  return (o && PARENT.get(o)) || null;
+}
+
+export interface EscapeState {
+  key: string;
+  defaultPrevented: boolean;
+  feedback: boolean;
+  recording: boolean;
+  diag: boolean;
+  overlay: boolean;
+}
+
+export function escapeTarget(s: EscapeState): 'feedback' | 'diag' | 'overlay' | null {
+  if (s.key !== 'Escape') return null;
+  if (s.feedback && !s.defaultPrevented && !s.recording) return 'feedback';
+  if (s.diag) return 'diag';
+  if (s.overlay) return 'overlay';
+  return null;
+}
+
 export interface OverlayState {
   overlay: string | null;
   overlayArg?: string | null;

@@ -6,18 +6,19 @@
   import Plus from '@lucide/svelte/icons/plus';
   import Server from '@lucide/svelte/icons/server';
   import { connLabel } from '../../conn-label';
-  import { hostMenu, hostName, openOnHost, toggleFold } from '../../host-actions';
-  import type { HostLink } from '../../host-link.svelte';
-  import { hostColor } from '../../hosts';
-  import { itemsOf } from '../../host-watch';
+  import { hostMenu, openOnHost, toggleFold } from '../../host/host-actions';
+  import type { HostLink } from '../../host/host-link.svelte';
+  import { hostColor, hostName } from '../../host/hosts';
+  import { itemsOf } from '../../host/host-watch';
   import { t } from '../../i18n.svelte';
-  import { settings } from '../../settings.svelte';
-  import { spaces } from '../../spaces';
+  import { settings } from '../../settings/settings.svelte';
+  import { spaces } from '../../workspace/spaces';
   import { app } from '../../state.svelte';
   import { visibleClock } from '../../visible-clock';
   import SpaceBlock from './SpaceBlock.svelte';
   import SpacesView from './SpacesView.svelte';
   import StatesView from './StatesView.svelte';
+  import { isAgentItem } from '../../agents';
 
   let { filter, showArchived }: { filter: string; showArchived: boolean } = $props();
 
@@ -32,7 +33,7 @@
 
   function count(l: HostLink): number {
     const items = l === app.link ? app.items : itemsOf(l).items;
-    return items.filter((i) => i.kind !== 'shell').length;
+    return items.filter((i) => isAgentItem(i)).length;
   }
 
   function dot(l: HostLink): string {

@@ -6,10 +6,10 @@
   import ExternalLink from '@lucide/svelte/icons/external-link';
   import TriangleAlert from '@lucide/svelte/icons/triangle-alert';
   import Inbox from '@lucide/svelte/icons/inbox';
-  import type { TabInfo } from '../../tabs';
+  import type { TabInfo } from '../../tabs/tabs';
   import { app } from '../../state.svelte';
   import { age } from '../../time';
-  import { openExternal } from '../../ports.svelte';
+  import { openExternal } from '../../ports/ports.svelte';
   import { gt } from '../../github/strings';
   import { ghError, groupByRepo, reviewState, sizeLabel, sizeTone } from '../../github/format';
   import { ReviewFeed } from '../../github/feed.svelte';

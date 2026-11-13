@@ -2,10 +2,10 @@
   import SquareTerminal from '@lucide/svelte/icons/square-terminal';
   import StickyNote from '@lucide/svelte/icons/sticky-note';
   import { notesUi, toggleNotes } from '../../notes.svelte';
-  import type { SidebarItem } from '../../grouping';
+  import type { SidebarItem } from '../../session/grouping';
   import { t } from '../../i18n.svelte';
   import { age } from '../../time';
-  // `now` comes from the shared clock so rows own no timer.
+  import { isShellItem } from '../../agents';
   let {
     item,
     now,
@@ -24,13 +24,12 @@
     onselect: (e?: MouseEvent) => void;
     onmenu?: (e: MouseEvent) => void;
     onpointerdown?: (e: PointerEvent) => void;
-    /** The workspace this row is listed in; makes it a drop target for reordering its tabs. */
     zone?: string;
     dropPos?: 'before' | 'after' | 'inside' | null;
   } = $props();
 
   const label = $derived(t(`session.state.${item.state}`));
-  const shell = $derived(item.kind === 'shell');
+  const shell = $derived(isShellItem(item));
   const notes = $derived(item.notes ?? 0);
   const notesLabel = $derived(notes ? t(notes === 1 ? 'notes.countOne' : 'notes.count', { n: notes }) : t('notes.add'));
 </script>

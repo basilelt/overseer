@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { adaptChoice, agentName, canInstall, efforts, hasModel, ordered, pickAgent, sessionsAvailable, splitInstalled, taskAgents } from './agents';
-import { MOCK_AGENTS } from './mock';
+import { MOCK_AGENTS } from './daemon/mock';
 
 const by = (id: string) => MOCK_AGENTS.find((a) => a.id === id)!;
 

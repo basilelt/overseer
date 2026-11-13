@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { MockDaemon } from '../mock';
+import { MockDaemon } from '../daemon/mock';
 import type { DaemonEvent } from '../types';
 import type { ReviewGraph } from './types';
 import { reviewApi } from './api';

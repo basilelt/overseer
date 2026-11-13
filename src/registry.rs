@@ -207,6 +207,77 @@ const ADDED_COLUMNS: &[(&str, &str, &str)] = &[
     ("tasks", "task_type", "TEXT"),
 ];
 
+pub const fn col(cols: &[&str], name: &str) -> usize {
+    let mut i = 0;
+    while i < cols.len() {
+        let (a, b) = (cols[i].as_bytes(), name.as_bytes());
+        if a.len() == b.len() {
+            let mut j = 0;
+            while j < a.len() && a[j] == b[j] {
+                j += 1;
+            }
+            if j == a.len() {
+                return i;
+            }
+        }
+        i += 1;
+    }
+    panic!("unknown column")
+}
+
+macro_rules! columns {
+    ($list:ident, $select:ident = $first:ident $(, $c:ident)* $(,)?) => {
+        const $list: &[&str] = &[stringify!($first) $(, stringify!($c))*];
+        const $select: &str = concat!(stringify!($first) $(, ", ", stringify!($c))*);
+    };
+}
+
+macro_rules! col_at {
+    ($list:ident, $name:literal) => {
+        const { $crate::registry::col($list, $name) }
+    };
+}
+
+macro_rules! insert_row {
+    ($conn:expr, $verb:literal, $table:literal, $tail:literal; $first:ident = $fv:expr $(, $c:ident = $v:expr)* $(,)?) => {
+        $conn.execute(
+            concat!($verb, " ", $table, " (", stringify!($first) $(, ", ", stringify!($c))*,
+                ") VALUES (:", stringify!($first) $(, ", :", stringify!($c))*, ")", $tail),
+            &[(concat!(":", stringify!($first)), &$fv as &dyn rusqlite::ToSql)
+                $(, (concat!(":", stringify!($c)), &$v as &dyn rusqlite::ToSql))*],
+        )
+    };
+}
+
+macro_rules! update_row {
+    ($conn:expr, $table:literal, $key:ident = $kv:expr; $first:ident = $fv:expr $(, $c:ident = $v:expr)* $(,)?) => {
+        $conn.execute(
+            concat!("UPDATE ", $table, " SET ", stringify!($first), " = :", stringify!($first)
+                $(, ", ", stringify!($c), " = :", stringify!($c))*,
+                " WHERE ", stringify!($key), " = :", stringify!($key)),
+            &[(concat!(":", stringify!($key)), &$kv as &dyn rusqlite::ToSql),
+                (concat!(":", stringify!($first)), &$fv as &dyn rusqlite::ToSql)
+                $(, (concat!(":", stringify!($c)), &$v as &dyn rusqlite::ToSql))*],
+        )
+    };
+}
+
+pub(crate) use {col_at, columns, insert_row, update_row};
+
+pub fn sql<T>(r: rusqlite::Result<T>) -> Result<T, (u16, String)> {
+    r.map_err(|e| (500, e.to_string()))
+}
+
+pub fn db(ctx: &crate::Ctx) -> Result<Registry, (u16, String)> {
+    Registry::open(&ctx.state_dir).map_err(|e| (500, e))
+}
+
+pub fn db_with(ctx: &crate::Ctx, ddl: &str) -> Result<Registry, (u16, String)> {
+    let reg = db(ctx)?;
+    sql(reg.conn.execute_batch(ddl))?;
+    Ok(reg)
+}
+
 impl Registry {
     pub fn open(state_dir: &Path) -> Result<Self, String> {
         let mut tries = 0;
@@ -222,7 +293,7 @@ impl Registry {
     }
 
     fn open_once(state_dir: &Path) -> Result<Self, String> {
-        let path = state_dir.join("overseer.db");
+        let path = state_dir.join(crate::paths::REGISTRY_DB);
         std::fs::OpenOptions::new()
             .create(true)
             .append(true)
@@ -387,7 +458,6 @@ impl Registry {
             .map_err(|e| e.to_string())
     }
 
-    /// Atomically takes a pending hold: true only for the caller that cleared it.
     pub fn claim_hold_pending(&self, id: &str) -> Result<bool, String> {
         self.conn
             .execute(
@@ -624,9 +694,6 @@ mod tests {
 
     #[test]
     fn pending_hold_and_held_at_persist_across_reopen_and_clear() {
-        // Given a line with a pending hold and a held-at time
-        // When the registry is reopened
-        // Then both marks are still there, and clearing them removes them
         let dir = std::env::temp_dir().join(format!("sb-reg-pend-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
@@ -687,9 +754,6 @@ mod tests {
 
     #[test]
     fn notes_survive_reopen_on_an_old_database() {
-        // Given a database created before the notes column existed
-        // When a note is added through the transactional update, the registry reopened, then the note removed
-        // Then the note persists across the reopen, a missing line is a 404, and removing the last note clears the column
         let dir = std::env::temp_dir().join(format!("sb-reg-notes-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
@@ -738,9 +802,6 @@ mod tests {
 
     #[test]
     fn title_override_mark_survives_reopen_and_clears() {
-        // Given a database created before the title_override column existed
-        // When a custom title is set, the registry reopened, then the title cleared
-        // Then the title persists across the reopen and reads back as none once cleared
         let dir = std::env::temp_dir().join(format!("sb-reg-title-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
@@ -773,9 +834,6 @@ mod tests {
 
     #[test]
     fn a_line_workspace_assignment_persists_until_cleared() {
-        // Given a registry holding one line
-        // When the line is assigned to a workspace, the registry reopened, then the mark cleared
-        // Then the assignment survives the reopen and the clear removes it
         let dir = std::env::temp_dir().join(format!("sb-reg-wsid-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
@@ -837,9 +895,6 @@ mod tests {
 
     #[test]
     fn an_old_workspaces_table_gains_kind_and_cwd_and_keeps_its_rows() {
-        // Given a database created before subjects, with a workspace row
-        // When the registry is opened, then two subjects with no cwd clash are inserted
-        // Then the old row is a dir without cwd and several subjects can coexist
         let dir = std::env::temp_dir().join(format!("sb-reg-subj-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
@@ -875,5 +930,42 @@ mod tests {
         drop(reg);
         assert!(Registry::open(&dir).is_ok());
         std::fs::remove_dir_all(dir).unwrap();
+    }
+}
+
+#[cfg(test)]
+mod column_tests {
+    use super::*;
+
+    columns!(COLUMNS, SELECT = id, name, rank);
+
+    #[test]
+    fn column_list_select_and_positions_come_from_one_list() {
+        assert_eq!(SELECT, "id, name, rank");
+        assert_eq!(col_at!(COLUMNS, "id"), 0);
+        assert_eq!(col_at!(COLUMNS, "rank"), 2);
+        assert_eq!(col(COLUMNS, "name"), 1);
+    }
+
+    #[test]
+    fn insert_and_update_bind_each_column_by_name() {
+        let c = Connection::open_in_memory().unwrap();
+        c.execute_batch("CREATE TABLE t (id TEXT PRIMARY KEY, name TEXT, rank REAL)")
+            .unwrap();
+        let n =
+            insert_row!(c, "INSERT INTO", "t", ""; rank = 2.5, id = "a", name = Some("x")).unwrap();
+        assert_eq!(n, 1);
+        let dup = insert_row!(c, "INSERT INTO", "t", " ON CONFLICT DO NOTHING"; id = "a", name = "y", rank = 1.0).unwrap();
+        assert_eq!(dup, 0);
+        update_row!(c, "t", id = "a"; name = None::<String>, rank = 9.0).unwrap();
+        let got: (Option<String>, f64) = c
+            .query_row(&format!("SELECT {SELECT} FROM t"), [], |r| {
+                Ok((
+                    r.get(col_at!(COLUMNS, "name"))?,
+                    r.get(col_at!(COLUMNS, "rank"))?,
+                ))
+            })
+            .unwrap();
+        assert_eq!(got, (None, 9.0));
     }
 }

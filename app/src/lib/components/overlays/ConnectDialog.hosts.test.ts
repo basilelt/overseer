@@ -1,9 +1,8 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { render } from 'svelte/server';
-import { settings } from '../../settings.svelte';
+import { settings } from '../../settings/settings.svelte';
 import { app } from '../../state.svelte';
 import ConnectDialog from './ConnectDialog.svelte';
-import src from './ConnectDialog.svelte?raw';
 
 const prod = { kind: 'ssh' as const, host: 'prod', label: 'prod' };
 const html = () => render(ConnectDialog, { props: { onclose: () => {} } }).body;
@@ -35,18 +34,5 @@ describe('ConnectDialog: where a host opens', () => {
     expect(html()).not.toContain('Where should');
     app.overlayArg = 'ask:{bad';
     expect(html()).not.toContain('Where should');
-  });
-
-  it('decides with connectHow and remembers the answer per host only when asked to', () => {
-    expect(src).toContain("connectHow(settings, target, { active: hostKey(app.conn.target), keys: app.hosts.map((l) => l.key), live: app.connected }, forced)");
-    expect(src).toMatch(/if \(remember\) saveSettings\(\{ hostChoice: \{ \.\.\.settings\.hostChoice, \[hostKey\(target\)\]: c \} \}\);/);
-    expect(src).toContain("app.connect(target, how === 'add' ? 'add' : 'replace')");
-    expect(src).toContain("app.overlayArg === 'add' ? 'add' : undefined");
-  });
-
-  it('follows only the host being connected, not the one the main area showed before', () => {
-    expect(src).toContain('const mine = $derived(!!lastTarget && hostKey(app.conn.target) === hostKey(lastTarget));');
-    expect(src).toContain('if (started && mine && !reached.includes(p))');
-    expect(src).toContain("if (!started || !mine || app.conn.phase !== 'connected') return;");
   });
 });

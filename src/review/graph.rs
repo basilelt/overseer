@@ -110,7 +110,7 @@ fn blobs(wt: &str, specs: &[String]) -> Vec<Option<String>> {
     if specs.is_empty() {
         return vec![];
     }
-    let Ok(mut child) = crate::git::Watchdog::guard(
+    let Ok(mut child) = crate::exec::Watchdog::guard(
         Command::new("git")
             .arg("-C")
             .arg(wt)
@@ -123,7 +123,7 @@ fn blobs(wt: &str, specs: &[String]) -> Vec<Option<String>> {
     .spawn() else {
         return none();
     };
-    let dog = crate::git::Watchdog::start(child.id(), crate::git::TIMEOUT);
+    let dog = crate::exec::Watchdog::start(child.id(), crate::git::TIMEOUT);
     let input: String = specs.iter().map(|s| format!("{s}\n")).collect();
     let mut stdin = child.stdin.take();
     let writer = std::thread::spawn(move || {
@@ -1070,23 +1070,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&d);
         std::fs::create_dir_all(&d).unwrap();
         let run = |args: &[&str]| {
-            let ok = Command::new("git")
-                .current_dir(&d)
-                .env("GIT_CONFIG_GLOBAL", "/dev/null")
-                .env("GIT_CONFIG_NOSYSTEM", "1")
-                .args([
-                    "-c",
-                    "user.email=t@example.com",
-                    "-c",
-                    "user.name=T",
-                    "-c",
-                    "commit.gpgsign=false",
-                ])
-                .args(args)
-                .status()
-                .unwrap()
-                .success();
-            assert!(ok, "git {args:?}");
+            crate::git::fixture::run(&d, args);
         };
         run(&["init", "-q", "-b", "main"]);
         std::fs::write(d.join("a.rs"), "fn a() {}\n").unwrap();

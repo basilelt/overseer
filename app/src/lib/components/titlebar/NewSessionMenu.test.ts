@@ -1,48 +1,61 @@
-import { describe, expect, it } from 'vitest';
-import button from './NewSessionMenu.svelte?raw';
-import list from './NewSessionList.svelte?raw';
+import { afterEach, describe, expect, it } from 'vitest';
+import { render } from 'svelte/server';
+import { app } from '../../state.svelte';
+import type { AgentInfo } from '../../types';
+import NewSessionMenu from './NewSessionMenu.svelte';
+import NewSessionList from './NewSessionList.svelte';
 
-describe('new session menu', () => {
-  it('keeps only the button at startup and loads the menu when it opens', () => {
-    expect(button).toMatch(/const list = preload\(\(\) => import\('\.\/NewSessionList\.svelte'\)\);/);
-    expect(button).toMatch(/\{#if open\}\s*\{#await list\(\) then \{ default: NewSessionList \}\}<NewSessionList onclose=\{close\} \/>\{\/await\}/);
-    expect(button).not.toMatch(/AgentGlyph|ProfileSelect/);
+const agent = (id: string, over: Partial<AgentInfo> = {}): AgentInfo => ({ id, name: id.toUpperCase(), installed: true, efforts: [], resume: false, verified: true, sessions: true, turns: true, ...over });
+const before = { agents: app.agents, connected: app.connected };
+afterEach(() => Object.assign(app, before));
+
+const list = () => render(NewSessionList, { props: { onclose: () => {} } }).body;
+
+describe('new session menu button', () => {
+  it('is the tour target, a menu button that starts closed', () => {
+    app.connected = true;
+    const h = render(NewSessionMenu).body;
+    expect(h).toContain('data-tour="new-session"');
+    expect(h).toContain('aria-haspopup="menu"');
+    expect(h).toContain('aria-expanded="false"');
+    expect(h).not.toMatch(/<button[^>]*\bdisabled/);
   });
 
-  it('focuses the first agent when it opens, walks with the arrows and gives focus back on Escape', () => {
-    expect(list).toMatch(/onMount\(\(\) => \{\s*menu\?\.querySelector<HTMLElement>\('button:not\(\[disabled\]\)'\)\?\.focus\(\);/);
-    expect(list).toMatch(/else if \(e\.key === 'Escape'\) onclose\(true\);/);
-    expect(button).toMatch(/if \(refocus\) root\.querySelector<HTMLElement>\('\.icon-btn'\)\?\.focus\(\);/);
+  it('is disabled while the daemon is not connected', () => {
+    app.connected = false;
+    expect(render(NewSessionMenu).body).toMatch(/<button[^>]*\bdisabled/);
   });
 
-  it('closes before starting the session so a failure shows as a toast, not a stuck menu', () => {
-    expect(list).toMatch(/onclose\(false\);\s*try \{\s*await \(a\.installed \? app\.newSession\(a\.id\) : app\.installAgent\(a\.id\)\);/);
-  });
-});
-
-describe('agents that are not installed', () => {
-  it('lists the installed agents and folds the missing ones behind one row', () => {
-    expect(list).toMatch(/\{#each split\.installed as a/);
-    expect(list).toMatch(/\{#if split\.missing\.length\}/);
-    expect(list).toMatch(/aria-expanded=\{more\} onclick=\{\(\) => \(more = !more\)\}/);
-    expect(list).toMatch(/\{#if more\}\s*\{#each split\.missing as a/);
-  });
-
-  it('starts folded each time the menu opens, since the list mounts on open', () => {
-    expect(list).toMatch(/let more = \$state\(false\);/);
-    expect(button).toMatch(/\{#if open\}\s*\{#await list\(\)/);
+  it('renders no menu list while closed (the lazy chunk is held by the startup bundle budget test)', () => {
+    app.connected = true;
+    expect(render(NewSessionMenu).body).not.toContain('role="menu"');
   });
 });
 
-describe('installing from the new session menu', () => {
-  it('installs an absent agent with an install command instead of disabling it', () => {
-    expect(list).toContain('disabled={!canInstall(a)}');
-    expect(list).toContain('a.installed ? app.newSession(a.id) : app.installAgent(a.id)');
+describe('new session list', () => {
+  it('lists the installed agents with their version as the tooltip', () => {
+    app.agents = [agent('claude', { version: '2.1.0' }), agent('codex')];
+    const h = list();
+    expect(h).toContain('role="menu"');
+    expect(h.match(/role="menuitem"/g)).toHaveLength(2);
+    expect(h).toContain('title="2.1.0"');
+    expect(h).toContain('>CLAUDE<');
+    expect(h).toContain('>2.1.0<');
+    expect(h).toContain('title="CODEX"');
   });
 
-  it('marks the + that starts sessions on desktop and on the phone for the tour', async () => {
-    const chips = (await import('../mobile/MobileChips.svelte?raw')).default;
-    expect(button).toContain('<div class="wrap" data-tour="new-session"');
-    expect(chips).toMatch(/data-tour="new-session"[^>]*onclick=\{\(\) => app\.open\('palette'\)\}/);
+  it('folds the missing agents behind one collapsed row that counts them', () => {
+    app.agents = [agent('claude'), agent('aider', { installed: false, install: 'pip install aider' }), agent('gemini', { installed: false })];
+    const h = list();
+    expect(h).toContain('>CLAUDE<');
+    expect(h).toContain('aria-expanded="false"');
+    expect(h).not.toContain('AIDER');
+    expect(h).not.toContain('GEMINI');
+    expect(h.match(/role="menuitem"/g)).toHaveLength(2);
+  });
+
+  it('shows no fold row when every agent is installed', () => {
+    app.agents = [agent('claude')];
+    expect(list()).not.toContain('aria-expanded');
   });
 });

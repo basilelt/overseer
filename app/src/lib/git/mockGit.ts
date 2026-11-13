@@ -1,4 +1,4 @@
-import { DaemonError } from '../client';
+import { DaemonError } from '../daemon/client';
 import type { EventType, LocalLine, Project, Task } from '../types';
 import type { CleanupPlan, CommitDetail, GraphCommit, GraphPage, GraphRef, NewWorktree, Overlay, PlanItem, Worktree, WorktreeList } from './types';
 

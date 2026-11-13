@@ -1,22 +1,29 @@
 <script lang="ts">
   import Circle from '@lucide/svelte/icons/circle';
+  import { onMount } from 'svelte';
   import Modal from '../ui/Modal.svelte';
   import { app } from '../../state.svelte';
-  import { feedback } from '../../feedback.svelte';
-  import { canVideo, MAX_MS } from '../../record';
-  import { recorder, rt } from '../../record.svelte';
+  import { feedback } from '../../feedback/feedback.svelte';
+  import { canVideo, MAX_MS } from '../../record/record';
+  import { recorder, rt } from '../../record/record.svelte';
 
   const supported = canVideo();
   const min = MAX_MS / 60_000;
   let video = $state(supported);
 
   function start() {
+    const wantVideo = supported && video;
     recorder
-      .start({ video: supported && video, onDone: (recording) => feedback.show({ kind: 'bug', recording }) })
+      .start({ video: wantVideo, onDone: (recording) => feedback.show({ kind: 'bug', recording }) })
+      .then((withVideo) => {
+        if (wantVideo && !withVideo) app.notify(rt('noVideo'));
+      })
       .catch((e) => app.notify(rt('denied', { error: String((e as Error)?.message ?? e) }), 'error'));
   }
 
   const close = () => recorder.dismiss();
+
+  onMount(() => feedback.close());
 </script>
 
 <svelte:window onkeydown={(e) => e.key === 'Escape' && close()} />

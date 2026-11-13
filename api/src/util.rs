@@ -116,7 +116,7 @@ mod tests {
         );
         assert_eq!(
             sign("k", 7, "b"),
-            format!("t=7,v1={}", hmac_hex("k", "7.b"))
+            "t=7,v1=a24c2f1b4db1494a2631ee7969c18cd3d1b9025fa7027a62cbb0512eb3c9a5e3"
         );
     }
 }

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import * as CMD from './lib/daemon/tauri-commands';
   import { onMount, untrack } from 'svelte';
   import { app } from './lib/state.svelte';
   import TitleBar from './lib/components/TitleBar.svelte';
@@ -8,14 +9,15 @@
   import Toast from './lib/components/ui/Toast.svelte';
   import { offerSwitchboard, switchboard } from './lib/switchboard.svelte';
   import { preload } from './lib/idle';
-  import { startNotifications } from './lib/notify';
-  import { startPorts } from './lib/ports.svelte';
-  import { startCenter } from './lib/notifications.svelte';
+  import { startNotifications } from './lib/notify/notify';
+  import { startPorts } from './lib/ports/ports.svelte';
+  import { startCenter } from './lib/notify/notifications.svelte';
   import { followReview, openReviewFromHash } from './lib/review/open';
   import { liveOn } from './lib/git/live.svelte';
-  import { isTauri } from './lib/client';
-  import { themeReport } from './lib/terminal';
-  import { colorPalette, customColors, resolvedTheme, saveSettings, setSystemDark, settings } from './lib/settings.svelte';
+  import { api } from './lib/daemon/api';
+  import { isTauri } from './lib/platform';
+  import { themeReport } from './lib/terminal/terminal';
+  import { colorPalette, customColors, resolvedTheme, saveSettings, setSystemDark, settings } from './lib/settings/settings.svelte';
   import Resizer from './lib/components/ui/Resizer.svelte';
   import Boundary from './lib/components/ui/Boundary.svelte';
   import { PANEL, SIDEBAR, clampWidth } from './lib/resize';
@@ -23,16 +25,22 @@
   import { startUpdater } from './lib/updater.svelte';
   import { isMainWindow } from './lib/window';
   import { startPresence } from './lib/presence';
-  import { startRest } from './lib/rest';
-  import { startShortcuts } from './lib/keyboard';
-  import { startTextDefaults } from './lib/textinput';
-  import { onResume, startLayout, ui } from './lib/mobile/ui.svelte';
-  import { diag, startDiagnostics } from './lib/diag.svelte';
-  import { feedback } from './lib/feedback.svelte';
+  import { startRest } from './lib/daemon/rest';
+  import { command } from './lib/commands/commands';
+  import { startShortcuts } from './lib/commands/keyboard';
+  import { startTextDefaults } from './lib/terminal/textinput';
+  import { isPhone, onResume, startLayout, ui } from './lib/mobile/ui.svelte';
+  import { phoneOrMobile } from './lib/mobile/phone.svelte';
+  import { diag, startDiagnostics } from './lib/diag/diag.svelte';
+  import { feedback } from './lib/feedback/feedback.svelte';
+  import { escapeTarget } from './lib/overlay-route';
+  import { rec } from './lib/record/record-state.svelte';
   import { tour } from './lib/tour/tour.svelte';
   import { isNativeAndroid, native, setNativeOs } from './lib/mobile/native';
   import { closeTop, runBack } from './lib/mobile/back';
   import { isWebLink } from './lib/links';
+  import { nativeMenu } from './lib/commands/native-menu';
+  import Copy from '@lucide/svelte/icons/copy';
 
   let sidebarW = $state(clampWidth(settings.sidebarWidth, SIDEBAR));
   let panelW = $state(clampWidth(settings.panelWidth, PANEL));
@@ -50,7 +58,7 @@
   $effect(() => {
     const theme = resolvedTheme();
     const report = themeReport(theme, customColors(), colorPalette());
-    if (app.connected && app.conn.phase === 'connected') app.client?.request('POST', '/v1/theme', report).catch(() => {});
+    if (app.connected && app.conn.phase === 'connected') app.client && api(app.client).reportTheme(report).catch(() => {});
   });
 
   $effect(() => {
@@ -66,7 +74,7 @@
   const live = $derived(liveOn());
 
   $effect(() => {
-    tour.setReady(ui.layout !== 'phone');
+    tour.setReady(!isPhone());
   });
   $effect(() => {
     if (tour.ready && app.connected && switchboard.checked && !app.overlay && !feedback.open && !diag.mode && !ui.drawer && tour.pending()) tour.offer();
@@ -103,7 +111,7 @@
   async function followSystemTheme(): Promise<() => void> {
     try {
       const { invoke } = await import('@tauri-apps/api/core');
-      const platform = await invoke<{ os: string; mobile: boolean }>('app_platform');
+      const platform = await invoke<{ os: string; mobile: boolean }>(CMD.appPlatform);
       if (platform.mobile) return followMobileSystem(platform.os);
       const { getCurrentWindow } = await import('@tauri-apps/api/window');
       const w = getCurrentWindow();
@@ -128,34 +136,43 @@
     return () => void listener.unregister();
   }
 
-  function onLinkMenu(e: MouseEvent) {
-    const a = (e.target as Element | null)?.closest?.('a[href]') as HTMLAnchorElement | null;
-    if (e.defaultPrevented || !a || !isWebLink(a.href)) return;
+  function onContextMenu(e: MouseEvent) {
+    if (e.defaultPrevented) return;
+    const target = e.target as Element | null;
+    const a = target?.closest?.('a[href]') as HTMLAnchorElement | null;
+    if (a && isWebLink(a.href)) {
+      e.preventDefault();
+      return app.linkMenu(e, a.href);
+    }
+    const selection = getSelection()?.toString() ?? '';
+    const mode = nativeMenu({ tauri: isTauri(), phone: phoneOrMobile() }, target, selection);
+    if (mode === 'native') return;
     e.preventDefault();
-    app.linkMenu(e, a.href);
+    if (mode === 'copy') app.openMenu(e, '', [{ label: t('chat.copy'), icon: Copy, run: () => void app.client?.copyText(selection).catch(() => {}) }]);
   }
 
   function onKey(e: KeyboardEvent) {
     if (tour.phase) return;
-    const mod = (e.metaKey || e.ctrlKey) && (app.mobile || ui.layout === 'phone');
+    const mod = (e.metaKey || e.ctrlKey) && phoneOrMobile();
     if (mod && e.key.toLowerCase() === 'k') {
       e.preventDefault();
-      app.open(app.overlay === 'palette' ? null : 'palette');
+      command('palette').toggle?.();
     } else if (mod && e.key === ',') {
       e.preventDefault();
-      app.open('settings');
-    } else if (e.key === 'Escape' && diag.mode) {
-      diag.close();
-    } else if (e.key === 'Escape' && app.overlay) {
-      app.closeOverlay();
+      command('settings').run();
+    } else {
+      const top = escapeTarget({ key: e.key, defaultPrevented: e.defaultPrevented, feedback: feedback.open, recording: rec.phase !== 'idle', diag: !!diag.mode, overlay: !!app.overlay });
+      if (top === 'feedback') feedback.close();
+      else if (top === 'diag') diag.close();
+      else if (top === 'overlay') app.closeOverlay();
     }
   }
   const connBanner = preload(() => import('./lib/components/ui/ConnBanner.svelte'), 1000);
 </script>
 
-<svelte:window onkeydown={onKey} oncontextmenu={onLinkMenu} />
+<svelte:window onkeydown={onKey} oncontextmenu={onContextMenu} />
 
-{#if ui.layout === 'phone'}
+{#if isPhone()}
   <Boundary name="mobile">{#await mobileShell() then { default: MobileShell }}<MobileShell />{/await}</Boundary>
 {:else}
 <div class="shell">

@@ -1,12 +1,20 @@
+use crate::agents::{self, Hooks};
 use crate::hooks;
+use crate::http::err;
+use crate::legacy;
 use crate::util::shell_quote;
 use serde_json::{json, Map, Value};
 use std::path::{Path, PathBuf};
 
 pub const MARKER: &str = "#overseer-hook";
-pub const OLD_MARKER: &str = "#switchboard-hook";
+pub const TMP_EXT: &str = "sb-tmp";
+pub const CLAUDE_SETTINGS_FILE: &str = "settings.json";
+pub const HOOK_TIMEOUT_SECS: u64 = 5;
+pub const SESSION_END_TIMEOUT_SECS: u64 = 3;
 
-const CODEX_TRUST: &str = "Codex runs edited hooks only after you trust them again: open codex and accept the hooks prompt (Overseer never edits config.toml).";
+pub const fn millis(secs: u64) -> u64 {
+    secs * 1000
+}
 
 pub fn shim_path() -> PathBuf {
     let name = if cfg!(windows) {
@@ -14,7 +22,7 @@ pub fn shim_path() -> PathBuf {
     } else {
         "overseer"
     };
-    crate::home().join(".overseer/bin").join(name)
+    crate::paths::bin_dir().join(name)
 }
 
 pub fn path_with_shim(path: &str, shim: &Path) -> String {
@@ -45,7 +53,7 @@ pub fn ensure_shim(shim: &Path, real: &Path, replace: bool) -> std::io::Result<b
     if let Some(dir) = shim.parent() {
         crate::mkdir_private(dir)?;
     }
-    let tmp = shim.with_extension("sb-tmp");
+    let tmp = shim.with_extension(TMP_EXT);
     let _ = std::fs::remove_file(&tmp);
     link(real, &tmp)?;
     std::fs::rename(&tmp, shim)?;
@@ -63,7 +71,7 @@ fn link(real: &Path, at: &Path) -> std::io::Result<()> {
 }
 
 pub fn hook_command(bin: &Path, state_dir: &Path, agent: &str, event: &str) -> String {
-    let reply = if agent == "cursor" && event == "beforeSubmitPrompt" {
+    let reply = if agent == agents::CURSOR && event == "beforeSubmitPrompt" {
         r#"'{"continue":true}'"#
     } else {
         "{}"
@@ -135,7 +143,7 @@ fn merge_with(
 }
 
 pub fn merge(existing: &Value, events: &[&str], command: impl Fn(&str) -> String) -> Value {
-    merge_groups(existing, events, command, 5)
+    merge_groups(existing, events, command, HOOK_TIMEOUT_SECS)
 }
 
 pub fn merge_groups(
@@ -208,7 +216,7 @@ pub fn unmerge_marker(existing: &Value, marker: &str) -> Value {
     root
 }
 
-fn commands(v: &Value) -> Vec<String> {
+pub(crate) fn commands(v: &Value) -> Vec<String> {
     let entries = v["hooks"]
         .as_object()
         .into_iter()
@@ -225,21 +233,10 @@ fn commands(v: &Value) -> Vec<String> {
     out
 }
 
-fn hook_binary(cmd: &str) -> Option<&str> {
+pub(crate) fn hook_binary(cmd: &str) -> Option<&str> {
     cmd.split_whitespace()
         .find(|w| !w.contains('='))
         .map(|w| w.trim_matches(['\'', '"']))
-}
-
-fn orphaned_switchboard(v: &Value) -> bool {
-    let old: Vec<String> = commands(v)
-        .into_iter()
-        .filter(|c| c.contains(OLD_MARKER))
-        .collect();
-    !old.is_empty()
-        && old
-            .iter()
-            .all(|c| hook_binary(c).is_some_and(|b| !Path::new(b).exists()))
 }
 
 pub fn validate(original: &Value, written: &[u8], expect_ours: &[String]) -> Result<(), String> {
@@ -248,10 +245,10 @@ pub fn validate(original: &Value, written: &[u8], expect_ours: &[String]) -> Res
         return Err("top level or .hooks is not an object".into());
     }
     let after = commands(&v);
-    let orphaned = orphaned_switchboard(original);
+    let orphaned = legacy::orphaned_hooks(original);
     for c in commands(original)
         .into_iter()
-        .filter(|c| !c.contains(MARKER) && !(orphaned && c.contains(OLD_MARKER)))
+        .filter(|c| !c.contains(MARKER) && !(orphaned && c.contains(legacy::HOOK_MARKER)))
     {
         if !after.contains(&c) {
             return Err("an existing hook would be lost".into());
@@ -323,114 +320,154 @@ pub struct Target {
     pub home: PathBuf,
 }
 
+#[derive(Clone, Copy)]
+enum Owned {
+    CopilotJson,
+    VibeToml,
+    Plugin,
+}
+
+enum Root {
+    Agent,
+    XdgConfig(&'static str),
+}
+
+struct Spec {
+    agent: &'static str,
+    root: Root,
+    file: &'static str,
+    events: &'static [&'static str],
+    format: Format,
+    owned: Option<Owned>,
+}
+
+const SPECS: &[Spec] = &[
+    Spec {
+        agent: agents::CLAUDE,
+        root: Root::Agent,
+        file: CLAUDE_SETTINGS_FILE,
+        events: hooks::CLAUDE_EVENTS,
+        format: Format::Groups(HOOK_TIMEOUT_SECS),
+        owned: None,
+    },
+    Spec {
+        agent: agents::CODEX,
+        root: Root::Agent,
+        file: "hooks.json",
+        events: hooks::CODEX_EVENTS,
+        format: Format::GroupsWithOverrides {
+            default: HOOK_TIMEOUT_SECS,
+            overrides: &[("SessionEnd", SESSION_END_TIMEOUT_SECS)],
+        },
+        owned: None,
+    },
+    Spec {
+        agent: agents::GEMINI,
+        root: Root::Agent,
+        file: "settings.json",
+        events: hooks::GEMINI_EVENTS,
+        format: Format::Groups(millis(HOOK_TIMEOUT_SECS)),
+        owned: None,
+    },
+    Spec {
+        agent: agents::COPILOT,
+        root: Root::Agent,
+        file: "hooks/overseer.json",
+        events: hooks::COPILOT_EVENTS,
+        format: Format::File,
+        owned: Some(Owned::CopilotJson),
+    },
+    Spec {
+        agent: agents::VIBE,
+        root: Root::Agent,
+        file: "hooks.toml",
+        events: hooks::VIBE_EVENTS,
+        format: Format::File,
+        owned: Some(Owned::VibeToml),
+    },
+    Spec {
+        agent: agents::CURSOR,
+        root: Root::Agent,
+        file: "hooks.json",
+        events: hooks::CURSOR_EVENTS,
+        format: Format::Flat,
+        owned: None,
+    },
+    Spec {
+        agent: agents::OPENCODE,
+        root: Root::XdgConfig("opencode"),
+        file: "plugins/overseer.js",
+        events: &[],
+        format: Format::File,
+        owned: Some(Owned::Plugin),
+    },
+    Spec {
+        agent: agents::AMP,
+        root: Root::XdgConfig("amp"),
+        file: "plugins/overseer.js",
+        events: &[],
+        format: Format::File,
+        owned: Some(Owned::Plugin),
+    },
+];
+
+pub fn hook_file(agent: &str) -> Option<(&'static str, &'static [&'static str])> {
+    SPECS
+        .iter()
+        .find(|s| s.agent == agent)
+        .map(|s| (s.file, s.events))
+}
+
 pub fn targets() -> Vec<Target> {
-    const NONE: &[&str] = &[];
-    let env_dir = crate::env_dir;
-    let config = env_dir("XDG_CONFIG_HOME", ".config");
-    let t = |agent, home: PathBuf, file: &str, events, format| Target {
-        agent,
-        path: home.join(file),
-        events,
-        format,
-        home,
-    };
-    vec![
-        t(
-            "claude",
-            env_dir("CLAUDE_CONFIG_DIR", ".claude"),
-            "settings.json",
-            hooks::CLAUDE_EVENTS,
-            Format::Groups(5),
-        ),
-        t(
-            "codex",
-            env_dir("CODEX_HOME", ".codex"),
-            "hooks.json",
-            hooks::CODEX_EVENTS,
-            Format::GroupsWithOverrides {
-                default: 5,
-                overrides: &[("SessionEnd", 3)],
-            },
-        ),
-        t(
-            "gemini",
-            crate::home().join(".gemini"),
-            "settings.json",
-            hooks::GEMINI_EVENTS,
-            Format::Groups(5000),
-        ),
-        t(
-            "copilot",
-            env_dir("COPILOT_HOME", ".copilot"),
-            "hooks/overseer.json",
-            hooks::COPILOT_EVENTS,
-            Format::File,
-        ),
-        t(
-            "vibe",
-            crate::vibe::home(),
-            "hooks.toml",
-            hooks::VIBE_EVENTS,
-            Format::File,
-        ),
-        t(
-            "cursor",
-            crate::home().join(".cursor"),
-            "hooks.json",
-            hooks::CURSOR_EVENTS,
-            Format::Flat,
-        ),
-        t(
-            "opencode",
-            config.join("opencode"),
-            "plugins/overseer.js",
-            NONE,
-            Format::File,
-        ),
-        t(
-            "amp",
-            config.join("amp"),
-            "plugins/overseer.js",
-            NONE,
-            Format::File,
-        ),
-    ]
+    let config = crate::env_dir("XDG_CONFIG_HOME", ".config");
+    SPECS
+        .iter()
+        .map(|s| {
+            let home = match s.root {
+                Root::Agent => crate::agents::config_dir(s.agent),
+                Root::XdgConfig(dir) => config.join(dir),
+            };
+            Target {
+                agent: s.agent,
+                path: home.join(s.file),
+                events: s.events,
+                format: s.format,
+                home,
+            }
+        })
+        .collect()
 }
 
 pub fn available(t: &Target, cli: bool) -> bool {
-    cli || (!matches!(t.agent, "cursor" | "gemini") && t.home.is_dir())
+    cli || (!crate::agents::get(t.agent).is_some_and(|a| a.hooks_need_cli) && t.home.is_dir())
 }
 
 pub fn mechanism(agent: &str) -> &'static str {
-    match agent {
-        "claude" | "codex" | "gemini" | "copilot" | "cursor" | "vibe" => "hooks",
-        "opencode" | "amp" => "plugin",
-        _ => "polling",
+    match crate::agents::get(agent).map(|a| a.hooks) {
+        Some(Hooks::Native) => "hooks",
+        Some(Hooks::Plugin) => "plugin",
+        Some(Hooks::Polling) | None => "polling",
     }
 }
 
 pub fn note(agent: &str) -> Option<&'static str> {
-    Some(match agent {
-        "codex" => CODEX_TRUST,
-        "amp" => "Amp has no needs-input event: Overseer reports turn start and end only.",
-        "vibe" => "Needs Mistral Vibe 3.0 or later. An interrupted turn fires no hook: the line stays busy until the next turn ends.",
-        "cursor" => "Cursor Agent fires only some hooks in the CLI; a missing turn start falls back to terminal activity.",
-        "agy" => "No stable hook file for the Antigravity CLI yet: finished turns come from terminal activity.",
-        "shell" => return None,
-        a if mechanism(a) == "polling" => "No hook API: finished turns come from terminal activity.",
-        _ => return None,
-    })
+    const POLLING: &str = "No hook API: finished turns come from terminal activity.";
+    match crate::agents::get(agent) {
+        Some(a) => a
+            .hook_note
+            .or_else(|| (a.coding() && a.hooks == Hooks::Polling).then_some(POLLING)),
+        None => Some(POLLING),
+    }
 }
 
 fn js_str(p: &Path) -> String {
     Value::String(p.to_string_lossy().into_owned()).to_string()
 }
 
-const JS_SEND: &str = r##"import { spawn } from "node:child_process";
+const JS_IMPORT: &str = r##"import { spawn } from "node:child_process";
+"##;
 
-const MARKER = "#overseer-hook";
-
-function send(event, session) {
+const JS_SEND: &str = r##"function send(event, session) {
   try {
     const child = spawn(BIN, ["hook", AGENT, event, String(process.pid)], {
       env: { ...process.env, OVERSEER_STATE_DIR: STATE },
@@ -479,51 +516,56 @@ export default function (amp) {
 "#;
 
 pub fn plugin_js(agent: &str, bin: &Path, state_dir: &Path) -> String {
-    let events = if agent == "amp" {
+    let events = if agent == agents::AMP {
         AMP_EVENTS
     } else {
         OPENCODE_EVENTS
     };
     format!(
-        "const BIN = {};\nconst STATE = {};\nconst AGENT = {};\n{JS_SEND}{events}",
+        "const BIN = {};\nconst STATE = {};\nconst AGENT = {};\n{JS_IMPORT}\nconst MARKER = \"{MARKER}\";\n\n{JS_SEND}{events}",
         js_str(bin),
         js_str(state_dir),
         Value::String(agent.into()),
     )
 }
 
-pub fn vibe_toml(bin: &Path, state_dir: &Path) -> String {
+pub fn vibe_toml(bin: &Path, state_dir: &Path, events: &[&str]) -> String {
     let mut out = String::new();
-    for ev in hooks::VIBE_EVENTS {
-        let main = if matches!(*ev, "pre_agent" | "post_agent") {
+    for ev in events {
+        let main = if hooks::VIBE_MAIN_ONLY.contains(ev) {
             "match = \"main\"\n"
         } else {
             ""
         };
         out.push_str(&format!(
-            "[[hooks]]\nname = \"overseer-{ev}\"\ntype = \"{ev}\"\n{main}timeout = 5.0\ncommand = {}\n\n",
+            "[[hooks]]\nname = \"overseer-{ev}\"\ntype = \"{ev}\"\n{main}timeout = {HOOK_TIMEOUT_SECS}.0\ncommand = {}\n\n",
             Value::String(hook_command(bin, state_dir, "vibe", ev))
         ));
     }
     out
 }
 
-pub fn copilot_json(bin: &Path, state_dir: &Path) -> String {
+pub fn copilot_json(bin: &Path, state_dir: &Path, events: &[&str]) -> String {
     let mut hooks = Map::new();
-    for ev in hooks::COPILOT_EVENTS {
+    for ev in events {
         hooks.insert(
             ev.to_string(),
-            json!([{ "type": "command", "bash": hook_command(bin, state_dir, "copilot", ev), "timeoutSec": 5 }]),
+            json!([{ "type": "command", "bash": hook_command(bin, state_dir, "copilot", ev), "timeoutSec": HOOK_TIMEOUT_SECS }]),
         );
     }
     pretty(&json!({ "version": 1, "hooks": hooks }))
 }
 
 fn owned_text(t: &Target, bin: &Path, state_dir: &Path) -> String {
-    match t.agent {
-        "copilot" => copilot_json(bin, state_dir),
-        "vibe" => vibe_toml(bin, state_dir),
-        a => plugin_js(a, bin, state_dir),
+    let kind = SPECS
+        .iter()
+        .find(|s| s.agent == t.agent)
+        .and_then(|s| s.owned)
+        .unwrap_or(Owned::Plugin);
+    match kind {
+        Owned::CopilotJson => copilot_json(bin, state_dir, t.events),
+        Owned::VibeToml => vibe_toml(bin, state_dir, t.events),
+        Owned::Plugin => plugin_js(t.agent, bin, state_dir),
     }
 }
 
@@ -602,8 +644,8 @@ pub fn plan(t: &Target, uninstall: bool, bin: &Path, state_dir: &Path) -> Result
         ));
     }
     let mut base = before.clone().unwrap_or_else(|| json!({}));
-    if !uninstall && orphaned_switchboard(&base) {
-        base = unmerge_marker(&base, OLD_MARKER);
+    if !uninstall && legacy::orphaned_hooks(&base) {
+        base = unmerge_marker(&base, legacy::HOOK_MARKER);
     }
     let cmd = |ev: &str| hook_command(bin, state_dir, t.agent, ev);
     let after = match (uninstall, t.format) {
@@ -646,7 +688,7 @@ pub(crate) fn atomic_write(path: &Path, text: &str) -> Result<(), String> {
     if let Some(parent) = path.parent() {
         crate::mkdir_private(parent).map_err(|e| format!("{}: {e}", parent.display()))?;
     }
-    let tmp = PathBuf::from(format!("{}.sb-tmp", path.display()));
+    let tmp = PathBuf::from(format!("{}.{TMP_EXT}", path.display()));
     std::fs::write(&tmp, text).map_err(|e| format!("{}: {e}", tmp.display()))?;
     if let Ok(m) = std::fs::metadata(path) {
         let _ = std::fs::set_permissions(&tmp, m.permissions());
@@ -700,7 +742,7 @@ pub fn write(
     if let Some(parent) = target.parent() {
         crate::mkdir_private(parent).map_err(|e| e.to_string())?;
     }
-    let tmp = PathBuf::from(format!("{}.sb-tmp", target.display()));
+    let tmp = PathBuf::from(format!("{}.{TMP_EXT}", target.display()));
     std::fs::write(&tmp, &p.after_text).map_err(|e| format!("{}: {e}", tmp.display()))?;
     if let Ok(m) = std::fs::metadata(&target) {
         let _ = std::fs::set_permissions(&tmp, m.permissions());
@@ -751,7 +793,9 @@ impl Outcome {
         if let Some(s) = &self.skipped {
             v["skipped"] = json!(s);
         }
-        if let Some(n) = note(self.agent).filter(|_| self.agent == "codex" && self.written) {
+        if let Some(n) = note(self.agent).filter(|_| {
+            crate::agents::get(self.agent).is_some_and(|a| a.retrust_hooks) && self.written
+        }) {
             v["note"] = json!(n);
         }
         v
@@ -772,7 +816,7 @@ pub fn run(
     r: &Run,
     available: impl Fn(&Target) -> bool,
 ) -> Vec<Outcome> {
-    let tmp = r.state_dir.join("tmp");
+    let tmp = r.state_dir.join(crate::paths::TMP_DIR);
     let mut out = vec![];
     for t in targets {
         if agents.is_some_and(|a| !a.iter().any(|x| x == t.agent)) {
@@ -830,7 +874,7 @@ pub fn status(
 ) -> Value {
     let rows: Vec<Value> = crate::agents::AGENTS
         .iter()
-        .filter(|a| a.id != "shell")
+        .filter(|a| a.coding())
         .map(|a| {
             let t = targets.iter().find(|t| t.agent == a.id);
             let present = t.is_some_and(installed);
@@ -894,16 +938,11 @@ pub fn routes(method: &str, segs: &[&str], body: &Value, state_dir: &Path) -> Op
                 .filter_map(|v| v.as_str().map(str::to_string))
                 .collect(),
         ),
-        _ => {
-            return Some((
-                400,
-                json!({"error": "agents must be an array of agent ids"}),
-            ))
-        }
+        _ => return Some(err(400, "agents must be an array of agent ids")),
     };
     let apply = body["dryRun"].as_bool() == Some(false);
     let bin = hook_bin();
-    let stamp = stamp(crate::procs::now_ms());
+    let stamp = stamp(crate::util::now_ms());
     let r = Run {
         mode,
         apply,
@@ -958,7 +997,7 @@ pub fn on_daemon_start(state_dir: &Path) {
         }
     }
     let bin = hook_bin();
-    let stamp = stamp(crate::procs::now_ms());
+    let stamp = stamp(crate::util::now_ms());
     let r = Run {
         mode: Mode::Repair,
         apply: true,
@@ -992,8 +1031,8 @@ pub fn on_daemon_start(state_dir: &Path) {
                 r.bin.display()
             );
         }
-        if o.written && o.agent == "codex" {
-            eprintln!("overseer daemon: {CODEX_TRUST}");
+        if o.written && crate::agents::get(o.agent).is_some_and(|a| a.retrust_hooks) {
+            eprintln!("overseer daemon: {}", crate::agents::CODEX_TRUST);
         }
         if let Some(e) = o.error {
             eprintln!("overseer daemon: hook repair skipped: {e}");
@@ -1003,6 +1042,70 @@ pub fn on_daemon_start(state_dir: &Path) {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn specs_and_installable_agents_match_both_ways() {
+        for a in crate::agents::AGENTS
+            .iter()
+            .filter(|a| matches!(a.hooks, Hooks::Native | Hooks::Plugin))
+        {
+            let n = SPECS.iter().filter(|s| s.agent == a.id).count();
+            assert_eq!(
+                n, 1,
+                "{} declares {:?} hooks: needs exactly one spec",
+                a.id, a.hooks
+            );
+        }
+        for s in SPECS {
+            let a = crate::agents::get(s.agent)
+                .unwrap_or_else(|| panic!("spec for unknown agent {}", s.agent));
+            let want = if s.owned.is_some_and(|o| matches!(o, Owned::Plugin)) {
+                Hooks::Plugin
+            } else {
+                Hooks::Native
+            };
+            assert_eq!(
+                a.hooks, want,
+                "{}: spec kind and descriptor disagree",
+                s.agent
+            );
+        }
+    }
+
+    #[test]
+    fn mechanism_and_note_follow_the_descriptor() {
+        let m: Vec<_> = crate::agents::AGENTS
+            .iter()
+            .map(|a| (a.id, mechanism(a.id)))
+            .collect();
+        assert_eq!(
+            m,
+            [
+                ("claude", "hooks"),
+                ("codex", "hooks"),
+                ("gemini", "hooks"),
+                ("agy", "polling"),
+                ("opencode", "plugin"),
+                ("amp", "plugin"),
+                ("copilot", "hooks"),
+                ("cursor", "hooks"),
+                ("vibe", "hooks"),
+                ("shell", "polling"),
+            ]
+        );
+        assert_eq!(note("codex"), Some(crate::agents::CODEX_TRUST));
+        assert!(note("amp").unwrap().starts_with("Amp has no"));
+        assert!(note("agy").unwrap().starts_with("No stable hook file"));
+        for none in ["claude", "gemini", "copilot", "opencode", "shell"] {
+            assert_eq!(note(none), None, "{none}");
+        }
+        assert_eq!(
+            note("unknown"),
+            Some("No hook API: finished turns come from terminal activity.")
+        );
+        assert!(crate::agents::get("codex").unwrap().retrust_hooks);
+        assert!(!crate::agents::get("claude").unwrap().retrust_hooks);
+    }
+
     #[test]
     fn path_with_shim_prepends_the_shim_dir_once() {
         let shim = Path::new("/h/.overseer/bin/overseer");
@@ -1182,8 +1285,9 @@ mod tests {
     fn switchboard_hooks(bin: &Path) -> Value {
         let cmd = |event: &str| {
             format!(
-                "SWITCHBOARD_STATE_DIR=/s {} hook codex {event} \"$PPID\" 2>/dev/null||:;echo {{}};{OLD_MARKER}",
-                bin.display()
+                "SWITCHBOARD_STATE_DIR=/s {} hook codex {event} \"$PPID\" 2>/dev/null||:;echo {{}};{}",
+                bin.display(),
+                legacy::HOOK_MARKER
             )
         };
         let mut v = merge_groups(&json!({}), hooks::CODEX_EVENTS, cmd, 5);
@@ -1216,7 +1320,7 @@ mod tests {
         assert!(out[0].error.is_none(), "{:?}", out[0].error);
 
         let text = std::fs::read_to_string(&codex.path).unwrap();
-        assert!(!text.contains(OLD_MARKER));
+        assert!(!text.contains(legacy::HOOK_MARKER));
         let after = read(&codex.path);
         let end = after["hooks"]["SessionEnd"].as_array().unwrap();
         assert_eq!(end.len(), 2);
@@ -1237,7 +1341,7 @@ mod tests {
             planned.after["hooks"]["SessionEnd"][0]["hooks"][0]["timeout"],
             5
         );
-        assert!(planned.after_text.contains(OLD_MARKER));
+        assert!(planned.after_text.contains(legacy::HOOK_MARKER));
     }
 
     #[test]

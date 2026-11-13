@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { Drafts, type DraftStorage } from './drafts';
-import { inFlight, single } from './inflight';
+import { inFlight, single } from './daemon/inflight';
 
 const memory = () => {
   const data = new Map<string, string>();

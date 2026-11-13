@@ -4,24 +4,13 @@ use std::sync::Arc;
 use sha2::{Digest, Sha256};
 
 use crate::install::{Platform, SERVER_VERSION};
-use crate::release_http::{asset_url, client, get, hex, ApkError};
+use crate::release_http::{
+    asset_url, client, get, hex, network, sums_first_match, ApkError, GITHUB, SUMS,
+};
 use crate::ssh::{Fetch, FetchFuture};
 
-const GITHUB: &str = "https://github.com";
-pub const SUMS: &str = "SHA256SUMS";
 pub fn asset_name(version: &str, platform: Platform) -> String {
     format!("overseer-{version}-{}", platform.target_triple())
-}
-
-pub fn parse_sums(text: &str, name: &str) -> Option<String> {
-    text.lines()
-        .find_map(|line| {
-            let mut words = line.split_whitespace();
-            let hash = words.next()?;
-            (words.next()?.trim_start_matches('*') == name).then_some(hash)
-        })
-        .filter(|h| h.len() == 64 && h.bytes().all(|b| b.is_ascii_hexdigit()))
-        .map(str::to_ascii_lowercase)
 }
 
 pub fn cached(cache: &Path, version: &str, platform: Platform) -> PathBuf {
@@ -69,15 +58,12 @@ async fn from_base(base: &str, version: &str, platform: Platform) -> Result<Vec<
     let client = client()?;
     let name = asset_name(version, platform);
     let (sums_url, bin_url) = server_urls(base, version, platform);
-    let network = |e: reqwest::Error| ApkError::Network {
-        message: e.without_url().to_string(),
-    };
     let text = get(&client, &sums_url)
         .await?
         .text()
         .await
         .map_err(network)?;
-    let want = parse_sums(&text, &name).ok_or_else(|| ApkError::Failed {
+    let want = sums_first_match(&text, &name).ok_or_else(|| ApkError::Failed {
         message: format!("release v{version} has no {name} line in {SUMS}"),
     })?;
     let bytes = get(&client, &bin_url)
@@ -155,35 +141,6 @@ mod tests {
         );
         assert_eq!(name("Darwin x86_64"), "overseer-0.9.0-x86_64-apple-darwin");
         assert_eq!(name("Darwin arm64"), "overseer-0.9.0-aarch64-apple-darwin");
-    }
-
-    #[test]
-    fn parses_release_sha256sums() {
-        let a = "a".repeat(64);
-        let b = "B".repeat(64);
-        let sums = format!(
-            "{a}  Overseer_0.9.0_android.apk\n{b}  overseer-0.9.0-x86_64-unknown-linux-musl\n{a} *overseer-0.9.0-aarch64-apple-darwin\n{a}  overseer-0.9.0-x86_64-unknown-linux-musl.sig\n"
-        );
-        assert_eq!(
-            parse_sums(&sums, "overseer-0.9.0-x86_64-unknown-linux-musl"),
-            Some("b".repeat(64))
-        );
-        assert_eq!(
-            parse_sums(&sums, "overseer-0.9.0-aarch64-apple-darwin"),
-            Some(a.clone())
-        );
-        assert_eq!(
-            parse_sums(&sums, "overseer-0.9.0-aarch64-unknown-linux-musl"),
-            None
-        );
-        assert_eq!(
-            parse_sums(
-                "xyz  overseer-0.9.0-x86_64-apple-darwin\n",
-                "overseer-0.9.0-x86_64-apple-darwin"
-            ),
-            None
-        );
-        assert_eq!(parse_sums("", "x"), None);
     }
 
     #[tokio::test]

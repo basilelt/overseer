@@ -1,10 +1,11 @@
+use crate::util::percent_encode as encode;
 use serde_json::{json, Value};
 use std::io::{BufRead, Write};
 
 pub type Call<'a> = dyn FnMut(&str, &str, Option<&Value>) -> Result<(u16, Value), String> + 'a;
 
 const PROTOCOL: &str = "2025-06-18";
-const AGENT_STATUSES: [&str; 3] = ["in_testing", "merged", "in_progress"];
+use crate::status::AGENT_SETTABLE as AGENT_STATUSES;
 
 fn reply(id: &Value, result: Value) -> Value {
     json!({"jsonrpc": "2.0", "id": id, "result": result})
@@ -29,7 +30,7 @@ fn tools(file_tasks: bool) -> Value {
     json!([
         tool("list_tasks", "List Kanban tasks, optionally filtered by project and status. The project defaults to your own task's project.",
             json!({"project": s("Absolute path of the project's main worktree root"),
-                   "status": s("Status or comma list: pending, auto, in_progress, in_testing, merged, completed")}),
+                   "status": s(&format!("Status or comma list: {}", crate::status::LIST_FILTER.join(", ")))}),
             json!([])),
         tool("get_task", "Get one task by id.", json!({"id": s("Task id")}), json!(["id"])),
         tool("create_task", &format!("Create a pending task. The project defaults to your own task's project, else the current git repository. A quorum orchestrator's subtasks start on their own.{}",
@@ -141,17 +142,6 @@ fn pick(v: &Value, keys: &[&str]) -> Value {
     o
 }
 
-fn encode(s: &str) -> String {
-    s.bytes()
-        .map(|b| match b {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'.' | b'_' | b'~' => {
-                (b as char).to_string()
-            }
-            _ => format!("%{b:02X}"),
-        })
-        .collect()
-}
-
 fn daemon(
     call: &mut Call,
     method: &str,
@@ -170,7 +160,7 @@ fn daemon(
 }
 
 fn git_top() -> Option<String> {
-    let o = crate::git::output_within(
+    let o = crate::exec::output_within(
         std::process::Command::new("git").args(["rev-parse", "--show-toplevel"]),
         crate::git::TIMEOUT,
     )
@@ -348,7 +338,7 @@ fn run_tool(name: &str, a: &Value, own: Option<&str>, call: &mut Call) -> Result
                     )
                 })?;
             refuse_configurator(call, Some(own), "change task status")?;
-            if status == "merged" {
+            if status == crate::status::MERGED {
                 ensure_landed(call, own)?;
             }
             daemon(

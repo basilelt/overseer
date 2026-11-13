@@ -1,6 +1,6 @@
-use crate::board::{decode, git_out, publish};
-use crate::daemon::{q, Request};
-use crate::git::git;
+use crate::board::publish;
+use crate::git::{git, git_out};
+use crate::http::{res, Request};
 use crate::worktrees::{self, valid_sha, Res};
 use crate::Ctx;
 use serde_json::{json, Value};
@@ -186,7 +186,7 @@ fn target(ctx: &Ctx, worktree: Option<String>, line: Option<String>) -> Res<Stri
 }
 
 fn target_q(ctx: &Ctx, r: &Request) -> Res<String> {
-    let d = |k| q(r, k).map(decode).filter(|s| !s.is_empty());
+    let d = |k| r.param(k).filter(|s| !s.is_empty());
     target(ctx, d("worktree"), d("line"))
 }
 
@@ -695,22 +695,18 @@ pub fn revert(wt: &str, b: &Value) -> Res<Value> {
     reply(wt, head(wt))
 }
 
-fn res(r: Res<Value>) -> (u16, Value) {
-    match r {
-        Ok(v) => (200, v),
-        Err((c, e)) => (c, json!({ "error": e })),
-    }
-}
-
 pub fn routes(ctx: &Ctx, r: &Request, segs: &[&str], body: &Value) -> Option<(u16, Value)> {
-    let post = |f: &dyn Fn(&str) -> Res<Value>| res(target_b(ctx, body).and_then(|wt| f(&wt)));
+    let post = |f: &dyn Fn(&str) -> Res<Value>| res(200, target_b(ctx, body).and_then(|wt| f(&wt)));
     let with =
         |f: &dyn Fn(&str, &Files) -> Res<Value>| post(&|wt| files(body).and_then(|fs| f(wt, &fs)));
     Some(match (r.method.as_str(), segs) {
-        ("GET", ["v1", "git", "status"]) => res(target_q(ctx, r).and_then(|wt| {
-            crate::review::watch::touch(&wt);
-            status(&wt)
-        })),
+        ("GET", ["v1", "git", "status"]) => res(
+            200,
+            target_q(ctx, r).and_then(|wt| {
+                crate::review::watch::touch(&wt);
+                status(&wt)
+            }),
+        ),
         ("POST", ["v1", "git", "stage"]) => with(&stage),
         ("POST", ["v1", "git", "unstage"]) => with(&unstage),
         ("POST", ["v1", "git", "discard"]) => with(&discard),

@@ -1,12 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { render } from 'svelte/server';
-import { HostLink } from '../../host-link.svelte';
-import { itemsOf, load, watch } from '../../host-watch';
-import { MockDaemon } from '../../mock';
-import { settings } from '../../settings.svelte';
+import { HostLink } from '../../host/host-link.svelte';
+import { itemsOf, load, watch } from '../../host/host-watch';
+import { MockDaemon } from '../../daemon/mock';
+import { settings } from '../../settings/settings.svelte';
 import { app } from '../../state.svelte';
 import HostSections from './HostSections.svelte';
-import sidebarSrc from './Sidebar.svelte?raw';
 
 const html = (filter = '') => render(HostSections, { props: { filter, showArchived: false } }).body;
 
@@ -16,11 +15,10 @@ describe('HostSections', () => {
   let prod: HostLink;
 
   beforeEach(async () => {
-    local = new HostLink({ kind: 'local', label: 'Local' }, new MockDaemon({ live: false }));
-    prod = new HostLink({ kind: 'ssh', host: 'prod', label: 'prod' }, new MockDaemon({ live: false }));
+    local = new HostLink({ kind: 'local', label: 'Local' }, new MockDaemon({ live: false, delayMs: 0 }));
+    prod = new HostLink({ kind: 'ssh', host: 'prod', label: 'prod' }, new MockDaemon({ live: false, delayMs: 0 }));
     await prod.connect();
     watch(prod);
-    await new Promise((r) => setTimeout(r, 0));
     await load(prod);
     app.link = local;
     app.conn = { phase: 'connected', target: local.target };
@@ -45,7 +43,7 @@ describe('HostSections', () => {
 
   it('lists the sessions of a background host under its own section', () => {
     const name = itemsOf(prod).items.find((i) => i.kind !== 'shell')?.title;
-    expect(name).toBeTruthy();
+    expect(name).toBe('PROJ-10844 docker images multi-arch');
     expect(html()).toContain(name!);
   });
 
@@ -64,10 +62,5 @@ describe('HostSections', () => {
 
   it('offers to add a host to the window', () => {
     expect(html()).toContain('Add a host to this window');
-  });
-
-  it('is shown by the sidebar only when the window has several hosts, around the usual view', () => {
-    expect(sidebarSrc).toMatch(/\{:else if app\.hosts\.length > 1\}\n\s+\{#await hostSections\(\) then \{ default: HostSections \}\}<HostSections \{filter\} \{showArchived\} \/>\{\/await\}/);
-    expect(sidebarSrc).toContain("const hostSections = () => import('./HostSections.svelte');");
   });
 });

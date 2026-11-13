@@ -4,16 +4,15 @@ use std::sync::Mutex;
 use reqwest::header::ACCEPT;
 use reqwest::Client;
 use serde::Serialize;
-use sha2::{Digest, Sha256};
 use tauri::ipc::Channel;
 use tauri::{AppHandle, Manager, State};
 use tauri_plugin_updater::{Update, UpdaterExt};
-use tokio::io::AsyncWriteExt;
 
-use crate::release_http::{asset_url, client, get, hex, ApkError, REPO};
+use crate::release_http::{
+    asset_url, client, failed, get, manifest_url, network, release_url, stream_to,
+    sums_valid_match, ApkError, CheckResult, GITHUB, REPO, SUMS,
+};
 
-const GITHUB: &str = "https://github.com";
-const PROGRESS_STEP: u64 = 256 * 1024;
 #[cfg(any(target_os = "macos", test))]
 const APP_BUNDLE: &str = "Applications/Overseer.app";
 
@@ -35,13 +34,6 @@ pub struct UpdateStatus {
     current: String,
     kind: InstallKind,
     releases_url: String,
-}
-
-#[derive(Serialize)]
-#[serde(tag = "status", rename_all = "lowercase")]
-pub enum CheckResult {
-    None { current: String },
-    Available(UpdateInfo),
 }
 
 #[derive(Serialize)]
@@ -82,27 +74,9 @@ fn current_version(app: &AppHandle) -> String {
     app.package_info().version.to_string()
 }
 
-pub(crate) fn manifest_url() -> String {
-    format!("{GITHUB}/{REPO}/releases/latest/download/latest.json")
-}
-
-fn release_url(version: &str) -> String {
-    format!("{GITHUB}/{REPO}/releases/tag/v{version}")
-}
-
 pub fn msix_name(version: &str, arch: &str) -> String {
     let arch = if arch == "aarch64" { "arm64" } else { "x64" };
     format!("Overseer_{version}_{arch}.msix")
-}
-
-pub fn sum_for(sums: &str, file: &str) -> Option<String> {
-    sums.lines().find_map(|line| {
-        let mut words = line.split_whitespace();
-        let hash = words.next()?;
-        let name = words.next()?.trim_start_matches('*');
-        (name == file && hash.len() == 64 && hash.bytes().all(|b| b.is_ascii_hexdigit()))
-            .then(|| hash.to_ascii_lowercase())
-    })
 }
 
 #[tauri::command]
@@ -118,7 +92,7 @@ pub async fn update_status(app: AppHandle) -> UpdateStatus {
 pub async fn update_check(
     app: AppHandle,
     state: State<'_, UpdaterState>,
-) -> Result<CheckResult, String> {
+) -> Result<CheckResult<UpdateInfo>, String> {
     let res = check_update(app, state).await;
     match &res {
         Ok(CheckResult::None { current }) => {
@@ -136,9 +110,9 @@ pub async fn update_check(
 async fn check_update(
     app: AppHandle,
     state: State<'_, UpdaterState>,
-) -> Result<CheckResult, String> {
+) -> Result<CheckResult<UpdateInfo>, String> {
     let current = current_version(&app);
-    let endpoint = reqwest::Url::parse(&manifest_url()).map_err(|e| e.to_string())?;
+    let endpoint = reqwest::Url::parse(&manifest_url(GITHUB)).map_err(|e| e.to_string())?;
     let update = app
         .updater_builder()
         .endpoints(vec![endpoint])
@@ -162,7 +136,7 @@ async fn check_update(
             .and_then(|d| d.as_str())
             .map(str::to_string),
         kind: current_kind(),
-        release_url: release_url(&update.version),
+        release_url: release_url(GITHUB, &update.version),
     };
     *state.pending.lock().unwrap() = Some(update);
     Ok(CheckResult::Available(info))
@@ -267,33 +241,22 @@ pub async fn download_verified(
     version: &str,
     name: &str,
     dir: &Path,
-    mut progress: impl FnMut(u64, Option<u64>),
+    progress: impl FnMut(u64, Option<u64>),
 ) -> Result<PathBuf, ApkError> {
-    let sums = get(client, &asset_url(base, version, "SHA256SUMS"))
+    let sums = get(client, &asset_url(base, version, SUMS))
         .await?
         .text()
         .await
-        .map_err(crate::release_http::network)?;
-    let want = sum_for(&sums, name).ok_or_else(|| {
-        crate::release_http::failed(format!("{name} is not in the release checksums"))
-    })?;
-    tokio::fs::create_dir_all(dir)
-        .await
-        .map_err(crate::release_http::failed)?;
+        .map_err(network)?;
+    let want = sums_valid_match(&sums, name)
+        .ok_or_else(|| failed(format!("{name} is not in the release checksums")))?;
+    tokio::fs::create_dir_all(dir).await.map_err(failed)?;
     let part = dir.join(format!("{name}.part"));
-    let streamed = stream_to(
-        client,
-        &asset_url(base, version, name),
-        &part,
-        &mut progress,
-    )
-    .await;
+    let streamed = stream_to(client, &asset_url(base, version, name), &part, progress).await;
     match streamed {
         Ok(got) if got == want => {
             let out = dir.join(name);
-            tokio::fs::rename(&part, &out)
-                .await
-                .map_err(crate::release_http::failed)?;
+            tokio::fs::rename(&part, &out).await.map_err(failed)?;
             Ok(out)
         }
         Ok(_) => {
@@ -305,32 +268,6 @@ pub async fn download_verified(
             Err(e)
         }
     }
-}
-
-async fn stream_to(
-    client: &Client,
-    url: &str,
-    part: &Path,
-    progress: &mut impl FnMut(u64, Option<u64>),
-) -> Result<String, ApkError> {
-    use crate::release_http::{failed, network};
-    let mut res = get(client, url).await?;
-    let total = res.content_length();
-    let mut file = tokio::fs::File::create(part).await.map_err(failed)?;
-    let mut hasher = Sha256::new();
-    let (mut downloaded, mut reported) = (0u64, 0u64);
-    progress(0, total);
-    while let Some(chunk) = res.chunk().await.map_err(network)? {
-        hasher.update(&chunk);
-        file.write_all(&chunk).await.map_err(failed)?;
-        downloaded += chunk.len() as u64;
-        if downloaded - reported >= PROGRESS_STEP || Some(downloaded) == total {
-            reported = downloaded;
-            progress(downloaded, total);
-        }
-    }
-    file.flush().await.map_err(failed)?;
-    Ok(hex(&hasher.finalize()))
 }
 
 #[cfg(any(target_os = "macos", test))]
@@ -532,7 +469,7 @@ mod tests {
     #[test]
     fn desktop_endpoint_is_the_public_latest_download() {
         assert_eq!(
-            manifest_url(),
+            manifest_url(GITHUB),
             "https://github.com/basilelt/overseer/releases/latest/download/latest.json"
         );
     }
@@ -563,25 +500,6 @@ mod tests {
     }
 
     const SHA: &str = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
-
-    #[test]
-    fn sum_for_reads_one_file_from_sha256sums() {
-        let sums = format!(
-            "{}  Overseer_0.35.0_arm64.msix\n{SHA}  Overseer_0.35.0_x64.msix\n{} *other\n",
-            "0".repeat(64),
-            "1".repeat(64)
-        );
-        assert_eq!(
-            sum_for(&sums, "Overseer_0.35.0_x64.msix").as_deref(),
-            Some(SHA)
-        );
-        assert_eq!(
-            sum_for(&sums, "other").as_deref(),
-            Some("1".repeat(64).as_str())
-        );
-        assert_eq!(sum_for(&sums, "Overseer_0.35.0_x64.msi"), None);
-        assert_eq!(sum_for("nothex  f\n", "f"), None);
-    }
 
     fn tmp(tag: &str) -> PathBuf {
         let d = std::env::temp_dir().join(format!("sb-upd-{tag}-{}", std::process::id()));
@@ -679,6 +597,6 @@ mod tests {
             http_error(ApkError::Checksum),
             "The download does not match the release checksum"
         );
-        assert_eq!(http_error(crate::release_http::failed("x")), "x");
+        assert_eq!(http_error(failed("x")), "x");
     }
 }

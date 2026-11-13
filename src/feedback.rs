@@ -1,9 +1,9 @@
+use crate::http::err;
 use crate::sys::OpenOptionsExt;
 use crate::Ctx;
 use serde_json::{json, Value};
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use std::time::{Duration, SystemTime};
 
 type Res<T> = Result<T, (u16, String)>;
@@ -18,7 +18,6 @@ const IMAGE_MAX: u64 = 10 * 1024 * 1024;
 const VIDEO_MAX: u64 = 100 * 1024 * 1024;
 const IMAGES: [&str; 6] = ["png", "jpg", "jpeg", "gif", "webp", "svg"];
 const VIDEOS: [&str; 3] = ["mp4", "mov", "webm"];
-const POSITIONAL: [&str; 2] = ["claude", "codex"];
 
 pub fn routes(ctx: &Ctx, method: &str, segs: &[&str], body: &Value) -> Option<(u16, Value)> {
     let r = match (method, segs) {
@@ -26,7 +25,7 @@ pub fn routes(ctx: &Ctx, method: &str, segs: &[&str], body: &Value) -> Option<(u
         ("POST", ["v1", "feedback", "direct"]) => direct(ctx, body).map(|v| (201, v)),
         _ => return None,
     };
-    Some(r.unwrap_or_else(|(c, e)| (c, json!({ "error": e }))))
+    Some(r.unwrap_or_else(|(c, e)| err(c, e)))
 }
 
 fn bad(m: impl Into<String>) -> (u16, String) {
@@ -175,8 +174,8 @@ pub fn launch(
     let (cols, rows) = crate::term::size(b).map_err(bad)?.unwrap_or((120, 32));
     let session = agent.session.and_then(|_| crate::runner::uuid().ok());
     let by_flag = agent.prompt.is_some();
-    let by_arg = !by_flag && POSITIONAL.contains(&agent.id);
-    let extra: &[String] = if agent.id == "claude" {
+    let by_arg = !by_flag && agent.positional_prompt;
+    let extra: &[String] = if agent.start_args {
         &ctx.config.start_args
     } else {
         &[]
@@ -216,7 +215,9 @@ pub fn launch(
     .map_err(|e| (409, e))?;
     let json = term.to_json();
     if !by_flag && !by_arg {
-        std::thread::spawn(move || crate::deliver::when_started(&term, &prompt, false));
+        std::thread::spawn(move || {
+            crate::deliver::when_started(&term, &prompt, crate::deliver::StartupPrompt::WaitForUser)
+        });
     }
     Ok(json)
 }
@@ -290,16 +291,8 @@ pub fn args(
 }
 
 fn gh(args: &[String]) -> Res<(bool, String, String)> {
-    use crate::git::RunError;
-    let out = crate::git::run_within(
-        Command::new("gh")
-            .args(args)
-            .env("GH_PROMPT_DISABLED", "1")
-            .env("GH_NO_UPDATE_NOTIFIER", "1")
-            .env("NO_COLOR", "1"),
-        GH_TIMEOUT,
-    )
-    .map_err(|e| match e {
+    use crate::exec::RunError;
+    let out = crate::git::run_gh(args, GH_TIMEOUT).map_err(|e| match e {
         RunError::Spawn(e) if e.kind() == std::io::ErrorKind::NotFound => {
             (424, "gh is not installed on this host".to_string())
         }
@@ -422,7 +415,7 @@ mod tests {
         let d = std::env::temp_dir().join(format!(
             "sb-feedback-{tag}-{}-{}",
             std::process::id(),
-            crate::procs::now_ms()
+            crate::util::now_ms()
         ));
         let _ = std::fs::remove_dir_all(&d);
         d
@@ -541,9 +534,13 @@ mod tests {
 
     #[test]
     fn passes_the_prompt_as_the_initial_argument() {
-        for id in POSITIONAL {
-            let a = crate::agents::get(id).unwrap();
-            assert!(a.prompt.is_none(), "{id} has a prompt flag now");
+        let positional: Vec<_> = crate::agents::AGENTS
+            .iter()
+            .filter(|a| a.positional_prompt)
+            .collect();
+        assert_eq!(positional.len(), 2);
+        for a in positional {
+            assert!(a.prompt.is_none(), "{} has a prompt flag now", a.id);
         }
         let cmd = vec!["claude".to_string(), "--model".into(), "opus".into()];
         assert_eq!(

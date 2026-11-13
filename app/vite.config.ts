@@ -55,6 +55,7 @@ export default defineConfig({
     chunkSizeWarningLimit: 900,
     reportCompressedSize: true,
     rolldownOptions: {
+      optimization: { inlineConst: true },
       output: {
         codeSplitting: {
           // Keeps rolldown's CJS interop runtime out of the lazy hljs chunk, which the entry would otherwise modulepreload.
@@ -65,6 +66,9 @@ export default defineConfig({
   },
   test: {
     environment: 'node',
+    unstubGlobals: true,
+    unstubEnvs: true,
+    restoreMocks: true,
     setupFiles: ['src/test/pin-locale.ts', 'src/test/pin-platform.ts'],
     include: ['src/**/*.test.ts'],
     css: { include: [/\.css\?raw$/] },
@@ -73,7 +77,7 @@ export default defineConfig({
       include: ['src/lib/**/*.ts'],
       exclude: ['src/**/*.test.ts', 'src/**/types.ts', 'src/**/strings.ts', 'src/**/mock*.ts', 'src/lib/i18n/*.ts'],
       reporter: ['text-summary', 'json-summary'],
-      thresholds: { lines: 95, functions: 90, branches: 90, statements: 94 },
+      thresholds: { lines: 95, functions: 91, branches: 90, statements: 94 },
     },
   },
 });

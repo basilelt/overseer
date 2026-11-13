@@ -1,5 +1,7 @@
 import type { ReviewApi } from './api';
 import type { MapFile, MapLink, MapRegion, ReviewMap, ReviewTarget } from './types';
+import { readItem, writeItem, KEY_REVIEW_VIEW } from '../storage';
+import { OneShot } from '../timer';
 
 export const SIGNALS = ['logic', 'reach', 'contract', 'struggle', 'untested', 'unseen'] as const;
 export type Signal = (typeof SIGNALS)[number];
@@ -280,23 +282,15 @@ export function step(rank: Scored[], current: string | null, dir: 1 | -1): Score
   return rank[(i + dir + rank.length) % rank.length];
 }
 
-const VIEW_KEY = 'overseer.review.view';
+const VIEW_KEY = KEY_REVIEW_VIEW;
 
 export function savedView(): 'list' | 'map' {
-  try {
-    const v = globalThis.localStorage?.getItem(VIEW_KEY);
-    return v === 'map' || v === 'graph' ? 'map' : 'list';
-  } catch {
-    return 'list';
-  }
+  const v = readItem(VIEW_KEY);
+  return v === 'map' || v === 'graph' ? 'map' : 'list';
 }
 
 export function saveView(v: 'list' | 'map') {
-  try {
-    globalThis.localStorage?.setItem(VIEW_KEY, v);
-  } catch {
-    return;
-  }
+  writeItem(VIEW_KEY, v);
 }
 
 export class ReviewMapStore {
@@ -306,19 +300,19 @@ export class ReviewMapStore {
   loading = $state(false);
   private want = '';
   private seq = 0;
-  private timer: ReturnType<typeof setTimeout> | undefined;
+  private timer = new OneShot();
 
   constructor(private api: () => ReviewApi | null) {}
 
   request(key: string, target: ReviewTarget, also: string[], delay = 300) {
     if (key === this.want) return;
     this.want = key;
-    clearTimeout(this.timer);
+    this.timer.clear();
     if (!this.data || delay <= 0) {
       this.load(target, also);
       return;
     }
-    this.timer = setTimeout(() => this.load(target, also), delay);
+    this.timer.set(() => this.load(target, also), delay);
   }
 
   async load(target: ReviewTarget, also: string[]) {
@@ -342,7 +336,7 @@ export class ReviewMapStore {
   }
 
   stop() {
-    clearTimeout(this.timer);
+    this.timer.clear();
     this.seq++;
   }
 }
