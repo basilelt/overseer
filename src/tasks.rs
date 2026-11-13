@@ -58,6 +58,10 @@ pub const TITLE_USER: &str = "user";
 pub const TITLE_AUTO: &str = "auto";
 
 static START: Mutex<()> = Mutex::new(());
+
+pub(crate) fn start_lock() -> std::sync::MutexGuard<'static, ()> {
+    START.lock().unwrap_or_else(|e| e.into_inner())
+}
 static SEEN_BUSY: Mutex<Option<HashSet<String>>> = Mutex::new(None);
 
 #[derive(Clone, Debug, Default)]
@@ -1080,7 +1084,7 @@ pub(crate) fn start_with_args(
     here: bool,
     extra: &[String],
 ) -> Res<Task> {
-    let _g = START.lock().unwrap_or_else(|e| e.into_inner());
+    let _g = start_lock();
     let reg = db(ctx)?;
     let mut t = get(&reg, id)?;
     if t.from_session() {
@@ -1092,6 +1096,7 @@ pub(crate) fn start_with_args(
             ),
         ));
     }
+    crate::quorum::check_start(&reg, &t)?;
     if let Some(term) = t.live_term() {
         return Err((
             409,
@@ -1462,7 +1467,13 @@ pub fn tick(ctx: &Ctx, lines: &[Line]) {
             return;
         };
         if let Err((_, e)) = start(ctx, &next.id, None) {
-            let mut n = next.clone();
+            let _g = start_lock();
+            let Ok(mut n) = get(&reg, &next.id) else {
+                return;
+            };
+            if n.status != status::AUTO {
+                continue;
+            }
             n.status = PENDING.into();
             n.error = Some(e);
             logged(

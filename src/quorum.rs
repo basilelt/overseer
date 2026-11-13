@@ -76,6 +76,31 @@ pub fn is_reviewer(t: &Task) -> bool {
     t.origin.as_deref() == Some(REVIEWER)
 }
 
+fn in_round(state: &Value, r: &Task) -> bool {
+    state["reviewers"]
+        .as_array()
+        .is_none_or(|ids| ids.iter().any(|i| i == r.id.as_str()))
+}
+
+pub fn check_start(reg: &Registry, t: &Task) -> Res<()> {
+    if !is_reviewer(t) {
+        return Ok(());
+    }
+    let Some(w) = t.parent_id.as_deref().and_then(|p| tasks::get(reg, p).ok()) else {
+        return Ok(());
+    };
+    match &w.votes {
+        Some(s) if s["outcome"].is_null() && in_round(s, t) => Ok(()),
+        _ => Err((
+            409,
+            format!(
+                "task #{} reviews a closed round of task #{}",
+                t.number, w.number
+            ),
+        )),
+    }
+}
+
 pub fn needed(voters: usize) -> usize {
     voters / 2 + 1
 }
@@ -173,6 +198,7 @@ fn tell(ctx: &Ctx, to: &str, body: String) {
 }
 
 fn stop_reviewers(ctx: &Ctx, reg: &Registry, worker: &str) {
+    let _started = tasks::start_lock();
     for mut r in tasks::all(reg).unwrap_or_default().into_iter().filter(|r| {
         is_reviewer(r)
             && r.parent_id.as_deref() == Some(worker)
@@ -216,20 +242,14 @@ pub fn on_ready(ctx: &Ctx, worker: &Task) {
         + 1;
     stop_reviewers(ctx, &reg, &w.id);
     let voters = reviewers.len() + 1;
-    w.votes = Some(
-        json!({"round": round, "voters": voters, "needed": needed(voters),
-                         "votes": [], "outcome": null}),
-    );
-    if tasks::store(&reg, &mut w, &ctx.config.station_id).is_err() {
-        return;
-    }
     let base = crate::git::git(&w.project, &["symbolic-ref", "-q", "--short", "HEAD"])
         .filter(|b| !b.is_empty())
         .unwrap_or_else(|| "the base branch".into());
-    let mut started = vec![];
-    for (i, agent) in reviewers.iter().enumerate() {
-        let now = crate::util::now_ms();
-        let mut r = Task {
+    let now = crate::util::now_ms();
+    let mut fresh: Vec<Task> = reviewers
+        .iter()
+        .enumerate()
+        .map(|(i, agent)| Task {
             id: ulid(now + i as i64),
             title: format!("Review #{} (round {round})", w.number),
             description: reviewer_prompt(&root, &w, round, &base),
@@ -243,9 +263,20 @@ pub fn on_ready(ctx: &Ctx, worker: &Task) {
             updated_ms: now,
             rank: now as f64,
             ..Default::default()
-        };
-        if tasks::insert(&reg, &mut r, &ctx.config.station_id).is_ok() {
-            started.push(format!("#{} ({agent})", r.number));
+        })
+        .collect();
+    let ids: Vec<&str> = fresh.iter().map(|r| r.id.as_str()).collect();
+    w.votes = Some(
+        json!({"round": round, "voters": voters, "needed": needed(voters),
+                         "votes": [], "outcome": null, "reviewers": ids}),
+    );
+    if tasks::store(&reg, &mut w, &ctx.config.station_id).is_err() {
+        return;
+    }
+    let mut started = vec![];
+    for r in &mut fresh {
+        if tasks::insert(&reg, r, &ctx.config.station_id).is_ok() {
+            started.push(format!("#{} ({})", r.number, r.agent));
         }
     }
     tell(
@@ -271,6 +302,7 @@ fn voter_role(w: &Task, from: &Task) -> Res<&'static str> {
     if is_reviewer(from)
         && from.parent_id.as_deref() == Some(w.id.as_str())
         && !crate::status::is_done(&from.status)
+        && w.votes.as_ref().is_none_or(|s| in_round(s, from))
     {
         return Ok(REVIEWER);
     }
@@ -402,8 +434,9 @@ pub fn reviewer_ended(ctx: &Ctx, reg: &Registry, r: &Task) {
     let Ok(w) = tasks::get(reg, wid) else {
         return;
     };
-    let voted = w.votes.as_ref().is_some_and(|s| {
+    let voted = w.votes.as_ref().is_none_or(|s| {
         s["outcome"].is_string()
+            || !in_round(s, r)
             || s["votes"]
                 .as_array()
                 .is_some_and(|vs| vs.iter().any(|v| v["from"] == r.id.as_str()))
@@ -556,5 +589,109 @@ mod tests {
         assert!(t.contains("Merge its branch task/4-parser"));
         let t = verdict(&w, 2, "rejected", &votes[..1], 2);
         assert!(t.contains("send_message (to: W)"));
+    }
+
+    fn ctx(dir: &std::path::Path) -> Ctx<'static> {
+        Ctx {
+            claude_dir: dir.join("claude"),
+            codex_dir: dir.join("codex"),
+            gemini_dir: dir.join("gemini"),
+            vibe_dir: dir.join("vibe"),
+            snapshot: dir.join("snapshot.json"),
+            config: crate::load_config(dir),
+            state_dir: dir.to_path_buf(),
+            now_ms: 1_000_000,
+            probe: &crate::procs::System,
+            tmux: None,
+        }
+    }
+
+    fn two_rounds(tag: &str) -> (std::path::PathBuf, Task, Task, Task) {
+        let dir = std::env::temp_dir().join(format!(
+            "sb-quorum-{tag}-{}-{}",
+            std::process::id(),
+            crate::util::now_ms()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let ctx = ctx(&dir);
+        let reg = db(&ctx).unwrap();
+        let project = dir.to_string_lossy().into_owned();
+        let mut root = Task {
+            id: "ROOT".into(),
+            title: "Job".into(),
+            project: project.clone(),
+            status: status::IN_PROGRESS.into(),
+            agent: "claude".into(),
+            quorum: Some(json!({"workers": ["claude"], "reviewers": ["opencode"]})),
+            ..Default::default()
+        };
+        tasks::insert(&reg, &mut root, "st").unwrap();
+        let mut w = Task {
+            id: "W".into(),
+            title: "Part".into(),
+            project,
+            status: status::IN_TESTING.into(),
+            agent: "claude".into(),
+            parent_id: Some(root.id.clone()),
+            ..Default::default()
+        };
+        tasks::insert(&reg, &mut w, "st").unwrap();
+        let reviewer = |reg: &Registry| {
+            tasks::all(reg)
+                .unwrap()
+                .into_iter()
+                .filter(|t| is_reviewer(t) && !status::is_done(&t.status))
+                .max_by_key(|t| t.number)
+                .unwrap()
+        };
+        on_ready(&ctx, &w);
+        let first = reviewer(&reg);
+        on_ready(&ctx, &w);
+        let second = reviewer(&reg);
+        assert_ne!(first.id, second.id);
+        (dir, tasks::get(&reg, "W").unwrap(), first, second)
+    }
+
+    #[test]
+    fn a_reviewer_of_an_earlier_round_ending_casts_no_vote_in_the_next_one() {
+        let (dir, w, mut first, _) = two_rounds("ended");
+        let ctx = ctx(&dir);
+        let reg = db(&ctx).unwrap();
+        assert_eq!(w.votes.as_ref().unwrap()["round"], 2);
+        first.status = status::COMPLETED.into();
+        reviewer_ended(&ctx, &reg, &first);
+        let w = tasks::get(&reg, "W").unwrap();
+        assert_eq!(w.votes.as_ref().unwrap()["votes"], json!([]));
+        assert!(w.votes.as_ref().unwrap()["outcome"].is_null());
+        assert_eq!(w.status, status::IN_TESTING);
+    }
+
+    #[test]
+    fn a_reviewer_of_an_earlier_round_cannot_vote_or_start_again() {
+        let (dir, _, mut first, second) = two_rounds("zombie");
+        let ctx = ctx(&dir);
+        let reg = db(&ctx).unwrap();
+        first.status = status::IN_PROGRESS.into();
+        tasks::store(&reg, &mut first, "st").unwrap();
+        let (code, msg) = vote(
+            &ctx,
+            "W",
+            &json!({"approve": false, "reason": "late", "from": first.id}),
+        )
+        .unwrap_err();
+        assert_eq!(code, 403);
+        assert!(msg.contains("is not a voter on task"), "{msg}");
+        let (code, msg) = check_start(&reg, &first).unwrap_err();
+        assert_eq!(code, 409);
+        assert!(msg.contains("reviews a closed round"), "{msg}");
+        assert!(check_start(&reg, &second).is_ok());
+        let w = vote(
+            &ctx,
+            "W",
+            &json!({"approve": false, "reason": "no tests", "from": second.id}),
+        )
+        .unwrap();
+        assert_eq!(w.votes.as_ref().unwrap()["outcome"], "rejected");
+        assert!(check_start(&reg, &second).is_err());
     }
 }
