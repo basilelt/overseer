@@ -237,11 +237,16 @@
     .wrap.agent:not(.noted) .age {
       visibility: visible;
     }
+    .note::after {
+      content: '';
+      position: absolute;
+      inset: -10px;
+    }
   }
   :global(:root.phone) .note {
-    right: 28px;
-    width: 32px;
-    height: 32px;
+    right: 24px;
+    width: 40px;
+    height: 40px;
     opacity: 1;
   }
   :global(:root.phone) .wrap.agent .age {
@@ -249,7 +254,7 @@
   }
   :global(:root.phone) .wrap.agent .nslot {
     display: block;
-    width: 26px;
+    width: 34px;
   }
   :global(:root.phone) .row.shell {
     height: 40px;
