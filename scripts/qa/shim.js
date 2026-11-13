@@ -36,7 +36,7 @@
           send(ch, { phase: 'reconnecting', target, attempt, detail: 'the daemon stopped answering' });
           await new Promise((r) => setTimeout(r, 1000));
           const version = await alive(slot);
-          if (version !== null) { send(ch, { phase: 'connected', target, version }); break; }
+          if (version !== null) { send(ch, { phase: 'connected', target, version, server: serverUpdate() }); break; }
         }
         h.wake?.(); h.wake = null;
       }
@@ -85,6 +85,7 @@
       ws.onclose = () => send(ch, []);
     });
   }
+  const serverUpdate = () => { const q = new URLSearchParams(location.search).get('qaserver'); if (!q) return undefined; const [running, installed, terms] = q.split(':'); return { running, installed, terms: Number(terms || 0), reason: 'qa' }; };
   const MAX_UPLOAD = 50 << 20, pastes = new Map();
   const pctDecode = (v) => { const b = new TextEncoder().encode(v), out = []; for (let i = 0; i < b.length; i++) { const hex = String.fromCharCode(b[i + 1], b[i + 2]); if (b[i] === 37 && /^[0-9a-fA-F]{2}$/.test(hex)) { out.push(parseInt(hex, 16)); i += 2; } else out.push(b[i]); } return new TextDecoder().decode(Uint8Array.from(out)); };
   const pasteName = (raw) => { const clean = [...raw.split(/[\\/]/).pop()].map((c) => (/[\p{Alphabetic}\p{N}.\-_]/u.test(c) ? c : '_')).slice(0, 80).join('').replace(/^\.+/, ''); return clean || 'paste.png'; };
@@ -140,7 +141,8 @@
     'plugin:app|register_listener': () => null,
     'plugin:notification|register_listener': () => null,
     save_download: (a, o) => { const bytes = bytesOf(a); if (!bytes) throw 'expected bytes'; window.__qaDownload = { name: pasteName(pctDecode(o?.headers?.['x-name'] ?? '')), size: bytes.length }; return '/home/qa/Downloads/' + window.__qaDownload.name; },
-    conn_connect: async (a) => { const w = watches.get(a.slot ?? ''); if (w) w.stop = true; log('conn_connect', a.slot ?? '', JSON.stringify(a.target)); send(a.onState, { phase: 'connected', target: a.target, version: (await alive(a.slot)) ?? '0.2.0' }); monitor(a.onState, a.target, a.slot); },
+    conn_restart_server: (a) => { log('conn_restart_server', a.slot ?? ''); return null; },
+    conn_connect: async (a) => { const w = watches.get(a.slot ?? ''); if (w) w.stop = true; log('conn_connect', a.slot ?? '', JSON.stringify(a.target)); send(a.onState, { phase: 'connected', target: a.target, version: (await alive(a.slot)) ?? '0.2.0', server: serverUpdate() }); monitor(a.onState, a.target, a.slot); },
     conn_disconnect: (a) => { const slot = a?.slot ?? ''; log('conn_disconnect', slot); const w = watches.get(slot); if (w) w.stop = true; watches.delete(slot); const h = H(slot); h.wake?.(); h.wake = null; h.up = Promise.resolve(); return null; },
     window_new: (a) => { window.__qaWindows.push(a?.connect ?? null); return 'w-' + (window.__qaWindows.length + 1); },
     window_handoff: () => null,
@@ -153,7 +155,7 @@
     term_detach: (a) => { terms.get(a.attach)?.close(); terms.delete(a.attach); },
   };
   const NULL_COMMANDS = new Set([
-    'conn_answer', 'conn_wake', 'conn_restart_server',
+    'conn_answer', 'conn_wake',
     'ports_forward', 'ports_unforward',
     'browser_open', 'browser_bounds', 'browser_navigate', 'browser_back', 'browser_forward', 'browser_reload', 'browser_hide', 'browser_show', 'browser_close', 'browser_pages_reset',
     'update_install', 'update_relaunch',
