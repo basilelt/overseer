@@ -2,8 +2,10 @@ use crate::agents::{self, Hooks};
 use crate::hooks;
 use crate::http::err;
 use crate::legacy;
+use crate::sys::OpenOptionsExt;
 use crate::util::shell_quote;
 use serde_json::{json, Map, Value};
+use std::io::Write;
 use std::path::{Path, PathBuf};
 
 pub const MARKER: &str = "#overseer-hook";
@@ -277,11 +279,25 @@ pub fn diff(path: &Path, before: &str, after: &str, tmp: &Path) -> String {
     if before == after {
         return String::new();
     }
-    let a = tmp.join("sb-diff-a");
-    let b = tmp.join("sb-diff-b");
-    let ok = crate::mkdir_private(tmp).is_ok()
-        && std::fs::write(&a, before).is_ok()
-        && std::fs::write(&b, after).is_ok();
+    static SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let tag = format!(
+        "sb-diff-{}-{}",
+        std::process::id(),
+        SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+    );
+    let a = tmp.join(format!("{tag}-a"));
+    let b = tmp.join(format!("{tag}-b"));
+    let put = |p: &Path, text: &str| {
+        let _ = std::fs::remove_file(p);
+        std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .mode(0o600)
+            .open(p)
+            .and_then(|mut f| f.write_all(text.as_bytes()))
+            .is_ok()
+    };
+    let ok = crate::mkdir_private(tmp).is_ok() && put(&a, before) && put(&b, after);
     let label = path.to_string_lossy();
     let out = ok
         .then(|| {

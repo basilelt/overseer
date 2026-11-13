@@ -242,7 +242,7 @@ pub fn apply(
         settings,
         &p.before_text,
         &p.after_text,
-        &std::env::temp_dir().join("overseer-statusline"),
+        &state_dir.join(crate::paths::TMP_DIR),
     );
     let mut backup = None;
     if p.changed && !dry_run {
