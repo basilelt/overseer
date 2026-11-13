@@ -47,7 +47,7 @@ Each step is **Do → Expect**. Check every screenshot for overlaps, clipped tex
 ### A. Start and connect
 
 - **A1** Open the app → the title bar shows **Local** with a green dot and the CPU/RAM chip. The welcome card offers **Skip** and **Take the tour**.
-- **A2** **Take the tour**, step through it, close it → every step points at a visible control. Reload: the tour does not come back.
+- **A2** **Take the tour**, step through it, close it → every step points at a visible control. Reload: the tour does not come back. On a phone the keyboard **Palette shortcut** step is left out.
 - **A3** Reload the app, then stop and start the daemon (`sandbox.sh stop`, then `start`) → the app reconnects on its own, without an error left on screen.
 - **A3b** Open two session tabs and a split, palette **Disconnect**, then **Reconnect** (or connect to the same host again) → the same tabs, the same split and the same selected tab are back, as after a relaunch, and the terminal accepts typing. With two hosts in the window, disconnecting one leaves the others' tabs alone, and reconnecting it restores only its own.
 - **A4** Host chip → **Connect to host…**, type `box`, Enter (default **One window per host**) → the window now shows **box** alone, with no extra connection (`window.__qaLog` has one `conn_connect` per connect, no slot). Session rows in the sidebar show no host name.
