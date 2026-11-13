@@ -107,7 +107,11 @@ desktop)
   linux_only desktop
   [ -f "$D/daemon.pid" ] || { echo "run $0 start first" >&2; exit 1; }
   "$0" desktop-stop
-  mkdir -p "$D/home" "$D/run"
+  mkdir -p "$D/home" "$D/run" "$D/appbin"
+  for f in "$R"/tests/stubs/*; do
+    [ "${f##*/}" = ssh ] || ln -sf "$f" "$D/appbin/${f##*/}"
+  done
+  app_path=$D/appbin:${daemon_path#"$R/tests/stubs:"}
   [ -f "$MESA_EGL" ] || MESA_EGL=
   setsid env ${MESA_EGL:+__EGL_VENDOR_LIBRARY_FILENAMES="$MESA_EGL"} Xvfb ":$DISPLAY_NUM" -screen 0 1440x900x24 -nolisten tcp >> "$D/xvfb.log" 2>&1 &
   echo $! > "$D/xvfb.pid"
@@ -118,7 +122,7 @@ desktop)
     unshare -rn true 2>/dev/null || { echo "port 1420 is taken by another dev server" >&2; exit 1; }
     ns="unshare -rn"
   fi
-  export R D DISPLAY_NUM MESA_EGL APP_BIN BIN daemon_path QA_SHELL
+  export R D DISPLAY_NUM MESA_EGL APP_BIN BIN app_path QA_SHELL
   setsid $ns sh -c '
     ip link set lo up 2>/dev/null || true
     cd "$R/app" && nice -n 10 ./node_modules/.bin/vite --port 1420 --strictPort >> "$D/vite.log" 2>&1 &
@@ -128,7 +132,7 @@ desktop)
       [ $i -lt 100 ] || { echo "vite did not start, see $D/vite.log" >&2; exit 1; }
       sleep 0.2
     done
-    exec env -i PATH="$daemon_path" DISPLAY=":$DISPLAY_NUM" HOME="$D/home" SHELL="${QA_SHELL:-/bin/sh}" TERM=xterm-256color LANG=C.UTF-8 \
+    exec env -i PATH="$app_path" DISPLAY=":$DISPLAY_NUM" HOME="$D/home" SHELL="${QA_SHELL:-/bin/sh}" TERM=xterm-256color LANG=C.UTF-8 \
       XDG_RUNTIME_DIR="$D/run" CLAUDE_CONFIG_DIR="$D/home/.claude" CODEX_HOME="$D/home/.codex" \
       OVERSEER_STATE_DIR="$D/state" OVERSEER_TMUX_SOCKET="$D/tmux.sock" OVERSEER_LOGIN_ENV=0 \
       GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 GIT_AUTHOR_NAME=qa GIT_AUTHOR_EMAIL=qa@example.com \
