@@ -753,7 +753,7 @@ function qContent(c, T) {
   chip(c, lab, 1276, 70, 26, col, 'right');
   c.fillStyle = C.line; c.fillRect(0, 168, QP.w, 1);
   tx(c, 'WORKER', 44, 226, 15, 600, 'm', C.ink3, 'left', 3);
-  avatar(c, 84, 296, 30, SCOL[1], '</>'); tx(c, 'Codex', 134, 292, 32, 600, 'u', C.ink); tx(c, 'gpt-5-codex', 134, 322, 18, 400, 'm', C.ink3);
+  avatar(c, 84, 296, 30, SCOL[8], '▦'); tx(c, 'Mistral Vibe', 134, 292, 32, 600, 'u', C.ink); tx(c, 'vibe 3.1.2', 134, 322, 18, 400, 'm', C.ink3);
   tx(c, 'Split into the API endpoint,', 44, 392, 24, 400, 'u', C.ink2); tx(c, 'the UI button and the tests.', 44, 424, 24, 400, 'u', C.ink2);
   tx(c, 'RESULT', 44, 504, 15, 600, 'm', C.ink3, 'left', 3);
   [['+48', '−12', 'src/orders/mod.rs'], ['+21', '−4', 'src/invoicing.rs']].forEach(([a, d, f], i) => { tx(c, a, 44, 548 + i * 40, 22, 500, 'm', C.add); tx(c, d, 112, 548 + i * 40, 22, 500, 'm', C.del); tx(c, f, 178, 548 + i * 40, 22, 400, 'm', C.ink); });
@@ -1080,20 +1080,20 @@ function montage(T) {
   MI.forEach((f, k) => {
     const s = MS + k * MDUR, a0 = s, a1 = k === MI.length - 1 ? FIN : s + MDUR;
     if (T < a0 || T >= a1) return;
-    const e = E.o4(P(T, a0, s + 0.07)), x = k === MI.length - 1 ? 0 : E.i2(P(T, a1 - 0.035, a1)), al = e * (1 - x);
+    const e = E.o4(P(T, a0, s + 0.035)), x = k === MI.length - 1 ? 0 : E.i2(P(T, a1 - 0.03, a1)), al = 1 - x;
     const im = SH[f.k], q = im.naturalWidth / f.cw, [sx, sy, sw, sh] = f.src, sc = Math.min(940 / sw, 700 / sh), w = sw * sc, h = sh * sc;
     const right = k % 2 === 0, cx = right ? 1340 : 580, kb = lerp(1.07, 1, E.o3(P(T, a0, s + MDUR))), side = right ? 1 : -1;
     const fl = Math.exp(-Math.max(0, T - s) * 18) * 0.55;
     if (fl > 0.01) emit(c => { const g = c.createRadialGradient(cx, 540, 0, cx, 540, 700); g.addColorStop(0, rgba(C.amber, 0.45 * fl)); g.addColorStop(1, rgba(C.amber, 0)); c.fillStyle = g; c.fillRect(cx - 700, 0, 1400, 1080); });
-    X.save(); X.globalAlpha = al; X.translate(cx + (1 - e) * 90 * side, 540); X.scale(kb, kb);
+    X.save(); X.globalAlpha = al; X.translate(cx + (1 - e) * 24 * side, 540); X.scale(kb, kb);
     X.shadowColor = 'rgba(0,0,0,0.7)'; X.shadowBlur = 70; X.shadowOffsetY = 28; rr(X, -w / 2, -h / 2, w, h, 20); X.fillStyle = C.surf; X.fill(); X.shadowColor = 'transparent'; X.shadowBlur = 0; X.shadowOffsetY = 0;
     X.save(); rr(X, -w / 2, -h / 2, w, h, 20); X.clip(); X.drawImage(im, sx * q, sy * q, sw * q, sh * q, -w / 2, -h / 2, w, h); X.restore();
     X.lineWidth = 2; X.strokeStyle = 'rgba(255,255,255,0.16)'; rr(X, -w / 2, -h / 2, w, h, 20); X.stroke(); X.restore();
-    const tcx = right ? 96 : 1080, tx0 = tcx + (1 - e) * -70 * side;
+    const tcx = right ? 96 : 1080, tx0 = tcx;
     X.save(); X.globalAlpha = al;
     tx(X, `0${k + 1} / 06`, tx0, 372, 22, 500, 'm', C.amber, 'left', 4);
     tx(X, f.cap[0], tx0 - 4, 520, 150, 800, 'd', C.ink, 'left', -5); tx(X, f.cap[1], tx0 - 4, 662, 100, 800, 'd', C.ink, 'left', -3);
-    rr(X, tx0, 700, 120 * E.o4(P(T, a0, s + 0.12)), 8, 4); X.fillStyle = C.amber; X.fill();
+    rr(X, tx0, 700, 120, 8, 4); X.fillStyle = C.amber; X.fill();
     tx(X, f.sub, tx0, 770, 32, 500, 'u', C.ink2); X.restore();
   });
   for (let k = 0; k < MI.length; k++) dot(X, 960 + (k - 2.5) * 30, 1000, k === Math.min(5, Math.floor(u / MDUR)) ? 6 : 3.5, k === Math.min(5, Math.floor(u / MDUR)) ? C.amber : C.ink3);
