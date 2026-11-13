@@ -43,6 +43,16 @@ describe('CSS guard: workspace drawer touch targets on a phone', () => {
     expect(tall(sources[name], sel)).toBeGreaterThanOrEqual(MIN);
   });
 
+  it('gives the sticky note button a thumb-sized hit area', () => {
+    expect(px(phone(sessionRow, '.note', 'width'))).toBeGreaterThanOrEqual(MIN);
+    expect(px(phone(sessionRow, '.note', 'height'))).toBeGreaterThanOrEqual(MIN);
+  });
+
+  it('grows the note hit area on touch desktop layouts without growing the glyph', () => {
+    expect(declOf(sessionRow, '.note::after', 'inset', '@media (hover: none)')).toBe('-10px');
+    expect(declOf(sessionRow, '.note', 'width')).toBe('20px');
+  });
+
   it('gives the expand chevron and the start button a thumb-sized width', () => {
     expect(px(phone(spaceBlock, '.chev', 'width'))).toBeGreaterThanOrEqual(36);
     expect(px(phone(spaceBlock, '.start', 'width'))).toBeGreaterThanOrEqual(MIN);
