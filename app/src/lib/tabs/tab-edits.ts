@@ -12,7 +12,7 @@ import type { app as appState } from '../state.svelte';
 import { activeKey, addTabs, allTabs, closeTabAt, dropKey, savedLayouts as saved, update, workspace } from '../workspace/workspace.svelte';
 import { itemMenu } from '../workspace/wsactions';
 import { buildTree, resolveTab } from '../workspace/workspaces';
-import { endTarget, exitedTerm } from './tabs';
+import { endTarget, endsSession, exitedTerm } from './tabs';
 
 type App = typeof appState;
 
@@ -164,11 +164,17 @@ export function reapEnded(app: App, terms = app.data.terms) {
   }
 }
 
+export function closeTabAsking(app: App, index: number, key: string) {
+  if (!endsSession(key, app.items, app.data.terms)) return closeTabAt(index, key);
+  update((l) => ({ ...l, focused: index }));
+  app.open('closeTab', key);
+}
+
 export function tabMenu(app: App, e: MouseEvent, index: number, key: string, item: boolean): MenuItem[] {
   const items: MenuItem[] = item ? itemMenu(key) : [];
   if (app.canMoveToWorkspace(key)) items.push({ label: t('ws.moveSession'), icon: FolderInput, run: () => app.openMenu(e, t('ws.moveSession'), moveMenu(app, key)) });
   items.push({ label: '', separator: true });
   if (item) items.push({ label: t('tab.hide'), run: () => closeTabAt(index, key, false) });
-  items.push({ label: t('common.close'), icon: X, run: () => closeTabAt(index, key) });
+  items.push({ label: t('common.close'), icon: X, run: () => closeTabAsking(app, index, key) });
   return items;
 }

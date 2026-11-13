@@ -118,6 +118,10 @@ export function endTarget(key: string, items: SidebarItem[]): { line: string } |
   return null;
 }
 
+export function endsSession(key: string, items: SidebarItem[], terms: Term[]): boolean {
+  return !!endTarget(key, items) && !exitedTerm(key, terms);
+}
+
 export function focusSession(pane: Element | null | undefined): boolean {
   const target = pane?.querySelector<HTMLElement>('.chat .composer textarea') ?? pane?.querySelector<HTMLElement>('.keep:not(.hidden) [data-terminal]') ?? pane?.querySelector<HTMLElement>('.review');
   if (!target || !target.isConnected) return false;

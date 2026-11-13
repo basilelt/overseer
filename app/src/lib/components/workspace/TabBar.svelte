@@ -16,7 +16,7 @@
   import Megaphone from '@lucide/svelte/icons/megaphone';
   import { settings } from '../../settings/settings.svelte';
   import { tabLabel } from '../../tabs/tab-label';
-  import { coarsePointer, focusSession, stripScroll, tabInfo, type TabInfo } from '../../tabs/tabs';
+  import { coarsePointer, endsSession, focusSession, stripScroll, tabInfo, type TabInfo } from '../../tabs/tabs';
   import { broadcastTo, newSessionItems } from '../../workspace/wsactions';
   import { wsDropTarget } from '../../workspace/workspaces';
   import { t, type Key } from '../../i18n.svelte';
@@ -207,7 +207,9 @@
 
   function close(e: MouseEvent, key: string) {
     e.stopPropagation();
-    closeTabAt(index, key);
+    if (!endsSession(key, app.items, app.data.terms)) return closeTabAt(index, key);
+    update((l) => ({ ...l, focused: index }));
+    app.open('closeTab', key);
   }
 
   let editing = $state<{ key: string; initial: string; openedAt: number } | null>(null);

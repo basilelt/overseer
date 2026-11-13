@@ -1863,7 +1863,7 @@ Stopped: no live agent process, resumable); the toggle is at the top of the side
   **More** sheet list only the commands that can run now: a command that needs a connection (or a
   project, or no recording in progress) is hidden, not greyed out. A destructive button (end a terminal, delete a task, restart the server
   from the phone **More** sheet) arms on the first press and acts on a second press within 3 seconds. Drag tabs
-  to reorder (the sidebar follows), middle-click or `×` to close (this ends the agent or shell; right-click > **Hide tab
+  to reorder (the sidebar follows), middle-click or `×` to close (a live agent or shell asks "End this session?" first, as Ctrl+W does; **Hide tab
   (keep running)** only hides it), split right or down. The
   order is saved in the daemon, so it comes back on another machine.
   Keyboard: see 14.7a (close with Cmd+W or Ctrl+W, reopen with Cmd/Ctrl+Shift+T, new tab with

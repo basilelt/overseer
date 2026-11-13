@@ -6,7 +6,7 @@ import { DEFAULT_SETTINGS, saveSettings, settings } from '../settings/settings.s
 import type { ShortcutId } from './shortcuts';
 import { app } from '../state.svelte';
 import { FONT_SIZE_MAX, FONT_SIZE_MIN } from '../terminal/terminal-font';
-import { applyShortcut, endTarget, exitedTerm, tabInfo } from '../tabs/tabs';
+import { applyShortcut, endsSession, tabInfo } from '../tabs/tabs';
 import { openWindow } from '../window';
 import { activeKey, activeTabs, closeTabAt, focusPane, openInFocused, paneInDirection, takeClosed, update, workspace, type Direction } from '../workspace/workspace.svelte';
 import { createFolder, rescanFolders } from '../workspace/wsactions';
@@ -55,7 +55,7 @@ export function closeActive() {
   lastClose = now;
   const key = activeKey(workspace.layout);
   if (!key) return;
-  if (endTarget(key, app.items) && !exitedTerm(key, app.data.terms)) app.open('closeTab', key);
+  if (endsSession(key, app.items, app.data.terms)) app.open('closeTab', key);
   else closeTabKey(key, true);
 }
 
