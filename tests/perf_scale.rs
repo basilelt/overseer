@@ -1,5 +1,5 @@
 use overseer::chat::{self, Cursor, Query};
-use overseer::{activity, gitgraph, screen};
+use overseer::{activity, gitgraph, screen, termmodes};
 use serde_json::{json, Value};
 use std::io::{Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
@@ -183,6 +183,44 @@ fn screen_render_cost_is_bounded_by_its_tail() {
         4.0,
     );
     assert!(r < 4.0, "render ratio {r:.1}");
+}
+
+#[test]
+fn terminal_modes_track_in_linear_time() {
+    let frames = |n: usize| {
+        let mut s = String::from("\x1b[?1049h\x1b[?1000;1002;1003h\x1b[?1006h");
+        for i in 0..n {
+            s.push_str(&format!(
+                "\x1b[?2026h\x1b[{};1H\x1b[2K\x1b[38;5;{}mframe {i}\x1b[0m\x1b]8;;file:///w/{i}\x1b\\link\x1b]8;;\x1b\\\x1b[?2026l",
+                i % 40 + 1,
+                i % 255
+            ));
+        }
+        s.into_bytes()
+    };
+    let small = frames(20_000);
+    let big = frames(200_000);
+    let feed = |b: &[u8]| {
+        let mut m = termmodes::Modes::default();
+        for c in b.chunks(4096) {
+            m.feed(c);
+        }
+        m
+    };
+    assert_eq!(
+        feed(&big).preamble(),
+        b"\x1b[?1049h\x1b[?1000h\x1b[?1002h\x1b[?1003h\x1b[?1006h"
+    );
+    let r = scaling(
+        &mut || {
+            feed(&small);
+        },
+        &mut || {
+            feed(&big);
+        },
+        LINEAR,
+    );
+    assert!(r < LINEAR, "termmodes ratio {r:.1}");
 }
 
 #[test]

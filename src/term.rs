@@ -123,6 +123,30 @@ impl Sub {
 }
 
 impl Out {
+    fn trim(&mut self, n: usize) -> usize {
+        if n == 0 {
+            return 0;
+        }
+        let (a, b) = self.ring.as_slices();
+        let k = n.min(a.len());
+        self.base.feed(&a[..k]);
+        self.base.feed(&b[..n - k]);
+        let mut n = n;
+        let end = self.ring.len().min(n + crate::termmodes::MAX_SEQ);
+        while n < end && !self.base.idle() {
+            self.base.byte(self.ring[n]);
+            n += 1;
+        }
+        self.ring.drain(..n);
+        n
+    }
+
+    fn replay(&self) -> Vec<u8> {
+        let mut out = self.base.preamble();
+        out.extend(self.ring.iter());
+        out
+    }
+
     fn hang_up(&mut self) {
         for s in self.subs.drain(..) {
             let _ = s.tx.send(Arc::from(&[][..]));
@@ -140,6 +164,7 @@ struct Out {
     burst_ms: i64,
     submit_ms: i64,
     scan: crate::termtheme::Scanner,
+    base: crate::termmodes::Modes,
 }
 
 pub const TURN_GRACE_MS: i64 = 1_500;
@@ -877,7 +902,7 @@ impl Term {
         o.last_ms = now;
         o.ring.extend(b);
         let over = o.ring.len().saturating_sub(RING);
-        o.ring.drain(..over);
+        let _ = o.trim(over);
         let chunk: Arc<[u8]> = b.into();
         o.subs.retain(|s| s.feed(&chunk));
         let reply = o.scan.feed(b, crate::termtheme::current());
@@ -901,7 +926,7 @@ impl Term {
     #[cfg(test)]
     fn subscribe(&self) -> (Vec<u8>, Option<Chunks>) {
         let mut o = lock(&self.out);
-        let replay = o.ring.iter().copied().collect();
+        let replay = o.replay();
         if o.closed {
             return (replay, None);
         }
@@ -912,7 +937,7 @@ impl Term {
 
     fn subscribe_waking(&self, backlog: &Arc<AtomicUsize>) -> (Vec<u8>, Option<(Waker, Chunks)>) {
         let mut o = lock(&self.out);
-        let replay = o.ring.iter().copied().collect();
+        let replay = o.replay();
         if o.closed {
             return (replay, None);
         }
@@ -1083,9 +1108,7 @@ impl Term {
             lock(&self.master).raw_fd().unwrap_or(-1)
         };
         let o = lock(&self.out);
-        let (a, b) = o.ring.as_slices();
-        let mut ring = crate::upgrade::hex(a);
-        ring.push_str(&crate::upgrade::hex(b));
+        let ring = crate::upgrade::hex(&o.replay());
         crate::upgrade::SavedTerm {
             fd,
             total: o.total,
@@ -1270,9 +1293,8 @@ pub fn trim_exited(now: i64) -> usize {
         let mut o = lock(&t.out);
         if o.subs.is_empty() && now - o.last_ms >= EXITED_TRIM_MS && o.ring.len() > EXITED_RING {
             let over = o.ring.len() - EXITED_RING;
-            o.ring.drain(..over);
+            freed += o.trim(over);
             o.ring.shrink_to_fit();
-            freed += over;
         }
     }
     freed
@@ -1753,6 +1775,45 @@ mod tests {
         assert!(rx.is_none());
         assert_eq!(replay.len(), EXITED_RING);
         assert!(String::from_utf8_lossy(&replay).contains("the-end"));
+        remove(&id);
+    }
+
+    #[test]
+    fn a_trimmed_ring_replays_the_modes_it_dropped_from_a_boundary() {
+        let mut o = Out::default();
+        o.ring
+            .extend(b"\x1b[?1049h\x1b[?1000hold\x1b[?1000l\x1b[?1006hnew");
+        let cut = o.ring.len() - b"06hnew".len();
+        assert_eq!(o.trim(cut), cut + 3);
+        assert_eq!(o.replay(), b"\x1b[?1049h\x1b[?1006hnew");
+        assert_eq!(o.trim(1), 1);
+        assert_eq!(o.replay(), b"\x1b[?1049h\x1b[?1006hew");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn an_upgrade_carries_the_modes_of_a_trimmed_ring() {
+        let t = spawn(Spec {
+            cwd: std::env::temp_dir().to_string_lossy().into_owned(),
+            cmd: vec![
+                "/bin/sh".into(),
+                "-c".into(),
+                "printf '\\033[?1049h'; head -c 2200000 /dev/zero | tr '\\0' x".into(),
+            ],
+            cols: 80,
+            rows: 24,
+            ..Default::default()
+        })
+        .unwrap();
+        let id = t.info().id;
+        let deadline = std::time::Instant::now() + Duration::from_secs(10);
+        while !(t.exited() && t.out_closed()) {
+            assert!(std::time::Instant::now() < deadline, "term did not exit");
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        let ring = crate::upgrade::unhex(&t.save().ring).unwrap();
+        assert!(ring.starts_with(b"\x1b[?1049hx"), "{:?}", &ring[..16]);
+        assert_eq!(ring.len(), RING + b"\x1b[?1049h".len());
         remove(&id);
     }
 

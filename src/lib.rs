@@ -62,6 +62,7 @@ pub mod task_sources;
 pub mod task_transition;
 pub mod tasks;
 pub mod term;
+pub mod termmodes;
 pub mod termtheme;
 pub mod tmux;
 pub mod uninstall;
