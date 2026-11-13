@@ -10,7 +10,7 @@
   import ChevronRight from '@lucide/svelte/icons/chevron-right';
   import Link2 from '@lucide/svelte/icons/link-2';
   import { onMount, tick, untrack } from 'svelte';
-  import { walkDirection } from '../../review/walk-key';
+  import { holdFocus, walkDirection } from '../../review/walk-key';
   import { t } from '../../i18n.svelte';
   import { reviewCounts } from '../../review/counts.svelte';
   import { totals, type Mode } from '../../review/rows';
@@ -142,7 +142,9 @@
 
   function walk(dir: 1 | -1) {
     const n = step(rank, hot, dir);
-    if (n) openFile(n.w, n.file.path);
+    if (!n) return;
+    holdFocus(root);
+    openFile(n.w, n.file.path);
   }
 
   function onKey(e: KeyboardEvent) {
