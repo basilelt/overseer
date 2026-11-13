@@ -372,6 +372,66 @@ fn feedback_hub_starts_and_relaunches_a_line_on_a_runner() {
 }
 
 #[test]
+fn patch_local_refuses_a_line_whose_branch_is_not_a_branch_name() {
+    let t = T::new();
+    commit(&t.wt);
+    let origin = t.base.join("origin.git");
+    git(&t.base, &["init", "-q", "--bare", origin.to_str().unwrap()]);
+    git(
+        &t.wt,
+        &["remote", "set-url", "origin", origin.to_str().unwrap()],
+    );
+    let api = Api::start(&t.base);
+    let wt_root = t.base.join("worktrees");
+    config(
+        &t,
+        json!({
+            "stationId": "st1", "owner": "dev@example.com", "ssh": {"vm2": "dev@vm2.internal"},
+            "repos": {"github.com/acme/live": t.wt}, "worktreeDir": wt_root,
+        }),
+    );
+    let (_, v) = api.http(
+        "POST",
+        "/v1/stations",
+        ADMIN,
+        Some(json!({"stationId": "vm2", "kind": "runner"})),
+    );
+    let mut ws =
+        overseer::sync::Ws::connect(&api.url(), "vm2", v["token"].as_str().unwrap()).unwrap();
+    ws.send(&json!({"kind": "hello", "stationId": "vm2", "daemonVersion": "t", "lastAckedSeq": 0}))
+        .unwrap();
+    common::recv(&mut ws, "ack");
+    let marker = t.base.join("ran");
+    let branch = format!("--upload-pack=touch {}", marker.display());
+    ws.send(&json!({"kind": "snapshot", "seq": 1, "lines": [{
+        "id": "vm2-01JPATCH000000000000000AC", "owner": "feedback-bot", "stationId": "vm2",
+        "agent": "claude", "agentSessionId": "eeeeeeee-0000-4000-8000-000000000078",
+        "repo": "github.com/acme/live", "branch": branch, "ticketKey": "AS-78",
+        "worktreePath": "/w/live", "origin": "feedback", "state": "idle",
+        "lastActivityAt": "2099-01-01T00:00:00Z",
+    }]}))
+    .unwrap();
+    common::recv(&mut ws, "ack");
+    let o = common::sb_stdin(&t, &["login", "--api", &api.url()], &api.user("bob"));
+    assert!(o.status.success(), "{}", err(&o));
+
+    for args in [
+        &["patch", "AS-78", "--local"][..],
+        &["patch", "AS-78", "--local", "--print"][..],
+    ] {
+        let o = t.sb(args);
+        assert!(!o.status.success(), "{}", out(&o));
+        assert!(
+            err(&o).contains("is not a valid branch name"),
+            "{}",
+            err(&o)
+        );
+    }
+    assert!(!marker.exists());
+    assert!(!wt_root.exists());
+}
+
+#[test]
 fn patch_attaches_by_default_or_opens_a_local_line_with_a_summary() {
     let t = T::new();
     commit(&t.wt);

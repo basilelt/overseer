@@ -142,10 +142,7 @@ fn plan(ctx: &Ctx, line_id: &str, args: &Value) -> Result<Plan, String> {
         ("", None) => return Err("start needs a branch or a ticketKey".into()),
         (b, _) => b.to_string(),
     };
-    let c = clone.to_string_lossy();
-    if git(&c, &["check-ref-format", "--branch", &branch]).is_none() {
-        return Err(format!("'{branch}' is not a valid branch name"));
-    }
+    valid_branch(&clone, &branch)?;
     let path = crate::layout::feedback_checkout_dir(&ctx.config.worktree_dir, &clone, &branch);
     if path.exists() {
         return Err(format!("worktree path {} already exists", path.display()));
@@ -418,6 +415,14 @@ fn remote_titles(ctx: &Ctx, l: &Line) -> Vec<String> {
     .unwrap_or_default()
 }
 
+fn valid_branch(clone: &Path, branch: &str) -> Result<(), String> {
+    let c = clone.to_string_lossy();
+    if branch.starts_with('-') || git(&c, &["check-ref-format", "--branch", branch]).is_none() {
+        return Err(format!("'{branch}' is not a valid branch name"));
+    }
+    Ok(())
+}
+
 fn add_worktree(clone: &Path, dir: &Path, branch: &str) -> Result<(), String> {
     let c = clone.to_string_lossy();
     let d = dir.to_string_lossy();
@@ -445,6 +450,7 @@ pub fn patch_local(ctx: &Ctx, l: &Line, print: bool) -> Result<String, String> {
             l.repo
         )
     })?;
+    valid_branch(&clone, &l.branch)?;
     let dir = patch_dir(ctx, l);
     if dir.exists() {
         return Err(format!("{} already exists", dir.display()));
