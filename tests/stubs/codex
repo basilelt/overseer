@@ -2,10 +2,10 @@
 [ "${1:-}" = "--version" ] && { echo "codex-cli 0.0.0 (stub)"; exit 0; }
 echo "$$ codex $*" >> "${SB_STUB_LOG:?}"
 sid=
-prev=
+resuming=
 for a in "$@"; do
-  [ "$prev" = "resume" ] && [ "$a" != "--last" ] && sid=$a
-  prev=$a
+  [ "$a" = "resume" ] && resuming=1
+  [ -n "$resuming" ] && case $a in ????????-????-????-????-????????????) sid=$a ;; esac
 done
 dir=${CODEX_HOME:?}
 day=$(date -u +%Y/%m/%d)
