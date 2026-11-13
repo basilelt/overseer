@@ -83,7 +83,7 @@ describe('command palette views', () => {
     const body = await rendered(true);
     const row = (label: string) => body.match(new RegExp(`<li[^>]*role="option"[^>]*>(?:(?!</li>)[\\s\\S])*${label}(?:(?!</li>)[\\s\\S])*</li>`))?.[0] ?? '';
     expect(row('Open tasks board')).toContain('Ctrl+Shift+K');
-    expect(row('Toggle sidebar')).toContain('Ctrl+Shift+B');
+    expect(row('Toggle sidebar')).toContain('Ctrl+B');
     expect(row('Show or hide source control in the sidebar')).not.toContain('class="keys');
     expect(row('Show or hide source control in the sidebar')).not.toBe('');
   });
