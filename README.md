@@ -393,7 +393,7 @@ and `scripts/qa/sandbox.sh` do.
 ## Documentation
 
 - [User guide](docs/user-guide.md): setup per station, every command, Board, API, desktop app, troubleshooting.
-- [Brief](BRIEF.md): context, architecture and plan.
+- [Brief](BRIEF.md): the original build brief, kept for history.
 - [Architecture decisions](docs/adr/).
 - [CI and releases](docs/ci.md).
 - [Changelog](CHANGELOG.md).
