@@ -370,6 +370,25 @@ async fn refuses_an_untrusted_or_changed_host_key() {
     );
     assert!(crate::ssh::permanent(&err));
     assert!(asked.lock().unwrap().is_empty());
+
+    std::fs::write(
+        d.join("known_hosts"),
+        format!(
+            "{} ecdsa-sha2-nistp256 AAAAE2Vj\n",
+            super::known::pattern("127.0.0.1", srv.port)
+        ),
+    )
+    .unwrap();
+    let (ask, asked) = asker(&["yes"]);
+    let err = connect(&h, &session(&device, &known, ask))
+        .await
+        .err()
+        .unwrap();
+    assert!(
+        err.contains("REMOTE HOST IDENTIFICATION HAS CHANGED"),
+        "{err}"
+    );
+    assert!(asked.lock().unwrap().is_empty());
     let _ = std::fs::remove_dir_all(d);
 }
 

@@ -177,9 +177,19 @@ mod tests {
         );
         assert_eq!(check(&text, "box.lan", 22, &k), Verdict::Trusted);
         assert_eq!(check(&text, "alias", 22, &k), Verdict::Trusted);
+    }
+
+    #[test]
+    fn a_key_of_another_algorithm_than_the_trusted_one_is_a_change() {
+        let k = key();
+        let line = key_text(&k).unwrap();
+        let other = "box.lan ecdsa-sha2-nistp256 AAAAE2Vj\n";
+        assert_eq!(check(other, "box.lan", 22, &k), Verdict::Changed);
+        assert_eq!(check(other, "box.lan", 2222, &k), Verdict::Unknown);
+        assert_eq!(check(other, "elsewhere", 22, &k), Verdict::Unknown);
         assert_eq!(
-            check("box.lan ecdsa-sha2-nistp256 AAAAE2Vj\n", "box.lan", 22, &k),
-            Verdict::Unknown
+            check(&format!("{other}box.lan {line}\n"), "box.lan", 22, &k),
+            Verdict::Trusted
         );
     }
 }
