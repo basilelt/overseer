@@ -1936,7 +1936,7 @@ reopens the agent in a terminal, **Open in workspace** jumps to it, **Dismiss** 
 
 ### 14.7a Keyboard shortcuts
 
-macOS uses Cmd, Linux and Windows use Ctrl. The palette (Cmd/Ctrl+K or Cmd/Ctrl+P) shows the shortcut next to
+macOS uses Cmd, Linux and Windows use Ctrl. The palette (Cmd/Ctrl+P) shows the shortcut next to
 each action, and **Keyboard shortcuts** (palette, or `?` in Settings > Keyboard, or
 Cmd+/ / Ctrl+Shift+/) lists them all for the current platform. Shortcuts are caught before the
 terminal, but on Linux and Windows the Ctrl+letter keys a shell needs (Ctrl+D EOF, Ctrl+F, Ctrl+B,
@@ -1956,7 +1956,7 @@ shortcuts.
 | Find in terminal (Enter: older match, Shift+Enter: newer, Esc closes) | Cmd+F | Ctrl+Shift+F (Ctrl+F outside a terminal) |
 | Copy the selection / paste | Cmd+C / Cmd+V | Ctrl+Shift+C / Ctrl+Shift+V, or Ctrl+Insert / Shift+Insert |
 | Terminal font larger / smaller / default | Cmd+= / Cmd+- / Cmd+0 | Ctrl+= / Ctrl+- / Ctrl+0 |
-| Command palette | Cmd+K or Cmd+P | Ctrl+K, Ctrl+P (Ctrl+Shift+P in a terminal) |
+| Command palette | Cmd+P | Ctrl+P (Ctrl+Shift+P in a terminal) |
 | Settings | Cmd+, | Ctrl+, |
 | Keyboard shortcuts | Cmd+/ | Ctrl+Shift+/ (Ctrl+/ outside a terminal) |
 | Show or hide the sidebar | Cmd+B | Ctrl+Shift+B (Ctrl+B outside a terminal) |

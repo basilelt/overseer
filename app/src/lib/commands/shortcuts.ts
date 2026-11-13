@@ -66,7 +66,7 @@ export function bindings({ mac, ctrlWClosesTab }: ShortcutOptions): Binding[] {
   const m = (key: string, extra: Omit<Combo, 'key' | 'mod'> = {}): Combo => ({ key, mod: true, ...extra });
   const termSafe = (key: string): Combo[] => (mac ? [m(key)] : [m(key, { shift: true }), m(key, { outsideTerminal: true })]);
   const table: Record<ShortcutId, Combo[]> = {
-    palette: [m('K'), ...termSafe('P')],
+    palette: termSafe('P'),
     settings: [m(',')],
     shortcuts: mac ? [m('/', { anyShift: true })] : [m('/', { shift: true }), m('/', { outsideTerminal: true })],
     newTab: [m('T')],
