@@ -59,6 +59,8 @@ export class ReviewStore {
   private offPresence: (() => void) | null = null;
   private deferred = false;
   private timer: ReturnType<typeof setTimeout> | undefined;
+  private pending: Set<string> | null | undefined;
+  private seq = 0;
   private scopeTimer: ReturnType<typeof setTimeout> | undefined;
 
   target: ReviewTarget;
@@ -116,6 +118,7 @@ export class ReviewStore {
     this.offPresence = null;
     this.deferred = false;
     clearTimeout(this.timer);
+    this.pending = undefined;
     clearTimeout(this.scopeTimer);
     this.live = false;
   }
@@ -133,6 +136,7 @@ export class ReviewStore {
   async load() {
     if (!app.client || this.notRepo) return;
     this.loading = !this.diff;
+    let seq = ++this.seq;
     try {
       let [diff, threads] = await Promise.all([this.fetchDiff(), this.target.branch ? Promise.resolve([]) : this.api.threads(this.target)]);
       if (!this.restored && !this.target.branch) {
@@ -140,21 +144,24 @@ export class ReviewStore {
         const saved = loadBase(diff.worktree);
         if (saved && !this.base) {
           this.base = saved;
+          seq = ++this.seq;
           diff = await this.fetchDiff();
         }
       }
-      this.diff = { ...diff, files: keepUnchanged(this.diff?.files, diff.files) };
+      if (seq === this.seq) {
+        this.diff = { ...diff, files: keepUnchanged(this.diff?.files, diff.files) };
+        this.stale = false;
+        this.revision++;
+      }
       this.threads = threads;
       this.error = '';
       this.missing = false;
       this.live = true;
-      this.stale = false;
-      this.revision++;
       reviewCounts.alias(this.target, diff.worktree);
       for (const path of Object.keys(this.expanded)) if (this.expanded[path].length) this.fetchLines(path, true);
       this.loadScope();
     } catch (e) {
-      this.diff = null;
+      if (seq === this.seq) this.diff = null;
       this.fail(e);
     } finally {
       this.loading = false;
@@ -191,8 +198,10 @@ export class ReviewStore {
 
   async reloadDiff(changed?: string[]) {
     if (!app.client || this.notRepo) return;
+    const seq = ++this.seq;
     try {
       const diff = await this.fetchDiff();
+      if (seq !== this.seq) return;
       this.diff = { ...diff, files: keepUnchanged(this.diff?.files, diff.files) };
       this.error = '';
       this.missing = false;
@@ -201,7 +210,7 @@ export class ReviewStore {
       const paths = changed ?? Object.keys(this.fileLines);
       for (const p of paths) if (this.expanded[p]?.length) this.fetchLines(p, true);
     } catch (e) {
-      this.fail(e);
+      if (seq === this.seq) this.fail(e);
     }
   }
 
@@ -225,6 +234,7 @@ export class ReviewStore {
   private defer(): boolean {
     if (presence().visible) return false;
     clearTimeout(this.timer);
+    this.pending = undefined;
     clearTimeout(this.scopeTimer);
     this.deferred = true;
     return true;
@@ -244,7 +254,14 @@ export class ReviewStore {
           return;
         }
         clearTimeout(this.timer);
-        this.timer = setTimeout(() => this.reloadDiff(this.target.branch ? undefined : e.data?.files), 300);
+        const files = this.target.branch ? undefined : (e.data?.files as string[] | undefined);
+        if (!files || this.pending === null) this.pending = null;
+        else this.pending = new Set([...(this.pending ?? []), ...files]);
+        this.timer = setTimeout(() => {
+          const changed = this.pending ? [...this.pending] : undefined;
+          this.pending = undefined;
+          void this.reloadDiff(changed);
+        }, 300);
         return;
       }
       case 'worktree.created':
