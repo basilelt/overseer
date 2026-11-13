@@ -204,7 +204,19 @@ fn hold_steps(ctx: &Ctx, l: &Line, stub: bool) -> Vec<String> {
             ];
         }
     }
-    let pane = l.pane.as_deref().unwrap_or("?");
+    let Some(pane) = l.pane.as_deref() else {
+        return vec![
+            format!(
+                "record {} as held(user) with launch flags {:?}",
+                l.id, l.launch_args
+            ),
+            format!(
+                "send SIGTERM to agent pid {} (it runs outside Overseer)",
+                l.pid.unwrap_or(0)
+            ),
+            "wait up to 10 s for the agent to exit (abort and revert on timeout)".into(),
+        ];
+    };
     vec![
         format!(
             "record {} as held(user) with launch flags {:?}",
@@ -421,6 +433,58 @@ fn execute_hold_term(
     Ok(done)
 }
 
+#[cfg(unix)]
+fn sigterm(pid: u32) -> Result<bool, String> {
+    if unsafe { libc::kill(pid as i32, libc::SIGTERM) } == 0 {
+        return Ok(true);
+    }
+    let e = std::io::Error::last_os_error();
+    if e.raw_os_error() == Some(libc::ESRCH) {
+        Ok(false)
+    } else {
+        Err(format!("cannot stop agent pid {pid}: {e}"))
+    }
+}
+
+#[cfg(unix)]
+fn execute_hold_external(ctx: &Ctx, reg: &Registry, l: &Line) -> Result<Vec<String>, String> {
+    let pid = l.pid.ok_or("no pid")?;
+    let then = stamp(ctx.probe, pid);
+    let tree = descendants(ctx, pid);
+    record_held(ctx, reg, l, pid)?;
+    let mut done = vec![format!("recorded {} as held(user)", l.id)];
+    if !alive_same(ctx.probe, pid, &then) {
+        done.push(format!("agent pid {pid} was already gone"));
+        return Ok(done);
+    }
+    match sigterm(pid) {
+        Ok(true) => {}
+        Ok(false) => {
+            done.push(format!("agent pid {pid} was already gone"));
+            return Ok(done);
+        }
+        Err(e) => {
+            revert_held(reg, l);
+            return Err(e);
+        }
+    }
+    let start = then.and_then(|t| t.0);
+    if !wait_exit(ctx, pid, &start) {
+        revert_held(reg, l);
+        return Err(format!(
+            "agent pid {pid} did not exit; reverted the registry"
+        ));
+    }
+    done.push(format!("agent pid {pid} exited after SIGTERM"));
+    done.extend(stop_tree(ctx, &tree));
+    Ok(done)
+}
+
+#[cfg(not(unix))]
+fn execute_hold_external(_: &Ctx, _: &Registry, _: &Line) -> Result<Vec<String>, String> {
+    Err("closing a session that runs outside Overseer is not supported on this platform".into())
+}
+
 fn execute_hold(
     ctx: &Ctx,
     reg: &Registry,
@@ -432,6 +496,7 @@ fn execute_hold(
         if let Some(t) = crate::deliver::line_term(l) {
             return execute_hold_term(ctx, reg, l, &t, stub, shell);
         }
+        return execute_hold_external(ctx, reg, l);
     }
     let tmux = ctx.tmux.as_ref().ok_or("tmux unavailable")?;
     let pane = l.pane.as_deref().ok_or("no pane")?;
@@ -509,11 +574,30 @@ pub(crate) fn hold_line(
     shell: bool,
     force: bool,
 ) -> Report {
-    let checks = if force {
+    hold_line_with(ctx, l, apply, stub, shell, force, false)
+}
+
+fn is_external(l: &Line) -> bool {
+    l.pane.is_none() && crate::deliver::line_term(l).is_none()
+}
+
+fn hold_line_with(
+    ctx: &Ctx,
+    l: &Line,
+    apply: bool,
+    stub: bool,
+    shell: bool,
+    force: bool,
+    closing: bool,
+) -> Report {
+    let mut checks = if force {
         vec![]
     } else {
         evaluate(&hold_input(ctx, l))
     };
+    if closing && is_external(l) {
+        checks.retain(|c| !["inTmux", "inputEmpty"].contains(&c.name));
+    }
     let mut r = Report {
         line_id: l.id.clone(),
         steps: hold_steps(ctx, l, stub),
@@ -833,7 +917,7 @@ pub(crate) fn close_line(
     force: bool,
 ) -> Result<Report, String> {
     let mut r = if l.alive() {
-        let mut h = hold_line(ctx, l, apply, false, shell, force);
+        let mut h = hold_line_with(ctx, l, apply, false, shell, force, true);
         if h.ok() {
             h.steps.push(format!("mark {} hung-up", l.id));
         }
@@ -1279,6 +1363,12 @@ pub fn status_line(v: &Value) -> String {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(unix)]
+    #[test]
+    fn sigterm_of_a_pid_that_is_gone_is_not_an_error() {
+        assert_eq!(super::sigterm(u32::MAX / 2), Ok(false));
+    }
+
     use super::*;
 
     fn report(ok: bool, error: Option<&str>, pending: bool) -> Report {

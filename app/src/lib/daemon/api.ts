@@ -17,7 +17,7 @@ export function api(c: DaemonClient) {
     /** Hold now, or queue the hold for the end of the turn (`action: 'hold-pending'`); throws 409 when refused. */
     holdAfterTurn: (id: string) => c.request<HoldPlan>('POST', `/v1/lines/${enc(id)}/hold?dryRun=false&afterTurn=true`),
     cancelHold: (id: string) => c.request<{ lineId: string; holdPending: false }>('DELETE', `/v1/lines/${enc(id)}/hold`),
-    close: (id: string, shell = false) => c.request('POST', `/v1/lines/${enc(id)}/close?dryRun=false${shell ? '&shell=true' : ''}`),
+    close: (id: string, shell = false, force = false) => c.request('POST', `/v1/lines/${enc(id)}/close?dryRun=false${shell ? '&shell=true' : ''}${force ? '&force=true' : ''}`),
     resume: (id: string) => c.request<Term>('POST', `/v1/lines/${enc(id)}/resume?dryRun=false`, { target: 'term' }),
     attach: (id: string) => c.request<Term>('POST', `/v1/lines/${enc(id)}/resume?dryRun=false`, { target: 'term', attachOnly: true }),
     pin: (id: string, pinned: boolean) => c.request('PUT', `/v1/lines/${enc(id)}/pin`, { pinned }),
@@ -81,16 +81,8 @@ export function api(c: DaemonClient) {
     saveProfiles: (patch: { default?: string; profiles?: Profile[]; scopes?: Record<string, string>; types?: ProfilesStore['types'] }) => c.request<ProfilesStore>('PUT', '/v1/profiles', patch),
     subagents: (cwd?: string) => c.request<{ subagents: SubagentDef[] }>('GET', `/v1/profiles/subagents${cwd ? `?cwd=${enc(cwd)}` : ''}`),
     applyProfileFiles: (b: { profile: string; cwd?: string; dryRun: boolean; files?: string[] }) => c.request<{ dryRun: boolean; files: FileEdit[] }>('POST', '/v1/profiles/apply-files', b),
-    holdPlan: (id: string) =>
-      c.request<HoldPlan>('POST', `/v1/lines/${enc(id)}/hold`).catch((e) => {
-        if (e instanceof DaemonError && e.status === 409 && e.body && typeof e.body === 'object') return e.body as HoldPlan;
-        throw e;
-      }),
-    closePlan: (id: string) =>
-      c.request<HoldPlan>('POST', `/v1/lines/${enc(id)}/close`).catch((e) => {
-        if (e instanceof DaemonError && e.status === 409 && e.body && typeof e.body === 'object') return e.body as HoldPlan;
-        throw e;
-      }),
+    holdPlan: (id: string) => plan(c, `/v1/lines/${enc(id)}/hold`),
+    closePlan: (id: string) => plan(c, `/v1/lines/${enc(id)}/close`),
     workspaces: () => c.request<Workspace[]>('GET', '/v1/workspaces'),
     createWorkspace: (w: { path?: string; name?: string; kind?: 'dir' | 'subject'; folderId?: string | null; pinned?: boolean; parentId?: string; cwd?: string | null }) => c.request<Workspace>('POST', '/v1/workspaces', w),
     patchWorkspace: (id: string, patch: Partial<Pick<Workspace, 'name' | 'folderId' | 'pinned' | 'archived' | 'rank' | 'tabs' | 'notifyIdle' | 'cwd'>>) =>
@@ -112,6 +104,12 @@ export function api(c: DaemonClient) {
 }
 
 export type Api = ReturnType<typeof api>;
+
+const plan = (c: DaemonClient, path: string) =>
+  c.request<HoldPlan>('POST', path).catch((e) => {
+    if (e instanceof DaemonError && e.status === 409 && e.body && typeof e.body === 'object') return e.body as HoldPlan;
+    throw e;
+  });
 
 export interface HoldPlan {
   lineId?: string;

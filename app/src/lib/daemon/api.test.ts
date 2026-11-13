@@ -20,6 +20,12 @@ describe('api.close', () => {
     await a.close('ln 1', true);
     expect(sent).toEqual(['POST /v1/lines/ln%201/close?dryRun=false&shell=true']);
   });
+
+  it('sends force when the user closes a session that is waiting for them anyway', async () => {
+    const { sent, a } = recorder();
+    await a.close('ln 1', false, true);
+    expect(sent).toEqual(['POST /v1/lines/ln%201/close?dryRun=false&force=true']);
+  });
 });
 
 describe('api.uninstall', () => {

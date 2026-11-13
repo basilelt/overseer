@@ -786,6 +786,14 @@ describe('nested workspaces', () => {
     expect(app.newSession).toHaveBeenCalledWith('claude');
   });
 
+  it('keeps the native context menu away when it opens the session menu', () => {
+    app.items = [{ key: 'line:l1', title: 'Accueil', state: 'running' }];
+    const preventDefault = vi.fn();
+    itemMenuAt('line:l1', 'Accueil', { clientX: 1, clientY: 2, preventDefault } as unknown as MouseEvent);
+    expect(preventDefault).toHaveBeenCalledOnce();
+    expect(app.openMenu).toHaveBeenCalledWith({ clientX: 1, clientY: 2, preventDefault }, 'Accueil', expect.any(Array));
+  });
+
   it('offers to move a single movable session to another workspace from its menu', async () => {
     app.items = [{ key: 'line:l1', title: 'Accueil', state: 'running' }];
     app.canMoveToWorkspace = vi.fn(() => true);

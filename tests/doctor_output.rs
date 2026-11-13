@@ -91,6 +91,19 @@ fn doctor_reports_the_same_lines_for_a_fixture_home() {
         r##"{"hooks":{"Stop":[{"hooks":[{"type":"command","command":"x #overseer-hook"}]}]}}"##,
     )
     .unwrap();
+    std::fs::write(
+        home.join(".codex/hooks.json"),
+        r##"{"hooks":{"SessionStart":[{"hooks":[{"type":"command","command":"x #overseer-hook"}]}],"Stop":[{"hooks":[{"type":"command","command":"x #overseer-hook"}]}]}}"##,
+    )
+    .unwrap();
+    std::fs::write(
+        home.join(".codex/config.toml"),
+        format!(
+            "[hooks.state.\"{}:stop:0:0\"]\ntrusted_hash = \"sha256:x\"\n",
+            home.join(".codex/hooks.json").display()
+        ),
+    )
+    .unwrap();
     std::fs::write(home.join(".claude/hooks/tmux-claude-id.sh"), "").unwrap();
     std::fs::write(home.join(".local/bin/tmux-snapshot"), "sb_held").unwrap();
     std::fs::write(home.join(".local/bin/tmux-restore"), "").unwrap();

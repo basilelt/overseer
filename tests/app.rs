@@ -387,6 +387,34 @@ fn a_websocket_head_that_arrives_late_still_attaches() {
 }
 
 #[test]
+fn a_replay_past_the_ring_keeps_the_screen_and_mouse_modes() {
+    let app = App::new("ringmodes", json!({}));
+    let wt = app.fx.wt.to_string_lossy().into_owned();
+    let script = r#"printf '\033[?1049h\033[?1000h\033[?1006h\033[?2004h\033[?1007l'; head -c 2500000 /dev/zero | tr '\0' x; printf 'flood-%s' done; sleep 60"#;
+    let t = app.ok(
+        "POST",
+        "/v1/terms",
+        json!({"cwd": wt, "cmd": ["/bin/sh", "-c", script]}),
+    );
+    let id = t["id"].as_str().unwrap().to_string();
+    let mut first = app.ws(&id);
+    read_until(&mut first, "flood-done");
+    drop(first);
+    let mut ws = app.ws(&id);
+    let replay = read_until(&mut ws, "flood-done");
+    let head = &replay[..replay.find('x').unwrap()];
+    for mode in [
+        "\x1b[?1049h",
+        "\x1b[?1000h",
+        "\x1b[?1006h",
+        "\x1b[?2004h",
+        "\x1b[?1007l",
+    ] {
+        assert!(head.contains(mode), "{mode:?} missing from {head:?}");
+    }
+}
+
+#[test]
 fn task_start_runs_the_agent_in_a_term_and_goes_in_testing() {
     let app = App::new("start", json!({"autoConcurrency": 0}));
     let wt = app.fx.wt.to_string_lossy().into_owned();
@@ -4043,4 +4071,206 @@ fn auto_organize_is_on_from_the_config_key_or_the_registry_flag() {
         on.ok("GET", "/v1/tasks/auto-organize", Value::Null)["enabled"],
         true
     );
+}
+
+struct External {
+    pid: i32,
+    gone: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    _stdin: Option<std::process::ChildStdin>,
+}
+
+impl External {
+    fn send(&mut self, text: &str) {
+        use std::io::Write;
+        let w = self._stdin.as_mut().unwrap();
+        w.write_all(text.as_bytes()).unwrap();
+        w.flush().unwrap();
+    }
+
+    fn gone(&self) -> bool {
+        self.gone.load(std::sync::atomic::Ordering::SeqCst)
+    }
+}
+
+impl Drop for External {
+    fn drop(&mut self) {
+        if !self.gone() {
+            unsafe { libc::kill(self.pid, libc::SIGKILL) };
+        }
+    }
+}
+
+fn external_claude(app: &App, sid: &str, stubborn: bool) -> External {
+    let wt = app.fx.wt.to_string_lossy().into_owned();
+    let mut c = Command::new("claude");
+    app.fx.env(&mut c);
+    c.env("SB_BIN", bin())
+        .env("SB_STUB_LOG", app.fx.base.join("stub.log"))
+        .current_dir(wt)
+        .args(["--session-id", sid])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+    if stubborn {
+        c.env("SB_STUB_STUBBORN", "1");
+    }
+    let mut child = c.spawn().unwrap();
+    let pid = child.id() as i32;
+    let stdin = child.stdin.take();
+    let gone = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let flag = gone.clone();
+    std::thread::spawn(move || {
+        let _ = child.wait();
+        flag.store(true, std::sync::atomic::Ordering::SeqCst);
+    });
+    External {
+        pid,
+        gone,
+        _stdin: stdin,
+    }
+}
+
+fn external_line(app: &App, sid: &str) -> String {
+    wait_for(|| {
+        app.ok("GET", "/v1/lines?all=true", Value::Null)
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|l| l["line"]["agentSessionId"] == sid && l["local"]["pid"].is_u64())
+            .map(|l| l["line"]["id"].as_str().unwrap().to_string())
+    })
+}
+
+#[test]
+fn close_ends_a_session_started_outside_overseer() {
+    let sid = "dddddddd-0000-4000-8000-000000000310";
+    let app = App::new("closeext", json!({}));
+    let agent = external_claude(&app, sid, false);
+    let line = external_line(&app, sid);
+    let l = line_json(&app, &line);
+    assert!(l["local"]["termId"].is_null() && l["local"]["tmuxPane"].is_null());
+
+    let close = format!("/v1/lines/{}/close", enc(&line));
+    let plan = app.ok("POST", &close, Value::Null);
+    assert_eq!(plan["action"], "would-close", "{plan}");
+    assert!(plan["steps"].to_string().contains("outside Overseer"));
+    assert!(!agent.gone());
+
+    let done = app.ok("POST", &format!("{close}?dryRun=false"), Value::Null);
+    assert_eq!(done["action"], "closed", "{done}");
+    wait(|| agent.gone());
+    wait(|| line_json(&app, &line)["line"]["state"] == "hung-up");
+}
+
+#[test]
+fn close_of_an_external_session_that_ignores_sigterm_fails_and_keeps_it() {
+    let sid = "dddddddd-0000-4000-8000-000000000311";
+    let app = App::with_env(
+        "closeext-stuck",
+        json!({}),
+        &[("OVERSEER_HOLD_TIMEOUT_MS", "500")],
+    );
+    let _agent = external_claude(&app, sid, true);
+    let line = external_line(&app, sid);
+
+    let close = format!("/v1/lines/{}/close?dryRun=false", enc(&line));
+    let (code, v) = app.req("POST", &close, Value::Null);
+    assert_eq!(code, 409, "{v}");
+    assert!(v["error"].as_str().unwrap().contains("did not exit"), "{v}");
+    assert_ne!(line_json(&app, &line)["line"]["state"], "hung-up");
+}
+
+#[test]
+fn close_of_an_external_session_waiting_for_you_needs_force() {
+    let sid = "dddddddd-0000-4000-8000-000000000312";
+    let app = App::new("closeext-ask", json!({}));
+    let mut agent = external_claude(&app, sid, false);
+    let line = external_line(&app, sid);
+    agent.send("ask\n");
+    wait(|| line_json(&app, &line)["local"]["needsInput"] == true);
+
+    let close = format!("/v1/lines/{}/close", enc(&line));
+    let (code, plan) = app.req("POST", &close, Value::Null);
+    assert_eq!(code, 409, "{plan}");
+    assert_eq!(plan["predicates"]["notNeedsInput"]["ok"], false, "{plan}");
+    let (code, _) = app.req("POST", &format!("{close}?dryRun=false"), Value::Null);
+    assert_eq!(code, 409);
+    assert!(!agent.gone());
+
+    let done = app.ok(
+        "POST",
+        &format!("{close}?dryRun=false&force=true"),
+        Value::Null,
+    );
+    assert_eq!(done["action"], "closed", "{done}");
+    wait(|| agent.gone());
+    wait(|| line_json(&app, &line)["line"]["state"] == "hung-up");
+}
+
+#[test]
+fn close_of_an_overseer_session_waiting_for_you_needs_force() {
+    let sid = "dddddddd-0000-4000-8000-000000000313";
+    let app = App::new("closeterm-ask", json!({}));
+    let wt = app.fx.wt.to_string_lossy().into_owned();
+    let t = app.ok(
+        "POST",
+        "/v1/terms",
+        json!({"cwd": wt, "cmd": ["claude", "--session-id", sid], "cols": 100, "rows": 30}),
+    );
+    let mut ws = app.ws(t["id"].as_str().unwrap());
+    let line = external_line(&app, sid);
+    read_until(&mut ws, "❯");
+    send(&mut ws, "ask\r");
+    wait(|| line_json(&app, &line)["local"]["needsInput"] == true);
+
+    let close = format!("/v1/lines/{}/close?dryRun=false", enc(&line));
+    let (code, v) = app.req("POST", &close, Value::Null);
+    assert_eq!(code, 409, "{v}");
+    let done = app.ok("POST", &format!("{close}&force=true"), Value::Null);
+    assert_eq!(done["action"], "closed", "{done}");
+    wait(|| line_json(&app, &line)["line"]["state"] == "hung-up");
+}
+
+fn fire_hook(app: &App, sid: &str, event: &str, pid: i32) {
+    let wt = app.fx.wt.to_string_lossy().into_owned();
+    let input = json!({"session_id": sid, "cwd": wt, "hook_event_name": event}).to_string();
+    let mut c = Command::new(bin());
+    app.fx.env(&mut c);
+    let o = output(
+        c.args(["hook", "claude", event, &pid.to_string()]),
+        Some(&input),
+    );
+    assert!(o.status.success());
+}
+
+#[test]
+fn close_of_an_external_session_stuck_mid_turn_needs_force() {
+    for (n, event, failed) in [
+        ('a', "UserPromptSubmit", "atPrompt"),
+        ('b', "SubagentStart", "noToolRunning"),
+        ('c', "TaskCreated", "noToolRunning"),
+    ] {
+        let sid = format!("dddddddd-0000-4000-8000-00000000052{}", n as u8 - b'a');
+        let app = App::new(&format!("closemid-{n}"), json!({}));
+        let agent = external_claude(&app, &sid, false);
+        let line = external_line(&app, &sid);
+        std::thread::sleep(Duration::from_secs(2));
+        fire_hook(&app, &sid, event, agent.pid);
+        let close = format!("/v1/lines/{}/close", enc(&line));
+        let v = wait_for(|| {
+            let (code, v) = app.req("POST", &close, Value::Null);
+            (code == 409).then_some(v)
+        });
+        assert_eq!(v["predicates"][failed]["ok"], false, "{event}: {v}");
+        let (code, _) = app.req("POST", &format!("{close}?dryRun=false"), Value::Null);
+        assert_eq!(code, 409);
+        assert!(!agent.gone());
+        let done = app.ok(
+            "POST",
+            &format!("{close}?dryRun=false&force=true"),
+            Value::Null,
+        );
+        assert_eq!(done["action"], "closed", "{done}");
+        wait(|| agent.gone());
+    }
 }

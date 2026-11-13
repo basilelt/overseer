@@ -173,6 +173,13 @@ describe('MockDaemon', () => {
     expect((await a.lines()).find((l) => l.line.id === 'ln_06')!.line.state).toBe('hung-up');
   });
 
+  it('refuses to close a line waiting for input unless forced, like the daemon', async () => {
+    const { m, a } = setup();
+    await expect(a.close('ln_01')).rejects.toMatchObject({ status: 409, body: { predicates: { notNeedsInput: { ok: false, detail: 'agent is waiting for you' } } } });
+    await m.request('POST', '/v1/lines/ln_01/close?dryRun=false&force=true');
+    expect((await a.lines()).find((l) => l.line.id === 'ln_01')!.line.state).toBe('hung-up');
+  });
+
   it('ignores force on hold and answers 409 for a busy line, like the daemon', async () => {
     const { m, a } = setup();
     await expect(m.request('POST', '/v1/lines/ln_06/hold?dryRun=false&force=true')).rejects.toMatchObject({
