@@ -391,6 +391,16 @@ pub(crate) fn save(ctx: &Ctx, reg: &Registry, t: &mut Task) -> Res<()> {
     store(reg, t, &ctx.config.station_id)
 }
 
+pub(crate) fn logged<T>(what: &str, r: Res<T>) -> bool {
+    match r {
+        Ok(_) => true,
+        Err((_, e)) => {
+            crate::dlog::line("warn", &format!("{what}: {e}"));
+            false
+        }
+    }
+}
+
 pub(crate) fn store(reg: &Registry, t: &mut Task, station: &str) -> Res<()> {
     t.updated_ms = crate::util::now_ms();
     sql(update_row!(
@@ -1455,7 +1465,10 @@ pub fn tick(ctx: &Ctx, lines: &[Line]) {
             let mut n = next.clone();
             n.status = PENDING.into();
             n.error = Some(e);
-            let _ = save(ctx, &reg, &mut n);
+            logged(
+                "task not saved after a failed start",
+                save(ctx, &reg, &mut n),
+            );
         }
     }
 }
@@ -1629,6 +1642,15 @@ mod tests {
         let _ = std::fs::remove_dir_all(&base);
     }
     use super::*;
+
+    #[test]
+    fn a_failed_save_is_reported_as_failed_and_a_good_one_as_done() {
+        assert!(logged("save", Ok::<(), (u16, String)>(())));
+        assert!(!logged(
+            "save",
+            Err::<(), _>((500, "disk full".to_string()))
+        ));
+    }
 
     #[test]
     fn cost_is_recomputed_only_when_the_session_moved() {

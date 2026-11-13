@@ -182,7 +182,10 @@ fn stop_reviewers(ctx: &Ctx, reg: &Registry, worker: &str) {
             let _ = term.kill();
         }
         r.status = status::COMPLETED.into();
-        let _ = tasks::store(reg, &mut r, &ctx.config.station_id);
+        tasks::logged(
+            "reviewer task not saved as completed",
+            tasks::store(reg, &mut r, &ctx.config.station_id),
+        );
     }
 }
 

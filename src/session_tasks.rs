@@ -63,7 +63,10 @@ pub fn run(reg: &Registry, lines: &[Line], env: &Env) {
         let mut t = t.clone();
         let line = t.line_id.as_deref().and_then(|id| by_line.get(id)).copied();
         if refresh(&mut t, line, env) {
-            let _ = tasks::store(reg, &mut t, env.station);
+            tasks::logged(
+                "session task not saved",
+                tasks::store(reg, &mut t, env.station),
+            );
         }
     }
     for l in lines {
@@ -74,7 +77,10 @@ pub fn run(reg: &Registry, lines: &[Line], env: &Env) {
             continue;
         };
         let mut t = new_task(l, project, (env.activity)(l).as_ref());
-        let _ = tasks::insert(reg, &mut t, env.station);
+        tasks::logged(
+            "session task not created",
+            tasks::insert(reg, &mut t, env.station),
+        );
     }
 }
 
