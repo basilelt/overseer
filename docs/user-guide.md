@@ -841,11 +841,13 @@ write access to the repository to attach files.
 Palette > **Record a bug** (phone: More > Record a bug) records what you do while you show a
 problem. The setup dialog offers **Record the screen too** where the webview can capture the
 screen (`getDisplayMedia` and `MediaRecorder`; a browser asks which screen or window to share);
-elsewhere, such as iOS and Android, only the action log is recorded. If the webview rejects the
-request, Overseer asks once more in the plain form; if the screen still cannot be captured (the
-desktop app on Linux, for one), the recording goes on with the action log only and says so. Declining
+elsewhere, such as iOS, Android and the Linux desktop app (WebKitGTK cannot capture), the option
+is not offered and only the action log is recorded. If the webview rejects the
+request, Overseer asks once more in the plain form; if the screen still cannot be captured, the
+recording goes on with the action log only and says so. Declining
 the share prompt cancels the recording as before. While it runs, a red pill at
-the bottom shows the time and the number of actions, with **Stop** and a discard button. The log
+the bottom shows the time and the number of actions, with **Stop** and a discard button; a
+notification shows above the pill, never under it. The log
 has the start, clicks (the control's label, never a field's content), shortcuts (Ctrl/Cmd/Alt
 combinations, Escape, function keys, arrows), "typed in <field>" once per field without the text,
 view and dialog changes, uncaught errors and error toasts, each with its time since the start.
@@ -1057,7 +1059,9 @@ In the app:
 
   (bash and fish do this by default or ignore it; Overseer never edits your dotfiles.)
 - **Images and files**: paste an image (Cmd+V, or Ctrl+Shift+V on Linux and Windows, with a screenshot
-  on the clipboard; right-click a terminal for Copy and Paste) or drop files on a terminal. The app uploads them to the daemon (`POST /v1/uploads`, 50 MB per file)
+  on the clipboard; right-click a terminal for Copy and Paste; the desktop app shows no other
+  webview menu with Back, Forward or Reload, only the native menu in text fields and an app Copy
+  over selected text) or drop files on a terminal. The app uploads them to the daemon (`POST /v1/uploads`, 50 MB per file)
   which stores each one as `~/.overseer/u/<6-character id>.<ext>` (mode `0600`, deleted after 7
   days), then types the path followed by a space as a bracketed paste when the program asked for
   it. Other files are typed short, `~/.overseer/u/a1b2c3.pdf`; images keep their absolute path
@@ -1999,7 +2003,8 @@ A GitHub-style review of what an agent changed, while it works (ADR 0030, contra
   collapsed entry (`old → new` commits) with **Review this submodule**, which opens its own
   review from the old commit; files inside submodules are never listed, and a submodule with
   only uncommitted changes is skipped, so large submodules cost nothing. File tree, unified or split diff, syntax highlighting, unchanged lines folded
-  (click to expand), a Viewed box per file (unticked again when the file changes). The view
+  (click to expand), a Viewed box per file (unticked again when the file changes). J and K walk
+  the files after a click anywhere in the review pane, its toolbar included, except on a text field. The view
   follows the agent's edits live: the daemon watches the worktree (file system events, polling as a fallback) and sends
   `review.changed`.
 - **Triage**: every changed line is sorted into moved code, formatting, reordered imports,
