@@ -23,7 +23,8 @@ describe('shortcut resolver', () => {
     expect(resolveShortcut(ev('t', 'KeyT', { ctrl: true }), linuxTerm)).toEqual({ id: 'newTab' });
     expect(resolveShortcut(ev('T', 'KeyT', { ctrl: true, shift: true }), linuxTerm)).toEqual({ id: 'reopenTab' });
     expect(resolveShortcut(ev('T', 'KeyT', { meta: true, shift: true }), mac)).toEqual({ id: 'reopenTab' });
-    expect(resolveShortcut(ev('k', 'KeyK', { meta: true }), mac)).toEqual({ id: 'palette' });
+    expect(resolveShortcut(ev('k', 'KeyK', { meta: true }), mac)).toBeNull();
+    expect(resolveShortcut(ev('k', 'KeyK', { ctrl: true }), linux)).toBeNull();
     expect(resolveShortcut(ev('K', 'KeyK', { meta: true, shift: true }), mac)).toEqual({ id: 'kanban' });
     expect(resolveShortcut(ev('N', 'KeyN', { ctrl: true, shift: true }), linux)).toEqual({ id: 'newWorkspace' });
     expect(resolveShortcut(ev(',', 'Comma', { ctrl: true }), linux)).toEqual({ id: 'settings' });

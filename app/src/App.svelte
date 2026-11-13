@@ -154,7 +154,7 @@
   function onKey(e: KeyboardEvent) {
     if (tour.phase) return;
     const mod = (e.metaKey || e.ctrlKey) && phoneOrMobile();
-    if (mod && e.key.toLowerCase() === 'k') {
+    if (mod && e.key.toLowerCase() === 'p') {
       e.preventDefault();
       command('palette').toggle?.();
     } else if (mod && e.key === ',') {

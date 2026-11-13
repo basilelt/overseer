@@ -97,8 +97,8 @@ function events(win: EventTarget, type: string) {
 
 function key(over: Record<string, unknown> = {}) {
   return {
-    key: 'k',
-    code: 'KeyK',
+    key: 'p',
+    code: 'KeyP',
     metaKey: false,
     ctrlKey: true,
     shiftKey: false,
