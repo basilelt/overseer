@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { isDone } from './task-status';
-import { autoSummary, blockers, byId, chainOf, depCandidates, startable, flagPatch, isOrganizer, matrix, mergeMessage, organizing, quadrant, quadrantFlags, canDrop, cardMeta, modelLabel, moveAction, cardStatus, columns, dropTarget, edgeSpeed, insertIndex, isSession, movableStatuses, moveTask, taskForItem, nextUp, rankAt, relTime, revertTask, shiftStatus, sortColumn, shownCount, grown, insertBefore, CARD_PAGE, newTaskId } from './kanban';
+import { autoSummary, blockers, byId, chainOf, depCandidates, startable, flagPatch, isOrganizer, matrix, mergeMessage, organizing, quadrant, quadrantFlags, canDrop, cardMeta, modelLabel, moveAction, cardStatus, columns, dropTarget, edgeSpeed, insertIndex, isSession, hearsMessages, movableStatuses, moveTask, taskForItem, nextUp, rankAt, relTime, revertTask, shiftStatus, sortColumn, shownCount, grown, insertBefore, CARD_PAGE, newTaskId } from './kanban';
 import type { Task, TaskMessage } from '../types';
 
 let n = 0;
@@ -505,5 +505,24 @@ describe('insertBefore', () => {
   it('returns null when the marker goes after the last card', () => {
     expect(insertBefore(col, 'b', 3)).toBeNull();
     expect(insertBefore([], null, 0)).toBeNull();
+  });
+});
+
+describe('hearsMessages', () => {
+  const t = (status: Task['status'], termId?: string) => ({ status, termId }) as Task;
+  const terms = [{ id: 'live', exited: false }, { id: 'gone', exited: true }] as { id: string; exited?: boolean }[];
+
+  it('is true for a running task whose terminal is live', () => {
+    expect(hearsMessages(t('in_progress', 'live'), terms)).toBe(true);
+  });
+
+  it('is true for a task waiting in Review with a live terminal, as the daemon delivers to it', () => {
+    expect(hearsMessages(t('in_testing', 'live'), terms)).toBe(true);
+  });
+
+  it('is false without a terminal, with an ended terminal or an unknown one', () => {
+    expect(hearsMessages(t('in_testing'), terms)).toBe(false);
+    expect(hearsMessages(t('in_progress', 'gone'), terms)).toBe(false);
+    expect(hearsMessages(t('in_progress', 'missing'), terms)).toBe(false);
   });
 });

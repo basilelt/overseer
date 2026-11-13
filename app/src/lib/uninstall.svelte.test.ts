@@ -180,6 +180,20 @@ describe('uninstall dialog', () => {
     expect(h).toContain('>Remove Overseer<');
   });
 
+  it('labels the lid keep-awake row and its refused admin prompt', () => {
+    uninstall.phase = 'confirm';
+    uninstall.report = {
+      dryRun: true,
+      removed: [{ kind: 'power', path: 'pmset -a disablesleep 0' }],
+      kept: [],
+      errors: [{ kind: 'power', path: 'powercfg lid close action', error: 'User canceled. (-128)' }],
+    };
+    const h = html();
+    expect(h).toContain('Lid keep-awake');
+    expect(h).toContain('pmset -a disablesleep 0');
+    expect(h).toContain('User canceled. (-128)');
+  });
+
   it('shows the result with failures and only a close button', () => {
     uninstall.phase = 'done';
     uninstall.report = { dryRun: false, removed: [], kept: [], errors: [{ kind: 'dir', path: '/h/.overseer', error: 'busy' }] };

@@ -57,6 +57,14 @@ describe('tour steps', () => {
     expect(targetOf(step, (n) => n === 'settings')).toBe('settings');
   });
 
+  it('skips the keyboard shortcut step on a phone and keeps it elsewhere', () => {
+    const ids = (phone: boolean) => visibleSteps(STEPS, () => true, phone).map((s) => s.id);
+    expect(ids(false)).toContain('paletteKey');
+    expect(ids(true)).not.toContain('paletteKey');
+    expect(ids(true)).toContain('palette');
+    expect(visibleSteps(STEPS, () => true, true)).toHaveLength(STEPS.length - 1);
+  });
+
   it('points the agentMessaging step at its switch, else at the settings', () => {
     const step = STEPS.find((s) => s.id === 'agentMessaging')!;
     expect(step.since).toBe('0.36');

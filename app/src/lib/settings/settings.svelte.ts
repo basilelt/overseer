@@ -33,6 +33,7 @@ export interface Settings {
   defaultModel: string;
   defaultEffort: Effort;
   autoConcurrency: number;
+  autoConcurrencySynced?: boolean;
   autoOrganize: boolean;
   agentMessaging: boolean;
   agentTasks: boolean;

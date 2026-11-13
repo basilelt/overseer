@@ -896,6 +896,66 @@ fn resume_target_term_starts_the_resume_argv() {
 }
 
 #[test]
+fn a_codex_turn_in_a_terminal_reads_busy_when_its_hooks_never_arrive() {
+    let app = App::with_env("codexnohooks", json!({}), &[("SB_STUB_NO_HOOKS", "1")]);
+    let wt = app.fx.wt.to_string_lossy().into_owned();
+    let t = app.ok(
+        "POST",
+        "/v1/terms",
+        json!({"cwd": wt, "agent": "codex", "cols": 100, "rows": 30}),
+    );
+    let tid = t["id"].as_str().unwrap().to_string();
+    let busy = || {
+        app.ok("GET", "/v1/lines?all=true", Value::Null)
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|l| l["local"]["termId"] == tid.as_str())
+            .map(|l| l["local"]["busy"] == true)
+    };
+    let mut ws = app.ws(&tid);
+    read_until(&mut ws, "codex ready");
+    send(&mut ws, "work\r");
+    wait_for(|| busy().filter(|b| *b));
+    wait_for(|| busy().filter(|b| !*b));
+    send(&mut ws, "typed but not sent");
+    read_until(&mut ws, "typed but not sent");
+    std::thread::sleep(Duration::from_millis(5500));
+    assert_eq!(busy(), Some(false), "typing without Enter is not a turn");
+}
+
+#[test]
+fn a_codex_line_with_working_hooks_follows_them_not_the_terminal_detector() {
+    let app = App::new("codexhooks", json!({}));
+    let wt = app.fx.wt.to_string_lossy().into_owned();
+    let t = app.ok(
+        "POST",
+        "/v1/terms",
+        json!({"cwd": wt, "agent": "codex", "cols": 100, "rows": 30}),
+    );
+    let tid = t["id"].as_str().unwrap().to_string();
+    let busy = || {
+        app.ok("GET", "/v1/lines?all=true", Value::Null)
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|l| l["local"]["termId"] == tid.as_str())
+            .map(|l| l["local"]["busy"] == true)
+    };
+    let mut ws = app.ws(&tid);
+    read_until(&mut ws, "codex ready");
+    send(&mut ws, "work\r");
+    wait_for(|| busy().filter(|b| *b));
+    read_until(&mut ws, "Working (13s)");
+    let ended = Instant::now();
+    wait_for(|| busy().filter(|b| !*b));
+    assert!(
+        ended.elapsed() < Duration::from_millis(3000),
+        "the Stop hook ends the turn at once; the 4 s quiet window of the detector must not delay it"
+    );
+}
+
+#[test]
 fn hold_and_resume_work_on_every_cycle_of_the_same_line() {
     let sid = "bbbbbbbb-0000-4000-8000-000000000000";
     let app = App::new("holdcycles", json!({}));

@@ -34,3 +34,6 @@ export function startable(tasks: Task[]): Task[] {
   const ids = byId(tasks);
   return sortColumn(tasks.filter((t) => isQueued(t.status) && !isSession(t) && !blockers(t, ids).length));
 }
+
+export const hearsMessages = (task: Task, terms: { id: string; exited?: boolean }[]): boolean =>
+  !!task.termId && terms.some((x) => x.id === task.termId && !x.exited);

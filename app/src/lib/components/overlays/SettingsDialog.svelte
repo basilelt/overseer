@@ -15,6 +15,7 @@
   import { adaptChoice, findAgent, hasModel, taskAgents } from '../../agents';
   import { allState, setAll } from '../../auto-approve';
   import { localeName, locales, t, type Key } from '../../i18n.svelte';
+  import { pullAutoConcurrency, pushAutoConcurrency } from '../../settings/auto-concurrency';
   import { saveSettings, settings } from '../../settings/settings.svelte';
   import { COLOR_TOKENS, type ColorToken, type Mode, type PresetColors, type ThemePref } from '../../theme/theme';
   import { contrastWarnings, fullColors, presetsFor, readableOn } from '../../theme/theme-edit';
@@ -176,6 +177,7 @@
         .agentTasks()
         .then((r) => saveSettings({ agentTasks: r.enabled }))
         .catch(() => {});
+      pullAutoConcurrency(app.api).catch(() => {});
     });
   });
   async function setAgentMessaging(el: HTMLInputElement) {
@@ -185,6 +187,14 @@
       saveSettings({ agentMessaging: r.enabled });
     } catch (e) {
       el.checked = !on;
+      app.notify(String((e as Error)?.message ?? e), 'error');
+    }
+  }
+  async function setAutoConcurrency(el: HTMLInputElement, v: number) {
+    try {
+      await pushAutoConcurrency(app.api, v);
+    } catch (e) {
+      el.value = String(settings.autoConcurrency);
       app.notify(String((e as Error)?.message ?? e), 'error');
     }
   }
@@ -568,7 +578,7 @@
           {#if row('defaults', 'autoConcurrency')}
             <label class="row" class:hit={hit('defaults', 'autoConcurrency')}>
               <span>{t('settings.autoConcurrency')}<small>{t('settings.autoConcurrencyHint')}</small></span>
-              <input type="number" min="1" max="16" value={settings.autoConcurrency} onchange={(e) => commitNumber(e.currentTarget, (v) => clampFinite(v, 1, 16), (autoConcurrency) => saveSettings({ autoConcurrency }))} />
+              <input type="number" min="1" max="16" value={settings.autoConcurrency} onchange={(e) => commitNumber(e.currentTarget, (v) => clampFinite(v, 1, 16), (v) => setAutoConcurrency(e.currentTarget, v))} />
             </label>
           {/if}
           {#if row('defaults', 'autoOrganize')}

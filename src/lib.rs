@@ -764,6 +764,13 @@ fn codex_found(ctx: &Ctx, hooks: &HashMap<String, HookState>) -> Vec<Found> {
             if let Some(h) = hook {
                 f.busy = h.busy;
                 f.busy_known = f.alive.is_some();
+            } else if let Some(b) = j
+                .and_then(|j| terms[j].as_ref())
+                .and_then(|x| x.turn_busy(ctx.now_ms))
+                .filter(|_| f.alive.is_some())
+            {
+                f.busy = b;
+                f.busy_known = true;
             }
             f.cwd = t.cwd.unwrap_or_default();
             f.branch = t.branch;

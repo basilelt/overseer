@@ -1516,7 +1516,6 @@ export const dict: Partial<Dict> = {
   'tour.palette.title': 'Befehlspalette',
   'tour.palette.phone': 'Sitzungen suchen und beliebige Befehle unter Mehr ausführen.',
   'tour.paletteKey.title': 'Tastenkürzel für die Palette',
-  'tour.paletteKey.phone': 'Durchsuche Sitzungen und führe jeden Befehl über Mehr aus.',
   'tour.organize.title': 'Meine Sitzungen organisieren',
   'tour.organize.body': 'Zu viele Sitzungen? Meine Sitzungen organisieren schlägt Workspaces, Gruppen und Aufräumen vor, offline per Regeln oder mit einem Agent. Du prüfst jede Änderung und machst dann dort weiter, wo du aufgehört hast.',
   'tour.organize.phone': 'Meine Sitzungen organisieren findest du unter Mehr: Es schlägt Workspaces, Gruppen und Aufräumen vor und zeigt, wo du weitermachen kannst.',

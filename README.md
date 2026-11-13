@@ -32,7 +32,7 @@
 </p>
 
 <p align="center">
-  <img src="docs/media/tour.gif" width="960" alt="The guided tour of the desktop app">
+  <img src="docs/media/tour.gif" width="880" alt="The guided tour of the desktop app">
 </p>
 
 Overseer is a desktop app (Linux, macOS, Windows), a phone and tablet app (Android, iOS) and a small
@@ -58,8 +58,8 @@ is done. Agent tabs also have a **Chat** view rebuilt live from the agent's sess
 Terminals can optionally be drawn on the GPU with WebGL (Settings, Terminal, **GPU rendering**,
 off by default and experimental), which keeps long output smooth. Clicking in the line you are
 typing, in a shell or an agent like Claude Code or Codex, moves the cursor there like in a text editor.
-An agent you have not installed yet is one click away: pick it under **+** and its install
-command runs in a new terminal, then it is ready to start.
+The **+** menus list only the agents you have installed; the rest wait under **Not installed**,
+where one click runs an agent's install command in a new terminal, then it is ready to start.
 Coming from Switchboard, the old name of Overseer? When its data is found, Overseer offers to import
 your sessions, tasks, workspaces and settings in one click (also in Settings, Help).
 
@@ -88,9 +88,10 @@ with the orchestrator, and only results a majority accepts are merged.
 ![Tasks](app/docs/screenshots/kanban-dark.png)
 
 <details>
-<summary>New task with the agent picker</summary>
+<summary>New task: agent picker, task type and Quorum</summary>
 
 ![New task, agent picker](app/docs/screenshots/add-task-light.png)
+![New task with Quorum and a task type](app/docs/screenshots/quorum-dark.png)
 
 </details>
 
@@ -183,6 +184,9 @@ connect.
   Defaults → Agents file what they find as tasks picks which.
 - **Sticky notes on sessions**: click the note icon of a session in the sidebar to leave yourself
   notes on it, like comments. They are never sent to the agent and stay with the session.
+
+  <img src="app/docs/screenshots/sticky-notes-dark.png" width="720" alt="Sticky notes on a session">
+
 - **Usage and system monitor**: agent quotas, token usage, CPU and RAM in the title bar.
 - **Real cost per session and task**: what each session cost, from the token counts in its
   transcript, per model with cache reads and writes apart and model switches shown as their own

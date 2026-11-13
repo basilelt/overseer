@@ -124,6 +124,7 @@ hooks did not fire, fall back to terminal activity: in a daemon terminal, a line
 agent keeps writing after you pressed Enter, and its turn ends after 4 s without output. Amp has no
 needs-input event; Cursor Agent fires only some hooks in the CLI; Mistral Vibe fires no hook
 when you interrupt a turn, so its line stays busy until the next turn ends.
+A Codex whose hooks are not trusted yet falls back the same way in a daemon terminal, and its task then moves to Review when the turn ends; a Codex started outside Overseer terminals needs its hooks.
 
 Hooks call `~/.overseer/bin/overseer`, a symlink the daemon points at its own binary on
 every start and hot upgrade, so a server upgrade never breaks them. When the daemon starts and
@@ -929,7 +930,7 @@ On first launch, once the app is connected (immediately in local mode, after the
 connection on a phone), a welcome card offers **Take the tour** or **Skip**. The tour dims the
 window and highlights the real controls one at a time: host chip, workspaces sidebar, tabs and the
 new-session menu, the Terminal/Chat toggle, the side panel, Tasks, Review, the usage, system and ports
-chips, notifications and hooks, the command palette and Feedback, in 0.25 the Cmd/Ctrl+P palette shortcut, and in 0.27 the demo mode (on the **Demo mode** pill while in the demo, else on the host chip), and in 0.28 the GPU rendering option for terminals, and in 0.29 the clean up of unused worktrees and the import from Switchboard (on its button in Settings, Help, or on the Settings button), and in 0.30 click to move the cursor in a terminal (on the tabs), and in 0.31 the Light and Dark palettes (on Settings, or More on a phone), and in 0.33 the one-click install of skills and plugins (on Settings), and in 0.34 the auto-approval defaults (on Settings, Agents), the Review, Merged and Closed columns (on the Merged column when the board is open, else on the Tasks tab) and the clean removal of everything Overseer added (on Settings, Connection, **Remove**), and in 0.35 one-click in-app updates for every install (on Settings, Updates, else on the Settings button), and in 0.36 subjects inside a workspace (on **+ New subject** in the open workspace, else on the sidebar), and the live review behind the git button (on the git button of a session's tab bar, else on the command palette), and the review map (on List | Map in a review, else on the Review tab), and keeping agents running with the lid closed (on its switch in Settings, Connection, else on the Settings button), and Record a bug (centred, on the command palette), and the Quorum option of a new task (on the Quorum control in the New task dialog, else on the Tasks tab), and installing a missing agent from the app (on the title bar **+**, else on the palette), and agents kept inside their project (on **Agents message each other** in Settings, Defaults, else on the Settings button), and Mistral Vibe as a new agent (on the title bar **+**, else on the palette), and the real cost of each session and task (on the cost line of the side panel, else on the side panel), and profiles by task type (on the **Type** field of the New task dialog, else on the Tasks tab), and the choice between agents filing what they find as tasks or fixing it themselves (on **Agents file what they find as tasks** in Settings, Defaults, else on the Settings button), and several hosts in one window (on the host sections of the sidebar when a window shows several hosts, else on the host chip), and sticky notes on sessions (on the note icon of a session that has notes, else on the sidebar). Steps whose control is not on
+chips, notifications and hooks, the command palette and Feedback, in 0.25 the Cmd/Ctrl+P palette shortcut (not shown on a phone), and in 0.27 the demo mode (on the **Demo mode** pill while in the demo, else on the host chip), and in 0.28 the GPU rendering option for terminals, and in 0.29 the clean up of unused worktrees and the import from Switchboard (on its button in Settings, Help, or on the Settings button), and in 0.30 click to move the cursor in a terminal (on the tabs), and in 0.31 the Light and Dark palettes (on Settings, or More on a phone), and in 0.33 the one-click install of skills and plugins (on Settings), and in 0.34 the auto-approval defaults (on Settings, Agents), the Review, Merged and Closed columns (on the Merged column when the board is open, else on the Tasks tab) and the clean removal of everything Overseer added (on Settings, Connection, **Remove**), and in 0.35 one-click in-app updates for every install (on Settings, Updates, else on the Settings button), and in 0.36 subjects inside a workspace (on **+ New subject** in the open workspace, else on the sidebar), and the live review behind the git button (on the git button of a session's tab bar, else on the command palette), and the review map (on List | Map in a review, else on the Review tab), and keeping agents running with the lid closed (on its switch in Settings, Connection, else on the Settings button), and Record a bug (centred, on the command palette), and the Quorum option of a new task (on the Quorum control in the New task dialog, else on the Tasks tab), and installing a missing agent from the app (on the title bar **+**, else on the palette), and agents kept inside their project (on **Agents message each other** in Settings, Defaults, else on the Settings button), and Mistral Vibe as a new agent (on the title bar **+**, else on the palette), and the real cost of each session and task (on the cost line of the side panel, else on the side panel), and profiles by task type (on the **Type** field of the New task dialog, else on the Tasks tab), and the choice between agents filing what they find as tasks or fixing it themselves (on **Agents file what they find as tasks** in Settings, Defaults, else on the Settings button), and several hosts in one window (on the host sections of the sidebar when a window shows several hosts, else on the host chip), and sticky notes on sessions (on the note icon of a session that has notes, else on the sidebar). Steps whose control is not on
 screen (no session selected, a feature the server lacks, phone layout) are skipped. On a phone the
 card is a sheet at the bottom (or top, when the control sits low) and points at the bottom
 navigation, the session strip and the menu.
@@ -1128,6 +1129,12 @@ daemon keeps its environment: the new one applies from its next start (the next 
 it is never restarted for this since that would end its terms. **Rescan** in the agent picker
 runs the detection again (`POST /v1/agents/rescan`), for instance after installing an agent.
 
+The **+** menus (tab bar and title bar) list only the agents that are installed; the others are
+folded under one **Not installed (N)** row at the bottom, which unfolds in place. An agent with a
+known install command shows **Install** there: click it and the command runs in a new terminal,
+then Overseer rescans, so the agent is ready to start. On a phone the palette lists **Install
+<agent>** for each missing agent.
+
 **Auto-approve** in Settings → Agents chooses which supported CLIs Overseer starts with their
 native automatic permission mode. It is on by default for Claude Code, Codex, Gemini CLI,
 Antigravity, opencode, Copilot CLI, Cursor Agent and Mistral Vibe (`--auto-approve`). The settings are stored on the connected
@@ -1262,7 +1269,7 @@ and `completed` (Closed). Merged and Closed are both done; they start collapsed 
   opencode and Copilot get them with their prompt flag instead). The prompt is never written to
   disk or logs.
 - Tasks in `auto` start by themselves in column order (`rank`), while fewer than `autoConcurrency` tasks run
-  (`config.json`, default 2).
+  (Settings, Defaults, **Auto concurrency**, 1 to 16, applied at once and kept by the daemon; `config.json` gives the starting value, default 2).
 - A running task moves to `in_testing` when the agent finishes a turn (`Stop` hook) or exits.
 - An `in_testing` task, or a `completed` one whose worktree is still on disk, moves to `merged` once its branch has landed in the project's default
   branch (`origin/HEAD`, else `main`/`master`; `origin/<default>` when it is ahead of the local
@@ -1956,7 +1963,7 @@ shortcuts.
 | Find in terminal (Enter: older match, Shift+Enter: newer, Esc closes) | Cmd+F | Ctrl+Shift+F (Ctrl+F outside a terminal) |
 | Copy the selection / paste | Cmd+C / Cmd+V | Ctrl+Shift+C / Ctrl+Shift+V, or Ctrl+Insert / Shift+Insert |
 | Terminal font larger / smaller / default | Cmd+= / Cmd+- / Cmd+0 | Ctrl+= / Ctrl+- / Ctrl+0 |
-| Command palette | Cmd+P | Ctrl+P (Ctrl+Shift+P in a terminal) |
+| Command palette (the search button in the title bar opens it too and shows the key) | Cmd+P | Ctrl+P (Ctrl+Shift+P in a terminal) |
 | Settings | Cmd+, | Ctrl+, |
 | Keyboard shortcuts | Cmd+/ | Ctrl+Shift+/ (Ctrl+/ outside a terminal) |
 | Show or hide the sidebar | Cmd+B | Ctrl+Shift+B (Ctrl+B outside a terminal) |
@@ -2253,7 +2260,7 @@ exits: Resume then reopens the session it was last in (`lines.session_now`). Two
 Overseer writes outside its own folders, so deleting the app alone leaves things behind: hook
 entries in the agents' config files (for example `~/.claude/settings.json`), the statusline
 wrapper, the boot service (a systemd user unit, or `~/Library/LaunchAgents/dev.overseer.daemon.plist`)
-and its linger setting, `~/.overseer` (the `bin/` shim, `server/`, `u/`, `tasks/`, `reviews/`), the
+its linger setting, the lid keep-awake setting when it was on (macOS `pmset disablesleep`, the Windows lid close action; both are system-wide and put back, macOS asking for your administrator password), `~/.overseer` (the `bin/` shim, `server/`, `u/`, `tasks/`, `reviews/`), the
 config backups it made, worktrees and `task/*` branches it created, the state dir
 (`~/.local/state/overseer` on Linux, `~/Library/Application Support/overseer` on macOS,
 `%LOCALAPPDATA%\overseer` on Windows, or `$OVERSEER_STATE_DIR`) and the app's own data.
