@@ -3289,6 +3289,7 @@ dependencies = [
  "base64 0.22.1",
  "dirs",
  "futures-util",
+ "gtk",
  "keyring-core",
  "minisign-verify",
  "objc2",
