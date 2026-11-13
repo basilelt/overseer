@@ -119,6 +119,19 @@ describe('clickMove', () => {
     expect(clickMove(12, 4, cur, narrow, base)).toBe('\x1b[C\x1b[C');
   });
 
+  it('stops at the end of the text for a click far right of it', () => {
+    expect(clickMove(70, 4, { x: 4, y: 4 }, narrow, base, 10)).toBe('\x1b[C'.repeat(6));
+  });
+
+  it('sends nothing for a click past the end when the cursor is already there', () => {
+    expect(clickMove(70, 4, cur, narrow, base, 10)).toBeNull();
+    expect(clickMove(70, 4, { x: 12, y: 4 }, narrow, base, 10)).toBeNull();
+  });
+
+  it('still moves left whatever the end of the text', () => {
+    expect(clickMove(7, 4, cur, narrow, base, 10)).toBe('\x1b[D'.repeat(3));
+  });
+
   it('uses application cursor keys when DECCKM is set', () => {
     expect(clickMove(9, 4, cur, narrow, { ...base, appCursor: true })).toBe('\x1bOD');
   });
