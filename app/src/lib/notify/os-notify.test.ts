@@ -3,20 +3,8 @@ import { eventTarget } from '../../test/fake-events';
 import { DEMO_KEY } from '../daemon/demo';
 import { center } from './notifications.svelte';
 import { DEFAULT_KINDS, DEFAULT_QUIET, FOCUS_FALLBACK_MS } from './notify-prefs';
-import {
-  cooldownGate,
-  dispatch,
-  isTargetMuted,
-  mutedList,
-  openSystemSettings,
-  osId,
-  permission,
-  requestPermission,
-  sendOs,
-  sendTest,
-  startOs,
-  toggleTargetMute,
-} from './os-notify';
+import { cooldownGate, dispatch, isTargetMuted, mutedList, toggleTargetMute } from './os-notify';
+import { openSystemSettings, osId, permission, requestPermission, sendOs, sendTest, startOs } from './os-send';
 import { settings } from '../settings/settings.svelte';
 import type { app as App } from '../state.svelte';
 

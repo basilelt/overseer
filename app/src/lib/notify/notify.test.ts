@@ -3,10 +3,14 @@ import { changes, folderName, idleTransitions, needsInputCount, notificationsFor
 import type { SidebarItem } from '../session/grouping';
 import { settings } from '../settings/settings.svelte';
 import type { app as App } from '../state.svelte';
-import { osId, routeOf } from './os-notify';
+import { osId, routeOf } from './os-send';
 import type { Snapshot } from '../reduce';
 import type { DaemonEvent, LocalLine, Task, Term } from '../types';
 import { stateOfGroup } from '../../test/fixtures';
+
+const onAction = vi.hoisted(() => vi.fn());
+const unregister = vi.hoisted(() => vi.fn(async () => {}));
+vi.mock('@tauri-apps/plugin-notification', () => ({ onAction }));
 
 const line = (id: string, agent: string, local: LocalLine['local'], state: LocalLine['line']['state'] = 'active'): LocalLine => ({
   line: { id, agent, state, lastActivityAt: '', worktreePath: `/home/u/work/${id}-repo` },
@@ -397,6 +401,37 @@ describe('startNotifications', () => {
     expect(app.onOther).toBeNull();
     vi.advanceTimersByTime(5000);
     expect(app.notice).not.toHaveBeenCalled();
+  });
+
+  describe('system tap listener', () => {
+    beforeEach(() => {
+      vi.useRealTimers();
+      onAction.mockReset();
+      unregister.mockClear();
+      onAction.mockResolvedValue({ unregister });
+      vi.stubGlobal('window', { __TAURI_INTERNALS__: {} });
+    });
+
+    afterEach(() => {
+      vi.unstubAllGlobals();
+    });
+
+    it('listens for notification taps in the desktop app and stops with the notifications', async () => {
+      const { app } = fakeApp();
+      const stop = startNotifications(app as unknown as typeof App);
+      await vi.waitFor(() => expect(onAction).toHaveBeenCalledTimes(1));
+      await vi.waitFor(() => expect(unregister).not.toHaveBeenCalled());
+      stop();
+      await vi.waitFor(() => expect(unregister).toHaveBeenCalledTimes(1));
+    });
+
+    it('never loads the system sender in a browser', async () => {
+      vi.stubGlobal('window', {});
+      const { app } = fakeApp();
+      startNotifications(app as unknown as typeof App)();
+      await Promise.resolve();
+      expect(onAction).not.toHaveBeenCalled();
+    });
   });
 
   it('skips events that change no line, term or task', () => {
