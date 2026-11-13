@@ -168,6 +168,7 @@
   }
   form {
     flex: 1;
+    min-width: 0;
     display: flex;
     align-items: center;
     gap: 8px;
@@ -185,6 +186,7 @@
   }
   form input {
     flex: 1;
+    min-width: 0;
     border: 0;
     padding: 0;
     background: transparent;
