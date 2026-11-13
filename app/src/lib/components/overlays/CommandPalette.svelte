@@ -8,7 +8,7 @@
   import X from '@lucide/svelte/icons/x';
   import { t, type Key } from '../../i18n.svelte';
   import { app } from '../../state.svelte';
-  import { highlight, rank, type Match } from '../../fuzzy';
+  import { bestSectionFirst, highlight, rank, type Match } from '../../fuzzy';
   import type { GroupId } from '../../session/grouping';
   import { GROUP_COLOR, STATE_COLOR } from '../../workspace/ws-color';
   import { canInstall, ordered } from '../../agents';
@@ -120,11 +120,16 @@
       run: () => app.select(i.key),
     })),
   );
-  const results = $derived<{ item: Cmd; match: Match }[]>([
-    ...rank(query, sessions, (c) => c.label).slice(0, query ? 8 : 5),
-    ...rank(query, views, (c) => c.label),
-    ...rank(query, actions, (c) => c.label),
-  ]);
+  const results = $derived<{ item: Cmd; match: Match }[]>(
+    bestSectionFirst(
+      [
+        ...rank(query, sessions, (c) => c.label).slice(0, query ? 8 : 5),
+        ...rank(query, views, (c) => c.label),
+        ...rank(query, actions, (c) => c.label),
+      ],
+      query,
+    ),
+  );
 
   $effect(() => {
     query;
