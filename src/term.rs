@@ -1289,7 +1289,14 @@ pub fn link_lines(lines: &[crate::Line]) {
     }
 }
 
+pub fn plain(text: &str) -> String {
+    text.chars()
+        .filter(|&c| matches!(c, '\n' | '\r' | '\t') || !c.is_control())
+        .collect()
+}
+
 pub fn insert(t: &Term, text: &str) -> std::io::Result<()> {
+    let text = plain(text);
     let screen = t.screen();
     let bracketed = screen.windows(8).any(|w| w == b"\x1b[?2004h");
     let body = if bracketed {
@@ -1641,6 +1648,48 @@ mod tests {
         assert!(out.contains("033[?997;1n"), "{out}");
         t.kill().unwrap();
         remove(&t.info().id);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn inserted_text_cannot_leave_the_paste_frame() {
+        let script = r#"stty -echo -icanon min 1; printf '\033[?2004h'; echo ready; head -c 24 | od -An -c | tr -d ' \n'; echo; echo got; sleep 30"#;
+        let t = spawn(Spec {
+            cwd: std::env::temp_dir().to_string_lossy().into_owned(),
+            cmd: vec!["/bin/sh".into(), "-c".into(), script.into()],
+            cols: 80,
+            rows: 24,
+            ..Default::default()
+        })
+        .unwrap();
+        let (replay, rx) = t.subscribe();
+        let rx = rx.unwrap();
+        let mut seen = replay;
+        let mut wait_for = |word: &str| {
+            let deadline = std::time::Instant::now() + Duration::from_secs(5);
+            while !String::from_utf8_lossy(&seen).contains(word) {
+                assert!(std::time::Instant::now() < deadline, "no {word}");
+                if let Ok(c) = rx.recv_timeout(Duration::from_millis(100)) {
+                    seen.extend_from_slice(&c);
+                }
+            }
+            String::from_utf8_lossy(&seen).into_owned()
+        };
+        wait_for("ready");
+        insert(&t, "a\x1b[201~b\x07c\u{9b}d\n\u{e9}").unwrap();
+        let out = wait_for("got");
+        assert!(out.contains(r"033[200~a[201~bcd\n303251033[201~"), "{out}");
+        t.kill().unwrap();
+        remove(&t.info().id);
+    }
+
+    #[test]
+    fn plain_keeps_text_and_line_breaks_only() {
+        assert_eq!(
+            plain("a\tb\r\nc \u{e9}\u{1f600}"),
+            "a\tb\r\nc \u{e9}\u{1f600}"
+        );
+        assert_eq!(plain("\x1b[201~\x00\x08\x7f\u{9b}x\u{9d}"), "[201~x");
     }
 
     #[cfg(unix)]
