@@ -202,6 +202,43 @@ fn codex_trust(hooks: &Path, config: &Path, events: &[&str]) -> CodexTrust {
     out
 }
 
+fn codex_trust_item(hooks: &Path, config: &Path, events: &[&str]) -> Item {
+    let t = codex_trust(hooks, config, events);
+    const FIX: &str = "start codex and choose Review hooks or Trust all at the \"Hooks need review\" prompt, or run /hooks in it (codex exec cannot review hooks)";
+    if !t.missing.is_empty() {
+        item(
+                    "warn",
+                    "codex trust",
+                    format!(
+                        "{}/{} events have no trust entry in config.toml ({}); Codex skips them until you trust them: {FIX}",
+                        t.missing.len(),
+                        t.total,
+                        t.missing.join(", ")
+                    ),
+                )
+    } else if !t.disabled.is_empty() {
+        item(
+                    "warn",
+                    "codex trust",
+                    format!(
+                        "{}/{} events are disabled in config.toml ({}); Codex does not run them: turn them on with /hooks in codex",
+                        t.disabled.len(),
+                        t.total,
+                        t.disabled.join(", ")
+                    ),
+                )
+    } else {
+        item(
+                    "info",
+                    "codex trust",
+                    format!(
+                        "{}/{} events have a trust entry in config.toml, but doctor cannot tell whether it matches the current hooks (Codex recomputes a hash, so an entry left from before a rewrite counts as changed); if sessions show no events, run /hooks in codex: hooks needing review are listed there",
+                        t.total, t.total
+                    ),
+                )
+    }
+}
+
 fn agent_bin(id: &str) -> &'static str {
     crate::agents::get(id).map_or("", |a| a.bin)
 }
@@ -278,44 +315,11 @@ pub fn run(ctx: &Ctx) -> Vec<Item> {
             format!("{n}/{total} events in {}", codex_hooks.display()),
         ));
         if n > 0 {
-            let t = codex_trust(
+            out.push(codex_trust_item(
                 &codex_hooks,
                 &ctx.codex_dir.join("config.toml"),
                 codex_events,
-            );
-            const FIX: &str = "start codex and choose Review hooks or Trust all at the \"Hooks need review\" prompt, or run /hooks in it (codex exec cannot review hooks)";
-            out.push(if !t.missing.is_empty() {
-                item(
-                    "warn",
-                    "codex trust",
-                    format!(
-                        "{}/{} events have no trust entry in config.toml ({}); Codex skips them until you trust them: {FIX}",
-                        t.missing.len(),
-                        t.total,
-                        t.missing.join(", ")
-                    ),
-                )
-            } else if !t.disabled.is_empty() {
-                item(
-                    "warn",
-                    "codex trust",
-                    format!(
-                        "{}/{} events are disabled in config.toml ({}); Codex does not run them: turn them on with /hooks in codex",
-                        t.disabled.len(),
-                        t.total,
-                        t.disabled.join(", ")
-                    ),
-                )
-            } else {
-                item(
-                    "info",
-                    "codex trust",
-                    format!(
-                        "{}/{} events have a trust entry in config.toml, but doctor cannot tell whether it matches the current hooks (Codex recomputes a hash, so an entry left from before a rewrite counts as changed); if sessions show no events, run /hooks in codex: hooks needing review are listed there",
-                        t.total, t.total
-                    ),
-                )
-            });
+            ));
         }
     }
     out.push(match version(agent_bin("claude")) {
@@ -633,5 +637,62 @@ mod tests {
         let t = codex_trust(&hooks, &cfg, EVENTS);
         assert_eq!(t.missing, ["UserPromptSubmit"]);
         assert_eq!(t.disabled, ["Stop"]);
+    }
+
+    fn level_and_detail(name: &str, config: Option<&str>) -> (&'static str, String) {
+        let (hooks, cfg) = fixture(name, config);
+        let i = codex_trust_item(&hooks, &cfg, EVENTS);
+        assert_eq!(i.name, "codex trust");
+        (i.level, i.detail)
+    }
+
+    const ALL_TRUSTED: &str = "[hooks.state.\"$H:session_start:0:0\"]\ntrusted_hash = \"a\"\n\
+         [hooks.state.\"$H:user_prompt_submit:0:0\"]\ntrusted_hash = \"a\"\n\
+         [hooks.state.\"$H:stop:0:0\"]\ntrusted_hash = \"a\"\n";
+
+    #[test]
+    fn item_is_info_never_ok_when_every_event_has_an_enabled_entry() {
+        let (level, detail) = level_and_detail("item-all", Some(ALL_TRUSTED));
+        assert_eq!(level, "info");
+        assert!(detail.starts_with("3/3 "), "{detail}");
+    }
+
+    #[test]
+    fn item_warns_naming_a_disabled_event() {
+        let cfg = ALL_TRUSTED.replace(
+            "[hooks.state.\"$H:stop:0:0\"]\n",
+            "[hooks.state.\"$H:stop:0:0\"]\nenabled = false\n",
+        );
+        let (level, detail) = level_and_detail("item-off", Some(&cfg));
+        assert_eq!(level, "warn");
+        assert!(
+            detail.starts_with("1/3 ") && detail.contains("Stop"),
+            "{detail}"
+        );
+        assert!(!detail.contains("SessionStart"), "{detail}");
+    }
+
+    #[test]
+    fn item_with_missing_and_disabled_events_warns_about_both_kinds() {
+        let cfg = "[hooks.state.\"$H:session_start:0:0\"]\ntrusted_hash = \"a\"\nenabled = false\n\
+             [hooks.state.\"$H:stop:0:0\"]\ntrusted_hash = \"a\"\n";
+        let (hooks, config) = fixture("item-mixed", Some(cfg));
+        let t = codex_trust(&hooks, &config, EVENTS);
+        assert_eq!(t.missing, ["UserPromptSubmit"]);
+        assert_eq!(t.disabled, ["SessionStart"]);
+        let i = codex_trust_item(&hooks, &config, EVENTS);
+        assert_eq!(i.level, "warn");
+        assert!(
+            i.detail.starts_with("1/3 ") && i.detail.contains("UserPromptSubmit"),
+            "{}",
+            i.detail
+        );
+    }
+
+    #[test]
+    fn item_warns_for_every_event_without_a_config_toml() {
+        let (level, detail) = level_and_detail("item-none", None);
+        assert_eq!(level, "warn");
+        assert!(detail.starts_with("3/3 "), "{detail}");
     }
 }
