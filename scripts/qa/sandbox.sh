@@ -161,7 +161,7 @@ desktop-stop)
   stop_group "$D/xvfb.pid"
   ;;
 crash)
-  kill -9 "$(cat "$D/daemon.pid")"
+  kill -9 "$(cat "$D/state/daemon.pid" 2>/dev/null || cat "$D/daemon.pid")"
   ;;
 stop)
   "$0" desktop-stop
