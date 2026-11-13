@@ -27,11 +27,12 @@ body.render .bar{display:none}
 'use strict';
 const Q = new URLSearchParams(location.search), RENDER = Q.has('render');
 const W = 1920, H = 1080, FPS = 60, DUR = Q.get('d') === '30' ? 30 : 15, K = 15 / DUR, BEAT = 60 / 128, SHUTTER = 0.85, TAU = Math.PI * 2;
-const ENTER = 2 * BEAT, DROP = 4 * BEAT, IRIS = DROP - 0.1, RIP = 15 * BEAT, FIN = 27 * BEAT;
+const bt = x => x * BEAT;
+const ENTER = 2 * BEAT, DROP = 4 * BEAT, IRIS = DROP - 0.1, RIP = 15 * BEAT, FIN = 29 * BEAT;
 const C = { bg: '#0b0b0c', bg2: '#111113', surf: '#141416', surf2: '#1b1b1e', line: '#232327', line2: '#2f2f34', ink: '#ededef', ink2: '#a1a1aa', ink3: '#63636b', white: '#fafafa', amber: '#e8a33a', blue: '#3b82f6', green: '#22c55e', purple: '#a855f7', red: '#ef4444', orange: '#f59e0b', gray: '#71717a', add: '#4ade80', del: '#f87171', hunk: '#818cf8' };
 const FF = { d: '"Inter Display"', u: 'Inter', m: '"JetBrains Mono"' };
 const FONTS = [['Inter Display', 'InterDisplay-SemiBold', 600], ['Inter Display', 'InterDisplay-Bold', 700], ['Inter Display', 'InterDisplay-ExtraBold', 800], ['Inter Display', 'InterDisplay-Black', 900], ['Inter', 'Inter-Regular', 400], ['Inter', 'Inter-Medium', 500], ['Inter', 'Inter-SemiBold', 600], ['Inter', 'Inter-Bold', 700], ['JetBrains Mono', 'JetBrainsMono-Regular', 400], ['JetBrains Mono', 'JetBrainsMono-Medium', 500], ['JetBrains Mono', 'JetBrainsMono-Bold', 700]];
-const SHOTS = { agents: 'agents-dark', kanban: 'kanban-dark', review: 'review-dark', graph: 'graph-dark', workspaces: 'workspaces-dark', worktrees: 'worktrees-dark', broadcast: 'broadcast-dark', addtask: 'add-task-dark', thread: 'review-thread-dark', graphite: 'graphite', solarized: 'solarized', ipad: 'ipad-landscape-dark', android: 'android-tablet-portrait-dark' };
+const SHOTS = { notes: 'notes', cost: 'cost', record: 'record', mistral: 'mistral', subjects: 'subjects', tasktype: 'tasktype' };
 const SH = {};
 
 const clamp = (x, a = 0, b = 1) => x < a ? a : x > b ? b : x;
@@ -133,7 +134,7 @@ function glowPass() {
   X.restore();
 }
 
-const IMP = [[ENTER, 1], [7 * BEAT, 0.35], [19 * BEAT, 0.3], [FIN, 1.3]];
+const IMP = [[ENTER, 1], [7 * BEAT, 0.35], [16.4 * BEAT, 0.3], [18.3 * BEAT, 0.3], [21.3 * BEAT, 0.3], [FIN, 1.3]];
 function shake(t) {
   let x = 0, y = 0, r = 0, z = 0;
   for (const [a, k] of IMP) {
@@ -160,7 +161,7 @@ function fxInit() {
 }
 function background(t) {
   X.fillStyle = BGG; X.fillRect(0, 0, W, H);
-  const a = P(t, 3.75, 4.3) * (1 - P(t, 11.0, 11.2)) * (t >= 5.625 && t < 7.5 ? 0 : 1);
+  const a = P(t, 3.75, 4.3) * (1 - P(t, 11.9, 12.1)) * (t >= bt(10) && t < bt(12) ? 0 : 1);
   if (a > 0) { GRID.setTransform(new DOMMatrix([1, 0, 0, 1, 0, 12])); X.save(); X.globalAlpha = a; X.fillStyle = GRID; X.fillRect(0, 0, W, H); X.restore(); }
 }
 
@@ -173,9 +174,11 @@ const AG = [
   { n: 'Amp', path: 'infra · ci/arm-runners', a: 'working', b: 'working', L: ['• edit .github/workflows/ci.yml', '• gh run watch', '  build (arm64)   passed', '  build (x64)     running'] },
   { n: 'Copilot CLI', path: 'admin · feat/dark-mode', a: 'paused', b: 'working', L: ['• suggest prefers-color-scheme', '• edit theme.css', '  3 files changed'] },
   { n: 'Cursor Agent', path: 'webshop · fix/vat', a: 'testing', b: 'done', L: ['• edit src/vat.rs', '• cargo test vat', '  round per line: ok'] },
+  { n: 'Mistral Vibe', path: 'docs · feat/i18n-fr', a: 'working', b: 'input', L: ['• read_file locales/en.json', '• search_replace fr.json', '  48 keys translated', '> Review the glossary?'] },
 ];
 const ST = { input: ['Needs input', C.green], working: ['Working', C.blue], testing: ['Testing', C.purple], done: ['Done', C.gray], paused: ['Paused', C.orange] };
-const SCOL = ['#3b82f6', '#22c55e', '#a855f7', '#f59e0b', '#38bdf8', '#f472b6', '#4ade80', '#818cf8'];
+const SCOL = ['#3b82f6', '#22c55e', '#a855f7', '#f59e0b', '#38bdf8', '#f472b6', '#4ade80', '#818cf8', '#fb923c'];
+const ALLN = AG.map(a => a.n);
 
 const TYPED = 'overseer', TK = i => 0.2 + i * 0.06;
 const WD = [{ s: 'RUN', t: 2.5 * BEAT, size: 300 }, { s: 'SUPERVISE', t: 3 * BEAT, size: 214 }, { s: 'REVIEW', t: 3.5 * BEAT, size: 286 }];
@@ -280,8 +283,9 @@ function intro(t) {
   }
 }
 
-const NAMES = ['Claude Code', 'Codex', 'Gemini CLI', 'Antigravity', 'opencode', 'Amp', 'Copilot CLI', 'Cursor Agent', 'every agent.'];
-const STEPS = [4.5, 5, 5.5, 5.75, 6, 6.25, 6.5, 7].map(b => b * BEAT);
+const NAMES = ['Claude Code', 'Codex', 'Gemini CLI', 'Antigravity', 'opencode', 'Amp', 'Copilot CLI', 'Cursor Agent', 'Mistral Vibe', 'every agent.'];
+const STEPS = [4.5, 5, 5.4, 5.65, 5.9, 6.15, 6.4, 6.65, 7].map(b => b * BEAT);
+const NL = STEPS.length - 1;
 let RL;
 function reelInit() {
   const L1 = lay('One window for', 92, 700, 'd', -1.5);
@@ -292,7 +296,7 @@ function reelInit() {
 function reelPos(t) {
   let p = lerp(-2.6, 0, E.o5(P(t, DROP, DROP + 0.32)));
   for (let k = 0; k < STEPS.length; k++) {
-    const a = STEPS[k], d = k === 7 ? 0.2 : Math.min(0.15, (STEPS[k + 1] - a) * 0.95);
+    const a = STEPS[k], d = k === NL ? 0.2 : Math.min(0.15, (STEPS[k + 1] - a) * 0.95);
     p += E.oB(P(t, a, a + d), 1.9);
   }
   return p;
@@ -305,7 +309,7 @@ function reel(t) {
   X.save(); X.globalAlpha = 1 - out1; X.translate(0, -out1 * 70);
   rise(X, 'One window for', RL.x0, RL.l1y, 92, 700, 'd', C.ink2, t, DROP + 0.02, { st: 0.014, dur: 0.5, tr: -1.5 });
   X.restore();
-  const p = reelPos(t), S7 = STEPS[7];
+  const p = reelPos(t), S7 = STEPS[NL];
   X.save(); X.globalAlpha = 1 - out2; X.translate(0, -out2 * 90);
   X.beginPath(); X.rect(0, RL.l1y + 34, W, H); X.clip();
   sf(X, 150, 800, 'd', -4); X.textAlign = 'left'; X.textBaseline = 'alphabetic';
@@ -322,7 +326,7 @@ function reel(t) {
     X.restore();
   }
   const ul = E.o4(P(t, S7 + 0.05, S7 + 0.32));
-  if (ul > 0) lit(c => { rr(c, RL.x0 + 4, RL.yc + 82, (lay(NAMES[8], 150, 800, 'd', -4).w - 8) * ul, 9, 4.5); c.fillStyle = AMB(c); c.fill(); }, 0.9);
+  if (ul > 0) lit(c => { rr(c, RL.x0 + 4, RL.yc + 82, (lay(NAMES[NL + 1], 150, 800, 'd', -4).w - 8) * ul, 9, 4.5); c.fillStyle = AMB(c); c.fill(); }, 0.9);
   X.restore();
   const w2 = WD[2], e = E.o5(P(t, DROP, DROP + 0.28));
   let bx = lerp(w2.dx, RL.bx, e), by = lerp(w2.dy, RL.yc, e), br = lerp(w2.r, 19, e);
@@ -335,6 +339,7 @@ function reel(t) {
 const OC = { x: 960, y: 540 };
 const ORB = [[235, 1.12, -0.42], [320, 1.24, 0.6], [400, 1.06, -0.85], [480, 1.3, 0.22]];
 const SATS = AG.map((a, i) => ({ o: i % 4, ph: (i < 4 ? 0.3 : 0.3 + Math.PI) + (i % 4) * 1.1, sp: (i % 2 ? -1 : 1) * (1.45 - (i % 4) * 0.16), col: SCOL[i] }));
+SATS[8].o = 1; SATS[8].ph = 2.97; SATS[8].sp = SATS[1].sp;
 const OUTER = [[0, 0], [1, 0], [2, 0], [2, 1], [2, 2], [1, 2], [0, 2], [0, 1]];
 let SLOT;
 function orbProj(o, ang, m, t) {
@@ -346,7 +351,7 @@ function orbProj(o, ang, m, t) {
 }
 function satAng(i, t) { const S = SATS[i], m = E.o5(P(t, 3.75 + i * 0.02, 4.35 + i * 0.02)); return [S.ph + S.sp * (t - 3.75) - (1 - m) * 1.6 * Math.sign(S.sp), m]; }
 function slotInit() {
-  const sa = SATS.map((S, i) => { const [a, m] = satAng(i, 5.2); const [x, y] = orbProj(S.o, a, m, 5.2); return Math.atan2(y - 540, x - 960); });
+  const sa = SATS.slice(0, 8).map((S, i) => { const [a, m] = satAng(i, 5.2); const [x, y] = orbProj(S.o, a, m, 5.2); return Math.atan2(y - 540, x - 960); });
   const so = OUTER.map(([c, r]) => Math.atan2((r - 1) * 320, (c - 1) * 548));
   const order = [...sa.keys()].sort((a, b) => sa[a] - sa[b]), sorder = [...so.keys()].sort((a, b) => so[a] - so[b]);
   let best = null, bc = Infinity;
@@ -375,7 +380,7 @@ function orbit(t) {
     X.setLineDash([2, 11]); X.lineWidth = 2.2; X.strokeStyle = rgba(C.white, 0.22 * pa); X.stroke(); X.setLineDash([]);
   }
   const items = [];
-  for (let i = 0; i < 8; i++) {
+  for (let i = 0; i < 9; i++) {
     const [a, m] = satAng(i, t), [x, y, z, s] = orbProj(SATS[i].o, a, m, t), g = E.io4(P(t, 5.2 + i * 0.012, 5.52 + i * 0.012));
     const [sx, sy] = slotXY(i);
     items.push({ i, x: lerp(x, sx, g), y: lerp(y, sy, g), z: lerp(z, 0, g), r: lerp(10 * s, 10, g), a, m, g, s, zr: z / ORB[SATS[i].o][0] });
@@ -411,7 +416,7 @@ function orbit(t) {
     const ap = E.o3(P(t, 4.05 + it.i * 0.035, 4.35 + it.i * 0.035));
     if (ap <= 0) continue;
     X.save(); X.globalAlpha = ap * la * lerp(0.38, 1, (it.zr + 1) / 2);
-    tx(X, AG[it.i].n, it.x + it.r + 14, it.y - it.r - 6, 27, 600, 'u', C.ink);
+    tx(X, ALLN[it.i], it.x + it.r + 14, it.y - it.r - 6, 27, 600, 'u', C.ink);
     X.restore();
   }
   rise(X, 'Side by side.', 960, 1000, 84, 800, 'd', C.ink, t, 4.45, { al: 'center', st: 0.022, t1: 5.2, tr: -2 });
@@ -461,26 +466,13 @@ function tileContent(c, i, w, h, t, ti) {
   rr(c, w - 178, h - 34, 158, 4, 2); c.fillStyle = C.line2; c.fill();
   rr(c, w - 178, h - 34, 158 * pg, 4, 2); c.fillStyle = st.col; c.fill();
 }
-function hubContent(c, w, h, t) {
-  c.fillStyle = C.surf2; c.fillRect(0, 0, w, 46); c.fillStyle = C.line; c.fillRect(0, 46, w, 1);
-  dot(c, 22, 23, 6, C.amber); tx(c, 'Overseer', 38, 29, 17, 600, 'u', C.ink); tx(c, '8 lines · by status', w - 18, 29, 13, 400, 'm', C.ink3, 'right');
-  const q = E.io3(P(t, RIP, RIP + 0.35));
-  const rows = [['NEEDS INPUT', C.green, 1, 1], ['WORKING', C.blue, 4, 3], ['TESTING', C.purple, 2, 1], ['DONE', C.gray, 0, 3]];
-  rows.forEach(([lab, col, a, b], j) => {
-    const y = 88 + j * 50, v = lerp(a, b, q);
-    dot(c, 26, y - 5, 5, col); tx(c, lab, 42, y, 14, 600, 'u', C.ink2, 'left', 1.2);
-    tx(c, String(Math.round(v)), w - 24, y, 16, 500, 'm', C.ink, 'right');
-    rr(c, 42, y + 12, w - 100, 5, 2.5); c.fillStyle = C.line2; c.fill();
-    rr(c, 42, y + 12, (w - 100) * v / 8, 5, 2.5); c.fillStyle = col; c.fill();
-  });
-}
 function tileBox(c, i, w, h, t, ti, fillMix, dotCol, ca) {
   const R = Math.min(14, w / 2, h / 2);
   rr(c, 0, 0, w, h, R); c.fillStyle = mixc(dotCol, C.surf, fillMix); c.fill();
   if (fillMix > 0.3) { c.lineWidth = 1.5; c.strokeStyle = rgba('#ffffff', 0.15 * fillMix); c.stroke(); }
   if (ca <= 0) return;
   c.save(); rr(c, 0, 0, w, h, R); c.clip(); c.globalAlpha *= ca;
-  i === 8 ? hubContent(c, TW, TH, t) : tileContent(c, i, TW, TH, t, ti);
+  tileContent(c, i, TW, TH, t, ti);
   c.restore();
 }
 function tileT(i) { return 5.625 + sdist(i) * 0.07; }
@@ -491,7 +483,7 @@ function grid(t) {
   if (cam.k > 0) { X.save(); const fg = X.createRadialGradient(cam.cx, cam.cy, 300, cam.cx, cam.cy, 1100); fg.addColorStop(0, rgba(C.bg, 0)); fg.addColorStop(1, rgba(C.bg, 0.92 * cam.k)); X.fillStyle = fg; X.fillRect(0, 0, W, H); X.restore(); }
   const T = [];
   for (let i = 0; i < 9; i++) {
-    const ti = tileT(i), u = E.o5(P(t, ti, ti + 0.4)), v = E.o5(P(t, ti + 0.05, ti + 0.45)), d0 = i === 8 ? 48 : 20;
+    const ti = tileT(i), u = E.o5(P(t, ti, ti + 0.4)), v = E.o5(P(t, ti + 0.05, ti + 0.45)), d0 = 20;
     const w = lerp(d0, TW, u), h = lerp(d0, TH, v);
     const [sx, sy] = slotXY(i), wx = sx - 960, wy = sy - 540;
     const z = cam.k * ((i === 8 ? 150 : 40 + 100 * hs(i + 20)) + 14 * Math.sin(t * 3.1 + i * 1.7));
@@ -508,7 +500,7 @@ function grid(t) {
     for (const p of T) {
       X.save(); plane(X, cam, p.wx - p.w / 2, p.wy - p.h / 2, 0); const m = X.getTransform(); X.restore();
       ug.setTransform(m.a / 8, m.b / 8, m.c / 8, m.d / 8, m.e / 8, m.f / 8);
-      rr(ug, -30, -30, p.w + 60, p.h + 60, 40); ug.fillStyle = p.i === 8 ? C.amber : stOf(p.i, t).raw; ug.fill();
+      rr(ug, -30, -30, p.w + 60, p.h + 60, 40); ug.fillStyle = stOf(p.i, t).raw; ug.fill();
     }
     b2.setTransform(1, 0, 0, 1, 0, 0); b2.clearRect(0, 0, W / 8, H / 8); b2.filter = 'blur(4px)'; b2.drawImage(UGC, 0, 0); b2.filter = 'none';
     X.save(); X.setTransform(1, 0, 0, 1, 0, 0); X.globalCompositeOperation = 'screen'; X.globalAlpha = 0.5 * cam.k; X.drawImage(B2, 0, 0, W, H); X.restore();
@@ -519,7 +511,7 @@ function grid(t) {
     if (th > 0.5) for (let s = 8; s >= 1; s--) { X.save(); plane(X, cam, p.wx - p.w / 2, p.wy - p.h / 2, p.z - th * s / 8); rr(X, 0, 0, p.w, p.h, 14); X.fillStyle = s === 8 ? '#08080a' : '#111115'; X.fill(); X.restore(); }
     X.save(); plane(X, cam, p.wx - p.w / 2, p.wy - p.h / 2, p.z);
     const fm = P(t, p.ti, p.ti + 0.2), ca = P(t, p.ti + 0.22, p.ti + 0.42);
-    tileBox(X, p.i, p.w, p.h, t, p.ti, fm, p.i === 8 ? C.amber : C.white, ca);
+    tileBox(X, p.i, p.w, p.h, t, p.ti, fm, C.white, ca);
     if (cam.k > 0.05) {
       const L = sweep - (p.wx - p.w / 2 + p.wy - p.h / 2);
       const g = X.createLinearGradient(L / 2 - 110, L / 2 - 110, L / 2 + 110, L / 2 + 110);
@@ -532,22 +524,25 @@ function grid(t) {
   rise(X, 'Every session, live.', 110, 178, 72, 800, 'd', C.ink, t, 6.33, { st: 0.018, t1: 7.02, tr: -2 });
 }
 
-const COLS = [['PENDING', C.gray], ['IN PROGRESS', C.blue], ['IN TESTING', C.purple], ['DONE', C.green]];
+const COLS = [['PENDING', C.gray], ['IN PROGRESS', C.blue], ['REVIEW', C.purple], ['MERGED', C.green]];
 const COLX = c => 112 + c * 430;
 const CRECT = (c, r) => ({ x: COLX(c) + 14, y: 262 + r * 142, w: 378, h: 128 });
 const CARDS = [
-  { id: '#110', key: 'PROJ-10812', title: 'PTY resize debounce', model: 'Claude Code' },
-  { id: '#108', key: 'PROJ-10802', title: 'Orders service split', model: 'gpt-5-codex' },
+  { id: '#110', key: 'PROJ-10812', title: 'PTY resize debounce', model: 'Claude Code', cost: '≈$1.74' },
+  { id: '#108', key: 'PROJ-10802', title: 'Orders service split', model: 'gpt-5-codex', cost: '≈$0.53', quorum: true },
   { id: '#97', key: 'PROJ-10790', title: 'Scheduler lab report', model: 'gemini-2.5-pro' },
   { id: '#116', key: 'PROJ-10851', title: 'Stock sync retries', model: 'Antigravity' },
   { id: '#101', key: 'PROJ-10821', title: 'Rate-limit the search API', model: 'opencode' },
   { id: '#119', key: 'PROJ-10860', title: 'Arm runners for CI', model: 'Amp' },
   { id: '#102', key: 'PROJ-10823', title: 'Dark mode for the admin', model: 'Copilot CLI' },
-  { id: '#111', key: 'PROJ-10819', title: 'VAT rounding', model: 'Cursor Agent' },
+  { id: '#111', key: 'PROJ-10819', title: 'VAT rounding', model: 'Cursor Agent', cost: '≈$2.13' },
+  { id: '#124', key: 'PROJ-10866', title: 'French translation', model: 'Mistral Vibe' },
 ];
-const CARD0 = { 4: [0, 0], 6: [0, 1], 1: [1, 0], 0: [1, 1], 5: [1, 2], 7: [2, 0], 3: [2, 1], 2: [3, 0] };
+const CARD0 = { 8: [0, 2], 4: [0, 0], 6: [0, 1], 1: [1, 0], 0: [1, 1], 5: [1, 2], 7: [2, 0], 3: [2, 1], 2: [3, 0] };
 const MOVES = { 0: [[17 * BEAT, 8.25, 2, 2, 1], [8.27, 8.45, 2, 1, 0]], 5: [[8.03, 8.25, 1, 1, 0]], 7: [[17.5 * BEAT, 8.45, 3, 1, 1]], 3: [[8.26, 8.45, 2, 0, 0]] };
 function cardStatus(i, t) {
+  if (i === 8) return ['Queued', C.gray];
+  if (i === 1) return t >= QM + 1.875 ? ['Merged', C.gray] : ['Implementing', C.blue];
   if (i === 0) return t < 8.25 ? ['Implementing', C.blue] : ['Ready for review', C.purple];
   if (i === 7) return t < 8.45 ? ['Ready for review', C.purple] : ['Merged', C.gray];
   return [['Merged', C.gray], ['Implementing', C.blue], ['Merged', C.gray], ['Ready for review', C.purple], ['Do first', C.red], ['Implementing', C.blue], ['Queued', C.gray]][i === 1 ? 1 : i === 2 ? 2 : i === 3 ? 3 : i === 4 ? 4 : i === 5 ? 5 : 6];
@@ -574,6 +569,8 @@ function cardBody(c, r, i, t, ca, lift) {
   const d = CARDS[i], st = cardStatus(i, t);
   c.save(); rr(c, r.x, r.y, r.w, r.h, 12); c.clip(); c.globalAlpha *= ca;
   tx(c, `${d.id}  ${d.key}`, r.x + 18, r.y + 32, 14, 400, 'm', C.ink3);
+  if (d.quorum) { sf(c, 13, 500, 'u'); const qw = c.measureText('Quorum').width + 20; rr(c, r.x + 176, r.y + 15, qw, 24, 6); c.lineWidth = 1.2; c.strokeStyle = C.ink3; c.stroke(); tx(c, 'Quorum', r.x + 186, r.y + 32, 13, 500, 'u', C.ink2); }
+  if (d.cost) tx(c, d.cost, r.x + r.w - 18, r.y + 32, 13, 400, 'm', C.amber, 'right');
   tx(c, d.title, r.x + 18, r.y + 64, 21, 600, 'u', C.ink);
   dot(c, r.x + 23, r.y + 91, 4.5, st[1]); tx(c, st[0], r.x + 36, r.y + 97, 16, 500, 'u', st[1]);
   tx(c, d.model, r.x + r.w - 18, r.y + 97, 13, 400, 'm', C.ink2, 'right');
@@ -607,8 +604,8 @@ function code(c, s, x, y, adv) {
   }
 }
 const APB = { x: 1358, y: 796, w: 210, h: 58 };
-function reviewContent(c, t) {
-  const ap = P(t, 8.95, 9.05);
+function reviewContent(c, t, o = {}) {
+  const ap = o.nofoot ? 0 : P(t, 8.95, 9.05);
   c.fillStyle = C.surf2; c.fillRect(0, 0, 1600, 68); c.fillStyle = C.line; c.fillRect(0, 68, 1600, 1);
   dot(c, 34, 34, 7, mixc(C.purple, C.green, ap));
   tx(c, 'PTY resize debounce', 54, 43, 26, 600, 'u', C.ink);
@@ -648,9 +645,11 @@ function reviewContent(c, t) {
       y += 106;
     }
   });
+  if (o.nofoot) return;
   c.fillStyle = C.line; c.fillRect(0, 776, 1600, 1);
   rr(c, APB.x - 256, APB.y, 240, APB.h, 12); c.lineWidth = 1.5; c.strokeStyle = C.line2; c.stroke();
   tx(c, 'Request changes', APB.x - 136, APB.y + 37, 19, 600, 'u', C.ink2, 'center');
+  rr(c, APB.x - 436, APB.y, 160, APB.h, 12); c.stroke(); tx(c, 'Comment', APB.x - 356, APB.y + 37, 19, 600, 'u', C.ink3, 'center');
   const cx = APB.x + APB.w / 2, cy = APB.y + APB.h / 2;
   const press = t >= 19 * BEAT ? 1 - 0.07 * Math.sin(Math.PI * P(t, 19 * BEAT, 19 * BEAT + 0.12)) : 1;
   const m = E.io4(P(t, 8.93, 9.1)), bw = lerp(APB.w, APB.h, m);
@@ -694,16 +693,20 @@ function drawReview(c, R, t, ca, cardMix = 0) {
   reviewContent(c, t);
   c.restore();
 }
-function tasks(t) {
-  if (t < 7.5 || t >= 9.375) return;
-  const zm = E.io4(P(t, 8.4, 8.7));
-  X.save(); X.translate(960, 560); X.scale(1 - 0.04 * zm, 1 - 0.04 * zm); X.translate(-960, -560); X.globalAlpha = 1 - 0.8 * zm;
+function chip(c, s, x, y, size, col, al = 'left') {
+  sf(c, size, 500, 'u'); const w = c.measureText(s).width + size * 0.9, x0 = al === 'right' ? x - w : x;
+  rr(c, x0, y - size * 1.05, w, size * 1.6, size * 0.3); c.fillStyle = rgba(col, 0.1); c.fill(); c.lineWidth = 1.5; c.strokeStyle = rgba(col, 0.45); c.stroke();
+  tx(c, s, x0 + size * 0.45, y, size, 500, 'u', col); return w;
+}
+function tasks(T) {
+  if (T < bt(12) || T >= bt(17)) return;
+  const t = T + 1.875;
+  const dim = E.io3(P(T, bt(14), bt(14) + 0.2)) * (1 - E.io3(P(T, bt(16.6), bt(17))));
+  X.save(); X.translate(960, 560); const zs = 1 - 0.03 * dim; X.scale(zs, zs); X.translate(-960, -560); X.globalAlpha = 1 - 0.8 * dim;
   rise(X, 'Tasks', 112, 150, 44, 700, 'd', C.ink, t, 7.56, { st: 0.02 });
   const ba = E.o3(P(t, 7.62, 7.85));
-  if (ba > 0) {
-    X.save(); X.globalAlpha *= ba; rr(X, 1648, 108, 160, 48, 10); X.fillStyle = C.blue; X.fill();
-    tx(X, '+  Add Task', 1728, 139, 18, 600, 'u', '#ffffff', 'center'); X.restore();
-  }
+  if (ba > 0) { X.save(); X.globalAlpha *= ba; rr(X, 1648, 108, 160, 48, 10); X.fillStyle = C.blue; X.fill(); tx(X, '+  Add Task', 1728, 139, 18, 600, 'u', '#ffffff', 'center'); X.restore(); }
+  const mg = T >= bt(16.75);
   for (let c = 0; c < 4; c++) {
     const e = E.o5(P(t, 7.52 + c * 0.04, 7.92 + c * 0.04));
     if (e <= 0) continue;
@@ -712,37 +715,246 @@ function tasks(t) {
     X.save(); X.globalAlpha *= ha;
     rr(X, COLX(c) + 18, 214, 4, 22, 2); X.fillStyle = COLS[c][1]; X.fill();
     tx(X, COLS[c][0], COLX(c) + 32, 232, 15, 700, 'u', C.ink2, 'left', 1.5);
-    const cnt = [2, t < 8.03 ? 3 : 2, t < 8.25 ? 2 : t < 8.3 ? 3 : 2, t < 8.45 ? 1 : 2][c];
+    const cnt = [3, (t < 8.03 ? 3 : 2) - (mg ? 1 : 0), t < 8.25 ? 2 : t < 8.3 ? 3 : 2, (t < 8.45 ? 1 : 2) + (mg ? 1 : 0)][c];
     tx(X, String(cnt), COLX(c) + 388, 232, 15, 400, 'm', C.ink3, 'right');
     X.restore();
   }
-  const ha = 1 - P(t, 7.5, 7.64);
-  if (ha > 0) {
-    const r = tileRect(8), s = lerp(1, 0.86, 1 - ha);
-    X.save(); X.globalAlpha *= ha; X.translate(960, 540); X.scale(s, s); X.translate(-TW / 2, -TH / 2);
-    tileBox(X, 8, TW, TH, t, tileT(8), 1, C.amber, 1); X.restore();
-  }
-  const order = [...Array(8).keys()].map(i => ({ i, ...cardState(i, t) })).sort((a, b) => a.lift - b.lift);
+  const order = [...Array(9).keys()].map(i => ({ i, ...cardState(i, t) })).sort((a, b) => a.lift - b.lift);
   for (const cs of order) {
-    if (cs.i === 0 && zm > 0) continue;
+    if (cs.i === 1 && T >= bt(14)) continue;
     const a = 7.5 + cs.i * 0.03, ta = 1 - P(t, 7.5, 7.7), ca = P(t, a + 0.16, a + 0.32);
     X.save();
     const cx = cs.r.x + cs.r.w / 2, cy = cs.r.y + cs.r.h / 2, ls = 1 + 0.05 * cs.lift;
     X.translate(cx, cy); X.rotate(cs.rot); X.scale(ls, ls); X.translate(-cx, -cy);
     cardBody(X, cs.r, cs.i, t, ca, cs.lift);
-    if (ta > 0) {
-      X.save(); rr(X, cs.r.x, cs.r.y, cs.r.w, cs.r.h, 12); X.clip(); X.globalAlpha *= ta; X.translate(cs.r.x, cs.r.y);
-      tileContent(X, cs.i, TW, TH, t, tileT(cs.i)); X.restore();
-    }
+    if (ta > 0) { X.save(); rr(X, cs.r.x, cs.r.y, cs.r.w, cs.r.h, 12); X.clip(); X.globalAlpha *= ta; X.translate(cs.r.x, cs.r.y); tileContent(X, cs.i, TW, TH, t, tileT(cs.i)); X.restore(); }
     X.restore();
   }
   X.restore();
-  if (zm > 0) {
-    const R = lerpR(cardState(0, t).r, REV, zm);
-    drawReview(X, R, t, P(t, 8.5, 8.6), 1 - zm);
-    const ca = 1 - P(t, 8.4, 8.47);
-    if (ca > 0) { X.save(); X.globalAlpha = ca; rr(X, R.x, R.y, R.w, R.h, 12); X.clip(); cardBody(X, { x: R.x, y: R.y, w: 378, h: 128 }, 0, t, 1, 0); X.restore(); }
-  }
+}
+
+const QP = { x: 300, y: 130, w: 1320, h: 790 };
+const QV = [
+  { who: 'Codex', role: 'Orchestrator', col: SCOL[1], g: '</>', ok: true, t: bt(14.75) },
+  { who: 'Claude Code', role: 'Reviewer', col: SCOL[0], g: '✳', ok: true, t: bt(15.5) },
+  { who: 'Gemini CLI', role: 'Reviewer', col: SCOL[2], g: '✦', ok: false, t: bt(16.15), why: 'No test covers an empty order' },
+];
+const QRES = bt(16.4), QM = bt(16.75);
+function avatar(c, x, y, r, col, g) {
+  dot(c, x, y, r, rgba(col, 0.16)); c.beginPath(); c.arc(x, y, r, 0, TAU); c.lineWidth = 2; c.strokeStyle = rgba(col, 0.6); c.stroke();
+  tx(c, g, x, y + r * 0.2, r * 0.7, 600, g.length > 1 ? 'm' : 'u', col, 'center');
+}
+function qContent(c, T) {
+  const nv = QV.filter(v => T >= v.t).length, ap = QV.filter(v => T >= v.t && v.ok).length, done = T >= QRES;
+  tx(c, '#108  PROJ-10802', 44, 62, 22, 400, 'm', C.ink3);
+  chip(c, t_('quorum.badge'), 300, 62, 19, C.ink2);
+  tx(c, 'Orders service split', 44, 130, 50, 700, 'd', C.ink, 'left', -1);
+  const lab = done ? `${ap}/3 accepted · Round 1` : nv ? `${ap}/3 voting` : 'Waiting for the reviewers', col = done ? C.green : nv ? C.amber : C.blue;
+  chip(c, lab, 1276, 70, 26, col, 'right');
+  c.fillStyle = C.line; c.fillRect(0, 168, QP.w, 1);
+  tx(c, 'WORKER', 44, 226, 15, 600, 'm', C.ink3, 'left', 3);
+  avatar(c, 84, 296, 30, SCOL[8], '▦'); tx(c, 'Mistral Vibe', 134, 292, 32, 600, 'u', C.ink); tx(c, 'vibe 3.1.2', 134, 322, 18, 400, 'm', C.ink3);
+  tx(c, 'Split into the API endpoint,', 44, 392, 24, 400, 'u', C.ink2); tx(c, 'the UI button and the tests.', 44, 424, 24, 400, 'u', C.ink2);
+  tx(c, 'RESULT', 44, 504, 15, 600, 'm', C.ink3, 'left', 3);
+  [['+48', '−12', 'src/orders/mod.rs'], ['+21', '−4', 'src/invoicing.rs']].forEach(([a, d, f], i) => { tx(c, a, 44, 548 + i * 40, 22, 500, 'm', C.add); tx(c, d, 112, 548 + i * 40, 22, 500, 'm', C.del); tx(c, f, 178, 548 + i * 40, 22, 400, 'm', C.ink); });
+  dot(c, 52, 640, 6, C.green); tx(c, 'cargo test   48/48 passed', 70, 647, 22, 400, 'm', C.green);
+  tx(c, t_('quorum.votes') + ' · ' + t_('quorum.round', 1), 600, 226, 32, 700, 'd', C.ink, 'left', -0.5);
+  tx(c, '2 of 3 votes needed', 1276, 224, 18, 400, 'm', C.ink3, 'right');
+  QV.forEach((v, i) => {
+    const top = 256 + i * 150, p = E.o4(P(T, v.t, v.t + 0.22)), has = T >= v.t, dx = (1 - p) * 70;
+    c.save(); c.translate(has ? dx : 0, 0);
+    rr(c, 600, top, 676, 128, 16); c.fillStyle = C.surf; c.fill(); c.lineWidth = 1.5; c.strokeStyle = has ? rgba(v.ok ? C.green : C.red, 0.5 * p) : C.line; c.stroke();
+    c.globalAlpha *= has ? p : 0.5 + 0.25 * Math.sin(T * 6 + i);
+    avatar(c, 664, top + 58, 32, v.col, v.g);
+    tx(c, v.who, 718, top + 54, 32, 600, 'u', C.ink); tx(c, t_(v.role === 'Reviewer' ? 'quorum.reviewer' : 'quorum.orchestrator'), 718, top + 86, 20, 400, 'u', C.ink3);
+    if (has) { chip(c, t_(v.ok ? 'quorum.approve' : 'quorum.reject'), 1236, top + 62, 26, v.ok ? C.green : C.red, 'right'); if (!v.ok) tx(c, v.why, 718, top + 116, 21, 400, 'u', rgba(C.del, 0.95)); }
+    else { sf(c, 20, 400, 'm'); tx(c, 'waiting…', 1236, top + 62, 20, 400, 'm', C.ink3, 'right'); }
+    c.restore();
+    if (has) { const ring = P(T, v.t, v.t + 0.45); if (ring < 1) { c.beginPath(); c.arc(664, top + 58, 32 + 60 * E.o3(ring), 0, TAU); c.lineWidth = 3; c.strokeStyle = rgba(v.ok ? C.green : C.red, 0.8 * (1 - ring)); c.stroke(); } }
+  });
+  QV.forEach((v, i) => { rr(c, 600 + i * 232, 728, 212, 10, 5); c.fillStyle = C.line2; c.fill(); if (T >= v.t) { rr(c, 600 + i * 232, 728, 212 * E.o3(P(T, v.t, v.t + 0.25)), 10, 5); c.fillStyle = v.ok ? C.green : C.red; c.fill(); } });
+}
+const t_ = (k, n) => ({ 'quorum.badge': 'Quorum', 'quorum.votes': 'Votes', 'quorum.round': `Round ${n}`, 'quorum.reviewer': 'Reviewer', 'quorum.orchestrator': 'Orchestrator', 'quorum.approve': 'Approved', 'quorum.reject': 'Rejected' })[k];
+function quorum(T) {
+  if (T < bt(14) || T >= bt(17)) return;
+  const tt = T + 1.875, e = E.io4(P(T, bt(14), bt(14.55))), sh = E.io4(P(T, QM - 0.25, QM + 0.3));
+  const R = lerpR(lerpR(CRECT(1, 0), QP, e), CRECT(3, 1), sh);
+  const ca = P(T, bt(14.3), bt(14.6)) * (1 - P(T, QM - 0.3, QM - 0.05)), done = T >= QRES;
+  const gl = done ? E.o3(P(T, QRES, QRES + 0.2)) * (1 - P(T, QM - 0.2, QM)) : 0;
+  X.save();
+  if (e > 0.3) { X.shadowColor = 'rgba(0,0,0,0.6)'; X.shadowBlur = 60 * e * (1 - sh); X.shadowOffsetY = 24 * e * (1 - sh); }
+  rr(X, R.x, R.y, R.w, R.h, lerp(12, 24, e)); X.fillStyle = C.surf2; X.fill();
+  X.shadowColor = 'transparent'; X.shadowBlur = 0; X.shadowOffsetY = 0;
+  X.lineWidth = 1.5; X.strokeStyle = mixc('#2f2f34', C.green, gl); X.stroke();
+  if (gl > 0) emit(c => { rr(c, R.x, R.y, R.w, R.h, 24); c.lineWidth = 10; c.strokeStyle = rgba(C.green, 0.5 * gl); c.stroke(); });
+  if (ca > 0) { X.save(); rr(X, R.x, R.y, R.w, R.h, 24); X.clip(); X.translate(R.x, R.y); X.scale(R.w / QP.w, R.h / QP.h); X.globalAlpha *= ca; qContent(X, T); X.restore(); }
+  const ba = 1 - P(T, bt(14.1), bt(14.4)), ma = P(T, QM - 0.1, QM + 0.1);
+  if (ba > 0) cardBody(X, R, 1, tt, ba, 0);
+  if (ma > 0) cardBody(X, R, 1, tt, ma, 0);
+  X.restore();
+  rise(X, 'The agents vote.', 960, 88, 52, 800, 'd', C.ink, T, bt(14.35), { al: 'center', st: 0.016, t1: QM - 0.25, tr: -1.5, ost: 0.006, odur: 0.16 });
+}
+const PRI = [['term.rs', 100, '#fbe167'], ['terminal.ts', 82, '#f28a26'], ['resize.rs', 63, '#d85a3e'], ['text.rs', 47, '#9b2f5f'], ['pty_legacy.rs', 40, '#9b2f5f'], ['resize.rs', 35, '#9b2f5f'], ['Terminal.kt', 20, '#3a2260']];
+const MAPB = [[0, 684, 471, 76, 117], [1, 918, 448, 76, 98], [2, 462, 581, 126, 90], [3, 591, 679, 81, 77], [4, 674, 590, 86, 68], [5, 766, 568, 160, 89], [-1, 467, 485, 120, 92, '#3a2260', 'strings.rs']];
+const MAPD = [[319, 313, 302, 155, 'review/'], [771, 341, 144, 205, 'components/'], [929, 554, 167, 123, 'docs/'], [590, 313, 170, 155, ''], [463, 469, 118, 10, 'util'], [591, 590, 80, 86, ''], [918, 341, 76, 100, ''], [766, 660, 160, 90, '']];
+const mx = x => 40 + (x - 310) * 1.2, my = y => 215 + (y - 265) * 1.2;
+const SELT = [[bt(18.4), 1], [bt(18.65), 2], [bt(18.85), 1]];
+const selAt = T => { let s = 0; for (const [a, v] of SELT) if (T >= a) s = v; return s; };
+const MA0 = bt(17.95);
+function key(c, s, x, y, on) { rr(c, x, y, 46, 46, 10); c.fillStyle = on ? rgba(C.white, 0.22) : C.surf2; c.fill(); c.lineWidth = 1.5; c.strokeStyle = on ? C.white : C.line2; c.stroke(); tx(c, s, x + 23, y + 31, 24, 600, 'm', C.ink, 'center'); }
+function mapContent(c, T) {
+  c.fillStyle = C.surf; c.fillRect(0, 69, 1600, 811);
+  tx(c, 'Comparing', 40, 112, 19, 400, 'u', C.ink3); tx(c, 'feat/term-resize', 150, 112, 20, 600, 'm', C.ink); tx(c, '←  main', 380, 112, 19, 400, 'm', C.ink2);
+  const tg = P(T, bt(17.9), bt(17.98));
+  rr(c, 1300, 86, 120, 44, 10); c.lineWidth = 1.5; c.strokeStyle = C.line2; c.stroke(); tx(c, 'List', 1360, 116, 19, 500, 'u', C.ink2, 'center');
+  rr(c, 1424, 86, 136, 44, 10); c.fillStyle = mixc(C.surf, C.surf2, tg); c.fill(); c.strokeStyle = mixc('#2f2f34', C.white, tg * 0.5); c.stroke(); tx(c, 'Map', 1492, 116, 19, 600, 'u', C.ink, 'center');
+  tx(c, '8 files', 40, 168, 18, 500, 'm', C.ink2); tx(c, '+75', 140, 168, 18, 500, 'm', C.add); tx(c, '−32', 200, 168, 18, 500, 'm', C.del); dot(c, 1310, 163, 5, C.green); tx(c, 'Live', 1326, 169, 18, 500, 'u', C.ink2);
+  ['Priority', 'Real logic', 'Blast radius', 'Contract change', 'Agent struggle', 'Untested', 'Not yet seen'].forEach((s, i, a) => {
+    sf(c, 18, 500, 'u'); const w = c.measureText(s).width + 32; const x = 40 + a.slice(0, i).reduce((q, z) => q + (c.measureText(z).width + 32 + 10), 0);
+    rr(c, x, 190, w, 38, 19); c.fillStyle = i ? 'transparent' : rgba(C.blue, 0.14); c.fill(); c.lineWidth = 1.5; c.strokeStyle = i ? C.line2 : C.blue; c.stroke(); tx(c, s, x + 16, 215, 18, 500, 'u', i ? C.ink2 : C.ink);
+  });
+  rr(c, 40, 246, 944, 590, 12); c.fillStyle = '#121214'; c.fill(); c.lineWidth = 1.5; c.strokeStyle = C.line2; c.stroke();
+  tx(c, 'feat-term-resize', 56, 280, 20, 600, 'u', C.ink); tx(c, 'feat/term-resize · 7 changed', 244, 280, 15, 400, 'm', C.ink3);
+  const oy = 35;
+  for (const [x, y, w, h, n] of MAPD) { rr(c, mx(x), my(y) + oy, w * 1.2, h * 1.2, 4); c.fillStyle = '#1a1a1d'; c.fill(); c.lineWidth = 1; c.strokeStyle = C.line; c.stroke(); if (n) tx(c, n, mx(x) + 6, my(y) + oy + 16, 13, 400, 'm', C.ink3); }
+  const sel = selAt(T), ord = [6, 4, 5, 3, 2, 1, 0];
+  MAPB.forEach(([idx, x, y, w, h, col0, nm]) => {
+    const col = idx >= 0 ? PRI[idx][2] : col0, name = idx >= 0 ? PRI[idx][0] : nm, rank = idx >= 0 ? ord.indexOf(idx) : 0;
+    const a = MA0 + rank * 0.045, p = E.o5(P(T, a, a + 0.3)); if (p <= 0) return;
+    const bw = w * 1.2, bh = h * 1.2, bx = mx(x) + bw / 2, by = my(y) + oy + bh / 2;
+    c.save(); c.translate(bx, by); c.scale(p, p); rr(c, -bw / 2, -bh / 2, bw, bh, 4); c.fillStyle = col; c.fill();
+    if (idx === sel) { c.lineWidth = 4; c.strokeStyle = C.white; c.stroke(); }
+    tx(c, name.length * 8 > bw ? name.slice(0, -3) : name, -bw / 2 + 6, -bh / 2 + 17, 13, 500, 'm', idx === 0 || idx === 1 ? '#1a1206' : '#f4e9ee'); c.restore();
+    if (idx === 0) { const bl = P(T, a + 0.2, a + 0.7); if (bl > 0 && bl < 1) emit(g => { g.beginPath(); g.arc(bx, by, 40 + 220 * E.o3(bl), 0, TAU); g.fillStyle = rgba('#fbe167', 0.35 * (1 - bl)); g.fill(); }); }
+  });
+  tx(c, 'REVIEW ORDER BY PRIORITY', 1020, 280, 15, 600, 'm', C.ink3, 'left', 2.5);
+  PRI.forEach(([n, v, col], i) => {
+    const y = 300 + i * 62, p = E.o4(P(T, MA0 + 0.15 + i * 0.03, MA0 + 0.4 + i * 0.03)); if (p <= 0) return;
+    c.save(); c.globalAlpha *= p; c.translate((1 - p) * 40, 0);
+    if (i === sel) { rr(c, 1010, y, 560, 54, 10); c.fillStyle = rgba(C.blue, 0.2); c.fill(); }
+    tx(c, String(i + 1), 1030, y + 35, 18, 400, 'm', C.ink3); tx(c, n, 1066, y + 35, 24, 600, 'm', C.ink);
+    rr(c, 1330, y + 22, 150, 9, 4.5); c.fillStyle = C.line2; c.fill(); rr(c, 1330, y + 22, 1.5 * v, 9, 4.5); c.fillStyle = col; c.fill();
+    tx(c, String(v), 1556, y + 35, 22, 500, 'm', C.ink, 'right'); c.restore();
+  });
+  const kj = SELT.some(([a]) => T >= a && T < a + 0.14) && selAt(T) !== 0, kd = SELT.findIndex(([a]) => T >= a && T < a + 0.14);
+  key(c, 'J', 1020, 760, kd === 0 || kd === 1); key(c, 'K', 1076, 760, kd === 2);
+  tx(c, 'Next hottest file', 1144, 790, 22, 500, 'u', C.ink2);
+}
+const RP = { x: 880, y: 100, w: 880, h: 780 }, LP = { x: 60, y: 100, w: 800, h: 780 }, GB = { x: 60, y: 900, w: 1700, h: 76 };
+function liveContent(c, T) {
+  c.fillStyle = C.surf2; c.fillRect(0, 0, 880, 60); c.fillStyle = C.line; c.fillRect(0, 60, 880, 1);
+  tx(c, 'Review · #110 PTY resize debounce', 24, 39, 22, 600, 'u', C.ink); dot(c, 800, 32, 6, C.green); tx(c, 'Live', 816, 39, 18, 500, 'u', C.ink2);
+  tx(c, 'Comparing', 24, 98, 17, 400, 'u', C.ink3); tx(c, 'fix/pty-resize-debounce', 124, 98, 17, 600, 'm', C.ink); tx(c, '←  main', 400, 98, 17, 400, 'm', C.ink2);
+  c.fillStyle = C.bg2; c.fillRect(0, 124, 250, 656); c.fillStyle = C.line; c.fillRect(250, 124, 1, 656);
+  tx(c, 'FILES', 22, 160, 13, 600, 'm', C.ink3, 'left', 2); tx(c, 'src', 40, 198, 18, 400, 'u', C.ink2);
+  rr(c, 12, 214, 226, 38, 8); c.fillStyle = rgba(C.blue, 0.18); c.fill(); tx(c, 'M', 26, 240, 15, 700, 'm', C.amber); tx(c, 'term.rs', 52, 240, 18, 500, 'm', C.ink); tx(c, '100', 226, 240, 14, 600, 'm', '#fbe167', 'right');
+  tx(c, 'M', 26, 284, 15, 700, 'm', C.amber); tx(c, 'terminal.ts', 52, 284, 18, 500, 'm', C.ink2); tx(c, '82', 226, 284, 14, 600, 'm', '#f28a26', 'right');
+  DIFF.slice(0, 9).forEach(([k, a, b, s], i) => {
+    const y = 160 + i * 38, ts = P(T, bt(19.3) + i * 0.02, bt(19.3) + i * 0.02 + 0.2);
+    if (ts <= 0) return;
+    c.save(); c.globalAlpha *= ts;
+    if (k === '+' || k === '-') { c.fillStyle = k === '+' ? 'rgba(34,197,94,0.12)' : 'rgba(239,68,68,0.12)'; c.fillRect(262, y - 24, 618, 34); c.fillStyle = k === '+' ? C.add : C.del; c.fillRect(262, y - 24, 3, 34); }
+    if (k === 'h') { c.fillStyle = 'rgba(129,140,248,0.08)'; c.fillRect(262, y - 24, 618, 34); tx(c, s.slice(0, 40), 276, y, 15, 400, 'm', C.hunk); }
+    else { tx(c, a || b, 302, y, 15, 400, 'm', C.ink3, 'right'); sf(c, 17, 400, 'm'); if (k !== ' ') tx(c, k, 322, y, 17, 400, 'm', k === '+' ? C.add : C.del); c.textAlign = 'left'; code(c, s.slice(0, 38), 346, y, c.measureText('0').width); }
+    c.restore();
+  });
+  c.fillStyle = C.line; c.fillRect(0, 700, 880, 1);
+  const ap = P(T, bt(19.75), bt(19.75) + 0.12), pr = T >= bt(19.75) ? 1 - 0.07 * Math.sin(Math.PI * P(T, bt(19.75), bt(19.75) + 0.12)) : 1;
+  rr(c, 24, 722, 140, 46, 10); c.lineWidth = 1.5; c.strokeStyle = C.line2; c.stroke(); tx(c, 'Comment', 94, 752, 17, 600, 'u', C.ink3, 'center');
+  rr(c, 520, 722, 200, 46, 10); c.stroke(); tx(c, 'Request changes', 620, 752, 17, 600, 'u', C.ink2, 'center');
+  c.save(); c.translate(790, 745); c.scale(pr, pr); rr(c, -56, -23, 112, 46, 10); c.fillStyle = mixc('#1b1b1e', C.green, ap); c.fill(); c.lineWidth = 1.5; c.strokeStyle = mixc(C.line2, C.green, ap); c.stroke();
+  tx(c, ap > 0.5 ? '✓  Approved' : 'Approve', 0, 8, ap > 0.5 ? 15 : 17, 600, 'u', mixc(C.ink2, '#ffffff', ap), 'center'); c.restore();
+}
+function termPane(c, T) {
+  c.fillStyle = C.surf2; c.fillRect(0, 0, 800, 60); c.fillStyle = C.line; c.fillRect(0, 60, 800, 1);
+  dot(c, 26, 30, 6, C.orange); tx(c, 'PTY resize debounce', 44, 38, 21, 600, 'u', C.ink);
+  const gp = P(T, bt(19), bt(19) + 0.5), gc = mixc(C.ink3, C.amber, E.o3(P(T, bt(18.95), bt(19.1))));
+  c.beginPath(); c.arc(716, 24, 5, 0, TAU); c.arc(716, 40, 5, 0, TAU); c.arc(736, 30, 5, 0, TAU); c.lineWidth = 2.5; c.strokeStyle = gc; c.stroke();
+  if (gp > 0 && gp < 1) { c.beginPath(); c.arc(726, 32, 12 + 40 * E.o3(gp), 0, TAU); c.lineWidth = 3; c.strokeStyle = rgba(C.amber, 0.8 * (1 - gp)); c.stroke(); }
+  tx(c, 'Claude Code', 24, 116, 20, 700, 'm', C.ink); tx(c, '/home/alice/worktrees/webshop/fix-pty-resize', 168, 116, 17, 400, 'm', C.ink3);
+  AG[0].L.forEach((s, i) => { const y = 170 + i * 36; if (s[0] === '•') { tx(c, '•', 24, y, 20, 400, 'm', C.ink3); tx(c, s.slice(1), 48, y, 20, 400, 'm', C.ink); } else tx(c, s, 24, y, 20, 400, 'm', s[0] === '>' ? C.green : C.ink2); });
+  if ((T * 2.6) % 1 < 0.6) { c.fillStyle = rgba(C.ink, 0.85); c.fillRect(24 + 28 * 11.3, 170 + 4 * 36 - 16, 11, 22); }
+}
+function gitBar(c) {
+  rr(c, 0, 0, 1700, 76, 14); c.fillStyle = C.surf; c.fill(); c.lineWidth = 1.5; c.strokeStyle = C.line2; c.stroke();
+  tx(c, '⎇', 30, 48, 22, 500, 'u', C.ink2); tx(c, 'fix/pty-resize-debounce  ⌄', 62, 47, 21, 600, 'u', C.ink);
+  tx(c, '4 changed', 500, 47, 20, 500, 'u', C.ink2); tx(c, '·  1 staged  ⌃', 610, 47, 20, 400, 'u', C.ink3);
+  rr(c, 780, 14, 640, 48, 10); c.fillStyle = C.bg2; c.fill(); c.strokeStyle = C.line2; c.stroke(); tx(c, 'Commit message (Enter to commit)', 800, 46, 20, 400, 'u', C.ink3);
+  rr(c, 1440, 14, 230, 48, 10); c.fillStyle = '#243b66'; c.fill(); tx(c, '✓  Commit 1 staged', 1555, 46, 20, 600, 'u', '#a9c4f5', 'center');
+}
+function review(T) {
+  if (T < bt(16.75) || T >= bt(20)) return;
+  const en = E.o5(P(T, bt(16.75), bt(17.15))), ps = E.io4(P(T, bt(19), bt(19.5))), pm = E.io3(P(T, bt(17.85), bt(18.3)));
+  const R = lerpR(REV, RP, ps), sc = lerp(0.95, 1, en);
+  X.save(); X.globalAlpha = en; X.translate(960, 540); X.scale(sc, sc); X.translate(-960, -540);
+  if (ps > 0) { X.save(); X.globalAlpha = E.o3(P(ps, 0.2, 0.8)); X.translate(lerp(-900, 0, ps), 0); rr(X, LP.x, LP.y, LP.w, LP.h, 18); X.fillStyle = C.bg; X.fill(); X.lineWidth = 1.5; X.strokeStyle = C.line2; X.stroke(); X.save(); rr(X, LP.x, LP.y, LP.w, LP.h, 18); X.clip(); X.translate(LP.x, LP.y); termPane(X, T); X.restore(); X.restore(); const gy = E.o5(P(T, bt(19.2), bt(19.6))); X.save(); X.globalAlpha = gy; X.translate(GB.x, lerp(1080, GB.y, gy)); gitBar(X); X.restore(); }
+  rr(X, R.x, R.y, R.w, R.h, lerp(18, 18, ps)); X.fillStyle = C.surf; X.fill(); X.lineWidth = 1.5; X.strokeStyle = C.line2; X.stroke();
+  X.save(); rr(X, R.x, R.y, R.w, R.h, 18); X.clip();
+  if (ps < 0.7) { X.save(); X.translate(R.x, R.y); X.scale(R.w / 1600, R.h / 880); X.globalAlpha *= 1 - E.o2(P(ps, 0.3, 0.7)); reviewContent(X, T + 0.6, { nofoot: true }); if (pm > 0) { X.globalAlpha *= pm; mapContent(X, T); } X.restore(); }
+  if (ps > 0.3) { X.save(); X.translate(R.x, R.y); X.scale(R.w / 880, R.h / 780); X.globalAlpha *= E.o2(P(ps, 0.4, 0.8)); liveContent(X, T); X.restore(); }
+  X.restore();
+  X.restore();
+  rise(X, 'Review map.', 960, 90, 52, 800, 'd', C.ink, T, bt(17.9), { al: 'center', st: 0.018, t1: bt(18.95), tr: -1.5, ost: 0.006, odur: 0.16 });
+  rise(X, 'Live review.', 960, 90, 52, 800, 'd', C.ink, T, bt(19.1), { al: 'center', st: 0.018, t1: bt(19.9), tr: -1.5, ost: 0.004, odur: 0.1 });
+}
+
+function hostsWin(c, mode) {
+  const L = mode !== 'ssh', S = mode !== 'local', both = mode === 'both';
+  c.fillStyle = C.surf2; c.fillRect(0, 0, 1600, 68); c.fillStyle = C.line; c.fillRect(0, 68, 1600, 1);
+  ['Agents', 'Tasks', 'Browser'].forEach((s, i) => tx(c, s, 70 + i * 120, 43, 22, i ? 500 : 700, 'u', i ? C.ink3 : C.ink));
+  rr(c, both ? 1300 : 1340, 14, both ? 170 : 130, 40, 10); c.lineWidth = 1.5; c.strokeStyle = C.line2; c.stroke();
+  dot(c, both ? 1330 : 1366, 34, 6, C.green); tx(c, both ? '2 hosts' : (L ? 'Local' : 'devbox'), both ? 1352 : 1386, 41, 20, 600, 'u', C.ink);
+  rr(c, 1490, 14, 90, 40, 10); c.fillStyle = C.blue; c.fill(); tx(c, 'RUN', 1535, 41, 19, 700, 'u', '#fff', 'center');
+  c.fillStyle = C.bg2; c.fillRect(0, 69, 470, 811); c.fillStyle = C.line; c.fillRect(470, 69, 1, 811);
+  let y = 92;
+  const sec = (name, meta, srv, col, rows, blocks) => {
+    rr(c, 14, y, 442, 52, 12); c.fillStyle = C.surf; c.fill(); c.lineWidth = 1.5; c.strokeStyle = C.line2; c.stroke();
+    tx(c, '⌄', 28, y + 34, 20, 500, 'u', C.ink3); tx(c, srv ? '▤' : '▭', 56, y + 35, 22, 400, 'u', C.ink2); dot(c, 92, y + 26, 6, col);
+    tx(c, name, 108, y + 34, 22, 700, 'u', C.ink); tx(c, meta, 220, y + 33, 15, 400, 'm', C.ink3); tx(c, '12', 436, y + 34, 18, 500, 'm', C.ink2, 'right');
+    y += 66;
+    blocks.forEach(([wn, bd, items]) => {
+      const h = 66 + items.length * 56;
+      rr(c, 14, y, 442, h, 14); c.fillStyle = '#18181b'; c.fill(); c.strokeStyle = C.line2; c.stroke();
+      tx(c, wn, 32, y + 40, 21, 700, 'u', C.ink); bd.forEach(([n, bc], k) => { dot(c, 346 + k * 42, y + 32, 14, bc); tx(c, n, 346 + k * 42, y + 38, 15, 700, 'u', '#0b0b0c', 'center'); });
+      items.forEach(([n, dc, a], k) => { const yy = y + 62 + k * 56; rr(c, 28, yy, 414, 48, 10); c.fillStyle = '#0f0f11'; c.fill(); dot(c, 50, yy + 24, 6, dc); tx(c, n, 68, yy + 31, 20, 600, 'u', C.ink); tx(c, a, 424, yy + 31, 16, 400, 'm', C.ink3, 'right'); });
+      y += h + 12;
+    });
+    y += 8;
+  };
+  if (L) sec('Local', 'This computer', false, C.green, 0, [['webshop', [['2', C.orange], ['1', C.green]], [['PROJ-10844 docker images', C.orange, '1m'], ['PROJ-10851 stock sync', C.orange, '3m'], ['VAT rounding', C.blue, '1h']]]]);
+  if (S) sec('devbox', 'ssh', true, '#7f9ac4', 0, both ? [['compilers', [], [['Parser error recovery', C.blue, '2h']]], ['os-labs', [['1', C.green]], [['Scheduler lab report', C.green, 'now']]]] : [['webshop', [['2', C.orange], ['1', C.green]], [['PROJ-10844 docker images', C.orange, '1m'], ['VAT rounding', C.blue, '1h'], ['Parser error recovery', C.blue, '2h']]]]);
+  if (S) { rr(c, 486, 76, 360, 44, 10); c.fillStyle = '#0e0e10'; c.fill(); rr(c, 496, 84, 70, 28, 6); c.lineWidth = 1.5; c.strokeStyle = C.ink2; c.stroke(); tx(c, 'devbox', 531, 104, 16, 500, 'm', C.ink, 'center'); dot(c, 590, 98, 6, C.orange); tx(c, 'PROJ-10844 docker images', 606, 105, 19, 600, 'u', C.ink); }
+  else { dot(c, 510, 98, 6, C.orange); tx(c, 'PROJ-10844 docker images', 526, 105, 19, 600, 'u', C.ink); }
+  c.fillStyle = '#08080a'; c.fillRect(471, 130, 1129, 750);
+  tx(c, 'Claude Code', 500, 180, 22, 700, 'm', C.ink); tx(c, S && !L ? '/home/alice/worktrees/webshop/feat-docker-images' : '/home/alice/worktrees/webshop/feat-proj-10844', 650, 180, 18, 400, 'm', C.ink3);
+  AG[0].L.slice(0, 3).forEach((s, i) => { tx(c, '•', 500, 236 + i * 38, 22, 400, 'm', C.ink3); tx(c, s.slice(1), 526, 236 + i * 38, 22, 400, 'm', C.ink); });
+  tx(c, 'Asking: push the arm64 tag to the staging registry too?', 500, 400, 22, 400, 'm', C.ink2); tx(c, '>', 500, 460, 22, 400, 'm', C.green);
+}
+function drawWin(c, R, ca) {
+  rr(c, R.x, R.y, R.w, R.h, lerp(10, 18, clamp((R.w - 700) / 900))); c.fillStyle = C.surf; c.fill(); c.lineWidth = 1.5; c.strokeStyle = C.line2; c.stroke();
+  if (ca <= 0) return;
+  c.save(); rr(c, R.x, R.y, R.w, R.h, 12); c.clip(); c.translate(R.x, R.y); c.scale(R.w / 1600, R.h / 880); c.globalAlpha *= ca; hostsWin(c, 'both'); c.restore();
+}
+const HM = [{ x: 90, y: 300, w: 760, h: 418 }, { x: 1070, y: 300, w: 760, h: 418 }];
+function hosts(T) {
+  if (T < bt(19.8) || T >= bt(22)) return;
+  const p1 = E.o5(P(T, bt(20), bt(20.45))), mg = E.io4(P(T, bt(20.6), bt(21.3))), fo = 1 - E.i2(P(T, bt(19.8), bt(20)) * 0 + 0);
+  const ao = 1 - E.o3(P(T, bt(19.75), bt(20.05)));
+  X.save();
+  if (mg < 1) HM.forEach((m, k) => {
+    const r = lerpR(m, REV, mg), s = lerp(0.84, 1, p1), cxm = r.x + r.w / 2, cym = r.y + r.h / 2;
+    X.save(); X.globalAlpha = p1 * (1 - P(mg, 0.45, 0.85)); X.translate(cxm, cym); X.scale(s, s); X.translate(-cxm, -cym);
+    X.shadowColor = 'rgba(0,0,0,0.55)'; X.shadowBlur = 50; X.shadowOffsetY = 20; rr(X, r.x, r.y, r.w, r.h, 16); X.fillStyle = C.surf; X.fill(); X.shadowColor = 'transparent'; X.shadowBlur = 0; X.shadowOffsetY = 0; X.lineWidth = 1.5; X.strokeStyle = C.line2; X.stroke();
+    X.save(); rr(X, r.x, r.y, r.w, r.h, 16); X.clip(); X.translate(r.x, r.y); X.scale(r.w / 1600, r.h / 880); hostsWin(X, k ? 'ssh' : 'local'); X.restore(); X.restore();
+  });
+  const ua = P(mg, 0.35, 0.8);
+  if (ua > 0) { const r = lerpR(HM[0], REV, 1); X.save(); X.globalAlpha = ua; X.shadowColor = 'rgba(0,0,0,0.55)'; X.shadowBlur = 60; X.shadowOffsetY = 24; drawWin(X, lerpR({ x: 460, y: 220, w: 1000, h: 550 }, REV, E.o4(P(mg, 0.35, 1))), 1); X.restore(); }
+  X.restore();
+  const cap = 1 - P(mg, 0.1, 0.4);
+  if (cap > 0) { X.save(); X.globalAlpha = cap * p1; tx(X, 'THIS COMPUTER', 90, 270, 20, 500, 'm', C.ink2, 'left', 4); tx(X, 'DEVBOX  ·  SSH', 1830, 270, 20, 500, 'm', C.ink2, 'right', 4); X.restore(); }
+  rise(X, 'Two hosts.', 960, 150, 74, 800, 'd', C.ink, T, bt(20.05), { al: 'center', st: 0.02, t1: bt(20.75), tr: -2, ost: 0.006, odur: 0.15 });
+  rise(X, 'One window.', 960, 90, 52, 800, 'd', C.amber, T, bt(21.2), { al: 'center', st: 0.02, t1: bt(22) + 5, tr: -1.5 });
+  if (mg > 0.9) { const fl = 1 - E.o3(P(T, bt(21.25), bt(21.65))); if (fl > 0) { X.save(); X.globalCompositeOperation = 'lighter'; X.globalAlpha = 0.35 * fl; const g = X.createLinearGradient(0, 0, W, 0); g.addColorStop(0, 'rgba(232,163,58,0)'); g.addColorStop(0.5, 'rgba(255,230,180,1)'); g.addColorStop(1, 'rgba(232,163,58,0)'); X.fillStyle = g; X.fillRect(0, REV.y + REV.h * (1 - E.o3(P(T, bt(21.25), bt(21.65)))) - 6, W, 12); X.restore(); } }
 }
 
 const LAP = { x: 260, y: 318, w: 880, h: 484 }, PHS = { x: 1300, y: 290, w: 276, h: 580 }, DMN = { x: 810, y: 92, w: 300, h: 84 };
@@ -767,7 +979,8 @@ function phoneContent(c, t) {
   c.fillStyle = C.surf; c.fillRect(0, 520, 276, 60); c.fillStyle = C.line; c.fillRect(0, 520, 276, 1);
   for (let k = 0; k < 4; k++) { rr(c, 38 + k * 62, 538, 22, 22, 6); c.lineWidth = 2; c.strokeStyle = k === 0 ? C.amber : C.ink3; c.stroke(); }
 }
-function devices(t) {
+function devices(T) {
+  const t = T - 2 * BEAT;
   if (t < 9.375 || t >= 11.25) return;
   const pcx = PHS.x + PHS.w / 2, pcy = PHS.y + PHS.h / 2, zm = lerp(1, 5.5, E.i3(P(t, 10.98, 11.25)));
   X.translate(pcx, pcy); X.scale(zm, zm); X.translate(-pcx, -pcy);
@@ -785,7 +998,7 @@ function devices(t) {
   X.save();
   if (lid > 0) { X.translate(0, hinge); X.scale(1, 1 - 0.965 * lid); X.translate(0, -hinge); }
   if (la > 0) { X.save(); X.globalAlpha = la; rr(X, scr.x - 16, scr.y - 16, scr.w + 32, scr.h + 32, 24); X.fillStyle = '#18181b'; X.fill(); X.lineWidth = 2; X.strokeStyle = C.line2; X.stroke(); X.restore(); }
-  drawReview(X, scr, t, 1);
+  drawWin(X, scr, 1);
   const dk = Math.max(lid, sleep * 0.92);
   if (dk > 0) { rr(X, scr.x, scr.y, scr.w, scr.h, 6); X.fillStyle = rgba('#000000', dk); X.fill(); }
   X.restore();
@@ -793,7 +1006,7 @@ function devices(t) {
   if (pb > 0) {
     const pr = lerpR(LAP, PHS, pb), fa = P(t, 9.64, 9.8);
     if (fa > 0) { X.save(); X.globalAlpha = fa; rr(X, PHS.x - 12, PHS.y - 12, PHS.w + 24, PHS.h + 24, 52); X.fillStyle = '#18181b'; X.fill(); X.lineWidth = 2; X.strokeStyle = C.line2; X.stroke(); X.restore(); }
-    rr(X, pr.x, pr.y, pr.w, pr.h, lerp(8, 40, pb)); X.fillStyle = C.bg; X.fill();
+    X.save(); X.globalAlpha *= E.o2(P(pb, 0, 0.35)); rr(X, pr.x, pr.y, pr.w, pr.h, lerp(8, 40, pb)); X.fillStyle = C.bg; X.fill(); X.restore();
     const off = E.i2(P(t, 10.3125, 10.42)), wake = P(t, 10.92, 11.02), ca = P(t, 9.66, 9.8) * (1 - off + off * wake);
     if (ca > 0) {
       X.save(); rr(X, pr.x, pr.y, pr.w, pr.h, lerp(8, 40, pb)); X.clip(); X.globalAlpha *= ca;
@@ -848,59 +1061,49 @@ function devices(t) {
   if (fo > 0) { X.setTransform(1, 0, 0, 1, 0, 0); X.fillStyle = rgba(C.bg, fo); X.fillRect(0, 0, W, H); }
 }
 
-const MF = 1100, MD = 1375, FZ = [3000, 6000, 9000], ARR = [11.485, 11.955, 12.425];
-const FOC = [['agents', 'Every session, by status'], ['graph', 'Git graph and worktrees'], ['solarized', 'Your palette, your rules']];
-let MC;
-function montInit() {
-  const r = mulberry32(7), names = ['kanban', 'review', 'worktrees', 'workspaces', 'broadcast', 'addtask', 'thread', 'graphite', 'ipad', 'android', 'kanban', 'review', 'graph', 'agents', 'worktrees', 'broadcast'];
-  MC = FOC.map(([k], i) => ({ k, x: 0, y: 0, z: FZ[i], w: 1440, rot: 0 }));
-  names.forEach((k, i) => {
-    const sx = i % 2 ? 1 : -1, sy = (i >> 1) % 2 ? 1 : -1;
-    MC.push({ k, x: sx * (1180 + r() * 420), y: sy * (600 + r() * 260), z: 900 + i * 560 + r() * 260, w: 980 + r() * 260, rot: (r() - 0.5) * 0.14 });
+const MI = [
+  { k: 'notes', cw: 340, src: [0, 0, 340, 320], cap: ['Sticky', 'notes'], sub: 'Pinned to a session' },
+  { k: 'cost', cw: 860, src: [0, 235, 860, 440], cap: ['Real', 'cost'], sub: 'Per session and task' },
+  { k: 'record', cw: 500, src: [0, 0, 500, 413], cap: ['Record', 'a bug'], sub: 'Clicks logged, not keys' },
+  { k: 'mistral', cw: 330, src: [0, 0, 330, 286], cap: ['Install', 'any agent'], sub: 'Mistral Vibe joins in' },
+  { k: 'subjects', cw: 290, src: [0, 0, 290, 260], cap: ['Subjects', 'in a workspace'], sub: 'Sub-folders and submodules' },
+  { k: 'tasktype', cw: 510, src: [0, 0, 510, 160], cap: ['A profile', 'per task type'], sub: 'Bug fix or migration' },
+];
+const MS = bt(26), MDUR = bt(0.5);
+function montage(T) {
+  if (T < MS - 0.05 || T >= FIN) return;
+  const u = T - MS, ex = E.iX(P(T, FIN - 0.55, FIN));
+  X.save();
+  GRID.setTransform(new DOMMatrix([1, 0, 0, 1, 0, 12 - u * 40])); X.globalAlpha = 0.9 * (1 - ex); X.fillStyle = GRID; X.fillRect(0, 0, W, H); X.restore();
+  X.save(); X.globalAlpha = 1 - ex;
+  tx(X, 'NEW IN 0.36', 96, 118, 20, 500, 'm', C.amber, 'left', 5);
+  MI.forEach((f, k) => {
+    const s = MS + k * MDUR, a0 = s, a1 = k === MI.length - 1 ? FIN : s + MDUR;
+    if (T < a0 || T >= a1) return;
+    const e = E.o4(P(T, a0, s + 0.035)), x = k === MI.length - 1 ? 0 : E.i2(P(T, a1 - 0.03, a1)), al = 1 - x;
+    const im = SH[f.k], q = im.naturalWidth / f.cw, [sx, sy, sw, sh] = f.src, sc = Math.min(940 / sw, 700 / sh), w = sw * sc, h = sh * sc;
+    const right = k % 2 === 0, cx = right ? 1340 : 580, kb = lerp(1.07, 1, E.o3(P(T, a0, s + MDUR))), side = right ? 1 : -1;
+    const fl = Math.exp(-Math.max(0, T - s) * 18) * 0.55;
+    if (fl > 0.01) emit(c => { const g = c.createRadialGradient(cx, 540, 0, cx, 540, 700); g.addColorStop(0, rgba(C.amber, 0.45 * fl)); g.addColorStop(1, rgba(C.amber, 0)); c.fillStyle = g; c.fillRect(cx - 700, 0, 1400, 1080); });
+    X.save(); X.globalAlpha = al; X.translate(cx + (1 - e) * 24 * side, 540); X.scale(kb, kb);
+    X.shadowColor = 'rgba(0,0,0,0.7)'; X.shadowBlur = 70; X.shadowOffsetY = 28; rr(X, -w / 2, -h / 2, w, h, 20); X.fillStyle = C.surf; X.fill(); X.shadowColor = 'transparent'; X.shadowBlur = 0; X.shadowOffsetY = 0;
+    X.save(); rr(X, -w / 2, -h / 2, w, h, 20); X.clip(); X.drawImage(im, sx * q, sy * q, sw * q, sh * q, -w / 2, -h / 2, w, h); X.restore();
+    X.lineWidth = 2; X.strokeStyle = 'rgba(255,255,255,0.16)'; rr(X, -w / 2, -h / 2, w, h, 20); X.stroke(); X.restore();
+    const tcx = right ? 96 : 1080, tx0 = tcx;
+    X.save(); X.globalAlpha = al;
+    tx(X, `0${k + 1} / 06`, tx0, 372, 22, 500, 'm', C.amber, 'left', 4);
+    tx(X, f.cap[0], tx0 - 4, 520, 150, 800, 'd', C.ink, 'left', -5); tx(X, f.cap[1], tx0 - 4, 662, 100, 800, 'd', C.ink, 'left', -3);
+    rr(X, tx0, 700, 120, 8, 4); X.fillStyle = C.amber; X.fill();
+    tx(X, f.sub, tx0, 770, 32, 500, 'u', C.ink2); X.restore();
   });
-}
-function camZ(t) {
-  if (t < ARR[0]) return lerp(FZ[0] - MD - 2600, FZ[0] - MD, E.o5(P(t, 11.25, ARR[0])));
-  if (t < ARR[1]) return lerp(FZ[0] - MD, FZ[1] - MD, E.io5(P(t, ARR[0], ARR[1])));
-  if (t < ARR[2]) return lerp(FZ[1] - MD, FZ[2] - MD, E.io5(P(t, ARR[1], ARR[2])));
-  return FZ[2] - MD + 260 * E.i2(P(t, ARR[2], FIN));
-}
-function montage(t) {
-  if (t < 11.25 || t >= FIN) return;
-  const cz = camZ(t), cxm = 70 * Math.sin((t - 11.25) * 3), cym = 36 * Math.cos((t - 11.25) * 2.4), imp = E.iX(P(t, 12.44, FIN)), fin = E.o2(P(t, 11.25, 11.34));
-  X.translate(960, 540); X.rotate(0.015 * Math.sin((t - 11.25) * 2.2)); X.translate(-960, -540);
-  const vis = MC.map(m => ({ m, dz: m.z - cz })).filter(v => v.dz > 80).sort((a, b) => b.dz - a.dz);
-  for (const { m, dz } of vis) {
-    const s = MF / dz, im = SH[m.k], w = m.w * s, h = w * im.naturalHeight / im.naturalWidth;
-    let x = 960 + (m.x - cxm) * s, y = 540 + (m.y - cym) * s, sc = 1, rot = m.rot;
-    const a = clamp((dz - 120) / 380) * clamp((7600 - dz) / 2600) * fin, foc = m.x === 0;
-    if (a <= 0) continue;
-    if (imp > 0) { x = lerp(x, 960, imp); y = lerp(y, 395, imp); sc = 1 - imp; rot += imp * 1.4 * (m.x >= 0 ? 1 : -1); }
-    X.save(); X.globalAlpha = a * (foc ? 1 : 0.62); X.translate(x, y); X.rotate(rot); X.scale(sc, sc);
-    rr(X, -w / 2, -h / 2, w, h, 16 * s); X.save(); X.clip(); X.drawImage(im, -w / 2, -h / 2, w, h); X.restore();
-    X.lineWidth = 2; X.strokeStyle = foc ? 'rgba(255,255,255,0.3)' : 'rgba(255,255,255,0.2)'; X.stroke();
-    const fg = foc ? clamp(1 - Math.abs(dz - MD) / 700) : 0;
-    if (fg > 0) emit(c => { rr(c, -w / 2, -h / 2, w, h, 16 * s); c.lineWidth = 12; c.strokeStyle = `rgba(232,163,58,${0.4 * fg})`; c.stroke(); });
-    X.restore();
-  }
-  for (let k = 0; k < 3; k++) {
-    const a0 = ARR[k] - 0.08, a1 = ARR[k] + 0.2;
-    if (t < a0 || t > a1 + 0.3) continue;
-    X.save(); X.globalAlpha = 1 - imp;
-    sf(X, 16, 500, 'm', 3); X.textAlign = 'left'; X.fillStyle = C.amber;
-    X.globalAlpha *= E.o3(P(t, a0, a0 + 0.12)) * (1 - P(t, a1, a1 + 0.15));
-    X.fillText(`0${k + 1} / 03`, 386, 930);
-    X.globalAlpha = 1 - imp;
-    rise(X, FOC[k][1], 384, 994, 52, 800, 'd', C.ink, t, a0, { st: 0.008, dur: 0.3, t1: a1 - 0.04, ost: 0.003, odur: 0.13, tr: -1 });
-    X.restore();
-  }
-  if (t > 12.42) {
-    const e = E.iX(P(t, 12.42, FIN));
+  for (let k = 0; k < MI.length; k++) dot(X, 960 + (k - 2.5) * 30, 1000, k === Math.min(5, Math.floor(u / MDUR)) ? 6 : 3.5, k === Math.min(5, Math.floor(u / MDUR)) ? C.amber : C.ink3);
+  X.restore();
+  if (T > FIN - 0.55) {
     for (let j = 0; j < 30; j++) {
-      const an = j / 30 * TAU + hs(j) * 0.2, r1 = lerp(1500, 0, e) * (0.6 + hs(j * 7 + 1) * 0.5), r0 = r1 + 280 * (1 - e) + 40;
-      lit(c => { c.beginPath(); c.moveTo(960 + Math.cos(an) * r0, 395 + Math.sin(an) * r0); c.lineTo(960 + Math.cos(an) * r1, 395 + Math.sin(an) * r1); c.lineWidth = 3; c.lineCap = 'round'; c.strokeStyle = j % 3 ? rgba(C.white, 0.75 * e) : AMB(c, 0.75 * e); c.stroke(); }, 1.4);
+      const an = j / 30 * TAU + hs(j) * 0.2, r1 = lerp(1500, 0, ex) * (0.6 + hs(j * 7 + 1) * 0.5), r0 = r1 + 280 * (1 - ex) + 40;
+      lit(c => { c.beginPath(); c.moveTo(960 + Math.cos(an) * r0, 395 + Math.sin(an) * r0); c.lineTo(960 + Math.cos(an) * r1, 395 + Math.sin(an) * r1); c.lineWidth = 3; c.lineCap = 'round'; c.strokeStyle = j % 3 ? rgba(C.white, 0.75 * ex) : AMB(c, 0.75 * ex); c.stroke(); }, 1.4);
     }
-    lit(c => dot(c, 960, 395, 4 + 18 * e, AMB(c)), 2);
+    lit(c => dot(c, 960, 395, 4 + 18 * ex, AMB(c)), 2);
   }
 }
 
@@ -955,21 +1158,21 @@ function logo(t) {
   for (let i = 0; i < TAG.length; i++) {
     if (i > 0 && TAG[i - 1] !== ' ') continue;
     if (TAG[i] === ' ') continue;
-    const end = TAG.indexOf(' ', i) < 0 ? TAG.length : TAG.indexOf(' ', i), a = T + 0.62 + wi * 0.03, e = E.o4(P(t, a, a + 0.45));
+    const end = TAG.indexOf(' ', i) < 0 ? TAG.length : TAG.indexOf(' ', i), a = T + 0.5 + wi * 0.022, e = E.o4(P(t, a, a + 0.45));
     if (e > 0) { X.save(); X.globalAlpha = e; X.fillText(TAG.slice(i, end), tx0 + TL.xs[i], 812 + (1 - e) * 18); X.restore(); }
     wi++;
   }
-  const n = clamp(Math.floor((t - (T + 0.92)) * 55), 0, URL.length), UL = lay(URL, 28, 500, 'm'), ux = 960 - UL.w / 2 - 14;
-  if (t > T + 0.86) {
+  const n = clamp(Math.floor((t - (T + 0.62)) * 110), 0, URL.length), UL = lay(URL, 28, 500, 'm'), ux = 960 - UL.w / 2 - 14;
+  if (t > T + 0.56) {
     tx(X, URL.slice(0, n), ux, 884, 28, 500, 'm', C.ink3);
     if (n < URL.length || (t * 2) % 1 < 0.55) { X.fillStyle = C.amber; X.fillRect(ux + UL.xs[n] + 4, 860, 15, 32); }
   }
 }
 
-const LBL = [[DROP, '01  AGENTS'], [3.75, '02  ORBIT'], [5.625, '03  SESSIONS'], [7.5, '04  TASKS + REVIEW'], [9.375, '05  ANYWHERE'], [11.25, '06  FEATURES']];
+const LBL = [[DROP, '01  AGENTS'], [3.75, '02  ORBIT'], [bt(10), '03  SESSIONS'], [bt(12), '04  TASKS'], [bt(14), '05  QUORUM'], [bt(17), '06  REVIEW'], [bt(20), '07  HOSTS'], [bt(22), '08  ANYWHERE'], [bt(26), '09  NEW IN 0.36']];
 const tcode = t => { const f = Math.round(t * FPS), s = Math.floor(f / FPS), ff = f % FPS; return `00:00:${String(s).padStart(2, '0')}:${String(ff).padStart(2, '0')}`; };
 function hud(c, t, tt) {
-  const a = 0.62 * E.o2(P(t, DROP, DROP + 0.3)) * (1 - P(t, 12.5, FIN));
+  const a = 0.62 * E.o2(P(t, DROP, DROP + 0.3)) * (1 - P(t, FIN - 0.5, FIN));
   if (a <= 0) return;
   c.save(); c.globalAlpha = a; c.strokeStyle = C.ink3; c.lineWidth = 1.5;
   for (const [x, y, sx, sy] of [[36, 36, 1, 1], [1884, 36, -1, 1], [36, 1044, 1, -1], [1884, 1044, -1, -1]]) { c.beginPath(); c.moveTo(x, y + sy * 18); c.lineTo(x, y); c.lineTo(x + sx * 18, y); c.stroke(); }
@@ -982,7 +1185,9 @@ function hud(c, t, tt) {
   c.restore();
 }
 
-const SCENES = [intro, reel, orbit, grid, tasks, devices, montage, logo];
+const orbitW = t => { if (t >= 3.75 && t < bt(10)) orbit(3.75 + (t - 3.75) * 2); };
+const gridW = t => { if (t >= bt(10) && t < bt(12)) grid(5.625 + (t - bt(10)) * 2); };
+const SCENES = [intro, reel, orbitW, gridW, tasks, quorum, review, hosts, devices, montage, logo];
 function drawAll(t) {
   X.setTransform(1, 0, 0, 1, 0, 0); X.globalAlpha = 1; X.globalCompositeOperation = 'source-over';
   G.setTransform(1, 0, 0, 1, 0, 0); G.clearRect(0, 0, W / 2, H / 2);
@@ -1026,7 +1231,7 @@ if (RENDER) document.body.classList.add('render');
 const ready = (async () => {
   await Promise.all(FONTS.map(async ([fam, file, w]) => { const f = new FontFace(fam, `url(fonts/${file}.woff2)`, { weight: String(w) }); await f.load(); document.fonts.add(f); }));
   await Promise.all(Object.entries(SHOTS).map(([k, f]) => new Promise((res, rej) => { const im = new Image(); im.onload = () => { SH[k] = im; res(); }; im.onerror = () => rej(new Error('image ' + f)); im.src = `shots/${f}.png`; })));
-  fxInit(); introInit(); reelInit(); slotInit(); montInit();
+  fxInit(); introInit(); reelInit(); slotInit();
 })();
 window.reel = { ready, fps: FPS, duration: DUR, width: W, height: H, frame(i, samples = 1, type = 'image/png', q) { renderFrame(i, samples); return cv.toDataURL(type, q); }, draw: renderFrame };
 
