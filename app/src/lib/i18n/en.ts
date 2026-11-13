@@ -1123,7 +1123,7 @@ export const en = {
   'hooks.installed': 'Agent hooks installed for {agents}',
   'hooks.removed': 'Agent hooks removed for {agents}',
   'hooks.failed': 'Could not update agent hooks: {error}',
-  'hooks.codexTrust': 'Codex runs the new hooks only after you trust them: start codex and review them at its "Hooks need review" prompt, or run /hooks in it',
+  'hooks.codexTrust': 'Codex runs the new hooks only after you trust them: start codex and accept "Hooks need review", or run /hooks',
   'skills.title': 'Skills and plugins',
   'skills.hint': 'Installs in a new terminal on this host.',
   'skills.rtk': 'Trims shell output before the agent reads it.',

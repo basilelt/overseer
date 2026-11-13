@@ -2545,7 +2545,7 @@ function mockHooks(): HooksStatus {
     shim: '/home/dev/.overseer/bin/overseer',
     agents: [
       row('claude', 'Claude Code', 'hooks', true, '/home/dev/.claude/settings.json'),
-      row('codex', 'Codex', 'hooks', true, '/home/dev/.codex/hooks.json', 'Codex runs new or edited hooks only after you trust them: start codex and review them at its "Hooks need review" prompt, or run /hooks in it'),
+      row('codex', 'Codex', 'hooks', true, '/home/dev/.codex/hooks.json', 'Codex runs new or edited hooks only after you trust them: start codex and choose Review hooks or Trust all at the "Hooks need review" prompt, or run /hooks inside it. codex exec cannot review hooks. Overseer never edits config.toml.'),
       row('gemini', 'Gemini CLI', 'hooks', false, '/home/dev/.gemini/settings.json'),
       row('opencode', 'opencode', 'plugin', true, '/home/dev/.config/opencode/plugins/overseer.js'),
       row('agy', 'Antigravity', 'polling', false, undefined, 'No stable hook file for the Antigravity CLI yet'),
