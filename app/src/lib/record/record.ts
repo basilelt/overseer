@@ -1,5 +1,6 @@
 import { comboModifiers } from '../commands/shortcuts';
 import { clock, redact } from '../feedback/feedback';
+import { isTauri, userAgent } from '../platform';
 
 export { clock };
 
@@ -125,7 +126,12 @@ export async function requestDisplay(get: GetDisplay): Promise<MediaStream> {
   }
 }
 
-export function canVideo(g: typeof globalThis = globalThis): boolean {
+export function webkitGtkShell(tauri: boolean, ua: string): boolean {
+  return tauri && /linux/i.test(ua) && !/android/i.test(ua);
+}
+
+export function canVideo(g: typeof globalThis = globalThis, shell = webkitGtkShell(isTauri(), userAgent())): boolean {
+  if (shell) return false;
   const md = (g.navigator as Navigator | undefined)?.mediaDevices;
   return typeof md?.getDisplayMedia === 'function' && typeof (g as { MediaRecorder?: unknown }).MediaRecorder === 'function';
 }

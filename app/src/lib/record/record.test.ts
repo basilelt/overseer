@@ -1,5 +1,5 @@
 import { describe as group, expect, it } from 'vitest';
-import { activeAt, canVideo, clock, describe, extFor, fileName, formatLog, isConstraintError, isField, isRefusal, pickMime, shortcut, type RecEvent } from './record';
+import { activeAt, canVideo, clock, describe, extFor, fileName, formatLog, isConstraintError, isField, isRefusal, pickMime, shortcut, webkitGtkShell, type RecEvent } from './record';
 import { el } from '../../test/fake-dom';
 import { formatCombo } from '../commands/shortcuts';
 
@@ -180,6 +180,15 @@ group('media helpers', () => {
     expect(canVideo({ navigator: { mediaDevices: {} }, MediaRecorder: class {} } as unknown as typeof globalThis)).toBe(false);
     expect(canVideo({ navigator: { mediaDevices: { getDisplayMedia: () => {} } } } as unknown as typeof globalThis)).toBe(false);
     expect(canVideo({} as typeof globalThis)).toBe(false);
+  });
+
+  it('does not offer screen recording in the Tauri app on Linux', () => {
+    const g = { navigator: { mediaDevices: { getDisplayMedia: () => {} } }, MediaRecorder: class {} } as unknown as typeof globalThis;
+    expect(canVideo(g, webkitGtkShell(true, 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/605.1.15'))).toBe(false);
+    expect(canVideo(g, webkitGtkShell(false, 'Mozilla/5.0 (X11; Linux x86_64) Chrome/120'))).toBe(true);
+    expect(canVideo(g, webkitGtkShell(true, 'Mozilla/5.0 (Windows NT 10.0) Edg/120'))).toBe(true);
+    expect(canVideo(g, webkitGtkShell(true, 'Mozilla/5.0 (Macintosh; Intel Mac OS X) AppleWebKit'))).toBe(true);
+    expect(webkitGtkShell(true, 'Mozilla/5.0 (Linux; Android 14) Chrome/120')).toBe(false);
   });
 });
 
