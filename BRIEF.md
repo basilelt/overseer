@@ -1,5 +1,10 @@
 # Overseer — build brief for Claude Code
 
+Historical. This is the original build brief, kept for history. The stack and the scope changed
+since: the daemon, API and CLI are written in Rust (see `docs/adr/0008-rust.md`), and the product
+has a desktop and mobile app (see `docs/adr/0025-desktop-app.md`). The current rules are in
+`AGENTS.md`, the current behaviour in `README.md` and `docs/user-guide.md`.
+
 > **This is the only document you need.** It contains the context, the target architecture,
 > the contracts, the knowledge about the existing setup on our machines, the plan and the
 > rules. Put it at the root of an empty repo as `CLAUDE.md` (or `BRIEF.md`) and start with:

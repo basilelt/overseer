@@ -1,4 +1,4 @@
-# 0040 Mistral Vibe as a full agent
+# 0042 Mistral Vibe as a full agent
 
 Status: accepted
 

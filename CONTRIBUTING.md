@@ -51,13 +51,14 @@ pnpm exec vitest run           # app tests
 
 ## Make the change
 
-1. Fork the repository and create a branch from an up-to-date `main`, named
+1. Fork the repository and create a branch from an up-to-date `next`, named
    `<type>/<description>` in lowercase with hyphens, for example `fix/held-session-resume` or
    `feat/task-filters`. Types: `feat`, `fix`, `docs`, `test`, `refactor`, `perf`, `chore`, `ci`,
    `build`, `style`, `revert`.
 2. Write [Conventional Commits](https://www.conventionalcommits.org/) messages
-   (`fix(kanban): keep the toolbar on narrow screens`). The PR title follows the same format: each
-   merge to `main` is a release, and its version comes from these titles (`feat` = minor,
+   (`fix(kanban): keep the toolbar on narrow screens`). The PR title follows the same format. PRs
+   are merged into `next`, which releases nothing. A release is cut when the maintainer merges
+   `next` into `main`: its version comes from the titles of the whole batch (`feat` = minor,
    `fix` and others = patch, `!` = major).
 3. Sign off every commit (`git commit -s`). The sign-off certifies the
    [Developer Certificate of Origin](https://developercertificate.org/): you wrote the change, or
@@ -70,10 +71,11 @@ pnpm exec vitest run           # app tests
    | daemon or API (Rust) | `cargo test <tests>`, `cargo clippy --all-targets -- -D warnings`, `cargo fmt --check` in each changed crate |
    | UI | screenshots of the mock build (`VITE_MOCK=1 pnpm exec vite build`), desktop light and dark plus phone width |
 
-5. Open the pull request as a **draft** and fill in the template. Mark it ready when the branch
-   is complete: CI runs then. A maintainer approves CI runs for first-time contributors.
-6. A maintainer reviews it and merges it with a merge commit once CI is green and the branch is
-   up to date with `main`.
+5. Open the pull request to `next` (never `main`) as a **draft** and fill in the template. Mark it
+   ready when the branch is complete: CI runs then. A maintainer approves CI runs for first-time
+   contributors.
+6. A maintainer reviews it and merges it with a merge commit once CI is green. The branch does not
+   have to be up to date with `next`: merge `next` into it only on a conflict.
 
 Changes written with AI coding agents are welcome. You are responsible for them like any other
 code: read the diff, run the checks, and answer review comments yourself.

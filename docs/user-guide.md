@@ -6,8 +6,8 @@ Overseer keeps track of AI coding agent sessions (Claude Code and Codex) across 
 machines. Its unit is the **line**: one agent session, in one worktree, on one station, for one
 owner. A station (a dev Mac, a VM, a runner container) runs the `overseer` daemon/CLI; a shared
 `overseer-api` merges the lines of every station, relays commands between them and serves
-read endpoints, events and webhooks. The design and its reasons are in [`BRIEF.md`](../BRIEF.md)
-and [`docs/adr/`](adr/); line states are detailed in [`docs/line-states.md`](line-states.md).
+read endpoints, events and webhooks. The original design and its reasons are in [`BRIEF.md`](../BRIEF.md)
+and later decisions are in [`docs/adr/`](adr/); line states are detailed in [`docs/line-states.md`](line-states.md).
 
 ## 2. Build and install
 
