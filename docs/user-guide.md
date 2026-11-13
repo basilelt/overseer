@@ -874,7 +874,7 @@ non-zero exit), `skip` (not configured, not checked), `info` (a setting worth kn
 | daemon | answers on its socket (CLI works without it; hooks spool to disk) |
 | claude hooks | how many Overseer events are in `settings.json` |
 | codex hooks | same for `hooks.json` (only when `~/.codex` exists) |
-| codex trust | `warn` listing the Overseer events with no trust entry in `config.toml` (read-only; a changed hook whose old entry is stale is not detected), with the step to take |
+| codex trust | read-only look at `config.toml`: `warn` listing the Overseer events with no trust entry, or disabled (`enabled = false`), with the step to take. When every event has an entry the item is `info`, not `ok`: Codex compares a hash of each hook, doctor does not, so an entry left from before Overseer rewrote `hooks.json` looks the same; run `/hooks` in codex to see the hooks needing review |
 | claude, codex, tmux | version found on PATH (hold needs tmux) |
 | daemon PATH | `info`: the running daemon's `PATH` and its source (`login-shell`, `fallback`, `inherited`; 14.1a) |
 | station enrolment | `sync.json` present (`skip` when not enrolled) |

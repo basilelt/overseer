@@ -2,7 +2,7 @@ use crate::install::{hook_file, MARKER};
 use crate::sys::PermissionsExt;
 use crate::{actions, daemon, scan, Ctx};
 use serde_json::Value;
-use std::collections::HashSet;
+use std::collections::HashMap;
 use std::path::Path;
 use std::process::Command;
 
@@ -106,9 +106,28 @@ fn has_value(rest: &str) -> bool {
         .is_some_and(|v| v.len() > 2 && (v.starts_with('"') || v.starts_with('\'')))
 }
 
-fn trusted_keys(config: &str) -> HashSet<String> {
+#[derive(Default)]
+struct Entry {
+    hashed: bool,
+    disabled: bool,
+}
+
+fn note_field(entries: &mut HashMap<String, Entry>, key: &str, line: &str) {
+    let e = entries.entry(key.to_string()).or_default();
+    if line.strip_prefix("trusted_hash").is_some_and(has_value) {
+        e.hashed = true;
+    } else if line
+        .strip_prefix("enabled")
+        .and_then(|r| r.trim_start().strip_prefix('='))
+        .is_some_and(|v| v.trim().starts_with("false"))
+    {
+        e.disabled = true;
+    }
+}
+
+fn hook_entries(config: &str) -> HashMap<String, Entry> {
     const TABLE: &str = "hooks.state.";
-    let mut out = HashSet::new();
+    let mut out = HashMap::new();
     let mut current: Option<String> = None;
     for line in config.lines() {
         let line = line.trim();
@@ -120,56 +139,67 @@ fn trusted_keys(config: &str) -> HashSet<String> {
                 .filter(|(_, rest)| rest.trim_start().starts_with(']'))
                 .map(|(k, _)| k);
         } else if let Some(k) = &current {
-            if line.strip_prefix("trusted_hash").is_some_and(has_value) {
-                out.insert(k.clone());
-            }
+            note_field(&mut out, k, line);
         } else if let Some((k, rest)) = line.strip_prefix(TABLE).and_then(quoted_key) {
-            if rest.strip_prefix(".trusted_hash").is_some_and(has_value) {
-                out.insert(k);
+            if let Some(field) = rest.strip_prefix('.') {
+                note_field(&mut out, &k, field);
             }
         }
     }
     out
 }
 
-fn untrusted_codex_events(hooks: &Path, config: &Path, events: &[&str]) -> (usize, Vec<String>) {
+#[derive(Debug, Default, PartialEq)]
+struct CodexTrust {
+    total: usize,
+    missing: Vec<String>,
+    disabled: Vec<String>,
+}
+
+fn codex_trust(hooks: &Path, config: &Path, events: &[&str]) -> CodexTrust {
     let v: Value = std::fs::read(hooks)
         .ok()
         .and_then(|b| serde_json::from_slice(&b).ok())
         .unwrap_or(Value::Null);
-    let trusted = std::fs::read_to_string(config)
-        .map(|c| trusted_keys(&c))
+    let entries = std::fs::read_to_string(config)
+        .map(|c| hook_entries(&c))
         .unwrap_or_default();
     let canon = |p: &Path| std::fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf());
     let want = canon(hooks);
-    let is_trusted = |label: &str, g: usize, h: usize| {
-        trusted.iter().any(|k| {
+    let find = |label: &str, g: usize, h: usize| {
+        entries.iter().find_map(|(k, e)| {
             let mut parts = k.rsplitn(4, ':');
             let (hh, gg, ll, path) = (parts.next(), parts.next(), parts.next(), parts.next());
-            ll == Some(label)
+            (ll == Some(label)
                 && gg == Some(g.to_string().as_str())
                 && hh == Some(h.to_string().as_str())
-                && path.is_some_and(|p| Path::new(p) == hooks || canon(Path::new(p)) == want)
+                && path.is_some_and(|p| Path::new(p) == hooks || canon(Path::new(p)) == want))
+            .then_some(e)
         })
     };
-    let (mut total, mut missing) = (0, vec![]);
+    let mut out = CodexTrust::default();
     for e in events {
         let label = snake(e);
-        let (mut seen, mut miss) = (false, false);
+        let (mut seen, mut miss, mut off) = (false, false, false);
         for (g, group) in v["hooks"][*e].as_array().into_iter().flatten().enumerate() {
             for (h, hook) in group["hooks"].as_array().into_iter().flatten().enumerate() {
                 if hook["command"].as_str().is_some_and(|c| c.contains(MARKER)) {
                     seen = true;
-                    miss |= !is_trusted(&label, g, h);
+                    match find(&label, g, h) {
+                        Some(en) if en.hashed => off |= en.disabled,
+                        _ => miss = true,
+                    }
                 }
             }
         }
-        total += usize::from(seen);
+        out.total += usize::from(seen);
         if miss {
-            missing.push((*e).to_string());
+            out.missing.push((*e).to_string());
+        } else if off {
+            out.disabled.push((*e).to_string());
         }
     }
-    (total, missing)
+    out
 }
 
 fn agent_bin(id: &str) -> &'static str {
@@ -248,25 +278,41 @@ pub fn run(ctx: &Ctx) -> Vec<Item> {
             format!("{n}/{total} events in {}", codex_hooks.display()),
         ));
         if n > 0 {
-            let (seen, missing) = untrusted_codex_events(
+            let t = codex_trust(
                 &codex_hooks,
                 &ctx.codex_dir.join("config.toml"),
                 codex_events,
             );
-            out.push(if missing.is_empty() {
-                item(
-                    "ok",
-                    "codex trust",
-                    format!("{seen}/{seen} events have a trust entry in config.toml (hashes are not verified)"),
-                )
-            } else {
+            const FIX: &str = "start codex and choose Review hooks or Trust all at the \"Hooks need review\" prompt, or run /hooks in it (codex exec cannot review hooks)";
+            out.push(if !t.missing.is_empty() {
                 item(
                     "warn",
                     "codex trust",
                     format!(
-                        "{}/{seen} events have no trust entry in config.toml ({}); Codex skips them until you trust them: start codex and choose Review hooks or Trust all at the \"Hooks need review\" prompt, or run /hooks in it (codex exec cannot review hooks)",
-                        missing.len(),
-                        missing.join(", ")
+                        "{}/{} events have no trust entry in config.toml ({}); Codex skips them until you trust them: {FIX}",
+                        t.missing.len(),
+                        t.total,
+                        t.missing.join(", ")
+                    ),
+                )
+            } else if !t.disabled.is_empty() {
+                item(
+                    "warn",
+                    "codex trust",
+                    format!(
+                        "{}/{} events are disabled in config.toml ({}); Codex does not run them: turn them on with /hooks in codex",
+                        t.disabled.len(),
+                        t.total,
+                        t.disabled.join(", ")
+                    ),
+                )
+            } else {
+                item(
+                    "info",
+                    "codex trust",
+                    format!(
+                        "{}/{} events have a trust entry in config.toml, but doctor cannot tell whether it matches the current hooks (Codex recomputes a hash, so an entry left from before a rewrite counts as changed); if sessions show no events, run /hooks in codex: hooks needing review are listed there",
+                        t.total, t.total
                     ),
                 )
             });
@@ -482,41 +528,38 @@ mod tests {
     }
 
     #[test]
-    fn trusted_keys_reads_table_and_dotted_forms() {
-        let t = trusted_keys(
+    fn hook_entries_reads_table_and_dotted_forms() {
+        let t = hook_entries(
             "[hooks.state.\"/a/hooks.json:stop:0:0\"]\ntrusted_hash = \"sha256:ab\"\n\n\
-             [hooks.state.'/b/hooks.json:stop:0:0']\nenabled = true\ntrusted_hash = 'x'\n\n\
-             [hooks.state.\"/c\\\\hooks.json:stop:0:0\"]\nenabled = false\n\n\
+             [hooks.state.'/b/hooks.json:stop:0:0']\nenabled = false\ntrusted_hash = 'x'\n\n\
+             [hooks.state.\"/c\\\\hooks.json:stop:0:0\"]\nenabled = true\n\n\
              [other]\ntrusted_hash = \"nope\"\n\
-             hooks.state.\"/d/hooks.json:stop:0:0\".trusted_hash = \"h\"\n",
+             hooks.state.\"/d/hooks.json:stop:0:0\".trusted_hash = \"h\"\n\
+             hooks.state.\"/d/hooks.json:stop:0:0\".enabled = false\n",
         );
-        let mut got: Vec<_> = t.into_iter().collect();
-        got.sort();
-        assert_eq!(
-            got,
-            [
-                "/a/hooks.json:stop:0:0",
-                "/b/hooks.json:stop:0:0",
-                "/d/hooks.json:stop:0:0"
-            ]
-        );
+        let flags = |k: &str| t.get(k).map(|e| (e.hashed, e.disabled));
+        assert_eq!(flags("/a/hooks.json:stop:0:0"), Some((true, false)));
+        assert_eq!(flags("/b/hooks.json:stop:0:0"), Some((true, true)));
+        assert_eq!(flags("/c\\hooks.json:stop:0:0"), Some((false, false)));
+        assert_eq!(flags("/d/hooks.json:stop:0:0"), Some((true, true)));
+        assert_eq!(t.len(), 4);
     }
 
     #[test]
-    fn trusted_keys_ignores_garbage() {
+    fn hook_entries_ignores_garbage() {
         assert!(
-            trusted_keys("\u{0}[[[ = = \n[hooks.state.\"unterminated\ntrusted_hash=\"x\"")
+            hook_entries("\u{0}[[[ = = \n[hooks.state.\"unterminated\ntrusted_hash=\"x\"")
                 .is_empty()
         );
-        assert!(trusted_keys("").is_empty());
+        assert!(hook_entries("").is_empty());
     }
 
     #[test]
     fn every_event_is_untrusted_without_a_config_toml() {
         let (hooks, cfg) = fixture("nocfg", None);
-        let (n, missing) = untrusted_codex_events(&hooks, &cfg, EVENTS);
-        assert_eq!(n, 3);
-        assert_eq!(missing, EVENTS);
+        let t = codex_trust(&hooks, &cfg, EVENTS);
+        assert_eq!(t.total, 3);
+        assert_eq!(t.missing, EVENTS);
     }
 
     #[test]
@@ -529,9 +572,9 @@ mod tests {
                  [hooks.state.\"$H:user_prompt_submit:0:1\"]\ntrusted_hash = \"a\"\n",
             ),
         );
-        let (n, missing) = untrusted_codex_events(&hooks, &cfg, EVENTS);
-        assert_eq!(n, 3);
-        assert_eq!(missing, ["UserPromptSubmit", "Stop"]);
+        let t = codex_trust(&hooks, &cfg, EVENTS);
+        assert_eq!(t.total, 3);
+        assert_eq!(t.missing, ["UserPromptSubmit", "Stop"]);
     }
 
     #[test]
@@ -544,7 +587,13 @@ mod tests {
                  [hooks.state.\"$H:user_prompt_submit:0:0\"]\ntrusted_hash = \"a\"\n",
             ),
         );
-        assert_eq!(untrusted_codex_events(&hooks, &cfg, EVENTS), (3, vec![]));
+        assert_eq!(
+            codex_trust(&hooks, &cfg, EVENTS),
+            CodexTrust {
+                total: 3,
+                ..Default::default()
+            }
+        );
     }
 
     #[test]
@@ -561,13 +610,28 @@ mod tests {
             ),
         )
         .unwrap();
-        let (_, missing) = untrusted_codex_events(&hooks, &cfg, EVENTS);
-        assert_eq!(missing, ["SessionStart", "UserPromptSubmit"]);
+        let t = codex_trust(&hooks, &cfg, EVENTS);
+        assert_eq!(t.missing, ["SessionStart", "UserPromptSubmit"]);
     }
 
     #[test]
     fn a_missing_hooks_file_has_nothing_to_trust() {
         let p = std::env::temp_dir().join("doctor-trust-none.json");
-        assert_eq!(untrusted_codex_events(&p, &p, EVENTS), (0, vec![]));
+        assert_eq!(codex_trust(&p, &p, EVENTS), CodexTrust::default());
+    }
+
+    #[test]
+    fn a_disabled_entry_is_not_counted_as_trusted() {
+        let (hooks, cfg) = fixture(
+            "off",
+            Some(
+                "[hooks.state.\"$H:session_start:0:0\"]\ntrusted_hash = \"a\"\n\
+                 [hooks.state.\"$H:stop:0:0\"]\ntrusted_hash = \"a\"\nenabled = false\n\
+                 [hooks.state.\"$H:user_prompt_submit:0:0\"]\nenabled = false\n",
+            ),
+        );
+        let t = codex_trust(&hooks, &cfg, EVENTS);
+        assert_eq!(t.missing, ["UserPromptSubmit"]);
+        assert_eq!(t.disabled, ["Stop"]);
     }
 }
