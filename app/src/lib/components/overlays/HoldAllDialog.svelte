@@ -6,7 +6,7 @@
   import { t } from '../../i18n.svelte';
   import type { HoldPlan } from '../../daemon/api';
   import { isOff } from '../../session/grouping';
-  import { waitingOnly } from '../../session/close-force';
+  import { stalled } from '../../session/close-force';
   import { targetItems, targetName } from '../../workspace/wsactions';
 
   let { onclose }: { onclose: () => void } = $props();
@@ -54,7 +54,7 @@
     for (const id of chosen) {
       try {
         if (mode === 'hold') await app.api.hold(id);
-        else if (mode === 'close') await app.api.close(id, false, waitingOnly(plans[id]));
+        else if (mode === 'close') await app.api.close(id, false, !!stalled(plans[id]));
         else await app.resumeLine({ key: `line:${id}`, lineId: id, kind: '', group: 'stopped', state: 'closed', title: '', at: '' });
         done = { ...done, [id]: 'ok' };
       } catch (e) {
@@ -75,7 +75,7 @@
       {@const id = l.lineId!}
       {@const p = plans[id]}
       {@const ok = mode === 'resume' || okOf(p)}
-      {@const waiting = mode === 'close' && waitingOnly(p)}
+      {@const waiting = mode === 'close' ? stalled(p) : null}
       <li>
         <label class:off={!ok && !waiting}>
           <input type="checkbox" disabled={(!ok && !waiting) || finished} checked={chosen.has(id)} onchange={() => toggle(id)} />
@@ -86,7 +86,7 @@
           {:else if p === 'loading'}
             <span class="st">{t('common.loading')}</span>
           {:else if waiting}
-            <span class="st bad">{t('hold.waiting')}</span>
+            <span class="st bad">{t(waiting === 'waiting' ? 'hold.waiting' : 'hold.turn')}</span>
           {:else if checked}
             <span class="st" class:good={ok} class:bad={!ok}>{ok ? t(mode === 'close' ? 'hold.safeClose' : 'hold.safe') : failures(p).join(' · ')}</span>
           {/if}

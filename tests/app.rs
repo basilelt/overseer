@@ -4202,3 +4202,47 @@ fn close_of_an_overseer_session_waiting_for_you_needs_force() {
     assert_eq!(done["action"], "closed", "{done}");
     wait(|| line_json(&app, &line)["line"]["state"] == "hung-up");
 }
+
+fn fire_hook(app: &App, sid: &str, event: &str, pid: i32) {
+    let wt = app.fx.wt.to_string_lossy().into_owned();
+    let input = json!({"session_id": sid, "cwd": wt, "hook_event_name": event}).to_string();
+    let mut c = Command::new(bin());
+    app.fx.env(&mut c);
+    let o = output(
+        c.args(["hook", "claude", event, &pid.to_string()]),
+        Some(&input),
+    );
+    assert!(o.status.success());
+}
+
+#[test]
+fn close_of_an_external_session_stuck_mid_turn_needs_force() {
+    for (n, event, failed) in [
+        ('a', "UserPromptSubmit", "atPrompt"),
+        ('b', "SubagentStart", "noToolRunning"),
+        ('c', "TaskCreated", "noToolRunning"),
+    ] {
+        let sid = format!("dddddddd-0000-4000-8000-00000000052{}", n as u8 - b'a');
+        let app = App::new(&format!("closemid-{n}"), json!({}));
+        let agent = external_claude(&app, &sid, false);
+        let line = external_line(&app, &sid);
+        std::thread::sleep(Duration::from_secs(2));
+        fire_hook(&app, &sid, event, agent.pid);
+        let close = format!("/v1/lines/{}/close", enc(&line));
+        let v = wait_for(|| {
+            let (code, v) = app.req("POST", &close, Value::Null);
+            (code == 409).then_some(v)
+        });
+        assert_eq!(v["predicates"][failed]["ok"], false, "{event}: {v}");
+        let (code, _) = app.req("POST", &format!("{close}?dryRun=false"), Value::Null);
+        assert_eq!(code, 409);
+        assert!(!agent.gone());
+        let done = app.ok(
+            "POST",
+            &format!("{close}?dryRun=false&force=true"),
+            Value::Null,
+        );
+        assert_eq!(done["action"], "closed", "{done}");
+        wait(|| agent.gone());
+    }
+}
