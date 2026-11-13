@@ -1,5 +1,5 @@
 use crate::util::{rfc3339, sign, token, ulid};
-use crate::{dberr, fail, reply, ApiError, App, Reply};
+use crate::{dberr, fail, reply, ApiError, App, Reply, Who};
 use axum::extract::{Path, Query, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::sse::{Event, KeepAlive, Sse};
@@ -49,19 +49,57 @@ impl App {
     }
 }
 
-type Feed = (
-    VecDeque<Value>,
-    broadcast::Receiver<Value>,
-    i64,
-    Option<HashSet<String>>,
-);
+struct Feed {
+    backlog: VecDeque<Value>,
+    rx: broadcast::Receiver<Value>,
+    seen: i64,
+    types: Option<HashSet<String>>,
+    user: Option<String>,
+    revoked: broadcast::Receiver<String>,
+}
+
+impl Feed {
+    fn is_revoked(&mut self) -> bool {
+        loop {
+            match self.revoked.try_recv() {
+                Ok(name) if Some(&name) == self.user.as_ref() => return true,
+                Ok(_) => {}
+                Err(broadcast::error::TryRecvError::Empty) => return false,
+                Err(_) => return true,
+            }
+        }
+    }
+
+    async fn next(&mut self) -> Option<Value> {
+        if self.is_revoked() {
+            return None;
+        }
+        if let Some(ev) = self.backlog.pop_front() {
+            return Some(ev);
+        }
+        loop {
+            tokio::select! {
+                biased;
+                gone = self.revoked.recv() => match gone {
+                    Ok(name) if Some(&name) != self.user.as_ref() => {}
+                    _ => return None,
+                },
+                ev = self.rx.recv() => return ev.ok(),
+            }
+        }
+    }
+}
 
 pub async fn sse(
     State(app): State<Arc<App>>,
     h: HeaderMap,
     Query(q): Query<HashMap<String, String>>,
 ) -> Result<Sse<impl Stream<Item = Result<Event, Infallible>>>, ApiError> {
-    app.who(&h)?;
+    let revoked = app.revoked.subscribe();
+    let user = match app.who(&h)? {
+        Who::User(name) => Some(name),
+        Who::Admin => None,
+    };
     let types: Option<HashSet<String>> = q.get("types").map(|t| {
         t.split(',')
             .map(str::trim)
@@ -74,31 +112,33 @@ pub async fn sse(
         .get("last-event-id")
         .and_then(|v| v.to_str().ok())
         .and_then(|s| s.trim().parse::<i64>().ok());
-    let backlog = last.map(|n| app.events_after(n)).unwrap_or_default();
-    let feed: Feed = (backlog, rx, last.unwrap_or(0), types);
-    let stream =
-        futures_util::stream::unfold(feed, |(mut backlog, mut rx, mut seen, types)| async move {
-            loop {
-                let ev = match backlog.pop_front() {
-                    Some(e) => e,
-                    None => rx.recv().await.ok()?,
-                };
-                let id = event_id(&ev);
-                if id <= seen {
-                    continue;
-                }
-                seen = id;
-                let ty = ev["type"].as_str().unwrap_or_default().to_string();
-                if types.as_ref().is_some_and(|t| !t.contains(&ty)) {
-                    continue;
-                }
-                let out = Event::default()
-                    .id(id.to_string())
-                    .event(ty)
-                    .data(ev.to_string());
-                return Some((Ok(out), (backlog, rx, seen, types)));
+    let feed = Feed {
+        backlog: last.map(|n| app.events_after(n)).unwrap_or_default(),
+        rx,
+        seen: last.unwrap_or(0),
+        types,
+        user,
+        revoked,
+    };
+    let stream = futures_util::stream::unfold(feed, |mut feed| async move {
+        loop {
+            let ev = feed.next().await?;
+            let id = event_id(&ev);
+            if id <= feed.seen {
+                continue;
             }
-        });
+            feed.seen = id;
+            let ty = ev["type"].as_str().unwrap_or_default().to_string();
+            if feed.types.as_ref().is_some_and(|t| !t.contains(&ty)) {
+                continue;
+            }
+            let out = Event::default()
+                .id(id.to_string())
+                .event(ty)
+                .data(ev.to_string());
+            return Some((Ok(out), feed));
+        }
+    });
     Ok(Sse::new(stream).keep_alive(KeepAlive::default()))
 }
 
