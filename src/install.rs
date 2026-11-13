@@ -2,8 +2,10 @@ use crate::agents::{self, Hooks};
 use crate::hooks;
 use crate::http::err;
 use crate::legacy;
+use crate::sys::OpenOptionsExt;
 use crate::util::shell_quote;
 use serde_json::{json, Map, Value};
+use std::io::Write;
 use std::path::{Path, PathBuf};
 
 pub const MARKER: &str = "#overseer-hook";
@@ -277,11 +279,25 @@ pub fn diff(path: &Path, before: &str, after: &str, tmp: &Path) -> String {
     if before == after {
         return String::new();
     }
-    let a = tmp.join("sb-diff-a");
-    let b = tmp.join("sb-diff-b");
-    let ok = crate::mkdir_private(tmp).is_ok()
-        && std::fs::write(&a, before).is_ok()
-        && std::fs::write(&b, after).is_ok();
+    static SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let tag = format!(
+        "sb-diff-{}-{}",
+        std::process::id(),
+        SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+    );
+    let a = tmp.join(format!("{tag}-a"));
+    let b = tmp.join(format!("{tag}-b"));
+    let put = |p: &Path, text: &str| {
+        let _ = std::fs::remove_file(p);
+        std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .mode(0o600)
+            .open(p)
+            .and_then(|mut f| f.write_all(text.as_bytes()))
+            .is_ok()
+    };
+    let ok = crate::mkdir_private(tmp).is_ok() && put(&a, before) && put(&b, after);
     let label = path.to_string_lossy();
     let out = ok
         .then(|| {
@@ -1042,6 +1058,26 @@ pub fn on_daemon_start(state_dir: &Path) {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(unix)]
+    #[test]
+    fn diff_does_not_write_through_files_planted_in_its_scratch_dir() {
+        let d = std::env::temp_dir().join(format!("sb-diff-planted-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        let scratch = d.join("scratch");
+        std::fs::create_dir_all(&scratch).unwrap();
+        let victim = d.join("victim");
+        std::fs::write(&victim, "keep").unwrap();
+        for n in ["sb-diff-a", "sb-diff-b"] {
+            std::os::unix::fs::symlink(&victim, scratch.join(n)).unwrap();
+        }
+        let out = diff(Path::new("settings.json"), "one\n", "two\n", &scratch);
+        assert!(out.contains("settings.json (merged)"), "{out}");
+        assert!(out.contains("-one\n+two\n"), "{out}");
+        assert_eq!(std::fs::read_to_string(&victim).unwrap(), "keep");
+        assert_eq!(std::fs::read_dir(&scratch).unwrap().count(), 2);
+        let _ = std::fs::remove_dir_all(d);
+    }
+
     #[test]
     fn specs_and_installable_agents_match_both_ways() {
         for a in crate::agents::AGENTS
