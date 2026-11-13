@@ -420,16 +420,15 @@ describe('startNotifications', () => {
       const { app } = fakeApp();
       const stop = startNotifications(app as unknown as typeof App);
       await vi.waitFor(() => expect(onAction).toHaveBeenCalledTimes(1));
-      await vi.waitFor(() => expect(unregister).not.toHaveBeenCalled());
+      expect(unregister).not.toHaveBeenCalled();
       stop();
       await vi.waitFor(() => expect(unregister).toHaveBeenCalledTimes(1));
     });
 
-    it('never loads the system sender in a browser', async () => {
-      vi.stubGlobal('window', {});
+    it('does not listen when stopped before the sender has loaded', async () => {
       const { app } = fakeApp();
       startNotifications(app as unknown as typeof App)();
-      await Promise.resolve();
+      await new Promise((r) => setTimeout(r, 20));
       expect(onAction).not.toHaveBeenCalled();
     });
   });
