@@ -590,6 +590,16 @@ describe('MockDaemon', () => {
     expect(await a.autoOrganize()).toEqual({ enabled: true });
   });
 
+  it('stores the auto concurrency, from the default of 2, and refuses what the daemon refuses', async () => {
+    const { a, m } = setup();
+    expect(await a.autoConcurrency()).toEqual({ value: 2 });
+    expect(await a.setAutoConcurrency(7)).toEqual({ value: 7 });
+    expect(await a.autoConcurrency()).toEqual({ value: 7 });
+    for (const value of [0, 17, 2.5, '3', null]) {
+      await expect(m.request('PUT', '/v1/tasks/auto-concurrency', { value })).rejects.toMatchObject({ status: 400, message: expect.stringContaining('value must be an integer from 1 to 16') });
+    }
+  });
+
   it('stores the agent tasks switch, on by default, and refuses a non-boolean', async () => {
     const { a, m } = setup();
     expect(await a.agentTasks()).toEqual({ enabled: true });

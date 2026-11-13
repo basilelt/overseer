@@ -10,6 +10,7 @@
   import MessageSquare from '@lucide/svelte/icons/message-square';
   import { isOff } from '../../session/grouping';
   import { projectName, app } from '../../state.svelte';
+  import { pullAutoConcurrency } from '../../settings/auto-concurrency';
   import { saveSettings, settings } from '../../settings/settings.svelte';
   import { holdAll } from '../../workspace/wsactions';
   import { t, type Key } from '../../i18n.svelte';
@@ -62,6 +63,10 @@
     { value: 'matrix' as const, label: t('kanban.view.matrix') },
   ]);
   const summary = $derived(autoSummary(app.data.tasks));
+  $effect(() => {
+    if (!app.connected || app.conn.phase !== 'connected') return;
+    untrack(() => pullAutoConcurrency(app.api).catch(() => {}));
+  });
   const next = $derived(nextUp(app.data.tasks, settings.autoConcurrency));
   const ids = $derived(byId(app.data.tasks));
   const linked = $derived(new Set(app.data.tasks.flatMap((x) => x.dependsOn ?? [])));
