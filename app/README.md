@@ -332,7 +332,7 @@ of hosts (Connect screen: label, host, port, user, optional ProxyJump through on
 password). It runs the server installed on that host (`~/.overseer/server/…`) and multiplexes
 everything over one SSH session, like the desktop. When the host has no server, or an older one,
 the phone downloads the server of its own version from the GitHub release (with the GitHub token
-of Settings > Updates / GitHub access), checks it against `SHA256SUMS`, uploads and starts it;
+of Settings > Updates / GitHub access), checks it against the signed `SHA256SUMS`, uploads and starts it;
 a running older daemon is hot-upgraded like from the desktop. The first connection asks to trust the host key (fingerprint shown); a changed key is
 refused until you remove the trusted key in the host's settings.
 

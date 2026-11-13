@@ -9,6 +9,8 @@ use tokio::io::AsyncWriteExt;
 pub const REPO: &str = "basilelt/overseer";
 pub const GITHUB: &str = "https://github.com";
 pub const SUMS: &str = "SHA256SUMS";
+pub const SUMS_SIG: &str = "SHA256SUMS.sig";
+pub const RELEASE_KEY: &str = "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDNCRkYxQUFDNTAyREYyOTcKUldTWDhpMVFyQnIvTzNxSVNtdURZS20xcXo4SkdEdGlSUmNheDZua3J4aHZZVGxES3ZtNHQzTHoK";
 pub const PROGRESS_STEP: u64 = 256 * 1024;
 
 #[derive(Serialize)]
@@ -52,6 +54,26 @@ pub(crate) fn release_url(base: &str, version: &str) -> String {
 
 pub(crate) fn status_error(status: StatusCode) -> Option<ApkError> {
     (!status.is_success()).then(|| failed(format!("GitHub answered {status}")))
+}
+
+pub fn signed(key: &str, data: &[u8], signature: &str) -> bool {
+    use base64::Engine;
+    let text = |b64: &str| {
+        base64::engine::general_purpose::STANDARD
+            .decode(b64.trim())
+            .ok()
+            .and_then(|b| String::from_utf8(b).ok())
+    };
+    let (Some(key), Some(signature)) = (text(key), text(signature)) else {
+        return false;
+    };
+    match (
+        minisign_verify::PublicKey::decode(&key),
+        minisign_verify::Signature::decode(&signature),
+    ) {
+        (Ok(key), Ok(signature)) => key.verify(data, &signature, false).is_ok(),
+        _ => false,
+    }
 }
 
 pub fn hex(bytes: &[u8]) -> String {
@@ -140,6 +162,10 @@ pub(crate) async fn stream_to(
 
 #[cfg(test)]
 pub(crate) mod testhttp {
+    pub const TEST_KEY: &str = "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDAyRkU2MTc1MTUzNkE4NzEKUldSeHFEWVZkV0grQWhHNEpuVW1wWExYL29Dek1KRnEvTEY4NUhENVNWY3pXdXFKU1pOTE03VW8K";
+    pub const TEST_SUMS: &str = "299001868fb8c02fd431c336c6d058f5558c5dff5b5af5e6fe04b870a6a9cbba  overseer-0.9.0-x86_64-unknown-linux-musl\n";
+    pub const TEST_SUMS_SIG: &str = "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVSeHFEWVZkV0grQWllNVJ5ODRpak9yTnNjNis2cXJmNU53RHVLMTYvZkFhU0JSMXJmZEZiUGt4Q3Y4c2tHeGFyTlFxa3Urc2ZBOWt4d3ZVVmZWZXgwYTBXYitXYWliZndBPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk0NTg5OTExCWZpbGU6U0hBMjU2U1VNUwpxNEl1MUxVWk9WYmc0V2YxWHNNZ3FMQTlUdENyMldDR0syQmJBRUc2bUpuSkc1TkVFUVFuL3VLUmVjeElWS3pHMnR4MkpGL3FTNG1UWER0WGJralVBUT09Cg==";
+
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::net::TcpListener;
 
@@ -186,6 +212,31 @@ pub(crate) mod testhttp {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    use super::testhttp::{TEST_KEY, TEST_SUMS, TEST_SUMS_SIG};
+
+    #[test]
+    fn the_release_key_is_the_updater_key_of_the_app() {
+        let conf: serde_json::Value =
+            serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
+        assert_eq!(conf["plugins"]["updater"]["pubkey"], RELEASE_KEY);
+    }
+
+    #[test]
+    fn signed_accepts_only_the_exact_text_signed_by_the_key() {
+        assert!(signed(TEST_KEY, TEST_SUMS.as_bytes(), TEST_SUMS_SIG));
+        assert!(signed(
+            TEST_KEY,
+            TEST_SUMS.as_bytes(),
+            &format!("{TEST_SUMS_SIG}\n")
+        ));
+        let other = TEST_SUMS.replacen('2', "3", 1);
+        assert!(!signed(TEST_KEY, other.as_bytes(), TEST_SUMS_SIG));
+        assert!(!signed(RELEASE_KEY, TEST_SUMS.as_bytes(), TEST_SUMS_SIG));
+        assert!(!signed(TEST_KEY, TEST_SUMS.as_bytes(), ""));
+        assert!(!signed(TEST_KEY, TEST_SUMS.as_bytes(), "not base64"));
+        assert!(!signed("", TEST_SUMS.as_bytes(), TEST_SUMS_SIG));
+    }
 
     #[test]
     fn errors_serialize_with_a_lowercase_kind() {
