@@ -901,6 +901,9 @@ mod tests {
         let s = AppState::default();
         let main = s.window("main");
         let slot = s.window(&conn_key("main", Some("ssh:prod")));
+        let other = s.window("w-2");
+        let (other_tx, _other_rx) = tokio::sync::mpsc::channel(1);
+        assert!(other.add_term(9, other_tx));
         let (tx, mut rx) = tokio::sync::mpsc::channel(1);
         assert!(main.add_term(1, tx));
         let sub = tauri::async_runtime::spawn(std::future::pending::<()>());
@@ -918,6 +921,8 @@ mod tests {
         assert!(rx.recv().await.is_none());
         assert!(finished(&abort).await);
         assert!(slot.is_closed() && !main.is_closed());
+        assert!(!other.is_closed());
+        assert_eq!(other.terms.lock().unwrap().len(), 1);
         main.ports.reset();
         assert_eq!(seen.load(Ordering::Relaxed), 1);
         let (tx, _rx) = tokio::sync::mpsc::channel(1);
