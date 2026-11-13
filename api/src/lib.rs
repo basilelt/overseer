@@ -100,6 +100,7 @@ pub struct App {
     clock: Clock,
     admin: Option<String>,
     events: broadcast::Sender<Value>,
+    revoked: broadcast::Sender<String>,
     hooks: mpsc::UnboundedSender<Value>,
     hooks_rx: Mutex<Option<mpsc::UnboundedReceiver<Value>>>,
     conns: Mutex<HashMap<String, Conn>>,
@@ -187,6 +188,7 @@ impl App {
             clock,
             admin: admin_token.filter(|t| !t.is_empty()).map(sha256),
             events: broadcast::channel(1024).0,
+            revoked: broadcast::channel(64).0,
             hooks,
             hooks_rx: Mutex::new(Some(hooks_rx)),
             conns: Mutex::new(HashMap::new()),
@@ -579,7 +581,9 @@ async fn create_user(State(app): State<Arc<App>>, h: HeaderMap, Json(b): Json<Va
 
 async fn revoke_user(State(app): State<Arc<App>>, h: HeaderMap, Path(name): Path<String>) -> Reply {
     app.admin(&h)?;
-    revoke(&app, "users", "name", &name)
+    let r = revoke(&app, "users", "name", &name);
+    let _ = app.revoked.send(name);
+    r
 }
 
 async fn list_stations(State(app): State<Arc<App>>, h: HeaderMap) -> Reply {
