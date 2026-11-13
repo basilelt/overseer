@@ -39,6 +39,8 @@
   import { isNativeAndroid, native, setNativeOs } from './lib/mobile/native';
   import { closeTop, runBack } from './lib/mobile/back';
   import { isWebLink } from './lib/links';
+  import { nativeMenu } from './lib/commands/native-menu';
+  import Copy from '@lucide/svelte/icons/copy';
 
   let sidebarW = $state(clampWidth(settings.sidebarWidth, SIDEBAR));
   let panelW = $state(clampWidth(settings.panelWidth, PANEL));
@@ -134,11 +136,19 @@
     return () => void listener.unregister();
   }
 
-  function onLinkMenu(e: MouseEvent) {
-    const a = (e.target as Element | null)?.closest?.('a[href]') as HTMLAnchorElement | null;
-    if (e.defaultPrevented || !a || !isWebLink(a.href)) return;
+  function onContextMenu(e: MouseEvent) {
+    if (e.defaultPrevented) return;
+    const target = e.target as Element | null;
+    const a = target?.closest?.('a[href]') as HTMLAnchorElement | null;
+    if (a && isWebLink(a.href)) {
+      e.preventDefault();
+      return app.linkMenu(e, a.href);
+    }
+    const selection = getSelection()?.toString() ?? '';
+    const mode = nativeMenu({ tauri: isTauri(), phone: phoneOrMobile() }, target, selection);
+    if (mode === 'native') return;
     e.preventDefault();
-    app.linkMenu(e, a.href);
+    if (mode === 'copy') app.openMenu(e, '', [{ label: t('chat.copy'), icon: Copy, run: () => void app.client?.copyText(selection).catch(() => {}) }]);
   }
 
   function onKey(e: KeyboardEvent) {
@@ -160,7 +170,7 @@
   const connBanner = preload(() => import('./lib/components/ui/ConnBanner.svelte'), 1000);
 </script>
 
-<svelte:window onkeydown={onKey} oncontextmenu={onLinkMenu} />
+<svelte:window onkeydown={onKey} oncontextmenu={onContextMenu} />
 
 {#if isPhone()}
   <Boundary name="mobile">{#await mobileShell() then { default: MobileShell }}<MobileShell />{/await}</Boundary>
