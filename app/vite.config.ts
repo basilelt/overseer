@@ -48,6 +48,7 @@ function ghosttyPatches(): Plugin {
 export default defineConfig({
   plugins: [svelte(), ghosttyPatches()],
   clearScreen: false,
+  optimizeDeps: { exclude: ['ghostty-web'] },
   define: { __SELF_UPDATE__: JSON.stringify(selfUpdate()) },
   server: { port: 1420, strictPort: true, watch: { ignored: ['**/src-tauri/**'] } },
   build: {
