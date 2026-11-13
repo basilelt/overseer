@@ -3,6 +3,7 @@ import type { SidebarItem } from '../session/grouping';
 import type { Term } from '../types';
 import { REVIEW_PREFIX } from '../review/keys';
 import { isShellItem } from '../agents';
+import { TEXT_FIELD } from '../review/walk-key';
 
 export type TabKind = 'agent' | 'chat' | 'shell' | 'browser' | 'review' | 'graph' | 'worktrees' | 'system' | 'usage' | 'prs';
 
@@ -124,4 +125,14 @@ export function focusSession(pane: Element | null | undefined): boolean {
   return document.activeElement === target;
 }
 
-export const coarsePointer = () => typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
+const TAKES_FOCUS = `${TEXT_FIELD}, button, a[href], summary, [tabindex]:not([tabindex="-1"])`;
+
+export function refocusReview(pane: Element | null | undefined, target: Element | null): boolean {
+  if (!pane || !target || target.closest(TAKES_FOCUS)) return false;
+  const review = pane.querySelector<HTMLElement>('.review');
+  if (!review || !review.isConnected || review.contains(document.activeElement)) return false;
+  review.focus({ preventScroll: true });
+  return document.activeElement === review;
+}
+
+export const coarsePointer =() => typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;

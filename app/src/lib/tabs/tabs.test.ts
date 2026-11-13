@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { SidebarItem } from '../session/grouping';
 import type { Term } from '../types';
-import { applyShortcut, coarsePointer, focusSession, followTerm, newTabKey, rememberTerms, registerTabKind, stripScroll, TAB_KINDS, tabInfo, tabTitle, type TabKindDef } from './tabs';
+import { applyShortcut, coarsePointer, focusSession, followTerm, newTabKey, refocusReview, rememberTerms, registerTabKind, stripScroll, TAB_KINDS, tabInfo, tabTitle, type TabKindDef } from './tabs';
 import { addTabs, layoutFromTabs, renameTab, reorderTab, split, switchLayout, workspace } from '../workspace/workspace.svelte';
 
 describe('tab shortcuts', () => {
@@ -185,6 +185,43 @@ describe('focusSession', () => {
     expect(focusSession(pane({ [TERM]: fake('gone', false) }))).toBe(false);
     expect(focusSession(null)).toBe(false);
     expect(active.el).toBe('tab');
+  });
+});
+
+describe('refocusReview', () => {
+  type Box = { id: string; isConnected: boolean; focus: (o?: unknown) => void; contains: (n: unknown) => boolean };
+  const active: { el: unknown } = { el: null };
+  const review = (): Box => ({ id: 'review', isConnected: true, focus() { active.el = this; }, contains(n) { return n === this; } });
+  const pane = (r: Box | null) => ({ querySelector: (sel: string) => (sel === '.review' ? r : null) }) as unknown as Element;
+  const target = (hits: string[]) => ({ closest: (sel: string) => (hits.some((h) => sel.includes(h)) ? {} : null) }) as unknown as Element;
+
+  it('focuses the review when the click lands on blank space outside it, such as the pane toolbar', () => {
+    const r = review();
+    active.el = 'body';
+    vi.stubGlobal('document', { get activeElement() { return active.el; } });
+    expect(refocusReview(pane(r), target([]))).toBe(true);
+    expect(active.el).toBe(r);
+  });
+
+  it('leaves a click on a control that takes focus itself alone', () => {
+    const r = review();
+    active.el = 'button';
+    vi.stubGlobal('document', { get activeElement() { return active.el; } });
+    expect(refocusReview(pane(r), target(['button']))).toBe(false);
+    expect(refocusReview(pane(r), target(['textarea']))).toBe(false);
+    expect(active.el).toBe('button');
+  });
+
+  it('does nothing when focus is already inside the review or the pane shows no review', () => {
+    const r = review();
+    active.el = r;
+    vi.stubGlobal('document', { get activeElement() { return active.el; } });
+    expect(refocusReview(pane(r), target([]))).toBe(false);
+    active.el = 'body';
+    expect(refocusReview(pane(null), target([]))).toBe(false);
+    expect(refocusReview(null, target([]))).toBe(false);
+    expect(refocusReview(pane(r), null)).toBe(false);
+    expect(active.el).toBe('body');
   });
 });
 

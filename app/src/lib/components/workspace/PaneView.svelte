@@ -16,7 +16,7 @@
   import TerminalPane from './TerminalPane.svelte';
   import GitCompare from '@lucide/svelte/icons/git-compare';
   import { renameTab } from '../../workspace/workspace.svelte';
-  import { newTabKey, TAB_KINDS, tabInfo } from '../../tabs/tabs';
+  import { newTabKey, refocusReview, TAB_KINDS, tabInfo } from '../../tabs/tabs';
   import { paneAction } from '../../workspace/workspaces';
   import { modeOf } from '../../chat/viewmode.svelte';
   import { isPhone } from '../../mobile/ui.svelte';
@@ -96,7 +96,7 @@
   }
 </script>
 
-<section class="pane" class:focused role="group" onpointerdown={focus}>
+<section class="pane" class:focused role="group" onpointerdown={focus} onpointerup={(e) => refocusReview(e.currentTarget, e.target as Element | null)}>
   <TabBar {pane} {index} {focused} {canClose} />
   <div class="body">
     <div class="main" class:hidden={!!webKey && phone}>
