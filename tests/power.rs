@@ -121,3 +121,19 @@ fn a_non_boolean_body_is_rejected() {
     assert_eq!(code, 400);
     assert_eq!(v["error"], "enabled must be a boolean");
 }
+
+#[test]
+fn uninstalling_releases_the_lid_inhibitor_and_lists_nothing_on_linux() {
+    let (app, log) = app("power-uninstall");
+    app.ok("PUT", LID, json!({"enabled": true}));
+    let pid = inhibitors(&log)[0].0;
+    let v = app.ok("POST", "/v1/uninstall", json!({"dryRun": true}));
+    assert!(v["removed"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .all(|r| r["kind"] != "power"));
+    assert!(alive(pid));
+    app.ok("POST", "/v1/uninstall", json!({"dryRun": false}));
+    wait(|| !alive(pid));
+}

@@ -585,7 +585,7 @@ export interface HooksRun {
   results: HookResult[];
 }
 
-export type UninstallKind = 'service' | 'linger' | 'hook' | 'statusline' | 'backup' | 'dir' | 'worktree' | 'branch' | 'appData' | 'stateDir';
+export type UninstallKind = 'service' | 'linger' | 'power' | 'hook' | 'statusline' | 'backup' | 'dir' | 'worktree' | 'branch' | 'appData' | 'stateDir';
 
 export interface UninstallItem {
   kind: UninstallKind;

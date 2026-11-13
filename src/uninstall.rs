@@ -1,4 +1,5 @@
-use crate::{autostart, install, statusline, worktrees, Ctx};
+use crate::registry::Registry;
+use crate::{autostart, install, power, statusline, worktrees, Ctx};
 use serde_json::{json, Value};
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
@@ -177,6 +178,38 @@ fn service(rep: &mut Report, state_dir: &Path, apply: bool) {
         }
         rep.removed("linger", label);
     }
+}
+
+fn lid_label(os: power::Os) -> &'static str {
+    match os {
+        power::Os::Mac => "pmset -a disablesleep 0",
+        _ => "powercfg lid close action",
+    }
+}
+
+fn lid(rep: &mut Report, state_dir: &Path, apply: bool, os: power::Os, run: power::Run) {
+    if !state_dir.join(crate::paths::REGISTRY_DB).exists() {
+        return;
+    }
+    let Ok(reg) = Registry::open(state_dir) else {
+        return;
+    };
+    if !power::enabled(&reg) {
+        return;
+    }
+    let label = lid_label(os);
+    if os == power::Os::Linux {
+        if apply {
+            let _ = power::apply(os, run, &reg, false);
+        }
+        return;
+    }
+    if apply {
+        if let Err(e) = power::apply(os, run, &reg, false) {
+            return rep.error("power", label, e);
+        }
+    }
+    rep.removed("power", label);
 }
 
 fn keep_copy(rep: &mut Report, kind: &str, path: &Path) -> bool {
@@ -488,6 +521,13 @@ pub fn run(ctx: &Ctx, apply: bool) -> Report {
     };
     let state_dir = ctx.state_dir.as_path();
     service(&mut rep, state_dir, apply);
+    lid(
+        &mut rep,
+        state_dir,
+        apply,
+        power::Os::current(),
+        &power::run_cmd,
+    );
     hooks(&mut rep, state_dir, apply);
     statusline_hook(&mut rep, state_dir, apply);
     config_backups(ctx, &mut rep, apply);
@@ -752,5 +792,91 @@ mod tests {
         let p = app_data_paths();
         assert!(!p.is_empty());
         assert!(p.iter().all(|p| p.to_string_lossy().contains(id)));
+    }
+
+    fn lid_state(tag: &str, on: bool) -> PathBuf {
+        let d = tmp(tag);
+        let reg = Registry::open(&d).unwrap();
+        reg.put("keepAwakeLidClosed", if on { "true" } else { "false" })
+            .unwrap();
+        d
+    }
+
+    #[test]
+    fn mac_uninstall_restores_sleep_through_the_admin_prompt() {
+        let d = lid_state("lid-mac", true);
+        let calls = std::cell::RefCell::new(vec![]);
+        let run = |c: &str, a: &[&str]| {
+            calls.borrow_mut().push(format!("{c} {}", a.join(" ")));
+            Ok(String::new())
+        };
+        let mut dry = Report::default();
+        lid(&mut dry, &d, false, power::Os::Mac, &run);
+        assert_eq!(
+            dry.removed,
+            vec![("power".into(), "pmset -a disablesleep 0".into())]
+        );
+        assert!(calls.borrow().is_empty());
+        let mut rep = Report::default();
+        lid(&mut rep, &d, true, power::Os::Mac, &run);
+        assert_eq!(rep.removed.len(), 1);
+        assert!(calls.borrow()[0].contains("pmset -a disablesleep 0"));
+    }
+
+    #[test]
+    fn a_refused_admin_prompt_is_an_error_not_a_removal() {
+        let d = lid_state("lid-mac-refused", true);
+        let run = |_: &str, _: &[&str]| Err("User canceled. (-128)".to_string());
+        let mut rep = Report::default();
+        lid(&mut rep, &d, true, power::Os::Mac, &run);
+        assert!(rep.removed.is_empty());
+        assert_eq!(rep.errors[0].0, "power");
+        assert!(rep.errors[0].2.contains("canceled"));
+    }
+
+    #[test]
+    fn windows_uninstall_puts_the_saved_lid_action_back() {
+        let d = lid_state("lid-win", true);
+        Registry::open(&d)
+            .unwrap()
+            .put("keepAwakeLidSaved", "1,2")
+            .unwrap();
+        let calls = std::cell::RefCell::new(vec![]);
+        let run = |c: &str, a: &[&str]| {
+            calls.borrow_mut().push(format!("{c} {}", a.join(" ")));
+            Ok("Current AC Power Setting Index: 0x00000000\nCurrent DC Power Setting Index: 0x00000000\n".into())
+        };
+        let mut rep = Report::default();
+        lid(&mut rep, &d, true, power::Os::Windows, &run);
+        assert_eq!(rep.removed[0].0, "power");
+        let calls = calls.borrow();
+        assert!(calls
+            .iter()
+            .any(|c| c.contains("/setacvalueindex") && c.ends_with(" 1")));
+        assert!(calls
+            .iter()
+            .any(|c| c.contains("/setdcvalueindex") && c.ends_with(" 2")));
+    }
+
+    #[test]
+    fn nothing_is_listed_or_run_when_the_option_was_never_on() {
+        let run = |_: &str, _: &[&str]| -> Result<String, String> { panic!("must not run") };
+        let off = lid_state("lid-off", false);
+        let none = tmp("lid-none");
+        for d in [&off, &none] {
+            let mut rep = Report::default();
+            lid(&mut rep, d, true, power::Os::Mac, &run);
+            assert!(rep.removed.is_empty() && rep.errors.is_empty());
+        }
+        assert!(!none.join(crate::paths::REGISTRY_DB).exists());
+    }
+
+    #[test]
+    fn linux_uninstall_lists_nothing_because_the_daemon_exit_releases_the_inhibitor() {
+        let d = lid_state("lid-linux", true);
+        let run = |_: &str, _: &[&str]| -> Result<String, String> { panic!("must not run") };
+        let mut rep = Report::default();
+        lid(&mut rep, &d, true, power::Os::Linux, &run);
+        assert!(rep.removed.is_empty() && rep.errors.is_empty());
     }
 }
