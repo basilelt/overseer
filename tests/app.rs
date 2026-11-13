@@ -387,6 +387,34 @@ fn a_websocket_head_that_arrives_late_still_attaches() {
 }
 
 #[test]
+fn a_replay_past_the_ring_keeps_the_screen_and_mouse_modes() {
+    let app = App::new("ringmodes", json!({}));
+    let wt = app.fx.wt.to_string_lossy().into_owned();
+    let script = r#"printf '\033[?1049h\033[?1000h\033[?1006h\033[?2004h\033[?1007l'; head -c 2500000 /dev/zero | tr '\0' x; printf 'flood-%s' done; sleep 60"#;
+    let t = app.ok(
+        "POST",
+        "/v1/terms",
+        json!({"cwd": wt, "cmd": ["/bin/sh", "-c", script]}),
+    );
+    let id = t["id"].as_str().unwrap().to_string();
+    let mut first = app.ws(&id);
+    read_until(&mut first, "flood-done");
+    drop(first);
+    let mut ws = app.ws(&id);
+    let replay = read_until(&mut ws, "flood-done");
+    let head = &replay[..replay.find('x').unwrap()];
+    for mode in [
+        "\x1b[?1049h",
+        "\x1b[?1000h",
+        "\x1b[?1006h",
+        "\x1b[?2004h",
+        "\x1b[?1007l",
+    ] {
+        assert!(head.contains(mode), "{mode:?} missing from {head:?}");
+    }
+}
+
+#[test]
 fn task_start_runs_the_agent_in_a_term_and_goes_in_testing() {
     let app = App::new("start", json!({"autoConcurrency": 0}));
     let wt = app.fx.wt.to_string_lossy().into_owned();
