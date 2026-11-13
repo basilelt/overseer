@@ -4052,6 +4052,13 @@ struct External {
 }
 
 impl External {
+    fn send(&mut self, text: &str) {
+        use std::io::Write;
+        let w = self._stdin.as_mut().unwrap();
+        w.write_all(text.as_bytes()).unwrap();
+        w.flush().unwrap();
+    }
+
     fn gone(&self) -> bool {
         self.gone.load(std::sync::atomic::Ordering::SeqCst)
     }
@@ -4143,4 +4150,55 @@ fn close_of_an_external_session_that_ignores_sigterm_fails_and_keeps_it() {
     assert_eq!(code, 409, "{v}");
     assert!(v["error"].as_str().unwrap().contains("did not exit"), "{v}");
     assert_ne!(line_json(&app, &line)["line"]["state"], "hung-up");
+}
+
+#[test]
+fn close_of_an_external_session_waiting_for_you_needs_force() {
+    let sid = "dddddddd-0000-4000-8000-000000000312";
+    let app = App::new("closeext-ask", json!({}));
+    let mut agent = external_claude(&app, sid, false);
+    let line = external_line(&app, sid);
+    agent.send("ask\n");
+    wait(|| line_json(&app, &line)["local"]["needsInput"] == true);
+
+    let close = format!("/v1/lines/{}/close", enc(&line));
+    let (code, plan) = app.req("POST", &close, Value::Null);
+    assert_eq!(code, 409, "{plan}");
+    assert_eq!(plan["predicates"]["notNeedsInput"]["ok"], false, "{plan}");
+    let (code, _) = app.req("POST", &format!("{close}?dryRun=false"), Value::Null);
+    assert_eq!(code, 409);
+    assert!(!agent.gone());
+
+    let done = app.ok(
+        "POST",
+        &format!("{close}?dryRun=false&force=true"),
+        Value::Null,
+    );
+    assert_eq!(done["action"], "closed", "{done}");
+    wait(|| agent.gone());
+    wait(|| line_json(&app, &line)["line"]["state"] == "hung-up");
+}
+
+#[test]
+fn close_of_an_overseer_session_waiting_for_you_needs_force() {
+    let sid = "dddddddd-0000-4000-8000-000000000313";
+    let app = App::new("closeterm-ask", json!({}));
+    let wt = app.fx.wt.to_string_lossy().into_owned();
+    let t = app.ok(
+        "POST",
+        "/v1/terms",
+        json!({"cwd": wt, "cmd": ["claude", "--session-id", sid], "cols": 100, "rows": 30}),
+    );
+    let mut ws = app.ws(t["id"].as_str().unwrap());
+    let line = external_line(&app, sid);
+    read_until(&mut ws, "❯");
+    send(&mut ws, "ask\r");
+    wait(|| line_json(&app, &line)["local"]["needsInput"] == true);
+
+    let close = format!("/v1/lines/{}/close?dryRun=false", enc(&line));
+    let (code, v) = app.req("POST", &close, Value::Null);
+    assert_eq!(code, 409, "{v}");
+    let done = app.ok("POST", &format!("{close}&force=true"), Value::Null);
+    assert_eq!(done["action"], "closed", "{done}");
+    wait(|| line_json(&app, &line)["line"]["state"] == "hung-up");
 }
