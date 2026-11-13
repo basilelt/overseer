@@ -1350,7 +1350,7 @@ fn scan_now(ctx: &Ctx) -> Result<Vec<Line>, String> {
             cwd_missing: f.cwd.is_empty() || !Path::new(&f.cwd).is_dir(),
             cwd: f.cwd,
             pid,
-            busy: f.busy,
+            busy: alive && f.busy,
             busy_known: f.busy_known,
             title: f.title,
             title_override: marks.title_override.clone(),
