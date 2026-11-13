@@ -77,12 +77,15 @@
   }
   :global(.phone) .scope {
     flex-wrap: wrap;
-    overflow: hidden;
     padding: 8px 12px;
   }
   :global(.phone) select {
     flex: 1 1 100%;
-    max-width: none;
+    min-width: 0;
+    max-width: 100%;
+    padding-right: 28px;
+    contain: paint;
+    text-overflow: ellipsis;
     height: 44px;
     font-size: 14px;
   }
