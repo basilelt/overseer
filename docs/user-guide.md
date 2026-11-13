@@ -131,8 +131,9 @@ finds Overseer hook entries that name another binary (older installs wrote
 `~/.overseer/server/<version>/overseer`), it rewrites them in place with the same merge,
 backup and validation. Files without Overseer entries are never touched.
 
-Codex runs edited hooks only after you trust them again (open codex and accept the prompt);
-Overseer never edits `config.toml`. Gemini CLI before 0.26 needs hooks enabled in its settings.
+Codex runs new or edited hooks only after you trust them: start `codex` and choose "Review hooks" or
+"Trust all and continue" at its "Hooks need review" prompt, or run `/hooks` inside it (`codex exec` cannot
+review hooks). Overseer never edits `config.toml`; `overseer doctor` shows which events still lack a trust entry. Gemini CLI before 0.26 needs hooks enabled in its settings.
 Files that Overseer owns (the Copilot hook file, the Mistral Vibe `hooks.toml`, the opencode and
 Amp plugins) are refused if a file of the same name was not written by Overseer. Mistral Vibe
 before 3.0 used other hook names behind an experimental flag and is not supported by the hooks.
@@ -774,7 +775,7 @@ fake consumer against the API and checks every payload against the schemas.
 | `board`: `daemon not reachable` | Start `overseer daemon --http 127.0.0.1:0` (or the service). `no loopback board`: restart it with `--http`. |
 | Board answers 403 | Missing or stale token (new at each daemon start): open the URL from `overseer board`; use `127.0.0.1`/`localhost` as host. |
 | States lag or `!input` missing | Hooks not installed: `overseer hooks install --apply`. |
-| Codex lines not tracked live | Codex needs you to re-trust edited hooks: open codex and accept. |
+| Codex lines not tracked live | Codex needs you to trust new or edited hooks: start codex and review them at the "Hooks need review" prompt, or run `/hooks`. `overseer doctor` lists the events without a trust entry. |
 | `api unreachable, showing this station only` | API down or wrong URL in `user.json`; `doctor` shows `api reachable`. `ls` falls back to local lines. |
 | `the api refused the user token` | Token revoked: `overseer login` again. |
 | `refused: disabled: acceptRemoteCommands is false on this station` | Set `"acceptRemoteCommands": true` in that station's `config.json`. |
@@ -872,7 +873,8 @@ non-zero exit), `skip` (not configured, not checked), `info` (a setting worth kn
 | state dir | exists with mode 700 |
 | daemon | answers on its socket (CLI works without it; hooks spool to disk) |
 | claude hooks | how many Overseer events are in `settings.json` |
-| codex hooks | same for `hooks.json` (only when `~/.codex` exists); reminder to re-trust |
+| codex hooks | same for `hooks.json` (only when `~/.codex` exists) |
+| codex trust | `warn` listing the Overseer events with no trust entry in `config.toml` (read-only; a changed hook whose old entry is stale is not detected), with the step to take |
 | claude, codex, tmux | version found on PATH (hold needs tmux) |
 | daemon PATH | `info`: the running daemon's `PATH` and its source (`login-shell`, `fallback`, `inherited`; 14.1a) |
 | station enrolment | `sync.json` present (`skip` when not enrolled) |

@@ -92,7 +92,7 @@ pub enum Repair {
     Codex,
 }
 
-pub const CODEX_TRUST: &str = "Codex runs edited hooks only after you trust them again: open codex and accept the hooks prompt (Overseer never edits config.toml).";
+pub const CODEX_TRUST: &str = "Codex runs new or edited hooks only after you trust them: start codex and choose Review hooks or Trust all at the \"Hooks need review\" prompt, or run /hooks inside it. codex exec cannot review hooks. Overseer never edits config.toml.";
 
 pub struct StartupPrompt {
     pub marker: &'static str,
