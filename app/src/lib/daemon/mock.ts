@@ -93,6 +93,7 @@ export const DAEMON_ERRORS = {
   shellInQuorum: { text: 'shell cannot join a quorum' },
   quorumOrchestrator: { text: 'the quorum orchestrator must be claude or codex' },
   sessionTaskStatus: { text: 'a session task follows its session: status must be one of in_progress, in_testing, merged, completed' },
+  bodyTooLarge: { text: 'request body exceeds 1 MiB' },
 } as const;
 
 const ALL_EFFORTS = ['low', 'medium', 'high', 'max'] as const;
@@ -823,6 +824,12 @@ export class MockDaemon implements DaemonClient {
 
   async request<T>(method: string, path: string, body?: any): Promise<T> {
     await lag(`${method} ${path}`);
+    if (body !== undefined) {
+      const json = JSON.stringify(body);
+      if (json.length * 3 > 1 << 20 && new TextEncoder().encode(json).length > 1 << 20) {
+        throw new DaemonError(413, DAEMON_ERRORS.bodyTooLarge.text);
+      }
+    }
     return this.route(method, path, body) as T;
   }
 

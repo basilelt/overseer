@@ -91,6 +91,8 @@ const ACCEPT_BACKOFF: Duration = Duration::from_millis(100);
 const MAX_LINE: usize = 8 << 10;
 const MAX_HEAD: usize = 64 << 10;
 const MAX_HEADERS: usize = 100;
+const MAX_BODY: u64 = 1 << 20;
+const MAX_DRAIN: u64 = 16 << 20;
 
 #[derive(Debug, PartialEq)]
 enum HeadErr {
@@ -1175,7 +1177,15 @@ pub fn conn(mut s: impl Stream, token: Option<&str>) {
         return respond(&mut s, code, &v);
     }
     let Head { mut req, len, .. } = head;
-    let mut body = vec![0; len.unwrap_or(0).min(1 << 20) as usize];
+    let len = len.unwrap_or(0);
+    if len > MAX_BODY {
+        // Drained first: a client still writing its body would get EPIPE and never read the answer.
+        let _ = r.get_ref().set_read_timeout(Some(HEAD_TIMEOUT));
+        let _ = std::io::copy(&mut (&mut r).take(len.min(MAX_DRAIN)), &mut std::io::sink());
+        drop(r);
+        return respond_err(&mut s, 413, "request body exceeds 1 MiB");
+    }
+    let mut body = vec![0; len as usize];
     let read = r.read_exact(&mut body);
     drop(r);
     if read.is_err() {

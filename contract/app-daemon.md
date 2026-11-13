@@ -28,7 +28,7 @@ are additions too, and so are session tasks (§5: `Task.origin`, `Task.manualSta
 
 - One request per connection (`Connection: close`), except `GET /v1/events` (SSE, long-lived)
   and `GET /v1/terms/{id}/io` (WebSocket, long-lived).
-- Bodies are JSON (`Content-Type: application/json`), max 1 MiB, except `POST /v1/uploads`
+- Bodies are JSON (`Content-Type: application/json`), max 1 MiB (a larger body is answered `413` with `{"error": "request body exceeds 1 MiB"}` and is not processed), except `POST /v1/uploads`
   (raw bytes, max 50 MiB, §3a); `GET /v1/file` answers raw bytes (§3a-bis). Errors: `{"error": "<message>"}`.
 - Times are RFC 3339 UTC (`2026-10-29T09:00:00Z`).
 

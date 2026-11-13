@@ -36,6 +36,7 @@ const triggers: Record<string, (m: MockDaemon, a: ReturnType<typeof api>) => Pro
   shellInQuorum: (_m, a) => a.createTask({ ...quorumBase, agent: 'claude', quorum: { workers: ['shell'], reviewers: ['codex'] } } as never),
   quorumOrchestrator: (_m, a) => a.createTask({ ...quorumBase, agent: 'gemini', quorum: { workers: ['claude'], reviewers: ['codex'] } } as never),
   sessionTaskStatus: async (_m, a) => a.patchTask((await sessionTask(a)).id, { status: 'pending' }),
+  bodyTooLarge: (m) => m.request('POST', '/v1/tasks', { title: 'x'.repeat(1 << 20) }),
 };
 
 describe('the mock daemon matches tests/golden/daemon_errors.json, which the real daemon is tested against', () => {
