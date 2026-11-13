@@ -36,7 +36,7 @@ export const STEPS: Step[] = [
   { id: 'autoUpdate', targets: ['updates', 'settings'], since: '0.35' },
   { id: 'subjects', targets: ['subjects', 'workspaces'], since: '0.36' },
   { id: 'sourceControl', targets: ['git-button', 'palette'], since: '0.36' },
-  { id: 'reviewMap', targets: ['review-map', 'review'], since: '0.36' },
+  { id: 'reviewMap', targets: ['review-map', 'review', 'palette', 'workspaces'], since: '0.36' },
   { id: 'lidClosed', targets: ['lid-closed', 'settings'], since: '0.36' },
   { id: 'recordBug', targets: ['palette'], since: '0.36', center: true },
   { id: 'quorum', targets: ['quorum', 'kanban'], since: '0.36' },

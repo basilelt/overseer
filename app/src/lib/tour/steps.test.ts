@@ -104,6 +104,15 @@ describe('tour steps', () => {
     expect(step.since).toBe('0.36');
     expect(targetOf(step, (n) => n === 'review-map' || n === 'review')).toBe('review-map');
     expect(targetOf(step, (n) => n === 'review')).toBe('review');
+    expect(targetOf(step, (n) => n === 'palette' || n === 'workspaces')).toBe('palette');
+  });
+
+  it('keeps the review map step in What\'s new with no session open, on desktop and phone', () => {
+    const whatsNew = stepsFor('whatsNew', '0.35');
+    const desktop = new Set(['palette', 'settings', 'workspaces', 'host']);
+    const phone = new Set(['workspaces', 'host']);
+    expect(visibleSteps(whatsNew, (n) => desktop.has(n)).map((s) => s.id)).toContain('reviewMap');
+    expect(visibleSteps(whatsNew, (n) => phone.has(n)).map((s) => s.id)).toContain('reviewMap');
   });
 
   it('shows the subjects, source control and review map steps to users who saw 0.35, subjects on the open workspace or else the sidebar', () => {
