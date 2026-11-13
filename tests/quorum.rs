@@ -156,12 +156,13 @@ fn a_ready_subtask_gets_reviewers_and_a_majority_accepts_it() {
         json!({"status": "in_testing"}),
     );
     let w = app.ok("GET", &format!("/v1/tasks/{wid}"), Value::Null);
-    assert_eq!(
-        w["votes"],
-        json!({"round": 1, "voters": 3, "needed": 2, "votes": [], "outcome": null})
-    );
     let reviewers = children(&app, &wid);
     assert_eq!(reviewers.len(), 2);
+    assert_eq!(
+        w["votes"],
+        json!({"round": 1, "voters": 3, "needed": 2, "votes": [], "outcome": null,
+               "reviewers": [id(&reviewers[0]), id(&reviewers[1])]})
+    );
     for (r, agent) in reviewers.iter().zip(["gemini", "codex"]) {
         assert_eq!(r["origin"], "reviewer");
         assert_eq!(r["status"], "auto");
@@ -409,6 +410,18 @@ fn a_rejected_worker_goes_back_to_work_and_its_next_turn_starts_round_two() {
     let w = get();
     assert_eq!(w["votes"]["outcome"], "rejected");
     assert_eq!(w["status"], "in_progress");
+    let (code, v) = app.req("POST", &format!("/v1/tasks/{}/start", id(&r)), json!({}));
+    assert_eq!(
+        (code, v["error"].as_str().unwrap_or_default()),
+        (
+            409,
+            format!(
+                "task #{} reviews a closed round of task #{}",
+                r["number"], w["number"]
+            )
+            .as_str()
+        )
+    );
     turn(&mut ws);
     wait_for(|| (get()["votes"]["round"] == 2).then_some(()));
     assert_eq!(get()["status"], "in_testing");
