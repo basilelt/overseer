@@ -319,7 +319,7 @@
     {#if dictation}
       <button class="icon-btn mic" title={t('dictation.start')} aria-label={t('dictation.start')} disabled={sender.sending} onpointerdown={(e) => e.preventDefault()} onclick={dictate}><Mic size={16} /></button>
     {/if}
-    <button class="send" title={t('chat.send')} aria-label={t('chat.send')} disabled={sender.sending || !text.trim()} onclick={() => send('idle')}><SendHorizontal size={16} /></button>
+    <button class="send" title={t('chat.send')} aria-label={t('chat.send')} disabled={sender.sending || !text.trim()} onpointerdown={(e) => e.preventDefault()} onclick={() => send('idle')}><SendHorizontal size={16} /></button>
   </div>
   <input class="picker" type="file" multiple bind:this={picker} onchange={picked} />
 </div>

@@ -35,6 +35,7 @@ import SunMoon from '@lucide/svelte/icons/sun-moon';
 import Unplug from '@lucide/svelte/icons/unplug';
 import Users from '@lucide/svelte/icons/users';
 import WandSparkles from '@lucide/svelte/icons/wand-sparkles';
+import { phoneOrMobile } from '../mobile/phone.svelte';
 import { allCommands, connected, register, type CommandDef, type CommandIcon, type CoreId } from './commands';
 import { diag, dt } from '../diag/diag.svelte';
 import { feedback, ft } from '../feedback/feedback.svelte';
@@ -92,6 +93,8 @@ const CORE_LABELS: Record<CoreId, Key> = {
   'font-reset': 'keys.fontReset',
   'close-window': 'keys.closeWindow',
 };
+
+const NO_PHONE = new Set(['split-right', 'split-down', 'panel', 'source-control', 'browser']);
 
 const AGENTS_VIEW = new Set<CoreId>(['split-right', 'split-down', 'tab-new', 'tab-close', 'tab-reopen']);
 
@@ -185,6 +188,10 @@ export function registerMore() {
   register(more);
   for (const c of allCommands()) {
     c.section ??= 'actions';
+    if (NO_PHONE.has(c.id)) {
+      const base = c.available;
+      c.available = () => !phoneOrMobile() && base();
+    }
     if (!isCore(c.id)) continue;
     c.icon = CORE_ICONS[c.id] ?? undefined;
     c.label = label(CORE_LABELS[c.id]);

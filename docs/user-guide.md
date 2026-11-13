@@ -124,6 +124,7 @@ hooks did not fire, fall back to terminal activity: in a daemon terminal, a line
 agent keeps writing after you pressed Enter, and its turn ends after 4 s without output. Amp has no
 needs-input event; Cursor Agent fires only some hooks in the CLI; Mistral Vibe fires no hook
 when you interrupt a turn, so its line stays busy until the next turn ends.
+A Codex whose hooks are not trusted yet falls back the same way in a daemon terminal, and its task then moves to Review when the turn ends; a Codex started outside Overseer terminals needs its hooks.
 
 Hooks call `~/.overseer/bin/overseer`, a symlink the daemon points at its own binary on
 every start and hot upgrade, so a server upgrade never breaks them. When the daemon starts and
@@ -1128,6 +1129,12 @@ daemon keeps its environment: the new one applies from its next start (the next 
 it is never restarted for this since that would end its terms. **Rescan** in the agent picker
 runs the detection again (`POST /v1/agents/rescan`), for instance after installing an agent.
 
+The **+** menus (tab bar and title bar) list only the agents that are installed; the others are
+folded under one **Not installed (N)** row at the bottom, which unfolds in place. An agent with a
+known install command shows **Install** there: click it and the command runs in a new terminal,
+then Overseer rescans, so the agent is ready to start. On a phone the palette lists **Install
+<agent>** for each missing agent.
+
 **Auto-approve** in Settings → Agents chooses which supported CLIs Overseer starts with their
 native automatic permission mode. It is on by default for Claude Code, Codex, Gemini CLI,
 Antigravity, opencode, Copilot CLI, Cursor Agent and Mistral Vibe (`--auto-approve`). The settings are stored on the connected
@@ -1956,7 +1963,7 @@ shortcuts.
 | Find in terminal (Enter: older match, Shift+Enter: newer, Esc closes) | Cmd+F | Ctrl+Shift+F (Ctrl+F outside a terminal) |
 | Copy the selection / paste | Cmd+C / Cmd+V | Ctrl+Shift+C / Ctrl+Shift+V, or Ctrl+Insert / Shift+Insert |
 | Terminal font larger / smaller / default | Cmd+= / Cmd+- / Cmd+0 | Ctrl+= / Ctrl+- / Ctrl+0 |
-| Command palette | Cmd+P | Ctrl+P (Ctrl+Shift+P in a terminal) |
+| Command palette (the search button in the title bar opens it too and shows the key) | Cmd+P | Ctrl+P (Ctrl+Shift+P in a terminal) |
 | Settings | Cmd+, | Ctrl+, |
 | Keyboard shortcuts | Cmd+/ | Ctrl+Shift+/ (Ctrl+/ outside a terminal) |
 | Show or hide the sidebar | Cmd+B | Ctrl+Shift+B (Ctrl+B outside a terminal) |
@@ -2253,7 +2260,7 @@ exits: Resume then reopens the session it was last in (`lines.session_now`). Two
 Overseer writes outside its own folders, so deleting the app alone leaves things behind: hook
 entries in the agents' config files (for example `~/.claude/settings.json`), the statusline
 wrapper, the boot service (a systemd user unit, or `~/Library/LaunchAgents/dev.overseer.daemon.plist`)
-and its linger setting, `~/.overseer` (the `bin/` shim, `server/`, `u/`, `tasks/`, `reviews/`), the
+its linger setting, the lid keep-awake setting when it was on (macOS `pmset disablesleep`, the Windows lid close action; both are system-wide and put back, macOS asking for your administrator password), `~/.overseer` (the `bin/` shim, `server/`, `u/`, `tasks/`, `reviews/`), the
 config backups it made, worktrees and `task/*` branches it created, the state dir
 (`~/.local/state/overseer` on Linux, `~/Library/Application Support/overseer` on macOS,
 `%LOCALAPPDATA%\overseer` on Windows, or `$OVERSEER_STATE_DIR`) and the app's own data.
