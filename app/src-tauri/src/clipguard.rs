@@ -104,13 +104,15 @@ mod tests {
     use super::*;
     use std::cell::RefCell;
 
+    type Timer = (Duration, Box<dyn FnOnce()>);
+
     #[derive(Default)]
     struct Fake {
         owned: Cell<bool>,
         probes: Cell<u32>,
         claims: Cell<u32>,
         listener: RefCell<Option<Box<dyn Fn()>>>,
-        timers: RefCell<Vec<(Duration, Box<dyn FnOnce()>)>>,
+        timers: RefCell<Vec<Timer>>,
     }
 
     impl Fake {
