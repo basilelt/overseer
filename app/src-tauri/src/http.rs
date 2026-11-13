@@ -227,6 +227,28 @@ pub async fn read_head<R: AsyncRead + Unpin>(r: &mut BufReader<R>) -> std::io::R
     Ok(Head { status, headers })
 }
 
+async fn read_sized<R, F>(
+    r: &mut BufReader<R>,
+    mut left: usize,
+    on_chunk: &mut F,
+) -> std::io::Result<()>
+where
+    R: AsyncRead + Unpin,
+    F: FnMut(&[u8]),
+{
+    let mut buf = vec![0; left.min(BODY_BUF)];
+    while left > 0 {
+        let want = left.min(buf.len());
+        let n = r.read(&mut buf[..want]).await?;
+        if n == 0 {
+            return Err(std::io::ErrorKind::UnexpectedEof.into());
+        }
+        on_chunk(&buf[..n]);
+        left -= n;
+    }
+    Ok(())
+}
+
 pub async fn stream_body<R, F>(
     r: &mut BufReader<R>,
     head: &Head,
@@ -254,19 +276,14 @@ where
                     }
                 }
             }
-            let mut buf = vec![0; size];
-            r.read_exact(&mut buf).await?;
-            on_chunk(&buf);
+            read_sized(r, size, &mut on_chunk).await?;
             let mut crlf = [0; 2];
             r.read_exact(&mut crlf).await?;
         }
     } else if let Some(len) = head.content_length() {
-        let mut buf = vec![0; len];
-        r.read_exact(&mut buf).await?;
-        on_chunk(&buf);
-        Ok(())
+        read_sized(r, len, &mut on_chunk).await
     } else {
-        let mut buf = vec![0; 8192];
+        let mut buf = vec![0; BODY_BUF];
         loop {
             let n = r.read(&mut buf).await?;
             if n == 0 {
