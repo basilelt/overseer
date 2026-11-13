@@ -204,7 +204,19 @@ fn hold_steps(ctx: &Ctx, l: &Line, stub: bool) -> Vec<String> {
             ];
         }
     }
-    let pane = l.pane.as_deref().unwrap_or("?");
+    let Some(pane) = l.pane.as_deref() else {
+        return vec![
+            format!(
+                "record {} as held(user) with launch flags {:?}",
+                l.id, l.launch_args
+            ),
+            format!(
+                "send SIGTERM to agent pid {} (it runs outside Overseer)",
+                l.pid.unwrap_or(0)
+            ),
+            "wait up to 10 s for the agent to exit (abort and revert on timeout)".into(),
+        ];
+    };
     vec![
         format!(
             "record {} as held(user) with launch flags {:?}",
@@ -421,6 +433,30 @@ fn execute_hold_term(
     Ok(done)
 }
 
+fn execute_hold_external(ctx: &Ctx, reg: &Registry, l: &Line) -> Result<Vec<String>, String> {
+    let pid = l.pid.ok_or("no pid")?;
+    let start = ctx.probe.info(pid).and_then(|i| i.start);
+    let tree = descendants(ctx, pid);
+    record_held(ctx, reg, l, pid)?;
+    let killed = crate::exec::output_within(
+        std::process::Command::new("kill").args(["-TERM", &pid.to_string()]),
+        crate::exec::PROBE_TIMEOUT,
+    )
+    .is_ok_and(|o| o.status.success());
+    if !killed || !wait_exit(ctx, pid, &start) {
+        revert_held(reg, l);
+        return Err(format!(
+            "agent pid {pid} did not exit; reverted the registry"
+        ));
+    }
+    let mut done = vec![
+        format!("recorded {} as held(user)", l.id),
+        format!("agent pid {pid} exited after SIGTERM"),
+    ];
+    done.extend(stop_tree(ctx, &tree));
+    Ok(done)
+}
+
 fn execute_hold(
     ctx: &Ctx,
     reg: &Registry,
@@ -432,6 +468,7 @@ fn execute_hold(
         if let Some(t) = crate::deliver::line_term(l) {
             return execute_hold_term(ctx, reg, l, &t, stub, shell);
         }
+        return execute_hold_external(ctx, reg, l);
     }
     let tmux = ctx.tmux.as_ref().ok_or("tmux unavailable")?;
     let pane = l.pane.as_deref().ok_or("no pane")?;
@@ -509,11 +546,30 @@ pub(crate) fn hold_line(
     shell: bool,
     force: bool,
 ) -> Report {
-    let checks = if force {
+    hold_line_with(ctx, l, apply, stub, shell, force, false)
+}
+
+fn is_external(l: &Line) -> bool {
+    l.pane.is_none() && crate::deliver::line_term(l).is_none()
+}
+
+fn hold_line_with(
+    ctx: &Ctx,
+    l: &Line,
+    apply: bool,
+    stub: bool,
+    shell: bool,
+    force: bool,
+    closing: bool,
+) -> Report {
+    let mut checks = if force {
         vec![]
     } else {
         evaluate(&hold_input(ctx, l))
     };
+    if closing && is_external(l) {
+        checks.retain(|c| !["inTmux", "inputEmpty"].contains(&c.name));
+    }
     let mut r = Report {
         line_id: l.id.clone(),
         steps: hold_steps(ctx, l, stub),
@@ -833,7 +889,7 @@ pub(crate) fn close_line(
     force: bool,
 ) -> Result<Report, String> {
     let mut r = if l.alive() {
-        let mut h = hold_line(ctx, l, apply, false, shell, force);
+        let mut h = hold_line_with(ctx, l, apply, false, shell, force, true);
         if h.ok() {
             h.steps.push(format!("mark {} hung-up", l.id));
         }

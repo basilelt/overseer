@@ -4044,3 +4044,103 @@ fn auto_organize_is_on_from_the_config_key_or_the_registry_flag() {
         true
     );
 }
+
+struct External {
+    pid: i32,
+    gone: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    _stdin: Option<std::process::ChildStdin>,
+}
+
+impl External {
+    fn gone(&self) -> bool {
+        self.gone.load(std::sync::atomic::Ordering::SeqCst)
+    }
+}
+
+impl Drop for External {
+    fn drop(&mut self) {
+        if !self.gone() {
+            unsafe { libc::kill(self.pid, libc::SIGKILL) };
+        }
+    }
+}
+
+fn external_claude(app: &App, sid: &str, stubborn: bool) -> External {
+    let wt = app.fx.wt.to_string_lossy().into_owned();
+    let mut c = Command::new("claude");
+    app.fx.env(&mut c);
+    c.env("SB_BIN", bin())
+        .env("SB_STUB_LOG", app.fx.base.join("stub.log"))
+        .current_dir(wt)
+        .args(["--session-id", sid])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+    if stubborn {
+        c.env("SB_STUB_STUBBORN", "1");
+    }
+    let mut child = c.spawn().unwrap();
+    let pid = child.id() as i32;
+    let stdin = child.stdin.take();
+    let gone = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let flag = gone.clone();
+    std::thread::spawn(move || {
+        let _ = child.wait();
+        flag.store(true, std::sync::atomic::Ordering::SeqCst);
+    });
+    External {
+        pid,
+        gone,
+        _stdin: stdin,
+    }
+}
+
+fn external_line(app: &App, sid: &str) -> String {
+    wait_for(|| {
+        app.ok("GET", "/v1/lines?all=true", Value::Null)
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|l| l["line"]["agentSessionId"] == sid && l["local"]["pid"].is_u64())
+            .map(|l| l["line"]["id"].as_str().unwrap().to_string())
+    })
+}
+
+#[test]
+fn close_ends_a_session_started_outside_overseer() {
+    let sid = "dddddddd-0000-4000-8000-000000000310";
+    let app = App::new("closeext", json!({}));
+    let agent = external_claude(&app, sid, false);
+    let line = external_line(&app, sid);
+    let l = line_json(&app, &line);
+    assert!(l["local"]["termId"].is_null() && l["local"]["tmuxPane"].is_null());
+
+    let close = format!("/v1/lines/{}/close", enc(&line));
+    let plan = app.ok("POST", &close, Value::Null);
+    assert_eq!(plan["action"], "would-close", "{plan}");
+    assert!(plan["steps"].to_string().contains("outside Overseer"));
+    assert!(!agent.gone());
+
+    let done = app.ok("POST", &format!("{close}?dryRun=false"), Value::Null);
+    assert_eq!(done["action"], "closed", "{done}");
+    wait(|| agent.gone());
+    wait(|| line_json(&app, &line)["line"]["state"] == "hung-up");
+}
+
+#[test]
+fn close_of_an_external_session_that_ignores_sigterm_fails_and_keeps_it() {
+    let sid = "dddddddd-0000-4000-8000-000000000311";
+    let app = App::with_env(
+        "closeext-stuck",
+        json!({}),
+        &[("OVERSEER_HOLD_TIMEOUT_MS", "500")],
+    );
+    let _agent = external_claude(&app, sid, true);
+    let line = external_line(&app, sid);
+
+    let close = format!("/v1/lines/{}/close?dryRun=false", enc(&line));
+    let (code, v) = app.req("POST", &close, Value::Null);
+    assert_eq!(code, 409, "{v}");
+    assert!(v["error"].as_str().unwrap().contains("did not exit"), "{v}");
+    assert_ne!(line_json(&app, &line)["line"]["state"], "hung-up");
+}
