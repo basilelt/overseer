@@ -90,6 +90,9 @@
   const pctDecode = (v) => { const b = new TextEncoder().encode(v), out = []; for (let i = 0; i < b.length; i++) { const hex = String.fromCharCode(b[i + 1], b[i + 2]); if (b[i] === 37 && /^[0-9a-fA-F]{2}$/.test(hex)) { out.push(parseInt(hex, 16)); i += 2; } else out.push(b[i]); } return new TextDecoder().decode(Uint8Array.from(out)); };
   const pasteName = (raw) => { const clean = [...raw.split(/[\\/]/).pop()].map((c) => (/[\p{Alphabetic}\p{N}.\-_]/u.test(c) ? c : '_')).slice(0, 80).join('').replace(/^\.+/, ''); return clean || 'paste.png'; };
   const bytesOf = (b) => b instanceof Uint8Array ? b : b instanceof ArrayBuffer ? new Uint8Array(b) : Array.isArray(b) ? Uint8Array.from(b) : null;
+  let memHosts = [];
+  const savedHosts = () => { try { return JSON.parse(localStorage.getItem('qaDirectHosts') ?? '[]'); } catch { return memHosts; } };
+  const saveHosts = (l) => { memHosts = l; try { localStorage.setItem('qaDirectHosts', JSON.stringify(l)); } catch {} return l; };
   const handlers = {
     save_paste: (a, o) => {
       const bytes = bytesOf(a); if (!bytes) throw 'expected bytes';
@@ -148,7 +151,10 @@
     window_handoff: () => null,
     conn_drop_slots: () => { for (const [slot, w] of watches) if (slot) { w.stop = true; watches.delete(slot); } return null; },
     ssh_hosts: () => [],
-    direct_hosts: () => [],
+    direct_hosts: () => savedHosts(),
+    direct_host_save: (a) => { const l = savedHosts().filter((h) => h.id !== a.host.id); l.push(a.host); return saveHosts(l); },
+    direct_host_delete: (a) => saveHosts(savedHosts().filter((h) => h.id !== a.id)),
+    direct_host_forget_key: () => null,
     direct_device_key: () => ({ publicKey: 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIQAShimKeyForQaOnly0000000000000000000 overseer-qa', fingerprint: 'SHA256:qaQaQaQaQaQaQaQaQaQaQaQaQaQaQaQaQaQaQaQaQaQ', installCommand: "echo 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIQAShimKeyForQaOnly0000000000000000000 overseer-qa' >> ~/.ssh/authorized_keys" }),
     'plugin:event|listen': () => nextId++,
     'plugin:event|unlisten': () => null,
@@ -160,7 +166,6 @@
     'browser_open', 'browser_bounds', 'browser_navigate', 'browser_back', 'browser_forward', 'browser_reload', 'browser_hide', 'browser_show', 'browser_close', 'browser_pages_reset',
     'update_install', 'update_relaunch',
     'open_local_network_settings', 'open_notification_settings', 'start_dictation',
-    'direct_host_save', 'direct_host_delete', 'direct_host_forget_key',
     'diag_log', 'diag_visibility', 'diag_session_end', 'diag_dismiss', 'diag_save', 'diag_open_dir',
     'apk_update_status', 'apk_update_check', 'apk_update_download', 'apk_update_install', 'apk_update_allow_install',
     'mobile_minimize', 'mobile_clipboard_image',
