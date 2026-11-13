@@ -98,6 +98,10 @@ jobs:
 
       - run: scripts/check-version.test.sh
 
+      - run: scripts/platforms.test.sh
+
+      - run: scripts/android-common.test.sh
+
       - env:
           CI_APT_TEST_IMAGE: mirror.gcr.io/library/ubuntu:24.04
         run: scripts/ci-apt.test.sh
@@ -326,11 +330,16 @@ jobs:
           persist-credentials: false
           fetch-depth: 0
 
-      # Same paths as scripts/release-gate.sh: a docs-only release makes no tag.
+      # A docs-only release makes no tag.
       - id: code
         shell: bash
         run: |
-          if grep -qvE '^(docs/|\.github/ISSUE_TEMPLATE/)|\.md$' < <(git diff --name-only HEAD^1 HEAD); then
+          . scripts/docs-paths.sh
+          code=false
+          while IFS= read -r f; do
+            is_docs_path "$f" || { code=true; break; }
+          done < <(git diff --name-only HEAD^1 HEAD)
+          if [ "$code" = true ]; then
             echo "release=true" >> "$GITHUB_OUTPUT"
           else
             echo "::notice title=release version::docs-only, no release, nothing to check"
