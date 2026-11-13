@@ -1096,6 +1096,15 @@ fn project_name(cwd: &str) -> String {
         .unwrap_or_else(|| "—".into())
 }
 
+fn repo_label(repo: &str) -> String {
+    repo.trim_end_matches('/')
+        .rsplit('/')
+        .next()
+        .filter(|n| !n.is_empty())
+        .unwrap_or(repo)
+        .to_string()
+}
+
 pub fn query(
     conn: &Connection,
     q: &Query,
@@ -1195,7 +1204,7 @@ pub fn query(
         }
         let line = lines.get(&(agent.clone(), session.clone()));
         let project = line
-            .map(|l| l.repo.clone())
+            .map(|l| repo_label(&l.repo))
             .filter(|r| !r.is_empty())
             .unwrap_or_else(|| project_name(cwd));
         let (key, meta) = match q.by {
@@ -2234,6 +2243,14 @@ mod tests {
         let old = Limits { at: 0, ..tapped };
         assert_eq!(lim_tap(&idx, true, Some(old))["via"], "claude");
         let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn project_labels_are_the_repo_name_not_its_remote_or_path() {
+        assert_eq!(repo_label("github.com/acme/app"), "app");
+        assert_eq!(repo_label("local:/home/u/work/proj"), "proj");
+        assert_eq!(repo_label("app-repo"), "app-repo");
+        assert_eq!(repo_label(""), "");
     }
 
     #[test]
