@@ -23,6 +23,7 @@
   import { exitDemo, isDemo, startDemo } from '../../daemon/demo';
   import { localNetworkView } from '../../localnet';
   import { fuzzy } from '../../fuzzy';
+  import { loadSshHosts } from '../../host/ssh-hosts';
   import type { ConnPhase, HostTarget, SshHost } from '../../types';
 
   let { onclose }: { onclose: () => void } = $props();
@@ -46,10 +47,7 @@
   let lastTarget = $state<HostTarget | null>(resuming ? app.conn.target : null);
 
   onMount(() => {
-    app.client
-      ?.sshHosts()
-      .then((h) => (hosts = h))
-      .catch(() => {});
+    void loadSshHosts(app.client, app.mobile).then((h) => (hosts = h));
   });
 
   const rows = $derived.by<Row[]>(() => {
