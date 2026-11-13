@@ -124,6 +124,7 @@ hooks did not fire, fall back to terminal activity: in a daemon terminal, a line
 agent keeps writing after you pressed Enter, and its turn ends after 4 s without output. Amp has no
 needs-input event; Cursor Agent fires only some hooks in the CLI; Mistral Vibe fires no hook
 when you interrupt a turn, so its line stays busy until the next turn ends.
+A Codex whose hooks are not trusted yet falls back the same way in a daemon terminal, and its task then moves to Review when the turn ends; a Codex started outside Overseer terminals needs its hooks.
 
 Hooks call `~/.overseer/bin/overseer`, a symlink the daemon points at its own binary on
 every start and hot upgrade, so a server upgrade never breaks them. When the daemon starts and
