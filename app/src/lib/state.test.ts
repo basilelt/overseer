@@ -524,6 +524,18 @@ describe('daemon events', () => {
     m.emit('project.added', {});
   });
 
+  it('learns a project that appears through a session or task started elsewhere, once per repository', async () => {
+    const added: Project = { path: '/fresh/repo', name: 'repo', repo: 'fresh/repo' };
+    m.override['GET /v1/projects'] = () => [...app.projects, added];
+    const before = m.calls.filter((c) => c === 'GET /v1/projects').length;
+    m.emit('line.created', { line: { id: 'ln_fresh', repo: 'local:/fresh/repo', agent: 'claude', state: 'active', lastActivityAt: '' } });
+    await vi.waitFor(() => expect(m.calls.filter((c) => c === 'GET /v1/projects').length).toBe(before + 1));
+    await vi.waitFor(() => expect(app.projects.some((x) => x.path === '/fresh/repo')).toBe(true));
+    m.emit('task.created', { task: { id: 'tk_fresh', project: '/fresh/repo', title: 't' } });
+    m.emit('line.created', { line: { id: 'ln_fresh2', repo: 'local:/fresh/repo', agent: 'claude', state: 'active', lastActivityAt: '' } });
+    expect(m.calls.filter((c) => c === 'GET /v1/projects').length).toBe(before + 1);
+  });
+
   it('rechecks the workspaces when the window comes back to the foreground', async () => {
     setPresence({ focused: false });
     const before = m.calls.filter((c) => c === 'GET /v1/workspaces').length;

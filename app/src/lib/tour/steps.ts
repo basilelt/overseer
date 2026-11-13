@@ -5,6 +5,7 @@ export interface Step {
   targets: string[];
   since: string;
   center?: boolean;
+  desktopOnly?: boolean;
 }
 
 export const STEPS: Step[] = [
@@ -23,7 +24,7 @@ export const STEPS: Step[] = [
   { id: 'organize', targets: ['organize', 'workspaces'], since: '0.17' },
   { id: 'settings', targets: ['settings', 'palette'], since: '0.25' },
   { id: 'feedback', targets: ['feedback'], since: '0.15' },
-  { id: 'paletteKey', targets: ['palette'], since: '0.25', center: true },
+  { id: 'paletteKey', targets: ['palette'], since: '0.25', center: true, desktopOnly: true },
   { id: 'gpuTerminal', targets: ['settings', 'palette'], since: '0.28' },
   { id: 'worktreeCleanup', targets: ['palette'], since: '0.29', center: true },
   { id: 'switchboard', targets: ['switchboard', 'settings', 'palette'], since: '0.29' },
@@ -87,8 +88,8 @@ export function targetOf(step: Step, has: (name: string) => boolean): string | n
   return step.targets.find(has) ?? null;
 }
 
-export function visibleSteps(steps: Step[], has: (name: string) => boolean): Step[] {
-  return steps.filter((s) => s.center || targetOf(s, has) !== null);
+export function visibleSteps(steps: Step[], has: (name: string) => boolean, phone = false): Step[] {
+  return steps.filter((s) => !(phone && s.desktopOnly) && (s.center || targetOf(s, has) !== null));
 }
 
 export type KeyAction = 'next' | 'back' | 'close';

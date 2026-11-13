@@ -1445,7 +1445,7 @@ pub fn tick(ctx: &Ctx, lines: &[Line]) {
                 t.is_running() && !crate::task_agents::is_organizer(t) && t.quorum.is_none()
             })
             .count();
-        if running >= ctx.config.auto_concurrency {
+        if running >= crate::task_agents::auto_concurrency(&reg, ctx.config.auto_concurrency) {
             return;
         }
         let Some(next) = tasks

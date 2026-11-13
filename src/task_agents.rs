@@ -183,6 +183,26 @@ pub fn set_agent_tasks(reg: &Registry, on: bool) -> Result<(), String> {
     reg.put(AGENT_TASKS_KEY, if on { "true" } else { "false" })
 }
 
+const AUTO_CONCURRENCY_KEY: &str = "autoConcurrency";
+pub const AUTO_CONCURRENCY_MAX: u64 = 16;
+
+pub fn auto_concurrency(reg: &Registry, configured: usize) -> usize {
+    match reg.get(AUTO_CONCURRENCY_KEY) {
+        Ok(Some(v)) => v.parse().unwrap_or(configured),
+        _ => configured,
+    }
+}
+
+pub fn set_auto_concurrency(reg: &Registry, value: &Value) -> Result<usize, (u16, String)> {
+    let n = value
+        .as_u64()
+        .filter(|n| (1..=AUTO_CONCURRENCY_MAX).contains(n))
+        .ok_or_else(|| bad("value must be an integer from 1 to 16"))?;
+    reg.put(AUTO_CONCURRENCY_KEY, &n.to_string())
+        .map_err(|e| (500, e))?;
+    Ok(n as usize)
+}
+
 fn parent_and_child(a: &Task, b: &Task) -> bool {
     a.parent_id.as_deref() == Some(b.id.as_str()) || b.parent_id.as_deref() == Some(a.id.as_str())
 }
@@ -863,6 +883,18 @@ mod tests {
         assert!(!agent_tasks_enabled(&r));
         set_agent_tasks(&r, true).unwrap();
         assert!(agent_tasks_enabled(&r));
+    }
+
+    #[test]
+    fn auto_concurrency_falls_back_to_the_config_and_clamps() {
+        let r = reg("auto-concurrency");
+        assert_eq!(auto_concurrency(&r, 2), 2);
+        assert_eq!(set_auto_concurrency(&r, &json!(5)).unwrap(), 5);
+        assert_eq!(auto_concurrency(&r, 2), 5);
+        for bad in [json!(0), json!(17), json!(1.5), json!("2"), Value::Null] {
+            assert_eq!(set_auto_concurrency(&r, &bad).unwrap_err().0, 400);
+        }
+        assert_eq!(auto_concurrency(&r, 2), 5);
     }
 
     #[test]

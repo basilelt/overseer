@@ -56,6 +56,8 @@ pub struct Saved {
     pub workspace_id: Option<String>,
     pub title_override: Option<String>,
     pub profile: Option<crate::profiles::Chip>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub launch: Vec<String>,
 }
 
 impl From<&Info> for Saved {
@@ -74,7 +76,24 @@ impl From<&Info> for Saved {
             workspace_id: i.workspace_id.clone(),
             title_override: i.title_override.clone(),
             profile: i.profile.clone(),
+            launch: vec![],
         }
+    }
+}
+
+fn fresh_launch(cmd: &[String]) -> Vec<String> {
+    let name = cmd
+        .first()
+        .and_then(|c| c.rsplit('/').next())
+        .unwrap_or_default();
+    let agent = crate::agents::get(name).filter(|a| a.coding());
+    let pinned = cmd
+        .iter()
+        .any(|a| a == "--resume" || a == "resume" || a.starts_with("--session-id"));
+    if agent.is_some() && !pinned {
+        cmd.to_vec()
+    } else {
+        vec![]
     }
 }
 
@@ -139,6 +158,11 @@ pub fn snapshot(terms: &[Info], lines: &[Line]) -> Vec<Saved> {
                 flags: line.map(|l| l.launch_args.clone()).unwrap_or_default(),
                 line_id: line.map(|l| l.id.clone()).or_else(|| i.line_id.clone()),
                 profile: line.and(i.profile.clone()),
+                launch: if line.is_none() {
+                    fresh_launch(&i.cmd)
+                } else {
+                    vec![]
+                },
                 ..Saved::from(i)
             })
         })
@@ -164,13 +188,27 @@ pub fn plan(saved: Vec<Saved>, mode: AfterReboot, exists: impl Fn(&str) -> bool)
             }
             _ => None,
         };
+        let fresh = if resume.is_none() && mode == AfterReboot::Agents {
+            s.launch.clone()
+        } else {
+            vec![]
+        };
+        let relaunched = resume.is_none() && !fresh.is_empty();
+        let resume = resume.or_else(|| Some(fresh).filter(|f| !f.is_empty()));
         let mut saved = s;
+        saved.launch = vec![];
         if resume.is_none() {
             saved.agent = None;
             saved.session = None;
             saved.flags = vec![];
             saved.line_id = None;
             saved.task_id = None;
+            saved.profile = None;
+        } else if relaunched {
+            saved.agent = None;
+            saved.session = None;
+            saved.flags = vec![];
+            saved.line_id = None;
             saved.profile = None;
         }
         out.push(Restore {
@@ -351,10 +389,56 @@ mod tests {
                 model: "m".into(),
                 effort: "high".into(),
             }),
+            launch: vec![],
         };
         let want: serde_json::Value = serde_json::from_str(FULL_SAVED).unwrap();
         assert_eq!(serde_json::to_value(&sv).unwrap(), want);
         assert_eq!(serde_json::from_str::<Saved>(FULL_SAVED).unwrap(), sv);
+    }
+
+    #[test]
+    fn an_agent_that_never_started_a_turn_comes_back_as_a_fresh_agent() {
+        let terms = [
+            info("t1", &["codex"], false),
+            info("t2", &["/usr/bin/codex", "--no-daemon"], false),
+            info("t3", &["claude", "--session-id", "s9"], false),
+            info("t4", &["codex", "resume", "x"], false),
+            info("t5", &["zsh"], false),
+        ];
+        let saved = snapshot(&terms, &[]);
+        let all = plan(saved.clone(), AfterReboot::Agents, |_| true);
+        assert_eq!(all[0].cmd, ["codex"]);
+        assert_eq!(all[1].cmd, ["/usr/bin/codex", "--no-daemon"]);
+        assert!(
+            all[2].cmd.is_empty(),
+            "a pinned session id is not started twice"
+        );
+        assert!(all[3].cmd.is_empty());
+        assert!(all[4].cmd.is_empty(), "a shell stays a shell");
+        assert!(all[0].saved.launch.is_empty() && all[0].saved.agent.is_none());
+        let mut tasked = saved[0].clone();
+        tasked.task_id = Some("task-1".into());
+        let kept = plan(vec![tasked.clone()], AfterReboot::Agents, |_| true);
+        assert_eq!(
+            kept[0].saved.task_id.as_deref(),
+            Some("task-1"),
+            "a relaunched agent keeps its task"
+        );
+        tasked.launch = vec![];
+        let dropped = plan(vec![tasked], AfterReboot::Agents, |_| true);
+        assert_eq!(
+            dropped[0].saved.task_id, None,
+            "a shell restored in its place does not claim the task"
+        );
+        let shells = plan(saved, AfterReboot::Shells, |_| true);
+        assert!(
+            shells.iter().all(|r| r.cmd.is_empty()),
+            "shells only restores shells"
+        );
+        let json = serde_json::to_string(&snapshot(&terms[..1], &[])).unwrap();
+        assert!(json.contains(r#""launch":["codex"]"#));
+        let line_json = serde_json::to_string(&snapshot(&terms[4..], &[])).unwrap();
+        assert!(!line_json.contains("launch"));
     }
 
     #[test]
