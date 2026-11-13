@@ -722,9 +722,9 @@ const pos = (k) => k * B;
 const beat = (k) => k * B * S;
 const sleepA = beat(22);
 const wakeT = beat(24);
-const finalT = beat(27);
+const finalT = beat(29);
 const groove = [];
-for (let k = 4 * S; k < 27 * S; k++) if (k < 22 * S || k >= 24 * S) groove.push(k);
+for (let k = 4 * S; k < 29 * S; k++) if (k < 22 * S || k >= 24 * S) groove.push(k);
 
 [0.2, 0.26, 0.32, 0.38, 0.44, 0.5, 0.56, 0.62].forEach((t, i) => keyClick(t * S, i));
 
@@ -771,7 +771,7 @@ for (const k of groove) {
   }
 }
 
-const roots = { 1: hz(33), 2: hz(29), 3: hz(36), 4: hz(31), 5: hz(33), 6: hz(29) };
+const roots = { 1: hz(33), 2: hz(29), 3: hz(36), 4: hz(31), 5: hz(33), 6: hz(29), 7: hz(31) };
 for (const k of groove) {
   const f = roots[Math.floor(k / (4 * S))];
   const last = k % 4 === 3;
@@ -812,8 +812,8 @@ chords.forEach((notes, i) => {
   });
 });
 
-[2.109375, 2.34375, 2.578125, 2.6953125, 2.8125, 2.9296875, 3.046875].forEach((t, i) =>
-  glass(t * S, hz(81 + [0, 2, 3, 5, 7, 8, 10][i]), 0.09, { pan: i % 2 ? 0.25 : -0.25 }),
+[4.5, 5, 5.4, 5.65, 5.9, 6.15, 6.4, 6.65].forEach((b, i) =>
+  glass(beat(b), hz(81 + [0, 2, 3, 5, 7, 8, 10, 12][i]), 0.09, { pan: i % 2 ? 0.25 : -0.25 }),
 );
 glass(beat(7), hz(93), 0.12, { d: 0.08 });
 voice(beat(7), 0.12, (t) => Math.sin(TAU * (120 + 60 * Math.exp(-t / 0.01)) * t) * Math.exp(-t / 0.03), { dest: fx, gain: 0.32, hall: 0.15 });
@@ -848,13 +848,19 @@ if (S === 1) {
 } else [0.36, 0.33, 0.3].forEach((g, i) => heartbeat(pos(44 + i), g));
 riser(beat(23), wakeT, { g: 0.2, f0: 300, f1: 8000, tone: 0.3, p0: 110, p1: 880, seed: 61 });
 
-[24, 25, 26].forEach((k, i) => whoosh(beat(k) - 0.03 * S, 0.26 * S, { f0: 3200, f1: 600, g: 0.12, p0: i % 2 ? 0.6 : -0.6, p1: i % 2 ? -0.6 : 0.6, peak: 0.18, seed: 70 + i }));
-swell(beat(26), finalT, 0.16);
-riser(beat(26), finalT, { g: 0.14, f0: 800, f1: 9000, tone: 0.25, p0: 440, p1: 1760, seed: 71 });
+[24, 26, 28].forEach((k, i) => whoosh(beat(k) - 0.03 * S, 0.26 * S, { f0: 3200, f1: 600, g: 0.12, p0: i % 2 ? 0.6 : -0.6, p1: i % 2 ? -0.6 : 0.6, peak: 0.18, seed: 70 + i }));
+[81, 84, 86, 88, 91, 93, 96, 100].forEach((m, i) => {
+  const t = beat(24.1 + i * 0.4);
+  blip(t, hz(m), 0.055, { up: 2, d: 0.035, pan: ((i % 4) - 1.5) * 0.4, e: 0.3 });
+  click(t, 0.18, 3000 + i * 250, ((i % 4) - 1.5) * 0.3);
+  if (i % 2 === 1) bell(t + 0.004, hz(m - 12), 0.04, { decay: 0.3, pan: ((i % 4) - 1.5) * 0.3 });
+});
+swell(beat(27.8), finalT, 0.16);
+riser(beat(27.8), finalT, { g: 0.14, f0: 800, f1: 9000, tone: 0.25, p0: 440, p1: 1760, seed: 71 });
 
 boom(finalT, 0.75, { f0: 120, f1: 38, tp: 0.08, ta: 0.5, noise: 0.5, nd: 0.28, nf: 2600, h: 0.45 });
 crash(finalT, 0.1);
-chord(finalT, 13.95 * S, [hz(48), hz(55), hz(60), hz(62), hz(64), hz(67)], {
+chord(finalT, 14.4 * S, [hz(48), hz(55), hz(60), hz(62), hz(64), hz(67)], {
   g: 0.03,
   att: 0.012,
   rel: 0.9 * S,
@@ -879,8 +885,8 @@ voice(
   },
   { dest: fx, gain: 0.05, hall: 0.6, echo: 0.2, fadeOut: 0.3 * S },
 );
-[12.876, 12.976, 13.076].forEach((t, i) => ping(t * S, hz([91, 96, 100][i]), 0.05, { pan: [0, 0.5, -0.5][i], decay: 0.09 }));
-for (let i = 0; i < 8; i++) glass(13 * S + i * 0.04 * S, hz(96 + (i % 3) * 2), 0.022, { pan: -0.5 + i / 7, d: 0.02, e: 0.05 });
+[13.81, 13.91, 14.01].forEach((t, i) => ping(t * S, hz([91, 96, 100][i]), 0.05, { pan: [0, 0.5, -0.5][i], decay: 0.09 }));
+for (let i = 0; i < 8; i++) glass(13.93 * S + i * 0.04 * S, hz(96 + (i % 3) * 2), 0.022, { pan: -0.5 + i / 7, d: 0.02, e: 0.05 });
 
 if (S === 2) {
   crash(pos(24), 0.07);
@@ -894,9 +900,9 @@ if (S === 2) {
     [0.75, 1.5, 2.75, 3.5].forEach((x, i) => perc(pos(bar * 4 + x), i % 2 ? 290 : 385, bar >= 12 ? 0.17 : 0.13, i % 2 ? 0.4 : -0.4));
   }
   const steps = [0, 2, 1, 3, 2, 0, 3, 1];
-  for (let k = 28; k < 54; k++) {
+  for (let k = 28; k < 58; k++) {
     if (k >= 44 && k < 48) continue;
-    const notes = chords[Math.floor(k / 8) - 1];
+    const notes = chords[Math.min(5, Math.floor(k / 8) - 1)];
     for (let h = 0; h < 2; h++) {
       const n = (k % 4) * 2 + h;
       pluck(pos(k + h * 0.5), notes[steps[n] % notes.length], (k >= 48 ? 0.085 : k >= 32 ? 0.07 : 0.055) * (h ? 0.8 : 1), ((n % 4) - 1.5) * 0.3);

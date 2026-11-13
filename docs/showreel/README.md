@@ -16,4 +16,4 @@ Publish: merge the change into `next`; the Pages workflow renders both cuts (cac
 
 When to remake it: [REGENERATE.md](REGENERATE.md). Agents ask the user first, and it is never redone without a yes.
 
-The screenshots in `shots/` are copies of `app/docs/screenshots/`. Fonts: Inter and JetBrains Mono, under the SIL Open Font License (`fonts/`).
+The screenshots in `shots/` are taken from the mock build (`VITE_MOCK=1`, headless Chromium, dark theme, cropped to the region the reel shows, 2x for the small ones); `review-map-dark.png` and `live-dark.png` are copies of `app/docs/screenshots/`. Fonts: Inter and JetBrains Mono, under the SIL Open Font License (`fonts/`).

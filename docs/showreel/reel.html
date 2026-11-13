@@ -27,11 +27,11 @@ body.render .bar{display:none}
 'use strict';
 const Q = new URLSearchParams(location.search), RENDER = Q.has('render');
 const W = 1920, H = 1080, FPS = 60, DUR = Q.get('d') === '30' ? 30 : 15, K = 15 / DUR, BEAT = 60 / 128, SHUTTER = 0.85, TAU = Math.PI * 2;
-const ENTER = 2 * BEAT, DROP = 4 * BEAT, IRIS = DROP - 0.1, RIP = 15 * BEAT, FIN = 27 * BEAT;
+const ENTER = 2 * BEAT, DROP = 4 * BEAT, IRIS = DROP - 0.1, RIP = 15 * BEAT, FIN = 29 * BEAT;
 const C = { bg: '#0b0b0c', bg2: '#111113', surf: '#141416', surf2: '#1b1b1e', line: '#232327', line2: '#2f2f34', ink: '#ededef', ink2: '#a1a1aa', ink3: '#63636b', white: '#fafafa', amber: '#e8a33a', blue: '#3b82f6', green: '#22c55e', purple: '#a855f7', red: '#ef4444', orange: '#f59e0b', gray: '#71717a', add: '#4ade80', del: '#f87171', hunk: '#818cf8' };
 const FF = { d: '"Inter Display"', u: 'Inter', m: '"JetBrains Mono"' };
 const FONTS = [['Inter Display', 'InterDisplay-SemiBold', 600], ['Inter Display', 'InterDisplay-Bold', 700], ['Inter Display', 'InterDisplay-ExtraBold', 800], ['Inter Display', 'InterDisplay-Black', 900], ['Inter', 'Inter-Regular', 400], ['Inter', 'Inter-Medium', 500], ['Inter', 'Inter-SemiBold', 600], ['Inter', 'Inter-Bold', 700], ['JetBrains Mono', 'JetBrainsMono-Regular', 400], ['JetBrains Mono', 'JetBrainsMono-Medium', 500], ['JetBrains Mono', 'JetBrainsMono-Bold', 700]];
-const SHOTS = { agents: 'agents-dark', kanban: 'kanban-dark', review: 'review-dark', graph: 'graph-dark', workspaces: 'workspaces-dark', worktrees: 'worktrees-dark', broadcast: 'broadcast-dark', addtask: 'add-task-dark', thread: 'review-thread-dark', graphite: 'graphite', solarized: 'solarized', ipad: 'ipad-landscape-dark', android: 'android-tablet-portrait-dark' };
+const SHOTS = { quorum: 'quorum-dark', map: 'review-map-dark', live: 'live-dark', hosts: 'hosts', notes: 'sticky-notes-dark', cost: 'cost', record: 'record', mistral: 'mistral' };
 const SH = {};
 
 const clamp = (x, a = 0, b = 1) => x < a ? a : x > b ? b : x;
@@ -133,7 +133,7 @@ function glowPass() {
   X.restore();
 }
 
-const IMP = [[ENTER, 1], [7 * BEAT, 0.35], [19 * BEAT, 0.3], [FIN, 1.3]];
+const IMP = [[ENTER, 1], [7 * BEAT, 0.35], [19 * BEAT, 0.3], [24 * BEAT, 0.3], [26 * BEAT, 0.22], [FIN, 1.3]];
 function shake(t) {
   let x = 0, y = 0, r = 0, z = 0;
   for (const [a, k] of IMP) {
@@ -175,7 +175,8 @@ const AG = [
   { n: 'Cursor Agent', path: 'webshop · fix/vat', a: 'testing', b: 'done', L: ['• edit src/vat.rs', '• cargo test vat', '  round per line: ok'] },
 ];
 const ST = { input: ['Needs input', C.green], working: ['Working', C.blue], testing: ['Testing', C.purple], done: ['Done', C.gray], paused: ['Paused', C.orange] };
-const SCOL = ['#3b82f6', '#22c55e', '#a855f7', '#f59e0b', '#38bdf8', '#f472b6', '#4ade80', '#818cf8'];
+const SCOL = ['#3b82f6', '#22c55e', '#a855f7', '#f59e0b', '#38bdf8', '#f472b6', '#4ade80', '#818cf8', '#fb923c'];
+const ALLN = AG.map(a => a.n).concat('Mistral Vibe');
 
 const TYPED = 'overseer', TK = i => 0.2 + i * 0.06;
 const WD = [{ s: 'RUN', t: 2.5 * BEAT, size: 300 }, { s: 'SUPERVISE', t: 3 * BEAT, size: 214 }, { s: 'REVIEW', t: 3.5 * BEAT, size: 286 }];
@@ -280,8 +281,9 @@ function intro(t) {
   }
 }
 
-const NAMES = ['Claude Code', 'Codex', 'Gemini CLI', 'Antigravity', 'opencode', 'Amp', 'Copilot CLI', 'Cursor Agent', 'every agent.'];
-const STEPS = [4.5, 5, 5.5, 5.75, 6, 6.25, 6.5, 7].map(b => b * BEAT);
+const NAMES = ['Claude Code', 'Codex', 'Gemini CLI', 'Antigravity', 'opencode', 'Amp', 'Copilot CLI', 'Cursor Agent', 'Mistral Vibe', 'every agent.'];
+const STEPS = [4.5, 5, 5.4, 5.65, 5.9, 6.15, 6.4, 6.65, 7].map(b => b * BEAT);
+const NL = STEPS.length - 1;
 let RL;
 function reelInit() {
   const L1 = lay('One window for', 92, 700, 'd', -1.5);
@@ -292,7 +294,7 @@ function reelInit() {
 function reelPos(t) {
   let p = lerp(-2.6, 0, E.o5(P(t, DROP, DROP + 0.32)));
   for (let k = 0; k < STEPS.length; k++) {
-    const a = STEPS[k], d = k === 7 ? 0.2 : Math.min(0.15, (STEPS[k + 1] - a) * 0.95);
+    const a = STEPS[k], d = k === NL ? 0.2 : Math.min(0.15, (STEPS[k + 1] - a) * 0.95);
     p += E.oB(P(t, a, a + d), 1.9);
   }
   return p;
@@ -305,7 +307,7 @@ function reel(t) {
   X.save(); X.globalAlpha = 1 - out1; X.translate(0, -out1 * 70);
   rise(X, 'One window for', RL.x0, RL.l1y, 92, 700, 'd', C.ink2, t, DROP + 0.02, { st: 0.014, dur: 0.5, tr: -1.5 });
   X.restore();
-  const p = reelPos(t), S7 = STEPS[7];
+  const p = reelPos(t), S7 = STEPS[NL];
   X.save(); X.globalAlpha = 1 - out2; X.translate(0, -out2 * 90);
   X.beginPath(); X.rect(0, RL.l1y + 34, W, H); X.clip();
   sf(X, 150, 800, 'd', -4); X.textAlign = 'left'; X.textBaseline = 'alphabetic';
@@ -322,7 +324,7 @@ function reel(t) {
     X.restore();
   }
   const ul = E.o4(P(t, S7 + 0.05, S7 + 0.32));
-  if (ul > 0) lit(c => { rr(c, RL.x0 + 4, RL.yc + 82, (lay(NAMES[8], 150, 800, 'd', -4).w - 8) * ul, 9, 4.5); c.fillStyle = AMB(c); c.fill(); }, 0.9);
+  if (ul > 0) lit(c => { rr(c, RL.x0 + 4, RL.yc + 82, (lay(NAMES[NL + 1], 150, 800, 'd', -4).w - 8) * ul, 9, 4.5); c.fillStyle = AMB(c); c.fill(); }, 0.9);
   X.restore();
   const w2 = WD[2], e = E.o5(P(t, DROP, DROP + 0.28));
   let bx = lerp(w2.dx, RL.bx, e), by = lerp(w2.dy, RL.yc, e), br = lerp(w2.r, 19, e);
@@ -335,6 +337,7 @@ function reel(t) {
 const OC = { x: 960, y: 540 };
 const ORB = [[235, 1.12, -0.42], [320, 1.24, 0.6], [400, 1.06, -0.85], [480, 1.3, 0.22]];
 const SATS = AG.map((a, i) => ({ o: i % 4, ph: (i < 4 ? 0.3 : 0.3 + Math.PI) + (i % 4) * 1.1, sp: (i % 2 ? -1 : 1) * (1.45 - (i % 4) * 0.16), col: SCOL[i] }));
+SATS.push({ o: 1, ph: 2.97, sp: SATS[1].sp, col: SCOL[8] });
 const OUTER = [[0, 0], [1, 0], [2, 0], [2, 1], [2, 2], [1, 2], [0, 2], [0, 1]];
 let SLOT;
 function orbProj(o, ang, m, t) {
@@ -346,7 +349,7 @@ function orbProj(o, ang, m, t) {
 }
 function satAng(i, t) { const S = SATS[i], m = E.o5(P(t, 3.75 + i * 0.02, 4.35 + i * 0.02)); return [S.ph + S.sp * (t - 3.75) - (1 - m) * 1.6 * Math.sign(S.sp), m]; }
 function slotInit() {
-  const sa = SATS.map((S, i) => { const [a, m] = satAng(i, 5.2); const [x, y] = orbProj(S.o, a, m, 5.2); return Math.atan2(y - 540, x - 960); });
+  const sa = SATS.slice(0, 8).map((S, i) => { const [a, m] = satAng(i, 5.2); const [x, y] = orbProj(S.o, a, m, 5.2); return Math.atan2(y - 540, x - 960); });
   const so = OUTER.map(([c, r]) => Math.atan2((r - 1) * 320, (c - 1) * 548));
   const order = [...sa.keys()].sort((a, b) => sa[a] - sa[b]), sorder = [...so.keys()].sort((a, b) => so[a] - so[b]);
   let best = null, bc = Infinity;
@@ -375,10 +378,10 @@ function orbit(t) {
     X.setLineDash([2, 11]); X.lineWidth = 2.2; X.strokeStyle = rgba(C.white, 0.22 * pa); X.stroke(); X.setLineDash([]);
   }
   const items = [];
-  for (let i = 0; i < 8; i++) {
+  for (let i = 0; i < 9; i++) {
     const [a, m] = satAng(i, t), [x, y, z, s] = orbProj(SATS[i].o, a, m, t), g = E.io4(P(t, 5.2 + i * 0.012, 5.52 + i * 0.012));
     const [sx, sy] = slotXY(i);
-    items.push({ i, x: lerp(x, sx, g), y: lerp(y, sy, g), z: lerp(z, 0, g), r: lerp(10 * s, 10, g), a, m, g, s, zr: z / ORB[SATS[i].o][0] });
+    items.push({ i, x: lerp(x, sx, g), y: lerp(y, sy, g), z: lerp(z, 0, g), r: lerp(10 * s, i === 8 ? 0 : 10, g), a, m, g, s, zr: z / ORB[SATS[i].o][0] });
   }
   for (const it of items) {
     const S = SATS[it.i], fade = 1 - it.g;
@@ -395,7 +398,7 @@ function orbit(t) {
   items.sort((p, q) => p.z - q.z);
   for (const it of items) {
     if (it.core) {
-      const g = E.io4(P(t, 5.2, 5.52)), pulse = Math.exp(-(t % BEAT) * 11) * (1 - g), r = 24 * (1 + 0.14 * pulse);
+      const g = E.io4(P(t, 5.2, 5.52)), pulse = Math.exp(-(t % BEAT) * 11) * (1 - g) + 1.4 * Math.exp(-Math.max(0, t - 5.58) * 16) * P(t, 5.52, 5.58), r = 24 * (1 + 0.14 * pulse);
       const ra = E.o4(P(t, 3.75, 4.1)) * (1 - P(t, 5.15, 5.35));
       if (ra > 0) { X.beginPath(); X.arc(960, 540, 44 + 6 * pulse, -Math.PI / 2, -Math.PI / 2 + TAU * ra); X.lineWidth = 8; X.strokeStyle = C.white; X.stroke(); }
       lit(c => dot(c, 960, 540, r, AMB(c)), 1.4);
@@ -411,7 +414,7 @@ function orbit(t) {
     const ap = E.o3(P(t, 4.05 + it.i * 0.035, 4.35 + it.i * 0.035));
     if (ap <= 0) continue;
     X.save(); X.globalAlpha = ap * la * lerp(0.38, 1, (it.zr + 1) / 2);
-    tx(X, AG[it.i].n, it.x + it.r + 14, it.y - it.r - 6, 27, 600, 'u', C.ink);
+    tx(X, ALLN[it.i], it.x + it.r + 14, it.y - it.r - 6, 27, 600, 'u', C.ink);
     X.restore();
   }
   rise(X, 'Side by side.', 960, 1000, 84, 800, 'd', C.ink, t, 4.45, { al: 'center', st: 0.022, t1: 5.2, tr: -2 });
@@ -532,18 +535,18 @@ function grid(t) {
   rise(X, 'Every session, live.', 110, 178, 72, 800, 'd', C.ink, t, 6.33, { st: 0.018, t1: 7.02, tr: -2 });
 }
 
-const COLS = [['PENDING', C.gray], ['IN PROGRESS', C.blue], ['IN TESTING', C.purple], ['DONE', C.green]];
+const COLS = [['PENDING', C.gray], ['IN PROGRESS', C.blue], ['REVIEW', C.purple], ['MERGED', C.green]];
 const COLX = c => 112 + c * 430;
 const CRECT = (c, r) => ({ x: COLX(c) + 14, y: 262 + r * 142, w: 378, h: 128 });
 const CARDS = [
-  { id: '#110', key: 'PROJ-10812', title: 'PTY resize debounce', model: 'Claude Code' },
-  { id: '#108', key: 'PROJ-10802', title: 'Orders service split', model: 'gpt-5-codex' },
+  { id: '#110', key: 'PROJ-10812', title: 'PTY resize debounce', model: 'Claude Code', cost: '≈$1.74' },
+  { id: '#108', key: 'PROJ-10802', title: 'Orders service split', model: 'gpt-5-codex', cost: '≈$0.53', quorum: true },
   { id: '#97', key: 'PROJ-10790', title: 'Scheduler lab report', model: 'gemini-2.5-pro' },
   { id: '#116', key: 'PROJ-10851', title: 'Stock sync retries', model: 'Antigravity' },
   { id: '#101', key: 'PROJ-10821', title: 'Rate-limit the search API', model: 'opencode' },
   { id: '#119', key: 'PROJ-10860', title: 'Arm runners for CI', model: 'Amp' },
   { id: '#102', key: 'PROJ-10823', title: 'Dark mode for the admin', model: 'Copilot CLI' },
-  { id: '#111', key: 'PROJ-10819', title: 'VAT rounding', model: 'Cursor Agent' },
+  { id: '#111', key: 'PROJ-10819', title: 'VAT rounding', model: 'Cursor Agent', cost: '≈$2.13' },
 ];
 const CARD0 = { 4: [0, 0], 6: [0, 1], 1: [1, 0], 0: [1, 1], 5: [1, 2], 7: [2, 0], 3: [2, 1], 2: [3, 0] };
 const MOVES = { 0: [[17 * BEAT, 8.25, 2, 2, 1], [8.27, 8.45, 2, 1, 0]], 5: [[8.03, 8.25, 1, 1, 0]], 7: [[17.5 * BEAT, 8.45, 3, 1, 1]], 3: [[8.26, 8.45, 2, 0, 0]] };
@@ -574,6 +577,8 @@ function cardBody(c, r, i, t, ca, lift) {
   const d = CARDS[i], st = cardStatus(i, t);
   c.save(); rr(c, r.x, r.y, r.w, r.h, 12); c.clip(); c.globalAlpha *= ca;
   tx(c, `${d.id}  ${d.key}`, r.x + 18, r.y + 32, 14, 400, 'm', C.ink3);
+  if (d.quorum) { sf(c, 13, 500, 'u'); const qw = c.measureText('Quorum').width + 20; rr(c, r.x + 176, r.y + 15, qw, 24, 6); c.lineWidth = 1.2; c.strokeStyle = C.ink3; c.stroke(); tx(c, 'Quorum', r.x + 186, r.y + 32, 13, 500, 'u', C.ink2); }
+  if (d.cost) tx(c, d.cost, r.x + r.w - 18, r.y + 32, 13, 400, 'm', C.amber, 'right');
   tx(c, d.title, r.x + 18, r.y + 64, 21, 600, 'u', C.ink);
   dot(c, r.x + 23, r.y + 91, 4.5, st[1]); tx(c, st[0], r.x + 36, r.y + 97, 16, 500, 'u', st[1]);
   tx(c, d.model, r.x + r.w - 18, r.y + 97, 13, 400, 'm', C.ink2, 'right');
@@ -651,6 +656,7 @@ function reviewContent(c, t) {
   c.fillStyle = C.line; c.fillRect(0, 776, 1600, 1);
   rr(c, APB.x - 256, APB.y, 240, APB.h, 12); c.lineWidth = 1.5; c.strokeStyle = C.line2; c.stroke();
   tx(c, 'Request changes', APB.x - 136, APB.y + 37, 19, 600, 'u', C.ink2, 'center');
+  rr(c, APB.x - 436, APB.y, 160, APB.h, 12); c.stroke(); tx(c, 'Comment', APB.x - 356, APB.y + 37, 19, 600, 'u', C.ink3, 'center');
   const cx = APB.x + APB.w / 2, cy = APB.y + APB.h / 2;
   const press = t >= 19 * BEAT ? 1 - 0.07 * Math.sin(Math.PI * P(t, 19 * BEAT, 19 * BEAT + 0.12)) : 1;
   const m = E.io4(P(t, 8.93, 9.1)), bw = lerp(APB.w, APB.h, m);
@@ -848,54 +854,65 @@ function devices(t) {
   if (fo > 0) { X.setTransform(1, 0, 0, 1, 0, 0); X.fillStyle = rgba(C.bg, fo); X.fillRect(0, 0, W, H); }
 }
 
-const MF = 1100, MD = 1375, FZ = [3000, 6000, 9000], ARR = [11.485, 11.955, 12.425];
-const FOC = [['agents', 'Every session, by status'], ['graph', 'Git graph and worktrees'], ['solarized', 'Your palette, your rules']];
-let MC;
-function montInit() {
-  const r = mulberry32(7), names = ['kanban', 'review', 'worktrees', 'workspaces', 'broadcast', 'addtask', 'thread', 'graphite', 'ipad', 'android', 'kanban', 'review', 'graph', 'agents', 'worktrees', 'broadcast'];
-  MC = FOC.map(([k], i) => ({ k, x: 0, y: 0, z: FZ[i], w: 1440, rot: 0 }));
-  names.forEach((k, i) => {
-    const sx = i % 2 ? 1 : -1, sy = (i >> 1) % 2 ? 1 : -1;
-    MC.push({ k, x: sx * (1180 + r() * 420), y: sy * (600 + r() * 260), z: 900 + i * 560 + r() * 260, w: 980 + r() * 260, rot: (r() - 0.5) * 0.14 });
-  });
-}
-function camZ(t) {
-  if (t < ARR[0]) return lerp(FZ[0] - MD - 2600, FZ[0] - MD, E.o5(P(t, 11.25, ARR[0])));
-  if (t < ARR[1]) return lerp(FZ[0] - MD, FZ[1] - MD, E.io5(P(t, ARR[0], ARR[1])));
-  if (t < ARR[2]) return lerp(FZ[1] - MD, FZ[2] - MD, E.io5(P(t, ARR[1], ARR[2])));
-  return FZ[2] - MD + 260 * E.i2(P(t, ARR[2], FIN));
-}
-function montage(t) {
+const FT = [
+  { k: 'quorum', n: '01', t: 'QUORUM', s: 'Agents vote on results', x: 54, y: 206, w: 450, h: 360, cw: 1440, src: [460, 484, 520, 416] },
+  { k: 'map', n: '02', t: 'REVIEW MAP', s: 'A heat map of the change', x: 528, y: 206, w: 620, h: 360, cw: 1440, src: [298, 196, 800, 465] },
+  { k: 'live', n: '03', t: 'LIVE REVIEW', s: 'Behind the git button', x: 1172, y: 206, w: 420, h: 360, cw: 1440, src: [600, 40, 840, 720] },
+  { k: 'hosts', n: '04', t: 'HOSTS', s: 'Local + SSH, one window', x: 1616, y: 206, w: 250, h: 360, cw: 300, src: [0, 0, 300, 400] },
+  { k: 'notes', n: '05', t: 'STICKY NOTES', s: 'Pinned to sessions', x: 54, y: 590, w: 360, h: 330, cw: 1440, src: [200, 320, 380, 348] },
+  { k: 'cost', n: '06', t: 'REAL COST', s: 'Per session and task', x: 438, y: 590, w: 600, h: 330, cw: 860, src: [0, 235, 860, 473] },
+  { k: 'record', n: '07', t: 'RECORD A BUG', s: 'Clicks logged, not keys', x: 1062, y: 590, w: 400, h: 330, cw: 500, src: [0, 0, 500, 413] },
+  { k: 'mistral', n: '08', t: 'MISTRAL VIBE', s: 'Install any agent CLI', x: 1486, y: 590, w: 380, h: 330, cw: 330, src: [0, 0, 330, 286] },
+];
+const FT0 = 24.1 * BEAT, FTS = 0.4 * BEAT, FOUT = 28.3 * BEAT, TICK = 'SUBJECTS  ·  INSTALL ANY AGENT  ·  LID CLOSED  ·  PROFILES BY TASK TYPE  ·  AGENT MESSAGES STAY IN PROJECT  ·  AGENTS FILE TASKS';
+function feats(t) {
   if (t < 11.25 || t >= FIN) return;
-  const cz = camZ(t), cxm = 70 * Math.sin((t - 11.25) * 3), cym = 36 * Math.cos((t - 11.25) * 2.4), imp = E.iX(P(t, 12.44, FIN)), fin = E.o2(P(t, 11.25, 11.34));
-  X.translate(960, 540); X.rotate(0.015 * Math.sin((t - 11.25) * 2.2)); X.translate(-960, -540);
-  const vis = MC.map(m => ({ m, dz: m.z - cz })).filter(v => v.dz > 80).sort((a, b) => b.dz - a.dz);
-  for (const { m, dz } of vis) {
-    const s = MF / dz, im = SH[m.k], w = m.w * s, h = w * im.naturalHeight / im.naturalWidth;
-    let x = 960 + (m.x - cxm) * s, y = 540 + (m.y - cym) * s, sc = 1, rot = m.rot;
-    const a = clamp((dz - 120) / 380) * clamp((7600 - dz) / 2600) * fin, foc = m.x === 0;
-    if (a <= 0) continue;
-    if (imp > 0) { x = lerp(x, 960, imp); y = lerp(y, 395, imp); sc = 1 - imp; rot += imp * 1.4 * (m.x >= 0 ? 1 : -1); }
-    X.save(); X.globalAlpha = a * (foc ? 1 : 0.62); X.translate(x, y); X.rotate(rot); X.scale(sc, sc);
-    rr(X, -w / 2, -h / 2, w, h, 16 * s); X.save(); X.clip(); X.drawImage(im, -w / 2, -h / 2, w, h); X.restore();
-    X.lineWidth = 2; X.strokeStyle = foc ? 'rgba(255,255,255,0.3)' : 'rgba(255,255,255,0.2)'; X.stroke();
-    const fg = foc ? clamp(1 - Math.abs(dz - MD) / 700) : 0;
-    if (fg > 0) emit(c => { rr(c, -w / 2, -h / 2, w, h, 16 * s); c.lineWidth = 12; c.strokeStyle = `rgba(232,163,58,${0.4 * fg})`; c.stroke(); });
+  const u = t - 11.25, ex = E.io3(P(t, FOUT, FIN)), fa = 1 - E.o2(P(t, FOUT - 0.05, FOUT + 0.25));
+  GRID.setTransform(new DOMMatrix([1, 0, 0, 1, 0, 12 - u * 26]));
+  X.save(); X.globalAlpha = 0.9 * E.o2(P(t, 11.25, 11.7)) * (1 - ex); X.fillStyle = GRID; X.fillRect(0, 0, W, H); X.restore();
+  X.save(); X.globalAlpha = fa;
+  rise(X, 'New in 0.36', 54, 150, 84, 800, 'd', C.ink, t, 11.3, { st: 0.022, tr: -2.5, t1: FOUT, ost: 0.01 });
+  tx(X, 'v0.36.0', 1866, 144, 22, 500, 'm', C.amber, 'right', 3);
+  X.globalAlpha = fa * E.o3(P(t, 11.55, 11.8)); tx(X, 'EVERYTHING THAT SHIPPED SINCE 0.35', 1866, 112, 15, 500, 'm', C.ink3, 'right', 3);
+  X.restore();
+  const order = FT.map((f, i) => i);
+  for (const i of order) {
+    const f = FT[i], a = FT0 + i * FTS, p = P(t, a, a + 0.42);
+    if (p <= 0) continue;
+    const pe = E.oB(p, 1.5), sc = lerp(0.8, 1, pe) * lerp(1, 0.02, E.i3(ex)), oy = (1 - E.o4(p)) * 70;
+    const cx = f.x + f.w / 2, cy = f.y + f.h / 2, tg = ex;
+    const px = lerp(cx, 960, E.i2(tg)), py = lerp(cy + oy, 395, E.i2(tg)), rot = (1 - E.o4(p)) * (i % 2 ? 0.07 : -0.07) + tg * (i % 2 ? 1.6 : -1.6);
+    const al = E.o2(P(t, a, a + 0.14)) * (1 - E.i3(P(t, FIN - 0.12, FIN)));
+    X.save(); X.globalAlpha = al; X.translate(px, py); X.rotate(rot); X.scale(sc, sc);
+    const w = f.w, h = f.h, x0 = -w / 2, y0 = -h / 2;
+    X.shadowColor = 'rgba(0,0,0,0.6)'; X.shadowBlur = 50; X.shadowOffsetY = 22; rr(X, x0, y0, w, h, 16); X.fillStyle = C.surf; X.fill();
+    X.shadowColor = 'transparent'; X.shadowBlur = 0; X.shadowOffsetY = 0;
+    X.save(); rr(X, x0, y0, w, h, 16); X.clip();
+    const im = SH[f.k], q = im.naturalWidth / f.cw, [sx, sy, sw, sh] = f.src, kb = lerp(1.07, 1, E.o3(P(t, a, a + 1.3))), dw = w * kb, dh = h * kb;
+    X.drawImage(im, sx * q, sy * q, sw * q, sh * q, x0 - (dw - w) / 2, y0 - (dh - h) / 2, dw, dh);
+    const gr = X.createLinearGradient(0, y0 + h - 124, 0, y0 + h); gr.addColorStop(0, 'rgba(8,8,10,0)'); gr.addColorStop(0.55, 'rgba(8,8,10,0.82)'); gr.addColorStop(1, 'rgba(8,8,10,0.96)');
+    X.fillStyle = gr; X.fillRect(x0, y0 + h - 124, w, 124);
+    const ca = a + 0.14;
+    tx(X, f.n, x0 + 20, y0 + h - 86, 14, 500, 'm', C.amber, 'left', 2);
+    X.restore();
+    X.save(); rr(X, x0, y0, w, h, 16); X.clip();
+    rise(X, f.t, x0 + 20, y0 + h - 52, 30, 800, 'd', C.ink, t, ca, { st: 0.012, dur: 0.4, tr: -0.5 });
+    X.globalAlpha = al * E.o3(P(t, ca + 0.12, ca + 0.32)); tx(X, f.s, x0 + 20, y0 + h - 24, 16, 500, 'u', C.ink2, 'left');
+    X.restore();
+    X.globalAlpha = al; rr(X, x0, y0, w, h, 16); X.lineWidth = 1.5; X.strokeStyle = 'rgba(255,255,255,0.16)'; X.stroke();
+    const fl = 1 - E.o3(P(t, a, a + 0.5));
+    if (fl > 0) { const g = fl; emit(c => { rr(c, x0, y0, w, h, 16); c.lineWidth = 8; c.strokeStyle = `rgba(232,163,58,${0.75 * g})`; c.stroke(); }); X.globalAlpha = al * g; rr(X, x0, y0, w, h, 16); X.lineWidth = 2.5; X.strokeStyle = C.amber; X.stroke(); }
     X.restore();
   }
-  for (let k = 0; k < 3; k++) {
-    const a0 = ARR[k] - 0.08, a1 = ARR[k] + 0.2;
-    if (t < a0 || t > a1 + 0.3) continue;
-    X.save(); X.globalAlpha = 1 - imp;
-    sf(X, 16, 500, 'm', 3); X.textAlign = 'left'; X.fillStyle = C.amber;
-    X.globalAlpha *= E.o3(P(t, a0, a0 + 0.12)) * (1 - P(t, a1, a1 + 0.15));
-    X.fillText(`0${k + 1} / 03`, 386, 930);
-    X.globalAlpha = 1 - imp;
-    rise(X, FOC[k][1], 384, 994, 52, 800, 'd', C.ink, t, a0, { st: 0.008, dur: 0.3, t1: a1 - 0.04, ost: 0.003, odur: 0.13, tr: -1 });
-    X.restore();
+  const ta = E.o3(P(t, 27.35 * BEAT, 27.8 * BEAT)) * fa;
+  if (ta > 0) {
+    const L = lay(TICK, 16, 500, 'm', 2.2), rv = E.io2(P(t, 27.35 * BEAT, 28.1 * BEAT));
+    X.save(); X.globalAlpha = ta; X.beginPath(); X.rect(54, 940, (L.w + 40) * rv, 50); X.clip();
+    tx(X, '+', 54, 968, 16, 700, 'm', C.amber, 'left', 2.2); tx(X, TICK, 90, 968, 16, 500, 'm', C.ink2, 'left', 2.2); X.restore();
+    const hd = 54 + (L.w + 40) * rv + 6; if (rv < 1) lit(c => { rr(c, hd + 36, 954, 3, 20, 1.5); c.fillStyle = AMB(c); c.fill(); }, 1);
   }
-  if (t > 12.42) {
-    const e = E.iX(P(t, 12.42, FIN));
+  if (t > FIN - 0.62) {
+    const e = E.iX(P(t, FIN - 0.62, FIN));
     for (let j = 0; j < 30; j++) {
       const an = j / 30 * TAU + hs(j) * 0.2, r1 = lerp(1500, 0, e) * (0.6 + hs(j * 7 + 1) * 0.5), r0 = r1 + 280 * (1 - e) + 40;
       lit(c => { c.beginPath(); c.moveTo(960 + Math.cos(an) * r0, 395 + Math.sin(an) * r0); c.lineTo(960 + Math.cos(an) * r1, 395 + Math.sin(an) * r1); c.lineWidth = 3; c.lineCap = 'round'; c.strokeStyle = j % 3 ? rgba(C.white, 0.75 * e) : AMB(c, 0.75 * e); c.stroke(); }, 1.4);
@@ -955,21 +972,21 @@ function logo(t) {
   for (let i = 0; i < TAG.length; i++) {
     if (i > 0 && TAG[i - 1] !== ' ') continue;
     if (TAG[i] === ' ') continue;
-    const end = TAG.indexOf(' ', i) < 0 ? TAG.length : TAG.indexOf(' ', i), a = T + 0.62 + wi * 0.03, e = E.o4(P(t, a, a + 0.45));
+    const end = TAG.indexOf(' ', i) < 0 ? TAG.length : TAG.indexOf(' ', i), a = T + 0.5 + wi * 0.022, e = E.o4(P(t, a, a + 0.45));
     if (e > 0) { X.save(); X.globalAlpha = e; X.fillText(TAG.slice(i, end), tx0 + TL.xs[i], 812 + (1 - e) * 18); X.restore(); }
     wi++;
   }
-  const n = clamp(Math.floor((t - (T + 0.92)) * 55), 0, URL.length), UL = lay(URL, 28, 500, 'm'), ux = 960 - UL.w / 2 - 14;
-  if (t > T + 0.86) {
+  const n = clamp(Math.floor((t - (T + 0.62)) * 110), 0, URL.length), UL = lay(URL, 28, 500, 'm'), ux = 960 - UL.w / 2 - 14;
+  if (t > T + 0.56) {
     tx(X, URL.slice(0, n), ux, 884, 28, 500, 'm', C.ink3);
     if (n < URL.length || (t * 2) % 1 < 0.55) { X.fillStyle = C.amber; X.fillRect(ux + UL.xs[n] + 4, 860, 15, 32); }
   }
 }
 
-const LBL = [[DROP, '01  AGENTS'], [3.75, '02  ORBIT'], [5.625, '03  SESSIONS'], [7.5, '04  TASKS + REVIEW'], [9.375, '05  ANYWHERE'], [11.25, '06  FEATURES']];
+const LBL = [[DROP, '01  AGENTS'], [3.75, '02  ORBIT'], [5.625, '03  SESSIONS'], [7.5, '04  TASKS + REVIEW'], [9.375, '05  ANYWHERE'], [11.25, '06  NEW IN 0.36']];
 const tcode = t => { const f = Math.round(t * FPS), s = Math.floor(f / FPS), ff = f % FPS; return `00:00:${String(s).padStart(2, '0')}:${String(ff).padStart(2, '0')}`; };
 function hud(c, t, tt) {
-  const a = 0.62 * E.o2(P(t, DROP, DROP + 0.3)) * (1 - P(t, 12.5, FIN));
+  const a = 0.62 * E.o2(P(t, DROP, DROP + 0.3)) * (1 - P(t, FOUT, FIN));
   if (a <= 0) return;
   c.save(); c.globalAlpha = a; c.strokeStyle = C.ink3; c.lineWidth = 1.5;
   for (const [x, y, sx, sy] of [[36, 36, 1, 1], [1884, 36, -1, 1], [36, 1044, 1, -1], [1884, 1044, -1, -1]]) { c.beginPath(); c.moveTo(x, y + sy * 18); c.lineTo(x, y); c.lineTo(x + sx * 18, y); c.stroke(); }
@@ -982,7 +999,7 @@ function hud(c, t, tt) {
   c.restore();
 }
 
-const SCENES = [intro, reel, orbit, grid, tasks, devices, montage, logo];
+const SCENES = [intro, reel, orbit, grid, tasks, devices, feats, logo];
 function drawAll(t) {
   X.setTransform(1, 0, 0, 1, 0, 0); X.globalAlpha = 1; X.globalCompositeOperation = 'source-over';
   G.setTransform(1, 0, 0, 1, 0, 0); G.clearRect(0, 0, W / 2, H / 2);
@@ -1026,7 +1043,7 @@ if (RENDER) document.body.classList.add('render');
 const ready = (async () => {
   await Promise.all(FONTS.map(async ([fam, file, w]) => { const f = new FontFace(fam, `url(fonts/${file}.woff2)`, { weight: String(w) }); await f.load(); document.fonts.add(f); }));
   await Promise.all(Object.entries(SHOTS).map(([k, f]) => new Promise((res, rej) => { const im = new Image(); im.onload = () => { SH[k] = im; res(); }; im.onerror = () => rej(new Error('image ' + f)); im.src = `shots/${f}.png`; })));
-  fxInit(); introInit(); reelInit(); slotInit(); montInit();
+  fxInit(); introInit(); reelInit(); slotInit();
 })();
 window.reel = { ready, fps: FPS, duration: DUR, width: W, height: H, frame(i, samples = 1, type = 'image/png', q) { renderFrame(i, samples); return cv.toDataURL(type, q); }, draw: renderFrame };
 
