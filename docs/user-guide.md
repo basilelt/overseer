@@ -1262,7 +1262,7 @@ and `completed` (Closed). Merged and Closed are both done; they start collapsed 
   opencode and Copilot get them with their prompt flag instead). The prompt is never written to
   disk or logs.
 - Tasks in `auto` start by themselves in column order (`rank`), while fewer than `autoConcurrency` tasks run
-  (`config.json`, default 2).
+  (Settings, Defaults, **Auto concurrency**, 1 to 16, applied at once and kept by the daemon; `config.json` gives the starting value, default 2).
 - A running task moves to `in_testing` when the agent finishes a turn (`Stop` hook) or exits.
 - An `in_testing` task, or a `completed` one whose worktree is still on disk, moves to `merged` once its branch has landed in the project's default
   branch (`origin/HEAD`, else `main`/`master`; `origin/<default>` when it is ahead of the local
