@@ -63,6 +63,15 @@ pub fn run() {
             diag::quit_on_signals(app.handle().clone());
             Ok(())
         })
+        .on_page_load(|wv, p| {
+            if matches!(p.event(), tauri::webview::PageLoadEvent::Started)
+                && wv.label() == wv.window().label()
+            {
+                if let Some(state) = tauri::Manager::try_state::<commands::AppState>(wv) {
+                    state.page_reloaded(wv.label());
+                }
+            }
+        })
         .on_window_event(|w, e| match e {
             tauri::WindowEvent::Focused(f) if w.label() == MAIN => diag::focus(*f),
             tauri::WindowEvent::Destroyed => {
