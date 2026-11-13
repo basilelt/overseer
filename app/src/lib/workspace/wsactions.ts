@@ -358,6 +358,7 @@ export function selectSession(key: string, e?: MouseEvent) {
 let lastMenuAt = { clientX: 0, clientY: 0 };
 
 export const itemMenuAt = (key: string, title: string, e: MouseEvent) => {
+  e.preventDefault();
   lastMenuAt = { clientX: e.clientX, clientY: e.clientY };
   app.openMenu(e, title, itemMenu(key));
 };

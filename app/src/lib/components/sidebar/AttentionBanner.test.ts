@@ -23,7 +23,8 @@ describe('AttentionBanner', () => {
   });
 
   it('uses the attention token for the dots', () => {
-    expect(html([e('line:a', 'A')])).toContain('var(--state-attention)');
+    expect(html([e('line:a', 'A')])).toContain('class="dot');
+    expect(declOf(componentSrc, '.dot', 'background')).toBe('var(--state-attention)');
   });
 
   it('CSS guard: hovers a banner entry with its own token', () => {
@@ -38,5 +39,9 @@ describe('AttentionBanner', () => {
 
   it('shows no path without a lookup', () => {
     expect(html([e('line:a', 'Hermes')])).not.toContain('class="path');
+  });
+
+  it('opens the session menu of the list on right-click and the Menu key', () => {
+    expect(componentSrc).toContain('oncontextmenu={(e) => itemMenuAt(entry.key, entry.title, e)}');
   });
 });
