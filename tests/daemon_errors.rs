@@ -144,6 +144,18 @@ fn every_error_the_mock_copies_is_what_the_daemon_sends() {
         json!({"status": "pending"}),
     );
 
+    check(
+        "bodyTooLarge",
+        None,
+        "POST",
+        "/v1/tasks",
+        json!({"title": "x".repeat(1 << 20)}),
+    );
+    let exact = format!("{{\"title\":\"{}\"}}", "x".repeat((1 << 20) - 12));
+    assert_eq!(exact.len(), 1 << 20);
+    let (code, _) = app.fx.req("POST", "/v1/tasks", &exact);
+    assert_ne!(code, 413, "a body of exactly 1 MiB is still read");
+
     let keys: BTreeSet<String> = golden().as_object().unwrap().keys().cloned().collect();
     assert_eq!(covered, keys, "every golden entry is triggered over HTTP");
 }

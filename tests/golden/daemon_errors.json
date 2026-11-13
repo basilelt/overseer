@@ -7,5 +7,6 @@
   "termSizeRequired": { "status": 400, "message": "cols and rows required" },
   "shellInQuorum": { "status": 400, "message": "shell cannot join a quorum" },
   "quorumOrchestrator": { "status": 400, "message": "the quorum orchestrator must be claude or codex" },
-  "sessionTaskStatus": { "status": 400, "message": "a session task follows its session: status must be one of in_progress, in_testing, merged, completed" }
+  "sessionTaskStatus": { "status": 400, "message": "a session task follows its session: status must be one of in_progress, in_testing, merged, completed" },
+  "bodyTooLarge": { "status": 413, "message": "request body exceeds 1 MiB" }
 }
