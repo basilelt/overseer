@@ -1293,6 +1293,8 @@ export const en = {
   'hold.introClose': 'Dry run of the close checks (the same as hold). Agents that pass every check end and their lines are marked hung up; lines without a live process are just marked hung up.',
   'hold.safeClose': 'Safe to close',
   'hold.closed': 'Closed',
+  'hold.waiting': 'Waiting for you. Tick to close.',
+  'hold.turn': 'Mid-turn? Tick to close.',
   'hold.confirmClose': 'Close {n}',
   'notify.allIdle': 'All agents in {name} are idle',
   'palette.newWorkspace': 'New workspace from a folder…',
