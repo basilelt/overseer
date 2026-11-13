@@ -433,28 +433,56 @@ fn execute_hold_term(
     Ok(done)
 }
 
+#[cfg(unix)]
+fn sigterm(pid: u32) -> Result<bool, String> {
+    if unsafe { libc::kill(pid as i32, libc::SIGTERM) } == 0 {
+        return Ok(true);
+    }
+    let e = std::io::Error::last_os_error();
+    if e.raw_os_error() == Some(libc::ESRCH) {
+        Ok(false)
+    } else {
+        Err(format!("cannot stop agent pid {pid}: {e}"))
+    }
+}
+
+#[cfg(unix)]
 fn execute_hold_external(ctx: &Ctx, reg: &Registry, l: &Line) -> Result<Vec<String>, String> {
     let pid = l.pid.ok_or("no pid")?;
-    let start = ctx.probe.info(pid).and_then(|i| i.start);
+    let then = stamp(ctx.probe, pid);
     let tree = descendants(ctx, pid);
     record_held(ctx, reg, l, pid)?;
-    let killed = crate::exec::output_within(
-        std::process::Command::new("kill").args(["-TERM", &pid.to_string()]),
-        crate::exec::PROBE_TIMEOUT,
-    )
-    .is_ok_and(|o| o.status.success());
-    if !killed || !wait_exit(ctx, pid, &start) {
+    let mut done = vec![format!("recorded {} as held(user)", l.id)];
+    if !alive_same(ctx.probe, pid, &then) {
+        done.push(format!("agent pid {pid} was already gone"));
+        return Ok(done);
+    }
+    match sigterm(pid) {
+        Ok(true) => {}
+        Ok(false) => {
+            done.push(format!("agent pid {pid} was already gone"));
+            return Ok(done);
+        }
+        Err(e) => {
+            revert_held(reg, l);
+            return Err(e);
+        }
+    }
+    let start = then.and_then(|t| t.0);
+    if !wait_exit(ctx, pid, &start) {
         revert_held(reg, l);
         return Err(format!(
             "agent pid {pid} did not exit; reverted the registry"
         ));
     }
-    let mut done = vec![
-        format!("recorded {} as held(user)", l.id),
-        format!("agent pid {pid} exited after SIGTERM"),
-    ];
+    done.push(format!("agent pid {pid} exited after SIGTERM"));
     done.extend(stop_tree(ctx, &tree));
     Ok(done)
+}
+
+#[cfg(not(unix))]
+fn execute_hold_external(_: &Ctx, _: &Registry, _: &Line) -> Result<Vec<String>, String> {
+    Err("closing a session that runs outside Overseer is not supported on this platform".into())
 }
 
 fn execute_hold(
@@ -1335,6 +1363,12 @@ pub fn status_line(v: &Value) -> String {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(unix)]
+    #[test]
+    fn sigterm_of_a_pid_that_is_gone_is_not_an_error() {
+        assert_eq!(super::sigterm(u32::MAX / 2), Ok(false));
+    }
+
     use super::*;
 
     fn report(ok: bool, error: Option<&str>, pending: bool) -> Report {

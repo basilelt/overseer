@@ -80,7 +80,7 @@
           <AgentIcon kind={l.kind} size={12} />
           <span class="title">{l.title}</span>
           {#if done[id]}
-            <span class="st" class:bad={done[id] !== 'ok'}>{done[id] === 'ok' ? t(mode === 'hold' ? 'hold.held' : mode === 'close' ? 'hold.closed' : 'hold.resumed') : done[id]}</span>
+            <span class="st" class:bad={done[id] !== 'ok'} title={done[id] === 'ok' ? undefined : done[id]}>{done[id] === 'ok' ? t(mode === 'hold' ? 'hold.held' : mode === 'close' ? 'hold.closed' : 'hold.resumed') : done[id]}</span>
           {:else if p === 'loading'}
             <span class="st">{t('common.loading')}</span>
           {:else if checked}
