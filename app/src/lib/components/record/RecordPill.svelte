@@ -19,7 +19,7 @@
   });
 </script>
 
-<div class="pill" class:phone={phoneOrMobile()} data-rec-skip role="status">
+<div class="pill" class:phone={phoneOrMobile()} data-rec-skip data-rec-pill role="status">
   <span class="dot" aria-hidden="true"></span>
   <span class="mono">{rt('recording', { time: clock(recorder.elapsed) })}</span>
   <span class="faint">· {rt('actions', { n: recorder.count })}</span>
@@ -33,7 +33,7 @@
     left: 50%;
     bottom: calc(16px + env(safe-area-inset-bottom, 0px));
     transform: translateX(-50%);
-    z-index: 900;
+    z-index: var(--z-record);
     display: flex;
     align-items: center;
     gap: 8px;

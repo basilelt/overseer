@@ -63,6 +63,12 @@
   :global(:root.phone) .toast {
     bottom: calc(72px + var(--safe-bottom) + var(--kb, 0px) + var(--composer-h, 0px) + 8px);
   }
+  :global(:root:has([data-rec-pill])) .toast {
+    bottom: calc(56px + var(--composer-h, 0px));
+  }
+  :global(:root.phone:has([data-rec-pill])) .toast {
+    bottom: calc(116px + var(--safe-bottom) + var(--kb, 0px) + var(--composer-h, 0px) + 8px);
+  }
   :global(:root.phone:has([role='menu'])) .toast {
     bottom: auto;
     top: calc(8px + var(--safe-top));
