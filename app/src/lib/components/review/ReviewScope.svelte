@@ -77,6 +77,7 @@
   }
   :global(.phone) .scope {
     flex-wrap: wrap;
+    overflow: hidden;
     padding: 8px 12px;
   }
   :global(.phone) select {
