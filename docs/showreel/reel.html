@@ -952,9 +952,9 @@ function hostsWin(c, mode, o = HOPT) {
   dot(c, both ? 1318 : 1356, 34, 6, C.green); tx(c, both ? '2 hosts' : (L ? 'Local' : 'devbox'), both ? 1342 : 1378, 41, 20, 600, 'u', C.ink);
   rr(c, 1490, 14, 90, 40, 10); c.fillStyle = C.blue; c.fill(); tx(c, 'RUN', 1535, 41, 19, 700, 'u', '#fff', 'center');
   if (o.rec > 0) {
-    const w = 330; rr(c, 760, 12, w, 44, 22); c.fillStyle = rgba(C.red, 0.16); c.fill(); c.lineWidth = 2; c.strokeStyle = rgba(C.red, 0.7); c.stroke();
-    dot(c, 790, 34, 7 + 2 * Math.sin(o.rec * 14), C.red); tx(c, `Recording 00:0${Math.min(9, Math.floor(o.rec * 6))}`, 812, 41, 19, 600, 'u', C.ink);
-    tx(c, `${o.count} actions`, 1000, 41, 17, 500, 'm', C.ink2); rr(c, 1010 + 36, 20, 0, 0, 0);
+    const w = 390; rr(c, 730, 12, w, 44, 22); c.fillStyle = rgba(C.red, 0.16); c.fill(); c.lineWidth = 2; c.strokeStyle = rgba(C.red, 0.7); c.stroke();
+    dot(c, 762, 34, 7 + 2 * Math.sin(o.rec * 14), C.red); tx(c, `Recording 00:0${Math.min(9, Math.floor(o.rec * 6))}`, 784, 41, 19, 600, 'u', C.ink);
+    tx(c, `${o.count} actions`, 1090, 41, 17, 500, 'm', C.ink2, 'right');
   }
   c.fillStyle = '#101012'; c.fillRect(0, 69, 470, 811); c.fillStyle = '#34343a'; c.fillRect(470, 69, 1, 811);
   let y = 92;
@@ -1243,7 +1243,7 @@ function recordScene(T) {
       c.restore();
     }
     if (rec > 0) {
-      const lg = [['00:01', 'click', 'Tasks', 0.34], ['00:02', 'shortcut', 'Ctrl+P', 0.46], ['00:03', 'view', 'Review', 0.58], ['00:04', 'typed', 'in Terminal · content not logged', 0.66]];
+      const lg = [['00:01', 'click', 'Tasks', 0.34], ['00:02', 'shortcut', 'Ctrl+P', 0.46], ['00:03', 'view', 'Review', 0.58], ['00:04', 'typed', 'Terminal · not logged', 0.66]];
       c.fillStyle = '#101012'; c.fillRect(1131, 69, 469, 811); c.fillStyle = '#34343a'; c.fillRect(1131, 69, 1, 811); const px = 1140, py = 96; tx(c, 'ACTIONS', px + 24, py + 44, 16, 700, 'm', C.ink2, 'left', 3);
       lg.forEach(([tm, k, d, ts], i) => { const p = E.o4(P(u, ts, ts + 0.06)); if (p <= 0) return; c.save(); c.globalAlpha = p; c.translate((1 - p) * 40, 0); const yy = py + 66 + i * 62; rr(c, px + 16, yy, 408, 52, 10); c.fillStyle = k === 'typed' ? rgba(C.amber, 0.1) : '#101013'; c.fill(); tx(c, tm, px + 32, yy + 33, 17, 400, 'm', C.ink2); pill(c, k, px + 100, yy + 33, 17, k === 'click' ? C.blue : k === 'shortcut' ? C.purple : k === 'view' ? C.green : C.amber); tx(c, d, px + (k === 'typed' ? 192 : 222), yy + 33, 17, 400, 'u', C.ink, 'left'); c.restore(); });
     }
