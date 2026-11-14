@@ -23,10 +23,11 @@
   import { chatCapable } from '../../chat/viewmode';
   import { modeOf, setMode } from '../../chat/viewmode.svelte';
   import { pages } from '../../session/session-pages.svelte';
-  import { GROUP_COLOR } from '../../workspace/ws-color';
+  import { STATE_COLOR } from '../../workspace/ws-color';
+  import { itemTarget } from '../../review/open';
 
   const tabs = $derived(activeTabs(workspace.layout).map((k) => tabInfo(k, app.items)).filter((x): x is TabInfo => !!x));
-  const canPanel = $derived(!!app.selected?.lineId);
+  const canPanel = $derived(!!itemTarget(app.selected?.key));
   const web = $derived(app.selected ? pages.byKey[app.selected.key] : undefined);
   const chatItem = $derived(app.selected && chatCapable(app.selected) ? app.selected : null);
   const inChat = $derived(chatItem ? modeOf(chatItem) === 'chat' : false);
@@ -62,7 +63,7 @@
     {#each tabs as tab (tab.key)}
       <button role="tab" class="chip" class:on={tab.key === app.selectedKey} aria-selected={tab.key === app.selectedKey} data-key={tab.key} use:longPress={(e) => chipMenu(e, tab)} onclick={() => selectTabKey(tab.key)}>
         {#if tab.item}
-          <span class="dot" style:background={GROUP_COLOR[tab.item.group]}></span>
+          <span class="dot" style:background={STATE_COLOR[tab.item.state]}></span>
           <AgentGlyph agent={tab.item.kind} size={13} />
         {:else if tab.kind === 'browser'}<Globe size={13} />
         {:else if tab.kind === 'review'}<GitCompare size={13} />

@@ -12,6 +12,7 @@ import type { app as AppState } from '../state.svelte';
 import type { DaemonEvent, HostTarget, LocalLine } from '../types';
 import { hostKey, isMainWindow, openWindow } from '../window';
 import { localStore } from '../storage';
+import { LOCAL_TARGET } from '../conn';
 
 type App = typeof AppState;
 
@@ -57,6 +58,12 @@ export async function addHost(app: App, target: HostTarget, activate: boolean): 
   park(app);
   adopt(app, link);
   await app.connect(target);
+}
+
+export async function addLocal(app: App): Promise<void> {
+  if (app.mobile || !isMainWindow() || app.conn.phase === 'idle' || app.conn.target.kind === 'local') return;
+  if (app.others.some((l) => l.key === 'local')) return;
+  await addHost(app, LOCAL_TARGET, false);
 }
 
 export async function switchHost(app: App, key: string): Promise<void> {

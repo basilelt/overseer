@@ -3282,7 +3282,7 @@ dependencies = [
 
 [[package]]
 name = "overseer-app"
-version = "0.36.0"
+version = "0.37.0"
 dependencies = [
  "android-native-keyring-store",
  "apple-native-keyring-store",

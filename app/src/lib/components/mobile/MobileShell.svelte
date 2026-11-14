@@ -11,7 +11,7 @@
   import { t } from '../../i18n.svelte';
   import { app } from '../../state.svelte';
   import { needsInputCount } from '../../notify/notify';
-  import { reviewTitle } from '../../review/open';
+  import { itemTarget, reviewTitle } from '../../review/open';
   import { isReviewKey } from '../../review/keys';
   import { MOBILE_TABS, type MobileTab } from '../../mobile/layout';
   import { nextTab, viewForTab, type NavState } from '../../mobile/nav';
@@ -70,7 +70,7 @@
   });
 
   $effect(() => {
-    if (!app.selected?.lineId) ui.panel = false;
+    if (!itemTarget(app.selected?.key)) ui.panel = false;
   });
 
   function go(tab: MobileTab) {
@@ -202,7 +202,7 @@
 
 <svelte:window onkeydown={(e) => escapeCloses(e, ui.panel) && (ui.panel = false)} />
 
-{#if ui.panel && app.selected?.lineId}
+{#if ui.panel && itemTarget(app.selected?.key)}
   <div class="sheet" role="dialog" aria-modal="true" aria-label={t('mobile.shell.activity')}>
     <div class="drawer-head">
       <span class="title">{t('mobile.shell.activity')}</span>

@@ -3,7 +3,7 @@ import os
 import re
 from playwright.sync_api import sync_playwright
 
-D = os.environ.get("QA_DIR", "/tmp/sbqa")
+D = os.environ.get("QA_DIR") or os.path.join(os.environ.get("XDG_CACHE_HOME") or os.path.expanduser("~/.cache"), "sbqa")
 WEB = f"http://127.0.0.1:{os.environ.get('QA_WEB', '4918')}/"
 SAME_ORIGIN = f"http://127.0.0.1:{os.environ.get('QA_PORT', '47811')}/"
 APP = WEB

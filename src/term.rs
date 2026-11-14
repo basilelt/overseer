@@ -1285,8 +1285,12 @@ pub fn of_pid(pid: u32, probe: &dyn Probe) -> Option<Arc<Term>> {
 }
 
 pub fn trim_exited(now: i64) -> usize {
+    trim_exited_in(all(), now)
+}
+
+fn trim_exited_in(terms: Vec<Arc<Term>>, now: i64) -> usize {
     let mut freed = 0;
-    for t in all() {
+    for t in terms {
         if !t.exited() {
             continue;
         }
@@ -1769,8 +1773,9 @@ mod tests {
         let full = lock(&t.out).ring.len();
         assert!(full > EXITED_RING, "{full}");
         let last = lock(&t.out).last_ms;
-        assert_eq!(trim_exited(last + 1000), 0);
-        assert!(trim_exited(last + EXITED_TRIM_MS) >= full - EXITED_RING);
+        // The sweep sees only this term: a global one trims the rings other tests are reading.
+        assert_eq!(trim_exited_in(vec![t.clone()], last + 1000), 0);
+        assert!(trim_exited_in(vec![t.clone()], last + EXITED_TRIM_MS) >= full - EXITED_RING);
         let (replay, rx) = t.subscribe();
         assert!(rx.is_none());
         assert_eq!(replay.len(), EXITED_RING);

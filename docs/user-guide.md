@@ -930,7 +930,7 @@ On first launch, once the app is connected (immediately in local mode, after the
 connection on a phone), a welcome card offers **Take the tour** or **Skip**. The tour dims the
 window and highlights the real controls one at a time: host chip, workspaces sidebar, tabs and the
 new-session menu, the Terminal/Chat toggle, the side panel, Tasks, Review, the usage, system and ports
-chips, notifications and hooks, the command palette and Feedback, in 0.25 the Cmd/Ctrl+P palette shortcut (not shown on a phone), and in 0.27 the demo mode (on the **Demo mode** pill while in the demo, else on the host chip), and in 0.28 the GPU rendering option for terminals, and in 0.29 the clean up of unused worktrees and the import from Switchboard (on its button in Settings, Help, or on the Settings button), and in 0.30 click to move the cursor in a terminal (on the tabs), and in 0.31 the Light and Dark palettes (on Settings, or More on a phone), and in 0.33 the one-click install of skills and plugins (on Settings), and in 0.34 the auto-approval defaults (on Settings, Agents), the Review, Merged and Closed columns (on the Merged column when the board is open, else on the Tasks tab) and the clean removal of everything Overseer added (on Settings, Connection, **Remove**), and in 0.35 one-click in-app updates for every install (on Settings, Updates, else on the Settings button), and in 0.36 subjects inside a workspace (on **+ New subject** in the open workspace, else on the sidebar), and the live review behind the git button (on the git button of a session's tab bar, else on the command palette), and the review map (on List | Map in a review, else on the Review tab), and keeping agents running with the lid closed (on its switch in Settings, Connection, else on the Settings button), and Record a bug (centred, on the command palette), and the Quorum option of a new task (on the Quorum control in the New task dialog, else on the Tasks tab), and installing a missing agent from the app (on the title bar **+**, else on the palette), and agents kept inside their project (on **Agents message each other** in Settings, Defaults, else on the Settings button), and Mistral Vibe as a new agent (on the title bar **+**, else on the palette), and the real cost of each session and task (on the cost line of the side panel, else on the side panel), and profiles by task type (on the **Type** field of the New task dialog, else on the Tasks tab), and the choice between agents filing what they find as tasks or fixing it themselves (on **Agents file what they find as tasks** in Settings, Defaults, else on the Settings button), and several hosts in one window (on the host sections of the sidebar when a window shows several hosts, else on the host chip), and sticky notes on sessions (on the note icon of a session that has notes, else on the sidebar). Steps whose control is not on
+chips, notifications and hooks, the command palette and Feedback, in 0.25 the Cmd/Ctrl+P palette shortcut (not shown on a phone), and in 0.27 the demo mode (on the **Demo mode** pill while in the demo, else on the host chip), and in 0.28 the GPU rendering option for terminals, and in 0.29 the clean up of unused worktrees and the import from Switchboard (on its button in Settings, Help, or on the Settings button), and in 0.30 click to move the cursor in a terminal (on the tabs), and in 0.31 the Light and Dark palettes (on Settings, or More on a phone), and in 0.33 the one-click install of skills and plugins (on Settings), and in 0.34 the auto-approval defaults (on Settings, Agents), the Review, Merged and Closed columns (on the Merged column when the board is open, else on the Tasks tab) and the clean removal of everything Overseer added (on Settings, Connection, **Remove**), and in 0.35 one-click in-app updates for every install (on Settings, Updates, else on the Settings button), and in 0.36 subjects inside a workspace (on **+ New subject** in the open workspace, else on the sidebar), and the live review behind the git button (on the git button of a session's tab bar, else on the command palette), and the review map (on List | Map in a review, else on the Review tab), and keeping agents running with the lid closed (on its switch in Settings, Connection, else on the Settings button), and Record a bug (centred, on the command palette), and the Quorum option of a new task (on the Quorum control in the New task dialog, else on the Tasks tab), and installing a missing agent from the app (on the title bar **+**, else on the palette), and agents kept inside their project (on **Agents message each other** in Settings, Defaults, else on the Settings button), and Mistral Vibe as a new agent (on the title bar **+**, else on the palette), and the real cost of each session and task (on the cost line of the side panel, else on the side panel), and profiles by task type (on the **Type** field of the New task dialog, else on the Tasks tab), and the choice between agents filing what they find as tasks or fixing it themselves (on **Agents file what they find as tasks** in Settings, Defaults, else on the Settings button), and several hosts in one window (on the host sections of the sidebar when a window shows several hosts, else on the host chip), and sticky notes on sessions (on the note icon of a session that has notes, else on the sidebar), and in 0.37 source control in the side panel (on its **Git** tab, else on the side panel), and the keyboard controls of the review map (on List | Map in a review, else on the Review tab; not shown on a phone). Steps whose control is not on
 screen (no session selected, a feature the server lacks, phone layout) are skipped. On a phone the
 card is a sheet at the bottom (or top, when the control sits low) and points at the bottom
 navigation, the session strip and the menu.
@@ -1457,7 +1457,9 @@ request, the event stream, every terminal and every forwarded port over that one
   host. Two windows on the same host both show its notifications.
 - **Several hosts in one window** (desktop, opt-in): Settings → Connection → **Windows and hosts**
   picks **One window per host** (the default, as above) or **One window, all hosts**. In the second
-  mode, connecting to a host adds it to the window instead of replacing the current one; the
+  mode, connecting to a host adds it to the window instead of replacing the current one, and this
+  computer always stays in the window: choosing the mode while on a remote host, or opening the app
+  on one, adds a **This computer** section beside it (unless you took it out of the window); the
   palette's **Add a host to this window…** and the sidebar's **Add a host to this window** do it in
   either mode. **Ask each time I connect to a host** makes the connect dialog ask "Where should
   <host> open?" with **Add to this window** and **Open in a new window** (the mode's choice first,
@@ -2034,14 +2036,22 @@ A GitHub-style review of what an agent changed, while it works (ADR 0030, contra
   file, and test runs that failed after it did), **Untested** (logic no changed test reaches),
   **Not yet seen** (lines not marked viewed, open comments) and **Priority**, their weighted
   mean (real logic 1.2, agent struggle 1.1, blast radius and contract 1, untested 0.9, not yet
-  seen 0.6). Hovering a file draws what it uses (blue) and what uses it (orange); a link to
-  another repository is dashed violet, and one found only through a shared name is marked so.
-  **Every link of the change** shows them all faintly. The side lists the files in that order,
-  and the picked file's six scores with plain reasons ("used by 3 changed files, 1 in another
-  repository"); **Open the diff** (or a double click) jumps to it in the list. In the list, a heat
-  band along the files shows the same colours top to bottom, and **Next hottest file** (or J and
-  K) walks the files hottest first across every worktree. On a phone the ranking comes first and
-  the map below it. The daemon serves it at `GET /v1/review/map?worktree=…` (or `line=`, `task=`),
+  seen 0.6). Click a file (on the map or in the ranking) to select it: the map draws what it uses
+  (blue) and what uses it (orange), a link to another repository dashed violet and one found
+  only through a shared name marked so, and fades the rest; hovering only outlines a file and
+  names it with its score in the corner. Clicking the empty map or Esc clears the selection.
+  **Every link of the change** (or A) shows them all faintly. The side lists the files in that
+  order, and the selected file's six scores with plain reasons ("used by 3 changed files, 1 in
+  another repository"); with nothing selected it lists the keys instead. **Open the diff** (Enter
+  or a double click) jumps to it in the list. On the map, J and K select the next and previous
+  file hottest first without leaving the map, the arrows move to the nearest file in that
+  direction (up and down walk the ranking when it has the focus), and M switches between list and
+  map keeping the file: the map selects the file on screen, the list opens the selected one. In
+  the list, a heat band along the files shows the same colours top to bottom, marks the file on
+  screen and names the hovered file with its score, and **Next hottest file** (or J and K) walks
+  the files hottest first across every worktree. A review remembers its view, selected file,
+  indicator, scroll and folded files while you visit other tabs (for the app's session, not
+  across a reload). On a phone the ranking comes first and the map below it. The daemon serves it at `GET /v1/review/map?worktree=…` (or `line=`, `task=`),
   plus `with=` for each extra worktree the review already shows.
 - **Comment**: click a line number (shift-click or drag for a range), write, Add review comment
   (Ctrl/Cmd+Enter). Suggest inserts a ```` ```suggestion ```` block prefilled with the lines; the
@@ -2156,8 +2166,9 @@ aborted and names the files; a merge started elsewhere shows as in progress; a p
 a submodule has commits that are not pushed. While the agent is running, the bar warns that files can
 still change. Everything refreshes on file and ref changes, never by polling.
 
-The sidebar has a **Git** tab next to **Workspaces** and **By status** (Ctrl+Shift+G, or the palette's
-"Show or hide source control in the sidebar"; it reopens a hidden sidebar). It keeps source control
+The side panel on the right has a **Git** tab next to **Activity** (Ctrl+Shift+G, or the palette's
+"Show or hide source control in the side panel"; it reopens a hidden side panel and leaves the board
+for the agents view). It keeps source control
 next to the terminal, like VS Code: the worktree of the selected session (its menu lists the session's
 other worktrees and submodules), the branch to switch or create, Fetch, Pull and Push or Publish, the
 commit message (Ctrl/Cmd+Enter) with Commit and its options, conflicts, staged files and changes with

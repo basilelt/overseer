@@ -1218,20 +1218,32 @@ describe('sessions', () => {
     expect(app.view).toBe('agents');
   });
 
-  it('shows source control in the sidebar, reopening a hidden sidebar, and leaves it for a session list', () => {
-    app.sidebarGit = false;
-    app.sidebarOpen = false;
+  it('shows source control as the side panel Git tab, reopening a hidden panel, and keeps it when the sidebar mode changes', () => {
+    app.panelGit = false;
+    app.panelOpen = false;
     app.toggleSourceControl();
-    expect([app.sidebarGit, app.sidebarOpen]).toEqual([true, true]);
-    expect(settings.sidebarGit).toBe(true);
+    expect([app.panelGit, app.panelOpen]).toEqual([true, true]);
+    expect(settings.panelGit).toBe(true);
     app.toggleSourceControl();
-    expect(app.sidebarGit).toBe(false);
-    app.setSidebarGit(true);
+    expect(app.panelGit).toBe(false);
+    expect(settings.panelGit).toBe(false);
+    app.setPanelGit(true);
     const mode = app.sidebarMode;
     app.setSidebarMode('status');
-    expect(app.sidebarGit).toBe(false);
-    expect(app.sidebarMode).toBe('status');
+    expect(app.panelGit).toBe(true);
     app.setSidebarMode(mode);
+    app.setPanelGit(false);
+  });
+
+  it('brings the board back to the agents view when source control is toggled on, so the panel shows', () => {
+    app.panelGit = false;
+    app.view = 'kanban';
+    app.toggleSourceControl();
+    expect([app.panelGit, app.view]).toEqual([true, 'agents']);
+    app.view = 'kanban';
+    app.toggleSourceControl();
+    expect([app.panelGit, app.view]).toEqual([true, 'agents']);
+    app.setPanelGit(false);
   });
 
   it('shows a project tab opened from More on the phone', () => {

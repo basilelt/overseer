@@ -731,7 +731,7 @@
               <div class="host-modes" role="radiogroup" aria-label={t('settings.hostWindows')}>
                 {#each [['shared', 'settings.hostShared'], ['separate', 'settings.hostSeparate']] as const as [mode, label] (mode)}
                   <label class="host-mode" class:on={settings.hostWindows === mode}>
-                    <input type="radio" name="host-windows" value={mode} checked={settings.hostWindows === mode} onchange={() => saveSettings({ hostWindows: mode })} />
+                    <input type="radio" name="host-windows" value={mode} checked={settings.hostWindows === mode} onchange={() => (saveSettings({ hostWindows: mode }), mode === 'shared' && void app.addLocal())} />
                     <span><b>{t(label)}</b></span>
                   </label>
                 {/each}

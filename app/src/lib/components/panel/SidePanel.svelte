@@ -13,9 +13,12 @@
   import Section from './Section.svelte';
   const todosView = preload(() => import('./Todos.svelte'));
   const workLogView = preload(() => import('./WorkLog.svelte'));
+  const gitView = () => import('../../git/PanelGit.svelte');
   import SessionCost from './SessionCost.svelte';
   import { formatCost } from '../../usage/format';
   import GitPullRequest from '@lucide/svelte/icons/git-pull-request';
+  import GitBranch from '@lucide/svelte/icons/git-branch';
+  import { hint } from '../../commands/keyboard';
   import { openReview, openReviewBeside } from '../../review/open';
   import { inRepo } from '../../review/repo';
   import Maximize2 from '@lucide/svelte/icons/maximize-2';
@@ -29,7 +32,7 @@
   import { diffs, relateds } from '../../panel/panel-cache';
   import { loadPanel } from '../../panel/panel-load';
   import { hostKey } from '../../window';
-  import { GROUP_COLOR } from '../../workspace/ws-color';
+  import { STATE_COLOR } from '../../workspace/ws-color';
 
   const EFFORTS = new Set(['low', 'medium', 'high', 'xhigh', 'max']);
   const item = $derived(app.selected);
@@ -87,8 +90,11 @@
   $effect(() => {
     const id = lineId;
     const inGit = repo;
+    const scm = app.panelGit;
     missing = false;
-    if (!id || !app.client) {
+    if (!id || !app.client || scm) {
+      clearTimeout(timer);
+      clearTimeout(relTimer);
       diff = null;
       related = null;
       return;
@@ -102,7 +108,7 @@
 
   onMount(() => {
     const off = app.onChange((_p, _n, e) => {
-      if (!lineId) return;
+      if (!lineId || app.panelGit) return;
       const id = lineId;
       if (e.type === 'line.activity' && e.data?.lineId === id) {
         clearTimeout(timer);
@@ -188,12 +194,18 @@
 </script>
 
 <aside class="panel" aria-label={t('panel.title')} data-tour="panel">
-  {#if !item || !line}
+  <div class="tabs" role="tablist" aria-label={t('panel.title')}>
+    <button role="tab" aria-selected={!app.panelGit} class:on={!app.panelGit} onclick={() => app.setPanelGit(false)}>{t('panel.title')}</button>
+    <button role="tab" title={`${t('git.scm')} (${hint('sourceControl')})`} aria-selected={app.panelGit} class:on={app.panelGit} data-tour="panel-git-tab" onclick={() => app.setPanelGit(true)}><GitBranch size={13} />{t('git.side.tab')}</button>
+  </div>
+  {#if app.panelGit}
+    {#await gitView() then { default: PanelGit }}<PanelGit />{/await}
+  {:else if !item || !line}
     <p class="empty faint">{item ? t('panel.noActivity') : t('panel.noSelection')}</p>
   {:else}
     <header>
       <div class="title">
-        <span class="dot" style:background={GROUP_COLOR[item.group]}></span>
+        <span class="dot" style:background={STATE_COLOR[item.state]}></span>
         <h3>{item.renamed ? item.title : act?.title || item.title}</h3>
       </div>
       {#if act?.goal || item.goal}<p class="goal muted">{act?.goal || item.goal}</p>{/if}
@@ -324,6 +336,41 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+  .tabs {
+    display: flex;
+    gap: 2px;
+    margin: 10px 14px 0;
+    padding: 2px;
+    border-radius: var(--radius);
+    background: var(--surface-2);
+  }
+  .tabs button {
+    flex: 1 1 0;
+    min-width: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    height: 24px;
+    border-radius: 4px;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text-2);
+    white-space: nowrap;
+    transition:
+      background var(--ease),
+      color var(--ease);
+  }
+  .tabs button.on {
+    background: var(--surface);
+    color: var(--text);
+    box-shadow: 0 0 0 1px var(--border);
+  }
+  :global(:root.phone) .tabs button {
+    height: 40px;
+    border-radius: 8px;
+    font-size: 14px;
   }
   .panel {
     width: var(--panel-w, 340px);

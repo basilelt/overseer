@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 R=$(cd "$(dirname "$0")/../.." && pwd)
-D=${QA_DIR:-/tmp/sbimport}
+D=${QA_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/sbimport}
 OLD_BIN=${OLD_BIN:?build switchboard-ide and set OLD_BIN to its binary}
 NEW_BIN=${NEW_BIN:-$R/target/debug/overseer}
 H=$D/home
