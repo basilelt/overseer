@@ -396,7 +396,11 @@ pub fn refresh(t: &mut Task, line: Option<&Line>, env: &Env) -> bool {
         let changed = t.title_source.is_none() && retitle(t, None, &Value::Null);
         let landed = !status::is_done(&t.status) && (env.merged)(t) && follow(t, "merged", || true);
         let gone = !landed && t.status == status::IN_PROGRESS && follow(t, "closed", || true);
-        return landed || gone || changed;
+        let stale = !landed && !gone && t.badge.take().is_some();
+        if stale {
+            t.session_state = Some("closed".into());
+        }
+        return landed || gone || stale || changed;
     };
     let mut changed = false;
     if l.last_activity_ms > t.updated_ms || t.title_source.is_none() {
@@ -820,6 +824,7 @@ mod tests {
         assert_eq!(by("fresh").badge.as_deref(), Some("needs_input"));
         let mut t = by("review");
         t.status = "in_testing".into();
+        t.badge = Some("needs_input".into());
         tasks::store(&r, &mut t, "st").unwrap();
         sync_with(&r, &[], 7, None);
         assert_eq!(by("fresh").status, "in_progress");
@@ -828,10 +833,14 @@ mod tests {
         assert_eq!(gone.status, "completed");
         assert_eq!(gone.badge, None);
         assert_eq!(gone.session_state.as_deref(), Some("closed"));
-        assert_eq!(by("review").status, "in_testing");
+        let review = by("review");
+        assert_eq!(review.status, "in_testing");
+        assert_eq!(review.badge, None);
+        assert_eq!(review.session_state.as_deref(), Some("closed"));
         assert_eq!(by("live").status, "in_progress");
         sync_with(&r, std::slice::from_ref(&live), 7, None);
         assert_eq!(by("fresh").updated_ms, gone.updated_ms);
+        assert_eq!(by("review").updated_ms, review.updated_ms);
         let _ = std::fs::remove_dir_all(dir);
     }
 
