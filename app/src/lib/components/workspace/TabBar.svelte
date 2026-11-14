@@ -33,7 +33,7 @@
   import { chipLabel, chipShort } from '../../profiles/profiles';
   import { formatCost } from '../../usage/format';
   import { pages } from '../../session/session-pages.svelte';
-  import { GROUP_COLOR } from '../../workspace/ws-color';
+  import { STATE_COLOR } from '../../workspace/ws-color';
 
   let { pane, index, focused, canClose }: { pane: Pane; index: number; focused: boolean; canClose: boolean } = $props();
 
@@ -251,7 +251,7 @@
         {#if hostTag}<span class="host mono" style:--host={hostTag.color}>{hostTag.name}</span>{/if}
         {#if tab.item}
           <AgentIcon kind={tab.item.kind} size={12} />
-          <span class="dot" style:background={GROUP_COLOR[tab.item.group]}></span>
+          <span class="dot" style:background={STATE_COLOR[tab.item.state]}></span>
         {:else if tab.kind === 'browser'}
           <span class="kind"><svg class="i" width="12" height="12" aria-hidden="true"><use href="#sbi-globe" /></svg></span>
         {:else if tab.kind === 'graph'}
