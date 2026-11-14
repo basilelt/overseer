@@ -104,6 +104,7 @@
   footer {
     display: flex;
     justify-content: flex-end;
+    flex-wrap: wrap;
     gap: 8px;
     padding: 12px 16px;
     border-top: 1px solid var(--border);
