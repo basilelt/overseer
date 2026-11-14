@@ -1,23 +1,25 @@
 <script lang="ts">
   import ArrowRight from '@lucide/svelte/icons/arrow-right';
   import LoaderCircle from '@lucide/svelte/icons/loader-circle';
+  import { tick } from 'svelte';
   import { t, type Key } from '../../i18n.svelte';
-  import { INDICATORS, endId, heat, heatInk, layout, ranking, reasons, type Indicator, type ReviewMapStore, type Scored } from '../../review/map.svelte';
+  import { INDICATORS, endId, heat, heatInk, layout, moveSelection, ranking, reasons, type Indicator, type Point, type ReviewMapStore, type Scored } from '../../review/map.svelte';
+  import { RANK, type ReviewAction } from '../../review/review-keys';
   import type { MapLink } from '../../review/types';
 
   let {
     map,
     ind = $bindable('priority'),
+    current = $bindable(null),
+    all = $bindable(false),
     phone = false,
-    current = null,
     onopen,
-  }: { map: ReviewMapStore; ind?: Indicator; phone?: boolean; current?: string | null; onopen: (w: number, path: string) => void } = $props();
+  }: { map: ReviewMapStore; ind?: Indicator; current?: string | null; all?: boolean; phone?: boolean; onopen: (w: number, path: string) => void } = $props();
 
   let width = $state(0);
   let height = $state(0);
   let hover = $state<string | null>(null);
-  let pinned = $state<string | null>(null);
-  let all = $state(false);
+  let section: HTMLElement | undefined = $state();
 
   const data = $derived(map.data);
   const scored = $derived(map.scored);
@@ -25,14 +27,10 @@
   const rank = $derived(ranking(scored, ind));
   const geo = $derived(data && width > 40 && height > 40 ? layout(data, { x: 0, y: 0, w: width, h: height }) : null);
   const centers = $derived(new Map((geo?.cells ?? []).map((c) => [c.id, [c.x + c.w / 2, c.y + c.h / 2] as const])));
-  const selected = $derived(pinned ?? current ?? rank[0]?.id ?? null);
-  const focus = $derived(hover ?? (pinned || current ? selected : null));
-  const sel = $derived(selected ? byId.get(selected) : undefined);
+  const sel = $derived(current ? byId.get(current) : undefined);
+  const focus = $derived(sel ? sel.id : null);
   const near = $derived(new Set(focus ? (data?.links ?? []).flatMap((l) => (endId(l.from) === focus ? [endId(l.to)] : endId(l.to) === focus ? [endId(l.from)] : [])) : []));
-
-  $effect(() => {
-    if (current) pinned = null;
-  });
+  const hov = $derived(hover ? byId.get(hover) : undefined);
 
   const label = (s: Scored) => s.file.path.split('/').pop() ?? s.file.path;
   const pct = (v: number) => Math.round(v * 100);
@@ -53,16 +51,53 @@
   const linkColor = (l: MapLink, from: boolean) => (l.cross ? 'var(--link-cross)' : from ? 'var(--link-out)' : 'var(--link-in)');
   const focused = $derived(focus ? (data?.links ?? []).filter((l) => endId(l.from) === focus || endId(l.to) === focus) : []);
 
-  function pick(id: string) {
-    pinned = pinned === id ? null : id;
-  }
-
   function open(s: Scored | undefined) {
     if (s) onopen(s.w, s.file.path);
   }
+
+  function background(e: MouseEvent) {
+    if (!(e.target as Element).closest('.cell.hot')) current = null;
+  }
+
+  async function choose(id: string) {
+    const inRank = !!(document.activeElement as Element | null)?.closest?.(RANK);
+    current = id;
+    await tick();
+    const els = [...(section?.querySelectorAll<HTMLElement>('[data-pick]') ?? [])].filter((el) => el.dataset.pick === id);
+    const row = els.find((el) => el.closest(RANK));
+    const list = row?.closest<HTMLElement>(RANK);
+    if (row && list) {
+      const top = row.offsetTop - list.offsetTop;
+      if (top < list.scrollTop) list.scrollTop = top;
+      else if (top + row.offsetHeight > list.scrollTop + list.clientHeight) list.scrollTop = top + row.offsetHeight - list.clientHeight;
+    }
+    (inRank ? row : els.find((el) => !el.closest(RANK)))?.focus({ preventScroll: true });
+  }
+
+  export function act(a: ReviewAction): boolean {
+    if (!data || !scored.length) return false;
+    if (a === 'clear') {
+      if (!current) return false;
+      current = null;
+      return true;
+    }
+    if (a === 'allLinks') {
+      all = !all;
+      return true;
+    }
+    if (a === 'open') {
+      open(sel);
+      return !!sel;
+    }
+    if (a === 'toggleView') return false;
+    const points = new Map<string, Point>([...centers].filter(([id]) => byId.has(id)));
+    const id = moveSelection(a, sel ? current : null, rank, points);
+    if (id) choose(id);
+    return true;
+  }
 </script>
 
-<section class="map" class:phone aria-label={t('review.map')}>
+<section class="map" class:phone aria-label={t('review.map')} bind:this={section}>
   <div class="inds" role="radiogroup" aria-label={t('map.indicator')}>
     {#each INDICATORS as k (k)}
       <button role="radio" aria-checked={ind === k} class:on={ind === k} title={t(`map.help.${k}` as Key)} onclick={() => (ind = k)}>{t(`map.ind.${k}` as Key)}</button>
@@ -86,7 +121,8 @@
           <span class="spacer"></span>
           <span class="ramp" aria-hidden="true">{t('map.low')}<b></b>{t('map.high')}</span>
         </div>
-        <div class="canvas" bind:clientWidth={width} bind:clientHeight={height} class:focus={!!focus}>
+        <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
+        <div class="canvas" bind:clientWidth={width} bind:clientHeight={height} class:focus={!!focus} onclick={background}>
           {#if geo}
             {#each geo.regions as r (r.w0)}
               <div class="region" style:left="{r.x}px" style:top="{r.y}px" style:width="{r.w}px" style:height="{r.h}px">
@@ -103,8 +139,10 @@
                 {@const v = s.score[ind]}
                 <button
                   class="cell hot"
-                  class:sel={c.id === focus || (selected === c.id && !!(pinned || current))}
+                  class:sel={c.id === focus}
                   class:near={near.has(c.id)}
+                  class:hov={c.id === hover}
+                  data-pick={c.id}
                   style:left="{c.x}px"
                   style:top="{c.y}px"
                   style:width="{c.w}px"
@@ -115,7 +153,7 @@
                   aria-label={`${c.path}, ${t(`map.ind.${ind}` as Key)} ${pct(v)}`}
                   onpointerenter={() => (hover = c.id)}
                   onpointerleave={() => (hover = null)}
-                  onclick={() => pick(c.id)}
+                  onclick={() => (current = c.id)}
                   ondblclick={() => open(s)}
                 >{#if c.w > 46 && c.h > 15}<em>{c.label}</em>{/if}</button>
               {:else}
@@ -139,6 +177,7 @@
                 {/if}
               {/each}
             </svg>
+            {#if hov}<span class="readout mono" aria-hidden="true">{regionName(hov.w)}/{hov.file.path} · {t(`map.ind.${ind}` as Key)} {pct(hov.score[ind])}</span>{/if}
           {/if}
         </div>
       </div>
@@ -146,11 +185,11 @@
       <aside class="side">
         <div class="sec">
           <span class="eyebrow">{t('map.order', { ind: t(`map.ind.${ind}` as Key).toLowerCase() })}</span>
-          <ol class="rank">
+          <ol class="rank" data-rank>
             {#each rank as s, i (s.id)}
               {@const v = s.score[ind]}
               <li>
-                <button class:on={selected === s.id} onpointerenter={() => (hover = s.id)} onpointerleave={() => (hover = null)} onclick={() => pick(s.id)} ondblclick={() => open(s)}>
+                <button class:on={current === s.id} data-pick={s.id} onpointerenter={() => (hover = s.id)} onpointerleave={() => (hover = null)} onclick={() => (current = s.id)} ondblclick={() => open(s)}>
                   <span class="n">{i + 1}</span>
                   <span class="p"><b class="mono">{label(s)}</b><span class="faint mono">{regionName(s.w)}/{s.file.path}</span></span>
                   <span class="bar"><i style:width="{Math.max(2, pct(v))}%" style:background={heat(Math.max(v, 0.01))}></i></span>
@@ -178,7 +217,7 @@
               <div class="lns">
                 {#each [...sel.outbound.map((l) => ({ l, out: true })), ...sel.inbound.map((l) => ({ l, out: false }))] as x, i (i)}
                   {@const other = x.out ? x.l.to : x.l.from}
-                  <button onclick={() => byId.has(endId(other)) && pick(endId(other))} onpointerenter={() => (hover = endId(other))} onpointerleave={() => (hover = null)}>
+                  <button onclick={() => byId.has(endId(other)) && (current = endId(other))} onpointerenter={() => (hover = endId(other))} onpointerleave={() => (hover = null)}>
                     <i class:dash={x.l.cross} style:border-color={linkColor(x.l, x.out)}></i>
                     <span class="mono">{regionName(other.w)}/{other.path}</span>
                     <small>{x.out ? t('map.uses') : t('map.usedBy')}{x.l.probable ? ` · ${t('map.probable')}` : ''}</small>
@@ -186,7 +225,16 @@
                 {/each}
               </div>
             {/if}
-            <button class="btn primary openbtn" onclick={() => open(sel)}>{t('map.open')}<ArrowRight size={13} /></button>
+            <button class="btn primary openbtn" title={t('map.openKey')} onclick={() => open(sel)}>{t('map.open')}<ArrowRight size={13} /></button>
+          </div>
+        {:else}
+          <div class="sec hint">
+            <span class="faint">{t('map.pickHint')}</span>
+            {#if !phone}
+              <ul class="keys faint">
+                {#each ['jk', 'arrows', 'enter', 'esc', 'a', 'm'] as k (k)}<li><kbd>{t(`map.key.${k}` as Key)}</kbd>{t(`map.keyHelp.${k}` as Key)}</li>{/each}
+              </ul>
+            {/if}
           </div>
         {/if}
       </aside>
@@ -393,6 +441,11 @@
   .cell.hot {
     cursor: pointer;
   }
+  .cell.hot.hov:not(.sel) {
+    outline: 1.5px solid var(--text-2);
+    outline-offset: -1px;
+    z-index: 2;
+  }
   .cell.hot:focus-visible {
     outline: 2px solid var(--focus);
     z-index: 4;
@@ -428,6 +481,49 @@
   svg.links circle {
     stroke: var(--bg);
     stroke-width: 1.5;
+  }
+  .readout {
+    position: absolute;
+    left: 8px;
+    bottom: 8px;
+    max-width: calc(100% - 16px);
+    padding: 2px 8px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--surface);
+    color: var(--text);
+    font-size: 11px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    pointer-events: none;
+    z-index: 6;
+  }
+  .hint {
+    font-size: 12px;
+  }
+  .keys {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .keys li {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .keys kbd {
+    min-width: 46px;
+    padding: 1px 6px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background: var(--surface);
+    color: var(--text-2);
+    font: 11px var(--mono);
+    text-align: center;
   }
   .side {
     flex: 1 1 320px;

@@ -9,8 +9,10 @@
   import ArrowDownWideNarrow from '@lucide/svelte/icons/arrow-down-wide-narrow';
   import ChevronRight from '@lucide/svelte/icons/chevron-right';
   import Link2 from '@lucide/svelte/icons/link-2';
-  import { onMount, tick, untrack } from 'svelte';
-  import { claimFocus, holdFocus, walkDirection } from '../../review/walk-key';
+  import { onDestroy, onMount, tick, untrack } from 'svelte';
+  import { claimFocus, holdFocus } from '../../review/walk-key';
+  import { keepFocus, reviewAction, type ReviewAction } from '../../review/review-keys';
+  import { recall, remember } from '../../review/memory';
   import { t } from '../../i18n.svelte';
   import { reviewCounts } from '../../review/counts.svelte';
   import { totals, type Mode } from '../../review/rows';
@@ -53,6 +55,15 @@
   const linked = new LinkedReviews();
   let scroller: HTMLDivElement | undefined = $state();
   let folded = $state<Record<string, boolean>>({});
+  const memo = recall(reviewKey(untrack(() => target)));
+  if (memo) {
+    store.view = memo.view;
+    store.selected = memo.selected;
+    store.collapsed = { ...memo.collapsed };
+    folded = { ...memo.folded };
+  }
+  let scrollTop = memo?.scrollTop ?? 0;
+  let restoreScroll = memo?.view === 'list' ? scrollTop : 0;
 
   onMount(() => {
     reviewCounts.ensure();
@@ -95,10 +106,26 @@
   const triage = $derived(diff?.triage);
   const lowKinds = $derived(lowRiskKinds(triage).slice(0, 3));
   const ranked = $derived(!!diff?.files.some((f) => f.risk !== undefined));
-  let sortRisk = $state(false);
+  let sortRisk = $state(memo?.sortRisk ?? false);
   const maps = new ReviewMapStore(() => (app.client ? reviewApi(app.client) : null));
-  let ind = $state<Indicator>('priority');
-  let hot = $state<string | null>(null);
+  let ind = $state<Indicator>(memo?.ind ?? 'priority');
+  let hot = $state<string | null>(memo?.hot ?? null);
+  let all = $state(memo?.all ?? false);
+  let seen = $state<string | null>(null);
+  let mapView: { act: (a: ReviewAction) => boolean } | undefined = $state();
+
+  onDestroy(() => {
+    remember(selfKey, { view: store.view, selected: store.selected, hot, ind, all, sortRisk, scrollTop, folded: $state.snapshot(folded), collapsed: $state.snapshot(store.collapsed) });
+  });
+
+  $effect(() => {
+    if (!restoreScroll || !scroller || !diff?.files.length) return;
+    const top = restoreScroll;
+    restoreScroll = 0;
+    tick().then(() => {
+      if (scroller) scroller.scrollTop = top;
+    });
+  });
   let root: HTMLDivElement | undefined = $state();
   const mapKey = $derived(diff && anyFiles ? [diff.worktree, diff.revision, ...shown.map((s) => `${s.worktree}@${s.diff!.revision}`)].join('|') : '');
   $effect(() => {
@@ -116,6 +143,7 @@
       : [],
   );
   const bands = $derived(band(maps.scored, bandOrder, ind));
+  const onScreen = $derived(seen ?? (diff && store.selected ? fid(regionOf(diff.worktree), store.selected) : hot));
   const upNext = $derived(rank.length ? (step(rank, hot, 1) ?? null) : null);
   const nameOf = (id: string) => {
     const s = maps.scored.find((x) => x.id === id);
@@ -123,19 +151,28 @@
   };
 
   function setView(v: 'list' | 'map') {
-    store.setView(v);
+    if (v === store.view) return;
+    if (v === 'map') {
+      if (onScreen && maps.scored.some((x) => x.id === onScreen)) hot = onScreen;
+      store.setView('map');
+      return;
+    }
+    const s = hot ? maps.scored.find((x) => x.id === hot) : undefined;
+    if (s) openFile(s.w, s.file.path);
+    else store.setView('list');
   }
 
   async function openFile(w: number, path: string) {
     const wt = maps.data?.regions[w]?.worktree;
     if (!wt) return;
     hot = fid(w, path);
+    seen = hot;
     const s = wt === diff?.worktree ? store : shown.find((x) => x.worktree === wt);
     if (!s) {
       openReviewNear({ worktree: wt }, selfKey);
       return;
     }
-    setView('list');
+    store.setView('list');
     await tick();
     if (s === store) select(path);
     else selectIn(s, path);
@@ -150,10 +187,20 @@
 
   function onKey(e: KeyboardEvent) {
     const el = e.target as HTMLElement | null;
-    const dir = walkDirection(e, el);
-    if (!dir || !root || !el || !root.contains(el) || !rank.length) return;
+    const onMap = store.view === 'map' && anyFiles;
+    const a = reviewAction(e, el, onMap ? 'map' : 'list');
+    if (!a || e.defaultPrevented) return;
+    if (a === 'toggleView') {
+      if (!anyFiles) return;
+      setView(onMap ? 'list' : 'map');
+    } else if (onMap) {
+      if (!mapView?.act(a)) return;
+    } else if ((a === 'next' || a === 'prev') && rank.length) {
+      walk(a === 'next' ? 1 : -1);
+    } else return;
     e.preventDefault();
-    walk(dir);
+    if (a === 'clear') e.stopPropagation();
+    tick().then(() => keepFocus(root));
   }
 
   function since(c: ReviewCommit) {
@@ -187,6 +234,7 @@
 
   let frame = 0;
   function onScroll() {
+    if (scroller) scrollTop = scroller.scrollTop;
     if (!frame) frame = requestAnimationFrame(track);
   }
 
@@ -194,17 +242,21 @@
     frame = 0;
     if (!scroller || !diff) return;
     const top = scroller.scrollTop + 60;
-    let cur: string | null = null;
-    for (const el of scroller.querySelectorAll<HTMLElement>(':scope > [data-path]')) {
-      if (el.offsetTop - scroller.offsetTop <= top) cur = el.dataset.path ?? null;
+    let cur: HTMLElement | null = null;
+    for (const el of scroller.querySelectorAll<HTMLElement>(':scope > [data-path], :scope > [data-wt] [data-path]')) {
+      if (el.offsetTop - scroller.offsetTop <= top) cur = el;
       else break;
     }
-    if (cur && cur !== store.selected) store.selected = cur;
+    const path = cur?.dataset.path;
+    if (!cur || !path) return;
+    const wt = cur.closest<HTMLElement>('[data-wt]')?.dataset.wt;
+    if (!wt && path !== store.selected) store.selected = path;
+    seen = fid(regionOf(wt ?? diff.worktree), path);
   }
 </script>
 
-<svelte:window onkeydown={onKey} />
-<div class="review" class:embedded class:phone bind:this={root} tabindex="-1">
+<!-- svelte-ignore a11y_no_static_element_interactions -->
+<div class="review" class:embedded class:phone bind:this={root} tabindex="-1" onkeydown={onKey}>
   {#if !embedded}<ReviewScope {store} {selfKey} />{/if}
   <header class="head" class:hide={store.missing || store.notRepo}>
     <div class="ref">
@@ -298,7 +350,7 @@
     <div class="state err" role="alert">{store.error}<button class="btn" onclick={() => store.load()}><RefreshCw size={13} />{t('common.retry')}</button></div>
   {:else if diff}
     {#if store.view === 'map' && anyFiles}
-      <MapView map={maps} bind:ind {phone} current={hot} onopen={openFile} />
+      <MapView bind:this={mapView} map={maps} bind:ind bind:current={hot} bind:all {phone} onopen={openFile} />
     {:else}
     {#if phone && anyFiles}
       <div class="picker">
@@ -330,7 +382,7 @@
         </aside>
       {/if}
       {#if !phone && bands.length > 1}
-        <HeatBand {bands} current={hot} names={nameOf} onpick={(id) => { const x = maps.scored.find((y) => y.id === id); if (x) openFile(x.w, x.file.path); }} />
+        <HeatBand {bands} current={onScreen} names={nameOf} onpick={(id) => { const x = maps.scored.find((y) => y.id === id); if (x) openFile(x.w, x.file.path); }} />
       {/if}
       <div class="files" bind:this={scroller} onscroll={onScroll}>
         {#if diff.truncated}<p class="note faint">{t('review.truncated')}</p>{/if}
