@@ -54,10 +54,10 @@ export interface Settings {
   hooksNever: string[];
   keepRunningOffered?: string[];
   sidebarMode?: 'workspaces' | 'status';
-  sidebarGit?: boolean;
   spacesOpen?: Record<string, string[]>;
   statesOpen?: Record<string, string[]>;
   workspaceId?: string;
+  panelGit?: boolean;
   workspaceByHost?: Record<string, string>;
   portsAutoForward: boolean;
   portsIgnore: string;

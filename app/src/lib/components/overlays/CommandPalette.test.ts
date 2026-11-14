@@ -84,8 +84,8 @@ describe('command palette views', () => {
     const row = (label: string) => body.match(new RegExp(`<li[^>]*role="option"[^>]*>(?:(?!</li>)[\\s\\S])*${label}(?:(?!</li>)[\\s\\S])*</li>`))?.[0] ?? '';
     expect(row('Open tasks board')).toContain('Ctrl+Shift+K');
     expect(row('Toggle sidebar')).toContain('Ctrl+B');
-    expect(row('Show or hide source control in the sidebar')).not.toContain('class="keys');
-    expect(row('Show or hide source control in the sidebar')).not.toBe('');
+    expect(row('Show or hide source control in the side panel')).not.toContain('class="keys');
+    expect(row('Show or hide source control in the side panel')).not.toBe('');
   });
 
   it('keeps the entries of a disconnected palette to the ones that need no host', async () => {

@@ -111,7 +111,7 @@ class AppState {
   ws = $state.raw<WsData>(EMPTY_WS);
   wsPersistent = $state(true);
   sidebarMode = $state<SidebarMode>(settings.sidebarMode ?? 'workspaces');
-  sidebarGit = $state(settings.sidebarGit ?? false);
+  panelGit = $state(settings.panelGit ?? false);
   workspaceId = $state<string>(NO_WORKSPACE);
   /** @internal */
   following: { id: string; goToWorkspace: boolean } | null = null;
@@ -477,19 +477,21 @@ class AppState {
     this.menu = { items, x: at.clientX, y: at.clientY, label };
   }
 
-  setSidebarGit(on: boolean) {
-    this.sidebarGit = on;
-    if (on) this.sidebarOpen = true;
-    saveSettings({ sidebarGit: on });
+  setPanelGit(on: boolean) {
+    this.panelGit = on;
+    if (on) {
+      this.panelOpen = true;
+      if (this.view !== 'agents') this.view = 'agents';
+    }
+    saveSettings({ panelGit: on });
   }
 
   toggleSourceControl() {
-    this.setSidebarGit(!(this.sidebarGit && this.sidebarOpen));
+    this.setPanelGit(!(this.panelGit && this.panelOpen && this.view === 'agents'));
   }
 
   setSidebarMode(mode: SidebarMode) {
     this.sidebarMode = mode;
-    if (this.sidebarGit) this.setSidebarGit(false);
     saveSettings({ sidebarMode: mode });
   }
 

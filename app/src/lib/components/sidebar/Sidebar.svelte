@@ -10,7 +10,6 @@
   import { t } from '../../i18n.svelte';
   import { isAgentItem } from '../../agents';
   import { command } from '../../commands/commands';
-  import { hint } from '../../commands/keyboard';
   import { touchContextMenu } from '../../mobile/touch-menu';
   import { app, type SidebarMode } from '../../state.svelte';
   import { broadcastTo, groupPicker } from '../../workspace/wsactions';
@@ -20,13 +19,11 @@
   import { nudgeVisible, unplacedCount } from '../../workspace/organize';
   import SpacesView from './SpacesView.svelte';
   import { preload } from '../../idle';
-  import GitBranch from '@lucide/svelte/icons/git-branch';
   import { isPhone } from '../../mobile/ui.svelte';
   import { notesUi } from '../../notes.svelte';
 
   const statesView = preload(() => import('./StatesView.svelte'));
   const hostSections = () => import('./HostSections.svelte');
-  const gitView = () => import('../../git/SidebarGit.svelte');
   const notesView = () => import('./NotesPopover.svelte');
 
   const unplaced = $derived(app.connected && app.wsPersistent ? unplacedCount(app.data.lines, app.ws.workspaces, app.projects, app.data.tasks) : 0);
@@ -67,19 +64,15 @@
   <header>
     <div class="modes" role="tablist" aria-label={t('ws.mode')}>
       {#each modes as m (m.id)}
-        <button role="tab" title={m.label()} aria-selected={!app.sidebarGit && app.sidebarMode === m.id} class:on={!app.sidebarGit && app.sidebarMode === m.id} onclick={() => app.setSidebarMode(m.id)}>{m.label()}</button>
+        <button role="tab" title={m.label()} aria-selected={app.sidebarMode === m.id} class:on={app.sidebarMode === m.id} onclick={() => app.setSidebarMode(m.id)}>{m.label()}</button>
       {/each}
-      <button role="tab" class="git" title={`${t('git.scm')} (${hint('sourceControl')})`} aria-label={t('git.scm')} aria-selected={app.sidebarGit} class:on={app.sidebarGit} data-tour="sidebar-git-tab" onclick={() => app.setSidebarGit(true)}><GitBranch size={13} />{t('git.side.tab')}</button>
     </div>
-    {#if app.sidebarGit}
-      <span></span>
-    {:else if app.sidebarMode === 'workspaces'}
+    {#if app.sidebarMode === 'workspaces'}
       {#if !phone}{@render wsActions()}{/if}
     {:else}
       <span class="count faint">{listed}</span>
     {/if}
   </header>
-  {#if !app.sidebarGit}
   <div class="tools">
     <label class="filter">
       <Search size={13} />
@@ -95,10 +88,7 @@
       <button class="icon-btn" title={t('org.nudgeHide')} aria-label={t('org.nudgeHide')} onclick={() => saveSettings({ organizeNudgeAt: unplaced })}><X size={13} /></button>
     </div>
   {/if}
-  {/if}
-  {#if app.sidebarGit}
-    {#await gitView() then { default: SidebarGit }}<SidebarGit />{/await}
-  {:else if app.hosts.length > 1}
+  {#if app.hosts.length > 1}
     {#await hostSections() then { default: HostSections }}<HostSections {filter} {showArchived} />{/await}
   {:else if app.sidebarMode === 'workspaces'}
     <SpacesView {filter} {showArchived} />
@@ -164,13 +154,6 @@
     transition:
       background var(--ease),
       color var(--ease);
-  }
-  .modes button.git {
-    flex: none;
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    padding: 0 8px;
   }
   .modes button.on {
     background: var(--surface);
@@ -256,11 +239,6 @@
     height: 40px;
     border-radius: 8px;
     font-size: 14px;
-  }
-  :global(:root.phone) .modes button.git {
-    flex: 1 1 0;
-    justify-content: center;
-    gap: 6px;
   }
   :global(:root.phone) .tools {
     display: flex;

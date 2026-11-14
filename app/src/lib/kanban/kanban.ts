@@ -76,7 +76,9 @@ export function autoSummary(tasks: Task[]): { running: number; queued: number } 
   let queued = 0;
   for (const t of tasks) {
     if (isOrganizer(t)) continue;
-    if (isRunning(t.status)) running++;
+    if (isRunning(t.status)) {
+      if (t.termId && !t.quorum) running++;
+    }
     else if (isQueued(t.status)) queued++;
   }
   return { running, queued };
