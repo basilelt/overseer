@@ -122,7 +122,7 @@ review of everything it changed sits beside it, the sidebar shrinks to a rail of
 bar at the bottom runs git on the worktree you pick among the session's worktrees and submodules.
 Write a message and press Enter to commit; Push, Publish or Pull takes the button's place when it
 is the next step, and the ⋯ menu holds fetch, amend, stage or discard all, merge, stash and the Git
-graph. While you work in a terminal, the sidebar's **Git** tab (Ctrl+Shift+G) keeps source control at
+graph. While you work in a terminal, the side panel's **Git** tab (Ctrl+Shift+G) keeps source control at
 hand like VS Code: the selected session's worktree, its branch, fetch, pull and push, a commit box,
 staged and changed files, and merge and stash. The Git graph tab keeps a per-project history that stays fast on large histories, with agent
 branches, tasks and PRs on it; from a commit you can merge it into a worktree or revert it.

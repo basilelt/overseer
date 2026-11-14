@@ -2156,8 +2156,9 @@ aborted and names the files; a merge started elsewhere shows as in progress; a p
 a submodule has commits that are not pushed. While the agent is running, the bar warns that files can
 still change. Everything refreshes on file and ref changes, never by polling.
 
-The sidebar has a **Git** tab next to **Workspaces** and **By status** (Ctrl+Shift+G, or the palette's
-"Show or hide source control in the sidebar"; it reopens a hidden sidebar). It keeps source control
+The side panel on the right has a **Git** tab next to **Activity** (Ctrl+Shift+G, or the palette's
+"Show or hide source control in the side panel"; it reopens a hidden side panel and leaves the board
+for the agents view). It keeps source control
 next to the terminal, like VS Code: the worktree of the selected session (its menu lists the session's
 other worktrees and submodules), the branch to switch or create, Fetch, Pull and Push or Publish, the
 commit message (Ctrl/Cmd+Enter) with Commit and its options, conflicts, staged files and changes with

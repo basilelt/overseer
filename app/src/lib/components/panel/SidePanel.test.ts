@@ -1,13 +1,14 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-async function rendered(lastAssistantText: string, extra: { line?: object; activity?: object } = {}) {
+async function rendered(lastAssistantText: string, extra: { line?: object; activity?: object; git?: boolean; selected?: object | null } = {}) {
   vi.resetModules();
   const activity = { l1: { workLog: [], todos: [], editedFiles: [], needsInput: false, lastAssistantText, ...extra.activity } };
   const { app } = await import('../../state.svelte');
   app.data.activity = activity as never;
   app.data.lines = [{ line: { id: 'l1', agent: 'claude', state: 'active', ...extra.line }, project: 'p' }] as never;
   app.selectedKey = 'line:l1';
-  vi.spyOn(app, 'selected', 'get').mockReturnValue({ key: 'line:l1', lineId: 'l1', title: 'x' } as never);
+  app.panelGit = extra.git ?? false;
+  vi.spyOn(app, 'selected', 'get').mockReturnValue((extra.selected === undefined ? { key: 'line:l1', lineId: 'l1', title: 'x' } : extra.selected) as never);
   const { render } = await import('svelte/server');
   const { default: SidePanel } = await import('./SidePanel.svelte');
   let html = render(SidePanel, { props: {} }).body;
@@ -72,5 +73,30 @@ describe('SidePanel cost', () => {
     const html = await rendered('hello');
     expect(html).not.toContain('data-sec="cost"');
     expect(html).not.toContain('≈$');
+  });
+});
+
+describe('SidePanel tabs', () => {
+  const tab = (html: string, label: string) => html.match(new RegExp(`<button[^>]*role="tab"[^>]*aria-selected="(true|false)"[^>]*>(?:<svg[\\s\\S]*?</svg>)?${label}</button>`))?.[1];
+
+  it('opens on the Activity tab with the Git tab next to it', async () => {
+    const html = await rendered('hello');
+    expect(tab(html, 'Activity')).toBe('true');
+    expect(tab(html, 'Git')).toBe('false');
+    expect(html).toContain('Last message');
+  });
+
+  it('swaps the session activity for source control on the Git tab', async () => {
+    const html = await rendered('hello', { git: true });
+    expect(tab(html, 'Activity')).toBe('false');
+    expect(tab(html, 'Git')).toBe('true');
+    expect(html).not.toContain('Last message');
+    expect(html).not.toContain('Open review');
+  });
+
+  it('keeps both tabs when no session is selected', async () => {
+    const html = await rendered('hello', { selected: null });
+    expect(html).toContain('No session selected');
+    expect(tab(html, 'Git')).toBe('false');
   });
 });
