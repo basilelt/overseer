@@ -51,7 +51,7 @@ describe('columns', () => {
 
 describe('auto queue', () => {
   const tasks = [
-    task({ id: 'r', status: 'in_progress' }),
+    task({ id: 'r', status: 'in_progress', termId: 'term-r' }),
     task({ id: 'q2', number: 20, rank: 2, status: 'auto' }),
     task({ id: 'q1', number: 30, rank: -1, status: 'auto' }),
     task({ id: 'q3', number: 10, rank: 3, status: 'auto' }),
@@ -59,6 +59,13 @@ describe('auto queue', () => {
 
   it('counts running and queued', () => {
     expect(autoSummary(tasks)).toEqual({ running: 1, queued: 3 });
+  });
+
+  it('counts as running only in-progress tasks with a terminal, like the daemon', () => {
+    const ghost = task({ id: 'g', status: 'in_progress', origin: 'session', lineId: 'gone' });
+    const voting = task({ id: 'v', status: 'in_progress', termId: 'term-v', quorum: { workers: ['claude'], reviewers: [] } });
+    expect(autoSummary([...tasks, ghost, voting])).toEqual({ running: 1, queued: 3 });
+    expect([...nextUp([...tasks, ghost, voting], 3)]).toEqual(['q1', 'q2']);
   });
 
   it('marks the first free slots as next up, at least one', () => {
@@ -418,7 +425,7 @@ describe('organizer tasks', () => {
 
   it('are hidden from the columns and not counted as running', () => {
     expect(columns([org]).flatMap((c) => c.tasks)).toEqual([]);
-    expect(autoSummary([org, task({ status: 'in_progress' })]).running).toBe(1);
+    expect(autoSummary([{ ...org, termId: 'term-o' }, task({ status: 'in_progress', termId: 'term-t' })]).running).toBe(1);
     expect(isOrganizer(org)).toBe(true);
   });
 
