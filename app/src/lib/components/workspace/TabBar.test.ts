@@ -10,10 +10,9 @@ import type { AgentInfo, LocalLine, Task } from '../../types';
 import TabBar from './TabBar.svelte';
 import bar from './TabBar.svelte?raw';
 
-const before = { data: app.data, link: app.link, others: app.others, agents: app.agents, hostTabColor: settings.hostTabColor, defaultAgent: settings.defaultAgent };
+const before = { data: app.data, link: app.link, others: app.others, agents: app.agents, defaultAgent: settings.defaultAgent };
 afterEach(() => {
   Object.assign(app, { data: before.data, link: before.link, others: before.others, agents: before.agents });
-  settings.hostTabColor = before.hostTabColor;
   settings.defaultAgent = before.defaultAgent;
   vi.restoreAllMocks();
 });
@@ -26,9 +25,10 @@ const html = (activity: Record<string, unknown> = {}) => {
 };
 
 describe('tab strip content', () => {
-  it('shows the session cost on its tab only when the transcript has one', () => {
-    expect(html()).not.toMatch(/class="[^"]*\bcost\b/);
-    expect(html({ l1: { workLog: [], todos: [], editedFiles: [], needsInput: false, lastAssistantText: '', cost } })).toMatch(/<span[^>]*class="[^"]*\bcost\b[^"]*"[^>]*>\$1\.23</);
+  it('keeps the session cost off its tab, the side panel shows it', () => {
+    const h = html({ l1: { workLog: [], todos: [], editedFiles: [], needsInput: false, lastAssistantText: '', cost } });
+    expect(h).not.toContain('$1.23');
+    expect(h).not.toMatch(/class="[^"]*\bcost\b/);
   });
 
   it('colours the dot of a running session in testing by its state, like the sidebar row', () => {
@@ -44,17 +44,13 @@ describe('tab strip content', () => {
     expect(h).toMatch(/<span class="slot[^"]*"><span class="num[^"]*">1<\/span><button class="x[^"]*"/);
   });
 
-  it('names the host on every tab only when the window shows several hosts and the setting is on', () => {
+  it('does not name the host on tabs, even with several hosts in the window, the sidebar already does', () => {
     const local = new HostLink({ kind: 'local', label: 'Local' }, new MockDaemon({ live: false }));
     const prod = new HostLink({ kind: 'ssh', host: 'prod', label: 'prod' }, new MockDaemon({ live: false }));
     Object.assign(app, { link: local, others: [prod] });
-    settings.hostTabColor = true;
-    expect(html()).toMatch(/class="host mono[^"]*"[^>]*>Local</);
-    settings.hostTabColor = false;
-    expect(html()).not.toContain('class="host mono');
-    settings.hostTabColor = true;
-    Object.assign(app, { others: [] });
-    expect(html()).not.toContain('class="host mono');
+    const h = html();
+    expect(h).not.toContain('class="host');
+    expect(h).not.toContain('>Local<');
   });
 });
 
@@ -106,10 +102,6 @@ describe('CSS guard: tab strip', () => {
     expect(parseStyle(bar).some((r) => r.selector === '.tabs:hover')).toBe(false);
   });
 
-  it('lets the session cost shrink before the title does', () => {
-    expect(declOf(bar, '.chip.cost', 'flex')).toBe('0 8 auto');
-  });
-
   it('stacks the number and the close button in one grid cell, hiding the number on hover', () => {
     expect(declOf(bar, '.slot > *', 'grid-area')).toBe('1 / 1');
     expect(declOf(bar, '.tab:hover .num', 'visibility')).toBe('hidden');
@@ -132,9 +124,5 @@ describe('CSS guard: tab strip', () => {
   it('wraps the toolbar buttons in a very narrow pane so none is clipped', () => {
     const actions = parseStyle(bar).filter((r) => r.at.startsWith('@container') && r.selector === '.actions');
     expect(actions.some((r) => r.decls['flex-wrap'] === 'wrap' && r.decls['min-height'] === '34px')).toBe(true);
-  });
-
-  it('limits the host tag width', () => {
-    expect(declOf(bar, '.host', 'max-width')).toBe('64px');
   });
 });

@@ -96,6 +96,14 @@ Every command has one home. Before adding a button, menu entry or shortcut, chec
 - **Menus stay on topic**: a menu only lists what its button says. The tab bar `+` starts sessions; it does not open views.
 - **Phone is the exception**: the phone has no keyboard palette shortcut, so `MobileMore` may list views the desktop only reaches through the palette.
 
+## No clutter
+
+Clutter is not a feature: every extra chip, badge or number makes the UI uglier and more overwhelming. Before showing a piece of information, check it is not already on screen and that the user needs it in that exact spot.
+
+- **Say it once**: never repeat what another part of the window already states. The sidebar's host sections and the host chip say which computer a session runs on, so tabs and session rows do not.
+- **Details live in their view**: secondary figures (API cost in dollars, token counts, model splits) belong in the side panel, the Usage view or a tooltip, not on tabs or other always-visible strips.
+- **No toggle for clutter**: do not add a setting to show something noisy; leave it out.
+
 ## UI strings
 
 - Write every user-visible string in English only, in `app/src/lib/i18n/en.ts` (or the module's namespace there, such as `usage.*`), and read it with `t()` or the module helper. Never hand-write other languages.
