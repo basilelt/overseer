@@ -55,6 +55,16 @@ describe('HostSections', () => {
     expect(out).toContain('Expand prod');
   });
 
+  it('frames each open host section as one box around its workspaces', () => {
+    settings.hostsFolded = ['ssh:prod'];
+    const out = html();
+    const local = out.match(/<section class="host[^"]*"[^>]*aria-label="Local"/)![0];
+    const prod = out.match(/<section class="host[^"]*"[^>]*aria-label="prod"/)![0];
+    expect(local).toMatch(/\bopen\b/);
+    expect(prod).not.toMatch(/\bopen\b/);
+    expect(out.indexOf('aria-label="Local"')).toBeLessThan(out.search(/class="spaces[ "]/));
+  });
+
   it('shows the state of a host that is not connected instead of its sessions', () => {
     prod.conn = { phase: 'reconnecting', target: prod.target, attempt: 2 };
     expect(html()).toMatch(/class="meta mono svelte-[\w-]+ warn"[^>]*>[^<]*2/);
