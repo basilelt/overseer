@@ -153,7 +153,7 @@
   function setView(v: 'list' | 'map') {
     if (v === store.view) return;
     if (v === 'map') {
-      if (onScreen) hot = onScreen;
+      if (onScreen && maps.scored.some((x) => x.id === onScreen)) hot = onScreen;
       store.setView('map');
       return;
     }
