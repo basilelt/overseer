@@ -62,6 +62,10 @@ pub fn run(reg: &Registry, lines: &[Line], env: &Env) {
     for t in all.iter().filter(|t| t.from_session()) {
         let mut t = t.clone();
         let line = t.line_id.as_deref().and_then(|id| by_line.get(id)).copied();
+        // An empty scan proves nothing (unreadable transcripts dir): never close on it.
+        if line.is_none() && lines.is_empty() {
+            continue;
+        }
         if refresh(&mut t, line, env) {
             tasks::logged(
                 "session task not saved",
@@ -390,8 +394,9 @@ fn absorb(t: &mut Task, l: &Line, a: &Value) -> bool {
 pub fn refresh(t: &mut Task, line: Option<&Line>, env: &Env) -> bool {
     let Some(l) = line else {
         let changed = t.title_source.is_none() && retitle(t, None, &Value::Null);
-        return (!status::is_done(&t.status) && (env.merged)(t) && follow(t, "merged", || true))
-            || changed;
+        let landed = !status::is_done(&t.status) && (env.merged)(t) && follow(t, "merged", || true);
+        let gone = !landed && t.status == status::IN_PROGRESS && follow(t, "closed", || true);
+        return landed || gone || changed;
     };
     let mut changed = false;
     if l.last_activity_ms > t.updated_ms || t.title_source.is_none() {
@@ -793,6 +798,60 @@ mod tests {
         l.busy = true;
         refresh(&mut t, Some(&l), &env);
         assert_eq!(t.status, "in_progress");
+    }
+
+    #[test]
+    fn a_session_gone_from_the_scan_closes_its_in_progress_task_once() {
+        let (r, dir) = reg("gone");
+        let mut fresh = line("fresh", "active");
+        fresh.busy_known = true;
+        let mut review = line("review", "idle");
+        review.busy_known = true;
+        review.title = Some("Ship it".into());
+        let live = line("live", "active");
+        sync_with(&r, &[fresh, review, live.clone()], 7, None);
+        let by = |id: &str| {
+            session_tasks(&r)
+                .into_iter()
+                .find(|t| t.line_id.as_deref() == Some(id))
+                .unwrap()
+        };
+        assert_eq!(by("fresh").status, "in_progress");
+        assert_eq!(by("fresh").badge.as_deref(), Some("needs_input"));
+        let mut t = by("review");
+        t.status = "in_testing".into();
+        tasks::store(&r, &mut t, "st").unwrap();
+        sync_with(&r, &[], 7, None);
+        assert_eq!(by("fresh").status, "in_progress");
+        sync_with(&r, std::slice::from_ref(&live), 7, None);
+        let gone = by("fresh");
+        assert_eq!(gone.status, "completed");
+        assert_eq!(gone.badge, None);
+        assert_eq!(gone.session_state.as_deref(), Some("closed"));
+        assert_eq!(by("review").status, "in_testing");
+        assert_eq!(by("live").status, "in_progress");
+        sync_with(&r, std::slice::from_ref(&live), 7, None);
+        assert_eq!(by("fresh").updated_ms, gone.updated_ms);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn a_vanished_session_on_a_landed_branch_still_moves_to_merged() {
+        let l = line("a", "active");
+        let mut t = new_task(&l, "/repo".into(), None);
+        let project = |_: &Line| Some("/repo".to_string());
+        let activity = |_: &Line| None;
+        let merged = |_: &Task| true;
+        let env = Env {
+            now_ms: NOW,
+            days: 7,
+            station: "st",
+            project: &project,
+            activity: &activity,
+            merged: &merged,
+        };
+        assert!(refresh(&mut t, None, &env));
+        assert_eq!(t.status, "merged");
     }
 
     #[test]
