@@ -1457,7 +1457,9 @@ request, the event stream, every terminal and every forwarded port over that one
   host. Two windows on the same host both show its notifications.
 - **Several hosts in one window** (desktop, opt-in): Settings → Connection → **Windows and hosts**
   picks **One window per host** (the default, as above) or **One window, all hosts**. In the second
-  mode, connecting to a host adds it to the window instead of replacing the current one; the
+  mode, connecting to a host adds it to the window instead of replacing the current one, and this
+  computer always stays in the window: choosing the mode while on a remote host, or opening the app
+  on one, adds a **This computer** section beside it (unless you took it out of the window); the
   palette's **Add a host to this window…** and the sidebar's **Add a host to this window** do it in
   either mode. **Ask each time I connect to a host** makes the connect dialog ask "Where should
   <host> open?" with **Add to this window** and **Open in a new window** (the mode's choice first,

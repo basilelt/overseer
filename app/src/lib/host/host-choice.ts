@@ -30,6 +30,11 @@ export function connectHow(p: HostPrefs, target: Pick<HostTarget, 'kind' | 'host
   return p.hostWindows === 'shared' || w.keys.length > 1 ? 'add' : 'replace';
 }
 
+export function sharesWindow(p: Pick<HostPrefs, 'hostWindows' | 'hostChoice'>, key: string): boolean {
+  const kept = p.hostChoice[key];
+  return kept ? kept === 'add' : p.hostWindows === 'shared';
+}
+
 export function preferredChoice(p: Pick<HostPrefs, 'hostWindows'>): HostChoice {
   return p.hostWindows === 'shared' ? 'add' : 'window';
 }

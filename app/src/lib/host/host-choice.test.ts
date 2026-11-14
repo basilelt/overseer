@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { connectHow, preferredChoice, toggled, type HostPrefs } from './host-choice';
+import { connectHow, preferredChoice, sharesWindow, toggled, type HostPrefs } from './host-choice';
 
 const prefs = (over: Partial<HostPrefs> = {}): HostPrefs => ({ hostWindows: 'separate', hostAsk: false, hostChoice: {}, ...over });
 const prod = { kind: 'ssh' as const, host: 'prod' };
@@ -52,5 +52,14 @@ describe('toggled', () => {
   it('adds a missing key and removes a present one', () => {
     expect(toggled(undefined, 'a')).toEqual(['a']);
     expect(toggled(['a', 'b'], 'a')).toEqual(['b']);
+  });
+});
+
+describe('sharesWindow', () => {
+  it('follows the remembered choice for the host, else the window mode', () => {
+    expect(sharesWindow(prefs({ hostWindows: 'shared' }), 'ssh:prod')).toBe(true);
+    expect(sharesWindow(prefs(), 'ssh:prod')).toBe(false);
+    expect(sharesWindow(prefs({ hostChoice: { 'ssh:prod': 'add' } }), 'ssh:prod')).toBe(true);
+    expect(sharesWindow(prefs({ hostWindows: 'shared', hostChoice: { 'ssh:prod': 'window' } }), 'ssh:prod')).toBe(false);
   });
 });

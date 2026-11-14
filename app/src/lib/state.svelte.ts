@@ -8,6 +8,7 @@ import { groupItems, sidebarItems, stableItems, type SidebarItem } from './sessi
 import { applyEvent, deepEqual, mergeFetched, touchedKey, type Snapshot, type Touched } from './reduce';
 import { rememberHost, rememberWorkspace, saveSettings, settings, workspaceFor } from './settings/settings.svelte';
 import { hostKey, isMainWindow } from './window';
+import { sharesWindow } from './host/host-choice';
 import type { HostLink, LinkChange } from './host/host-link.svelte';
 import { normalizeUrl } from './browser';
 import { pages } from './session/session-pages.svelte';
@@ -177,9 +178,12 @@ class AppState {
       return this.open('connect');
     }
     if (!platform.mobile) await this.client.dropSlots?.().catch(() => {});
-    const restore = !platform.mobile && isMainWindow() && settings.hostReconnect && !settings.explicitlyDisconnected && (settings.windowHosts?.length ?? 0) > 1 ? settings.windowHosts : null;
+    const main = !platform.mobile && isMainWindow() && !settings.explicitlyDisconnected;
+    const restore = main && settings.hostReconnect && (settings.windowHosts?.length ?? 0) > 1 ? settings.windowHosts : null;
+    const withLocal = main && !settings.windowHosts && sharesWindow(settings, hostKey(target));
     await this.connect(target);
     if (restore) void hostOps().then((m) => m.restore(this, restore, target));
+    else if (withLocal) void this.addLocal();
     if (this.conn.phase === 'error' && target.kind !== 'local') this.open('connect');
   }
 
@@ -292,6 +296,10 @@ class AppState {
 
   addHost(target: HostTarget, activate: boolean): Promise<void> {
     return hostOps().then((m) => m.addHost(this, target, activate));
+  }
+
+  addLocal(): Promise<void> {
+    return hostOps().then((m) => m.addLocal(this));
   }
 
   switchHost(key: string): Promise<void> {
