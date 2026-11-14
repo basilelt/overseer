@@ -2,7 +2,8 @@
 set -eu
 cmd=${1:-start}
 R=$(cd "${0%/*}/../.." && pwd)
-D=${QA_DIR:-/tmp/sbqa}
+# Not under /tmp: the daemon treats worktrees there as volatile and makes no session tasks for them.
+D=${QA_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/sbqa}
 PORT=${QA_PORT:-47811}
 WEB=${QA_WEB:-4918}
 DISPLAY_NUM=${QA_DISPLAY:-93}
@@ -47,6 +48,9 @@ launcher)
   ;;
 bin)
   echo "$BIN"
+  ;;
+dir)
+  echo "$D"
   ;;
 app-bin)
   echo "$APP_BIN"
