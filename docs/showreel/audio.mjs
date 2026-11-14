@@ -3,13 +3,32 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const MODE = process.argv[3] ?? '15';
-if (MODE !== '15' && MODE !== '30') {
-  console.error('usage: node audio.mjs [out.wav] [15|30]');
+if (MODE !== '15' && MODE !== '45') {
+  console.error('usage: node audio.mjs [out.wav] [15|45]');
   process.exit(1);
 }
-const S = MODE === '30' ? 2 : 1;
+const S = MODE === '45' ? 2 : 1;
+const SEG = MODE === '45' ? [[0, 4, 6], [4, 8, 6], [8, 10, 3], [10, 12, 3], [12, 13, 3], [13, 14, 6], [14, 17, 10], [17, 18, 2], [18, 19, 5], [19, 20, 5], [20, 21.25, 4], [21.25, 22, 6], [22, 26, 10], [26, 27, 7], [27, 28, 7], [28, 29, 7], [29, 32, 6]] : null;
+const RB = (k) => {
+  if (!SEG) return k;
+  let acc = 0;
+  for (const [s, e, r] of SEG) {
+    if (k < e) return acc + ((k - s) / (e - s)) * r;
+    acc += r;
+  }
+  return acc + (k - 32);
+};
+const RBinv = (rb) => {
+  if (!SEG) return rb;
+  let acc = 0;
+  for (const [s, e, r] of SEG) {
+    if (rb < acc + r) return s + ((rb - acc) / r) * (e - s);
+    acc += r;
+  }
+  return 32 + (rb - acc);
+};
 const SR = 48000;
-const N = 720000 * S;
+const N = (MODE === '45' ? 2160000 : 720000);
 const B = 0.46875;
 const OUT = resolve(process.argv[2] ?? resolve(dirname(fileURLToPath(import.meta.url)), '../build/reel.wav'));
 const TARGET_LUFS = -16;
@@ -719,20 +738,21 @@ function limit(L, R, ceil) {
 }
 
 const pos = (k) => k * B;
-const beat = (k) => k * B * S;
+const beat = (k) => RB(k) * B;
+const at = (t15) => beat(t15 / B);
 const sleepA = beat(24);
 const wakeT = beat(26);
 const finalT = beat(29);
 const groove = [];
-for (let k = 4 * S; k < 29 * S; k++) if (k < 24 * S || k >= 26 * S) groove.push(k);
+for (let k = Math.round(RB(4)); k < Math.round(RB(29)); k++) if (k < RB(24) || k >= RB(26)) groove.push(k);
 
-[0.2, 0.26, 0.32, 0.38, 0.44, 0.5, 0.56, 0.62].forEach((t, i) => keyClick(t * S, i));
+[0.2, 0.26, 0.32, 0.38, 0.44, 0.5, 0.56, 0.62].forEach((t, i) => keyClick(at(t), i));
 
-chord(0, 0.94 * S, [hz(45), hz(52), hz(57)], {
+chord(0, beat(2), [hz(45), hz(52), hz(57)], {
   g: 0.05,
-  att: 0.9 * S,
+  att: beat(2) * 0.95,
   rel: 0.8 * S,
-  cut: (t) => 260 + 700 * smooth(t / (0.94 * S)),
+  cut: (t) => 260 + 700 * smooth(t / beat(2)),
   res: 0.9,
   h: 0.3,
   voices: 4,
@@ -740,19 +760,18 @@ chord(0, 0.94 * S, [hz(45), hz(52), hz(57)], {
   seed: 3,
   dest: fx,
 });
-riser(0.45 * S, beat(2), { g: 0.16, f0: 500, f1: 6500, tone: 0.15, p0: 330, p1: 660, seed: 11 });
+riser(at(0.45), beat(2), { g: 0.16, f0: 500, f1: 6500, tone: 0.15, p0: 330, p1: 660, seed: 11 });
 
 click(beat(2), 0.35, 3800);
 click(beat(2) + 0.018, 0.18, 2600);
 voice(beat(2), 0.08, (t) => (Math.sin(TAU * 190 * t) * 0.7 + Math.sin(TAU * 340 * t) * 0.4) * Math.exp(-t / 0.022), { dest: fx, gain: 0.35, room: 0.2 });
 boom(beat(2), 0.55, { f0: 140, f1: 42, tp: 0.05, ta: 0.22, noise: 0.45, nd: 0.12, nf: 3200, h: 0.3 });
-whoosh(beat(2) + 0.01 * S, 0.55 * S, { f0: 4000, f1: 500, g: 0.2, p0: 0.3, p1: -0.3, peak: 0.12, seed: 21 });
+whoosh(beat(2) + 0.01, 0.55 * S, { f0: 4000, f1: 500, g: 0.2, p0: 0.3, p1: -0.3, peak: 0.12, seed: 21 });
 
 stab(beat(2.5), [hz(57), hz(60), hz(64)], 0.3);
 stab(beat(3), [hz(60), hz(64), hz(69)], 0.32);
 stab(beat(3.5), [hz(64), hz(69), hz(72)], 0.34);
-if (S === 1) [beat(3), beat(3.25), beat(3.5), beat(3.625), beat(3.75), beat(3.875)].forEach((t, i) => snare(t, 0.09 + i * 0.045, 900 + i * 550));
-else [0, 0.25, 0.5, 0.75, 1, 1.125, 1.25, 1.375, 1.5, 1.625, 1.75, 1.875].forEach((x, i) => snare(pos(6 + x), 0.07 + i * 0.024, 800 + i * 330));
+[3, 3.25, 3.5, 3.625, 3.75, 3.875].forEach((x, i) => snare(beat(x), 0.09 + i * 0.045, 900 + i * 550));
 riser(beat(3), beat(4), { g: 0.2, f0: 600, f1: 9000, tone: 0.2, p0: 440, p1: 1760, seed: 12 });
 
 crash(beat(4), 0.12);
@@ -761,10 +780,10 @@ crash(wakeT, 0.14);
 for (const k of groove) kick(pos(k), 0.5);
 for (const k of groove) if (k % 4 === 1 || k % 4 === 3) clap(pos(k), 0.5);
 for (const k of groove) {
-  const open = k >= 26 * S;
-  const hv = S === 1 ? 1 : k < 12 ? 0 : k < 16 ? 0.55 : k < 24 ? 0.8 : 1;
+  const sb = RBinv(k), open = sb >= 26;
+  const hv = S === 1 ? 1 : sb < 8 ? 0 : sb < 12 ? 0.55 : sb < 24 ? 0.8 : 1;
   if (hv) hat(pos(k + 0.5), (open ? 0.15 : 0.2) * hv, open ? 0.11 : 0.026, 0.22, 500 + k);
-  if (k >= 12 * S) {
+  if (sb >= 12) {
     const r = rng(800 + k);
     hat(pos(k + 0.25), 0.05 + r() * 0.03, 0.016, -0.3, 900 + k);
     hat(pos(k + 0.75), 0.07 + r() * 0.035, 0.018, -0.25, 1300 + k);
@@ -773,13 +792,13 @@ for (const k of groove) {
 
 const roots = { 1: hz(33), 2: hz(29), 3: hz(36), 4: hz(31), 5: hz(33), 6: hz(29), 7: hz(31) };
 for (const k of groove) {
-  const f = roots[Math.floor(k / (4 * S))];
+  const sb = RBinv(k), f = roots[Math.floor(sb / 4)];
   const last = k % 4 === 3;
-  const roll = S === 2 && k >= 24 && k < 40 && k % 2 === 1;
+  const roll = S === 2 && sb >= 12 && sb < 20 && k % 2 === 1;
   bassNote(pos(k + 0.5), f, last || roll ? 0.1 : 0.17, 0.62);
   if (last) bassNote(pos(k + 0.75), f, 0.09, 0.5, 0.8);
   else if (roll) bassNote(pos(k + 0.75), f, 0.08, 0.4, 0.9);
-  if (k >= 26 * S) bassNote(pos(k + 0.5), f * 2, last ? 0.1 : 0.15, 0.22, 1.4);
+  if (sb >= 26) bassNote(pos(k + 0.5), f * 2, last ? 0.1 : 0.15, 0.22, 1.4);
 }
 
 const chords = [
@@ -791,10 +810,10 @@ const chords = [
   [hz(53), hz(57), hz(60), hz(64), hz(65), hz(69)],
 ];
 const baseCut = [1800, 2100, 2400, 2700, 2700, 3600];
-const sleepFall = (t) => smooth((t - sleepA) / (0.42 * S));
+const sleepFall = (t) => smooth((t - sleepA) / (0.42 * S * (MODE === '45' ? 2 : 1)));
 chords.forEach((notes, i) => {
   const t0 = i === 5 ? wakeT : beat(4 + i * 4);
-  const t1 = i === 5 ? finalT : i === 4 ? wakeT : t0 + 4 * B * S;
+  const t1 = i === 5 ? finalT : i === 4 ? wakeT : beat(8 + i * 4);
   const sleepy = i === 4;
   chord(t0 - 0.004, t1, notes, {
     g: i === 5 ? 0.04 : 0.05,
@@ -846,7 +865,7 @@ boom(beat(16.4), 0.35, { f0: 110, f1: 44, tp: 0.06, ta: 0.3, noise: 0.25, nd: 0.
 whoosh(beat(16.75) - 0.1 * S, 0.4 * S, { f0: 600, f1: 4500, g: 0.15, p0: -0.3, p1: 0.5, peak: 0.35, seed: 45 });
 
 riser(beat(17.3), beat(18.3), { g: 0.17, f0: 500, f1: 8000, tone: 0.2, p0: 330, p1: 1320, seed: 46 });
-[7.97, 8.04, 8.11, 8.18, 8.25, 8.32].forEach((t, i) => glass(t * S, hz(86 + (i % 2) * 3), 0.035, { pan: -0.2 + i * 0.08, d: 0.025, e: 0.05 }));
+[7.97, 8.04, 8.11, 8.18, 8.25, 8.32].forEach((t, i) => glass(at(t), hz(86 + (i % 2) * 3), 0.035, { pan: -0.2 + i * 0.08, d: 0.025, e: 0.05 }));
 boom(beat(18.3), 0.4, { f0: 130, f1: 40, tp: 0.07, ta: 0.4, noise: 0.3, nd: 0.2, nf: 2800, h: 0.4 });
 [84, 88, 91, 96, 100].forEach((m, i) => bell(beat(18.3) + i * 0.03 * S, hz(m), 0.06, { decay: 0.8, ratio: 2.0, index: 1.2, pan: -0.5 + i * 0.25, h: 0.5, e: 0.3 }));
 [[18.4, 88], [18.65, 91], [18.85, 86]].forEach(([b, m], i) => { click(beat(b), 0.26, 4200); blip(beat(b), hz(m), 0.05, { up: 3, d: 0.03, pan: i % 2 ? 0.4 : -0.4, e: 0.2 }); });
@@ -861,40 +880,46 @@ riser(beat(20.5), beat(21.3), { g: 0.16, f0: 300, f1: 6000, tone: 0.3, p0: 220, 
 stab(beat(21.3), [hz(57), hz(64), hz(69)], 0.28);
 boom(beat(21.3), 0.4, { f0: 120, f1: 40, tp: 0.07, ta: 0.35, noise: 0.3, nd: 0.2, nf: 2600, h: 0.4 });
 whoosh(beat(22) - 0.05 * S, 0.55 * S, { f0: 350, f1: 4200, g: 0.15, p0: -0.4, p1: 0.4, peak: 0.4, seed: 51 });
-[10.64, 10.79, 10.94, 11.09].forEach((t, i) => blip(t * S, hz(88 + (i % 2) * 5), 0.04, { up: 2, d: 0.03, pan: i % 2 ? 0.45 : -0.45, e: 0.25 }));
+[10.64, 10.79, 10.94, 11.09].forEach((t, i) => blip(at(t), hz(88 + (i % 2) * 5), 0.04, { up: 2, d: 0.03, pan: i % 2 ? 0.45 : -0.45, e: 0.25 }));
 
-if (S === 1) {
-  heartbeat(beat(24), 0.36);
-  heartbeat(beat(25), 0.32);
-} else [0.36, 0.33, 0.3].forEach((g, i) => heartbeat(pos(48 + i), g));
+[[24, 0.36], [24.7, 0.33], [25.3, 0.3]].forEach(([b, g]) => heartbeat(beat(b), g));
 riser(beat(25), wakeT, { g: 0.2, f0: 300, f1: 8000, tone: 0.3, p0: 110, p1: 880, seed: 61 });
 
-const keys = (b0, b1, n, seed) => { for (let i = 0; i < n; i++) keyClick(beat(b0 + ((b1 - b0) * i) / n), seed + i); };
+const FULL = MODE === '45';
+const keys = (b0, b1, n, seed) => { if (!FULL) return; for (let i = 0; i < n; i++) keyClick(beat(b0 + ((b1 - b0) * i) / n), seed + i); };
 const pops = (b, m, g = 0.05) => blip(beat(b), hz(m), g, { up: 3, d: 0.035, pan: 0.2, e: 0.25 });
+if (FULL) {
 click(beat(26), 0.28, 3200);
 click(beat(26.2), 0.3, 3600);
 whoosh(beat(26.2), 0.22 * S, { f0: 700, f1: 3200, g: 0.1, p0: -0.4, p1: 0.2, peak: 0.3, seed: 81 });
+}
 keys(26.3, 26.68, 11, 300);
 click(beat(26.7), 0.3, 2600);
 click(beat(26.7) + 0.014, 0.16, 1800);
 bell(beat(26.78), hz(88), 0.07, { decay: 0.5, ratio: 2.0, index: 1.0, pan: 0.1, h: 0.4, e: 0.25 });
 bell(beat(26.8), hz(95), 0.05, { decay: 0.6, ratio: 2.0, index: 1.0, pan: -0.2, h: 0.45, e: 0.25 });
+if (FULL) {
 click(beat(27), 0.28, 3000);
 click(beat(27.2), 0.3, 3500);
 pops(27.2, 84);
 [[27.34, 81], [27.46, 86], [27.58, 91]].forEach(([b, m]) => { click(beat(b), 0.26, 4200); pops(b, m, 0.04); });
+}
 keys(27.64, 27.74, 5, 400);
 click(beat(27.76), 0.3, 2400);
 whoosh(beat(27.78), 0.2 * S, { f0: 600, f1: 3800, g: 0.11, p0: 0.5, p1: -0.1, peak: 0.3, seed: 82 });
 bell(beat(27.84), hz(84), 0.06, { decay: 0.4, pan: 0, h: 0.35 });
+if (FULL) {
 click(beat(28), 0.28, 3000);
 click(beat(28.12), 0.3, 3600);
 whoosh(beat(28.12), 0.2 * S, { f0: 500, f1: 3000, g: 0.1, p0: -0.5, p1: 0.1, peak: 0.3, seed: 83 });
 click(beat(28.28), 0.26, 3000);
 [28.3, 28.33, 28.36].forEach((b, i) => pops(b, 81 + i * 3, 0.035));
 click(beat(28.4), 0.3, 3400);
+}
 keys(28.44, 28.56, 14, 500);
+if (FULL) {
 [28.58, 28.62, 28.66, 28.68, 28.7, 28.72].forEach((b, i) => pops(b, 84 + i * 2, 0.03));
+}
 [84, 88, 91, 96].forEach((m, i) => bell(beat(28.78) + i * 0.03 * S, hz(m), 0.06, { decay: 0.7, ratio: 2.0, index: 1.1, pan: -0.4 + i * 0.27, h: 0.5, e: 0.3 }));
 for (let i = 0; i < 6; i++) glass(beat(28.8) + i * 0.025 * S, hz(96 + (i % 3) * 3), 0.025, { pan: -0.5 + i / 5, d: 0.02, e: 0.05 });
 click(beat(13.24), 0.26, 3400);
@@ -910,7 +935,7 @@ riser(beat(28), finalT, { g: 0.14, f0: 800, f1: 9000, tone: 0.25, p0: 440, p1: 1
 
 boom(finalT, 0.75, { f0: 120, f1: 38, tp: 0.08, ta: 0.5, noise: 0.5, nd: 0.28, nf: 2600, h: 0.45 });
 crash(finalT, 0.1);
-chord(finalT, 14.4 * S, [hz(48), hz(55), hz(60), hz(62), hz(64), hz(67)], {
+chord(finalT, beat(30.7), [hz(48), hz(55), hz(60), hz(62), hz(64), hz(67)], {
   g: 0.03,
   att: 0.012,
   rel: 0.9 * S,
@@ -935,30 +960,30 @@ voice(
   },
   { dest: fx, gain: 0.05, hall: 0.6, echo: 0.2, fadeOut: 0.3 * S },
 );
-[13.81, 13.91, 14.01].forEach((t, i) => ping(t * S, hz([91, 96, 100][i]), 0.05, { pan: [0, 0.5, -0.5][i], decay: 0.09 }));
-for (let i = 0; i < 8; i++) glass(13.93 * S + i * 0.04 * S, hz(96 + (i % 3) * 2), 0.022, { pan: -0.5 + i / 7, d: 0.02, e: 0.05 });
+[13.81, 13.91, 14.01].forEach((t, i) => ping(at(t), hz([91, 96, 100][i]), 0.05, { pan: [0, 0.5, -0.5][i], decay: 0.09 }));
+for (let i = 0; i < 8; i++) glass(at(13.93) + i * 0.04 * S, hz(96 + (i % 3) * 2), 0.022, { pan: -0.5 + i / 7, d: 0.02, e: 0.05 });
 
-if (S === 2) {
-  crash(pos(24), 0.07);
-  crash(pos(40), 0.08);
-  for (let k = 16; k < 24; k++) {
+if (MODE === '45') {
+  crash(beat(12), 0.07);
+  crash(beat(20), 0.08);
+  for (let k = Math.round(RB(8)); k < RB(12); k++) {
     const r = rng(2000 + k);
-    for (let j = 0; j < 4; j++) hat(pos(k + j * 0.25), (j % 2 ? 0.05 : 0.032) * (0.5 + (0.5 * (k - 16)) / 7) * (0.85 + r() * 0.3), 0.011, 0.38, 2100 + k * 4 + j);
-  }
-  for (let bar = 8; bar < 14; bar++) {
-    if (bar === 11) continue;
-    [0.75, 1.5, 2.75, 3.5].forEach((x, i) => perc(pos(bar * 4 + x), i % 2 ? 290 : 385, bar >= 12 ? 0.17 : 0.13, i % 2 ? 0.4 : -0.4));
+    for (let j = 0; j < 4; j++) hat(pos(k + j * 0.25), (j % 2 ? 0.05 : 0.032) * (0.5 + (0.5 * (k - RB(8))) / (RB(12) - RB(8))) * (0.85 + r() * 0.3), 0.011, 0.38, 2100 + k * 4 + j);
   }
   const steps = [0, 2, 1, 3, 2, 0, 3, 1];
-  for (let k = 28; k < 58; k++) {
-    if (k >= 48 && k < 52) continue;
-    const notes = chords[Math.min(5, Math.floor(k / 8) - 1)];
+  for (let k = Math.round(RB(16)); k < Math.round(RB(29)); k++) {
+    if (k >= RB(24) && k < RB(26)) continue;
+    if (k % 4 === 0) [0.75, 1.5, 2.75, 3.5].forEach((x, i) => perc(pos(k + x), i % 2 ? 290 : 385, k >= RB(24) ? 0.17 : 0.13, i % 2 ? 0.4 : -0.4));
+  }
+  for (let k = Math.round(RB(14)); k < Math.round(RB(29)); k++) {
+    if (k >= RB(24) && k < RB(26)) continue;
+    const sbar = Math.floor(RBinv(k) / 4), notes = chords[Math.max(0, Math.min(5, sbar - 1))];
     for (let h = 0; h < 2; h++) {
       const n = (k % 4) * 2 + h;
-      pluck(pos(k + h * 0.5), notes[steps[n] % notes.length], (k >= 52 ? 0.085 : k >= 32 ? 0.07 : 0.055) * (h ? 0.8 : 1), ((n % 4) - 1.5) * 0.3);
+      pluck(pos(k + h * 0.5), notes[steps[n] % notes.length], (k >= RB(26) ? 0.085 : k >= RB(16) ? 0.07 : 0.055) * (h ? 0.8 : 1), ((n % 4) - 1.5) * 0.3);
     }
   }
-  for (let j = 0; j < 8; j++) snare(pos(51 + j * 0.125), 0.06 + j * 0.035, 1500 + j * 480);
+  for (let j = 0; j < 8; j++) snare(beat(26) - B + j * 0.125 * B, 0.06 + j * 0.035, 1500 + j * 480);
 }
 
 const kicks = groove.map(pos);
@@ -981,8 +1006,8 @@ const wetEcho = pingpong(echo, { time: 0.75 * B, fb: 0.4, tone: 0.28 });
 
 let L = new Float64Array(N);
 let R = new Float64Array(N);
-const fadeA = 14.2 * S;
-const fadeB = 14.95 * S;
+const fadeA = beat(30.3);
+const fadeB = beat(31.9);
 for (let n = 0; n < N; n++) {
   const dl = drums.L[n];
   const dr = drums.R[n];

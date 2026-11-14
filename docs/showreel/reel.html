@@ -22,12 +22,21 @@ body.render .bar{display:none}
 </head>
 <body>
 <canvas id="c" width="1920" height="1080" role="img" aria-label="Overseer showreel, rendered live"></canvas>
-<div class="bar"><button id="pp" type="button">Pause</button><input id="sk" type="range" min="0" max="899" value="0" aria-label="Seek"><span id="tc">0.00 s</span><a id="alt" href="reel.html?d=30">30 s cut</a><a href="./">Video</a></div>
+<div class="bar"><button id="pp" type="button">Pause</button><input id="sk" type="range" min="0" max="899" value="0" aria-label="Seek"><span id="tc">0.00 s</span><a id="alt" href="reel.html?d=45">45 s cut</a><a href="./">Video</a></div>
 <script>
 'use strict';
 const Q = new URLSearchParams(location.search), RENDER = Q.has('render');
-const W = 1920, H = 1080, FPS = 60, DUR = Q.get('d') === '30' ? 30 : 15, K = 15 / DUR, BEAT = 60 / 128, SHUTTER = 0.85, TAU = Math.PI * 2;
+const W = 1920, H = 1080, FPS = 60, DUR = Q.get('d') === '45' ? 45 : 15, BEAT = 60 / 128, SHUTTER = 0.85, TAU = Math.PI * 2;
 const bt = x => x * BEAT;
+const TEASER = DUR === 15;
+const SEGS = DUR === 45 ? [[0, 4, 6], [4, 8, 6], [8, 10, 3], [10, 12, 3], [12, 13, 3], [13, 14, 6], [14, 17, 10], [17, 18, 2], [18, 19, 5], [19, 20, 5], [20, 21.25, 4], [21.25, 22, 6], [22, 26, 10], [26, 27, 7], [27, 28, 7], [28, 29, 7], [29, 32, 6]] : null;
+function sceneAt(r) {
+  if (!SEGS) return r;
+  const b = r / BEAT; let acc = 0;
+  for (const [s, e, n] of SEGS) { if (b < acc + n) return (s + (b - acc) / n * (e - s)) * BEAT; acc += n; }
+  return (32 + b - acc) * BEAT;
+}
+function stretch(t) { if (!SEGS) return 1; const sb = t / BEAT; for (const [s, e, n] of SEGS) if (sb < e) return n / (e - s); return 1; }
 const ENTER = 2 * BEAT, DROP = 4 * BEAT, IRIS = DROP - 0.1, RIP = 15 * BEAT, FIN = 29 * BEAT;
 const C = { bg: '#0b0b0c', bg2: '#111113', surf: '#141416', surf2: '#1b1b1e', line: '#232327', line2: '#2f2f34', ink: '#ededef', ink2: '#a1a1aa', ink3: '#63636b', white: '#fafafa', amber: '#e8a33a', blue: '#3b82f6', green: '#22c55e', purple: '#a855f7', red: '#ef4444', orange: '#f59e0b', gray: '#71717a', add: '#4ade80', del: '#f87171', hunk: '#818cf8' };
 const FF = { d: '"Inter Display"', u: 'Inter', m: '"JetBrains Mono"' };
@@ -136,14 +145,14 @@ const IMP = [[ENTER, 1], [7 * BEAT, 0.35], [16.4 * BEAT, 0.3], [18.3 * BEAT, 0.3
 function shake(t) {
   let x = 0, y = 0, r = 0, z = 0;
   for (const [a, k] of IMP) {
-    const d = (t - a) / K;
+    const d = (t - a) * stretch(a);
     if (d < 0 || d > 0.6) continue;
     const e = k * Math.exp(-d * 10);
     x += e * 15 * Math.sin(d * 90 + a * 13); y += e * 11 * Math.sin(d * 77 + a * 5 + 1.1); r += e * 0.004 * Math.sin(d * 61 + 2.3); z += e * 0.026;
   }
   return { x, y, r, z: 1 + z };
 }
-function aberrAmt(t) { let a = 0; for (const [b, k] of IMP) { const d = (t - b) / K; if (d >= 0 && d < 0.3) a += k * 10 * Math.exp(-d * 16); } return a; }
+function aberrAmt(t) { let a = 0; for (const [b, k] of IMP) { const d = (t - b) * stretch(b); if (d >= 0 && d < 0.3) a += k * 10 * Math.exp(-d * 16); } return a; }
 
 let BGG, GRID, VIG, GR;
 function fxInit() {
@@ -574,7 +583,7 @@ function cardBody(c, r, i, t, ca, lift) {
   tx(c, d.model, r.x + r.w - 18, r.y + 97, 13, 400, 'm', C.ink2, 'right');
   c.restore();
 }
-const REV = { x: 160, y: 100, w: 1600, h: 880 };
+const REV = { x: 200, y: 160, w: 1520, h: 836 };
 const DIFF = [
   ['h', '', '', '@@ -12,14 +12,22 @@ use std::time::{Duration, Instant};'],
   [' ', '12', '12', 'pub struct Term {'],
@@ -731,7 +740,7 @@ function tasks(T) {
   X.restore();
 }
 
-const QP = { x: 300, y: 130, w: 1320, h: 790 };
+const QP = { x: 300, y: 150, w: 1320, h: 790 };
 const QV = [
   { who: 'Codex', role: 'Orchestrator', col: SCOL[1], g: '</>', ok: true, t: bt(14.75) },
   { who: 'Claude Code', role: 'Reviewer', col: SCOL[0], g: '✳', ok: true, t: bt(15.5) },
@@ -796,7 +805,7 @@ function quorum(T) {
   if (ba > 0) cardBody(X, R, 1, tt, ba, 0);
   if (ma > 0) cardBody(X, R, 1, tt, ma, 0);
   X.restore();
-  rise(X, 'The agents vote.', 960, 88, 52, 800, 'd', C.ink, T, bt(14.35), { al: 'center', st: 0.016, t1: QM - 0.25, tr: -1.5, ost: 0.006, odur: 0.16 });
+  rise(X, 'The agents vote.', 960, 108, 52, 800, 'd', C.ink, T, bt(14.35), { al: 'center', st: 0.016, t1: QM - 0.25, tr: -1.5, ost: 0.006, odur: 0.16 });
 }
 const PRI = [['term.rs', 100, '#fbe167'], ['terminal.ts', 82, '#f28a26'], ['resize.rs', 63, '#d85a3e'], ['text.rs', 47, '#9b2f5f'], ['pty_legacy.rs', 40, '#9b2f5f'], ['resize.rs', 35, '#9b2f5f'], ['Terminal.kt', 20, '#3a2260']];
 const HSTOP = [[0, '#26262b'], [0.1, '#33205a'], [0.35, '#8a2c63'], [0.6, '#d9503a'], [0.82, '#f28a26'], [1, '#fbe167']];
@@ -854,7 +863,7 @@ function mapContent(c, T) {
   key(c, 'J', 1020, 760, kd === 0 || kd === 1); key(c, 'K', 1076, 760, kd === 2);
   tx(c, 'Next hottest file', 1144, 790, 22, 500, 'u', C.ink2);
 }
-const RP = { x: 880, y: 100, w: 880, h: 780 }, LP = { x: 60, y: 100, w: 800, h: 780 }, GB = { x: 60, y: 900, w: 1700, h: 76 };
+const RP = { x: 880, y: 160, w: 880, h: 740 }, LP = { x: 60, y: 160, w: 800, h: 740 }, GB = { x: 60, y: 912, w: 1700, h: 76 };
 function liveContent(c, T) {
   c.fillStyle = C.surf2; c.fillRect(0, 0, 880, 60); c.fillStyle = C.line; c.fillRect(0, 60, 880, 1);
   tx(c, 'Review · #110 PTY resize debounce', 24, 39, 22, 600, 'u', C.ink); dot(c, 800, 32, 6, C.green); tx(c, 'Live', 816, 39, 18, 500, 'u', C.ink2);
@@ -909,8 +918,8 @@ function review(T) {
   if (ps > 0.3) { X.save(); X.translate(R.x, R.y); X.scale(R.w / 880, R.h / 780); X.globalAlpha *= E.o2(P(ps, 0.4, 0.8)); liveContent(X, T); X.restore(); }
   X.restore();
   X.restore();
-  rise(X, 'Review map.', 960, 90, 52, 800, 'd', C.ink, T, bt(17.9), { al: 'center', st: 0.018, t1: bt(18.95), tr: -1.5, ost: 0.006, odur: 0.16 });
-  rise(X, 'Live review.', 960, 90, 52, 800, 'd', C.ink, T, bt(19.1), { al: 'center', st: 0.018, t1: bt(19.9), tr: -1.5, ost: 0.004, odur: 0.1 });
+  rise(X, 'Review map.', 960, 108, 52, 800, 'd', C.ink, T, bt(17.9), { al: 'center', st: 0.018, t1: bt(18.95), tr: -1.5, ost: 0.006, odur: 0.16 });
+  rise(X, 'Live review.', 960, 108, 52, 800, 'd', C.ink, T, bt(19.1), { al: 'center', st: 0.018, t1: bt(19.9), tr: -1.5, ost: 0.004, odur: 0.1 });
 }
 
 const HOPT = { sp: 0, note: 0, full: false, rec: 0, count: 0 };
@@ -982,8 +991,8 @@ function hostsWin(c, mode, o = HOPT) {
     });
   }
   c.fillStyle = '#1b1b1f'; c.fillRect(471, 69, 1129, 52); c.fillStyle = '#34343a'; c.fillRect(471, 120, 1129, 1);
-  if (S) { rr(c, 486, 78, 84, 34, 7); c.lineWidth = 1.5; c.strokeStyle = C.ink2; c.stroke(); tx(c, 'devbox', 528, 102, 17, 500, 'm', C.ink, 'center'); dot(c, 596, 95, 6, C.orange); tx(c, 'PROJ-10844 docker images', 612, 102, 20, 600, 'u', C.ink); tx(c, '$1.18', 880, 102, 16, 400, 'm', C.ink2); }
-  else { dot(c, 506, 95, 6, C.orange); tx(c, 'PROJ-10844 docker images', 524, 102, 20, 600, 'u', C.ink); tx(c, '$1.18', 790, 102, 16, 400, 'm', C.ink2); }
+  if (S) { rr(c, 486, 78, 84, 34, 7); c.lineWidth = 1.5; c.strokeStyle = C.ink2; c.stroke(); tx(c, 'devbox', 528, 102, 17, 500, 'm', C.ink, 'center'); dot(c, 596, 95, 6, C.orange); tx(c, 'PROJ-10844 docker images', 612, 102, 20, 600, 'u', C.ink); chip(c, '$1.18', 612 + lay('PROJ-10844 docker images', 20, 600, 'u').w + 16, 102, 14, C.ink2); }
+  else { dot(c, 506, 95, 6, C.orange); tx(c, 'PROJ-10844 docker images', 524, 102, 20, 600, 'u', C.ink); chip(c, '$1.18', 524 + lay('PROJ-10844 docker images', 20, 600, 'u').w + 16, 102, 14, C.ink2); }
   c.fillStyle = '#08080a'; c.fillRect(471, 121, 660, 759);
   tx(c, 'Claude Code', 500, 172, 22, 700, 'm', C.ink); tx(c, S && !L ? '/home/alice/worktrees/webshop/feat-docker' : '/home/alice/worktrees/webshop/feat-proj-10844', 650, 172, 17, 400, 'm', C.ink2);
   ['Read project layout', 'Read src/lib.rs', 'Edit src/handlers.rs', 'Edit .github/workflows/docker.yml', 'cargo check', 'cargo test --lib'].forEach((s, i) => { tx(c, '•', 500, 230 + i * 40, 22, 400, 'm', C.ink2); tx(c, s, 526, 230 + i * 40, 22, 400, 'm', C.ink); });
@@ -1023,8 +1032,8 @@ function hosts(T) {
   const cap = 1 - P(mg, 0.1, 0.4);
   if (cap > 0) { X.save(); X.globalAlpha = cap * p1; tx(X, 'THIS COMPUTER', 90, 270, 20, 500, 'm', C.ink2, 'left', 4); tx(X, 'DEVBOX  ·  SSH', 1830, 270, 20, 500, 'm', C.ink2, 'right', 4); X.restore(); }
   rise(X, 'Two hosts.', 960, 150, 74, 800, 'd', C.ink, T, bt(20.05), { al: 'center', st: 0.02, t1: bt(20.75), tr: -2, ost: 0.006, odur: 0.15 });
-  rise(X, 'One window.', 960, 90, 52, 800, 'd', C.amber, T, bt(21.05), { al: 'center', st: 0.014, t1: bt(21.55), tr: -1.5, ost: 0.006, odur: 0.12 });
-  rise(X, 'Subjects inside.', 960, 90, 52, 800, 'd', C.amber, T, bt(21.62), { al: 'center', st: 0.012, t1: bt(22) + 5, tr: -1.5 });
+  rise(X, 'One window.', 960, 108, 52, 800, 'd', C.amber, T, bt(21.05), { al: 'center', st: 0.014, t1: bt(21.55), tr: -1.5, ost: 0.006, odur: 0.12 });
+  rise(X, 'Subjects inside.', 960, 108, 52, 800, 'd', C.amber, T, bt(21.62), { al: 'center', st: 0.012, t1: bt(22) + 5, tr: -1.5 });
   if (mg > 0.9) { const fl = 1 - E.o3(P(T, bt(21.25), bt(21.65))); if (fl > 0) { X.save(); X.globalCompositeOperation = 'lighter'; X.globalAlpha = 0.35 * fl; const g = X.createLinearGradient(0, 0, W, 0); g.addColorStop(0, 'rgba(232,163,58,0)'); g.addColorStop(0.5, 'rgba(255,230,180,1)'); g.addColorStop(1, 'rgba(232,163,58,0)'); X.fillStyle = g; X.fillRect(0, REV.y + REV.h * (1 - E.o3(P(T, bt(21.25), bt(21.65)))) - 6, W, 12); X.restore(); } }
 }
 
@@ -1137,16 +1146,17 @@ function cursor(c, x, y, s = 1.6, press = 0) {
   c.save(); c.translate(x, y); c.scale(s * (1 - 0.1 * press), s * (1 - 0.1 * press)); c.beginPath(); c.moveTo(0, 0); c.lineTo(0, 26); c.lineTo(7, 20); c.lineTo(12, 31); c.lineTo(17, 29); c.lineTo(12, 18); c.lineTo(21, 18); c.closePath();
   c.fillStyle = '#ffffff'; c.fill(); c.lineWidth = 1.6; c.lineJoin = 'round'; c.strokeStyle = '#000'; c.stroke(); c.restore();
 }
-function cpath(T, pts) {
+function cpath(T, pts, move = false) {
+  if (TEASER && !move) { const l = pts[pts.length - 1]; return [l[1], l[2]]; }
   if (T <= pts[0][0]) return [pts[0][1], pts[0][2]];
   for (let i = 1; i < pts.length; i++) if (T < pts[i][0]) { const [a, x0, y0] = pts[i - 1], [b, x1, y1] = pts[i], e = E.io3(P(T, a, b)); return [lerp(x0, x1, e), lerp(y0, y1, e)]; }
   const l = pts[pts.length - 1]; return [l[1], l[2]];
 }
 function ripple(c, x, y, T, t0) { const p = P(T, t0, t0 + 0.16); if (p > 0 && p < 1) { c.beginPath(); c.arc(x, y, 8 + 44 * E.o3(p), 0, TAU); c.lineWidth = 3; c.strokeStyle = rgba(C.white, 0.7 * (1 - p)); c.stroke(); } }
-function sel(c, x, y, w, h, label, open) { rr(c, x, y, w, h, 10); c.fillStyle = '#101013'; c.fill(); c.lineWidth = 1.5; c.strokeStyle = open ? C.blue : '#3c3c44'; c.stroke(); tx(c, label, x + 20, y + h / 2 + 8, 24, 400, 'u', C.ink); tx(c, '⌄', x + w - 28, y + h / 2 + 8, 22, 500, 'u', C.ink2, 'center'); }
+function sel(c, x, y, w, h, label, open, fs = 24) { rr(c, x, y, w, h, 10); c.fillStyle = '#101013'; c.fill(); c.lineWidth = 1.5; c.strokeStyle = open ? C.blue : '#3c3c44'; c.stroke(); tx(c, label, x + 20, y + h / 2 + 8, fs, 400, 'u', C.ink); tx(c, '⌄', x + w - 28, y + h / 2 + 8, 22, 500, 'u', C.ink2, 'center'); }
 function fld(c, s, x, y) { tx(c, s, x, y, 18, 500, 'u', C.ink2); }
 function chipSel(c, s, x, y, on, size = 20) { sf(c, size, 500, 'u'); const w = c.measureText(s).width + 30; rr(c, x, y, w, 40, 20); c.fillStyle = on ? rgba(C.blue, 0.16) : 'transparent'; c.fill(); c.lineWidth = 1.5; c.strokeStyle = on ? C.blue : '#3c3c44'; c.stroke(); tx(c, s, x + 15, y + 27, size, 500, 'u', on ? '#8db4ff' : C.ink2); return w + 10; }
-const TMW = { x: 520, y: 140, w: 880, h: 810 };
+const TMW = { x: 520, y: 170, w: 880, h: 790 };
 function modalContent(c, T) {
   const a = bt(13), ty = P(T, bt(13.58), bt(13.7)), op = T >= bt(13.28) && T < bt(13.58);
   c.fillStyle = '#16161a'; c.fillRect(0, 0, 880, 810);
@@ -1175,26 +1185,26 @@ function taskModal(T) {
   X.save(); X.fillStyle = `rgba(0,0,0,${0.55 * pin * (1 - po)})`; X.fillRect(0, 0, W, H);
   X.globalAlpha = al; X.shadowColor = 'rgba(0,0,0,0.65)'; X.shadowBlur = 70; X.shadowOffsetY = 26; rr(X, R.x, R.y, R.w, R.h, 20); X.fillStyle = '#16161a'; X.fill(); X.shadowColor = 'transparent'; X.shadowBlur = 0; X.shadowOffsetY = 0; X.lineWidth = 1.5; X.strokeStyle = '#34343a'; X.stroke();
   X.save(); rr(X, R.x, R.y, R.w, R.h, 20); X.clip(); X.translate(R.x, R.y); X.scale(R.w / 880, R.h / 810); modalContent(X, T); X.restore();
-  const [cx, cy] = cpath(T, [[a, 1300, 300], [bt(13.2), 700, 514], [bt(13.42), 700, 514], [bt(13.56), 700, 740], [bt(13.8), 1100, 560]]);
-  ripple(X, 700, 514, T, bt(13.24)); ripple(X, 700, 740, T, bt(13.58));
+  const [cx, cy] = cpath(T, [[a, 1300, 300], [bt(13.2), 700, 535], [bt(13.42), 700, 535], [bt(13.56), 700, 755], [bt(13.8), 1100, 560]], true);
+  ripple(X, 700, 535, T, bt(13.24)); ripple(X, 700, 755, T, bt(13.58));
   if (T < bt(13.8)) cursor(X, cx, cy, 1.6, T > bt(13.58) && T < bt(13.64) ? 1 : 0);
   X.restore();
-  rise(X, 'A profile per task type.', 960, 88, 52, 800, 'd', C.ink, T, bt(13.05), { al: 'center', st: 0.012, t1: bt(13.85), tr: -1.5, ost: 0.004, odur: 0.1 });
+  rise(X, 'A profile per task type.', 960, 108, 52, 800, 'd', C.ink, T, bt(13.05), { al: 'center', st: 0.012, t1: bt(13.85), tr: -1.5, ost: 0.004, odur: 0.1 });
 }
 function pill(c, s, x, y, size, col) { sf(c, size, 600, 'u'); const w = c.measureText(s).width + size * 1.1; rr(c, x, y - size * 1.15, w, size * 1.7, size * 0.85); c.fillStyle = rgba(col, 0.14); c.fill(); c.lineWidth = 1.5; c.strokeStyle = rgba(col, 0.5); c.stroke(); tx(c, s, x + size * 0.55, y, size, 600, 'u', col); return w; }
 function fwin(T, k, z0, z1, fn, cap, capT) {
-  const s = bt(26 + k), u = P(T, s, s + BEAT);
+  const s = bt(26 + k), u0 = P(T, s, s + BEAT), u = TEASER ? 0.7 + 0.3 * u0 : u0;
   if (T < s || T >= s + BEAT) return;
-  const z = lerp(z0, z1, E.o2(u)), a = E.o4(P(T, s, s + 0.05));
+  const z = lerp(z0, z1, E.o2(u0)), a = E.o4(P(T, s, s + (TEASER ? 0.03 : 0.12 / stretch(s))));
   X.save(); X.globalAlpha = a; X.translate(960, 540); X.scale(z, z); X.translate(-960, -540);
   X.shadowColor = 'rgba(0,0,0,0.6)'; X.shadowBlur = 60; X.shadowOffsetY = 24; drawWin(X, REV, 0); X.shadowColor = 'transparent'; X.shadowBlur = 0; X.shadowOffsetY = 0;
-  X.save(); rr(X, REV.x, REV.y, REV.w, REV.h, 18); X.clip(); X.translate(REV.x, REV.y); fn(X, u, T, s); X.restore(); X.restore();
-  rise(X, cap, 960, 80, 52, 800, 'd', C.ink, T, s + capT, { al: 'center', st: 0.012, tr: -1.5, t1: 1e9 });
+  X.save(); rr(X, REV.x, REV.y, REV.w, REV.h, 18); X.clip(); X.translate(REV.x, REV.y); X.scale(REV.w / 1600, REV.h / 880); fn(X, u, T, s); X.restore(); X.restore();
+  rise(X, cap, 960, 108, 52, 800, 'd', C.ink, T, s + capT, { al: 'center', st: 0.012, tr: -1.5, t1: 1e9 });
   const mk = Math.min(1, T - s > 0.3 ? 1 : 0);
 }
 const NTA = 'Ask Sam whether the backoff cap should be 30 s or 60 s';
 function notesScene(T) {
-  fwin(T, 0, 1.0, 1.05, (c, u, T, s) => {
+  fwin(T, 0, 1.0, 1.02, (c, u, T, s) => {
     HOPT.note = u > 0.2 ? 2 : u > 0.1 ? 1 : 0; HOPT.sp = 1; HOPT.full = true; HOPT.rec = 0; hostsWin(c, 'local'); HOPT.note = 0;
     const po = E.o5(P(u, 0.2, 0.34)), land = E.o4(P(u, 0.76, 0.9)), ix = 376, iy = 300;
     if (po > 0) {
@@ -1218,7 +1228,7 @@ function notesScene(T) {
   }, 'Sticky notes.', 0.0);
 }
 function recordScene(T) {
-  fwin(T, 1, 1.0, 1.05, (c, u, T, s) => {
+  fwin(T, 1, 1.0, 1.02, (c, u, T, s) => {
     const st = P(u, 0.2, 0.26), rec = u > 0.24 && u < 0.78 ? (u - 0.24) / 0.54 : 0, nA = u < 0.34 ? 0 : u < 0.46 ? 1 : u < 0.58 ? 2 : u < 0.66 ? 3 : 4;
     HOPT.sp = 1; HOPT.full = true; HOPT.note = 0; HOPT.rec = rec; HOPT.count = nA; hostsWin(c, 'local'); HOPT.rec = 0;
     if (u > 0.78) { c.fillStyle = 'rgba(0,0,0,0.5)'; c.fillRect(0, 0, 1600, 880); }
@@ -1234,7 +1244,7 @@ function recordScene(T) {
     }
     if (rec > 0) {
       const lg = [['00:01', 'click', 'Tasks', 0.34], ['00:02', 'shortcut', 'Ctrl+P', 0.46], ['00:03', 'view', 'Review', 0.58], ['00:04', 'typed', 'in Terminal · content not logged', 0.66]];
-      const px = 1140, py = 140; rr(c, px, py, 440, 330, 16); c.fillStyle = '#17171b'; c.fill(); c.lineWidth = 1.5; c.strokeStyle = '#3c3c44'; c.stroke(); tx(c, 'ACTIONS', px + 24, py + 44, 16, 700, 'm', C.ink2, 'left', 3);
+      c.fillStyle = '#101012'; c.fillRect(1131, 69, 469, 811); c.fillStyle = '#34343a'; c.fillRect(1131, 69, 1, 811); const px = 1140, py = 96; tx(c, 'ACTIONS', px + 24, py + 44, 16, 700, 'm', C.ink2, 'left', 3);
       lg.forEach(([tm, k, d, ts], i) => { const p = E.o4(P(u, ts, ts + 0.06)); if (p <= 0) return; c.save(); c.globalAlpha = p; c.translate((1 - p) * 40, 0); const yy = py + 66 + i * 62; rr(c, px + 16, yy, 408, 52, 10); c.fillStyle = k === 'typed' ? rgba(C.amber, 0.1) : '#101013'; c.fill(); tx(c, tm, px + 32, yy + 33, 17, 400, 'm', C.ink2); pill(c, k, px + 100, yy + 33, 17, k === 'click' ? C.blue : k === 'shortcut' ? C.purple : k === 'view' ? C.green : C.amber); tx(c, d, px + (k === 'typed' ? 192 : 222), yy + 33, 17, 400, 'u', C.ink, 'left'); c.restore(); });
     }
     const cps = [[0, 900, 700], [0.14, 1010, 640], [0.22, 1010, 640], [0.30, 160, 130], [0.34, 160, 130], [0.44, 700, 40], [0.5, 700, 40], [0.56, 100, 200], [0.6, 100, 200], [0.66, 560, 660], [0.72, 1260, 40], [0.78, 1260, 40]];
@@ -1243,7 +1253,7 @@ function recordScene(T) {
     if (u > 0.66 && u < 0.78) { const n = Math.floor(14 * (u - 0.66) / 0.1); tx(c, '$ ' + 'git push origin'.slice(0, n), 500, 760, 22, 400, 'm', C.ink); }
     const sh = E.o4(P(u, 0.78, 0.9));
     if (sh > 0) {
-      c.save(); c.translate((1 - sh) * 500, 0); const x = 880, y = 110, w = 680, h = 680; c.shadowColor = 'rgba(0,0,0,0.6)'; c.shadowBlur = 50; rr(c, x, y, w, h, 20); c.fillStyle = '#1b1b20'; c.fill(); c.shadowColor = 'transparent'; c.shadowBlur = 0; c.lineWidth = 1.5; c.strokeStyle = '#3c3c44'; c.stroke();
+      c.save(); c.translate((1 - sh) * 500, 0); const x = 880, y = 80, w = 680, h = 690; c.shadowColor = 'rgba(0,0,0,0.6)'; c.shadowBlur = 50; rr(c, x, y, w, h, 20); c.fillStyle = '#1b1b20'; c.fill(); c.shadowColor = 'transparent'; c.shadowBlur = 0; c.lineWidth = 1.5; c.strokeStyle = '#3c3c44'; c.stroke();
       tx(c, 'Send feedback', x + 32, y + 56, 30, 700, 'u', C.ink); ['Bug', 'Idea', 'Other'].forEach((s, i) => { sf(c, 20, 500, 'u'); rr(c, x + 32 + i * 110, y + 84, 98, 44, 10); c.fillStyle = i ? 'transparent' : rgba(C.blue, 0.16); c.fill(); c.lineWidth = 1.5; c.strokeStyle = i ? '#3c3c44' : C.blue; c.stroke(); tx(c, s, x + 81 + i * 110, y + 114, 20, 500, 'u', i ? C.ink2 : '#8db4ff', 'center'); });
       tx(c, 'Title', x + 32, y + 176, 18, 500, 'u', C.ink2); rr(c, x + 32, y + 190, w - 64, 56, 10); c.fillStyle = '#101013'; c.fill(); c.strokeStyle = '#3c3c44'; c.stroke(); tx(c, 'Review is empty after a reconnect', x + 52, y + 228, 24, 500, 'u', C.ink);
       rr(c, x + 32, y + 280, w - 64, 100, 12); c.fillStyle = '#101013'; c.fill(); c.stroke(); tx(c, '▶', x + 62, y + 342, 30, 400, 'u', C.red); tx(c, 'Recording', x + 108, y + 326, 24, 600, 'u', C.ink); tx(c, '0:04 · screen + actions', x + 108, y + 358, 18, 400, 'm', C.ink2); pill(c, 'Replay', x + w - 190, y + 340, 18, C.blue);
@@ -1253,7 +1263,7 @@ function recordScene(T) {
   }, 'Record a bug.', 0.0);
 }
 function installScene(T) {
-  fwin(T, 2, 1.0, 1.05, (c, u, T, s) => {
+  fwin(T, 2, 1.0, 1.02, (c, u, T, s) => {
     HOPT.sp = 1; HOPT.full = true; HOPT.note = 0; HOPT.rec = 0; hostsWin(c, 'local');
     rr(c, 22, 18, 34, 34, 8); c.fillStyle = P(u, 0.1, 0.14) > 0 && u < 0.7 ? '#2a2a31' : 'transparent'; c.fill(); c.lineWidth = 2.5; c.strokeStyle = C.ink; c.beginPath(); c.moveTo(39, 26); c.lineTo(39, 44); c.moveTo(30, 35); c.lineTo(48, 35); c.stroke();
     const mo = E.o5(P(u, 0.12, 0.22)), mc = 1 - E.o3(P(u, 0.4, 0.46)), mb = E.o5(P(u, 0.74, 0.8)), fold = E.o4(P(u, 0.26, 0.34)), inst = P(u, 0.7, 0.8), lnd = E.oB(P(u, 0.76, 0.86), 1.6);
@@ -1268,7 +1278,7 @@ function installScene(T) {
       tx(c, '›', x + 34, ny + 38, 26, 500, 'u', C.ink2, 'center'); c.save(); c.translate(x + 34, ny + 28); c.rotate(Math.PI / 2 * fold * (withViba ? 0 : 1)); c.translate(-(x + 34), -(ny + 28)); c.restore();
       tx(c, `Not installed (${nf})`, x + 76, ny + 38, 24, 500, 'u', C.ink);
       if (!withViba && fold > 0.02) [['opencode', SCOL[4], '◇'], ['Amp', SCOL[5], '↯'], ['Mistral Vibe', SCOL[8], '▦']].forEach(([n, col, g], i) => { c.save(); c.globalAlpha *= fold; const yy = ny + 62 + i * 58 * fold; const hv = i === 2 && u > 0.36; if (hv) { rr(c, x + 8, yy - 2, w - 16, 54, 10); c.fillStyle = '#2a2a33'; c.fill(); } avatar(c, x + 60, yy + 25, 16, col, g); tx(c, n, x + 96, yy + 34, 23, 500, 'u', C.ink2); tx(c, 'Install', x + w - 28, yy + 33, 17, 600, 'u', hv ? '#8db4ff' : C.ink3, 'right'); c.restore(); });
-      const by = ny + 70 + fh; tx(c, 'Next session', x + 24, by + 44, 18, 400, 'u', C.ink2); sel(c, x + 190, by + 12, 286, 50, 'Default (CLI defaults)', false);
+      const by = ny + 70 + fh; tx(c, 'Next session', x + 24, by + 44, 18, 400, 'u', C.ink2); sel(c, x + 170, by + 12, 310, 50, 'Default (CLI defaults)', false, 20);
       c.restore();
     };
     if (mc > 0.01 && u > 0.12) menu(mo * (u < 0.44 ? mc : 0), false);
@@ -1388,21 +1398,21 @@ function renderFrame(i, samples = 1) {
   O.setTransform(1, 0, 0, 1, 0, 0); O.globalAlpha = 1; O.globalCompositeOperation = 'source-over';
   O.fillStyle = C.bg; O.fillRect(0, 0, W, H);
   for (let s = 0; s < samples; s++) {
-    const t = clamp(samples > 1 ? t0 + ((s + 0.5) / samples - 0.5) * SHUTTER / FPS : t0, 0, DUR - 1e-4) * K;
+    const t = sceneAt(clamp(samples > 1 ? t0 + ((s + 0.5) / samples - 0.5) * SHUTTER / FPS : t0, 0, DUR - 1e-4));
     drawAll(t);
     const k = shake(t);
     O.save(); O.globalAlpha = 1 / (s + 1);
     O.translate(960 + k.x, 540 + k.y); O.rotate(k.r); O.scale(k.z, k.z); O.translate(-960, -540);
     O.drawImage(SC, 0, 0); O.restore();
   }
-  hud(O, t0 * K, t0);
+  hud(O, sceneAt(t0), t0);
   O.save();
   O.fillStyle = VIG; O.fillRect(0, 0, W, H);
-  const ab = aberrAmt(t0 * K);
+  const ab = aberrAmt(sceneAt(t0));
   if (ab > 0.4) aberr(ab);
   O.globalCompositeOperation = 'overlay'; O.globalAlpha = 0.07; O.fillStyle = GR[i % GR.length]; O.fillRect(0, 0, W, H);
   O.globalCompositeOperation = 'source-over';
-  const f = P(t0 * K, 14.8, 14.97);
+  const f = P(sceneAt(t0), 14.8, 14.97);
   if (f > 0) { O.globalAlpha = E.io2(f); O.fillStyle = C.bg; O.fillRect(0, 0, W, H); }
   O.restore();
 }
@@ -1416,7 +1426,7 @@ window.reel = { ready, fps: FPS, duration: DUR, width: W, height: H, frame(i, sa
 
 const pp = document.getElementById('pp'), sk = document.getElementById('sk'), tcl = document.getElementById('tc'), alt = document.getElementById('alt');
 sk.max = DUR * FPS - 1;
-if (DUR === 30) { alt.href = 'reel.html'; alt.textContent = '15 s cut'; }
+if (DUR === 45) { alt.href = 'reel.html'; alt.textContent = '15 s cut'; }
 let playing = false, start = 0, cur = clamp(parseFloat(Q.get('t')) || 0, 0, DUR - 1 / FPS);
 function show() { const i = Math.min(DUR * FPS - 1, Math.floor(cur * FPS)); renderFrame(i, 1); sk.value = i; tcl.textContent = `${cur.toFixed(2)} s`; }
 function tick(now) { if (!playing) return; cur = ((now - start) / 1000) % DUR; show(); requestAnimationFrame(tick); }
