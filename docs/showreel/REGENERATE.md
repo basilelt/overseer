@@ -33,7 +33,7 @@ Do not start a render, or any other part of the work, while you wait for the ans
 
 ## Regenerating
 
-1. Update the scenes in `reel.html` to show the app as it now is. Keep every frame a pure function of time on the 128 BPM grid, and both cuts in sync (`reel.html?d=30` plays every event at twice its time). If a view changed, copy the new screenshot from `app/docs/screenshots/` into `shots/`.
+1. Update the scenes in `reel.html` to show the app as it now is. Keep every frame a pure function of time on the 128 BPM grid, and both cuts in sync (`reel.html?d=30` plays every event at twice its time). If a view changed, redraw it in code after the app's real look (wording from `app/src/lib/i18n/en.ts`); the reel contains no screenshots.
 2. If cue times moved, move the matching events in `audio.mjs` and rebuild both soundtracks.
 3. Check stills or a contact sheet at every scene change of both cuts (commands in [README.md](README.md)).
 4. Commit the sources on the branch; the videos and the poster are not committed. Run Actions > Pages on the branch and watch both cuts from its artifacts. When the PR merges into `next`, the Pages workflow renders them again (or reuses the cache) and deploys the site.
