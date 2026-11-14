@@ -11,7 +11,7 @@ import panelSrc from '../panel/SidePanel.svelte?raw';
 const SAME = { needs_input: 'attention', running: 'running', ready: 'open', paused: 'paused', stopped: 'closed' } as const;
 
 describe('one palette for session states', () => {
-  it('colours the tab, phone chip, title bar and group dots like the session row', () => {
+  it('colours the group dots of plain states like the session row', () => {
     for (const [group, state] of Object.entries(SAME)) expect(GROUP_COLOR[group as keyof typeof SAME]).toBe(STATE_COLOR[state]);
   });
 
