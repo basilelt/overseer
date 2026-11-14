@@ -26,6 +26,13 @@ check "binary honours CARGO_TARGET_DIR" "$work/tgt/debug/overseer" \
   "$(CARGO_TARGET_DIR="$work/tgt" "$root/scripts/qa/sandbox.sh" bin)"
 check "desktop binary honours CARGO_TARGET_DIR" "$work/tgt/debug/overseer-app" \
   "$(CARGO_TARGET_DIR="$work/tgt" "$root/scripts/qa/sandbox.sh" app-bin)"
+check "QA_DIR defaults to the cache dir, never /tmp" "$work/xdg/sbqa" \
+  "$(env -u QA_DIR XDG_CACHE_HOME="$work/xdg" "$root/scripts/qa/sandbox.sh" dir)"
+check "QA_DIR falls back to ~/.cache without XDG_CACHE_HOME" "$work/h/.cache/sbqa" \
+  "$(env -u QA_DIR -u XDG_CACHE_HOME HOME="$work/h" "$root/scripts/qa/sandbox.sh" dir)"
+check "QA_DIR overrides the default" "$work/qa" "$(QA_DIR="$work/qa" "$root/scripts/qa/sandbox.sh" dir)"
+check "drive.py defaults to the same dir" "$work/xdg/sbqa" \
+  "$(cd "$root/scripts/qa" && env -u QA_DIR XDG_CACHE_HOME="$work/xdg" python3 -c 'import sys, types; sys.modules["playwright"] = types.ModuleType("playwright"); m = types.ModuleType("playwright.sync_api"); m.sync_playwright = None; sys.modules["playwright.sync_api"] = m; import drive; print(drive.D)')"
 check "QA_DISPLAY accepts a bare number" 97 "$(QA_DISPLAY=97 "$root/scripts/qa/sandbox.sh" display)"
 check "QA_DISPLAY accepts a leading colon" 97 "$(QA_DISPLAY=:97 "$root/scripts/qa/sandbox.sh" display)"
 check "daemon PATH has the stubs first and Homebrew when present" "$root/tests/stubs" \

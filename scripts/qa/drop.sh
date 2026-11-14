@@ -2,7 +2,7 @@
 set -eu
 [ $# -ge 3 ] || { echo "usage: $0 X Y FILE... (drags FILE from a native GTK source onto X,Y of the sandbox desktop app)" >&2; exit 2; }
 R=$(cd "${0%/*}/../.." && pwd)
-D=${QA_DIR:-/tmp/sbqa}
+D=${QA_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/sbqa}
 x=$1 y=$2
 shift 2
 export DISPLAY=":$("$R/scripts/qa/sandbox.sh" display)"
