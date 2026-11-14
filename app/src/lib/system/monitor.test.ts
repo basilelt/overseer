@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { DaemonError } from '../client';
+import { DaemonError } from '../daemon/client';
 import { CHIP_MS, RETRY_MS, SystemMonitor, pageVisible } from './monitor.svelte';
 import { mockSystem } from './mock';
 

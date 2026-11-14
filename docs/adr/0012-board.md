@@ -50,7 +50,7 @@ Numbered 0012 because `main` already has a second 0009 (`api-and-sync`); the mer
   is shared by all worktrees of a repository.
 - **Destructive actions** (resume, hold, close, commit, stash) always run the dry run first and
   confirm in a dialog; refusals show the failed predicates and their detail.
-- **Resume from the Board** uses the daemon's resume (ADR 0011): it relaunches in the held
+- **Resume from the Board** uses the daemon's resume (ADR 0015): it relaunches in the held
   line's stub pane, or in a new tmux session when the daemon runs with `OVERSEER_TMUX_SOCKET`;
   otherwise it refuses ("no tmux available to the daemon") and the page shows the command to run
   in a terminal.

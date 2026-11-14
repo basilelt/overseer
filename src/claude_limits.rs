@@ -69,7 +69,8 @@ pub fn read_creds(claude_dir: &Path) -> Option<Creds> {
 
 /// Claude Code keeps the keychain login under one fixed name only for `~/.claude`.
 fn keychain_applies(claude_dir: &Path) -> bool {
-    claude_dir == crate::home().join(".claude")
+    crate::agents::get(crate::agents::CLAUDE).and_then(|a| a.default_config_dir())
+        == Some(claude_dir.to_path_buf())
 }
 
 #[cfg(target_os = "macos")]
@@ -165,6 +166,7 @@ pub fn outcome(
                 at: now,
                 windows,
                 plan: c.plan,
+                ..Limits::default()
             }),
             None => Outcome::Failed(Auth::Unavailable),
         },
@@ -206,7 +208,7 @@ pub fn fetch(t: &Token) -> Option<(u16, Vec<u8>)> {
 }
 
 fn run(mut c: Command, input: Option<Vec<u8>>) -> Option<(bool, Vec<u8>)> {
-    let mut child = crate::git::Watchdog::guard(&mut c)
+    let mut child = crate::exec::Watchdog::guard(&mut c)
         .stdin(if input.is_some() {
             Stdio::piped()
         } else {
@@ -216,7 +218,7 @@ fn run(mut c: Command, input: Option<Vec<u8>>) -> Option<(bool, Vec<u8>)> {
         .stderr(Stdio::null())
         .spawn()
         .ok()?;
-    let dog = crate::git::Watchdog::start(child.id(), TIMEOUT + Duration::from_secs(1));
+    let dog = crate::exec::Watchdog::start(child.id(), TIMEOUT + Duration::from_secs(1));
     if let (Some(mut stdin), Some(data)) = (child.stdin.take(), input) {
         let _ = stdin.write_all(&data);
     }
@@ -248,10 +250,7 @@ mod tests {
 
     #[test]
     fn keychain_is_only_read_for_the_default_claude_dir() {
-        // Given the default Claude dir and a custom one
         let home = crate::home();
-        // When asking whether the shared keychain item applies
-        // Then only the default dir may use it, so tests and custom dirs never read the host login
         assert!(keychain_applies(&home.join(".claude")));
         assert!(!keychain_applies(Path::new("/tmp/custom-claude")));
     }

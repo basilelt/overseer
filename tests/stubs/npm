@@ -1,0 +1,4 @@
+#!/bin/sh
+echo "$$ npm $*" >> "${SB_STUB_LOG:?}"
+[ -n "${SB_NPM_FAIL:-}" ] && { echo "npm ERR! stub failure"; exit 1; }
+echo "added 1 package (stub)"

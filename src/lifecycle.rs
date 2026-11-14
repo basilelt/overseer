@@ -1,4 +1,5 @@
 use crate::autostart;
+use crate::http::err;
 use crate::registry::Registry;
 use crate::term::Info;
 use crate::Line;
@@ -54,6 +55,46 @@ pub struct Saved {
     pub task_id: Option<String>,
     pub workspace_id: Option<String>,
     pub title_override: Option<String>,
+    pub profile: Option<crate::profiles::Chip>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub launch: Vec<String>,
+}
+
+impl From<&Info> for Saved {
+    fn from(i: &Info) -> Self {
+        Self {
+            id: i.id.clone(),
+            cwd: i.cwd.clone(),
+            title: i.title.clone(),
+            cols: i.cols,
+            rows: i.rows,
+            agent: i.agent.clone(),
+            session: i.session.clone(),
+            flags: i.flags.clone(),
+            line_id: i.line_id.clone(),
+            task_id: i.task_id.clone(),
+            workspace_id: i.workspace_id.clone(),
+            title_override: i.title_override.clone(),
+            profile: i.profile.clone(),
+            launch: vec![],
+        }
+    }
+}
+
+fn fresh_launch(cmd: &[String]) -> Vec<String> {
+    let name = cmd
+        .first()
+        .and_then(|c| c.rsplit('/').next())
+        .unwrap_or_default();
+    let agent = crate::agents::get(name).filter(|a| a.coding());
+    let pinned = cmd
+        .iter()
+        .any(|a| a == "--resume" || a == "resume" || a.starts_with("--session-id"));
+    if agent.is_some() && !pinned {
+        cmd.to_vec()
+    } else {
+        vec![]
+    }
 }
 
 #[derive(Debug, PartialEq)]
@@ -70,9 +111,9 @@ pub fn boot_id() -> Option<String> {
             .filter(|s| !s.is_empty());
     }
     if cfg!(target_os = "macos") {
-        let out = crate::git::output_within(
+        let out = crate::exec::output_within(
             std::process::Command::new("sysctl").args(["-n", "kern.boottime"]),
-            crate::git::PROBE_TIMEOUT,
+            crate::exec::PROBE_TIMEOUT,
         )
         .ok()?;
         return parse_boottime(&String::from_utf8_lossy(&out.stdout));
@@ -94,6 +135,10 @@ pub fn is_reboot(stored: Option<&str>, current: Option<&str>) -> bool {
     matches!((stored, current), (Some(a), Some(b)) if a != b)
 }
 
+pub fn is_stub_wrapper(cmd: &[String]) -> bool {
+    cmd.last().is_some_and(|c| c.contains(" stub "))
+}
+
 pub fn snapshot(terms: &[Info], lines: &[Line]) -> Vec<Saved> {
     terms
         .iter()
@@ -104,22 +149,21 @@ pub fn snapshot(terms: &[Info], lines: &[Line]) -> Vec<Saved> {
             let line = lines
                 .iter()
                 .find(|l| l.term_id.as_deref() == Some(i.id.as_str()) && l.alive());
-            if line.is_none() && i.cmd.last().is_some_and(|c| c.contains(" stub ")) {
+            if line.is_none() && is_stub_wrapper(&i.cmd) {
                 return None;
             }
             Some(Saved {
-                id: i.id.clone(),
-                cwd: i.cwd.clone(),
-                title: i.title.clone(),
-                cols: i.cols,
-                rows: i.rows,
                 agent: line.map(|l| l.agent.to_string()),
                 session: line.map(|l| l.session_id.clone()),
                 flags: line.map(|l| l.launch_args.clone()).unwrap_or_default(),
                 line_id: line.map(|l| l.id.clone()).or_else(|| i.line_id.clone()),
-                task_id: i.task_id.clone(),
-                workspace_id: i.workspace_id.clone(),
-                title_override: i.title_override.clone(),
+                profile: line.and(i.profile.clone()),
+                launch: if line.is_none() {
+                    fresh_launch(&i.cmd)
+                } else {
+                    vec![]
+                },
+                ..Saved::from(i)
             })
         })
         .collect()
@@ -144,13 +188,28 @@ pub fn plan(saved: Vec<Saved>, mode: AfterReboot, exists: impl Fn(&str) -> bool)
             }
             _ => None,
         };
+        let fresh = if resume.is_none() && mode == AfterReboot::Agents {
+            s.launch.clone()
+        } else {
+            vec![]
+        };
+        let relaunched = resume.is_none() && !fresh.is_empty();
+        let resume = resume.or_else(|| Some(fresh).filter(|f| !f.is_empty()));
         let mut saved = s;
+        saved.launch = vec![];
         if resume.is_none() {
             saved.agent = None;
             saved.session = None;
             saved.flags = vec![];
             saved.line_id = None;
             saved.task_id = None;
+            saved.profile = None;
+        } else if relaunched {
+            saved.agent = None;
+            saved.session = None;
+            saved.flags = vec![];
+            saved.line_id = None;
+            saved.profile = None;
         }
         out.push(Restore {
             cmd: resume.unwrap_or_default(),
@@ -199,7 +258,7 @@ pub fn on_start(state_dir: &Path, takeover: bool) {
         let s = r.saved;
         let agent = s.agent.as_deref().and_then(crate::agents::get);
         let applied = agent
-            .map(|a| crate::profiles::for_resume(state_dir, a, &s.cwd))
+            .map(|a| crate::profiles::for_restore(state_dir, a, &s.cwd, s.profile.as_ref()))
             .unwrap_or_default();
         let spawned = crate::term::spawn(crate::term::Spec {
             id: Some(s.id.clone()),
@@ -270,20 +329,17 @@ pub fn routes(method: &str, segs: &[&str], body: &Value, state_dir: &Path) -> Op
     }
     let reg = match Registry::open(state_dir) {
         Ok(r) => r,
-        Err(e) => return Some((500, json!({"error": e}))),
+        Err(e) => return Some(err(500, e)),
     };
     match method {
         "GET" => Some((200, payload(state_dir, &reg))),
         "PATCH" => {
             if let Some(v) = body.get("afterReboot") {
                 let Some(m) = v.as_str().and_then(AfterReboot::parse) else {
-                    return Some((
-                        400,
-                        json!({"error": "afterReboot must be agents, shells or nothing"}),
-                    ));
+                    return Some(err(400, "afterReboot must be agents, shells or nothing"));
                 };
                 if let Err(e) = reg.put(AFTER_KEY, m.as_str()) {
-                    return Some((500, json!({"error": e})));
+                    return Some(err(500, e));
                 }
             }
             let env = autostart::Env::current(state_dir);
@@ -309,6 +365,95 @@ pub fn routes(method: &str, segs: &[&str], body: &Value, state_dir: &Path) -> Op
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    const FULL_SAVED: &str = r#"{"id":"t","cwd":"/w","title":"T","cols":80,"rows":24,"agent":"claude","session":"s","flags":["--x"],"lineId":"l","taskId":"k","workspaceId":"w1","titleOverride":"O","profile":{"id":"p1","name":"Fast","model":"m","effort":"high"}}"#;
+
+    #[test]
+    fn saved_json_is_pinned() {
+        let sv = Saved {
+            id: "t".into(),
+            cwd: "/w".into(),
+            title: "T".into(),
+            cols: 80,
+            rows: 24,
+            agent: Some("claude".into()),
+            session: Some("s".into()),
+            flags: vec!["--x".into()],
+            line_id: Some("l".into()),
+            task_id: Some("k".into()),
+            workspace_id: Some("w1".into()),
+            title_override: Some("O".into()),
+            profile: Some(crate::profiles::Chip {
+                id: "p1".into(),
+                name: "Fast".into(),
+                model: "m".into(),
+                effort: "high".into(),
+            }),
+            launch: vec![],
+        };
+        let want: serde_json::Value = serde_json::from_str(FULL_SAVED).unwrap();
+        assert_eq!(serde_json::to_value(&sv).unwrap(), want);
+        assert_eq!(serde_json::from_str::<Saved>(FULL_SAVED).unwrap(), sv);
+    }
+
+    #[test]
+    fn an_agent_that_never_started_a_turn_comes_back_as_a_fresh_agent() {
+        let terms = [
+            info("t1", &["codex"], false),
+            info("t2", &["/usr/bin/codex", "--no-daemon"], false),
+            info("t3", &["claude", "--session-id", "s9"], false),
+            info("t4", &["codex", "resume", "x"], false),
+            info("t5", &["zsh"], false),
+        ];
+        let saved = snapshot(&terms, &[]);
+        let all = plan(saved.clone(), AfterReboot::Agents, |_| true);
+        assert_eq!(all[0].cmd, ["codex"]);
+        assert_eq!(all[1].cmd, ["/usr/bin/codex", "--no-daemon"]);
+        assert!(
+            all[2].cmd.is_empty(),
+            "a pinned session id is not started twice"
+        );
+        assert!(all[3].cmd.is_empty());
+        assert!(all[4].cmd.is_empty(), "a shell stays a shell");
+        assert!(all[0].saved.launch.is_empty() && all[0].saved.agent.is_none());
+        let mut tasked = saved[0].clone();
+        tasked.task_id = Some("task-1".into());
+        let kept = plan(vec![tasked.clone()], AfterReboot::Agents, |_| true);
+        assert_eq!(
+            kept[0].saved.task_id.as_deref(),
+            Some("task-1"),
+            "a relaunched agent keeps its task"
+        );
+        tasked.launch = vec![];
+        let dropped = plan(vec![tasked], AfterReboot::Agents, |_| true);
+        assert_eq!(
+            dropped[0].saved.task_id, None,
+            "a shell restored in its place does not claim the task"
+        );
+        let shells = plan(saved, AfterReboot::Shells, |_| true);
+        assert!(
+            shells.iter().all(|r| r.cmd.is_empty()),
+            "shells only restores shells"
+        );
+        let json = serde_json::to_string(&snapshot(&terms[..1], &[])).unwrap();
+        assert!(json.contains(r#""launch":["codex"]"#));
+        let line_json = serde_json::to_string(&snapshot(&terms[4..], &[])).unwrap();
+        assert!(!line_json.contains("launch"));
+    }
+
+    #[test]
+    fn saved_minimal_json_takes_defaults() {
+        let sv: Saved = serde_json::from_str(r#"{"id":"t","cwd":"/w"}"#).unwrap();
+        assert_eq!(
+            sv,
+            Saved {
+                id: "t".into(),
+                cwd: "/w".into(),
+                ..Default::default()
+            }
+        );
+        assert!(sv.flags.is_empty() && sv.agent.is_none() && sv.cols == 0);
+    }
 
     fn info(id: &str, cmd: &[&str], exited: bool) -> Info {
         Info {
@@ -342,7 +487,11 @@ mod tests {
             session_id: sid.into(),
             term_id: Some(term.into()),
             pid: alive.then_some(42),
-            state: if alive { "active" } else { "idle" },
+            state: if alive {
+                crate::wire::STATE_ACTIVE
+            } else {
+                crate::wire::STATE_IDLE
+            },
             launch_args: vec!["--model".into(), "opus".into()],
             ..Default::default()
         }
@@ -388,7 +537,17 @@ mod tests {
         let mut terms = terms;
         terms[1].workspace_id = Some("w1".into());
         terms[1].title_override = Some("build".into());
+        let chip = crate::profiles::Chip {
+            id: "economy".into(),
+            name: "Economy".into(),
+            model: "sonnet".into(),
+            effort: "low".into(),
+        };
+        terms[0].profile = Some(chip.clone());
+        terms[1].profile = Some(chip.clone());
         let s = snapshot(&terms, &lines);
+        assert_eq!(s[0].profile, Some(chip), "the agent keeps its profile chip");
+        assert_eq!(s[1].profile, None, "a shell left by the agent has no chip");
         assert_eq!(
             s.iter().map(|x| x.id.as_str()).collect::<Vec<_>>(),
             ["t1", "t2", "t5", "t6"]
@@ -459,6 +618,15 @@ mod tests {
             Vec::<String>::new(),
             "shells start the login shell"
         );
+        let mut shell = saved[1].clone();
+        shell.profile = Some(crate::profiles::Chip::default());
+        assert_eq!(
+            plan(vec![shell], AfterReboot::Agents, exists)[0]
+                .saved
+                .profile,
+            None,
+            "a term restored as a shell drops the chip"
+        );
         let shells = plan(saved.clone(), AfterReboot::Shells, exists);
         assert_eq!(shells.len(), 1);
         assert_eq!(shells[0].saved.id, "t2");
@@ -470,7 +638,7 @@ mod tests {
         let d = std::env::temp_dir().join(format!(
             "sb-lifecycle-{}-{}",
             std::process::id(),
-            crate::procs::now_ms()
+            crate::util::now_ms()
         ));
         std::fs::create_dir_all(&d).unwrap();
         let reg = Registry::open(&d).unwrap();

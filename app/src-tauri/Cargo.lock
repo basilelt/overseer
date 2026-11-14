@@ -3282,13 +3282,16 @@ dependencies = [
 
 [[package]]
 name = "overseer-app"
-version = "0.35.0"
+version = "0.36.0"
 dependencies = [
  "android-native-keyring-store",
  "apple-native-keyring-store",
+ "base64 0.22.1",
  "dirs",
  "futures-util",
+ "gtk",
  "keyring-core",
+ "minisign-verify",
  "objc2",
  "objc2-foundation",
  "objc2-web-kit",

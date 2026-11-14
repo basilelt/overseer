@@ -1,12 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'svelte/server';
-import { DaemonError, setClient } from './client';
-import { MockDaemon } from './mock';
+import { DaemonError, setClient } from './daemon/client';
+import { MockDaemon } from './daemon/mock';
 import { app } from './state.svelte';
 import { applyUninstall, canQuit, planUninstall, quitApp, resetUninstall, uninstall } from './uninstall.svelte';
 import UninstallDialog from './components/overlays/UninstallDialog.svelte';
 import ServerSettings from './components/overlays/ServerSettings.svelte';
 import type { ConnState, HostTarget, UninstallReport } from './types';
+import { quietMock } from '../test/quiet-mock';
 
 class Daemon extends MockDaemon {
   calls: { path: string; body: unknown }[] = [];
@@ -30,7 +31,7 @@ const clean = () => Object.assign(uninstall, { phase: 'idle', report: null, erro
 
 describe('MockDaemon uninstall route', () => {
   it('stays a dry run unless dryRun is exactly false', async () => {
-    const m = new MockDaemon({ live: false, delayMs: 0 });
+    const m = quietMock();
     for (const body of [undefined, {}, { dryRun: true }, { dryRun: 'false' }, { dryRun: 0 }]) {
       expect((await m.request<UninstallReport>('POST', '/v1/uninstall', body)).dryRun).toBe(true);
     }
@@ -38,7 +39,7 @@ describe('MockDaemon uninstall route', () => {
   });
 
   it('lists removed items and what it keeps with a reason', async () => {
-    const m = new MockDaemon({ live: false, delayMs: 0 });
+    const m = quietMock();
     const r = await m.request<UninstallReport>('POST', '/v1/uninstall', {});
     expect(r.removed.map((i) => i.kind)).toContain('hook');
     expect(r.kept[0]).toMatchObject({ kind: 'worktree', reason: expect.any(String) });
@@ -59,8 +60,6 @@ describe('uninstall flow', () => {
 
   afterEach(async () => {
     clean();
-    vi.unstubAllGlobals();
-    vi.restoreAllMocks();
     await app.disconnect();
   });
 
@@ -179,6 +178,20 @@ describe('uninstall dialog', () => {
     expect(h).toContain('uncommitted changes');
     expect(h).toContain('Cancel');
     expect(h).toContain('>Remove Overseer<');
+  });
+
+  it('labels the lid keep-awake row and its refused admin prompt', () => {
+    uninstall.phase = 'confirm';
+    uninstall.report = {
+      dryRun: true,
+      removed: [{ kind: 'power', path: 'pmset -a disablesleep 0' }],
+      kept: [],
+      errors: [{ kind: 'power', path: 'powercfg lid close action', error: 'User canceled. (-128)' }],
+    };
+    const h = html();
+    expect(h).toContain('Lid keep-awake');
+    expect(h).toContain('pmset -a disablesleep 0');
+    expect(h).toContain('User canceled. (-128)');
   });
 
   it('shows the result with failures and only a close button', () => {

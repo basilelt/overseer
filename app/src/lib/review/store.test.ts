@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { DaemonError } from '../client';
-import { MockDaemon } from '../mock';
+import { DaemonError } from '../daemon/client';
+import { MockDaemon } from '../daemon/mock';
 import { app } from '../state.svelte';
 import type { DaemonEvent, LocalLine } from '../types';
 import { reviewCounts } from './counts.svelte';
@@ -58,7 +58,6 @@ describe('ReviewStore without a daemon', () => {
     await s.load();
     await s.reloadDiff();
     await s.loadScope();
-    await s.loadGraph('r');
     expect(s.diff).toBeNull();
     expect(s.loading).toBe(false);
     expect(s.error).toBe('');
@@ -168,20 +167,89 @@ describe('ReviewStore loading', () => {
     expect(reload).not.toHaveBeenCalled();
   });
 
-  it('reloads only the changed files a watcher event names, after the debounce', async () => {
+  async function watched() {
     const s = new ReviewStore({ worktree: MOCK_WORKTREE });
     s.start();
     await vi.waitFor(() => expect(s.live).toBe(true), { interval: 1 });
     vi.useFakeTimers();
     const reload = vi.spyOn(s, 'reloadDiff').mockResolvedValue();
+    return { s, reload };
+  }
+
+  function gateDiffRequests() {
+    const real = d.request.bind(d);
+    const gates: (() => void)[] = [];
+    vi.spyOn(d, 'request').mockImplementation(async <T,>(method: string, path: string, body?: unknown) => {
+      if (method === 'GET' && path.startsWith('/v1/review?')) await new Promise<void>((r) => gates.push(r));
+      return real<T>(method, path, body);
+    });
+    return gates;
+  }
+
+  it('reloads every file the watcher events named during the debounce, once', async () => {
+    const { s, reload } = await watched();
     d.emit('review.changed', { worktree: MOCK_WORKTREE, files: ['a'] });
     vi.advanceTimersByTime(200);
     d.emit('review.changed', { worktree: MOCK_WORKTREE, files: ['b'] });
     vi.advanceTimersByTime(299);
     expect(reload).not.toHaveBeenCalled();
     vi.advanceTimersByTime(1);
-    expect(reload).toHaveBeenCalledExactlyOnceWith(['b']);
+    expect(reload).toHaveBeenCalledExactlyOnceWith(['a', 'b']);
     s.stop();
+  });
+
+  it('forgets the pending files once they were reloaded', async () => {
+    const { s, reload } = await watched();
+    d.emit('review.changed', { worktree: MOCK_WORKTREE, files: ['a'] });
+    vi.advanceTimersByTime(300);
+    expect(reload).toHaveBeenLastCalledWith(['a']);
+    d.emit('review.changed', { worktree: MOCK_WORKTREE, files: ['b'] });
+    vi.advanceTimersByTime(300);
+    expect(reload).toHaveBeenCalledTimes(2);
+    expect(reload).toHaveBeenLastCalledWith(['b']);
+    s.stop();
+  });
+
+  it('reloads everything when one of the debounced events names no files', async () => {
+    const { s, reload } = await watched();
+    d.emit('review.changed', { worktree: MOCK_WORKTREE, files: ['a'] });
+    d.emit('review.changed', { worktree: MOCK_WORKTREE });
+    d.emit('review.changed', { worktree: MOCK_WORKTREE, files: ['b'] });
+    vi.advanceTimersByTime(300);
+    expect(reload).toHaveBeenCalledExactlyOnceWith(undefined);
+    s.stop();
+  });
+
+  it('keeps the newest diff when an older reload answers last', async () => {
+    const s = await loaded();
+    const gates = gateDiffRequests();
+    const first = s.reloadDiff();
+    const second = s.setBase('origin/main');
+    await vi.waitFor(() => expect(gates.length).toBe(2));
+    gates[1]();
+    await second;
+    const rev = s.revision;
+    const diff = s.diff;
+    gates[0]();
+    await first;
+    expect(s.revision).toBe(rev);
+    expect(s.diff).toBe(diff);
+  });
+
+  it('finishes the first load when a reload overtakes it', async () => {
+    const s = new ReviewStore({ worktree: MOCK_WORKTREE });
+    const gates = gateDiffRequests();
+    const first = s.load();
+    await vi.waitFor(() => expect(gates.length).toBe(1));
+    const second = s.reloadDiff();
+    await vi.waitFor(() => expect(gates.length).toBe(2));
+    gates[1]();
+    await second;
+    gates[0]();
+    await first;
+    expect(s.live).toBe(true);
+    expect(s.diff).not.toBeNull();
+    expect(s.loading).toBe(false);
   });
 
   it('marks the review stale instead of reloading while live refresh is paused', async () => {
@@ -299,66 +367,21 @@ describe('ReviewStore live thread events', () => {
   });
 });
 
-describe('ReviewStore graph view', () => {
-  it('loads the graph once per diff revision and only while the graph view is shown', async () => {
-    const spy = vi.spyOn(d.review, 'route');
-    const graphCalls = () => spy.mock.calls.filter((c) => String(c[1]).startsWith('/v1/review/graph')).length;
-    const s = await loaded();
-    expect(graphCalls()).toBe(0);
-    s.setView('graph');
-    await vi.waitFor(() => expect(s.graph).not.toBeNull(), { interval: 1 });
-    expect(s.graph!.revision).toBe(s.diff!.revision);
-    await s.reloadDiff();
-    s.setView('graph');
-    expect(graphCalls()).toBe(1);
-  });
+describe('ReviewStore view', () => {
+  afterEach(() => vi.unstubAllGlobals());
 
-  it('drops a stale graph when the diff changes in the list view and resets the reading position', async () => {
-    const s = await loaded();
-    s.setView('graph');
-    await vi.waitFor(() => expect(s.graph).not.toBeNull(), { interval: 1 });
-    s.orderAt = 3;
+  it('remembers the chosen view and opens a saved graph view as the map', () => {
+    const data = new Map<string, string>();
+    vi.stubGlobal('localStorage', { getItem: (k: string) => data.get(k) ?? null, setItem: (k: string, v: string) => void data.set(k, v) });
+    const s = new ReviewStore({ worktree: MOCK_WORKTREE });
+    expect(s.view).toBe('list');
+    s.setView('map');
+    expect(localStorage.getItem('overseer.review.view')).toBe('map');
+    expect(new ReviewStore({ worktree: MOCK_WORKTREE }).view).toBe('map');
+    localStorage.setItem('overseer.review.view', 'graph');
+    expect(new ReviewStore({ worktree: MOCK_WORKTREE }).view).toBe('map');
     s.setView('list');
-    expect(s.graph).not.toBeNull();
-    s.diff = { ...s.diff!, revision: 'changed' };
-    s.setView('list');
-    expect(s.graph).toBeNull();
-    expect(s.orderAt).toBe(-1);
-  });
-
-  it('shows a graph error and retries on the next request', async () => {
-    const spy = failOn((m, p) => p.startsWith('/v1/review/graph'));
-    const s = await loaded();
-    s.setView('graph');
-    await vi.waitFor(() => expect(s.graphError).toBe('boom'), { interval: 1 });
-    expect(s.graph).toBeNull();
-    spy.mockRestore();
-    s.setView('graph');
-    await vi.waitFor(() => expect(s.graph).not.toBeNull(), { interval: 1 });
-    expect(s.graphError).toBe('');
-  });
-
-  it('discards graph answers and errors for a revision that is no longer wanted', async () => {
-    const s = await loaded();
-    const pending: { resolve: (v: unknown) => void; reject: (e: Error) => void }[] = [];
-    const request = d.request.bind(d);
-    vi.spyOn(d, 'request').mockImplementation((m: string, p: string, b?: unknown) => {
-      if (!p.startsWith('/v1/review/graph')) return request(m, p, b);
-      return new Promise((resolve, reject) => pending.push({ resolve, reject })) as never;
-    });
-    s.setView('graph');
-    s.diff = { ...s.diff!, revision: 'r2' };
-    s.setView('graph');
-    s.diff = { ...s.diff!, revision: 'r3' };
-    s.setView('graph');
-    expect(pending).toHaveLength(3);
-    pending[0].resolve({ revision: 'r1', nodes: [], edges: [], order: [], truncated: false });
-    pending[1].reject(new Error('late'));
-    await new Promise((r) => setTimeout(r, 0));
-    expect(s.graph).toBeNull();
-    expect(s.graphError).toBe('');
-    pending[2].resolve({ revision: 'r3', nodes: [], edges: [], order: [], truncated: false });
-    await vi.waitFor(() => expect(s.graph?.revision).toBe('r3'), { interval: 1 });
+    expect(new ReviewStore({ worktree: MOCK_WORKTREE }).view).toBe('list');
   });
 });
 

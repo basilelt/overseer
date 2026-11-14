@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { isPhone, onResume, startLayout, ui } from './ui.svelte';
+import { isPhone, isPhoneOr, onResume, startLayout, ui } from './ui.svelte';
 
 type Handlers = Map<string, Set<() => void>>;
 
@@ -258,5 +258,26 @@ describe('onResume', () => {
   it('is a no-op without a document', () => {
     vi.stubGlobal('document', undefined);
     expect(() => onResume(vi.fn())()).not.toThrow();
+  });
+});
+
+describe('isPhoneOr', () => {
+  afterEach(() => {
+    ui.layout = 'desktop';
+  });
+
+  it('is true for a mobile shell on any layout', () => {
+    ui.layout = 'desktop';
+    expect(isPhoneOr(true)).toBe(true);
+  });
+
+  it('is true on the phone layout without a mobile shell', () => {
+    ui.layout = 'phone';
+    expect(isPhoneOr(false)).toBe(true);
+  });
+
+  it('is false on desktop without a mobile shell', () => {
+    ui.layout = 'desktop';
+    expect(isPhoneOr(false)).toBe(false);
   });
 });

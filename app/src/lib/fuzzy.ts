@@ -40,6 +40,14 @@ export function highlight(text: string, ranges: [number, number][]): { text: str
   return out;
 }
 
+export function bestSectionFirst<T extends { item: { section: string }; match: Match }>(rows: T[], query: string): T[] {
+  if (!query.trim()) return rows;
+  const best = new Map<string, number>();
+  for (const r of rows) best.set(r.item.section, Math.max(best.get(r.item.section) ?? -Infinity, r.match.score));
+  const order = [...best.keys()].sort((a, b) => best.get(b)! - best.get(a)!);
+  return order.flatMap((s) => rows.filter((r) => r.item.section === s));
+}
+
 export function rank<T>(query: string, items: T[], label: (t: T) => string): { item: T; match: Match }[] {
   const out: { item: T; match: Match }[] = [];
   for (const item of items) {

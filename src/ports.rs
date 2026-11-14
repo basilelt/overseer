@@ -1,5 +1,5 @@
-use crate::procs::now_ms;
 use crate::util::format_rfc3339;
+use crate::util::now_ms;
 use serde_json::{json, Value};
 use std::collections::{BTreeMap, HashMap};
 use std::net::{Ipv4Addr, Ipv6Addr};
@@ -197,9 +197,9 @@ fn ppids() -> Vec<(u32, u32)> {
             })
             .collect()
     } else {
-        crate::git::output_within(
+        crate::exec::output_within(
             std::process::Command::new("ps").args(["-axo", "pid=,ppid="]),
-            crate::git::PROBE_TIMEOUT,
+            crate::exec::PROBE_TIMEOUT,
         )
         .map(|o| String::from_utf8_lossy(&o.stdout).into_owned())
         .unwrap_or_default()
@@ -371,7 +371,7 @@ fn resolve(listen: &HashMap<u64, (String, u16)>, socks: &[(u32, u64)]) -> Vec<Li
 #[cfg(target_os = "macos")]
 fn listeners(pids: &[u32]) -> Vec<Listen> {
     let list: Vec<String> = pids.iter().map(u32::to_string).collect();
-    crate::git::output_within(
+    crate::exec::output_within(
         std::process::Command::new("lsof").args([
             "-nP",
             "-a",
@@ -382,7 +382,7 @@ fn listeners(pids: &[u32]) -> Vec<Listen> {
             "-F",
             "pcn",
         ]),
-        crate::git::PROBE_TIMEOUT,
+        crate::exec::PROBE_TIMEOUT,
     )
     .map(|o| parse_lsof(&String::from_utf8_lossy(&o.stdout)))
     .unwrap_or_default()

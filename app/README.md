@@ -38,7 +38,7 @@ sshd containers: a `Match` block, `ProxyJump` via a bastion, `ProxyCommand nc %h
 prompt answered from the app, and exactly one TCP connection on the server side while everything
 is open. Containers, network and image are labelled `overseer-remote-it` and removed after.
 
-The mock (`src/lib/mock.ts`) is used with `VITE_MOCK=1` or whenever the page runs outside Tauri.
+The mock (`src/lib/daemon/mock.ts`) is used with `VITE_MOCK=1` or whenever the page runs outside Tauri.
 It serves the nine agents of `/v1/agents` (claude, codex, gemini, agy, copilot and shell installed;
 opencode, amp and cursor not), 12 lines (some Gemini, Copilot and Antigravity; `/activity` answers
 409 for agents without session files), 14 ranked tasks, projects (`POST /v1/projects` included),
@@ -97,7 +97,7 @@ ghostty-web embeds as base64 (`vite.config.ts`).
   Drag to reorder, into a folder or onto Pinned; right-click to rename, pin, move, archive,
   delete, broadcast, hold or resume all, or be notified when all agents are idle.
 - **Workspace tabs**: selecting a workspace shows its own tab strip: agent sessions, shells,
-  browser and review tabs (a small registry in `lib/tabs.ts`; the review view mounts
+  browser and review tabs (a small registry in `lib/tabs/tabs.ts`; the review view mounts
   `ReviewTab.svelte` when it exists), with agent glyph and status dot. `+` starts an agent or a
   shell in the workspace folder; drag to reorder; split right or down. Cmd/Ctrl+1–9,
   Cmd/Ctrl+Shift+[ ], Cmd/Ctrl+T. The order is stored in the daemon.
@@ -140,7 +140,7 @@ ghostty-web embeds as base64 (`vite.config.ts`).
   theme, splits). **Settings**: Ctrl/Cmd+, (theme auto/light/dark, language, font size, task
   defaults, auto concurrency, hosts, server binaries folder, notifications).
 - **Git graph** and **Worktrees** tabs: from a workspace's `+` menu or the palette, one tab each
-  per project (tab kinds `graph:<project>` and `worktrees:<project>` in `lib/tabs.ts`, mounting
+  per project (tab kinds `graph:<project>` and `worktrees:<project>` in `lib/tabs/tabs.ts`, mounting
   `lib/git/GitGraphTab.svelte` and `lib/git/WorktreesPanel.svelte`; `#graph` / `#worktrees`
   open them at start).
   - *Graph*: lanes and merges drawn on a canvas for the visible rows only, branch / remote / tag
@@ -332,7 +332,7 @@ of hosts (Connect screen: label, host, port, user, optional ProxyJump through on
 password). It runs the server installed on that host (`~/.overseer/server/…`) and multiplexes
 everything over one SSH session, like the desktop. When the host has no server, or an older one,
 the phone downloads the server of its own version from the GitHub release (with the GitHub token
-of Settings > Updates / GitHub access), checks it against `SHA256SUMS`, uploads and starts it;
+of Settings > Updates / GitHub access), checks it against the signed `SHA256SUMS`, uploads and starts it;
 a running older daemon is hot-upgraded like from the desktop. The first connection asks to trust the host key (fingerprint shown); a changed key is
 refused until you remove the trusted key in the host's settings.
 
@@ -383,7 +383,7 @@ minimised. Nothing in the app may poll or animate continuously.
 
 - **Terminal rendering.** ghostty-web 0.4.0 starts a `requestAnimationFrame` loop per terminal in
   `Terminal.startRenderLoop()` that never stops, and its renderer redraws the cursor row on every
-  frame when `cursorBlink` is on. `lib/termrender.ts` patches the pinned version at load time
+  frame when `cursorBlink` is on. `lib/terminal/termrender.ts` patches the pinned version at load time
   (`installOnDemandRendering`, called from `loadGhostty`): `startRenderLoop` registers the terminal
   with one shared `FrameScheduler` instead, and the triggers that relied on the loop mark it dirty
   (`write`/`writeInternal`, resize, reset/clear, scrolling, selection via
@@ -419,18 +419,25 @@ minimised. Nothing in the app may poll or animate continuously.
 
 ```
 app/src                       Svelte 5 (runes), no UI framework
-  lib/client.ts               DaemonClient interface; picks tauri-client.ts or mock.ts
-  lib/api.ts                  typed routes (contract/app-daemon.md, protocol 1)
+  lib/daemon/                 client.ts (DaemonClient interface; picks tauri-client.ts or mock.ts),
+                              api.ts (typed routes, contract/app-daemon.md, protocol 1),
+                              tauri-commands.ts (the one table of Tauri command names)
   lib/state.svelte.ts         app store: connection, snapshot, selection, overlays
   lib/reduce.ts               SSE events -> snapshot (pure)
-  lib/termrender.ts           on-demand terminal frames, patches ghostty-web's render loop
+  lib/commands/               commands.ts and commands-more.ts (the command registry behind the
+                              palette, shortcuts, phone More sheet, title bar), keyboard.ts, shortcuts.ts
+  lib/terminal/               termrender.ts (on-demand frames, patches ghostty-web's render loop),
+                              termgl.ts, selection, IME, links
   lib/presence.ts             window visible/focused, drives html.inactive
-  lib/grouping.ts             sidebar groups (pure)
-  lib/workspaces.ts           workspace membership, status aggregation, tree, drag plans (pure)
-  lib/tabs.ts, broadcast.ts   tab kinds and shortcuts, broadcast dialog logic (pure)
-  lib/wsactions.ts            workspace, folder and group menus and actions
+  lib/session/                grouping.ts (sidebar groups, pure), session state and pages
+  lib/workspace/              workspaces.ts (membership, status aggregation, tree, drag plans, pure),
+                              wsactions.ts (workspace, folder and group menus and actions),
+                              workspace.svelte.ts
+  lib/tabs/                   tabs.ts (tab kinds and shortcuts), tab edits, order, labels
+  lib/kanban/                 kanban.ts, task-status.ts (the task status vocabulary), cost.ts, quorum.ts
+  lib/notify/, lib/host/      notifications; host switching and watching
   lib/agents.ts               agent list helpers: order, names, model/effort choices (pure)
-  lib/kanban.ts, workspace.svelte.ts, conn.ts, notify.ts, diff.ts, fuzzy.ts   pure logic + tests
+  lib/broadcast.ts, conn.ts, diff.ts, fuzzy.ts, platform.ts, storage.ts   pure logic + tests
   lib/git/                    git graph and worktrees: layout.ts (pure lane layout, incremental
                               over pages), view.ts (virtual window, labels, filters), loader.ts,
                               draw.ts (canvas), api.ts, mockGit.ts, strings.ts (gt over i18n), components

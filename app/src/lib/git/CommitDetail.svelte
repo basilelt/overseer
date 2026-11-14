@@ -1,4 +1,5 @@
 <script lang="ts">
+  import type { Snippet } from 'svelte';
   import { gesture } from '../links';
   import Cherry from '@lucide/svelte/icons/cherry';
   import Copy from '@lucide/svelte/icons/copy';
@@ -14,7 +15,7 @@
   import type { CommitDetail, Worktree } from './types';
   import { commitUrl } from './view';
 
-  let { project, repo, sha, onclose, onselect }: { project: string; repo?: string; sha: string; onclose: () => void; onselect?: (sha: string) => void } = $props();
+  let { project, repo, sha, onclose, onselect, extra }: { project: string; repo?: string; sha: string; onclose: () => void; onselect?: (sha: string) => void; extra?: Snippet } = $props();
 
   let detail = $state<CommitDetail | null>(null);
   let error = $state<string | null>(null);
@@ -27,7 +28,7 @@
   const short = $derived(sha.slice(0, 7));
   const url = $derived(commitUrl(repo, sha));
   const err = (e: unknown) => String((e as Error)?.message ?? e);
-  const api = () => gitApi(app.client!);
+  const api = () => gitApi(app.requireClient());
 
   $effect(() => {
     const s = sha;
@@ -129,6 +130,7 @@
         <button class="btn" disabled={busy} onclick={newWorktree}><FolderGit size={13} />{gt('newWorktree')}</button>
         <button class="btn" class:on={mode === 'branch'} onclick={() => (mode = mode === 'branch' ? 'none' : 'branch')}><GitBranchPlus size={13} />{gt('createBranch')}</button>
         <button class="btn" class:on={mode === 'cherry'} onclick={() => (mode === 'cherry' ? (mode = 'none') : openCherry())}><Cherry size={13} />{gt('cherryPick')}</button>
+        {@render extra?.()}
       </div>
 
       {#if mode === 'branch'}

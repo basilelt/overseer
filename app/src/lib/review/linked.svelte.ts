@@ -1,10 +1,9 @@
 import { ReviewStore } from './store.svelte';
 import { batch, type Batch } from './threads';
-import type { GraphNode, ReviewDiff, ReviewFile, ReviewGraph, SubmitKind, SubmitResult } from './types';
+import type { ReviewDiff, ReviewFile, SubmitKind, SubmitResult } from './types';
 
 export class LinkedReviews {
   stores = $state.raw<ReviewStore[]>([]);
-  view: 'list' | 'graph' = 'list';
 
   sync(linked: ReviewDiff['linked']) {
     const want = (linked ?? []).map((l) => l.worktree);
@@ -14,7 +13,6 @@ export class LinkedReviews {
       .filter((w) => !keep.some((s) => s.target.worktree === w))
       .map((w) => {
         const s = new ReviewStore({ worktree: w });
-        s.setView(this.view);
         s.start();
         return s;
       });
@@ -23,11 +21,6 @@ export class LinkedReviews {
 
   get visible(): ReviewStore[] {
     return this.stores.filter((s) => !!s.diff && (s.diff.files.length > 0 || (s.diff.commits?.length ?? 0) > 0));
-  }
-
-  setView(v: 'list' | 'graph') {
-    this.view = v;
-    for (const s of this.stores) s.setView(v);
   }
 
   setAutoRefresh(on: boolean) {
@@ -77,36 +70,4 @@ export function pickerGroups(stores: ReviewStore[]): { worktree: string; label: 
 export function parsePick(v: string): { worktree: string | null; path: string } {
   const i = v.indexOf('\n');
   return i < 0 ? { worktree: null, path: v } : { worktree: v.slice(0, i), path: v.slice(i + 1) };
-}
-
-const orders = new WeakMap<ReviewGraph, GraphNode[]>();
-
-export function graphOrder(s: ReviewStore): GraphNode[] {
-  const g = s.graph;
-  if (!g) return [];
-  let o = orders.get(g);
-  if (!o) {
-    const byId = new Map(g.nodes.map((n) => [n.id, n]));
-    o = g.order.map((id) => byId.get(id)).filter((n): n is GraphNode => !!n);
-    orders.set(g, o);
-  }
-  return o;
-}
-
-export interface Step {
-  store: ReviewStore;
-  node: GraphNode;
-  at: number;
-}
-
-export function nextStep(stores: ReviewStore[], active: ReviewStore): Step | undefined {
-  const i = stores.indexOf(active);
-  if (i < 0) return undefined;
-  const own = graphOrder(active);
-  if (active.orderAt + 1 < own.length) return { store: active, node: own[active.orderAt + 1], at: active.orderAt + 1 };
-  for (const s of stores.slice(i + 1)) {
-    const o = graphOrder(s);
-    if (o.length) return { store: s, node: o[0], at: 0 };
-  }
-  return undefined;
 }

@@ -1,0 +1,67 @@
+export type MainOverlay =
+  | 'palette'
+  | 'mobileConnect'
+  | 'connect'
+  | 'settings'
+  | 'task'
+  | 'taskDetail'
+  | 'project'
+  | 'review'
+  | 'broadcast'
+  | 'holdAll'
+  | 'name'
+  | 'workspaceNew'
+  | 'profiles'
+  | 'ports'
+  | 'system'
+  | 'usage'
+  | 'notifications'
+  | 'file'
+  | 'switchboardImport'
+  | 'uninstall'
+  | 'closeTab'
+  | 'shortcuts';
+
+const PLAIN = new Set<string>(['palette', 'settings', 'task', 'taskDetail', 'project', 'review', 'broadcast', 'holdAll', 'name', 'workspaceNew', 'profiles', 'ports', 'system', 'usage', 'notifications', 'switchboardImport', 'uninstall']);
+
+type Opened = Exclude<MainOverlay, 'mobileConnect'>;
+
+const PARENT = new Map<string, Opened>([['uninstall', 'settings']]);
+
+export function parentOverlay(o: string | null): Opened | null {
+  return (o && PARENT.get(o)) || null;
+}
+
+export interface EscapeState {
+  key: string;
+  defaultPrevented: boolean;
+  feedback: boolean;
+  recording: boolean;
+  diag: boolean;
+  overlay: boolean;
+}
+
+export function escapeTarget(s: EscapeState): 'feedback' | 'diag' | 'overlay' | null {
+  if (s.key !== 'Escape') return null;
+  if (s.feedback && !s.defaultPrevented && !s.recording) return 'feedback';
+  if (s.diag) return 'diag';
+  if (s.overlay) return 'overlay';
+  return null;
+}
+
+export interface OverlayState {
+  overlay: string | null;
+  overlayArg?: string | null;
+  hasFile: boolean;
+  phone: boolean;
+}
+
+export function mainOverlay(s: OverlayState): MainOverlay | null {
+  const o = s.overlay;
+  if (!o) return null;
+  if (o === 'connect') return s.phone ? 'mobileConnect' : 'connect';
+  if (o === 'file') return s.hasFile ? 'file' : null;
+  if (o === 'closeTab') return s.overlayArg ? 'closeTab' : null;
+  if (o === 'shortcuts') return s.phone ? null : 'shortcuts';
+  return PLAIN.has(o) ? (o as MainOverlay) : null;
+}

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { TabInfo } from '../tabs';
+  import type { TabInfo } from '../tabs/tabs';
   import WorktreesPanel from './WorktreesPanel.svelte';
 
   let { tab }: { tabKey: string; tab: TabInfo; focused: boolean } = $props();

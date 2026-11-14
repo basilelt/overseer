@@ -1,4 +1,5 @@
-import { isTauri } from './client';
+import * as CMD from './daemon/tauri-commands';
+import { isTauri } from './platform';
 import type { HostTarget } from './types';
 
 export const MAIN_WINDOW = 'main';
@@ -21,13 +22,15 @@ export function hostKey(t: Pick<HostTarget, 'kind' | 'host'>): string {
 
 let opened = 1;
 
-export async function openWindow(): Promise<void> {
+export async function openWindow(target?: HostTarget): Promise<void> {
   if (isTauri()) {
     const { invoke } = await import('@tauri-apps/api/core');
-    await invoke('window_new');
+    await (target ? invoke(CMD.windowNew, { connect: target }) : invoke(CMD.windowNew));
     return;
   }
   const url = new URL(globalThis.location.href);
   url.searchParams.set('window', `w-${++opened}`);
+  if (target) url.searchParams.set('connect', JSON.stringify(target));
+  else url.searchParams.delete('connect');
   globalThis.open?.(url.toString(), '_blank');
 }

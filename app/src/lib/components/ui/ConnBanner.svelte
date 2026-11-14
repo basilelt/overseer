@@ -7,15 +7,15 @@
   import Server from '@lucide/svelte/icons/server';
   import Bell from '@lucide/svelte/icons/bell';
   import Power from '@lucide/svelte/icons/power';
-  import { keepRunningOffer } from '../../lifecycle';
-  import { keepRunningAnswered, lifecycle, loadLifecycle, patchLifecycle } from '../../lifecycle.svelte';
+  import { keepRunningOffer } from '../../lifecycle/lifecycle';
+  import { keepRunningAnswered, lifecycle, loadLifecycle, patchLifecycle } from '../../lifecycle/lifecycle.svelte';
   import { t } from '../../i18n.svelte';
   import { app } from '../../state.svelte';
-  import { serverBanner } from '../../server';
+  import { serverBanner } from '../../daemon/server';
   import { hooksOffer } from '../../hooks';
   import { hooks, hooksLater, hooksNever, loadHooks, setHooks } from '../../hooks.svelte';
-  import { settings } from '../../settings.svelte';
-  import { isDemo } from '../../demo';
+  import { settings } from '../../settings/settings.svelte';
+  import { isDemo } from '../../daemon/demo';
 
   const demo = isDemo();
 

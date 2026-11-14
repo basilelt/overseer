@@ -129,6 +129,60 @@ pub fn check(cmd: &str, rest: &[String]) -> Result<(), String> {
 mod tests {
     use super::*;
 
+    const UNCHECKED: [&str; 9] = [
+        "login",
+        "enroll",
+        "sync",
+        "mcp",
+        "vote",
+        "proxy",
+        "statusline-tap",
+        "ls",
+        "hooks",
+    ];
+
+    fn dispatched() -> Vec<String> {
+        let main = include_str!("main.rs");
+        let body = &main[main.find("    match cmd {").unwrap()..];
+        let mut out: Vec<String> = vec![];
+        for line in body.lines().filter(|l| l.contains(" =>")) {
+            let Some(arm) = line.strip_prefix("        \"") else {
+                continue;
+            };
+            let head = format!("\"{}", arm.split(" =>").next().unwrap_or_default());
+            for alt in head.split(" | ") {
+                let name: String = alt
+                    .trim_start_matches('"')
+                    .chars()
+                    .take_while(|c| c.is_ascii_lowercase() || *c == '-')
+                    .collect();
+                if !name.is_empty() && !out.contains(&name) {
+                    out.push(name);
+                }
+            }
+        }
+        out
+    }
+
+    #[test]
+    fn every_dispatched_command_is_checked_or_listed_as_unchecked() {
+        let cmds = dispatched();
+        assert!(cmds.len() >= 20, "{cmds:?}");
+        for c in &cmds {
+            assert!(
+                spec(c).is_some() || UNCHECKED.contains(&c.as_str()),
+                "`{c}` is dispatched in main.rs but neither in the cli.rs table nor in UNCHECKED"
+            );
+        }
+        for c in UNCHECKED {
+            assert!(
+                spec(c).is_none(),
+                "`{c}` has a spec; drop it from UNCHECKED"
+            );
+            assert!(cmds.iter().any(|d| d == c), "`{c}` is no longer dispatched");
+        }
+    }
+
     fn a(s: &str) -> Vec<String> {
         s.split_whitespace().map(String::from).collect()
     }

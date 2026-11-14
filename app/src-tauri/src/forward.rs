@@ -149,9 +149,19 @@ impl Ports {
         self.inner.lock().unwrap().watchers.remove(&id);
     }
 
+    pub fn unwatch_all(&self) -> usize {
+        let mut g = self.inner.lock().unwrap();
+        let n = g.watchers.len();
+        g.watchers.clear();
+        n
+    }
+
     pub fn reset(&self) {
         let mut g = self.inner.lock().unwrap();
         g.generation += 1;
+        if let Some(t) = g.tracker.take() {
+            t.abort();
+        }
         for (_, a) in std::mem::take(&mut g.forwards) {
             a.task.abort();
         }
@@ -446,6 +456,38 @@ mod tests {
         p.ensure_tracking();
         let g = p.inner.lock().unwrap();
         assert!(g.tracker.is_none() && g.watchers.is_empty());
+    }
+
+    #[tokio::test]
+    async fn a_reset_restarts_the_tracker_on_the_new_generation() {
+        let p = Ports::new(Arc::new(ConnManager::default()));
+        p.ensure_tracking();
+        let old = p
+            .inner
+            .lock()
+            .unwrap()
+            .tracker
+            .as_ref()
+            .unwrap()
+            .abort_handle();
+        p.reset();
+        p.ensure_tracking();
+        let fresh = p
+            .inner
+            .lock()
+            .unwrap()
+            .tracker
+            .as_ref()
+            .unwrap()
+            .abort_handle();
+        assert_ne!(old.id(), fresh.id());
+        tokio::time::timeout(Duration::from_secs(2), async {
+            while !old.is_finished() {
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+        })
+        .await
+        .expect("the tracker of the previous generation still runs");
     }
 
     #[test]

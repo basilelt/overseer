@@ -1,5 +1,6 @@
 use crate::deliver::Channel;
 use crate::hold::sgr_dim;
+use crate::http::err;
 use crate::Ctx;
 use serde_json::{json, Value};
 use std::time::Duration;
@@ -8,7 +9,6 @@ pub const TAIL: usize = 256 << 10;
 const MAX_KEYS: usize = 32;
 const KEY_GAP: Duration = Duration::from_millis(40);
 const MAX_TEXT: usize = 64 << 10;
-const TEXT_SETTLE: Duration = Duration::from_millis(300);
 
 #[derive(Clone, Copy, PartialEq, Debug)]
 struct Cell {
@@ -453,10 +453,6 @@ pub fn parse_keys(v: &Value) -> Result<Vec<Vec<u8>>, String> {
         .collect()
 }
 
-fn err(code: u16, msg: impl Into<String>) -> (u16, Value) {
-    (code, json!({ "error": msg.into() }))
-}
-
 fn channel_of(ctx: &Ctx, id: &str) -> Result<(String, Channel), (u16, Value)> {
     let lines = crate::daemon::cached_lines(ctx, Some(id)).map_err(|e| err(500, e))?;
     let l = crate::actions::find_line(&lines, id).map_err(|e| err(404, e))?;
@@ -531,7 +527,7 @@ pub fn keys_route(ctx: &Ctx, id: &str, body: &Value) -> (u16, Value) {
         if let Err(e) = crate::deliver::insert(&ch, text, ctx.tmux.as_ref(), &buffer) {
             return err(409, e);
         }
-        std::thread::sleep(TEXT_SETTLE);
+        std::thread::sleep(crate::deliver::PASTE_SETTLE);
     }
     (
         200,

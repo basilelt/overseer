@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { frameLoop, insertBefore } from '../kanban';
+import { frameLoop, insertBefore } from '../kanban/kanban';
 import type { Task } from '../types';
 
 function fakeRaf() {

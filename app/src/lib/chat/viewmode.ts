@@ -1,7 +1,7 @@
 export type ViewMode = 'chat' | 'terminal';
 export type LayoutKind = 'phone' | 'desktop';
 
-export const CHAT_AGENTS = ['claude', 'codex', 'gemini'];
+export const CHAT_AGENTS = ['claude', 'codex', 'gemini', 'vibe'];
 
 export interface ModeItem {
   kind: string;

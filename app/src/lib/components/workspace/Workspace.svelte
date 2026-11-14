@@ -2,16 +2,16 @@
   import { untrack } from 'svelte';
   import { t } from '../../i18n.svelte';
   import { app, NO_WORKSPACE } from '../../state.svelte';
-  import { activeKey, addTabs, allTabs, layoutFromTabs, openInFocused, renameTab, setRatio, split, switchLayout, update, workspace, type Layout } from '../../workspace.svelte';
-  import { isKnown, loadKnown, mergeKnown, saveKnown, startKnown } from '../../known-tabs';
+  import { activeKey, addTabs, allTabs, layoutFromTabs, openInFocused, renameTab, setRatio, split, switchLayout, update, workspace, type Layout } from '../../workspace/workspace.svelte';
+  import { isKnown, loadKnown, mergeKnown, saveKnown, startKnown } from '../../tabs/known-tabs';
   import { hostKey } from '../../window';
-  import { pages } from '../../session-pages.svelte';
-  import { isOff, type SidebarItem } from '../../grouping';
+  import { pages } from '../../session/session-pages.svelte';
+  import { isOff, type SidebarItem } from '../../session/grouping';
   import type { Workspace } from '../../types';
-  import { aggregate, resolveTab, workspaceTabs } from '../../workspaces';
-  import { rememberTerms } from '../../tabs';
+  import { aggregate, resolveTab, workspaceTabs } from '../../workspace/workspaces';
+  import { rememberTerms } from '../../tabs/tabs';
   import { releaseCapturedPointer } from '../../pointer-drag';
-  import { arrangePanes, layoutShape, reconcileLayout, restoreLayout, savedActive } from '../../layout-sync';
+  import { arrangePanes, layoutShape, reconcileLayout, restoreLayout, savedActive, staleAfterReset } from '../../tabs/layout-sync';
   import PaneView from './PaneView.svelte';
 
   let root: HTMLDivElement;
@@ -24,6 +24,7 @@
   );
   const loaded = $derived(app.connected && app.synced && app.data.lines.length + app.data.terms.length > 0);
   let current = '#status';
+  let seenEpoch = workspace.epoch;
   const stale = new Set<string>(['#status']);
   const localTabs = new Map<string, string>();
   const knownBy = new Map<string, Set<string> | undefined>();
@@ -64,7 +65,9 @@
     const items = app.items;
     const ws = app.currentWorkspace;
     const ready = loaded;
+    const epoch = workspace.epoch;
     untrack(() => {
+      seenEpoch = staleAfterReset(stale, seenEpoch, epoch, current);
       if (key !== current) {
         switchLayout(current, key, () => build(key, ws, mem, items, ready));
         current = key;

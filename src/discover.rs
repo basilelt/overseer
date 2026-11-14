@@ -84,12 +84,13 @@ pub fn run(ctx: &Ctx) -> Res<Value> {
             .conn
             .execute(
                 "INSERT OR IGNORE INTO projects (path, added_ms) VALUES (?1, ?2)",
-                params![root, crate::procs::now_ms()],
+                params![root, crate::util::now_ms()],
             )
             .map_err(sql)?;
     }
     drop(reg);
     crate::workspaces::list(ctx)?;
+    crate::workspaces::scan_submodules(ctx)?;
     let lines = crate::daemon::cached_lines(ctx, None).map_err(|e| (500, e))?;
     let projects = crate::tasks::projects(ctx, &lines)?;
     Ok(json!({"added": added, "projects": projects}))
@@ -102,10 +103,13 @@ pub fn background() {
     std::thread::spawn(|| {
         let probe = crate::procs::System;
         let ctx = Ctx::from_env(&probe);
-        if !ctx.config.discover_roots.is_empty() {
-            if let Err((_, e)) = run(&ctx) {
-                eprintln!("overseer daemon: discovery failed: {e}");
-            }
+        let done = if ctx.config.discover_roots.is_empty() {
+            crate::workspaces::scan_submodules(&ctx).map(drop)
+        } else {
+            run(&ctx).map(drop)
+        };
+        if let Err((_, e)) = done {
+            eprintln!("overseer daemon: discovery failed: {e}");
         }
         RUNNING.store(false, Ordering::SeqCst);
     });
@@ -120,7 +124,7 @@ mod tests {
         let base = std::env::temp_dir().join(format!(
             "sb-discover-{}-{}",
             std::process::id(),
-            crate::procs::now_ms()
+            crate::util::now_ms()
         ));
         let _ = std::fs::remove_dir_all(&base);
         let root = base.join("root");

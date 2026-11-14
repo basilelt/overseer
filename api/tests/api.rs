@@ -219,6 +219,17 @@ fn contains(hay: &[u8], needle: &str) -> bool {
 struct Sse(TcpStream, String);
 
 impl Sse {
+    fn ended(&mut self) -> bool {
+        let mut buf = [0u8; 4096];
+        loop {
+            match self.0.read(&mut buf) {
+                Ok(0) => return true,
+                Ok(_) => {}
+                Err(_) => return false,
+            }
+        }
+    }
+
     fn next(&mut self) -> Option<(i64, String, Value)> {
         loop {
             while let Some(i) = self.1.find("\n\n") {
@@ -592,6 +603,37 @@ fn sse_replays_from_last_event_id_then_streams_live() {
 }
 
 #[test]
+fn revoking_a_user_ends_their_open_event_streams_and_no_others() {
+    let srv = Srv::start();
+    let t = srv.enrol("vm", "vm");
+    let (bob, carol) = (srv.user("bob"), srv.user("carol"));
+    let mut s = srv.station("vm", &t).unwrap();
+    s.hello("vm", 0);
+    let mut b = srv.sse(&bob, "", Some(0));
+    let mut c = srv.sse(&carol, "", Some(0));
+    let mut a = srv.sse(ADMIN, "", Some(0));
+    for live in [&mut b, &mut c, &mut a] {
+        assert_eq!(live.next().unwrap().1, "station.online");
+    }
+    assert_eq!(
+        srv.http("DELETE", "/v1/users/bob/token", Some(ADMIN), None)
+            .0,
+        204
+    );
+    assert!(b.ended(), "the revoked user's stream stayed open");
+    s.send(json!({ "kind": "snapshot", "seq": 1, "lines": [
+        line("vm-1", "vm", "alice", "active", None),
+    ]}));
+    s.recv();
+    for live in [&mut c, &mut a] {
+        assert_eq!(live.next().unwrap().1, "line.created");
+    }
+    let bob = srv.user("bob");
+    let mut b = srv.sse(&bob, "", Some(1));
+    assert_eq!(b.next().unwrap().1, "line.created");
+}
+
+#[test]
 fn webhooks_are_hmac_signed() {
     let srv = Srv::start();
     let hook = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
@@ -736,4 +778,54 @@ fn post_lines_starts_on_a_runner_without_storing_the_prompt() {
     assert_eq!(audit[0]["args"]["ticketKey"], "AS-9");
     assert!(audit[0]["args"].get("prompt").is_none());
     assert!(!contains(&srv.stored_bytes(), prompt));
+}
+
+#[test]
+fn failed_delta_rolls_back_and_asks_for_a_resync() {
+    let srv = Srv::start();
+    let t = srv.enrol("vm", "vm");
+    let mut s = srv.station("vm", &t).unwrap();
+    s.hello("vm", 0);
+    s.send(json!({ "kind": "snapshot", "seq": 1, "lines": [line("vm-1", "vm", "alice", "idle", None)] }));
+    assert_eq!(s.recv()["seq"], 1);
+    srv.db()
+        .execute_batch(
+            "CREATE TRIGGER block_delete BEFORE DELETE ON lines BEGIN SELECT RAISE(ABORT, 'blocked'); END",
+        )
+        .unwrap();
+    s.send(json!({ "kind": "delta", "seq": 2, "upsert": [], "remove": ["vm-1"] }));
+    assert_eq!(s.recv(), json!({ "kind": "ack", "seq": 1, "resync": true }));
+    assert_eq!(
+        srv.count("SELECT last_seq FROM stations WHERE id = 'vm'"),
+        1
+    );
+    assert_eq!(srv.count("SELECT count(*) FROM lines WHERE id = 'vm-1'"), 1);
+    srv.db().execute_batch("DROP TRIGGER block_delete").unwrap();
+    s.send(json!({ "kind": "delta", "seq": 2, "upsert": [], "remove": ["vm-1"] }));
+    assert_eq!(
+        s.recv(),
+        json!({ "kind": "ack", "seq": 2, "resync": false })
+    );
+    assert_eq!(srv.count("SELECT count(*) FROM lines WHERE id = 'vm-1'"), 0);
+}
+
+#[test]
+fn failed_snapshot_asks_for_a_resync_then_closes_the_connection() {
+    let srv = Srv::start();
+    let t = srv.enrol("vm", "vm");
+    let mut s = srv.station("vm", &t).unwrap();
+    s.hello("vm", 0);
+    srv.db()
+        .execute_batch(
+            "CREATE TRIGGER block_insert BEFORE INSERT ON lines BEGIN SELECT RAISE(ABORT, 'blocked'); END",
+        )
+        .unwrap();
+    s.send(json!({ "kind": "snapshot", "seq": 1, "lines": [line("vm-1", "vm", "alice", "idle", None)] }));
+    assert_eq!(s.recv(), json!({ "kind": "ack", "seq": 0, "resync": true }));
+    assert!(matches!(s.0.read(), Ok(Message::Close(_)) | Err(_)));
+    assert_eq!(srv.count("SELECT count(*) FROM lines"), 0);
+    assert_eq!(
+        srv.count("SELECT last_seq FROM stations WHERE id = 'vm'"),
+        0
+    );
 }

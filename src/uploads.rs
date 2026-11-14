@@ -57,12 +57,11 @@ fn cap(s: &str) -> String {
     }
 }
 
-pub const SHORT_DIR: &str = ".overseer/u";
 const ID_LEN: usize = 6;
 const ALPHABET: &[u8; 36] = b"abcdefghijklmnopqrstuvwxyz0123456789";
 
 pub fn dir() -> PathBuf {
-    crate::home().join(SHORT_DIR)
+    crate::home().join(crate::paths::SHORT_UPLOADS_REL)
 }
 
 fn id(attempt: u32) -> String {
@@ -128,10 +127,8 @@ pub fn store(dir: &Path, name: &str, len: u64, body: impl Read) -> Res<PathBuf> 
     }
 }
 
-pub const TASK_DIR: &str = ".overseer/tasks";
-
 pub fn task_dir(id: &str) -> PathBuf {
-    crate::home().join(TASK_DIR).join(id)
+    crate::home().join(crate::paths::TASK_UPLOADS_REL).join(id)
 }
 
 pub fn attachments(uploads: &Path, list: &Value) -> Result<Vec<(PathBuf, String)>, String> {
@@ -188,7 +185,8 @@ pub fn short(path: &Path, home: &Path) -> String {
 }
 
 pub fn receive(dir: &Path, name: Option<&str>, len: u64, body: impl Read) -> Res<Value> {
-    let name = check_name(&crate::board::decode(name.unwrap_or_default())).map_err(|e| (400, e))?;
+    let name =
+        check_name(&crate::util::percent_decode(name.unwrap_or_default())).map_err(|e| (400, e))?;
     let path = store(dir, &name, len, body)?;
     Ok(json!({
         "path": path.to_string_lossy(),
@@ -238,7 +236,7 @@ mod tests {
         let d = std::env::temp_dir().join(format!(
             "sb-uploads-{tag}-{}-{}",
             std::process::id(),
-            crate::procs::now_ms()
+            crate::util::now_ms()
         ));
         let _ = std::fs::remove_dir_all(&d);
         std::fs::create_dir_all(&d).unwrap();
@@ -277,7 +275,7 @@ mod tests {
             assert!(check_name(bad).is_err(), "{bad:?}");
         }
         assert_eq!(
-            check_name(&crate::board::decode("..%2F..%2Fetc%2Fpasswd")),
+            check_name(&crate::util::percent_decode("..%2F..%2Fetc%2Fpasswd")),
             Err("name must be a plain file name".into())
         );
     }

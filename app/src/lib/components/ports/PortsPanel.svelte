@@ -8,10 +8,10 @@
   import Modal from '../ui/Modal.svelte';
   import { t } from '../../i18n.svelte';
   import { app, projectName } from '../../state.svelte';
-  import { saveSettings, settings } from '../../settings.svelte';
-  import { openExternal, ports } from '../../ports.svelte';
-  import { stopProcess } from '../../ports-kill';
-  import { parseIgnore, parsePort, type PortRow } from '../../ports';
+  import { saveSettings, settings } from '../../settings/settings.svelte';
+  import { openExternal, ports } from '../../ports/ports.svelte';
+  import { stopProcess } from '../../ports/ports-kill';
+  import { parseIgnore, parsePort, type PortRow } from '../../ports/ports';
 
   let { onclose }: { onclose: () => void } = $props();
 
@@ -38,7 +38,7 @@
     }
     busy = true;
     try {
-      await app.client!.forwardPort(remotePort, localPort);
+      await app.requireClient().forwardPort(remotePort, localPort);
       remoteInput = localInput = '';
     } catch (e) {
       error = msg(e);
@@ -49,7 +49,7 @@
 
   async function stop(row: PortRow) {
     try {
-      await app.client!.unforwardPort(row.port);
+      await app.requireClient().unforwardPort(row.port);
     } catch (e) {
       app.notify(msg(e), 'error');
     }

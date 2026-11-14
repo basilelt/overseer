@@ -91,7 +91,7 @@
   const canReview = (w: Worktree) => w.state !== 'missing';
   const newWorktree = () =>
     act({ id: '' } as Worktree, async () => {
-      const w = await gitApi(app.client!).createWorktree({ project: data?.project ?? projectPath });
+      const w = await gitApi(app.requireClient()).createWorktree({ project: data?.project ?? projectPath });
       app.notify(gt('worktreeCreated', { branch: w.branch ?? w.path }));
     });
   const shortPath = (p: string) => (data?.store && p.startsWith(`${data.store}/`) ? p.slice(data.store.length + 1) : p);
@@ -135,7 +135,7 @@
           title={gt('mergeBase', { base: data?.base ?? 'main' })}
           aria-label={gt('mergeBase', { base: data?.base ?? 'main' })}
           disabled={w.kind === 'main' || w.state === 'missing' || !w.behind || busy === w.id}
-          onclick={() => act(w, () => gitApi(app.client!).mergeBase(w.id), gt('merged2', { base: data?.base ?? 'main', branch: w.branch ?? '' }))}><GitMerge size={14} /></button
+          onclick={() => act(w, () => gitApi(app.requireClient()).mergeBase(w.id), gt('merged2', { base: data?.base ?? 'main', branch: w.branch ?? '' }))}><GitMerge size={14} /></button
         >
         <button class="icon-btn" title={gt('cleanup')} aria-label={gt('cleanup')} disabled={w.kind === 'main'} onclick={() => (cleaning = [w])}><BrushCleaning size={14} /></button>
       {/if}

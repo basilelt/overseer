@@ -6,8 +6,14 @@ pub mod askpass;
 mod browser;
 #[cfg(desktop)]
 mod browsers;
+#[cfg(target_os = "linux")]
+mod clipguard;
 mod commands;
 mod conn;
+/// Held by tests that change the process environment (PATH, OVERSEER_SOCKET) and by tests that
+/// spawn processes needing it intact.
+#[cfg(test)]
+pub(crate) static TEST_ENV: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 #[cfg(all(test, unix))]
 mod daemon_it;
 pub mod diag;
@@ -41,6 +47,8 @@ mod updater;
 mod window;
 mod ws;
 
+pub(crate) const MAIN: &str = "main";
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     diag::install_panic_hook(env!("CARGO_PKG_VERSION").to_string());
@@ -53,14 +61,33 @@ pub fn run() {
             macos::create_main_window(app)?;
             diag::log_start(app.handle());
             diag::start_watchdog(app.handle().clone());
+            #[cfg(target_os = "linux")]
+            clipguard::install();
             #[cfg(all(unix, desktop))]
             diag::quit_on_signals(app.handle().clone());
             Ok(())
         })
+        .on_page_load(|wv, p| {
+            if matches!(p.event(), tauri::webview::PageLoadEvent::Started)
+                && wv.label() == wv.window().label()
+            {
+                if let Some(state) = tauri::Manager::try_state::<commands::AppState>(wv) {
+                    state.page_reloaded(wv.label());
+                }
+            }
+        })
         .on_window_event(|w, e| match e {
-            tauri::WindowEvent::Focused(f) if w.label() == "main" => diag::focus(*f),
+            tauri::WindowEvent::Focused(f) => {
+                #[cfg(target_os = "linux")]
+                if *f {
+                    clipguard::recheck();
+                }
+                if w.label() == MAIN {
+                    diag::focus(*f);
+                }
+            }
             tauri::WindowEvent::Destroyed => {
-                if w.label() == "main" {
+                if w.label() == MAIN {
                     diag::focus(false);
                     diag::visibility(false);
                 }
@@ -95,6 +122,7 @@ pub fn run() {
             commands::conn_connect,
             commands::conn_disconnect,
             commands::conn_answer,
+            commands::conn_drop_slots,
             commands::conn_wake,
             commands::conn_restart_server,
             commands::ssh_hosts,
@@ -120,6 +148,7 @@ pub fn run() {
             browsers::browsers_list,
             browsers::browser_open_with,
             window::window_new,
+            window::window_handoff,
             updater::update_status,
             updater::update_check,
             updater::update_install,

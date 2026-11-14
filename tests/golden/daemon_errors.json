@@ -1,0 +1,12 @@
+{
+  "noTerm": { "status": 404, "message": "no term {id}" },
+  "termStillRunning": { "status": 409, "message": "term is still running; kill it first" },
+  "termExited": { "status": 409, "message": "term has exited" },
+  "killNeedsConfirm": { "status": 400, "message": "kill needs {\"confirm\":true}" },
+  "termSize": { "status": 400, "message": "cols and rows must be integers in 1..=1000" },
+  "termSizeRequired": { "status": 400, "message": "cols and rows required" },
+  "shellInQuorum": { "status": 400, "message": "shell cannot join a quorum" },
+  "quorumOrchestrator": { "status": 400, "message": "the quorum orchestrator must be claude or codex" },
+  "sessionTaskStatus": { "status": 400, "message": "a session task follows its session: status must be one of in_progress, in_testing, merged, completed" },
+  "bodyTooLarge": { "status": 413, "message": "request body exceeds 1 MiB" }
+}

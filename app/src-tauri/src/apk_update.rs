@@ -1,27 +1,16 @@
 use reqwest::{Client, StatusCode};
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use tauri::ipc::Channel;
 use tauri::{AppHandle, Manager, State};
-use tokio::io::AsyncWriteExt;
 
 use crate::release_http::{
-    asset_url, client, failed, get, hex, network, status_error, ApkError, REPO,
+    asset_url, client, failed, get, manifest_url, network, release_url, single_checksum,
+    status_error, stream_to, ApkError, CheckResult, GITHUB,
 };
 
-const GITHUB: &str = "https://github.com";
 const DOWNLOADS: &str = "updates";
-const PROGRESS_STEP: u64 = 256 * 1024;
-
-pub(crate) fn manifest_url(base: &str) -> String {
-    format!("{base}/{REPO}/releases/latest/download/latest.json")
-}
-
-pub(crate) fn release_url(base: &str, version: &str) -> String {
-    format!("{base}/{REPO}/releases/tag/v{version}")
-}
 
 pub(crate) fn apk_name(version: &str) -> String {
     format!("Overseer_{version}_android.apk")
@@ -57,7 +46,7 @@ pub(crate) fn checksum_outcome(
     if let Some(e) = status_error(status) {
         return Err(e);
     }
-    parse_sha256(body, file)
+    single_checksum(body, file)
         .map(Some)
         .ok_or_else(|| failed("The checksum file of the release is not valid"))
 }
@@ -68,18 +57,6 @@ fn version(v: &str) -> Option<semver::Version> {
 
 pub fn is_newer(tag: &str, current: &str) -> bool {
     matches!((version(tag), version(current)), (Some(latest), Some(installed)) if latest > installed)
-}
-
-pub fn parse_sha256(text: &str, file: &str) -> Option<String> {
-    let mut words = text.split_whitespace();
-    let hex = words.next()?;
-    if hex.len() != 64 || !hex.bytes().all(|b| b.is_ascii_hexdigit()) {
-        return None;
-    }
-    match words.next() {
-        Some(name) if name.trim_start_matches('*') != file => None,
-        _ => Some(hex.to_ascii_lowercase()),
-    }
 }
 
 pub fn is_download(path: &Path) -> bool {
@@ -113,13 +90,6 @@ pub struct ApkState {
 pub struct ApkStatus {
     current: String,
     supported: bool,
-}
-
-#[derive(Serialize)]
-#[serde(tag = "status", rename_all = "lowercase")]
-pub enum CheckResult {
-    None { current: String },
-    Available(UpdateInfo),
 }
 
 #[derive(Serialize)]
@@ -208,7 +178,7 @@ pub async fn apk_update_status(app: AppHandle) -> Result<ApkStatus, ApkError> {
 pub async fn apk_update_check(
     app: AppHandle,
     state: State<'_, ApkState>,
-) -> Result<CheckResult, ApkError> {
+) -> Result<CheckResult<UpdateInfo>, ApkError> {
     crate::diag::info("updater", "checking for an APK update");
     let current = current_version(&app);
     let Some(found) = find_update(&client()?, GITHUB, &current).await? else {
@@ -255,33 +225,20 @@ pub async fn apk_update_download(
     tokio::fs::create_dir_all(&dir).await.map_err(failed)?;
     let client = client()?;
     let found = pending.found;
-    let mut res = get(&client, &found.url).await?;
-    let total = res.content_length();
     let part = dir.join(format!("{}.part", found.name));
-    let mut file = tokio::fs::File::create(&part).await.map_err(failed)?;
-    let mut hasher = Sha256::new();
-    let (mut downloaded, mut reported) = (0u64, 0u64);
-    let _ = on_progress.send(DownloadEvent::Progress { downloaded, total });
-    let streamed: Result<(), ApkError> = async {
-        while let Some(chunk) = res.chunk().await.map_err(network)? {
-            hasher.update(&chunk);
-            file.write_all(&chunk).await.map_err(failed)?;
-            downloaded += chunk.len() as u64;
-            if downloaded - reported >= PROGRESS_STEP || Some(downloaded) == total {
-                reported = downloaded;
-                let _ = on_progress.send(DownloadEvent::Progress { downloaded, total });
-            }
-        }
-        file.flush().await.map_err(failed)
-    }
+    let streamed = stream_to(&client, &found.url, &part, |downloaded, total| {
+        let _ = on_progress.send(DownloadEvent::Progress { downloaded, total });
+    })
     .await;
-    drop(file);
-    if let Err(e) = streamed {
-        let _ = tokio::fs::remove_file(&part).await;
-        return Err(e);
-    }
+    let got = match streamed {
+        Ok(got) => got,
+        Err(e) => {
+            let _ = tokio::fs::remove_file(&part).await;
+            return Err(e);
+        }
+    };
     let _ = on_progress.send(DownloadEvent::Verifying);
-    if hex(&hasher.finalize()) != found.sha256 {
+    if got != found.sha256 {
         let _ = tokio::fs::remove_file(&part).await;
         return Err(ApkError::Checksum);
     }
@@ -417,50 +374,6 @@ mod tests {
         assert!(!is_newer("v0.8.9", "0.9.0"));
         assert!(!is_newer("nightly", "0.9.0"));
         assert!(!is_newer("v0.9.1", "garbage"));
-    }
-
-    #[test]
-    fn parses_sha256sum_output() {
-        let sum = "A".repeat(64);
-        let lower = "a".repeat(64);
-        assert_eq!(
-            parse_sha256(
-                &format!("{sum}  Overseer_0.9.0_android.apk\n"),
-                "Overseer_0.9.0_android.apk"
-            ),
-            Some(lower.clone())
-        );
-        assert_eq!(
-            parse_sha256(
-                &format!("{sum} *Overseer_0.9.0_android.apk"),
-                "Overseer_0.9.0_android.apk"
-            ),
-            Some(lower.clone())
-        );
-        assert_eq!(parse_sha256(&format!("{sum}\n"), "x.apk"), Some(lower));
-        assert_eq!(
-            parse_sha256(&format!("{sum}  other.apk"), "Overseer_0.9.0_android.apk"),
-            None
-        );
-        assert_eq!(parse_sha256("abc  x.apk", "x.apk"), None);
-        assert_eq!(
-            parse_sha256(&format!("{}  x.apk", "g".repeat(64)), "x.apk"),
-            None
-        );
-        assert_eq!(parse_sha256("", "x.apk"), None);
-    }
-
-    #[test]
-    fn hashes_match_the_sha256sum_format() {
-        let digest = Sha256::digest(b"abc");
-        assert_eq!(
-            hex(&digest),
-            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
-        );
-        assert_eq!(
-            parse_sha256(&format!("{}  f.apk", hex(&digest)), "f.apk"),
-            Some(hex(&digest))
-        );
     }
 
     const SHA: &str = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";

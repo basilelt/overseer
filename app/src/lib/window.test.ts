@@ -24,8 +24,6 @@ describe('host key', () => {
 });
 
 describe('isMainWindow', () => {
-  afterEach(() => vi.unstubAllGlobals());
-
   it('is true for the first window and false for extra ones', () => {
     vi.stubGlobal('location', { search: '' });
     expect(isMainWindow()).toBe(true);
@@ -38,7 +36,6 @@ describe('isMainWindow', () => {
 
 describe('openWindow', () => {
   afterEach(() => {
-    vi.unstubAllGlobals();
     invoke.mockReset();
   });
 
@@ -65,5 +62,32 @@ describe('openWindow', () => {
     expect(labels.every((l) => /^w-\d+$/.test(l!))).toBe(true);
     expect(new Set([...labels, 'w-1']).size).toBe(3);
     expect(invoke).not.toHaveBeenCalled();
+  });
+});
+
+describe('opening a window for one host', () => {
+  const prod = { kind: 'ssh' as const, host: 'prod', label: 'prod' };
+
+  afterEach(() => {
+    invoke.mockReset();
+  });
+
+  it('hands the host to the new native window', async () => {
+    vi.stubGlobal('window', { __TAURI_INTERNALS__: {} });
+    invoke.mockResolvedValue('w-3');
+    await openWindow(prod);
+    expect(invoke).toHaveBeenCalledWith('window_new', { connect: prod });
+  });
+
+  it('puts the host in the URL of a browser window, and drops a stale one', async () => {
+    const open = vi.fn();
+    vi.stubGlobal('window', {});
+    vi.stubGlobal('open', open);
+    vi.stubGlobal('location', { href: 'https://sb.local/app?connect=%7B%7D' });
+    await openWindow(prod);
+    await openWindow();
+    const [a, b] = open.mock.calls.map(([u]) => new URL(u as string));
+    expect(JSON.parse(a.searchParams.get('connect')!)).toEqual(prod);
+    expect(b.searchParams.has('connect')).toBe(false);
   });
 });

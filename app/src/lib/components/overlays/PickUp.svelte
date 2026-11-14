@@ -6,8 +6,8 @@
   import Modal from '../ui/Modal.svelte';
   import { app } from '../../state.svelte';
   import { t, type Key } from '../../i18n.svelte';
-  import { organizer } from '../../organize.svelte';
-  import type { PickUpItem } from '../../organize';
+  import { organizer } from '../../workspace/organize.svelte';
+  import type { PickUpItem } from '../../workspace/organize';
 
   let { items }: { items: PickUpItem[] } = $props();
 

@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { MockDaemon } from '../mock';
+import { MockDaemon } from '../daemon/mock';
 import type { DaemonEvent } from '../types';
+import type { ReviewGraph } from './types';
 import { reviewApi } from './api';
 import { escapeHtml, highlightLines, langFor, splitHtml } from './highlight';
 import { itemWorktree, parseReviewKey, reviewKey, titleOf } from './keys';
@@ -137,7 +138,7 @@ describe('mock review daemon', () => {
     expect(Math.max(...diff.files.map((x) => x.risk ?? 0))).toBe(100);
     expect(diff.triage!.changed).toBe(Object.values(diff.triage!.byKind).reduce((a, b) => a + b!, 0));
     expect(diff.triage!.lowRiskPct).toBeGreaterThan(0);
-    const g = await api.graph({ worktree: MOCK_WORKTREE });
+    const g = await d.request<ReviewGraph>('GET', `/v1/review/graph?worktree=${encodeURIComponent(MOCK_WORKTREE)}`);
     expect(g.revision).toBe(diff.revision);
     expect(new Set(g.order)).toEqual(new Set(g.nodes.map((n) => n.id)));
     expect(g.nodes.find((n) => n.name === 'title')?.path).toBe('src/text.rs');

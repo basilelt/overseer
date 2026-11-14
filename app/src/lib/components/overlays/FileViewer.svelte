@@ -2,7 +2,7 @@
   import Modal from '../ui/Modal.svelte';
   import Markdown from '../chat/Markdown.svelte';
   import { app, type FileArg } from '../../state.svelte';
-  import { api } from '../../api';
+  import { api } from '../../daemon/api';
   import { fileKind, isMissingFile, mimeOf, saveFile } from '../../files';
   import { t } from '../../i18n.svelte';
 

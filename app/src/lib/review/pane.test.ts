@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { EMPTY_LAYOUT, type Layout } from '../workspace.svelte';
+import { EMPTY_LAYOUT, type Layout } from '../workspace/workspace.svelte';
 import { closeReviews, follow, openBeside, reviewMode } from './pane';
 
 const one = (tabs: string[], active = tabs[0] ?? null): Layout => ({ ...EMPTY_LAYOUT, panes: [{ tabs, active }] });

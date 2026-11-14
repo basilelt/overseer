@@ -1,40 +1,29 @@
+use crate::http::err;
 use crate::install::{self, Format, Target};
+use crate::legacy;
 use crate::registry::Registry;
 use rusqlite::{Connection, OpenFlags};
 use serde_json::{json, Map, Value};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-const KEY: &str = "import.switchboard";
-const OLD_HOOK: &str = "#switchboard-hook";
-const OLD_STATUSLINE: &str = "#switchboard-statusline";
-const OLD_UNIT: &str = "switchboard-daemon.service";
-const OLD_LABEL: &str = "dev.switchboard.daemon";
-const OLD_APP: &str = "fr.armtek.switchboard";
-const OLD_WORKTREES: &str = "~/.switchboard/worktrees";
 const SKIP_TABLES: &[&str] = &["spool_offsets", "sqlite_sequence"];
 const FIX_REGISTRY: &str = "
 UPDATE hook_state SET pid = NULL, pane = NULL
   WHERE (agent, session_id) IN (SELECT agent, session_id FROM old.hook_state);
 UPDATE lines SET held_by_user = 0 WHERE id IN (SELECT id FROM old.lines);
 ";
-const COPY_FILES: &[&str] = &[
-    "profiles.json",
-    "board.json",
-    "user.json",
-    "sync.json",
-    "projects.json",
-];
-const COPY_DIRS: &[&str] = &["stations", "feedback"];
-const COPY_HOME_DIRS: &[&str] = &["u", "tasks", "reviews"];
+const COPY_FILES: &[&str] = &crate::paths::MIGRATED_STATE_FILES;
+const COPY_DIRS: &[&str] = &[crate::paths::STATIONS_DIR, "feedback"];
+const COPY_HOME_DIRS: &[&str] = &crate::paths::MIGRATED_HOME_DIRS;
 
 fn locate(get: &dyn Fn(&str) -> Option<String>, windows: bool, macos: bool) -> PathBuf {
-    if let Some(d) = get("SWITCHBOARD_STATE_DIR").filter(|v| !v.is_empty()) {
+    if let Some(d) = get(legacy::STATE_ENV).filter(|v| !v.is_empty()) {
         return PathBuf::from(d);
     }
     if windows {
         if let Some(d) = get("LOCALAPPDATA").filter(|v| !v.is_empty()) {
-            return PathBuf::from(d).join("switchboard");
+            return PathBuf::from(d).join(legacy::NAME);
         }
     }
     let home = PathBuf::from(get("HOME").unwrap_or_default());
@@ -45,7 +34,7 @@ fn locate(get: &dyn Fn(&str) -> Option<String>, windows: bool, macos: bool) -> P
         .filter(|v| !v.is_empty())
         .map(PathBuf::from)
         .unwrap_or_else(|| home.join(".local/state"))
-        .join("switchboard")
+        .join(legacy::NAME)
 }
 
 pub fn old_dir() -> PathBuf {
@@ -57,7 +46,7 @@ pub fn old_dir() -> PathBuf {
 }
 
 fn old_db(dir: &Path) -> PathBuf {
-    dir.join("switchboard.db")
+    dir.join(legacy::DB_FILE)
 }
 
 fn readonly(path: &Path) -> Option<Connection> {
@@ -124,7 +113,7 @@ fn old_pid(dir: &Path) -> Option<i32> {
         .parse()
         .ok()
         .filter(|p| *p > 1 && *p != std::process::id() as i32)
-        .filter(|p| alive(*p) && cmdline(*p).contains("switchboard"))
+        .filter(|p| alive(*p) && cmdline(*p).contains(legacy::NAME))
 }
 
 fn marked(state_dir: &Path) -> bool {
@@ -132,7 +121,11 @@ fn marked(state_dir: &Path) -> bool {
         .ok()
         .and_then(|r| {
             r.conn
-                .query_row("SELECT 1 FROM kv WHERE key = ?1", [KEY], |_| Ok(()))
+                .query_row(
+                    "SELECT 1 FROM kv WHERE key = ?1",
+                    [legacy::IMPORT_KEY],
+                    |_| Ok(()),
+                )
                 .ok()
         })
         .is_some()
@@ -150,10 +143,10 @@ fn has_marker(path: &Path, marker: &str) -> bool {
 
 fn old_hooks(t: &Target) -> bool {
     match t.format {
-        Format::File => has_marker(&old_target_path(t), OLD_HOOK),
+        Format::File => has_marker(&old_target_path(t), legacy::HOOK_MARKER),
         _ => {
-            has_marker(&t.path, OLD_HOOK)
-                || (t.agent == "claude" && has_marker(&t.path, OLD_STATUSLINE))
+            has_marker(&t.path, legacy::HOOK_MARKER)
+                || (t.agent == "claude" && has_marker(&t.path, legacy::STATUSLINE_MARKER))
         }
     }
 }
@@ -221,14 +214,14 @@ fn find_local_storage(dir: &Path, depth: usize, found: &mut Vec<PathBuf>) {
 fn webview_root(get: &dyn Fn(&str) -> Option<String>, macos: bool) -> Option<PathBuf> {
     let home = PathBuf::from(get("HOME").filter(|v| !v.is_empty())?);
     if macos {
-        return Some(home.join("Library/WebKit").join(OLD_APP));
+        return Some(home.join("Library/WebKit").join(legacy::APP));
     }
     Some(
         get("XDG_DATA_HOME")
             .filter(|v| !v.is_empty())
             .map(PathBuf::from)
             .unwrap_or_else(|| home.join(".local/share"))
-            .join(OLD_APP),
+            .join(legacy::APP),
     )
 }
 
@@ -271,9 +264,9 @@ fn disable_autostart(run: crate::autostart::Run, state_dir: &Path) {
     let env = crate::autostart::Env::current(state_dir);
     match env.kind {
         crate::autostart::Kind::Systemd => {
-            let unit = env.config_home.join("systemd/user").join(OLD_UNIT);
+            let unit = env.config_home.join("systemd/user").join(legacy::UNIT);
             if unit.exists() {
-                let _ = run("systemctl", &["--user", "disable", "--now", OLD_UNIT]);
+                let _ = run("systemctl", &["--user", "disable", "--now", legacy::UNIT]);
                 let _ = std::fs::remove_file(&unit);
                 let _ = run("systemctl", &["--user", "daemon-reload"]);
             }
@@ -282,10 +275,13 @@ fn disable_autostart(run: crate::autostart::Run, state_dir: &Path) {
             let plist = env
                 .home
                 .join("Library/LaunchAgents")
-                .join(format!("{OLD_LABEL}.plist"));
+                .join(format!("{}.plist", legacy::LABEL));
             if plist.exists() {
                 let uid = unsafe_uid();
-                let _ = run("launchctl", &["bootout", &format!("gui/{uid}/{OLD_LABEL}")]);
+                let _ = run(
+                    "launchctl",
+                    &["bootout", &format!("gui/{uid}/{}", legacy::LABEL)],
+                );
                 let _ = std::fs::remove_file(&plist);
             }
         }
@@ -418,7 +414,7 @@ fn merge_or_clone(state_dir: &Path, old_dir: &Path, name: &str, fix: &str) -> Re
     if !old.is_file() {
         return Ok(());
     }
-    if dest.exists() && name != "sync.db" {
+    if dest.exists() && name != crate::paths::SYNC_DB {
         merge_db(&dest, &old, fix)
     } else if dest.exists() {
         Ok(())
@@ -437,7 +433,7 @@ fn merge_config(ours: &Value, old: &Value, worktrees_exist: bool) -> Value {
         }
     }
     if worktrees_exist && !out.contains_key("worktreeDir") {
-        out.insert("worktreeDir".into(), json!(OLD_WORKTREES));
+        out.insert("worktreeDir".into(), json!(legacy::WORKTREES));
     }
     Value::Object(out)
 }
@@ -457,7 +453,10 @@ fn import_config(state_dir: &Path, old_dir: &Path) -> Result<(), String> {
     }
     let ours_path = state_dir.join("config.json");
     let ours = read_json(&ours_path);
-    let wt = crate::home().join(".switchboard/worktrees").is_dir();
+    let wt = crate::home()
+        .join(legacy::HOME_DIR)
+        .join(crate::paths::WORKTREES_DIR)
+        .is_dir();
     let merged = merge_config(&ours, &old, wt);
     if merged == ours {
         return Ok(());
@@ -490,7 +489,7 @@ fn copy_missing(src: &Path, dst: &Path) -> Result<(), String> {
 fn strip_target(t: &Target, stamp: &str) -> Result<bool, String> {
     if t.format == Format::File {
         let old = old_target_path(t);
-        if !has_marker(&old, OLD_HOOK) {
+        if !has_marker(&old, legacy::HOOK_MARKER) {
             return Ok(false);
         }
         std::fs::remove_file(&old).map_err(|e| format!("{}: {e}", old.display()))?;
@@ -513,10 +512,10 @@ fn strip_target(t: &Target, stamp: &str) -> Result<bool, String> {
             t.path.display()
         ));
     }
-    let mut after = install::unmerge_marker(&v, OLD_HOOK);
+    let mut after = install::unmerge_marker(&v, legacy::HOOK_MARKER);
     if let Some(orig) = v["statusLine"]["command"]
         .as_str()
-        .and_then(|c| crate::statusline::original_marker(c, OLD_STATUSLINE))
+        .and_then(|c| crate::statusline::original_marker(c, legacy::STATUSLINE_MARKER))
     {
         match orig {
             Some(o) => after["statusLine"]["command"] = json!(o),
@@ -539,12 +538,12 @@ fn strip_target(t: &Target, stamp: &str) -> Result<bool, String> {
 }
 
 fn import_hooks(state_dir: &Path) -> bool {
-    let stamp = install::stamp(crate::procs::now_ms());
+    let stamp = install::stamp(crate::util::now_ms());
     let targets = install::targets();
     let mut agents: Vec<String> = vec![];
     let mut wrapped = false;
     for t in &targets {
-        wrapped |= t.agent == "claude" && has_marker(&t.path, OLD_STATUSLINE);
+        wrapped |= t.agent == "claude" && has_marker(&t.path, legacy::STATUSLINE_MARKER);
         match strip_target(t, &stamp) {
             Ok(true) => agents.push(t.agent.to_string()),
             Ok(false) => {}
@@ -577,7 +576,7 @@ fn import_hooks(state_dir: &Path) -> bool {
             false,
             &bin,
             state_dir,
-            crate::procs::now_ms(),
+            crate::util::now_ms(),
         ) {
             crate::dlog::line("warn", &format!("overseer import: statusline: {e}"));
         }
@@ -589,19 +588,24 @@ fn run_import(state_dir: &Path, dir: &Path) -> Result<Value, String> {
     let (sessions, tasks, workspaces) = counts(dir);
     let stopped = stop_old(dir, state_dir)?;
     Registry::open(state_dir)?;
-    merge_db(&state_dir.join("overseer.db"), &old_db(dir), FIX_REGISTRY)
-        .map_err(|e| format!("merging the database: {e}"))?;
-    merge_or_clone(state_dir, dir, "usage.db", "").map_err(|e| format!("merging usage: {e}"))?;
+    merge_db(
+        &state_dir.join(crate::paths::REGISTRY_DB),
+        &old_db(dir),
+        FIX_REGISTRY,
+    )
+    .map_err(|e| format!("merging the database: {e}"))?;
+    merge_or_clone(state_dir, dir, crate::paths::USAGE_DB, "")
+        .map_err(|e| format!("merging usage: {e}"))?;
     import_config(state_dir, dir)?;
     for f in COPY_FILES.iter().chain(COPY_DIRS) {
         copy_missing(&dir.join(f), &state_dir.join(f))?;
     }
-    merge_or_clone(state_dir, dir, "sync.db", "")?;
+    merge_or_clone(state_dir, dir, crate::paths::SYNC_DB, "")?;
     let home = crate::home();
     for d in COPY_HOME_DIRS {
         copy_missing(
-            &home.join(".switchboard").join(d),
-            &home.join(".overseer").join(d),
+            &home.join(legacy::HOME_DIR).join(d),
+            &crate::paths::overseer_home().join(d),
         )?;
     }
     let hooks = import_hooks(state_dir);
@@ -609,7 +613,7 @@ fn run_import(state_dir: &Path, dir: &Path) -> Result<Value, String> {
         .conn
         .execute(
             "INSERT OR REPLACE INTO kv (key, value) VALUES (?1, ?2)",
-            rusqlite::params![KEY, crate::procs::now_ms().to_string()],
+            rusqlite::params![legacy::IMPORT_KEY, crate::util::now_ms().to_string()],
         )
         .map_err(|e| e.to_string())?;
     Ok(json!({
@@ -631,13 +635,14 @@ pub fn routes(
     match (method, segs) {
         ("GET", ["v1", "import", "switchboard"]) => Some((200, status(state_dir))),
         ("POST", ["v1", "import", "switchboard"]) => {
+            crate::daemon::mark(crate::daemon::Effect::Rescan);
             let dir = old_dir();
             if !old_db(&dir).is_file() {
-                return Some((404, json!({"error": "no switchboard data found"})));
+                return Some(err(404, "no switchboard data found"));
             }
             Some(match run_import(state_dir, &dir) {
                 Ok(v) => (200, v),
-                Err(e) => (500, json!({"error": e})),
+                Err(e) => err(500, e),
             })
         }
         _ => None,
@@ -964,7 +969,7 @@ mod tests {
         let m = merge_config(&ours, &old, true);
         assert_eq!(
             m,
-            json!({"stationId": "mine", "roots": ["a"], "idleAfterSeconds": 5, "worktreeDir": OLD_WORKTREES})
+            json!({"stationId": "mine", "roots": ["a"], "idleAfterSeconds": 5, "worktreeDir": legacy::WORKTREES})
         );
     }
 
@@ -1016,7 +1021,7 @@ mod tests {
             {"hooks": [{"type": "command", "command": "mine"}, {"type": "command", "command": "y #switchboard-hook"}]},
             {"hooks": [{"type": "command", "command": "z #overseer-hook"}]}
         ], "Start": [{"hooks": [{"type": "command", "command": "q #switchboard-hook"}]}]}});
-        let after = install::unmerge_marker(&v, OLD_HOOK);
+        let after = install::unmerge_marker(&v, legacy::HOOK_MARKER);
         assert_eq!(
             after,
             json!({"hooks": {"Stop": [
@@ -1109,7 +1114,7 @@ mod tests {
         Registry::open(&s)
             .unwrap()
             .conn
-            .execute("INSERT INTO kv VALUES (?1, '1')", [KEY])
+            .execute("INSERT INTO kv VALUES (?1, '1')", [legacy::IMPORT_KEY])
             .unwrap();
         assert!(marked(&s));
     }

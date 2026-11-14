@@ -77,7 +77,8 @@ A host without the Overseer server (or with an older one) no longer needs the de
 first. When the phone connects, it maps `uname -sm` to the release asset
 (`overseer-<version>-x86_64-unknown-linux-musl`, `-aarch64-unknown-linux-musl`,
 `-x86_64-apple-darwin`, `-aarch64-apple-darwin`) of its own version, downloads it from the GitHub
-release, checks it against the release's `SHA256SUMS`, caches it in the app
+release, checks the signature of the release's `SHA256SUMS` (`SHA256SUMS.sig`, made with the
+updater key) and the binary against that file, caches it in the app
 cache folder, uploads it over the SSH session and starts it. The Connect screen shows "Downloading
 server for linux/x86_64", "Installing server", "Starting". A running older daemon is hot-upgraded
 as from the desktop.

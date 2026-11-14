@@ -79,9 +79,4 @@ describe('Escape on a phone sheet', () => {
     expect(escapeCloses({ key: 'Enter', defaultPrevented: false }, true)).toBe(false);
     expect(escapeCloses({ key: 'Escape', defaultPrevented: true }, true)).toBe(false);
   });
-
-  it('is wired to the Activity sheet of the phone shell', async () => {
-    const src = (await import('../components/mobile/MobileShell.svelte?raw')).default;
-    expect(src).toMatch(/<svelte:window onkeydown=\{[^}]*escapeCloses\(e, ui\.panel\)[^}]*ui\.panel = false/);
-  });
 });

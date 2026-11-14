@@ -1,27 +1,17 @@
-export const LONG_PRESS_MS = 500;
+import { LONG_PRESS_MS, pressTimer } from './gestures';
 
 export function longPress(node: HTMLElement, onLong: (e: PointerEvent) => void) {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  let start: PointerEvent | null = null;
+  const press = pressTimer(LONG_PRESS_MS, { swallow: true });
   let fired = false;
-  const cancel = () => {
-    clearTimeout(timer);
-    timer = undefined;
-    start = null;
-  };
   const down = (e: PointerEvent) => {
     fired = false;
-    cancel();
-    start = e;
-    timer = setTimeout(() => {
-      timer = undefined;
+    press.start(e.clientX, e.clientY, () => {
       fired = true;
-      if (start) onLong(start);
-    }, LONG_PRESS_MS);
+      onLong(e);
+    });
   };
-  const move = (e: PointerEvent) => {
-    if (start && Math.hypot(e.clientX - start.clientX, e.clientY - start.clientY) > 10) cancel();
-  };
+  const move = (e: PointerEvent) => press.move(e.clientX, e.clientY);
+  const cancel = () => press.cancel();
   const click = (e: MouseEvent) => {
     if (!fired) return;
     fired = false;

@@ -1,23 +1,67 @@
-use crate::board::{git_out, publish};
+use crate::board::publish;
+use crate::git::git_out;
 use crate::git::Git;
-use crate::registry::Registry;
+use crate::registry::{col_at, columns, db, insert_row, sql, update_row, Registry};
+use crate::status::{self, COMPLETED, IN_PROGRESS, MERGED, PENDING};
+use crate::task_transition::{self, Origin};
 use crate::term::{self, Spec, Term};
 use crate::util::{format_rfc3339, ticket_any, ulid};
 use crate::{Ctx, Line};
 use rusqlite::{params, OptionalExtension, Row};
 use serde_json::{json, Value};
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 
 pub(crate) type Res<T> = Result<T, (u16, String)>;
 
-const COLS: &str = "id, number, title, description, project, status, agent, model, effort, ticket_key, line_id, term_id, branch, worktree_path, progress, error, started_ms, created_ms, updated_ms, rank, origin, manual_status, session_state, badge, profile, title_source, urgent, important, parent_id, depends_on, inherit_branch";
+columns!(
+    COLUMNS,
+    COLS = id,
+    number,
+    title,
+    description,
+    project,
+    status,
+    agent,
+    model,
+    effort,
+    ticket_key,
+    line_id,
+    term_id,
+    branch,
+    worktree_path,
+    progress,
+    error,
+    started_ms,
+    created_ms,
+    updated_ms,
+    rank,
+    origin,
+    manual_status,
+    session_state,
+    badge,
+    profile,
+    title_source,
+    urgent,
+    important,
+    parent_id,
+    depends_on,
+    inherit_branch,
+    quorum,
+    votes,
+    cost,
+    task_type
+);
 
 pub const TITLE_USER: &str = "user";
 pub const TITLE_AUTO: &str = "auto";
 
 static START: Mutex<()> = Mutex::new(());
+
+pub(crate) fn start_lock() -> std::sync::MutexGuard<'static, ()> {
+    START.lock().unwrap_or_else(|e| e.into_inner())
+}
 static SEEN_BUSY: Mutex<Option<HashSet<String>>> = Mutex::new(None);
 
 #[derive(Clone, Debug, Default)]
@@ -53,48 +97,69 @@ pub struct Task {
     pub parent_id: Option<String>,
     pub depends_on: Vec<String>,
     pub inherit_branch: Option<bool>,
+    pub quorum: Option<Value>,
+    pub votes: Option<Value>,
+    pub cost: Option<Value>,
+    pub task_type: Option<String>,
+}
+
+macro_rules! at {
+    ($n:literal) => {
+        col_at!(COLUMNS, $n)
+    };
 }
 
 fn row(r: &Row) -> rusqlite::Result<Task> {
-    let created: i64 = r.get(17)?;
+    let created: i64 = r.get(at!("created_ms"))?;
     Ok(Task {
-        id: r.get(0)?,
-        number: r.get(1)?,
-        title: r.get(2)?,
-        description: r.get(3)?,
-        project: r.get(4)?,
-        status: r.get(5)?,
-        agent: r.get(6)?,
-        model: r.get(7)?,
-        effort: r.get(8)?,
-        ticket_key: r.get(9)?,
-        line_id: r.get(10)?,
-        term_id: r.get(11)?,
-        branch: r.get(12)?,
-        worktree_path: r.get(13)?,
+        id: r.get(at!("id"))?,
+        number: r.get(at!("number"))?,
+        title: r.get(at!("title"))?,
+        description: r.get(at!("description"))?,
+        project: r.get(at!("project"))?,
+        status: r.get(at!("status"))?,
+        agent: r.get(at!("agent"))?,
+        model: r.get(at!("model"))?,
+        effort: r.get(at!("effort"))?,
+        ticket_key: r.get(at!("ticket_key"))?,
+        line_id: r.get(at!("line_id"))?,
+        term_id: r.get(at!("term_id"))?,
+        branch: r.get(at!("branch"))?,
+        worktree_path: r.get(at!("worktree_path"))?,
         progress: r
-            .get::<_, Option<String>>(14)?
+            .get::<_, Option<String>>(at!("progress"))?
             .and_then(|s| serde_json::from_str(&s).ok()),
-        error: r.get(15)?,
-        started_ms: r.get(16)?,
+        error: r.get(at!("error"))?,
+        started_ms: r.get(at!("started_ms"))?,
         created_ms: created,
-        updated_ms: r.get(18)?,
-        rank: r.get::<_, Option<f64>>(19)?.unwrap_or(created as f64),
-        origin: r.get(20)?,
-        manual_status: r.get(21)?,
-        session_state: r.get(22)?,
-        badge: r.get(23)?,
-        profile: r.get(24)?,
-        title_source: r.get(25)?,
-        urgent: r.get(26)?,
-        important: r.get(27)?,
-        parent_id: r.get(28)?,
+        updated_ms: r.get(at!("updated_ms"))?,
+        rank: r
+            .get::<_, Option<f64>>(at!("rank"))?
+            .unwrap_or(created as f64),
+        origin: r.get(at!("origin"))?,
+        manual_status: r.get(at!("manual_status"))?,
+        session_state: r.get(at!("session_state"))?,
+        badge: r.get(at!("badge"))?,
+        profile: r.get(at!("profile"))?,
+        title_source: r.get(at!("title_source"))?,
+        urgent: r.get(at!("urgent"))?,
+        important: r.get(at!("important"))?,
+        parent_id: r.get(at!("parent_id"))?,
         depends_on: r
-            .get::<_, Option<String>>(29)?
+            .get::<_, Option<String>>(at!("depends_on"))?
             .and_then(|s| serde_json::from_str(&s).ok())
             .unwrap_or_default(),
-        inherit_branch: r.get(30)?,
+        inherit_branch: r.get(at!("inherit_branch"))?,
+        quorum: json_col(r, at!("quorum"))?,
+        votes: json_col(r, at!("votes"))?,
+        cost: json_col(r, at!("cost"))?,
+        task_type: r.get(at!("task_type"))?,
     })
+}
+
+fn json_col(r: &Row, i: usize) -> rusqlite::Result<Option<Value>> {
+    Ok(r.get::<_, Option<String>>(i)?
+        .and_then(|s| serde_json::from_str(&s).ok()))
 }
 
 impl Task {
@@ -116,6 +181,7 @@ impl Task {
             ("error", &self.error),
             ("manualStatus", &self.manual_status),
             ("profile", &self.profile),
+            ("taskType", &self.task_type),
         ] {
             if let Some(x) = val {
                 v[k] = json!(x);
@@ -136,8 +202,17 @@ impl Task {
         if let Some(x) = &self.parent_id {
             v["parentId"] = json!(x);
         }
+        if let Some(q) = &self.quorum {
+            v["quorum"] = q.clone();
+        }
+        if let Some(x) = &self.votes {
+            v["votes"] = x.clone();
+        }
         if let Some(b) = &self.badge {
             v["badges"] = json!([b]);
+        }
+        if let Some(c) = self.cost.as_ref().and_then(cost_total) {
+            v["cost"] = c;
         }
         v
     }
@@ -152,14 +227,144 @@ impl Task {
             .and_then(term::get)
             .filter(|t| !t.exited())
     }
+
+    pub(crate) fn is_running(&self) -> bool {
+        self.status == IN_PROGRESS && self.live_term().is_some()
+    }
 }
 
-pub(crate) fn sql<T>(r: rusqlite::Result<T>) -> Res<T> {
-    r.map_err(|e| (500, e.to_string()))
+const COST_BUSY_MS: i64 = 60_000;
+const COST_PER_TICK: usize = 8;
+
+static COST_SEEN: Mutex<Option<HashMap<String, (i64, i64)>>> = Mutex::new(None);
+
+fn cost_due(seen: Option<(i64, i64)>, activity_ms: i64, busy: bool, now: i64) -> bool {
+    match seen {
+        None => true,
+        Some((a, _)) if a == activity_ms => false,
+        Some((_, at)) => !busy || now - at >= COST_BUSY_MS,
+    }
 }
 
-pub(crate) fn db(ctx: &Ctx) -> Res<Registry> {
-    Registry::open(&ctx.state_dir).map_err(|e| (500, e))
+fn cost_total(c: &Value) -> Option<Value> {
+    let sessions = c["sessions"].as_object().filter(|m| !m.is_empty())?;
+    let mut out = json!({"input": 0, "cacheWrite": 0, "cacheRead": 0, "output": 0, "cost": null, "partial": false, "sessions": sessions.len()});
+    let mut latest = i64::MIN;
+    for s in sessions.values() {
+        for k in ["input", "cacheWrite", "cacheRead", "output"] {
+            out[k] = json!(out[k].as_u64().unwrap_or(0) + s[k].as_u64().unwrap_or(0));
+        }
+        if let Some(x) = s["cost"].as_f64() {
+            let sum = out["cost"].as_f64().unwrap_or(0.0) + x;
+            out["cost"] = json!((sum * 10_000.0).round() / 10_000.0);
+        }
+        if s["partial"] == true {
+            out["partial"] = json!(true);
+        }
+        let at = s["at"].as_i64().unwrap_or(0);
+        if at >= latest {
+            latest = at;
+            out["model"] = s["model"].clone();
+            out["effort"] = s["effort"].clone();
+        }
+    }
+    Some(out)
+}
+
+fn track_cost(ctx: &Ctx, reg: &Registry, lines: &[Line]) {
+    let Ok(tasks) = all(reg) else { return };
+    let now = crate::util::now_ms();
+    let mut budget = COST_PER_TICK;
+    let mut seen = COST_SEEN.lock().unwrap_or_else(|e| e.into_inner());
+    let seen = seen.get_or_insert_with(HashMap::new);
+    let live: HashSet<String> = tasks.iter().map(|t| t.id.clone()).collect();
+    seen.retain(|k, _| k.split_once(' ').is_some_and(|(id, _)| live.contains(id)));
+    for t in tasks {
+        let Some(l) = t
+            .line_id
+            .as_deref()
+            .and_then(|id| lines.iter().find(|l| l.id == id))
+        else {
+            continue;
+        };
+        if l.session_id.is_empty() {
+            continue;
+        }
+        let key = format!("{}:{}", l.agent, l.session_id);
+        let mark = format!("{} {key}", t.id);
+        if !cost_due(seen.get(&mark).copied(), l.last_activity_ms, l.busy, now) || budget == 0 {
+            continue;
+        }
+        budget -= 1;
+        seen.insert(mark, (l.last_activity_ms, now));
+        let Some(spend) = crate::activity::find_transcript(
+            &ctx.claude_dir,
+            &ctx.codex_dir,
+            &ctx.gemini_dir,
+            l.agent,
+            &l.session_id,
+        )
+        .and_then(|p| crate::activity::spend(l.agent, &p)) else {
+            continue;
+        };
+        let full = crate::activity::spend_json(&spend, &l.launch_args);
+        let mut cost = t.cost.clone().unwrap_or_else(|| json!({"sessions": {}}));
+        if !cost["sessions"].is_object() {
+            cost["sessions"] = json!({});
+        }
+        let old = cost["sessions"][&key].clone();
+        let mut snap = json!({"at": now.max(l.last_activity_ms)});
+        for k in [
+            "model",
+            "effort",
+            "cost",
+            "partial",
+            "input",
+            "cacheWrite",
+            "cacheRead",
+            "output",
+        ] {
+            snap[k] = full[k].clone();
+        }
+        if snap["effort"].is_null() {
+            snap["effort"] = match &old["effort"] {
+                Value::Null if !t.effort.is_empty() => json!(t.effort),
+                e => e.clone(),
+            };
+        }
+        if [
+            "model",
+            "effort",
+            "cost",
+            "partial",
+            "input",
+            "cacheWrite",
+            "cacheRead",
+            "output",
+        ]
+        .iter()
+        .all(|k| old[k] == snap[k])
+        {
+            continue;
+        }
+        cost["sessions"][&key] = snap;
+        if reg
+            .conn
+            .execute(
+                "UPDATE tasks SET cost = ?2 WHERE id = ?1",
+                params![t.id, cost.to_string()],
+            )
+            .is_err()
+        {
+            continue;
+        }
+        let mut t = t;
+        t.cost = Some(cost);
+        publish(
+            "task.updated",
+            json!({"task": t.to_json(&ctx.config.station_id)}),
+        );
+    }
 }
 
 pub(crate) fn bad(msg: impl Into<String>) -> (u16, String) {
@@ -186,46 +391,52 @@ pub fn get(reg: &Registry, id: &str) -> Res<Task> {
     .ok_or_else(|| (404, format!("no task {id}")))
 }
 
-fn save(ctx: &Ctx, reg: &Registry, t: &mut Task) -> Res<()> {
+pub(crate) fn save(ctx: &Ctx, reg: &Registry, t: &mut Task) -> Res<()> {
     store(reg, t, &ctx.config.station_id)
 }
 
+pub(crate) fn logged<T>(what: &str, r: Res<T>) -> bool {
+    match r {
+        Ok(_) => true,
+        Err((_, e)) => {
+            crate::dlog::line("warn", &format!("{what}: {e}"));
+            false
+        }
+    }
+}
+
 pub(crate) fn store(reg: &Registry, t: &mut Task, station: &str) -> Res<()> {
-    t.updated_ms = crate::procs::now_ms();
-    sql(reg.conn.execute(
-        "UPDATE tasks SET title = ?2, description = ?3, status = ?4, agent = ?5, model = ?6, effort = ?7,
-           ticket_key = ?8, line_id = ?9, term_id = ?10, branch = ?11, worktree_path = ?12, progress = ?13,
-           error = ?14, started_ms = ?15, updated_ms = ?16, rank = ?17, manual_status = ?18,
-           session_state = ?19, badge = ?20, profile = ?21, title_source = ?22, urgent = ?23, important = ?24,
-           depends_on = ?25, inherit_branch = ?26 WHERE id = ?1",
-        params![
-            t.id,
-            t.title,
-            t.description,
-            t.status,
-            t.agent,
-            t.model,
-            t.effort,
-            t.ticket_key,
-            t.line_id,
-            t.term_id,
-            t.branch,
-            t.worktree_path,
-            t.progress.as_ref().map(Value::to_string),
-            t.error,
-            t.started_ms,
-            t.updated_ms,
-            t.rank,
-            t.manual_status,
-            t.session_state,
-            t.badge,
-            t.profile,
-            t.title_source,
-            t.urgent,
-            t.important,
-            deps_json(&t.depends_on),
-            t.inherit_branch,
-        ],
+    t.updated_ms = crate::util::now_ms();
+    sql(update_row!(
+        reg.conn, "tasks", id = t.id;
+        title = t.title,
+        description = t.description,
+        status = t.status,
+        agent = t.agent,
+        model = t.model,
+        effort = t.effort,
+        ticket_key = t.ticket_key,
+        line_id = t.line_id,
+        term_id = t.term_id,
+        branch = t.branch,
+        worktree_path = t.worktree_path,
+        progress = t.progress.as_ref().map(Value::to_string),
+        error = t.error,
+        started_ms = t.started_ms,
+        updated_ms = t.updated_ms,
+        rank = t.rank,
+        manual_status = t.manual_status,
+        session_state = t.session_state,
+        badge = t.badge,
+        profile = t.profile,
+        title_source = t.title_source,
+        urgent = t.urgent,
+        important = t.important,
+        depends_on = deps_json(&t.depends_on),
+        inherit_branch = t.inherit_branch,
+        quorum = t.quorum.as_ref().map(Value::to_string),
+        votes = t.votes.as_ref().map(Value::to_string),
+        task_type = t.task_type,
     ))?;
     publish("task.updated", json!({"task": t.to_json(station)}));
     Ok(())
@@ -275,9 +486,7 @@ fn deps_json(d: &[String]) -> Option<String> {
     (!d.is_empty()).then(|| json!(d).to_string())
 }
 
-pub fn is_done(status: &str) -> bool {
-    matches!(status, "merged" | "completed")
-}
+use crate::status::is_done;
 
 pub fn blockers<'a>(t: &Task, tasks: &'a [Task]) -> Vec<&'a Task> {
     t.depends_on
@@ -378,6 +587,20 @@ fn ticket_of(v: &Value) -> Res<Option<String>> {
     }
 }
 
+fn task_type_of(v: &Value) -> Res<Option<String>> {
+    match v {
+        Value::Null => Ok(None),
+        Value::String(s) if s.is_empty() => Ok(None),
+        Value::String(s) if crate::profiles::TASK_TYPES.contains(&s.as_str()) => {
+            Ok(Some(s.clone()))
+        }
+        _ => Err(bad(format!(
+            "taskType must be one of {}",
+            crate::profiles::TASK_TYPES.join(", ")
+        ))),
+    }
+}
+
 fn profile_of(ctx: &Ctx, v: &Value) -> Res<Option<String>> {
     match v {
         Value::Null => Ok(None),
@@ -390,13 +613,31 @@ fn profile_of(ctx: &Ctx, v: &Value) -> Res<Option<String>> {
     }
 }
 
+/// The checkout of a submodule whose git dir is `<repo>/.git/modules/<name>`: git
+/// records it as `core.worktree`, so a worktree of a submodule maps back to it.
+pub fn module_worktree(common: &Path) -> Option<String> {
+    let text = std::fs::read_to_string(common.join("config")).ok()?;
+    let mut core = false;
+    for l in text.lines().map(str::trim) {
+        if l.starts_with('[') {
+            core = l.eq_ignore_ascii_case("[core]");
+        } else if let Some((k, v)) = l.split_once('=').filter(|_| core) {
+            if k.trim() == "worktree" {
+                let p = common.join(v.trim()).canonicalize().ok()?;
+                return Some(p.to_string_lossy().into_owned());
+            }
+        }
+    }
+    None
+}
+
 pub fn main_root(g: &mut Git, path: &str) -> Option<(String, String)> {
     let i = g.info(path)?;
     let common = Path::new(&i.common);
     let root = if common.file_name().is_some_and(|n| n == ".git") {
         common.parent()?.to_string_lossy().into_owned()
     } else {
-        i.top.clone()
+        module_worktree(common).unwrap_or_else(|| i.top.clone())
     };
     let repo = g.info(&root).map(|r| r.repo).unwrap_or(i.repo);
     Some((root, repo))
@@ -414,14 +655,44 @@ pub fn create(ctx: &Ctx, b: &Value) -> Res<Task> {
         .ok_or_else(|| bad("project required"))?;
     let (project, _) = main_root(&mut Git::default(), path)
         .ok_or_else(|| bad(format!("{path} is not in a git repository")))?;
-    let status = pick(b, "status", &["pending", "auto"], "pending")?;
-    let agent = agent_of(b, "agent")?.unwrap_or("claude");
+    let mut status = pick(b, "status", &status::TASK_CREATE_SETTABLE, PENDING)?;
+    let reg = db(ctx)?;
+    let parent = match &b["parentId"] {
+        Value::Null => None,
+        Value::String(p) => {
+            let parent = get(&reg, p).map_err(|_| bad(format!("parentId {p} is not a task")))?;
+            if crate::task_agents::is_organizer(&parent) {
+                return Err(bad("the organizer may not create tasks"));
+            }
+            Some(parent)
+        }
+        _ => return Err(bad("parentId must be a string or null")),
+    };
+    let asked = agent_of(b, "agent")?;
+    let agent = match &parent {
+        Some(p) => crate::quorum::child_agent(p, asked)?,
+        None => asked,
+    }
+    .unwrap_or(crate::agents::DEFAULT_ID);
+    let quorum = crate::quorum::parse(&b["quorum"], agent)?;
+    if quorum.is_some() && parent.is_some() {
+        return Err(bad("a subtask cannot run a quorum"));
+    }
+    if parent.as_ref().is_some_and(|p| p.quorum.is_some()) {
+        status = status::AUTO;
+    }
     let profile = profile_of(ctx, &b["profile"])?;
+    let task_type = task_type_of(&b["taskType"])?;
     let profiled = {
         let s = crate::profiles::load(&ctx.state_dir);
-        crate::profiles::resolve(&s, profile.as_deref(), &[project.as_str()])
-            .map_err(|(_, e)| bad(e))?
-            .is_some_and(|p| p.agents.get(agent).is_some_and(|c| !c.effort.is_empty()))
+        crate::profiles::resolve(
+            &s,
+            profile.as_deref(),
+            task_type.as_deref(),
+            &[project.as_str()],
+        )
+        .map_err(|(_, e)| bad(e))?
+        .is_some_and(|p| p.agents.get(agent).is_some_and(|c| !c.effort.is_empty()))
     };
     let levels = crate::agents::get(agent)
         .map(|a| a.valid_efforts())
@@ -433,20 +704,9 @@ pub fn create(ctx: &Ctx, b: &Value) -> Res<Task> {
         _ => return Err(bad("model must be a string")),
     };
     let origin = pick(b, "origin", &["user", "agent"], "user")?;
-    let reg = db(ctx)?;
-    let parent_id = match &b["parentId"] {
-        Value::Null => None,
-        Value::String(p) => {
-            let parent = get(&reg, p).map_err(|_| bad(format!("parentId {p} is not a task")))?;
-            if crate::task_agents::is_organizer(&parent) {
-                return Err(bad("the organizer may not create tasks"));
-            }
-            Some(p.clone())
-        }
-        _ => return Err(bad("parentId must be a string or null")),
-    };
+    let parent_id = parent.map(|p| p.id);
     let depends_on = deps_of(&reg, "", &project, &b["dependsOn"])?;
-    let now = crate::procs::now_ms();
+    let now = crate::util::now_ms();
     let mut t = Task {
         id: ulid(now),
         title: title.into(),
@@ -458,12 +718,14 @@ pub fn create(ctx: &Ctx, b: &Value) -> Res<Task> {
         effort: effort.into(),
         ticket_key: ticket_of(&b["ticketKey"])?,
         profile,
+        task_type,
         origin: (origin != "user").then(|| origin.to_string()),
         urgent: flag_of("urgent", &b["urgent"])?,
         important: flag_of("important", &b["important"])?,
         parent_id,
         depends_on,
         inherit_branch: flag_of("inheritBranch", &b["inheritBranch"])?,
+        quorum,
         created_ms: now,
         updated_ms: now,
         rank: match &b["rank"] {
@@ -498,40 +760,38 @@ pub(crate) fn insert(reg: &Registry, t: &mut Task, station: &str) -> Res<bool> {
         [&t.project],
         |r| r.get(0),
     ))?;
-    let n = sql(tx.execute(
-        "INSERT INTO tasks (id, number, title, description, project, status, agent, model, effort, ticket_key,
-           line_id, branch, worktree_path, progress, created_ms, updated_ms, rank, origin, session_state, badge, profile, title_source, urgent, important, parent_id, depends_on, inherit_branch)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27)
-         ON CONFLICT DO NOTHING",
-        params![
-            t.id,
-            t.number,
-            t.title,
-            t.description,
-            t.project,
-            t.status,
-            t.agent,
-            t.model,
-            t.effort,
-            t.ticket_key,
-            t.line_id,
-            t.branch,
-            t.worktree_path,
-            t.progress.as_ref().map(Value::to_string),
-            t.created_ms,
-            t.updated_ms,
-            t.rank,
-            t.origin,
-            t.session_state,
-            t.badge,
-            t.profile,
-            t.title_source,
-            t.urgent,
-            t.important,
-            t.parent_id,
-            deps_json(&t.depends_on),
-            t.inherit_branch,
-        ],
+    let n = sql(insert_row!(
+        tx, "INSERT INTO", "tasks", " ON CONFLICT DO NOTHING";
+        id = t.id,
+        number = t.number,
+        title = t.title,
+        description = t.description,
+        project = t.project,
+        status = t.status,
+        agent = t.agent,
+        model = t.model,
+        effort = t.effort,
+        ticket_key = t.ticket_key,
+        line_id = t.line_id,
+        branch = t.branch,
+        worktree_path = t.worktree_path,
+        progress = t.progress.as_ref().map(Value::to_string),
+        created_ms = t.created_ms,
+        updated_ms = t.updated_ms,
+        rank = t.rank,
+        origin = t.origin,
+        session_state = t.session_state,
+        badge = t.badge,
+        profile = t.profile,
+        title_source = t.title_source,
+        urgent = t.urgent,
+        important = t.important,
+        parent_id = t.parent_id,
+        depends_on = deps_json(&t.depends_on),
+        inherit_branch = t.inherit_branch,
+        quorum = t.quorum.as_ref().map(Value::to_string),
+        votes = t.votes.as_ref().map(Value::to_string),
+        task_type = t.task_type,
     ))?;
     if n == 0 {
         return Ok(false);
@@ -582,29 +842,25 @@ pub fn patch(ctx: &Ctx, id: &str, b: &Value) -> Res<Task> {
             "description" => t.description = s()?.to_string(),
             "model" => t.model = s()?.trim().to_string(),
             "status" if t.from_session() => {
-                let s = pick(b, k, &["in_progress", "in_testing", "merged", "completed"], "")
-                    .map_err(|_| bad("a session task follows its session: status must be one of in_progress, in_testing, merged, completed"))?;
+                let s = pick(b, k, &status::SESSION_TASK_SETTABLE, "").map_err(|_| {
+                    bad(format!(
+                        "a session task follows its session: status must be one of {}",
+                        status::SESSION_TASK_SETTABLE.join(", ")
+                    ))
+                })?;
                 t.status = s.into();
                 t.manual_status = Some(s.into());
             }
-            "status" if v == "in_progress" && t.status != "in_progress" => {
+            "status" if v == status::IN_PROGRESS && t.status != status::IN_PROGRESS => {
                 if t.live_term().is_none() {
                     return Err(bad("use POST /v1/tasks/{id}/start to start a task"));
                 }
-                t.status = "in_progress".into();
-                t.started_ms = Some(crate::procs::now_ms());
+                t.status = status::IN_PROGRESS.into();
+                t.started_ms = Some(crate::util::now_ms());
                 seen_busy(|s| s.remove(&t.id));
             }
-            "status" if v == "in_progress" => {}
-            "status" => {
-                t.status = pick(
-                    b,
-                    k,
-                    &["pending", "auto", "in_testing", "merged", "completed"],
-                    "",
-                )?
-                .into()
-            }
+            "status" if v == status::IN_PROGRESS => {}
+            "status" => t.status = pick(b, k, &status::TASK_PATCH_SETTABLE, "")?.into(),
             "agent" => {
                 t.agent = agent_of(b, k)?
                     .ok_or_else(|| bad("agent must not be null"))?
@@ -615,6 +871,7 @@ pub fn patch(ctx: &Ctx, id: &str, b: &Value) -> Res<Task> {
             "important" => t.important = flag_of(k, v)?,
             "inheritBranch" => t.inherit_branch = flag_of(k, v)?,
             "dependsOn" => t.depends_on = deps_of(&reg, id, &t.project, v)?,
+            "effort" if v == "" => t.effort.clear(),
             "effort" => {
                 let levels = crate::agents::get(&effort_agent)
                     .map(|a| a.valid_efforts())
@@ -622,31 +879,26 @@ pub fn patch(ctx: &Ctx, id: &str, b: &Value) -> Res<Task> {
                 t.effort = pick(b, k, levels, "")?.into();
             }
             "profile" => t.profile = profile_of(ctx, v)?,
+            "taskType" => t.task_type = task_type_of(v)?,
             "ticketKey" => t.ticket_key = ticket_of(v)?,
             "progress" => t.progress = progress(v)?,
+            "quorum" => {
+                if !status::is_unstarted(&was) {
+                    return Err((
+                        409,
+                        "the quorum can only change before the task starts".into(),
+                    ));
+                }
+                t.quorum = crate::quorum::parse(v, &effort_agent)?;
+            }
             _ => {}
         }
     }
-    leave_merged(&mut t, &was);
-    if t.status == "completed" && was != "completed" {
-        t.session_state = None;
+    if t.quorum.is_some() {
+        crate::quorum::check_orchestrator(&t.agent)?;
     }
-    save(ctx, &reg, &mut t)?;
-    if t.status == "in_testing" && was != "in_testing" {
-        crate::task_agents::spawn_overlap_alert(ctx, &t);
-    }
+    task_transition::enter(ctx, &reg, &mut t, &was, Origin::Patch)?;
     Ok(t)
-}
-
-fn leave_merged(t: &mut Task, was: &str) {
-    if was == "merged" && t.status != "merged" {
-        if let Some(b) = &t.branch {
-            crate::worktrees::forget_landed(b);
-        }
-        if !t.from_session() && !is_done(&t.status) {
-            t.session_state = None;
-        }
-    }
 }
 
 pub fn delete(ctx: &Ctx, id: &str) -> Res<Value> {
@@ -680,7 +932,7 @@ pub fn delete(ctx: &Ctx, id: &str) -> Res<Value> {
 }
 
 fn remove(reg: &Registry, id: &str) -> Res<Vec<Task>> {
-    let now = crate::procs::now_ms();
+    let now = crate::util::now_ms();
     let dependents: Vec<Task> = all(reg)?
         .into_iter()
         .filter(|d| d.id != id && d.depends_on.iter().any(|x| x == id))
@@ -706,26 +958,6 @@ fn remove(reg: &Registry, id: &str) -> Res<Vec<Task>> {
     Ok(dependents)
 }
 
-pub fn slug(s: &str) -> String {
-    let mut out = String::new();
-    for c in s.chars().flat_map(char::to_lowercase) {
-        if c.is_ascii_alphanumeric() {
-            out.push(c);
-        } else if !out.ends_with('-') && !out.is_empty() {
-            out.push('-');
-        }
-        if out.len() >= 40 {
-            break;
-        }
-    }
-    let out = out.trim_matches('-').to_string();
-    if out.is_empty() {
-        "task".into()
-    } else {
-        out
-    }
-}
-
 fn dep_base(reg: &Registry, t: &Task) -> Option<String> {
     let [d] = t.depends_on.as_slice() else {
         return None;
@@ -749,7 +981,7 @@ fn worktree(ctx: &Ctx, reg: &Registry, t: &mut Task) -> Res<String> {
     let branch = t
         .branch
         .clone()
-        .unwrap_or_else(|| format!("task/{}-{}", t.number, slug(&t.title)));
+        .unwrap_or_else(|| crate::layout::task_branch(t.number, &t.title));
     let base = dep_base(reg, t);
     let (root, path, branch) = crate::worktrees::create(
         ctx,
@@ -775,7 +1007,7 @@ fn in_place(t: &mut Task) -> String {
 }
 
 pub fn applied(ctx: &Ctx, t: &Task) -> crate::profiles::Applied {
-    let a = crate::agents::get(&t.agent).unwrap_or(&crate::agents::AGENTS[0]);
+    let a = crate::agents::get(&t.agent).unwrap_or(crate::agents::default_agent());
     crate::profiles::for_task(&ctx.state_dir, a, t)
 }
 
@@ -788,7 +1020,7 @@ pub fn argv(
     auto_approve: bool,
 ) -> Vec<String> {
     let a = crate::agents::get(&t.agent).unwrap_or(&crate::agents::AGENTS[0]);
-    let mut extra: Vec<String> = if a.id == "claude" {
+    let mut extra: Vec<String> = if a.start_args {
         ctx.config.start_args.clone()
     } else {
         vec![]
@@ -817,7 +1049,7 @@ fn reserve(
         .map(|i| i.repo)
         .unwrap_or_else(|| "unknown".into());
     let l = Line {
-        id: format!("{}-{}", ctx.config.station_id, ulid(crate::procs::now_ms())),
+        id: format!("{}-{}", ctx.config.station_id, ulid(crate::util::now_ms())),
         agent,
         session_id: session.into(),
         owner: ctx.config.owner.clone(),
@@ -852,7 +1084,7 @@ pub(crate) fn start_with_args(
     here: bool,
     extra: &[String],
 ) -> Res<Task> {
-    let _g = START.lock().unwrap_or_else(|e| e.into_inner());
+    let _g = start_lock();
     let reg = db(ctx)?;
     let mut t = get(&reg, id)?;
     if t.from_session() {
@@ -864,6 +1096,7 @@ pub(crate) fn start_with_args(
             ),
         ));
     }
+    crate::quorum::check_start(&reg, &t)?;
     if let Some(term) = t.live_term() {
         return Err((
             409,
@@ -881,6 +1114,8 @@ pub(crate) fn start_with_args(
     let auto_approve = crate::agents::auto_approve_enabled(&reg, agent.id).map_err(|e| (500, e))?;
     let wt = if here {
         in_place(&mut t)
+    } else if let Some(cwd) = crate::quorum::reviewer_cwd(&reg, &t) {
+        cwd
     } else {
         worktree(ctx, &reg, &mut t)?
     };
@@ -893,27 +1128,32 @@ pub(crate) fn start_with_args(
     let mut prompt = format!("{}\n\n{}", t.title, t.description)
         .trim()
         .to_string();
+    if let Some(q) = &t.quorum {
+        prompt.push_str("\n\n");
+        prompt.push_str(&crate::quorum::orchestrator_prompt(q));
+    }
     if !waiting.is_empty() {
         prompt.push_str("\n\nMessages received before you started:\n");
         prompt.push_str(&crate::task_agents::backlog(&waiting));
     }
     let by_flag = agent.prompt.is_some();
     let p = applied(ctx, &t);
-    let mcp = match agent.id {
-        "codex" => crate::codex::overseer_mcp(
+    let injected = match agent.mcp {
+        crate::agents::Mcp::Codex => crate::codex::overseer_mcp(
             &crate::actions::self_exe(),
             &ctx.state_dir.to_string_lossy(),
             &t.id,
         ),
-        "claude" => crate::claude::overseer_mcp(
+        crate::agents::Mcp::Claude => crate::claude::overseer_mcp(
             &crate::actions::self_exe(),
             &ctx.state_dir.to_string_lossy(),
             &t.id,
         ),
-        _ => vec![],
+        crate::agents::Mcp::VibeTrust => vec!["--trust".to_string()],
+        crate::agents::Mcp::None => vec![],
     };
     let mut launch = p.clone();
-    launch.extra.extend(mcp.iter().cloned());
+    launch.extra.extend(injected.iter().cloned());
     launch.extra.extend(extra.iter().cloned());
     let cmd = argv(
         ctx,
@@ -930,8 +1170,7 @@ pub(crate) fn start_with_args(
         .rev()
         .find(|(k, _)| k == "PATH")
         .map(|(_, v)| v.clone())
-        .or_else(|| std::env::var("PATH").ok())
-        .unwrap_or_default();
+        .unwrap_or_else(crate::shellenv::path);
     env.retain(|(k, _)| k != "PATH");
     env.push((
         "PATH".into(),
@@ -941,12 +1180,12 @@ pub(crate) fn start_with_args(
     flags.extend(p.extra.iter().cloned());
     if auto_approve {
         let mut set = launch.extra.clone();
-        if agent.id == "claude" {
+        if agent.start_args {
             set.extend(ctx.config.start_args.iter().cloned());
         }
         flags.extend(crate::agents::auto_approve_flags(agent.id, &set));
     }
-    flags.extend(mcp);
+    flags.extend(injected);
     let (cols, rows) = size.unwrap_or((120, 32));
     let term = term::spawn(Spec {
         cwd: wt,
@@ -966,10 +1205,10 @@ pub(crate) fn start_with_args(
     })
     .map_err(|e| (409, e))?;
     t.term_id = Some(term.info().id);
-    t.status = "in_progress".into();
+    t.status = status::IN_PROGRESS.into();
     t.error = None;
     t.session_state = None;
-    t.started_ms = Some(crate::procs::now_ms());
+    t.started_ms = Some(crate::util::now_ms());
     seen_busy(|s| s.remove(&t.id));
     save(ctx, &reg, &mut t)?;
     crate::task_agents::mark_delivered(&reg, &waiting);
@@ -985,9 +1224,12 @@ pub(crate) fn start_with_args(
         }
         text.push_str(&crate::task_agents::backlog(&late));
     }
-    let own_dir = t.origin.as_deref() == Some(crate::task_agents::CONFIGURATOR);
+    let startup = match t.origin.as_deref() == Some(crate::task_agents::CONFIGURATOR) {
+        true => crate::deliver::StartupPrompt::AnswerForUser,
+        false => crate::deliver::StartupPrompt::WaitForUser,
+    };
     if !text.is_empty() {
-        std::thread::spawn(move || crate::deliver::when_started(&term, &text, own_dir));
+        std::thread::spawn(move || crate::deliver::when_started(&term, &text, startup));
     }
     Ok(t)
 }
@@ -1013,7 +1255,7 @@ pub fn review(ctx: &Ctx, id: &str, b: &Value) -> Res<Value> {
                     "a session task takes feedback in its session tab".into(),
                 ));
             }
-            t.status = "in_progress".into();
+            t.status = status::IN_PROGRESS.into();
         }
         "approve" => {
             if let Some(text) = pr_followup(b["merge"] == true, b["approvePr"] == true) {
@@ -1026,7 +1268,7 @@ pub fn review(ctx: &Ctx, id: &str, b: &Value) -> Res<Value> {
                 crate::deliver::send(&crate::deliver::Channel::Term(term), &text, None, "")
                     .map_err(|e| (500, e))?;
             }
-            t.status = "completed".into();
+            t.status = COMPLETED.into();
             t.session_state = Some(REVIEWED.into());
         }
         "reject" => match (t.live_term(), message) {
@@ -1035,14 +1277,14 @@ pub fn review(ctx: &Ctx, id: &str, b: &Value) -> Res<Value> {
                     crate::deliver::send(&crate::deliver::Channel::Term(term), m, None, "")
                         .map_err(|e| (500, e))?;
                 }
-                t.status = "in_progress".into();
-                t.started_ms = Some(crate::procs::now_ms());
+                t.status = status::IN_PROGRESS.into();
+                t.started_ms = Some(crate::util::now_ms());
                 seen_busy(|s| s.remove(&t.id));
             }
             (None, Some(_)) => {
                 return Err((409, "the agent is not running; start the task again".into()))
             }
-            (None, None) => t.status = "pending".into(),
+            (None, None) => t.status = PENDING.into(),
         },
         _ => {
             let wt = t
@@ -1062,18 +1304,17 @@ pub fn review(ctx: &Ctx, id: &str, b: &Value) -> Res<Value> {
                 .and_then(|_| git_out(&wt, &["rev-parse", "HEAD"]))
                 .map_err(|e| (409, e))?;
             out["commit"] = json!(sha.trim());
-            t.status = "completed".into();
+            t.status = COMPLETED.into();
             t.session_state = Some(REVIEWED.into());
         }
     }
-    leave_merged(&mut t, &was);
     if t.from_session() {
         t.manual_status = Some(t.status.clone());
-        if t.status == "completed" {
+        if t.status == COMPLETED {
             t.session_state = None;
         }
     }
-    save(ctx, &reg, &mut t)?;
+    task_transition::enter(ctx, &reg, &mut t, &was, Origin::Review)?;
     out["task"] = t.to_json(&ctx.config.station_id);
     Ok(out)
 }
@@ -1096,8 +1337,8 @@ const REVIEW_MERGE_WINDOW_MS: i64 = 6 * 3_600_000;
 fn merge_candidate(t: &Task, now: i64) -> bool {
     !t.from_session()
         && match t.status.as_str() {
-            "in_testing" => true,
-            "completed" => {
+            status::IN_TESTING => true,
+            COMPLETED => {
                 t.session_state.as_deref() == Some(REVIEWED)
                     && now - t.updated_ms < REVIEW_MERGE_WINDOW_MS
                     && t.worktree_path
@@ -1117,7 +1358,7 @@ pub fn tick(ctx: &Ctx, lines: &[Line]) {
     };
     for mut t in tasks
         .into_iter()
-        .filter(|t| t.status == "in_progress" && !t.from_session())
+        .filter(|t| t.status == status::IN_PROGRESS && !t.from_session())
     {
         let term = t.term_id.as_deref().and_then(term::get);
         let mut changed = false;
@@ -1148,10 +1389,11 @@ pub fn tick(ctx: &Ctx, lines: &[Line]) {
             ),
             _ => None,
         };
-        let done = if crate::task_agents::is_organizer(&t) {
-            "completed"
+        let one_shot = crate::task_agents::is_organizer(&t) || crate::quorum::is_reviewer(&t);
+        let done = if one_shot {
+            COMPLETED
         } else {
-            "in_testing"
+            status::IN_TESTING
         };
         if let Some(err) = ended {
             t.status = done.into();
@@ -1163,11 +1405,8 @@ pub fn tick(ctx: &Ctx, lines: &[Line]) {
         }
         if changed {
             seen_busy(|s| s.remove(&t.id));
-            let _ = save(ctx, &reg, &mut t);
-            if t.status == "in_testing" {
-                crate::task_agents::spawn_overlap_alert(ctx, &t);
-            }
-            if turn && crate::task_agents::is_organizer(&t) {
+            let _ = task_transition::enter(ctx, &reg, &mut t, IN_PROGRESS, Origin::Reconcile);
+            if turn && one_shot {
                 if let Some(x) = term.as_ref().filter(|x| !x.exited()) {
                     let _ = x.kill();
                 }
@@ -1175,27 +1414,30 @@ pub fn tick(ctx: &Ctx, lines: &[Line]) {
         }
     }
     if let Ok(tasks) = all(&reg) {
-        let now = crate::procs::now_ms();
+        let now = crate::util::now_ms();
         for mut t in tasks.into_iter().filter(|t| merge_candidate(t, now)) {
             let busy = t
                 .line_id
                 .as_deref()
                 .is_some_and(|id| lines.iter().any(|l| l.id == id && l.busy));
             if !busy
-                && t.branch.as_deref().is_some_and(|b| {
-                    crate::worktrees::landed(&t.project, b, ctx.config.worktree_fetch)
-                })
+                && crate::worktrees::branch_landed(
+                    &t.project,
+                    t.branch.as_deref(),
+                    ctx.config.worktree_fetch,
+                )
             {
-                t.status = "merged".into();
-                t.session_state = Some("merged".into());
-                let _ = save(ctx, &reg, &mut t);
+                let was = std::mem::replace(&mut t.status, MERGED.into());
+                t.session_state = Some(MERGED.into());
+                let _ = task_transition::enter(ctx, &reg, &mut t, &was, Origin::Landed);
             }
         }
     }
     if let Ok(_g) = START.try_lock() {
         crate::session_tasks::sync(ctx, &reg, lines);
     }
-    if ctx.config.auto_organize || crate::task_agents::auto_organize_enabled(&reg) {
+    track_cost(ctx, &reg, lines);
+    if crate::task_agents::auto_organize_on(ctx, &reg) {
         crate::task_agents::auto_organize(ctx, &reg);
     }
     loop {
@@ -1205,17 +1447,17 @@ pub fn tick(ctx: &Ctx, lines: &[Line]) {
         let running = tasks
             .iter()
             .filter(|t| {
-                t.status == "in_progress"
-                    && !crate::task_agents::is_organizer(t)
-                    && t.live_term().is_some()
+                t.is_running() && !crate::task_agents::is_organizer(t) && t.quorum.is_none()
             })
             .count();
-        if running >= ctx.config.auto_concurrency {
+        if running >= crate::task_agents::auto_concurrency(&reg, ctx.config.auto_concurrency) {
             return;
         }
         let Some(next) = tasks
             .iter()
-            .filter(|t| t.status == "auto" && !t.from_session() && blockers(t, &tasks).is_empty())
+            .filter(|t| {
+                t.status == status::AUTO && !t.from_session() && blockers(t, &tasks).is_empty()
+            })
             .min_by(|a, b| {
                 (a.rank, a.created_ms)
                     .partial_cmp(&(b.rank, b.created_ms))
@@ -1225,10 +1467,19 @@ pub fn tick(ctx: &Ctx, lines: &[Line]) {
             return;
         };
         if let Err((_, e)) = start(ctx, &next.id, None) {
-            let mut n = next.clone();
-            n.status = "pending".into();
+            let _g = start_lock();
+            let Ok(mut n) = get(&reg, &next.id) else {
+                return;
+            };
+            if n.status != status::AUTO {
+                continue;
+            }
+            n.status = PENDING.into();
             n.error = Some(e);
-            let _ = save(ctx, &reg, &mut n);
+            logged(
+                "task not saved after a failed start",
+                save(ctx, &reg, &mut n),
+            );
         }
     }
 }
@@ -1321,21 +1572,142 @@ pub fn add_project(ctx: &Ctx, b: &Value) -> Res<(bool, Value)> {
     let reg = db(ctx)?;
     let n = sql(reg.conn.execute(
         "INSERT OR IGNORE INTO projects (path, added_ms) VALUES (?1, ?2)",
-        params![root, crate::procs::now_ms()],
+        params![root, crate::util::now_ms()],
     ))?;
     Ok((n > 0, project_json(&root, &repo, false)))
 }
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn a_worktree_of_a_submodule_maps_to_the_submodule_checkout() {
+        let base = std::env::temp_dir().join(format!(
+            "sb-submod-{}-{}",
+            std::process::id(),
+            crate::util::now_ms()
+        ));
+        let git = |dir: &Path, args: &[&str]| {
+            crate::git::fixture::run(dir, args);
+        };
+        let (lib, meta) = (base.join("lib"), base.join("meta"));
+        for d in [&lib, &meta] {
+            std::fs::create_dir_all(d).unwrap();
+            git(d, &["init", "-q"]);
+            git(d, &["commit", "-q", "--allow-empty", "-m", "init"]);
+        }
+        git(
+            &meta,
+            &[
+                "submodule",
+                "add",
+                "-q",
+                lib.to_str().unwrap(),
+                "40_code/lib",
+            ],
+        );
+        let sub = meta.join("40_code/lib");
+        let wt = base.join("wt");
+        git(
+            &sub,
+            &["worktree", "add", "-q", "-b", "feat", wt.to_str().unwrap()],
+        );
+        let mut g = Git::default();
+        let want = sub.canonicalize().unwrap().to_string_lossy().into_owned();
+        assert_eq!(main_root(&mut g, wt.to_str().unwrap()).unwrap().0, want);
+        assert_eq!(main_root(&mut g, sub.to_str().unwrap()).unwrap().0, want);
+        let top = meta.canonicalize().unwrap().to_string_lossy().into_owned();
+        assert_eq!(main_root(&mut g, meta.to_str().unwrap()).unwrap().0, top);
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn module_worktree_reads_core_worktree_only_from_the_core_section() {
+        let base = std::env::temp_dir().join(format!(
+            "sb-modwt-{}-{}",
+            std::process::id(),
+            crate::util::now_ms()
+        ));
+        let common = base.join(".git/modules/x");
+        std::fs::create_dir_all(&common).unwrap();
+        std::fs::create_dir_all(base.join("src/x")).unwrap();
+        std::fs::write(
+            common.join("config"),
+            "[remote \"o\"]\n\tworktree = ../nope\n",
+        )
+        .unwrap();
+        assert_eq!(module_worktree(&common), None);
+        std::fs::write(
+            common.join("config"),
+            "[core]\n\tbare = false\n\tworktree = ../../../src/x\n",
+        )
+        .unwrap();
+        let want = base
+            .join("src/x")
+            .canonicalize()
+            .unwrap()
+            .to_string_lossy()
+            .into_owned();
+        assert_eq!(module_worktree(&common), Some(want));
+        assert_eq!(module_worktree(&base.join("missing")), None);
+        let _ = std::fs::remove_dir_all(&base);
+    }
     use super::*;
 
     #[test]
+    fn a_failed_save_is_reported_as_failed_and_a_good_one_as_done() {
+        assert!(logged("save", Ok::<(), (u16, String)>(())));
+        assert!(!logged(
+            "save",
+            Err::<(), _>((500, "disk full".to_string()))
+        ));
+    }
+
+    #[test]
+    fn cost_is_recomputed_only_when_the_session_moved() {
+        assert!(cost_due(None, 5, false, 0));
+        assert!(!cost_due(Some((5, 0)), 5, false, 10));
+        assert!(!cost_due(Some((5, 0)), 5, true, 10 * COST_BUSY_MS));
+        assert!(cost_due(Some((5, 0)), 6, false, 1));
+        assert!(!cost_due(Some((5, 0)), 6, true, COST_BUSY_MS - 1));
+        assert!(cost_due(Some((5, 0)), 6, true, COST_BUSY_MS));
+    }
+
+    #[test]
+    fn task_cost_sums_its_sessions_and_takes_the_latest_model() {
+        let c = json!({"sessions": {
+            "claude:a": {"at": 1, "model": "claude-opus-5-5", "effort": "high", "cost": 1.25, "partial": false,
+                         "input": 1, "cacheWrite": 2, "cacheRead": 3, "output": 4},
+            "codex:b": {"at": 2, "model": "gpt-6", "effort": "low", "cost": null, "partial": true,
+                        "input": 10, "cacheWrite": 0, "cacheRead": 30, "output": 40}
+        }});
+        let t = cost_total(&c).unwrap();
+        assert_eq!(t["input"], 11);
+        assert_eq!(t["cacheRead"], 33);
+        assert_eq!(t["output"], 44);
+        assert_eq!(t["cost"], 1.25);
+        assert_eq!(t["partial"], true);
+        assert_eq!(t["model"], "gpt-6");
+        assert_eq!(t["effort"], "low");
+        assert_eq!(t["sessions"], 2);
+        assert_eq!(cost_total(&json!({"sessions": {}})), None);
+        let task = Task {
+            cost: Some(c),
+            ..Task::default()
+        };
+        assert_eq!(task.to_json("s")["cost"]["sessions"], 2);
+        assert!(Task::default().to_json("s").get("cost").is_none());
+    }
+
+    #[test]
     fn slugs() {
-        assert_eq!(slug("Fix the Login page!"), "fix-the-login-page");
-        assert_eq!(slug("  ##  "), "task");
-        assert_eq!(slug("Été 2026 — élan"), "t-2026-lan");
-        assert!(slug(&"word ".repeat(30)).len() <= 40);
+        assert_eq!(
+            crate::layout::task_slug("Fix the Login page!"),
+            "fix-the-login-page"
+        );
+        assert_eq!(crate::layout::task_slug("  ##  "), "task");
+        assert_eq!(crate::layout::task_slug("Été 2026 — élan"), "t-2026-lan");
+        assert!(crate::layout::task_slug(&"word ".repeat(30)).len() <= 40);
     }
 
     #[test]
@@ -1507,32 +1879,5 @@ mod tests {
             t.status = s.into();
             assert!(!merge_candidate(&t, now), "{s}");
         }
-    }
-
-    #[test]
-    fn leaving_merged_clears_the_marker_for_every_exit() {
-        for to in ["in_progress", "pending", "in_testing"] {
-            let mut t = Task {
-                status: to.into(),
-                session_state: Some("merged".into()),
-                ..Default::default()
-            };
-            leave_merged(&mut t, "merged");
-            assert_eq!(t.session_state, None, "{to}");
-        }
-        let mut t = Task {
-            status: "completed".into(),
-            session_state: Some("merged".into()),
-            ..Default::default()
-        };
-        leave_merged(&mut t, "merged");
-        assert_eq!(t.session_state.as_deref(), Some("merged"));
-        let mut t = Task {
-            status: "in_progress".into(),
-            session_state: Some("x".into()),
-            ..Default::default()
-        };
-        leave_merged(&mut t, "in_testing");
-        assert_eq!(t.session_state.as_deref(), Some("x"));
     }
 }

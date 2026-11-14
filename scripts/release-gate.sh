@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -uo pipefail
+. "$(dirname "$0")/docs-paths.sh"
 
 out() { echo "$1=$2" | tee -a "${GITHUB_OUTPUT:-/dev/null}"; }
 
@@ -15,10 +16,7 @@ if ! files=$(git diff --name-only "$base" HEAD); then
 else
   while IFS= read -r f; do
     [ -n "$f" ] || continue
-    case $f in
-      docs/* | *.md | .github/ISSUE_TEMPLATE/*) ;;
-      *) release=true; break ;;
-    esac
+    is_docs_path "$f" || { release=true; break; }
   done <<<"$files"
 fi
 out release "$release"

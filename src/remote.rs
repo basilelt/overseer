@@ -1,6 +1,10 @@
 use crate::actions::find_line;
 use crate::sync::{endpoint, private_file, safe_id};
 use crate::util::{parse_rfc3339, shell_quote};
+use crate::wire::{
+    STATE_ACTIVE, STATE_HELD, STATE_HUNG_UP, STATE_IDLE, STATUS_FAILED, STATUS_REFUSED,
+    STATUS_SUCCEEDED,
+};
 use crate::{mkdir_private, Ctx, Line};
 use serde_json::{json, Value};
 use std::io::{Read, Write};
@@ -16,7 +20,8 @@ pub struct User {
 
 pub fn user(state_dir: &Path) -> Option<User> {
     let v: Value =
-        serde_json::from_slice(&std::fs::read(state_dir.join("user.json")).ok()?).ok()?;
+        serde_json::from_slice(&std::fs::read(state_dir.join(crate::paths::USER_FILE)).ok()?)
+            .ok()?;
     Some(User {
         api: v["api"].as_str()?.to_string(),
         token: v["token"].as_str()?.to_string(),
@@ -114,7 +119,7 @@ pub fn relay(ctx: &Ctx, line_id: &str, kind: &str, args: Value) -> (u16, Value) 
         };
         let reason = c["reason"].as_str().unwrap_or_default().to_string();
         match c["status"].as_str() {
-            Some("succeeded") => {
+            Some(STATUS_SUCCEEDED) => {
                 return (
                     200,
                     json!({
@@ -125,7 +130,7 @@ pub fn relay(ctx: &Ctx, line_id: &str, kind: &str, args: Value) -> (u16, Value) 
                     }),
                 )
             }
-            Some("refused" | "failed") => return err(409, reason),
+            Some(STATUS_REFUSED | STATUS_FAILED) => return err(409, reason),
             _ => {}
         }
     }
@@ -166,10 +171,10 @@ pub fn to_line(row: &Value) -> Option<Line> {
         worktree_path: s("worktreePath"),
         cwd: s("worktreePath"),
         state: match l["state"].as_str()? {
-            "active" => "active",
-            "idle" => "idle",
-            "held" => "held",
-            "hung-up" => "hung-up",
+            STATE_ACTIVE => STATE_ACTIVE,
+            STATE_IDLE => STATE_IDLE,
+            STATE_HELD => STATE_HELD,
+            STATE_HUNG_UP => STATE_HUNG_UP,
             _ => "unknown",
         },
         last_activity_ms: l["lastActivityAt"]
@@ -181,21 +186,10 @@ pub fn to_line(row: &Value) -> Option<Line> {
     })
 }
 
-fn query_escape(v: &str) -> String {
-    v.bytes()
-        .map(|b| match b {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'.' | b'_' | b'~' => {
-                (b as char).to_string()
-            }
-            _ => format!("%{b:02X}"),
-        })
-        .collect()
-}
-
 pub fn lines(ctx: &Ctx, u: &User, owner: Option<&str>) -> Result<Vec<(Line, Value)>, String> {
     let mut path = "/v1/lines?includeHungUp=true".to_string();
     if let Some(o) = owner {
-        path.push_str(&format!("&owner={}", query_escape(o)));
+        path.push_str(&format!("&owner={}", crate::util::percent_encode(o)));
     }
     let v = get_ok(u, &path)?;
     Ok(v.as_array()
@@ -298,7 +292,7 @@ pub fn cli_login(args: &[String]) -> ExitCode {
     let r = get_ok(&u, "/v1/stations").and_then(|st| {
         mkdir_private(&state).map_err(|e| e.to_string())?;
         private_file(
-            &state.join("user.json"),
+            &state.join(crate::paths::USER_FILE),
             json!({ "api": u.api, "token": u.token })
                 .to_string()
                 .as_bytes(),

@@ -17,6 +17,12 @@ const PATCHES: [string | RegExp, string][] = [
     'this.selectionChangedEmitter.dispose(), this.stopAutoScroll()',
     'this.selectionChangedEmitter.dispose(), this.stopAutoScroll(), this.boundDocumentMouseDownHandler && (document.removeEventListener("mousedown", this.boundDocumentMouseDownHandler), this.boundDocumentMouseDownHandler = null)',
   ],
+  // Copy joins soft-wrapped rows instead of breaking a long command at the right margin. Only rows
+  // on screen report wrapping; scrollback rows always read as unwrapped in this ghostty-web build.
+  [
+    /(\w) >= 0 \? (\w) = \2\.substring\(0, \1\) : \2 = "", (\w) \+= \2, (\w) < (\w) && \(\3 \+= `\n`\);/,
+    'const sb = this.wasmTerm.getScrollbackLength(), wraps = $4 < $5 && $4 + 1 >= sb && this.wasmTerm.isRowWrapped($4 + 1 - sb); wraps || ($1 >= 0 ? $2 = $2.substring(0, $1) : $2 = ""), $3 += $2, $4 < $5 && !wraps && ($3 += `\n`);',
+  ],
 ];
 
 export function patchGhostty(code: string): string {
@@ -42,6 +48,7 @@ function ghosttyPatches(): Plugin {
 export default defineConfig({
   plugins: [svelte(), ghosttyPatches()],
   clearScreen: false,
+  optimizeDeps: { exclude: ['ghostty-web'] },
   define: { __SELF_UPDATE__: JSON.stringify(selfUpdate()) },
   server: { port: 1420, strictPort: true, watch: { ignored: ['**/src-tauri/**'] } },
   build: {
@@ -49,6 +56,7 @@ export default defineConfig({
     chunkSizeWarningLimit: 900,
     reportCompressedSize: true,
     rolldownOptions: {
+      optimization: { inlineConst: true },
       output: {
         codeSplitting: {
           // Keeps rolldown's CJS interop runtime out of the lazy hljs chunk, which the entry would otherwise modulepreload.
@@ -59,6 +67,9 @@ export default defineConfig({
   },
   test: {
     environment: 'node',
+    unstubGlobals: true,
+    unstubEnvs: true,
+    restoreMocks: true,
     setupFiles: ['src/test/pin-locale.ts', 'src/test/pin-platform.ts'],
     include: ['src/**/*.test.ts'],
     css: { include: [/\.css\?raw$/] },
@@ -67,7 +78,7 @@ export default defineConfig({
       include: ['src/lib/**/*.ts'],
       exclude: ['src/**/*.test.ts', 'src/**/types.ts', 'src/**/strings.ts', 'src/**/mock*.ts', 'src/lib/i18n/*.ts'],
       reporter: ['text-summary', 'json-summary'],
-      thresholds: { lines: 94, functions: 89, branches: 90, statements: 93 },
+      thresholds: { lines: 95, functions: 91, branches: 90, statements: 94 },
     },
   },
 });

@@ -1,3 +1,6 @@
+import { t } from './i18n.svelte';
+import { basename } from './paths';
+
 export const MAX_UPLOAD = 50 * 1024 * 1024;
 export const PROGRESS_FROM = 2 * 1024 * 1024;
 
@@ -34,10 +37,6 @@ export function bracketed(text: string, on: boolean): string {
   return on && text ? `\x1b[200~${text.replace(/\x1b\[20[01]~/g, '')}\x1b[201~` : text;
 }
 
-export function basename(path: string): string {
-  return path.split(/[\\/]/).filter(Boolean).pop() ?? path;
-}
-
 const isImage = (f: FileInfo) => f.type.startsWith('image/');
 
 export function planPaste(clip: { text: string; files: FileInfo[] }, remote: boolean): PastePlan {
@@ -55,4 +54,18 @@ export function planDrop(drop: { paths: string[]; dirs?: string[] }, remote: boo
   const dir = drop.paths.find((p) => drop.dirs?.includes(p));
   if (dir) return { kind: 'reject', reason: 'folder', name: basename(dir) };
   return { kind: 'upload', paths: drop.paths };
+}
+
+export const refusalMessage = (r: Refusal): string => t(r.reason === 'folder' ? 'upload.folder' : 'upload.tooLarge', { name: r.name });
+
+export const fileInfos = (files: File[]): FileInfo[] => files.map((f) => ({ name: f.name, type: f.type, size: f.size }));
+
+export function clipboardFiles(dt: Pick<DataTransfer, 'files' | 'items'>): File[] {
+  const files = Array.from(dt.files);
+  if (!files.length)
+    for (const item of Array.from(dt.items)) {
+      const f = item.kind === 'file' ? item.getAsFile() : null;
+      if (f) files.push(f);
+    }
+  return files;
 }

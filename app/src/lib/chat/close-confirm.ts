@@ -1,20 +1,14 @@
+import { OneShot } from '../timer';
+
 export function closeConfirm(set: (armed: boolean) => void, ms = 3000) {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const clear = () => {
-    clearTimeout(timer);
-    timer = undefined;
-  };
+  const timer = new OneShot();
   return {
     arm() {
-      clear();
       set(true);
-      timer = setTimeout(() => {
-        timer = undefined;
-        set(false);
-      }, ms);
+      timer.set(() => set(false), ms);
     },
     reset() {
-      clear();
+      timer.clear();
       set(false);
     },
   };

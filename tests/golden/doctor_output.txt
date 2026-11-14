@@ -1,0 +1,18 @@
+ok|state dir|$BASE/state
+warn|daemon|not running (ls/hold/resume work without it; hooks spool to disk)
+info|daemon PATH|$BASE/bin (inherited (no daemon))
+warn|claude hooks|1/14 events in $BASE/home/.claude/settings.json (install: overseer hooks install)
+warn|codex hooks|2/8 events in $BASE/home/.codex/hooks.json
+warn|codex trust|1/2 events have no trust entry in config.toml (SessionStart); Codex skips them until you trust them: start codex and choose Review hooks or Trust all at the "Hooks need review" prompt, or run /hooks in it (codex exec cannot review hooks)
+warn|claude|not on PATH
+warn|codex|not runnable on this station
+warn|tmux|not found; hold needs tmux
+ok|station enrolment|enrolled with http://127.0.0.1:1
+fail|api reachable|<error>
+skip|user login|not logged in (overseer login)
+info|remote commands|refused (acceptRemoteCommands is false)
+warn|toolkit|tmux-snapshot/tmux-restore not patched for @sb_held: a held stub comes back as a plain shell after a reboot (still held); see docs/toolkit-patch.md
+warn|existing hooks|tmux-claude-id.sh exists but is not declared in settings.json
+skip|tmux-snapshot|no snapshot state file
+ok|lines|station test: 0 active, 0 idle, 0 held in total; agents RSS 0.0 GB
+skip|memory policy|off (config memoryPolicy)

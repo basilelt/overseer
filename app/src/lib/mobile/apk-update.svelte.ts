@@ -1,5 +1,6 @@
-import { isTauri } from '../client';
-import { isDemo } from '../demo';
+import * as CMD from '../daemon/tauri-commands';
+import { isTauri } from '../platform';
+import { isDemo } from '../daemon/demo';
 import { type Sub, t } from '../i18n.svelte';
 
 export const CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
@@ -260,16 +261,16 @@ export function at(key: AKey, params?: Record<string, string | number>): string 
 async function tauriBackend(): Promise<ApkBackend> {
   const { invoke, Channel } = await import('@tauri-apps/api/core');
   return {
-    status: () => invoke<ApkStatus>('apk_update_status'),
-    check: () => invoke<ApkCheck>('apk_update_check'),
+    status: () => invoke<ApkStatus>(CMD.apkUpdateStatus),
+    check: () => invoke<ApkCheck>(CMD.apkUpdateCheck),
     download: (onProgress) => {
       const channel = new Channel<DownloadEvent>();
       channel.onmessage = onProgress;
-      return invoke<void>('apk_update_download', { onProgress: channel });
+      return invoke<void>(CMD.apkUpdateDownload, { onProgress: channel });
     },
-    install: () => invoke<InstallOutcome>('apk_update_install'),
-    allowInstall: () => invoke<void>('apk_update_allow_install'),
-    openUrl: (url) => invoke<void>('open_external', { url }),
+    install: () => invoke<InstallOutcome>(CMD.apkUpdateInstall),
+    allowInstall: () => invoke<void>(CMD.apkUpdateAllowInstall),
+    openUrl: (url) => invoke<void>(CMD.openExternal, { url }),
   };
 }
 

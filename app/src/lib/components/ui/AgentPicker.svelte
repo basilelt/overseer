@@ -1,8 +1,10 @@
 <script lang="ts">
+  import { dismiss } from '../../dismiss';
   import ChevronDown from '@lucide/svelte/icons/chevron-down';
   import Check from '@lucide/svelte/icons/check';
   import RefreshCw from '@lucide/svelte/icons/refresh-cw';
-  import { agentName } from '../../agents';
+  import { agentName, canInstall } from '../../agents';
+  import { nextPickable } from './agent-pick';
   import { t } from '../../i18n.svelte';
   import { app } from '../../state.svelte';
   import type { AgentInfo, DaemonEnv } from '../../types';
@@ -42,10 +44,16 @@
   }
 
   function choose(a: AgentInfo | undefined) {
+    if (a && canInstall(a)) return install(a);
     if (!a?.installed) return;
     open = false;
     onchange(a.id);
     root.querySelector<HTMLElement>('.trigger')?.focus();
+  }
+
+  function install(a: AgentInfo) {
+    open = false;
+    app.installAgent(a.id).catch((e) => app.notify(String((e as Error)?.message ?? e), 'error'));
   }
 
   async function rescan() {
@@ -60,19 +68,11 @@
     }
   }
 
-  function step(from: number, dir: number): number {
-    for (let i = 1; i <= agents.length; i++) {
-      const j = (from + dir * i + agents.length * i) % agents.length;
-      if (agents[j].installed) return j;
-    }
-    return from;
-  }
-
   function onListKey(e: KeyboardEvent) {
-    if (e.key === 'ArrowDown') active = step(active, 1);
-    else if (e.key === 'ArrowUp') active = step(active, -1);
-    else if (e.key === 'Home') active = step(-1, 1);
-    else if (e.key === 'End') active = step(agents.length, -1);
+    if (e.key === 'ArrowDown') active = nextPickable(agents, active, 1);
+    else if (e.key === 'ArrowUp') active = nextPickable(agents, active, -1);
+    else if (e.key === 'Home') active = nextPickable(agents, -1, 1);
+    else if (e.key === 'End') active = nextPickable(agents, agents.length, -1);
     else if (e.key === 'Enter' || e.key === ' ') choose(agents[active]);
     else if (e.key === 'Escape' || e.key === 'Tab') {
       open = false;
@@ -98,9 +98,9 @@
   });
 </script>
 
-<svelte:window onpointerdown={(e) => open && !root.contains(e.target as Node) && (open = false)} onresize={() => open && place()} />
+<svelte:window onresize={() => open && place()} />
 
-<div class="picker" bind:this={root}>
+<div class="picker" bind:this={root} use:dismiss={{ active: open, onclose: () => (open = false) }}>
   <button
     type="button"
     class="trigger"
@@ -135,11 +135,12 @@
             data-i={i}
             role="option"
             aria-selected={a.id === value}
-            aria-disabled={!a.installed}
+            aria-disabled={!a.installed && !canInstall(a)}
             class:active={i === active}
             class:off={!a.installed}
-            title={a.installed ? (a.version ?? a.name) : `${t('agents.notInstalled')} · ${a.install ?? ''}`}
-            onpointermove={() => a.installed && (active = i)}
+            class:can={canInstall(a)}
+            title={a.installed ? (a.version ?? a.name) : canInstall(a) ? t('agents.installIn', { name: a.name, cmd: a.install ?? '' }) : `${t('agents.notInstalled')} · ${a.install ?? ''}`}
+            onpointermove={() => (a.installed || canInstall(a)) && (active = i)}
             onclick={() => choose(a)}
             onkeydown={() => {}}
           >
@@ -152,7 +153,7 @@
                 <span class="sub">{a.version}</span>
               {/if}
             </span>
-            {#if a.id === value}<Check size={13} />{/if}
+            {#if a.id === value}<Check size={13} />{:else if canInstall(a)}<span class="act">{t('agents.install')}</span>{/if}
           </li>
         {/each}
       </ul>
@@ -210,7 +211,7 @@
   }
   .pop {
     position: fixed;
-    z-index: 70;
+    z-index: var(--z-picker);
     display: flex;
     flex-direction: column;
     background: var(--surface);
@@ -280,6 +281,14 @@
   li.off {
     cursor: default;
     color: var(--text-3);
+  }
+  li.off.can {
+    cursor: pointer;
+  }
+  .act {
+    font-size: 10.5px;
+    color: var(--accent);
+    flex: none;
   }
   .glyph {
     display: grid;

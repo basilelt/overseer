@@ -1,67 +1,28 @@
 <script lang="ts">
-  import Gauge from '@lucide/svelte/icons/gauge';
-  import { ust } from '../../usage/strings';
-  import GitPullRequestArrow from '@lucide/svelte/icons/git-pull-request-arrow';
-  import { gt } from '../../github/strings';
-  import { openPrReviews } from '../../github/open.svelte';
   import type { Component } from 'svelte';
   import Search from '@lucide/svelte/icons/search';
-  import Unplug from '@lucide/svelte/icons/unplug';
-  import KanbanSquare from '@lucide/svelte/icons/square-kanban';
-  import AppWindow from '@lucide/svelte/icons/app-window';
-  import GitGraph from '@lucide/svelte/icons/git-graph';
-  import FolderTree from '@lucide/svelte/icons/folder-tree';
-  import LayoutGrid from '@lucide/svelte/icons/layout-grid';
-  import Globe from '@lucide/svelte/icons/globe';
   import Server from '@lucide/svelte/icons/server';
-  import SunMoon from '@lucide/svelte/icons/sun-moon';
-  import PanelRight from '@lucide/svelte/icons/panel-right';
-  import Puzzle from '@lucide/svelte/icons/puzzle';
-  import Settings from '@lucide/svelte/icons/settings';
-  import Columns2 from '@lucide/svelte/icons/columns-2';
-  import Rows2 from '@lucide/svelte/icons/rows-2';
-  import EthernetPort from '@lucide/svelte/icons/ethernet-port';
-  import RefreshCw from '@lucide/svelte/icons/refresh-cw';
-  import Activity from '@lucide/svelte/icons/activity';
-  import { st } from '../../system/strings';
-  import ScrollText from '@lucide/svelte/icons/scroll-text';
-  import MessageSquarePlus from '@lucide/svelte/icons/message-square-plus';
-  import Compass from '@lucide/svelte/icons/compass';
-  import WandSparkles from '@lucide/svelte/icons/wand-sparkles';
-  import { organizer } from '../../organize.svelte';
-  import { tt } from '../../tour/strings';
-  import { replayTour } from '../../tour/replay';
-  import { feedback, ft } from '../../feedback.svelte';
-  import { diag, dt } from '../../diag.svelte';
-  import { updater, ut } from '../../updater.svelte';
-  import { apk, at } from '../../mobile/apk-update.svelte';
-  import { t, type Key } from '../../i18n.svelte';
-  import { app } from '../../state.svelte';
-  import { saveSettings, settings, type ThemePref } from '../../settings.svelte';
-  import { highlight, rank, type Match } from '../../fuzzy';
-  import type { GroupId } from '../../grouping';
-  import { ordered } from '../../agents';
-  import AgentGlyph from '../ui/AgentGlyph.svelte';
-  import FolderPlus from '@lucide/svelte/icons/folder-plus';
+  import FolderTree from '@lucide/svelte/icons/folder-tree';
   import Megaphone from '@lucide/svelte/icons/megaphone';
-  import Pause from '@lucide/svelte/icons/pause';
-  import Play from '@lucide/svelte/icons/play';
-  import Users from '@lucide/svelte/icons/users';
   import Box from '@lucide/svelte/icons/box';
   import X from '@lucide/svelte/icons/x';
-  import { ui } from '../../mobile/ui.svelte';
-  import GitPullRequest from '@lucide/svelte/icons/git-pull-request';
-  import { closeSideReview, openReview, openReviewBeside, reviewTargetFor } from '../../review/open';
-  import { beside } from '../../review/beside.svelte';
-  import { broadcastTo, createFolder, createGroup, holdAll, rescanFolders } from '../../wsactions';
-  import { isGhost } from '../../workspaces';
-  import Keyboard from '@lucide/svelte/icons/keyboard';
-  import PanelLeft from '@lucide/svelte/icons/panel-left';
-  import Plus from '@lucide/svelte/icons/plus';
-  import X2 from '@lucide/svelte/icons/square-x';
-  import Undo2 from '@lucide/svelte/icons/undo-2';
-  import { hint, newWindow, runShortcut } from '../../keyboard';
-  import type { ShortcutId } from '../../shortcuts';
+  import { t, type Key } from '../../i18n.svelte';
+  import { app } from '../../state.svelte';
+  import { bestSectionFirst, highlight, rank, type Match } from '../../fuzzy';
+  import type { GroupId } from '../../session/grouping';
+  import { GROUP_COLOR, STATE_COLOR } from '../../workspace/ws-color';
+  import { canInstall, ordered } from '../../agents';
+  import AgentGlyph from '../ui/AgentGlyph.svelte';
+  import { isPhone } from '../../mobile/ui.svelte';
+  import { phoneOrMobile } from '../../mobile/phone.svelte';
+  import { broadcastTo } from '../../workspace/wsactions';
+  import { isGhost } from '../../workspace/workspaces';
+  import { command, has } from '../../commands/commands';
+  import { registerMore } from '../../commands/commands-more';
+  import { hint } from '../../commands/keyboard';
+  import { hostName } from '../../host/hosts';
+
+  registerMore();
 
   let { onclose }: { onclose: () => void } = $props();
 
@@ -77,116 +38,72 @@
     run: () => unknown;
   }
 
-  const split = (dir: 'horizontal' | 'vertical') => {
-    app.view = 'agents';
-    window.dispatchEvent(new CustomEvent('sb:split', { detail: dir }));
-  };
-  const nextTheme: Record<ThemePref, ThemePref> = { auto: 'light', light: 'dark', dark: 'auto' };
-  const action = (id: string, key: Key, icon: Cmd['icon'], run: () => unknown): Cmd => ({ id, label: t(key), icon, section: 'actions', run });
-  const view = (id: string, key: Key, icon: Cmd['icon'], run: () => unknown): Cmd => ({ ...action(id, key, icon, run), section: 'views' });
   const connected = app.connected;
+  const desktop = !phoneOrMobile();
+  const UNHINTED = new Set(['source-control']);
+
+  const entry = (id: string): Cmd => {
+    const c = command(id);
+    return {
+      id: c.id,
+      label: c.label?.() ?? c.id,
+      icon: c.icon,
+      section: c.section ?? 'actions',
+      keys: desktop && c.shortcut && !UNHINTED.has(c.id) ? hint(c.shortcut) || undefined : undefined,
+      run: () => {
+        if (c.agentsView) app.view = 'agents';
+        return c.run();
+      },
+    };
+  };
+  const listed = (...ids: string[]): Cmd[] => ids.filter((id) => has(id) && command(id).available()).map(entry);
 
   const sessionActions: Cmd[] = connected
-    ? ordered(app.agents)
-        .filter((a) => a.installed)
-        .map((a) => ({ id: `new-${a.id}`, label: t('palette.newSession', { name: a.name }), agent: a.id, section: 'actions', run: () => app.newSession(a.id) }))
-    : [];
-
-  const reviewChanges = (side = false) => {
-    const target = reviewTargetFor(app.selected);
-    if (target) (side ? openReviewBeside : openReview)(target);
-    else app.notify(t('review.noLine'), 'error');
-  };
-  const desktop = !app.mobile && ui.layout !== 'phone';
-  const KEYED: Record<string, ShortcutId> = {
-    kanban: 'kanban',
-    panel: 'togglePanel',
-    'split-right': 'splitRight',
-    'split-down': 'splitDown',
-    settings: 'settings',
-    'ws-new': 'newWorkspace',
-    'new-window': 'newWindow',
-    sidebar: 'toggleSidebar',
-    shortcuts: 'shortcuts',
-    'tab-new': 'newTab',
-    'tab-close': 'closeTab',
-    'tab-reopen': 'reopenTab',
-  };
-  const tabAction = (id: string, key: Key, icon: Cmd['icon'], sc: ShortcutId): Cmd =>
-    action(id, key, icon, () => {
-      app.view = 'agents';
-      runShortcut({ id: sc });
-    });
-  const desktopActions: Cmd[] = desktop
     ? [
-        action('shortcuts', 'palette.shortcuts', Keyboard, () => app.open('shortcuts')),
-        action('new-window', 'palette.newWindow', AppWindow, () => newWindow()),
-        action('sidebar', 'palette.toggleSidebar', PanelLeft, () => (app.sidebarOpen = !app.sidebarOpen)),
-        ...(app.view === 'agents' ? [tabAction('tab-new', 'palette.newTab', Plus, 'newTab'), tabAction('tab-close', 'palette.closeTab', X2, 'closeTab'), tabAction('tab-reopen', 'palette.reopenTab', Undo2, 'reopenTab')] : []),
+        ...ordered(app.agents)
+          .filter((a) => a.installed)
+          .map((a): Cmd => ({ id: `new-${a.id}`, label: t('palette.newSession', { name: a.name }), agent: a.id, section: 'actions', run: () => app.newSession(a.id) })),
+        ...app.agents
+          .filter(canInstall)
+          .map((a): Cmd => ({ id: `install-${a.id}`, label: t('palette.installAgent', { name: a.name }), agent: a.id, section: 'actions', run: () => app.installAgent(a.id).catch((e) => app.notify(String((e as Error)?.message ?? e), 'error')) })),
       ]
     : [];
-  const views: Cmd[] = [
-    ...(connected ? [view('review', 'review.palette', GitPullRequest, () => reviewChanges()), view('review-beside', 'review.beside', GitPullRequest, () => reviewChanges(true))] : []),
-    view('browser', 'palette.openBrowser', Globe, () => (app.view = 'browser')),
-    view('graph', 'palette.openGit', GitGraph, () => app.openProjectTab('graph')),
-    view('worktrees', 'palette.openWorktrees', FolderTree, () => app.openProjectTab('worktrees')),
-    ...(connected ? [{ id: 'system', label: st('open'), icon: Activity, section: 'views', run: () => app.open('system') } as Cmd] : []),
-    ...(connected ? [{ id: 'usage', label: ust('open'), icon: Gauge, section: 'views', run: () => app.open('usage') } as Cmd] : []),
-    ...(connected ? [{ id: 'prs', label: gt('open'), icon: GitPullRequestArrow, section: 'views', run: () => openPrReviews() } as Cmd] : []),
-  ];
-  const actions: Cmd[] = ([
-    ...(beside.key ? [action('review-close', 'review.close', GitPullRequest, () => closeSideReview())] : []),
+
+  const subjectParent = $derived.by(() => {
+    const w = app.currentWorkspace;
+    const top = w?.parentId ? app.ws.workspaces.find((p) => p.id === w.parentId) : w;
+    return top && top.path && top.kind !== 'subject' && !top.parentId ? top : undefined;
+  });
+  const subjectAction = (): Cmd[] =>
+    connected && app.wsPersistent && subjectParent
+      ? [{ id: 'subject-new', label: t('palette.newSubject'), icon: FolderTree, section: 'actions', run: () => app.open('workspaceNew', subjectParent.id) }]
+      : [];
+  const views: Cmd[] = listed('review', 'review-beside', 'browser', 'graph', 'worktrees', 'system', 'usage', 'prs');
+  const actions: Cmd[] = [
+    ...listed('review-close'),
     ...sessionActions,
-    action('kanban', 'palette.openKanban', KanbanSquare, () => (app.view = 'kanban')),
-    action('agents', 'palette.openAgents', LayoutGrid, () => (app.view = 'agents')),
-    action('connect', connected ? 'palette.switchHost' : 'palette.connectHost', Server, () => app.open('connect')),
-    ...(connected ? [action('disconnect', 'palette.disconnect', Unplug, () => app.disconnect())] : []),
-    action('theme', 'palette.toggleTheme', SunMoon, () => saveSettings({ theme: nextTheme[settings.theme] })),
-    action('panel', 'palette.togglePanel', PanelRight, () => (app.panelOpen = !app.panelOpen)),
-    action('split-right', 'palette.splitRight', Columns2, () => split('horizontal')),
-    action('split-down', 'palette.splitDown', Rows2, () => split('vertical')),
-    action('settings', 'palette.settings', Settings, () => app.open('settings')),
-    ...(connected ? [action('skills', 'palette.skills', Puzzle, () => app.open('settings', 'skills'))] : []),
-    { id: 'logs', label: dt('show'), icon: ScrollText, section: 'actions', run: () => diag.open('live') },
-    { id: 'feedback', label: ft('title'), icon: MessageSquarePlus, section: 'actions', run: () => feedback.show() },
-    { id: 'tour', label: tt('palette'), icon: Compass, section: 'actions', run: () => replayTour() },
-    ...(connected ? [{ id: 'organize', label: t('org.palette'), icon: WandSparkles, section: 'actions', run: () => organizer.show() } as Cmd] : []),
-    ...(connected && app.wsPersistent
-      ? [action('ws-new', 'palette.newWorkspace', FolderTree, () => app.open('workspaceNew')), action('folder-new', 'palette.newFolder', FolderPlus, () => createFolder())]
-      : []),
-    ...(connected ? [action('rescan-folders', 'palette.rescanFolders', RefreshCw, () => rescanFolders())] : []),
-    ...(connected && app.currentWorkspace
-      ? [
-          action('ws-broadcast', 'palette.broadcastWorkspace', Megaphone, () => broadcastTo({ kind: 'workspace', id: app.workspaceId })),
-          action('ws-hold', 'palette.holdWorkspace', Pause, () => holdAll({ kind: 'workspace', id: app.workspaceId }, 'hold')),
-          action('ws-resume', 'palette.resumeWorkspace', Play, () => holdAll({ kind: 'workspace', id: app.workspaceId }, 'resume')),
-        ]
-      : []),
-    ...(connected && app.multi.size
-      ? [
-          action('group-new', 'palette.groupFromSelection', Users, () => createGroup([...app.multi])),
-          action('sel-broadcast', 'palette.broadcastSelection', Megaphone, () => broadcastTo({ kind: 'items', keys: [...app.multi] })),
-        ]
-      : []),
-    ...app.ws.groups.map((g) => ({ id: `group-bc-${g.id}`, label: t('palette.broadcastGroup', { name: g.name }), icon: Megaphone, section: 'actions' as const, run: () => broadcastTo({ kind: 'group', id: g.id }) })),
+    ...listed('kanban', 'agents', 'connect'),
+    ...(desktop ? listed('add-host') : []),
+    ...app.others.map((l): Cmd => ({ id: `host:${l.key}`, label: t('palette.showHost', { name: hostName(l.target) }), icon: Server, section: 'actions', run: () => app.switchHost(l.key) })),
+    ...listed('disconnect', 'theme', 'panel', 'live-review', 'source-control', 'split-right', 'split-down', 'settings', 'skills', 'logs', 'feedback', 'record', 'tour', 'organize', 'ws-new', 'folder-new', 'rescan-folders'),
+    ...subjectAction(),
+    ...listed('ws-broadcast', 'ws-hold', 'ws-resume', 'group-new', 'sel-broadcast'),
+    ...app.ws.groups.map((g): Cmd => ({ id: `group-bc-${g.id}`, label: t('palette.broadcastGroup', { name: g.name }), icon: Megaphone, section: 'actions', run: () => broadcastTo({ kind: 'group', id: g.id }) })),
     ...app.ws.workspaces
       .filter((w) => !w.archived && !isGhost(w))
-      .map((w) => ({
+      .map((w): Cmd => ({
         id: `ws-${w.id}`,
         label: t('palette.goWorkspace', { name: w.name }),
         icon: Box,
-        section: 'actions' as const,
+        section: 'actions',
         run: () => {
           if (app.sidebarMode !== 'workspaces') app.setSidebarMode('workspaces');
           app.selectWorkspace(w.id);
         },
       })),
-    ...(connected ? [action('ports', 'palette.ports', EthernetPort, () => app.open('ports'))] : []),
-    ...(connected && app.conn.target.kind !== 'local' ? [action('forward-port', 'palette.forwardPort', EthernetPort, () => app.open('ports', 'forward'))] : []),
-    ...(updater.enabled && !app.mobile ? [{ id: 'updates', label: ut('check'), icon: RefreshCw, section: 'actions' as const, run: () => updater.check(true) }] : []),
-    ...(__SELF_UPDATE__ && apk.enabled && apk.updates ? [{ id: 'apk-updates', label: at('check'), icon: RefreshCw, section: 'actions' as const, run: () => apk.check(true) }] : []),
-    ...desktopActions,
-  ] as Cmd[]).map((c) => (desktop && KEYED[c.id] ? { ...c, keys: hint(KEYED[c.id]) || undefined } : c));
+    ...listed('ports', 'forward-port', 'updates', 'apk-updates'),
+    ...(desktop ? listed('shortcuts', 'new-window', 'sidebar', ...(app.view === 'agents' ? ['tab-new', 'tab-close', 'tab-reopen'] : [])) : []),
+  ];
 
   let query = $state('');
   let active = $state(0);
@@ -203,11 +120,16 @@
       run: () => app.select(i.key),
     })),
   );
-  const results = $derived<{ item: Cmd; match: Match }[]>([
-    ...rank(query, sessions, (c) => c.label).slice(0, query ? 8 : 5),
-    ...rank(query, views, (c) => c.label),
-    ...rank(query, actions, (c) => c.label),
-  ]);
+  const results = $derived<{ item: Cmd; match: Match }[]>(
+    bestSectionFirst(
+      [
+        ...rank(query, sessions, (c) => c.label).slice(0, query ? 8 : 5),
+        ...rank(query, views, (c) => c.label),
+        ...rank(query, actions, (c) => c.label),
+      ],
+      query,
+    ),
+  );
 
   $effect(() => {
     query;
@@ -253,7 +175,7 @@
         aria-activedescendant={results.length ? `palette-${active}` : undefined}
       />
       <kbd>esc</kbd>
-      {#if ui.layout === 'phone'}<button class="icon-btn" aria-label={t('common.close')} onclick={onclose}><X size={18} /></button>{/if}
+      {#if isPhone()}<button class="icon-btn" aria-label={t('common.close')} onclick={onclose}><X size={18} /></button>{/if}
     </label>
     <ul id="palette-list" role="listbox" bind:this={list}>
       {#each results as { item, match }, i (item.id)}
@@ -276,7 +198,7 @@
           </span>
           {#if item.keys}<kbd class="keys">{item.keys}</kbd>{/if}
           {#if item.hint}
-            <span class="hint"><span class="dot" style:background="var(--st-{item.group === 'needs_input' ? 'input' : item.group === 'running' ? 'working' : item.group === 'needs_testing' ? 'testing' : item.group === 'paused' ? 'paused' : 'held'})"></span>{item.hint}</span>
+            <span class="hint"><span class="dot" style:background={item.group ? GROUP_COLOR[item.group] : STATE_COLOR.closed}></span>{item.hint}</span>
           {/if}
         </li>
       {:else}
@@ -295,7 +217,7 @@
     justify-content: center;
     align-items: flex-start;
     padding-top: 14vh;
-    z-index: 60;
+    z-index: var(--z-popover);
   }
   .palette {
     width: 580px;

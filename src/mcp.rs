@@ -1,10 +1,11 @@
+use crate::util::percent_encode as encode;
 use serde_json::{json, Value};
 use std::io::{BufRead, Write};
 
 pub type Call<'a> = dyn FnMut(&str, &str, Option<&Value>) -> Result<(u16, Value), String> + 'a;
 
 const PROTOCOL: &str = "2025-06-18";
-const AGENT_STATUSES: [&str; 3] = ["in_testing", "merged", "in_progress"];
+use crate::status::AGENT_SETTABLE as AGENT_STATUSES;
 
 fn reply(id: &Value, result: Value) -> Value {
     json!({"jsonrpc": "2.0", "id": id, "result": result})
@@ -14,7 +15,7 @@ fn error(id: &Value, code: i64, message: &str) -> Value {
     json!({"jsonrpc": "2.0", "id": id, "error": {"code": code, "message": message}})
 }
 
-fn tools() -> Value {
+fn tools(file_tasks: bool) -> Value {
     let s = |d: &str| json!({"type": "string", "description": d});
     let b = |d: &str| json!({"type": "boolean", "description": d});
     let n = |d: &str| json!({"type": "integer", "minimum": 0, "description": d});
@@ -27,18 +28,26 @@ fn tools() -> Value {
             "type": "object", "properties": properties, "required": required}})
     };
     json!([
-        tool("list_tasks", "List Kanban tasks, optionally filtered by project and status.",
+        tool("list_tasks", "List Kanban tasks, optionally filtered by project and status. The project defaults to your own task's project.",
             json!({"project": s("Absolute path of the project's main worktree root"),
-                   "status": s("Status or comma list: pending, auto, in_progress, in_testing, merged, completed")}),
+                   "status": s(&format!("Status or comma list: {}", crate::status::LIST_FILTER.join(", ")))}),
             json!([])),
         tool("get_task", "Get one task by id.", json!({"id": s("Task id")}), json!(["id"])),
-        tool("create_task", "Create a pending task. The project defaults to your own task's project, else the current git repository.",
+        tool("create_task", &format!("Create a pending task. The project defaults to your own task's project, else the current git repository. A quorum orchestrator's subtasks start on their own.{}",
+            if file_tasks { "" } else { " Do not use it for bugs or improvements you find while working, merging or reviewing: fix them yourself in your own task. Create a task only when the user asks for one or a quorum orchestrator splits its work." }),
             json!({"title": s("Task title"), "description": s("Task description"),
+                   "agent": s("Agent CLI that runs it (claude, codex, gemini, ...). For a quorum orchestrator, one of its workers (default the first)"),
                    "project": s("Absolute path of the project's main worktree root"),
                    "urgent": b("Needs doing soon"), "important": b("Matters for the project's goals"),
+                   "taskType": {"type": "string", "enum": crate::profiles::TASK_TYPES, "description": "Kind of work; picks the agent profile mapped to it"},
                    "dependsOn": deps(),
                    "inheritBranch": b("With exactly one dependency, start from its branch (default true)")}),
             json!(["title"])),
+        tool("cast_vote", "Vote on a quorum subtask's result: approve or reject, with a short reason. Reviewers vote on the subtask they review (the default); the orchestrator passes taskId.",
+            json!({"taskId": s("Id of the subtask, defaults to the one you review"),
+                   "approve": b("true to accept the result, false to reject it"),
+                   "reason": s("One or two sentences naming the concrete problems, if any")}),
+            json!(["approve", "reason"])),
         tool("set_task_dependencies", "Replace the tasks a task waits on. It does not auto-start until they are all completed. Cycles and self-dependencies are refused.",
             json!({"taskId": s("Task id"), "dependsOn": deps(),
                    "inheritBranch": b("With exactly one dependency, start from its branch (default true)")}),
@@ -107,29 +116,20 @@ fn refuse_configurator(call: &mut Call, own: Option<&str>, what: &str) -> Result
 }
 
 fn ensure_landed(call: &mut Call, own: &str) -> Result<(), String> {
-    let t = daemon(call, "GET", &format!("/v1/tasks/{}", encode(own)), None)?;
-    let (project, branch) = (t["project"].as_str(), t["branch"].as_str());
-    let (Some(project), Some(branch)) = (project, branch) else {
-        return Err("the task has no branch: nothing to mark as merged".into());
-    };
     let v = daemon(
         call,
         "GET",
-        &format!("/v1/projects/{}/worktrees", encode(project)),
+        &format!("/v1/tasks/{}/landed", encode(own)),
         None,
     )?;
-    let landed = v["worktrees"]
-        .as_array()
-        .into_iter()
-        .flatten()
-        .any(|w| w["branch"].as_str() == Some(branch) && w["merged"] == true);
-    if landed {
-        Ok(())
-    } else {
-        Err(format!(
-            "branch {branch} is not merged into the base branch yet: merge it first, then set merged"
-        ))
+    if v["landed"] == true {
+        return Ok(());
     }
+    let branch = v["branch"].as_str().unwrap_or("the task branch");
+    let base = v["base"].as_str().unwrap_or("the base branch");
+    Err(format!(
+        "branch {branch} is not merged into {base} yet: merge it first, then set merged"
+    ))
 }
 
 fn pick(v: &Value, keys: &[&str]) -> Value {
@@ -140,17 +140,6 @@ fn pick(v: &Value, keys: &[&str]) -> Value {
         }
     }
     o
-}
-
-fn encode(s: &str) -> String {
-    s.bytes()
-        .map(|b| match b {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'.' | b'_' | b'~' => {
-                (b as char).to_string()
-            }
-            _ => format!("%{b:02X}"),
-        })
-        .collect()
 }
 
 fn daemon(
@@ -171,7 +160,7 @@ fn daemon(
 }
 
 fn git_top() -> Option<String> {
-    let o = crate::git::output_within(
+    let o = crate::exec::output_within(
         std::process::Command::new("git").args(["rev-parse", "--show-toplevel"]),
         crate::git::TIMEOUT,
     )
@@ -190,10 +179,20 @@ fn run_tool(name: &str, a: &Value, own: Option<&str>, call: &mut Call) -> Result
     };
     match name {
         "list_tasks" => {
-            let q: Vec<String> = ["project", "status"]
+            let own_project = match (s("project"), own) {
+                (None, Some(o)) => daemon(call, "GET", &format!("/v1/tasks/{}", encode(o)), None)
+                    .ok()
+                    .filter(|t| t["origin"] != "configurator")
+                    .and_then(|t| t["project"].as_str().map(str::to_string)),
+                _ => None,
+            };
+            let mut q: Vec<String> = ["project", "status"]
                 .iter()
                 .filter_map(|k| s(k).map(|v| format!("{k}={}", encode(v))))
                 .collect();
+            if let Some(p) = own_project {
+                q.insert(0, format!("project={}", encode(&p)));
+            }
             let target = match q.is_empty() {
                 true => "/v1/tasks".to_string(),
                 false => format!("/v1/tasks?{}", q.join("&")),
@@ -228,7 +227,7 @@ fn run_tool(name: &str, a: &Value, own: Option<&str>, call: &mut Call) -> Result
                     body[k] = json!(v);
                 }
             }
-            for k in ["dependsOn", "inheritBranch"] {
+            for k in ["agent", "taskType", "dependsOn", "inheritBranch"] {
                 if !a[k].is_null() {
                     body[k] = a[k].clone();
                 }
@@ -238,6 +237,26 @@ fn run_tool(name: &str, a: &Value, own: Option<&str>, call: &mut Call) -> Result
                 body["parentId"] = json!(o);
             }
             daemon(call, "POST", "/v1/tasks", Some(&body))
+        }
+        "cast_vote" => {
+            let own = own.ok_or("OVERSEER_TASK_ID is not set: you have no task of your own")?;
+            let approve = a["approve"].as_bool().ok_or("approve must be a boolean")?;
+            let target = match s("taskId") {
+                Some(t) => t.to_string(),
+                None => daemon(call, "GET", &format!("/v1/tasks/{}", encode(own)), None)?
+                    ["parentId"]
+                    .as_str()
+                    .map(str::to_string)
+                    .ok_or("taskId is required: you do not review a subtask")?,
+            };
+            let body =
+                json!({"from": own, "approve": approve, "reason": s("reason").unwrap_or("")});
+            daemon(
+                call,
+                "POST",
+                &format!("/v1/tasks/{}/votes", encode(&target)),
+                Some(&body),
+            )
         }
         "set_task_dependencies" => {
             refuse_configurator(call, own, "change task dependencies")?;
@@ -319,7 +338,7 @@ fn run_tool(name: &str, a: &Value, own: Option<&str>, call: &mut Call) -> Result
                     )
                 })?;
             refuse_configurator(call, Some(own), "change task status")?;
-            if status == "merged" {
+            if status == crate::status::MERGED {
                 ensure_landed(call, own)?;
             }
             daemon(
@@ -449,6 +468,7 @@ fn call_tool(id: &Value, params: &Value, own: Option<&str>, call: &mut Call) -> 
         "list_tasks",
         "get_task",
         "create_task",
+        "cast_vote",
         "set_task_dependencies",
         "prioritize_task",
         "send_message",
@@ -484,6 +504,22 @@ fn call_tool(id: &Value, params: &Value, own: Option<&str>, call: &mut Call) -> 
     reply(id, result)
 }
 
+const ON_FINDINGS_FILE: &str = "When you find a bug or improvement unrelated to your task, create_task it (with urgent and important) instead of fixing it off-scope.";
+const ON_FINDINGS_FIX: &str = "When you find a bug or improvement while working, merging or reviewing, fix it yourself in your own task and branch; do not create_task for it unless the user asks you to.";
+
+fn instructions(file_tasks: bool) -> String {
+    let findings = if file_tasks {
+        ON_FINDINGS_FILE
+    } else {
+        ON_FINDINGS_FIX
+    };
+    format!("Overseer Kanban tasks and code review. Read and create tasks (always pending), report progress on your task with update_task_progress, and call set_task_status with in_testing when your work is ready for review, with merged once you merged its changes, and with in_progress when you resume work on it after review, merge or close. When the reviewer sends comments, list_review_comments shows them and resolve_review_comment answers each one once addressed. {findings} Call find_overlaps before large edits and before moving your task to in_testing; if another task touches the same files, send_message its agent to agree who changes what. Overseer also warns you by message when your task moves to in_testing and overlaps another. Messages from other agents arrive in your input prefixed [Overseer]; reply with send_message. The session configurator reads sessions with list_sessions, get_session_brief, list_projects, list_worktrees and list_layout, and records one plan with propose_organization.")
+}
+
+fn file_tasks(call: &mut Call) -> bool {
+    !matches!(call("GET", "/v1/tasks/agent-tasks", None), Ok((200, v)) if v["enabled"] == false)
+}
+
 pub fn handle(msg: &Value, own_task: Option<&str>, call: &mut Call) -> Option<Value> {
     let id = msg.get("id")?;
     let Some(method) = msg["method"].as_str() else {
@@ -499,11 +535,11 @@ pub fn handle(msg: &Value, own_task: Option<&str>, call: &mut Call) -> Option<Va
                 "protocolVersion": PROTOCOL,
                 "capabilities": {"tools": {"listChanged": false}},
                 "serverInfo": {"name": "overseer", "version": env!("CARGO_PKG_VERSION")},
-                "instructions": "Overseer Kanban tasks and code review. Read and create tasks (always pending), report progress on your task with update_task_progress, and call set_task_status with in_testing when your work is ready for review, with merged once you merged its changes, and with in_progress when you resume work on it after review, merge or close. When the reviewer sends comments, list_review_comments shows them and resolve_review_comment answers each one once addressed. When you find a bug or improvement unrelated to your task, create_task it (with urgent and important) instead of fixing it off-scope. Call find_overlaps before large edits and before moving your task to in_testing; if another task touches the same files, send_message its agent to agree who changes what. Overseer also warns you by message when your task moves to in_testing and overlaps another. Messages from other agents arrive in your input prefixed [Overseer]; reply with send_message. The session configurator reads sessions with list_sessions, get_session_brief, list_projects, list_worktrees and list_layout, and records one plan with propose_organization.",
+                "instructions": instructions(file_tasks(call)),
             }),
         ),
         "ping" => reply(id, json!({})),
-        "tools/list" => reply(id, json!({"tools": tools()})),
+        "tools/list" => reply(id, json!({"tools": tools(file_tasks(call))})),
         "tools/call" => call_tool(id, &msg["params"], own_task, call),
         _ => error(id, -32601, &format!("method not found: {method}")),
     })
@@ -526,6 +562,52 @@ pub fn serve(input: impl BufRead, mut output: impl Write, own_task: Option<&str>
             {
                 break;
             }
+        }
+    }
+}
+
+pub fn vote_args(args: &[String]) -> Result<Value, String> {
+    let usage = "usage: overseer vote approve|reject <reason> [--task <id>]";
+    let mut it = args.iter();
+    let approve = match it.next().map(String::as_str) {
+        Some("approve") => true,
+        Some("reject") => false,
+        _ => return Err(usage.into()),
+    };
+    let (mut reason, mut task) = (vec![], None);
+    while let Some(a) = it.next() {
+        match a.as_str() {
+            "--task" => task = Some(it.next().ok_or(usage)?.clone()),
+            _ => reason.push(a.as_str()),
+        }
+    }
+    let mut v = json!({"approve": approve, "reason": reason.join(" ")});
+    if let Some(t) = task {
+        v["taskId"] = json!(t);
+    }
+    Ok(v)
+}
+
+pub fn cli_vote(args: &[String]) -> std::process::ExitCode {
+    let own = std::env::var("OVERSEER_TASK_ID")
+        .ok()
+        .filter(|s| !s.is_empty());
+    let socket = crate::daemon::socket_path(&crate::default_state_dir());
+    let mut call = |m: &str, t: &str, b: Option<&Value>| crate::daemon::request(&socket, m, t, b);
+    match vote_args(args).and_then(|a| run_tool("cast_vote", &a, own.as_deref(), &mut call)) {
+        Ok(t) => {
+            println!(
+                "vote recorded on task #{}: {}",
+                t["number"],
+                t["votes"]["outcome"]
+                    .as_str()
+                    .unwrap_or("waiting for the other voters")
+            );
+            std::process::ExitCode::SUCCESS
+        }
+        Err(e) => {
+            eprintln!("overseer vote: {e}");
+            std::process::ExitCode::FAILURE
         }
     }
 }
@@ -584,7 +666,87 @@ mod tests {
         assert_eq!(out["result"]["protocolVersion"], "2025-06-18");
         assert_eq!(out["result"]["capabilities"]["tools"]["listChanged"], false);
         assert_eq!(out["result"]["serverInfo"]["name"], "overseer");
-        assert!(log.is_empty());
+        assert_eq!(log.len(), 1);
+        assert_eq!(
+            (log[0].0.as_str(), log[0].1.as_str()),
+            ("GET", "/v1/tasks/agent-tasks")
+        );
+    }
+
+    fn init_and_list(answer: impl Fn(&str, &str) -> (u16, Value) + Copy) -> (String, String) {
+        let init = json!({"jsonrpc": "2.0", "id": 0, "method": "initialize", "params": {}});
+        let list = json!({"jsonrpc": "2.0", "id": 1, "method": "tools/list"});
+        let text = with_fake(init, Some("OWN"), answer).0.unwrap()["result"]["instructions"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        let tools = with_fake(list, Some("OWN"), answer).0.unwrap()["result"]["tools"].clone();
+        let create = tools
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|t| t["name"] == "create_task")
+            .unwrap()["description"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        (text, create)
+    }
+
+    #[test]
+    fn agents_file_side_tasks_when_the_switch_is_on() {
+        let (text, create) = init_and_list(|_, _| (200, json!({"enabled": true})));
+        assert!(
+            text.contains("create_task it (with urgent and important)"),
+            "{text}"
+        );
+        assert!(!text.contains("fix it yourself"), "{text}");
+        assert!(!create.contains("Do not use it"), "{create}");
+    }
+
+    #[test]
+    fn agents_fix_findings_themselves_when_the_switch_is_off() {
+        let (text, create) = init_and_list(|_, _| (200, json!({"enabled": false})));
+        assert!(text.contains("fix it yourself in your own task"), "{text}");
+        assert!(!text.contains("create_task it"), "{text}");
+        assert!(text.contains("find_overlaps"), "{text}");
+        assert!(
+            create.contains("Do not use it for bugs or improvements"),
+            "{create}"
+        );
+        assert!(
+            create.contains("quorum orchestrator splits its work"),
+            "{create}"
+        );
+    }
+
+    #[test]
+    fn agents_keep_filing_side_tasks_when_the_daemon_cannot_answer() {
+        let (text, create) = init_and_list(|_, _| (500, json!({"error": "boom"})));
+        assert!(text.contains("create_task it"), "{text}");
+        assert!(!create.contains("Do not use it"), "{create}");
+        let init = json!({"jsonrpc": "2.0", "id": 0, "method": "initialize", "params": {}});
+        let mut call = |_: &str, _: &str, _: Option<&Value>| Err("daemon down".to_string());
+        let out = handle(&init, None, &mut call).unwrap();
+        assert!(out["result"]["instructions"]
+            .as_str()
+            .unwrap()
+            .contains("create_task it"));
+    }
+
+    #[test]
+    fn create_task_still_works_with_the_switch_off() {
+        let (out, log) = with_fake(
+            tool("create_task", json!({"title": "t"})),
+            Some("OWN"),
+            |m, t| match (m, t) {
+                ("GET", "/v1/tasks/agent-tasks") => (200, json!({"enabled": false})),
+                ("GET", _) => (200, json!({"id": "OWN", "project": "/p", "origin": "user"})),
+                _ => (201, json!({"id": "NEW"})),
+            },
+        );
+        assert_eq!(out.unwrap()["result"]["isError"], false);
+        assert_eq!(log.last().unwrap().1, "/v1/tasks");
     }
 
     #[test]
@@ -624,6 +786,7 @@ mod tests {
                 "list_tasks",
                 "get_task",
                 "create_task",
+                "cast_vote",
                 "set_task_dependencies",
                 "prioritize_task",
                 "send_message",
@@ -663,6 +826,52 @@ mod tests {
         assert_eq!(r["structuredContent"], json!({"tasks": []}));
         let (_, log) = with_fake(tool("list_tasks", json!({})), None, |_, _| (200, json!([])));
         assert_eq!(log[0].1, "/v1/tasks");
+    }
+
+    #[test]
+    fn list_tasks_defaults_to_own_project() {
+        let answer = |_: &str, t: &str| match t {
+            "/v1/tasks/OWN" => (200, json!({"id": "OWN", "project": "/home/u/my x"})),
+            _ => (200, json!([])),
+        };
+        let (_, log) = with_fake(
+            tool("list_tasks", json!({"status": "pending"})),
+            Some("OWN"),
+            answer,
+        );
+        assert_eq!(log[0].1, "/v1/tasks/OWN");
+        assert_eq!(
+            log[1].1,
+            "/v1/tasks?project=%2Fhome%2Fu%2Fmy%20x&status=pending"
+        );
+        let (_, log) = with_fake(
+            tool("list_tasks", json!({"project": "/other"})),
+            Some("OWN"),
+            answer,
+        );
+        assert_eq!(log.len(), 1);
+        assert_eq!(log[0].1, "/v1/tasks?project=%2Fother");
+    }
+
+    #[test]
+    fn list_tasks_lists_every_project_for_the_configurator_or_without_own_task() {
+        let (_, log) = with_fake(tool("list_tasks", json!({})), Some("CFG"), |_, t| match t {
+            "/v1/tasks/CFG" => (
+                200,
+                json!({"id": "CFG", "project": "/p", "origin": "configurator"}),
+            ),
+            _ => (200, json!([])),
+        });
+        assert_eq!(log[1].1, "/v1/tasks");
+        let (_, log) = with_fake(
+            tool("list_tasks", json!({})),
+            Some("GONE"),
+            |_, t| match t {
+                "/v1/tasks/GONE" => (404, json!({"error": "no such task"})),
+                _ => (200, json!([])),
+            },
+        );
+        assert_eq!(log[1].1, "/v1/tasks");
     }
 
     #[test]
@@ -737,11 +946,12 @@ mod tests {
         let (_, log) = with_fake(
             tool(
                 "create_task",
-                json!({"title": "t", "project": "/q", "urgent": true, "important": false}),
+                json!({"title": "t", "project": "/q", "urgent": true, "important": false, "taskType": "fix"}),
             ),
             None,
             ok,
         );
+        assert_eq!(log[0].2.as_ref().unwrap()["taskType"], "fix");
         assert_eq!(log[0].2.as_ref().unwrap()["urgent"], true);
         assert_eq!(log[0].2.as_ref().unwrap()["important"], false);
     }
@@ -931,16 +1141,12 @@ mod tests {
         }
     }
 
-    fn landed_answer(merged: bool, branch: Option<&str>) -> impl Fn(&str, &str) -> (u16, Value) {
-        let branch = branch.map(str::to_string);
+    fn landed_answer(answer: (u16, Value)) -> impl Fn(&str, &str) -> (u16, Value) {
         move |_, t| {
-            if t.contains("/worktrees") {
-                (
-                    200,
-                    json!({"worktrees": [{"branch": "sb/x", "merged": merged}, {"branch": "sb/y", "merged": true}]}),
-                )
+            if t == "/v1/tasks/OWN/landed" {
+                answer.clone()
             } else {
-                (200, json!({"id": "OWN", "project": "/p", "branch": branch}))
+                (200, json!({"id": "OWN", "project": "/p", "branch": "sb/x"}))
             }
         }
     }
@@ -954,16 +1160,34 @@ mod tests {
                 a,
             )
         };
-        for answer in [
-            landed_answer(false, Some("sb/x")),
-            landed_answer(true, None),
+        for (answer, says) in [
+            (
+                (
+                    200,
+                    json!({"landed": false, "branch": "sb/x", "base": "next"}),
+                ),
+                "branch sb/x is not merged into next yet",
+            ),
+            (
+                (
+                    400,
+                    json!({"error": "the task has no branch: nothing to mark as merged"}),
+                ),
+                "the task has no branch",
+            ),
         ] {
-            let (out, log) = call(&answer);
-            assert_eq!(out.unwrap()["result"]["isError"], true);
+            let (out, log) = call(&landed_answer(answer));
+            let out = out.unwrap();
+            assert_eq!(out["result"]["isError"], true);
+            assert!(out.to_string().contains(says), "{out}");
             assert!(log.iter().all(|l| l.0 == "GET"), "no PATCH was sent");
         }
-        let (out, log) = call(&landed_answer(true, Some("sb/x")));
+        let (out, log) = call(&landed_answer((
+            200,
+            json!({"landed": true, "branch": "sb/x", "base": "next"}),
+        )));
         assert_eq!(out.unwrap()["result"]["isError"], false);
+        assert!(log.iter().any(|l| l.1 == "/v1/tasks/OWN/landed"));
         let last = log.last().unwrap();
         assert_eq!(
             (last.0.as_str(), last.1.as_str(), last.2.clone()),
@@ -1175,5 +1399,82 @@ not json\n";
         assert_eq!(lines[1]["id"], 2);
         assert_eq!(lines[2]["id"], Value::Null);
         assert_eq!(lines[2]["error"]["code"], -32700);
+    }
+
+    #[test]
+    fn cast_vote_defaults_to_the_reviewed_subtask() {
+        let parent = |m: &str, _: &str| match m {
+            "GET" => (200, json!({"id": "R", "parentId": "W"})),
+            _ => (200, json!({"id": "W"})),
+        };
+        let (out, log) = with_fake(
+            tool("cast_vote", json!({"approve": false, "reason": "no tests"})),
+            Some("R"),
+            parent,
+        );
+        assert!(out.unwrap()["result"]["isError"] != true);
+        assert_eq!(
+            (log[1].0.as_str(), log[1].1.as_str()),
+            ("POST", "/v1/tasks/W/votes")
+        );
+        assert_eq!(
+            log[1].2,
+            Some(json!({"from": "R", "approve": false, "reason": "no tests"}))
+        );
+        let (_, log) = with_fake(
+            tool(
+                "cast_vote",
+                json!({"taskId": "W2", "approve": true, "reason": "ok"}),
+            ),
+            Some("O"),
+            ok,
+        );
+        assert_eq!(log.len(), 1);
+        assert_eq!(log[0].1, "/v1/tasks/W2/votes");
+    }
+
+    #[test]
+    fn cast_vote_refuses_without_an_own_task_a_target_or_a_boolean() {
+        let err = |args: Value, own: Option<&str>| {
+            let mut call = |_: &str, _: &str, _: Option<&Value>| Ok((200, json!({"id": "R"})));
+            run_tool("cast_vote", &args, own, &mut call).unwrap_err()
+        };
+        assert!(err(json!({"approve": true, "reason": "x"}), None).contains("OVERSEER_TASK_ID"));
+        assert_eq!(
+            err(json!({"approve": "yes", "reason": "x"}), Some("R")),
+            "approve must be a boolean"
+        );
+        assert_eq!(
+            err(json!({"approve": true, "reason": "x"}), Some("R")),
+            "taskId is required: you do not review a subtask"
+        );
+    }
+
+    #[test]
+    fn create_task_passes_the_agent_through() {
+        let (_, log) = with_fake(
+            tool("create_task", json!({"title": "t", "agent": "gemini"})),
+            Some("OWN"),
+            ok,
+        );
+        assert_eq!(log[1].2.as_ref().unwrap()["agent"], "gemini");
+    }
+
+    #[test]
+    fn vote_args_reads_the_verdict_reason_and_task() {
+        let a = |v: &[&str]| vote_args(&v.iter().map(|s| s.to_string()).collect::<Vec<_>>());
+        assert_eq!(
+            a(&["approve", "all", "good"]).unwrap(),
+            json!({"approve": true, "reason": "all good"})
+        );
+        assert_eq!(
+            a(&["reject", "bad", "--task", "W"]).unwrap(),
+            json!({"approve": false, "reason": "bad", "taskId": "W"})
+        );
+        assert!(a(&["maybe"])
+            .unwrap_err()
+            .starts_with("usage: overseer vote"));
+        assert!(a(&[]).is_err());
+        assert!(a(&["approve", "--task"]).is_err());
     }
 }

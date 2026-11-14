@@ -3,6 +3,7 @@
   import Check from '@lucide/svelte/icons/check';
   import { t } from '../../i18n.svelte';
   import { app } from '../../state.svelte';
+  import { COPIED_FLASH_MS } from '../../timing';
   import { cachedHighlight, highlightCode } from '../../review/highlight';
   import { watchNear } from '../../review/window';
 
@@ -12,7 +13,6 @@
   let copied = $state(false);
   let el = $state<HTMLDivElement>();
 
-  // Highlight only blocks near the viewport; remounts reuse the cached HTML.
   $effect(() => {
     const c = code;
     const l = lang;
@@ -36,7 +36,7 @@
     try {
       await app.client?.copyText(code);
       copied = true;
-      setTimeout(() => (copied = false), 1200);
+      setTimeout(() => (copied = false), COPIED_FLASH_MS);
     } catch (e) {
       app.notify(String((e as Error)?.message ?? e), 'error');
     }

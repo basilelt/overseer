@@ -1,12 +1,13 @@
 <script lang="ts">
   import Users from '@lucide/svelte/icons/users';
   import X from '@lucide/svelte/icons/x';
-  import { isTauri } from '../../client';
+  import { isTauri } from '../../platform';
   import { t, type Key } from '../../i18n.svelte';
   import { app } from '../../state.svelte';
-  import { saveSettings, settings, type Settings } from '../../settings.svelte';
-  import { mayAsk, MAX_COOLDOWN_S, NOTIFY_KINDS, opensSettings, type Delivery, type Perm } from '../../notify-prefs';
-  import { isTargetMuted, mutedList, openSystemSettings, permission, requestPermission, sendTest, toggleTargetMute } from '../../os-notify';
+  import { saveSettings, settings, type Settings } from '../../settings/settings.svelte';
+  import { mayAsk, MAX_COOLDOWN_S, NOTIFY_KINDS, opensSettings, type Delivery, type Perm } from '../../notify/notify-prefs';
+  import { isTargetMuted, mutedList, toggleTargetMute } from '../../notify/os-notify';
+  import { openSystemSettings, permission, requestPermission, sendTest } from '../../notify/os-send';
 
   let { row = () => true, hit = () => false }: { row?: (id: string) => boolean; hit?: (id: string) => boolean } = $props();
 

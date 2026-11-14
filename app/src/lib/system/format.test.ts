@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { loadLocale, setLocale } from '../i18n.svelte';
-import { agentLabel, basename, chartPaths, chipLevel, chipText, formatBytes, formatPct, formatRate, formatUptime, level, mergeHistory, niceMax } from './format';
+import { agentLabel, chartPaths, chipLevel, chipText, formatBytes, formatPct, formatRate, formatUptime, mergeHistory, niceMax } from './format';
+import { level } from '../severity';
 import { mockSystem } from './mock';
 import { systemSession } from './session';
 import { st } from './strings';
@@ -57,8 +58,8 @@ describe('formatting', () => {
   it('labels agents by name and project folder', () => {
     expect(agentLabel({ agent: 'claude', cwd: '/home/me/src/overseer/', title: '' })).toBe('Claude in overseer');
     expect(agentLabel({ agent: 'aider', cwd: 'C:\\src\\web', title: '' }, 'dans')).toBe('Aider dans web');
+    expect(agentLabel({ agent: 'vibe', cwd: '/w/site', title: '' })).toBe('Vibe in site');
     expect(agentLabel({ agent: null, cwd: '', title: 'zsh' })).toBe('zsh');
-    expect(basename('/')).toBe('/');
   });
 
   it('localizes its own strings', async () => {

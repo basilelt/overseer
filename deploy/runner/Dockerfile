@@ -4,6 +4,7 @@ COPY Cargo.toml Cargo.lock ./
 COPY src ./src
 COPY board ./board
 COPY api ./api
+COPY contract/wire.rs ./contract/wire.rs
 RUN cargo build --release --locked --bin overseer
 
 FROM debian:bookworm-slim

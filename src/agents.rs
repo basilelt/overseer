@@ -9,13 +9,132 @@ pub const AGY_EFFORTS: &[&str] = &["low", "medium", "high", "xhigh", "max"];
 type Argv = &'static [&'static str];
 type Renames = &'static [(&'static str, &'static str)];
 
+pub enum Install {
+    None,
+    Command(&'static str),
+    Manual(&'static str),
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Transcript {
+    Claude,
+    Codex,
+    Gemini,
+    Vibe,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Process {
+    ArgContains(&'static str),
+    BinOrScript {
+        bin: &'static str,
+        script: &'static str,
+    },
+    BinOrPackage {
+        bin: &'static str,
+        package: &'static str,
+    },
+    BinOrNative {
+        bins: &'static [&'static str],
+    },
+}
+
+impl Process {
+    pub fn matches(self, arg: &str) -> bool {
+        match self {
+            Process::ArgContains(s) => arg.contains(s),
+            Process::BinOrScript { bin, script } => {
+                let base = arg.rsplit('/').next().unwrap_or(arg);
+                base == bin || base == script
+            }
+            Process::BinOrPackage { bin, package } => {
+                let base = arg.rsplit('/').next().unwrap_or(arg);
+                base == bin || arg.contains(package)
+            }
+            Process::BinOrNative { bins } => {
+                let base = arg.rsplit(['/', '\\']).next().unwrap_or(arg);
+                bins.contains(&base)
+            }
+        }
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Mcp {
+    None,
+    Claude,
+    Codex,
+    VibeTrust,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Hooks {
+    Native,
+    Plugin,
+    Polling,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum ProfileKind {
+    Claude,
+    Codex,
+    MarkdownSubagents,
+    Opencode,
+    Vibe,
+    Plain,
+    Shell,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Repair {
+    None,
+    Claude,
+    Codex,
+}
+
+pub const CODEX_TRUST: &str = "Codex runs new or edited hooks only after you trust them: start codex and choose Review hooks or Trust all at the \"Hooks need review\" prompt, or run /hooks inside it. codex exec cannot review hooks. Overseer never edits config.toml.";
+
+pub struct StartupPrompt {
+    pub marker: &'static str,
+    pub cursor: char,
+    pub accept_label: &'static str,
+    pub accept: &'static [u8],
+    pub select_then_accept: &'static [u8],
+}
+
+pub struct ConfigDir {
+    pub env: Option<&'static str>,
+    pub default: &'static str,
+}
+
 pub struct Agent {
     pub id: &'static str,
     pub name: &'static str,
     pub bin: &'static str,
-    pub install: &'static str,
+    pub install: Install,
+    pub config: Option<ConfigDir>,
+    pub auto_approve: Option<&'static [&'static str]>,
+    pub approval_overrides: &'static [&'static str],
+    pub effort_levels: &'static [&'static str],
+    pub transcript: Option<Transcript>,
+    pub process: Option<Process>,
+    pub subagent_models: Option<&'static [&'static str]>,
+    pub subagent_effort: bool,
+    pub oauth_limits: bool,
+    pub embedded_daemon: bool,
+    pub metered: bool,
+    pub mcp: Mcp,
+    pub hooks: Hooks,
+    pub hook_note: Option<&'static str>,
+    pub retrust_hooks: bool,
+    pub hooks_need_cli: bool,
+    pub profile: ProfileKind,
+    pub repair: Repair,
+    pub start_args: bool,
+    pub tmux_snapshot: bool,
+    pub orchestrator: bool,
+    pub positional_prompt: bool,
     pub verified: bool,
-    pub sessions: bool,
     pub turns: bool,
     pub resume_verified: bool,
     pub models: Option<&'static [&'static str]>,
@@ -25,15 +144,37 @@ pub struct Agent {
     pub prompt: Option<&'static str>,
     pub resume: Option<&'static [&'static str]>,
     pub cont: Option<&'static [&'static str]>,
+    pub startup_prompt: Option<StartupPrompt>,
 }
 
 const NONE: Agent = Agent {
     id: "",
     name: "",
     bin: "",
-    install: "",
+    install: Install::None,
+    config: None,
+    auto_approve: None,
+    approval_overrides: &[],
+    effort_levels: EFFORTS,
+    transcript: None,
+    process: None,
+    subagent_models: None,
+    subagent_effort: false,
+    oauth_limits: false,
+    embedded_daemon: false,
+    metered: false,
+    mcp: Mcp::None,
+    hooks: Hooks::Polling,
+    hook_note: None,
+    retrust_hooks: false,
+    hooks_need_cli: false,
+    profile: ProfileKind::Plain,
+    repair: Repair::None,
+    start_args: false,
+    tmux_snapshot: false,
+    orchestrator: false,
+    positional_prompt: false,
     verified: true,
-    sessions: false,
     turns: false,
     resume_verified: false,
     models: None,
@@ -43,15 +184,45 @@ const NONE: Agent = Agent {
     prompt: None,
     resume: None,
     cont: None,
+    startup_prompt: None,
 };
 
 pub static AGENTS: &[Agent] = &[
     Agent {
-        id: "claude",
+        id: CLAUDE,
+        startup_prompt: Some(StartupPrompt {
+            marker: "Itrustthisfolder",
+            cursor: '❯',
+            accept_label: "Yes",
+            accept: b"\r",
+            select_then_accept: b"\x1b[B\r",
+        }),
+        transcript: Some(Transcript::Claude),
+        process: Some(Process::ArgContains("claude")),
+        subagent_effort: true,
+        oauth_limits: true,
+        metered: true,
+        mcp: Mcp::Claude,
+        hooks: Hooks::Native,
+        profile: ProfileKind::Claude,
+        repair: Repair::Claude,
+        start_args: true,
+        tmux_snapshot: true,
+        orchestrator: true,
+        positional_prompt: true,
+        auto_approve: Some(&["--permission-mode", "auto"]),
+        approval_overrides: &[
+            "--permission-mode",
+            "--dangerously-skip-permissions",
+            "--allow-dangerously-skip-permissions",
+        ],
+        config: Some(ConfigDir {
+            env: Some("CLAUDE_CONFIG_DIR"),
+            default: ".claude",
+        }),
         name: "Claude Code",
         bin: "claude",
-        install: "curl -fsSL https://claude.ai/install.sh | bash",
-        sessions: true,
+        install: Install::Command("curl -fsSL https://claude.ai/install.sh | bash"),
         turns: true,
         resume_verified: true,
         models: Some(&["opus", "sonnet", "haiku", "fable"]),
@@ -63,25 +234,65 @@ pub static AGENTS: &[Agent] = &[
         ..NONE
     },
     Agent {
-        id: "codex",
+        id: CODEX,
+        transcript: Some(Transcript::Codex),
+        process: Some(Process::BinOrScript {
+            bin: "codex",
+            script: "codex.js",
+        }),
+        metered: true,
+        mcp: Mcp::Codex,
+        hooks: Hooks::Native,
+        hook_note: Some(CODEX_TRUST),
+        retrust_hooks: true,
+        profile: ProfileKind::Codex,
+        repair: Repair::Codex,
+        orchestrator: true,
+        positional_prompt: true,
+        auto_approve: Some(&["--ask-for-approval", "never"]),
+        approval_overrides: &[
+            "--ask-for-approval",
+            "-a",
+            "--full-auto",
+            "--yolo",
+            "--dangerously-bypass-approvals-and-sandbox",
+        ],
+        config: Some(ConfigDir {
+            env: Some("CODEX_HOME"),
+            default: ".codex",
+        }),
         name: "Codex",
         bin: "codex",
-        install: "npm install -g @openai/codex",
-        sessions: true,
+        install: Install::Command("npm install -g @openai/codex"),
         turns: true,
         resume_verified: true,
         model_flag: Some("-m"),
         effort: Some((&["-c", "model_reasoning_effort={}"], &[("max", "xhigh")])),
         resume: Some(&["resume", "{flags}", "{id}"]),
         cont: Some(&["resume", "--last"]),
+        embedded_daemon: true,
         ..NONE
     },
     Agent {
-        id: "gemini",
+        id: GEMINI,
+        transcript: Some(Transcript::Gemini),
+        process: Some(Process::BinOrPackage {
+            bin: "gemini",
+            package: "/@google/gemini-cli/",
+        }),
+        metered: true,
+        hooks: Hooks::Native,
+        hooks_need_cli: true,
+        profile: ProfileKind::MarkdownSubagents,
+        auto_approve: Some(&["--approval-mode=yolo"]),
+        approval_overrides: &["--approval-mode", "--yolo", "-y"],
+        config: Some(ConfigDir {
+            env: None,
+            default: ".gemini",
+        }),
         name: "Gemini CLI",
         bin: "gemini",
-        install: "npm install -g @google/gemini-cli",
-        sessions: true,
+        install: Install::Command("npm install -g @google/gemini-cli"),
         model_flag: Some("-m"),
         session: Some(&["--session-id", "{}"]),
         prompt: Some("-i"),
@@ -91,9 +302,15 @@ pub static AGENTS: &[Agent] = &[
     },
     Agent {
         id: "agy",
+        subagent_models: Some(&["inherit", "flash", "pro"]),
+        hook_note: Some("No stable hook file for the Antigravity CLI yet: finished turns come from terminal activity."),
+        profile: ProfileKind::MarkdownSubagents,
+        effort_levels: AGY_EFFORTS,
+        auto_approve: Some(&["--mode=auto"]),
+        approval_overrides: &["--mode"],
         name: "Antigravity",
         bin: "agy",
-        install: "see https://antigravity.google/download",
+        install: Install::Manual("see https://antigravity.google/download"),
         model_flag: Some("--model"),
         effort: Some((&["--effort", "{}"], &[])),
         prompt: Some("-i"),
@@ -102,10 +319,14 @@ pub static AGENTS: &[Agent] = &[
         ..NONE
     },
     Agent {
-        id: "opencode",
+        id: OPENCODE,
+        hooks: Hooks::Plugin,
+        profile: ProfileKind::Opencode,
+        auto_approve: Some(&["--auto"]),
+        approval_overrides: &["--auto"],
         name: "opencode",
         bin: "opencode",
-        install: "npm install -g --allow-scripts=opencode-ai opencode-ai",
+        install: Install::Command("npm install -g --allow-scripts=opencode-ai opencode-ai"),
         model_flag: Some("-m"),
         prompt: Some("--prompt"),
         resume: Some(&["{flags}", "--session", "{id}"]),
@@ -113,10 +334,12 @@ pub static AGENTS: &[Agent] = &[
         ..NONE
     },
     Agent {
-        id: "amp",
+        id: AMP,
+        hooks: Hooks::Plugin,
+        hook_note: Some("Amp has no needs-input event: Overseer reports turn start and end only."),
         name: "Amp",
         bin: "amp",
-        install: "npm install -g --allow-scripts=@ampcode/cli @sourcegraph/amp",
+        install: Install::Command("npm install -g --allow-scripts=@ampcode/cli @sourcegraph/amp"),
         models: Some(&[]),
         effort: Some((&["--mode", "{}"], &[("max", "ultra")])),
         resume: Some(&["threads", "continue", "{id}"]),
@@ -124,10 +347,17 @@ pub static AGENTS: &[Agent] = &[
         ..NONE
     },
     Agent {
-        id: "copilot",
+        id: COPILOT,
+        hooks: Hooks::Native,
+        auto_approve: Some(&["--allow-all"]),
+        approval_overrides: &["--allow-all", "--allow-all-tools", "--yolo"],
+        config: Some(ConfigDir {
+            env: Some("COPILOT_HOME"),
+            default: ".copilot",
+        }),
         name: "Copilot CLI",
         bin: "copilot",
-        install: "npm install -g @github/copilot",
+        install: Install::Command("npm install -g @github/copilot"),
         resume_verified: true,
         models: Some(&[
             "claude-sonnet-4.6",
@@ -148,10 +378,19 @@ pub static AGENTS: &[Agent] = &[
         ..NONE
     },
     Agent {
-        id: "cursor",
+        id: CURSOR,
+        hooks: Hooks::Native,
+        hook_note: Some("Cursor Agent fires only some hooks in the CLI; a missing turn start falls back to terminal activity."),
+        hooks_need_cli: true,
+        auto_approve: Some(&["--force"]),
+        approval_overrides: &["--force", "-f", "--yolo"],
+        config: Some(ConfigDir {
+            env: None,
+            default: ".cursor",
+        }),
         name: "Cursor Agent",
         bin: "cursor-agent",
-        install: "curl https://cursor.com/install -fsS | bash",
+        install: Install::Command("curl https://cursor.com/install -fsS | bash"),
         verified: false,
         model_flag: Some("--model"),
         resume: Some(&["{flags}", "--resume", "{id}"]),
@@ -159,7 +398,34 @@ pub static AGENTS: &[Agent] = &[
         ..NONE
     },
     Agent {
+        id: VIBE,
+        transcript: Some(Transcript::Vibe),
+        process: Some(Process::BinOrNative {
+            bins: &["vibe", "vibe.exe", "vibe-rs", "vibe-rs.exe"],
+        }),
+        mcp: Mcp::VibeTrust,
+        hooks: Hooks::Native,
+        hook_note: Some("Needs Mistral Vibe 3.0 or later. An interrupted turn fires no hook: the line stays busy until the next turn ends."),
+        profile: ProfileKind::Vibe,
+        auto_approve: Some(&["--auto-approve"]),
+        approval_overrides: &["--auto-approve", "--yolo", "--agent", "--smart-approve"],
+        config: Some(ConfigDir {
+            env: Some("VIBE_HOME"),
+            default: ".vibe",
+        }),
+        name: "Mistral Vibe",
+        bin: "vibe",
+        install: Install::Command("uv tool install mistral-vibe"),
+        turns: true,
+        models: Some(&[]),
+        prompt: Some("--"),
+        resume: Some(&["{flags}", "--resume", "{id}"]),
+        cont: Some(&["--continue"]),
+        ..NONE
+    },
+    Agent {
         id: "shell",
+        profile: ProfileKind::Shell,
         name: "Shell",
         models: Some(&[]),
         ..NONE
@@ -174,15 +440,50 @@ pub fn id_of(id: &str) -> &'static str {
     get(id).map(|a| a.id).unwrap_or("other")
 }
 
+pub fn config_dir(id: &str) -> std::path::PathBuf {
+    get(id).and_then(Agent::config_dir).unwrap_or_default()
+}
+
+pub const SHELL: &str = "shell";
+
+pub fn is_shell(id: &str) -> bool {
+    id == SHELL
+}
+
+pub const CLAUDE: &str = "claude";
+pub const CODEX: &str = "codex";
+pub const GEMINI: &str = "gemini";
+pub const VIBE: &str = "vibe";
+pub const COPILOT: &str = "copilot";
+pub const CURSOR: &str = "cursor";
+pub const OPENCODE: &str = "opencode";
+pub const AMP: &str = "amp";
+
+pub const DEFAULT_ID: &str = CLAUDE;
+
+pub fn default_agent() -> &'static Agent {
+    get(DEFAULT_ID).unwrap_or(&AGENTS[0])
+}
+
+pub fn transcript_of(id: &str) -> Option<Transcript> {
+    get(id).and_then(|a| a.transcript)
+}
+
 pub fn task_agent(id: &str) -> bool {
-    get(id).is_some_and(|a| a.id != "shell")
+    get(id).is_some_and(Agent::coding)
 }
 
 fn base(arg: &str) -> &str {
     arg.rsplit(['/', '\\']).next().unwrap_or(arg)
 }
 
-pub fn of_argv(argv: &[String]) -> Option<&'static Agent> {
+pub fn runs_as(id: &str, arg: &str) -> bool {
+    get(id)
+        .and_then(|a| a.process)
+        .is_some_and(|p| p.matches(arg))
+}
+
+pub fn of_launch_argv(argv: &[String]) -> Option<&'static Agent> {
     let first = argv.first().map(|a| base(a))?;
     AGENTS
         .iter()
@@ -204,50 +505,15 @@ pub struct Launch<'a> {
 
 const AUTO_APPROVE_KEY: &str = "agent.autoApprove.";
 
-/// CLI-native auto-approval flags for agents that expose a launch-time mode.
-/// Amp currently auto-approves by default unless the user's Amp permission
-/// configuration opts into a policy, so it needs no launch flag.
 pub fn auto_approve_args(id: &str) -> Option<&'static [&'static str]> {
-    match id {
-        "claude" => Some(&["--permission-mode", "auto"]),
-        "codex" => Some(&["--ask-for-approval", "never"]),
-        "gemini" => Some(&["--approval-mode=yolo"]),
-        "agy" => Some(&["--mode=auto"]),
-        "opencode" => Some(&["--auto"]),
-        "copilot" => Some(&["--allow-all"]),
-        "cursor" => Some(&["--force"]),
-        _ => None,
-    }
-}
-
-fn approval_overrides(id: &str) -> &'static [&'static str] {
-    match id {
-        "claude" => &[
-            "--permission-mode",
-            "--dangerously-skip-permissions",
-            "--allow-dangerously-skip-permissions",
-        ],
-        "codex" => &[
-            "--ask-for-approval",
-            "-a",
-            "--full-auto",
-            "--yolo",
-            "--dangerously-bypass-approvals-and-sandbox",
-        ],
-        "gemini" => &["--approval-mode", "--yolo", "-y"],
-        "agy" => &["--mode"],
-        "opencode" => &["--auto"],
-        "copilot" => &["--allow-all", "--allow-all-tools", "--yolo"],
-        "cursor" => &["--force", "-f", "--yolo"],
-        _ => &[],
-    }
+    get(id)?.auto_approve
 }
 
 pub fn auto_approve_flags(id: &str, extra: &[String]) -> Vec<String> {
     let Some(flags) = auto_approve_args(id) else {
         return vec![];
     };
-    let overrides = approval_overrides(id);
+    let overrides = get(id).map_or(&[][..], |a| a.approval_overrides);
     let set = extra.iter().any(|arg| {
         let name = arg.split_once('=').map_or(arg.as_str(), |(n, _)| n);
         overrides.contains(&name)
@@ -306,22 +572,26 @@ impl Agent {
 
     pub fn efforts(&self) -> &'static [&'static str] {
         if self.effort.is_some() {
-            if self.id == "agy" {
-                AGY_EFFORTS
-            } else {
-                EFFORTS
-            }
+            self.effort_levels
         } else {
             &[]
         }
     }
 
     pub fn valid_efforts(&self) -> &'static [&'static str] {
-        if self.effort.is_some() {
-            self.efforts()
-        } else {
-            EFFORTS
-        }
+        self.effort_levels
+    }
+
+    pub fn config_dir(&self) -> Option<std::path::PathBuf> {
+        let c = self.config.as_ref()?;
+        Some(match c.env {
+            Some(var) => crate::env_dir(var, c.default),
+            None => crate::home().join(c.default),
+        })
+    }
+
+    pub fn default_config_dir(&self) -> Option<std::path::PathBuf> {
+        Some(crate::home().join(self.config.as_ref()?.default))
     }
 
     pub fn flags(&self, model: &str, effort: &str) -> Vec<String> {
@@ -340,7 +610,7 @@ impl Agent {
     }
 
     pub fn mode_flags(&self, effort: &str, extra: &[String]) -> Vec<String> {
-        let needs_embedded = self.id == "codex"
+        let needs_embedded = self.embedded_daemon
             && (!effort.is_empty()
                 || extra
                     .iter()
@@ -372,8 +642,20 @@ impl Agent {
         a
     }
 
+    pub fn coding(&self) -> bool {
+        !is_shell(self.id)
+    }
+
+    pub fn sessions(&self) -> bool {
+        self.transcript.is_some()
+    }
+
+    pub fn polled(&self) -> bool {
+        !self.sessions() && !self.bin.is_empty()
+    }
+
     pub fn has_ids(&self) -> bool {
-        self.sessions || self.session.is_some()
+        self.sessions() || self.session.is_some()
     }
 
     pub fn resume_argv(&self, session_id: &str, flags: &[String]) -> Option<Vec<String>> {
@@ -396,7 +678,7 @@ impl Agent {
         let mut v = json!({
             "id": self.id, "name": self.name, "installed": version.is_some(),
             "efforts": self.efforts(), "resume": self.resume.is_some() || self.cont.is_some(),
-            "verified": self.verified, "sessions": self.sessions, "turns": self.turns,
+            "verified": self.verified, "sessions": self.sessions(), "turns": self.turns,
         });
         if let Some(ver) = version.filter(|v| !v.is_empty()) {
             v["version"] = json!(ver);
@@ -404,11 +686,44 @@ impl Agent {
         if let Some(m) = self.models {
             v["models"] = json!(m);
         }
-        if !self.install.is_empty() {
-            v["install"] = json!(self.install);
+        match self.install {
+            Install::None => {}
+            Install::Command(t) | Install::Manual(t) => v["install"] = json!(t),
+        }
+        if cfg!(unix) && self.install_cmd().is_some() {
+            v["installable"] = json!(true);
         }
         v
     }
+
+    pub fn install_cmd(&self) -> Option<&'static str> {
+        match self.install {
+            Install::Command(c) => Some(c),
+            Install::None | Install::Manual(_) => None,
+        }
+    }
+}
+
+#[cfg(unix)]
+pub fn install_argv(a: &Agent) -> Result<Vec<String>, String> {
+    let cmd = a
+        .install_cmd()
+        .ok_or_else(|| format!("{} has no install command", a.name))?;
+    Ok(vec![
+        "/bin/sh".into(),
+        "-c".into(),
+        format!(
+            "printf '%s\\r\\n\\r\\n' \"$1\"; {cmd}; s=$?; [ $s -eq 0 ] || printf '\\r\\n%s %s\\r\\n' \"$2\" \"$s\"; exit $s"
+        ),
+        "sh".into(),
+        format!("$ {cmd}"),
+        "Install failed with exit code".into(),
+    ])
+}
+
+#[cfg(not(unix))]
+pub fn install_argv(_: &Agent) -> Result<Vec<String>, String> {
+    Err("installing agents from the app is not supported on this platform".into())
 }
 
 pub fn redact(argv: &[String], agent: &Agent, prompt: Option<&str>) -> Vec<String> {
@@ -435,7 +750,7 @@ pub fn on_path(bin: &str, path: &std::ffi::OsStr, exts: &str) -> Option<std::pat
 
 fn program(bin: &str) -> std::path::PathBuf {
     if cfg!(windows) {
-        let path = std::env::var_os("PATH").unwrap_or_default();
+        let path = std::ffi::OsString::from(crate::shellenv::path());
         let exts = std::env::var("PATHEXT").unwrap_or_else(|_| ".COM;.EXE;.BAT;.CMD".into());
         if let Some(p) = on_path(bin, &path, &exts) {
             return p;
@@ -445,8 +760,10 @@ fn program(bin: &str) -> std::path::PathBuf {
 }
 
 pub fn version(bin: &str) -> Option<String> {
-    let o = crate::git::output_within(
-        Command::new(program(bin)).arg("--version"),
+    let o = crate::exec::output_within(
+        Command::new(program(bin))
+            .arg("--version")
+            .env("PATH", crate::shellenv::path()),
         Duration::from_secs(5),
     )
     .ok()?;
@@ -486,7 +803,7 @@ fn detect() -> Detected {
 }
 
 pub fn installed() -> Detected {
-    let path = std::env::var("PATH").unwrap_or_default();
+    let path = crate::shellenv::path();
     let mut g = CACHE.lock().unwrap_or_else(|e| e.into_inner());
     if let Some((at, p, d)) = g.as_ref() {
         if *p == path && at.elapsed() < Duration::from_secs(60) {
@@ -516,6 +833,7 @@ pub fn list() -> Value {
 }
 
 pub fn rescan() -> Value {
+    crate::shellenv::refresh();
     *CACHE.lock().unwrap_or_else(|e| e.into_inner()) = None;
     list()
 }
@@ -523,6 +841,37 @@ pub fn rescan() -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_runnable_install_commands_are_installable() {
+        let j = |id: &str| {
+            list()
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|a| a["id"] == id)
+                .cloned()
+                .unwrap()
+        };
+        assert_eq!(j("codex")["installable"], cfg!(unix));
+        assert!(j("agy")["installable"].is_null());
+        assert_eq!(
+            j("agy")["install"],
+            "see https://antigravity.google/download"
+        );
+        assert!(j("shell")["installable"].is_null());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn install_argv_wraps_the_command_and_exits_with_its_status() {
+        let argv = install_argv(get("codex").unwrap()).unwrap();
+        assert_eq!(argv[..2], ["/bin/sh", "-c"]);
+        assert!(argv[2].contains("; npm install -g @openai/codex; s=$?;"));
+        assert!(argv[2].ends_with("exit $s"));
+        assert_eq!(argv[4], "$ npm install -g @openai/codex");
+        assert!(install_argv(get("agy").unwrap()).is_err());
+    }
 
     #[test]
     fn on_path_finds_a_cmd_shim_by_pathext() {
@@ -746,16 +1095,136 @@ mod tests {
     }
 
     #[test]
+    fn descriptor_tables_match_the_per_agent_behaviour() {
+        let ids = |f: fn(&Agent) -> bool| -> Vec<&str> {
+            AGENTS.iter().filter(|a| f(a)).map(|a| a.id).collect()
+        };
+        assert_eq!(ids(|a| a.orchestrator), ["claude", "codex"]);
+        assert_eq!(ids(|a| a.positional_prompt), ["claude", "codex"]);
+        assert_eq!(
+            ids(|a| a.auto_approve.is_some()),
+            ["claude", "codex", "gemini", "agy", "opencode", "copilot", "cursor", "vibe"]
+        );
+        assert_eq!(get("agy").unwrap().efforts(), AGY_EFFORTS);
+        assert_eq!(get("claude").unwrap().efforts(), EFFORTS);
+        assert!(get("opencode").unwrap().efforts().is_empty());
+        assert_eq!(get("opencode").unwrap().valid_efforts(), EFFORTS);
+        assert_eq!(get("agy").unwrap().valid_efforts(), AGY_EFFORTS);
+        assert!(matches!(get("agy").unwrap().install, Install::Manual(_)));
+        assert!(get("shell").unwrap().install_cmd().is_none());
+    }
+
+    #[test]
+    fn predicates_name_the_agent_groups() {
+        let ids = |f: fn(&Agent) -> bool| -> Vec<&str> {
+            AGENTS.iter().filter(|a| f(a)).map(|a| a.id).collect()
+        };
+        assert_eq!(ids(|a| !a.coding()), ["shell"]);
+        assert_eq!(ids(Agent::sessions), ["claude", "codex", "gemini", "vibe"]);
+        assert_eq!(
+            ids(Agent::polled),
+            ["agy", "opencode", "amp", "copilot", "cursor"]
+        );
+        assert!(is_shell("shell") && !is_shell("claude") && !is_shell("nope"));
+        assert!(task_agent("claude") && !task_agent("shell") && !task_agent("nope"));
+    }
+
+    #[test]
+    fn capability_enums_name_every_agent_explicitly() {
+        let t = |id: &str| get(id).unwrap();
+        let kinds: Vec<_> = AGENTS.iter().filter_map(|a| a.transcript).collect();
+        assert_eq!(
+            kinds,
+            [
+                Transcript::Claude,
+                Transcript::Codex,
+                Transcript::Gemini,
+                Transcript::Vibe
+            ]
+        );
+        let metered: Vec<_> = AGENTS.iter().filter(|a| a.metered).map(|a| a.id).collect();
+        assert_eq!(metered, ["claude", "codex", "gemini"]);
+        assert_eq!(t("claude").mcp, Mcp::Claude);
+        assert_eq!(t("codex").mcp, Mcp::Codex);
+        assert_eq!(t("vibe").mcp, Mcp::VibeTrust);
+        assert_eq!(t("gemini").mcp, Mcp::None);
+        assert_eq!(t("claude").repair, Repair::Claude);
+        assert_eq!(t("codex").repair, Repair::Codex);
+        assert_eq!(t("vibe").repair, Repair::None);
+        assert_eq!(t("agy").profile, ProfileKind::MarkdownSubagents);
+        assert_eq!(t("gemini").profile, ProfileKind::MarkdownSubagents);
+        assert_eq!(t("shell").profile, ProfileKind::Shell);
+        assert_eq!(t("copilot").profile, ProfileKind::Plain);
+        let start: Vec<_> = AGENTS
+            .iter()
+            .filter(|a| a.start_args)
+            .map(|a| a.id)
+            .collect();
+        assert_eq!(start, ["claude"]);
+        assert_eq!(default_agent().id, DEFAULT_ID);
+        assert_eq!(transcript_of("vibe"), Some(Transcript::Vibe));
+        assert_eq!(transcript_of("cursor"), None);
+        assert_eq!(transcript_of("nope"), None);
+    }
+
+    #[test]
+    fn config_dirs_come_from_the_descriptor() {
+        for id in ["claude", "codex", "gemini", "copilot", "vibe", "cursor"] {
+            assert!(config_dir(id).starts_with(crate::home()), "{id}");
+        }
+        assert!(config_dir("gemini").ends_with(".gemini"));
+        assert!(config_dir("opencode").as_os_str().is_empty());
+        assert_eq!(
+            get("claude").unwrap().default_config_dir(),
+            Some(crate::home().join(".claude"))
+        );
+    }
+
+    #[test]
+    fn launch_binary_and_running_process_rules_side_by_side() {
+        let table: &[(&str, Option<&str>, Option<&str>)] = &[
+            ("/usr/bin/claude", Some("claude"), Some("claude")),
+            ("claude.exe", Some("claude"), Some("claude")),
+            ("/opt/claude-code/cli.js", None, Some("claude")),
+            ("/usr/bin/codex", Some("codex"), Some("codex")),
+            ("codex.exe", Some("codex"), None),
+            ("/x/bin/codex.js", None, Some("codex")),
+            ("C:\\bin\\codex", Some("codex"), None),
+            ("/usr/bin/gemini", Some("gemini"), Some("gemini")),
+            ("gemini.exe", Some("gemini"), None),
+            ("/x/@google/gemini-cli/dist/index.js", None, Some("gemini")),
+            ("/home/u/.local/bin/vibe", Some("vibe"), Some("vibe")),
+            ("vibe.exe", Some("vibe"), Some("vibe")),
+            ("C:\\bin\\vibe", Some("vibe"), Some("vibe")),
+            ("/x/site-packages/vibe/_bin/vibe-rs", None, Some("vibe")),
+            ("vibe-rs.exe", None, Some("vibe")),
+            ("/usr/bin/cursor-agent", Some("cursor"), None),
+            ("gemini-helper", None, None),
+            ("vibe-app-server", None, None),
+            ("/usr/bin/vibes", None, None),
+            ("bash", None, None),
+        ];
+        for (arg, launch, running) in table {
+            let launch_id = of_launch_argv(&s(&[arg])).map(|a| a.id);
+            let running_id = [CLAUDE, CODEX, GEMINI, VIBE]
+                .into_iter()
+                .find(|id| runs_as(id, arg));
+            assert_eq!(launch_id, *launch, "launch {arg}");
+            assert_eq!(running_id, *running, "running {arg}");
+        }
+    }
+
+    #[test]
     fn argv_detection() {
         assert_eq!(
-            of_argv(&s(&["/usr/bin/cursor-agent"])).map(|a| a.id),
+            of_launch_argv(&s(&["/usr/bin/cursor-agent"])).map(|a| a.id),
             Some("cursor")
         );
         assert_eq!(
-            of_argv(&s(&["gemini", "-i", "x"])).map(|a| a.id),
+            of_launch_argv(&s(&["gemini", "-i", "x"])).map(|a| a.id),
             Some("gemini")
         );
-        assert!(of_argv(&s(&["bash"])).is_none());
+        assert!(of_launch_argv(&s(&["bash"])).is_none());
         assert_eq!(id_of("nope"), "other");
         assert!(!task_agent("shell"));
     }

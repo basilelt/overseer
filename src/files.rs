@@ -1,7 +1,6 @@
-use crate::daemon::{q, respond_raw, Request};
+use crate::http::{respond_err, respond_raw, Request};
 use crate::procs::{Probe, System};
 use crate::Ctx;
-use serde_json::json;
 use std::io::{ErrorKind, Read, Write};
 use std::path::{Path, PathBuf};
 
@@ -15,24 +14,20 @@ pub fn serve(ctx: &Ctx, r: &Request, s: &mut dyn Write) -> bool {
     }
     match load(ctx, r) {
         Ok((ctype, bytes)) => respond_raw(s, 200, ctype, &bytes),
-        Err((code, e)) => respond_raw(
-            s,
-            code,
-            "application/json",
-            json!({ "error": e }).to_string().as_bytes(),
-        ),
+        Err((code, e)) => respond_err(s, code, &e),
     }
     true
 }
 
 fn load(ctx: &Ctx, r: &Request) -> Res<(&'static str, Vec<u8>)> {
-    let raw = crate::board::decode(q(r, "path").unwrap_or_default());
+    let raw = r.param("path").unwrap_or_default();
     if raw.is_empty() {
         return Err((400, "path required".into()));
     }
-    let base = q(r, "term")
-        .and_then(|t| term_cwd(&crate::board::decode(t)))
-        .or_else(|| q(r, "line").and_then(|l| line_cwd(ctx, &crate::board::decode(l))));
+    let base = r
+        .param("term")
+        .and_then(|t| term_cwd(&t))
+        .or_else(|| r.param("line").and_then(|l| line_cwd(ctx, &l)));
     let p = resolve(&raw, base.as_deref())?;
     let p = check(&p, MAX)?;
     read(&p, MAX).map(|b| (ctype(&p), b))
@@ -175,7 +170,6 @@ mod tests {
         assert_eq!(resolve("b", Some("/c")).unwrap(), PathBuf::from("/c/b"));
         assert_eq!(resolve("~x", Some("/c")).unwrap(), PathBuf::from("/c/~x"));
         assert_eq!(resolve("b", None).unwrap_err().0, 400);
-        assert_eq!(crate::board::decode("a%20b%67"), "a bg");
     }
 
     #[test]

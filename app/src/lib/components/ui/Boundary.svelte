@@ -54,7 +54,7 @@
   }
   .crash.floating {
     position: fixed;
-    z-index: 80;
+    z-index: var(--z-crash);
     left: 50%;
     top: 30%;
     transform: translateX(-50%);

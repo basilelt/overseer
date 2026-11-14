@@ -1,9 +1,9 @@
-use crate::daemon::Request;
+use crate::exec::RunError;
+use crate::http::Request;
 use crate::Ctx;
 use serde_json::{json, Value};
-use std::io::Read;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::Command;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
@@ -80,7 +80,7 @@ impl Drop for Pending {
 pub fn routes(ctx: &Ctx, r: &Request, segs: &[&str], body: &Value) -> Option<(u16, Value)> {
     let res = match (r.method.as_str(), segs) {
         ("GET", ["v1", "github", "review-requests"]) => {
-            list(ctx, "gh", crate::daemon::q(r, "refresh") == Some("1")).map(|v| (200, v))
+            list(ctx, "gh", r.is_one("refresh")).map(|v| (200, v))
         }
         ("POST", ["v1", "github", "review-requests", owner, repo, number, "review"]) => {
             review(ctx, owner, repo, number, body)
@@ -95,61 +95,18 @@ pub fn run(bin: &str, dir: Option<&Path>, args: &[&str], timeout: Duration) -> R
     if let Some(d) = dir {
         cmd.current_dir(d);
     }
-    #[cfg(unix)]
-    std::os::unix::process::CommandExt::process_group(&mut cmd, 0);
-    let mut child = cmd
-        .args(args)
-        .env("GH_PROMPT_DISABLED", "1")
-        .env("GH_NO_UPDATE_NOTIFIER", "1")
-        .env("GIT_TERMINAL_PROMPT", "0")
-        .env("NO_COLOR", "1")
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .map_err(|e| {
-            if e.kind() == std::io::ErrorKind::NotFound {
-                (
-                    424,
-                    format!("{bin} is not installed on this host"),
-                    "missing",
-                )
-            } else {
-                (500, format!("{bin}: {e}"), "failed")
-            }
-        })?;
-    fn drain(p: Option<impl Read + Send + 'static>) -> std::thread::JoinHandle<Vec<u8>> {
-        std::thread::spawn(move || {
-            let mut s = Vec::new();
-            if let Some(mut p) = p {
-                let _ = p.read_to_end(&mut s);
-            }
-            s
-        })
-    }
-    let _tracked = Child::track(child.id());
-    let (out, err) = (drain(child.stdout.take()), drain(child.stderr.take()));
-    let begin = Instant::now();
-    let status = loop {
-        match child.try_wait() {
-            Ok(Some(s)) => break s,
-            Ok(None) if begin.elapsed() > timeout => {
-                #[cfg(unix)]
-                if let Ok(pid) = i32::try_from(child.id()) {
-                    unsafe { libc::kill(-pid, libc::SIGKILL) };
-                }
-                let _ = child.kill();
-                let _ = child.wait();
-                return Err((504, format!("{bin} {} timed out", args[0]), "timeout"));
-            }
-            Ok(None) => std::thread::sleep(Duration::from_millis(50)),
-            Err(e) => return Err((500, e.to_string(), "failed")),
-        }
-    };
-    let (stdout, stderr) = (
-        out.join().unwrap_or_default(),
-        err.join().unwrap_or_default(),
-    );
+    crate::git::gh_env(crate::git::git_env(cmd.args(args)));
+    let out = crate::exec::run_tracked(&mut cmd, timeout, Child::track).map_err(|e| match e {
+        RunError::Spawn(e) if e.kind() == std::io::ErrorKind::NotFound => (
+            424,
+            format!("{bin} is not installed on this host"),
+            "missing",
+        ),
+        RunError::Spawn(e) => (500, format!("{bin}: {e}"), "failed"),
+        RunError::TimedOut(_) => (504, format!("{bin} {} timed out", args[0]), "timeout"),
+        RunError::Wait(e) => (500, e.to_string(), "failed"),
+    })?;
+    let (status, stdout, stderr) = (out.status, out.stdout, out.stderr);
     if status.success() {
         return Ok(String::from_utf8_lossy(&stdout).into_owned());
     }
@@ -277,7 +234,7 @@ fn list(ctx: &Ctx, bin: &str, refresh: bool) -> Res<Value> {
             p["localPath"] = json!(local);
         }
     }
-    v["fetchedAt"] = json!(crate::procs::now_ms());
+    v["fetchedAt"] = json!(crate::util::now_ms());
     *CACHE.lock().unwrap_or_else(|e| e.into_inner()) = Some((Instant::now(), v.clone()));
     Ok(v)
 }
@@ -356,8 +313,8 @@ pub fn prepare(
     };
     let (root, _) = crate::worktrees::project(&root).map_err(|(c, e)| (c, e, "failed"))?;
     let pull = format!("pull/{number}/head");
-    let branch = format!("review/pr-{number}");
-    let dir = crate::worktrees::store(ctx, &root).join(crate::worktrees::dir_name(&branch));
+    let branch = crate::layout::review_branch(number);
+    let dir = crate::worktrees::store(ctx, &root).join(crate::layout::branch_dir_name(&branch));
     if dir.is_dir() {
         let d = dir.to_string_lossy().into_owned();
         if git(
@@ -474,7 +431,7 @@ fn review(ctx: &Ctx, owner: &str, name: &str, number: &str, b: &Value) -> Res<(u
         "body": b,
         "local": local,
         "pr": pr,
-        "startedAt": crate::procs::now_ms(),
+        "startedAt": crate::util::now_ms(),
     });
     let dir = crate::default_state_dir().join(JOURNAL);
     let (tx, rx) = std::sync::mpsc::channel();
@@ -522,7 +479,7 @@ fn run_job(dir: &Path, job: &Value, agent: &'static crate::agents::Agent) -> Res
             prepare(
                 &ctx,
                 "gh",
-                &crate::home().join(".overseer/reviews"),
+                &crate::paths::reviews_dir(),
                 job["local"].as_str().map(String::from),
                 &repo,
                 number,
@@ -562,7 +519,7 @@ pub fn resume_pending(state_dir: &Path) {
     let Ok(rd) = std::fs::read_dir(&dir) else {
         return;
     };
-    let now = crate::procs::now_ms();
+    let now = crate::util::now_ms();
     for e in rd.flatten() {
         let path = e.path();
         let job: Value = std::fs::read(&path)
@@ -621,7 +578,7 @@ mod tests {
         let d = std::env::temp_dir().join(format!("sb-gh-journal-{}", std::process::id()));
         let dir = d.join(JOURNAL);
         std::fs::create_dir_all(&dir).unwrap();
-        let now = crate::procs::now_ms();
+        let now = crate::util::now_ms();
         let jobs = [
             json!({"title": "PR #1 acme/old", "repo": "acme/old", "number": 1, "body": {"agent": "claude"}, "startedAt": now - 2 * RESUME_MAX_MS}),
             json!({"title": "PR #2 acme/bad", "repo": "acme/bad", "number": 2, "body": {"agent": "nope"}, "startedAt": now}),

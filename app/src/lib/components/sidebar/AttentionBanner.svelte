@@ -1,8 +1,8 @@
 <script lang="ts">
   import type { AttentionEntry } from '../../attention';
   import { t } from '../../i18n.svelte';
+  import { itemMenuAt } from '../../workspace/wsactions';
 
-  // pathOf gives the folder path of an entry's workspace; the by-state view passes none.
   let { entries, onselect, pathOf }: { entries: AttentionEntry[]; onselect: (entry: AttentionEntry) => void; pathOf?: (entry: AttentionEntry) => string | undefined } = $props();
 </script>
 
@@ -11,8 +11,8 @@
     <div class="head">{t('session.state.attention')}</div>
     {#each entries as entry (entry.key)}
       {@const path = pathOf?.(entry)}
-      <button class="item" type="button" data-key={entry.key} onclick={() => onselect(entry)}>
-        <span class="dot" style:--c="var(--state-attention)" aria-hidden="true"></span>
+      <button class="item" type="button" onclick={() => onselect(entry)} oncontextmenu={(e) => itemMenuAt(entry.key, entry.title, e)}>
+        <span class="dot" aria-hidden="true"></span>
         <span class="title">{entry.title}</span>
         {#if entry.detail}<span class="detail">{entry.detail}</span>{/if}
         {#if path}<span class="path">{path}</span>{/if}
@@ -57,7 +57,7 @@
     width: 8px;
     height: 8px;
     border-radius: 50%;
-    background: var(--c);
+    background: var(--state-attention);
   }
   .title {
     flex: none;
@@ -84,5 +84,22 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+  :global(:root.phone) .banner {
+    padding: 8px;
+    border-radius: 12px;
+  }
+  :global(:root.phone) .head {
+    padding: 0 4px 2px;
+    font-size: 12px;
+  }
+  :global(:root.phone) .item {
+    min-height: var(--touch);
+    padding: 4px 8px;
+    border-radius: 10px;
+  }
+  :global(:root.phone) .path {
+    padding-bottom: 0;
+    font-size: 12px;
   }
 </style>

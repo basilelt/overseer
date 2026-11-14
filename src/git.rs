@@ -1,14 +1,14 @@
-use crate::procs::now_ms;
+use crate::exec::{output_within, run_within, RunError};
 use crate::util::normalize_remote;
+use crate::util::now_ms;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Output, Stdio};
+use std::process::{Command, Output};
 use std::sync::Mutex;
 use std::time::Duration;
 
 pub const TIMEOUT: Duration = Duration::from_secs(10);
 pub const SLOW_TIMEOUT: Duration = Duration::from_secs(600);
-pub const PROBE_TIMEOUT: Duration = Duration::from_secs(15);
 const INFO_TTL_MS: i64 = 300_000;
 const MISS_TTL_MS: i64 = 30_000;
 const MAX_CACHED: usize = 4096;
@@ -59,116 +59,56 @@ pub fn limit_for(args: &[&str]) -> Duration {
     }
 }
 
-pub struct Watchdog {
-    tx: Option<std::sync::mpsc::Sender<()>>,
-    dog: Option<std::thread::JoinHandle<bool>>,
+pub fn git_env(cmd: &mut Command) -> &mut Command {
+    cmd.env("GIT_TERMINAL_PROMPT", "0")
 }
 
-impl Watchdog {
-    pub fn guard(cmd: &mut Command) -> &mut Command {
-        #[cfg(unix)]
-        std::os::unix::process::CommandExt::process_group(cmd, 0);
-        cmd
-    }
-
-    pub fn start(pid: u32, limit: Duration) -> Watchdog {
-        let (tx, rx) = std::sync::mpsc::channel::<()>();
-        let dog = std::thread::spawn(move || {
-            let fired = matches!(
-                rx.recv_timeout(limit),
-                Err(std::sync::mpsc::RecvTimeoutError::Timeout)
-            );
-            if fired {
-                kill_group(pid);
-            }
-            fired
-        });
-        Watchdog {
-            tx: Some(tx),
-            dog: Some(dog),
-        }
-    }
-
-    pub fn finish(mut self) -> bool {
-        self.stop()
-    }
-
-    fn stop(&mut self) -> bool {
-        if let Some(tx) = self.tx.take() {
-            let _ = tx.send(());
-        }
-        self.dog
-            .take()
-            .map(|d| d.join().unwrap_or(false))
-            .unwrap_or(false)
-    }
+pub fn git_read_env(cmd: &mut Command) -> &mut Command {
+    git_env(cmd).env("GIT_OPTIONAL_LOCKS", "0")
 }
 
-impl Drop for Watchdog {
-    fn drop(&mut self) {
-        self.stop();
-    }
-}
-
-fn kill_group(pid: u32) {
-    #[cfg(unix)]
-    if let Ok(p) = i32::try_from(pid) {
-        unsafe { libc::kill(-p, libc::SIGKILL) };
-    }
-    #[cfg(not(unix))]
-    let _ = Command::new("taskkill")
-        .args(["/F", "/T", "/PID", &pid.to_string()])
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status();
-}
-
-#[derive(Debug)]
-pub enum RunError {
-    Spawn(std::io::Error),
-    TimedOut(Duration),
-    Wait(std::io::Error),
-}
-
-impl std::fmt::Display for RunError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            RunError::Spawn(e) | RunError::Wait(e) => write!(f, "{e}"),
-            RunError::TimedOut(d) => write!(f, "timed out after {} s", d.as_secs().max(1)),
-        }
-    }
-}
-
-pub fn run_within(cmd: &mut Command, limit: Duration) -> Result<Output, RunError> {
-    let child = Watchdog::guard(cmd)
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .map_err(RunError::Spawn)?;
-    let dog = Watchdog::start(child.id(), limit);
-    let out = child.wait_with_output();
-    if dog.finish() {
-        return Err(RunError::TimedOut(limit));
-    }
-    out.map_err(RunError::Wait)
-}
-
-pub fn output_within(cmd: &mut Command, limit: Duration) -> Result<Output, String> {
-    run_within(cmd, limit).map_err(|e| e.to_string())
+pub fn gh_env(cmd: &mut Command) -> &mut Command {
+    cmd.env("GH_PROMPT_DISABLED", "1")
+        .env("GH_NO_UPDATE_NOTIFIER", "1")
+        .env("NO_COLOR", "1")
 }
 
 pub fn run_in(program: &str, dir: &str, args: &[&str], limit: Duration) -> Result<Output, String> {
     output_within(
-        Command::new(program)
-            .arg("-C")
-            .arg(dir)
-            .args(args)
-            .env("GIT_OPTIONAL_LOCKS", "0")
-            .env("GIT_TERMINAL_PROMPT", "0"),
+        git_read_env(Command::new(program).arg("-C").arg(dir).args(args)),
         limit,
     )
+}
+
+pub fn run_gh<I, S>(args: I, limit: Duration) -> Result<Output, RunError>
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<std::ffi::OsStr>,
+{
+    run_within(gh_env(Command::new("gh").args(args)), limit)
+}
+
+pub fn git_out(dir: &str, args: &[&str]) -> Result<String, String> {
+    let out = output_within(
+        git_env(
+            Command::new("git")
+                .arg("-C")
+                .arg(dir)
+                .args(["-c", "color.ui=never", "-c", "core.quotepath=off"])
+                .args(args),
+        ),
+        limit_for(args),
+    )
+    .map_err(|e| format!("git {}: {e}", args.first().unwrap_or(&"")))?;
+    if out.status.success() {
+        Ok(String::from_utf8_lossy(&out.stdout).into_owned())
+    } else {
+        Err(format!(
+            "git {}: {}",
+            args.first().unwrap_or(&""),
+            String::from_utf8_lossy(&out.stderr).trim()
+        ))
+    }
 }
 
 pub fn git(dir: &str, args: &[&str]) -> Option<String> {
@@ -469,6 +409,48 @@ fn list_worktrees(dir: &str) -> Vec<Worktree> {
 }
 
 #[cfg(test)]
+pub mod fixture {
+    use std::path::Path;
+    use std::process::Command;
+
+    pub fn cmd(dir: &Path) -> Command {
+        let mut c = Command::new("git");
+        c.current_dir(dir)
+            .env("GIT_CONFIG_GLOBAL", "/dev/null")
+            .env("GIT_CONFIG_NOSYSTEM", "1")
+            .args([
+                "-c",
+                "user.email=t@example.com",
+                "-c",
+                "user.name=T",
+                "-c",
+                "commit.gpgsign=false",
+                "-c",
+                "core.hooksPath=/dev/null",
+                "-c",
+                "protocol.file.allow=always",
+                "-c",
+                "init.defaultBranch=main",
+            ]);
+        c
+    }
+
+    pub fn checked(mut c: Command, args: &[&str]) -> String {
+        let o = c.args(args).output().unwrap();
+        assert!(
+            o.status.success(),
+            "git {args:?}: {}",
+            String::from_utf8_lossy(&o.stderr)
+        );
+        String::from_utf8_lossy(&o.stdout).trim().to_string()
+    }
+
+    pub fn run(dir: &Path, args: &[&str]) -> String {
+        checked(cmd(dir), args)
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
 
@@ -516,10 +498,7 @@ mod tests {
             .parse()
             .unwrap();
         let gone = (0..100).any(|_| {
-            let alive = unsafe { libc::kill(child, 0) } == 0
-                && !std::fs::read_to_string(format!("/proc/{child}/stat"))
-                    .unwrap_or_default()
-                    .contains(") Z ");
+            let alive = crate::procs::alive_not_zombie(child);
             if alive {
                 std::thread::sleep(Duration::from_millis(20));
             }
@@ -528,6 +507,47 @@ mod tests {
         assert!(gone, "sleep {child} outlived the timeout");
         let fast = run_in("/bin/echo", "x", &["ok"], Duration::from_secs(5)).unwrap();
         assert_eq!(String::from_utf8_lossy(&fast.stdout).trim(), "-C x ok");
+        let _ = std::fs::remove_dir_all(d);
+    }
+
+    fn env_of(c: &Command, k: &str) -> Option<String> {
+        c.get_envs()
+            .find(|(n, _)| *n == k)
+            .and_then(|(_, v)| v.map(|v| v.to_string_lossy().into_owned()))
+    }
+
+    #[test]
+    fn each_tool_gets_its_own_environment() {
+        let mut g = Command::new("git");
+        git_env(&mut g);
+        assert_eq!(env_of(&g, "GIT_TERMINAL_PROMPT").as_deref(), Some("0"));
+        assert_eq!(env_of(&g, "GIT_OPTIONAL_LOCKS"), None);
+        let mut r = Command::new("git");
+        git_read_env(&mut r);
+        assert_eq!(env_of(&r, "GIT_OPTIONAL_LOCKS").as_deref(), Some("0"));
+        let mut h = Command::new("gh");
+        gh_env(&mut h);
+        for k in ["GH_PROMPT_DISABLED", "GH_NO_UPDATE_NOTIFIER", "NO_COLOR"] {
+            assert_eq!(env_of(&h, k).as_deref(), Some("1"), "{k}");
+        }
+        assert_eq!(env_of(&h, "GIT_TERMINAL_PROMPT"), None);
+    }
+
+    #[test]
+    fn git_out_names_the_subcommand_in_both_failure_shapes() {
+        let d = tmp("out");
+        let dir = d.to_string_lossy().into_owned();
+        let e = git_out(&dir, &["rev-parse", "HEAD"]).unwrap_err();
+        assert!(e.starts_with("git rev-parse: "), "{e}");
+        let gone = d.join("nope").to_string_lossy().into_owned();
+        assert!(git_out(&gone, &["status"])
+            .unwrap_err()
+            .starts_with("git status: "));
+        sh(&d, &["init", "-q", "-b", "main"]);
+        assert_eq!(
+            git_out(&dir, &["symbolic-ref", "HEAD"]).unwrap().trim(),
+            "refs/heads/main"
+        );
         let _ = std::fs::remove_dir_all(d);
     }
 
@@ -541,23 +561,7 @@ mod tests {
     }
 
     fn sh(dir: &Path, args: &[&str]) {
-        let ok = Command::new("git")
-            .arg("-C")
-            .arg(dir)
-            .args([
-                "-c",
-                "commit.gpgsign=false",
-                "-c",
-                "core.hooksPath=/dev/null",
-            ])
-            .args(args)
-            .env("GIT_CONFIG_NOSYSTEM", "1")
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status()
-            .unwrap()
-            .success();
-        assert!(ok, "git {args:?}");
+        fixture::run(dir, args);
     }
 
     #[test]

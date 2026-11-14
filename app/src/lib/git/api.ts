@@ -1,7 +1,19 @@
-import type { DaemonClient } from '../client';
-import type { CleanupPlan, CommitDetail, GraphPage, NewWorktree, RefsFilter, Worktree, WorktreeList } from './types';
+import type { DaemonClient } from '../daemon/client';
+import type { CleanupPlan, CommitDetail, CommitOptions, GraphPage, NewWorktree, RefsFilter, ScmResult, ScmStatus, ScmTarget, Worktree, WorktreeList } from './types';
 
 const enc = encodeURIComponent;
+
+export function scmQuery(t: ScmTarget): string {
+  if (t.worktree) return `worktree=${enc(t.worktree)}`;
+  if (t.lineId) return `line=${enc(t.lineId)}`;
+  return '';
+}
+
+export function scmBody(t: ScmTarget): ScmTarget {
+  if (t.worktree) return { worktree: t.worktree };
+  if (t.lineId) return { lineId: t.lineId };
+  return {};
+}
 
 export interface GraphQuery {
   limit?: number;
@@ -26,6 +38,18 @@ export function gitApi(c: DaemonClient) {
     cleanup: (id: string, dryRun: boolean, project?: string) => c.request<CleanupPlan>('POST', `/v1/worktrees/${enc(id)}/cleanup`, { dryRun, project }),
     mergeBase: (id: string) => c.request<Worktree>('POST', `/v1/worktrees/${enc(id)}/merge-base`, {}),
     cherryPick: (id: string, sha: string) => c.request<{ commit: string; worktree: Worktree }>('POST', `/v1/worktrees/${enc(id)}/cherry-pick`, { sha }),
+    status: (t: ScmTarget) => c.request<ScmStatus>('GET', `/v1/git/status?${scmQuery(t)}`),
+    stage: (t: ScmTarget, files: string[] | 'all') => c.request<ScmResult>('POST', '/v1/git/stage', { ...scmBody(t), files }),
+    unstage: (t: ScmTarget, files: string[] | 'all') => c.request<ScmResult>('POST', '/v1/git/unstage', { ...scmBody(t), files }),
+    discard: (t: ScmTarget, files: string[] | 'all') => c.request<ScmResult>('POST', '/v1/git/discard', { ...scmBody(t), files }),
+    commitChanges: (t: ScmTarget, o: CommitOptions) => c.request<ScmResult>('POST', '/v1/git/commit', { ...scmBody(t), ...o }),
+    fetch: (t: ScmTarget) => c.request<ScmResult>('POST', '/v1/git/fetch', scmBody(t)),
+    pull: (t: ScmTarget) => c.request<ScmResult>('POST', '/v1/git/pull', scmBody(t)),
+    push: (t: ScmTarget) => c.request<ScmResult>('POST', '/v1/git/push', scmBody(t)),
+    switchBranch: (t: ScmTarget, branch: string, create = false) => c.request<ScmResult>('POST', '/v1/git/switch', { ...scmBody(t), branch, create }),
+    merge: (t: ScmTarget, rev: string) => c.request<ScmResult>('POST', '/v1/git/merge', { ...scmBody(t), rev }),
+    stash: (t: ScmTarget, pop = false) => c.request<ScmResult>('POST', '/v1/git/stash', { ...scmBody(t), pop }),
+    revert: (t: ScmTarget, sha: string) => c.request<ScmResult>('POST', '/v1/git/revert', { ...scmBody(t), sha }),
   };
 }
 

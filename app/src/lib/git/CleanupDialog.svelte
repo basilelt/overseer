@@ -21,7 +21,7 @@
   const byId = $derived(new Map(worktrees.map((w) => [w.id, w])));
 
   $effect(() => {
-    const api = gitApi(app.client!);
+    const api = gitApi(app.requireClient());
     Promise.all(worktrees.map((w) => api.cleanup(w.id, true, w.project)))
       .then((p) => (plans = p))
       .catch((e) => (error = String((e as Error)?.message ?? e)));
@@ -29,7 +29,7 @@
 
   async function confirm() {
     busy = true;
-    const r = await runCleanup(gitApi(app.client!), picked, (id) => byId.get(id)?.project);
+    const r = await runCleanup(gitApi(app.requireClient()), picked, (id) => byId.get(id)?.project);
     busy = false;
     if (r.failed.length) app.notify(r.failed.map((f) => f.error).join(' · '), 'error');
     if (r.done.length) app.notify(cleanedMessage(r.done.length));

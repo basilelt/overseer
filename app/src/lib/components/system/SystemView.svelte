@@ -4,7 +4,8 @@
   import { system } from '../../system/monitor.svelte';
   import { systemSession } from '../../system/session';
   import { st } from '../../system/strings';
-  import { agentLabel, cpuPct, formatBytes, formatPct, formatRate, formatUptime, level, memPct, niceMax, type Level } from '../../system/format';
+  import { agentLabel, cpuPct, formatBytes, formatPct, formatRate, formatUptime, memPct, niceMax } from '../../system/format';
+  import { level, type Level } from '../../severity';
   import type { SysProc } from '../../system/types';
   import Spark from './Spark.svelte';
 

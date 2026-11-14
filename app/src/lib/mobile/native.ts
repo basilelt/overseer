@@ -1,4 +1,5 @@
-import { isTauri } from '../client';
+import * as CMD from '../daemon/tauri-commands';
+import { isTauri } from '../platform';
 
 let android = false;
 
@@ -17,8 +18,8 @@ async function call<T>(cmd: string, args?: Record<string, unknown>): Promise<T |
 }
 
 export const native = {
-  minimize: () => call<void>('mobile_minimize'),
-  systemDark: () => call<boolean | null>('mobile_system_dark'),
-  systemBars: (dark: boolean) => call<void>('mobile_system_bars', { dark }),
-  clipboardImage: () => call<string | null>('mobile_clipboard_image'),
+  minimize: () => call<void>(CMD.mobileMinimize),
+  systemDark: () => call<boolean | null>(CMD.mobileSystemDark),
+  systemBars: (dark: boolean) => call<void>(CMD.mobileSystemBars, { dark }),
+  clipboardImage: () => call<string | null>(CMD.mobileClipboardImage),
 };

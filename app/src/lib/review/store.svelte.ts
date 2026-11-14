@@ -1,6 +1,7 @@
 import { app } from '../state.svelte';
 import type { DaemonEvent } from '../types';
 import { reviewApi, type ReviewApi } from './api';
+import { saveView, savedView } from './map.svelte';
 import { reviewCounts } from './counts.svelte';
 import * as D from './draft';
 import { keepUnchanged, type Mode } from './rows';
@@ -8,36 +9,27 @@ import { isSince, loadBase, saveBase } from './base';
 import { worktreeOf } from './keys';
 import { inRepo } from './repo';
 import { upsert, withStatus } from './threads';
-import { DaemonError } from '../client';
+import { DaemonError } from '../daemon/client';
 import { Drafts } from '../drafts';
-import { inFlight, single } from '../inflight';
+import { inFlight, single } from '../daemon/inflight';
 import { onPresence, presence } from '../presence';
-import type { Delivery, Related, ReviewDiff, ReviewGraph, ReviewTarget, SubmitKind, Thread } from './types';
+import type { Delivery, Related, ReviewDiff, ReviewTarget, SubmitKind, Thread } from './types';
+import { readItem, writeItem, KEY_DRAFTS_REVIEW, KEY_REVIEW_AUTO_REFRESH, KEY_REVIEW_MODE } from '../storage';
 
-const MODE_KEY = 'overseer.review.mode';
-const AUTO_KEY = 'overseer.review.autoRefresh';
-const reviewDrafts = new Drafts<D.Draft | null>('overseer.drafts.review', (v) => !v);
+const MODE_KEY = KEY_REVIEW_MODE;
+const AUTO_KEY = KEY_REVIEW_AUTO_REFRESH;
+const reviewDrafts = new Drafts<D.Draft | null>(KEY_DRAFTS_REVIEW, (v) => !v);
 
 function loadAuto(): boolean {
-  try {
-    return globalThis.localStorage?.getItem(AUTO_KEY) !== '0';
-  } catch {
-    return true;
-  }
+  return readItem(AUTO_KEY) !== '0';
 }
 
 function saveAuto(on: boolean) {
-  try {
-    globalThis.localStorage?.setItem(AUTO_KEY, on ? '1' : '0');
-  } catch {}
+  writeItem(AUTO_KEY, on ? '1' : '0');
 }
 
 function loadMode(): Mode {
-  try {
-    return globalThis.localStorage?.getItem(MODE_KEY) === 'split' ? 'split' : 'unified';
-  } catch {
-    return 'unified';
-  }
+  return readItem(MODE_KEY) === 'split' ? 'split' : 'unified';
 }
 
 export class ReviewStore {
@@ -61,16 +53,14 @@ export class ReviewStore {
   base = $state<string | null>(null);
   related = $state.raw<Related | null>(null);
   unfolded = $state<Record<string, number[]>>({});
-  view = $state<'list' | 'graph'>('list');
-  graph = $state.raw<ReviewGraph | null>(null);
-  graphError = $state('');
-  orderAt = $state(-1);
-  private graphFor = '';
+  view = $state<'list' | 'map'>(savedView());
 
   private off: (() => void) | null = null;
   private offPresence: (() => void) | null = null;
   private deferred = false;
   private timer: ReturnType<typeof setTimeout> | undefined;
+  private pending: Set<string> | null | undefined;
+  private seq = 0;
   private scopeTimer: ReturnType<typeof setTimeout> | undefined;
 
   target: ReviewTarget;
@@ -98,8 +88,7 @@ export class ReviewStore {
   }
 
   get api(): ReviewApi {
-    if (!app.client) throw new Error('not connected');
-    return reviewApi(app.client);
+    return reviewApi(app.requireClient());
   }
 
   get worktree(): string | null {
@@ -129,6 +118,7 @@ export class ReviewStore {
     this.offPresence = null;
     this.deferred = false;
     clearTimeout(this.timer);
+    this.pending = undefined;
     clearTimeout(this.scopeTimer);
     this.live = false;
   }
@@ -146,6 +136,7 @@ export class ReviewStore {
   async load() {
     if (!app.client || this.notRepo) return;
     this.loading = !this.diff;
+    let seq = ++this.seq;
     try {
       let [diff, threads] = await Promise.all([this.fetchDiff(), this.target.branch ? Promise.resolve([]) : this.api.threads(this.target)]);
       if (!this.restored && !this.target.branch) {
@@ -153,22 +144,24 @@ export class ReviewStore {
         const saved = loadBase(diff.worktree);
         if (saved && !this.base) {
           this.base = saved;
+          seq = ++this.seq;
           diff = await this.fetchDiff();
         }
       }
-      this.diff = { ...diff, files: keepUnchanged(this.diff?.files, diff.files) };
+      if (seq === this.seq) {
+        this.diff = { ...diff, files: keepUnchanged(this.diff?.files, diff.files) };
+        this.stale = false;
+        this.revision++;
+      }
       this.threads = threads;
       this.error = '';
       this.missing = false;
       this.live = true;
-      this.stale = false;
-      this.revision++;
-      this.graphSoon();
       reviewCounts.alias(this.target, diff.worktree);
       for (const path of Object.keys(this.expanded)) if (this.expanded[path].length) this.fetchLines(path, true);
       this.loadScope();
     } catch (e) {
-      this.diff = null;
+      if (seq === this.seq) this.diff = null;
       this.fail(e);
     } finally {
       this.loading = false;
@@ -190,7 +183,6 @@ export class ReviewStore {
   async setBase(base: string | null, remember = false) {
     this.base = base;
     if (remember && !isSince(base)) saveBase(this.worktree, base);
-    this.graphFor = '';
     await this.reloadDiff();
   }
 
@@ -206,18 +198,19 @@ export class ReviewStore {
 
   async reloadDiff(changed?: string[]) {
     if (!app.client || this.notRepo) return;
+    const seq = ++this.seq;
     try {
       const diff = await this.fetchDiff();
+      if (seq !== this.seq) return;
       this.diff = { ...diff, files: keepUnchanged(this.diff?.files, diff.files) };
       this.error = '';
       this.missing = false;
       this.stale = false;
       this.revision++;
-      this.graphSoon();
       const paths = changed ?? Object.keys(this.fileLines);
       for (const p of paths) if (this.expanded[p]?.length) this.fetchLines(p, true);
     } catch (e) {
-      this.fail(e);
+      if (seq === this.seq) this.fail(e);
     }
   }
 
@@ -241,6 +234,7 @@ export class ReviewStore {
   private defer(): boolean {
     if (presence().visible) return false;
     clearTimeout(this.timer);
+    this.pending = undefined;
     clearTimeout(this.scopeTimer);
     this.deferred = true;
     return true;
@@ -260,7 +254,14 @@ export class ReviewStore {
           return;
         }
         clearTimeout(this.timer);
-        this.timer = setTimeout(() => this.reloadDiff(this.target.branch ? undefined : e.data?.files), 300);
+        const files = this.target.branch ? undefined : (e.data?.files as string[] | undefined);
+        if (!files || this.pending === null) this.pending = null;
+        else this.pending = new Set([...(this.pending ?? []), ...files]);
+        this.timer = setTimeout(() => {
+          const changed = this.pending ? [...this.pending] : undefined;
+          this.pending = undefined;
+          void this.reloadDiff(changed);
+        }, 300);
         return;
       }
       case 'worktree.created':
@@ -291,46 +292,14 @@ export class ReviewStore {
     if (!cur.includes(hunk)) this.unfolded[path] = [...cur, hunk];
   }
 
-  setView(v: 'list' | 'graph') {
+  setView(v: 'list' | 'map') {
     this.view = v;
-    this.graphSoon();
-  }
-
-  private graphSoon() {
-    const rev = this.diff?.revision;
-    if (this.view !== 'graph') {
-      if (this.graph && this.graph.revision !== rev) {
-        this.graph = null;
-        this.graphFor = '';
-        this.orderAt = -1;
-      }
-      return;
-    }
-    if (!rev || rev === this.graphFor) return;
-    this.graphFor = rev;
-    this.loadGraph(rev);
-  }
-
-  async loadGraph(rev: string) {
-    if (!app.client) return;
-    try {
-      const g = await this.api.graph(this.target, this.base ?? undefined);
-      if (this.graphFor !== rev) return;
-      if (this.graph?.revision !== g.revision) this.orderAt = -1;
-      this.graph = g;
-      this.graphError = '';
-    } catch (e) {
-      if (this.graphFor !== rev) return;
-      this.graphFor = '';
-      this.graphError = String((e as Error)?.message ?? e);
-    }
+    saveView(v);
   }
 
   setMode(m: Mode) {
     this.mode = m;
-    try {
-      globalThis.localStorage?.setItem(MODE_KEY, m);
-    } catch {}
+    writeItem(MODE_KEY, m);
   }
 
   async fetchLines(path: string, force = false) {

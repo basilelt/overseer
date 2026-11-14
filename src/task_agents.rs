@@ -1,7 +1,10 @@
-use crate::board::{git_out, publish};
+use crate::board::publish;
 use crate::deliver::{send, Channel};
+use crate::git::git_out;
 use crate::registry::Registry;
-use crate::tasks::{self, bad, db, sql, Res, Task};
+use crate::registry::{db, sql};
+use crate::status;
+use crate::tasks::{self, bad, Res, Task};
 use crate::util::{format_rfc3339, ulid};
 use crate::Ctx;
 use rusqlite::{params, Row};
@@ -114,7 +117,9 @@ pub fn delivery_text(m: &Message) -> String {
             "[Overseer] Message from task {from}: {}\nReply with the send_message tool (to: {from}) if needed.",
             m.body
         ),
-        _ if m.body.starts_with(OVERLAP_PREFIX) => format!("[Overseer] {}", m.body),
+        _ if m.body.starts_with(OVERLAP_PREFIX) || m.body.starts_with(crate::quorum::PREFIX) => {
+            format!("[Overseer] {}", m.body)
+        }
         _ => format!("[Overseer] Message from the user: {}", m.body),
     }
 }
@@ -152,14 +157,78 @@ pub fn send_message(ctx: &Ctx, id: &str, b: &Value) -> Res<Message> {
     };
     let reg = db(ctx)?;
     if let Some(f) = &from {
-        tasks::get(&reg, f).map_err(|_| bad(format!("from {f} is not a task")))?;
+        let sender = tasks::get(&reg, f).map_err(|_| bad(format!("from {f} is not a task")))?;
+        allow_agent_message(&reg, &sender, &tasks::get(&reg, id)?)?;
     }
     post(&reg, id, from, body)
 }
 
+const AGENT_MESSAGING_KEY: &str = "agentMessaging";
+
+pub fn agent_messaging_enabled(reg: &Registry) -> bool {
+    !matches!(reg.get(AGENT_MESSAGING_KEY), Ok(Some(v)) if v == "false")
+}
+
+pub fn set_agent_messaging(reg: &Registry, on: bool) -> Result<(), String> {
+    reg.put(AGENT_MESSAGING_KEY, if on { "true" } else { "false" })
+}
+
+const AGENT_TASKS_KEY: &str = "agentTasks";
+
+pub fn agent_tasks_enabled(reg: &Registry) -> bool {
+    !matches!(reg.get(AGENT_TASKS_KEY), Ok(Some(v)) if v == "false")
+}
+
+pub fn set_agent_tasks(reg: &Registry, on: bool) -> Result<(), String> {
+    reg.put(AGENT_TASKS_KEY, if on { "true" } else { "false" })
+}
+
+const AUTO_CONCURRENCY_KEY: &str = "autoConcurrency";
+pub const AUTO_CONCURRENCY_MAX: u64 = 16;
+
+pub fn auto_concurrency(reg: &Registry, configured: usize) -> usize {
+    match reg.get(AUTO_CONCURRENCY_KEY) {
+        Ok(Some(v)) => v.parse().unwrap_or(configured),
+        _ => configured,
+    }
+}
+
+pub fn set_auto_concurrency(reg: &Registry, value: &Value) -> Result<usize, (u16, String)> {
+    let n = value
+        .as_u64()
+        .filter(|n| (1..=AUTO_CONCURRENCY_MAX).contains(n))
+        .ok_or_else(|| bad("value must be an integer from 1 to 16"))?;
+    reg.put(AUTO_CONCURRENCY_KEY, &n.to_string())
+        .map_err(|e| (500, e))?;
+    Ok(n as usize)
+}
+
+fn parent_and_child(a: &Task, b: &Task) -> bool {
+    a.parent_id.as_deref() == Some(b.id.as_str()) || b.parent_id.as_deref() == Some(a.id.as_str())
+}
+
+pub fn allow_agent_message(reg: &Registry, from: &Task, to: &Task) -> Res<()> {
+    if from.project != to.project {
+        return Err((
+            403,
+            format!(
+                "task {} belongs to another project ({}): agents may only message tasks of their own project. Do not retry.",
+                to.id, to.project
+            ),
+        ));
+    }
+    if !agent_messaging_enabled(reg) && !parent_and_child(from, to) {
+        return Err((
+            403,
+            "messages between agents are turned off in Overseer's settings. Do not retry; carry on without them.".into(),
+        ));
+    }
+    Ok(())
+}
+
 fn post(reg: &Registry, id: &str, from: Option<String>, body: &str) -> Res<Message> {
     let target = tasks::get(reg, id)?;
-    let now = crate::procs::now_ms();
+    let now = crate::util::now_ms();
     let mut m = Message {
         id: ulid(now),
         task_id: id.into(),
@@ -259,7 +328,7 @@ fn overlaps_in(reg: &Registry, id: &str) -> Res<Vec<Value>> {
             || t.project != me.project
             || wt == mine_wt
             || is_organizer(&t)
-            || !matches!(t.status.as_str(), "in_progress" | "in_testing")
+            || !matches!(t.status.as_str(), status::IN_PROGRESS | status::IN_TESTING)
         {
             continue;
         }
@@ -305,6 +374,9 @@ pub fn overlap_changed(stored: Option<&str>, files: &[String]) -> Option<String>
 }
 
 fn alert_overlaps(reg: &Registry, id: &str) -> Res<()> {
+    if !agent_messaging_enabled(reg) {
+        return Ok(());
+    }
     let me = tasks::get(reg, id)?;
     for o in overlaps_in(reg, id)? {
         let files: Vec<String> = o["files"]
@@ -354,11 +426,16 @@ pub fn spawn_overlap_alert(ctx: &Ctx, t: &Task) {
     });
 }
 
-pub fn organizer_prompt(project: &str) -> String {
+pub fn organizer_prompt(project: &str, messaging: bool) -> String {
     let name = Path::new(project)
         .file_name()
         .map(|n| n.to_string_lossy().into_owned())
         .unwrap_or_else(|| project.to_string());
+    let point_out = if messaging {
+        "Point out duplicate or overlapping tasks with send_message to the agents of the tasks concerned when they are in_progress. "
+    } else {
+        ""
+    };
     format!(
         "You are the Overseer board organizer for the project {name} ({project}).\n\
 Call list_tasks (project {project}, status pending,auto,in_progress,in_testing). \
@@ -366,15 +443,14 @@ Classify every task whose origin is not organizer with prioritize_task (urgent, 
 urgent and important = do, important only = plan, urgent only = delegate, neither = drop. \
 Also set rank so that within a status column do comes before plan, plan before delegate, delegate before drop, \
 keeping the current relative order inside a quadrant (ranks are floats, lower first). \
-Point out duplicate or overlapping tasks with send_message to the agents of the tasks concerned when they are in_progress. \
-Never edit files, never create tasks, never start tasks. Finish with a one-line summary."
+{point_out}Never edit files, never create tasks, never start tasks. Finish with a one-line summary."
     )
 }
 
 pub fn organizable(tasks: &[Task], project: Option<&str>) -> Vec<String> {
     let mut out: Vec<String> = vec![];
     for t in tasks {
-        if crate::tasks::is_done(&t.status)
+        if crate::status::is_done(&t.status)
             || is_organizer(t)
             || t.from_session()
             || project.is_some_and(|p| p != t.project)
@@ -399,7 +475,7 @@ pub fn organize_due(tasks: &[Task], project: &str, live_organizer: bool, now_ms:
             .max()
     };
     let Some(work) = newest(&|t| {
-        !crate::tasks::is_done(&t.status)
+        !crate::status::is_done(&t.status)
             && matches!(t.origin.as_deref(), None | Some("user" | "agent"))
     }) else {
         return false;
@@ -408,12 +484,9 @@ pub fn organize_due(tasks: &[Task], project: &str, live_organizer: bool, now_ms:
 }
 
 fn live_organizer(tasks: &[Task], project: &str) -> bool {
-    tasks.iter().any(|t| {
-        t.project == project
-            && is_organizer(t)
-            && t.status == "in_progress"
-            && t.live_term().is_some()
-    })
+    tasks
+        .iter()
+        .any(|t| t.project == project && is_organizer(t) && t.is_running())
 }
 
 fn organize_one(ctx: &Ctx, reg: &Registry, project: &str) -> Res<Task> {
@@ -421,21 +494,22 @@ fn organize_one(ctx: &Ctx, reg: &Registry, project: &str) -> Res<Task> {
     if tasks::all(reg).is_ok_and(|all| live_organizer(&all, project)) {
         return Err((409, "an organizer is already running".into()));
     }
-    let claude = crate::agents::get("claude").ok_or_else(|| bad("claude agent unknown"))?;
+    let claude =
+        crate::agents::get(crate::agents::DEFAULT_ID).ok_or_else(|| bad("claude agent unknown"))?;
     if !crate::agents::is_installed(claude) {
         return Err((
             409,
             format!("{} is not installed ({})", claude.name, claude.bin),
         ));
     }
-    let now = crate::procs::now_ms();
+    let now = crate::util::now_ms();
     let mut t = Task {
         id: ulid(now),
         title: "Organize board".into(),
-        description: organizer_prompt(project),
+        description: organizer_prompt(project, agent_messaging_enabled(reg)),
         project: project.into(),
         status: "pending".into(),
-        agent: "claude".into(),
+        agent: crate::agents::DEFAULT_ID.into(),
         effort: "high".into(),
         origin: Some(ORGANIZER.into()),
         created_ms: now,
@@ -478,6 +552,10 @@ pub fn auto_organize_enabled(reg: &Registry) -> bool {
     matches!(reg.get(AUTO_ORGANIZE_KEY), Ok(Some(v)) if v == "true")
 }
 
+pub fn auto_organize_on(ctx: &Ctx, reg: &Registry) -> bool {
+    ctx.config.auto_organize || auto_organize_enabled(reg)
+}
+
 pub fn set_auto_organize(reg: &Registry, on: bool) -> Result<(), String> {
     reg.put(AUTO_ORGANIZE_KEY, if on { "true" } else { "false" })
 }
@@ -486,7 +564,7 @@ pub fn auto_organize(ctx: &Ctx, reg: &Registry) {
     let Ok(all) = tasks::all(reg) else {
         return;
     };
-    let now = crate::procs::now_ms();
+    let now = crate::util::now_ms();
     for p in organizable(&all, None) {
         if failed(|m| backed_off(m.get(&p).copied(), now)) {
             continue;
@@ -507,7 +585,7 @@ mod tests {
         let dir = std::env::temp_dir().join(format!(
             "sb-task-agents-{tag}-{}-{}",
             std::process::id(),
-            crate::procs::now_ms()
+            crate::util::now_ms()
         ));
         std::fs::create_dir_all(&dir).unwrap();
         Registry::open(&dir).unwrap()
@@ -621,6 +699,12 @@ mod tests {
         let mut m = msg("m", "A", None, 1);
         m.body = "hello".into();
         assert_eq!(delivery_text(&m), "[Overseer] Message from the user: hello");
+        m.body = "Quorum: subtask #2 is accepted".into();
+        assert_eq!(
+            delivery_text(&m),
+            "[Overseer] Quorum: subtask #2 is accepted"
+        );
+        m.body = "hello".into();
         m.from = Some("X1".into());
         m.from_number = Some(7);
         m.from_title = Some("Fix it".into());
@@ -648,18 +732,7 @@ mod tests {
     #[test]
     fn changed_files_ignore_commits_the_local_base_branch_is_behind_on() {
         let sh = |d: &Path, args: &[&str]| {
-            let ok = std::process::Command::new("git")
-                .current_dir(d)
-                .env("GIT_CONFIG_GLOBAL", "/dev/null")
-                .env("GIT_CONFIG_NOSYSTEM", "1")
-                .args(["-c", "user.email=t@example.com", "-c", "user.name=T"])
-                .args(["-c", "commit.gpgsign=false"])
-                .args(args)
-                .output()
-                .unwrap()
-                .status
-                .success();
-            assert!(ok, "git {args:?}");
+            crate::git::fixture::run(d, args);
         };
         let commit = |d: &Path, file: &str| {
             std::fs::write(d.join(file), file).unwrap();
@@ -669,7 +742,7 @@ mod tests {
         let d = std::env::temp_dir().join(format!(
             "sb-overlap-base-{}-{}",
             std::process::id(),
-            crate::procs::now_ms()
+            crate::util::now_ms()
         ));
         let up = d.join("up");
         std::fs::create_dir_all(&up).unwrap();
@@ -783,6 +856,76 @@ mod tests {
         assert_eq!(organizable(&ts, None), ["/p", "/t"]);
         assert_eq!(organizable(&ts, Some("/t")), ["/t"]);
         assert!(organizable(&ts, Some("/q")).is_empty());
-        assert!(organizer_prompt("/home/u/repo").contains("repo (/home/u/repo)"));
+        assert!(organizer_prompt("/home/u/repo", true).contains("repo (/home/u/repo)"));
+    }
+
+    #[test]
+    fn organizer_is_told_to_message_agents_only_when_messaging_is_on() {
+        assert!(organizer_prompt("/p", true).contains("send_message"));
+        assert!(!organizer_prompt("/p", false).contains("send_message"));
+    }
+
+    #[test]
+    fn agent_messaging_is_on_by_default_and_roundtrips() {
+        let r = reg("messaging-flag");
+        assert!(agent_messaging_enabled(&r));
+        set_agent_messaging(&r, false).unwrap();
+        assert!(!agent_messaging_enabled(&r));
+        set_agent_messaging(&r, true).unwrap();
+        assert!(agent_messaging_enabled(&r));
+    }
+
+    #[test]
+    fn agent_tasks_is_on_by_default_and_roundtrips() {
+        let r = reg("agent-tasks-flag");
+        assert!(agent_tasks_enabled(&r));
+        set_agent_tasks(&r, false).unwrap();
+        assert!(!agent_tasks_enabled(&r));
+        set_agent_tasks(&r, true).unwrap();
+        assert!(agent_tasks_enabled(&r));
+    }
+
+    #[test]
+    fn auto_concurrency_falls_back_to_the_config_and_clamps() {
+        let r = reg("auto-concurrency");
+        assert_eq!(auto_concurrency(&r, 2), 2);
+        assert_eq!(set_auto_concurrency(&r, &json!(5)).unwrap(), 5);
+        assert_eq!(auto_concurrency(&r, 2), 5);
+        for bad in [json!(0), json!(17), json!(1.5), json!("2"), Value::Null] {
+            assert_eq!(set_auto_concurrency(&r, &bad).unwrap_err().0, 400);
+        }
+        assert_eq!(auto_concurrency(&r, 2), 5);
+    }
+
+    #[test]
+    fn agents_message_only_inside_their_project() {
+        let r = reg("messaging-project");
+        let (a, b) = (
+            task("A", "/p", "in_progress", None, 1),
+            task("B", "/p", "in_progress", None, 2),
+        );
+        let far = task("C", "/q", "in_progress", None, 3);
+        assert!(allow_agent_message(&r, &a, &b).is_ok());
+        let (code, e) = allow_agent_message(&r, &a, &far).unwrap_err();
+        assert_eq!(code, 403);
+        assert!(e.contains("another project (/q)"), "{e}");
+    }
+
+    #[test]
+    fn messaging_off_refuses_agents_but_keeps_parent_and_subtask_talking() {
+        let r = reg("messaging-off");
+        set_agent_messaging(&r, false).unwrap();
+        let root = task("R", "/p", "in_progress", None, 1);
+        let mut sub = task("S", "/p", "in_progress", None, 2);
+        sub.parent_id = Some("R".into());
+        let other = task("O", "/p", "in_progress", None, 3);
+        let (code, e) = allow_agent_message(&r, &root, &other).unwrap_err();
+        assert_eq!(code, 403);
+        assert!(e.contains("turned off"), "{e}");
+        assert!(allow_agent_message(&r, &root, &sub).is_ok());
+        assert!(allow_agent_message(&r, &sub, &root).is_ok());
+        let mut far_sub = sub.clone();
+        far_sub.project = "/q".into();
+        assert!(allow_agent_message(&r, &root, &far_sub).is_err());
     }
 }

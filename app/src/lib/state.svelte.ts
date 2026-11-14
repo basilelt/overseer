@@ -1,31 +1,35 @@
 import { activityDelay } from './activity';
-import { FALLBACK_AGENTS, sessionsAvailable } from './agents';
+import { FALLBACK_AGENTS, isAgentId, isShellId, isShellItem, sessionsAvailable } from './agents';
+import { parentOverlay } from './overlay-route';
 import { onPresence, presence } from './presence';
-import { api, type Api } from './api';
-import { DaemonError, getClient, type DaemonClient } from './client';
-import { groupItems, sidebarItems, stableItems, type SidebarItem } from './grouping';
+import { api, type Api } from './daemon/api';
+import { DaemonError, getClient, isMockClient, type DaemonClient } from './daemon/client';
+import { groupItems, sidebarItems, stableItems, type SidebarItem } from './session/grouping';
 import { applyEvent, deepEqual, mergeFetched, touchedKey, type Snapshot, type Touched } from './reduce';
-import { rememberHost, rememberWorkspace, saveSettings, settings, workspaceFor } from './settings.svelte';
+import { rememberHost, rememberWorkspace, saveSettings, settings, workspaceFor } from './settings/settings.svelte';
 import { hostKey, isMainWindow } from './window';
+import type { HostLink, LinkChange } from './host/host-link.svelte';
 import { normalizeUrl } from './browser';
-import { pages } from './session-pages.svelte';
-import type { EntryKind } from './notifications';
-import type { Proposal } from './organize';
-import { dispatch, type NoticeInput } from './os-notify';
+import { pages } from './session/session-pages.svelte';
+import type { EntryKind } from './notify/notifications';
+import type { Proposal } from './workspace/organize';
+import { dispatch, type NoticeInput } from './notify/os-notify';
+import { center } from './notify/notifications.svelte';
 import type { Activity, AgentInfo, ConnState, DaemonEvent, Effort, HostTarget, LocalLine, LocalNetworkReport, ProfilesStore, Project, Term, TaskMessage } from './types';
 import { isNoRoute } from './localnet';
 import { startupTarget } from './conn';
-import { rememberShell } from './closed-tabs';
-import { activeKey, allTabs, EMPTY_LAYOUT, forgetLayouts, onTabClosed, openInFocused, update, workspace } from './workspace.svelte';
-import { newTabKey } from './tabs';
-import { aggregate, applyWsEvent, EMPTY_WS, isGhost, itemWorkspaces, resolveTab, sameMap, synthesize, upsert, within, type Aggregate, type WsData } from './workspaces';
+import { rememberShell } from './tabs/closed-tabs';
+import { activeKey, allTabs, EMPTY_LAYOUT, forgetLayouts, onTabClosed, openInFocused, update, workspace } from './workspace/workspace.svelte';
+import { newTabKey } from './tabs/tabs';
+import { aggregate, applyWsEvent, EMPTY_WS, isGhost, itemWorkspaces, resolveTab, sameMap, synthesize, upsert, within, type Aggregate, type WsData } from './workspace/workspaces';
 import type { Workspace } from './types';
-import type { MenuItem, OpenMenu } from './menu';
+import type { MenuItem, OpenMenu } from './commands/menu';
 import { isWebLink, resolveLink, type LinkFrom, type LinkGesture, type LinkRoute } from './links';
 import { t } from './i18n.svelte';
 import { browsers, openOutside } from './browsers.svelte';
-import { ui } from './mobile/ui.svelte';
-import { feedback } from './feedback.svelte';
+import { isPhone, isPhoneOr, ui } from './mobile/ui.svelte';
+import { feedback } from './feedback/feedback.svelte';
+import { tap } from './record/record-state.svelte';
 
 export type View = 'agents' | 'kanban' | 'browser';
 export type Overlay = null | 'taskDetail' | 'palette' | 'connect' | 'settings' | 'task' | 'project' | 'review' | 'ports' | 'system' | 'usage' | 'broadcast' | 'holdAll' | 'name' | 'workspaceNew' | 'profiles' | 'shortcuts' | 'file' | 'notifications' | 'closeTab' | 'switchboardImport' | 'uninstall';
@@ -56,11 +60,23 @@ function withAdded(terms: Term[], added: Map<string, Term>): Term[] {
 
 class AppState {
   client = $state.raw<DaemonClient | null>(null);
+  link = $state.raw<HostLink | null>(null);
+  others = $state.raw<HostLink[]>([]);
+  /** @internal */
+  hostOrder = $state.raw<string[]>([]);
+  hosts = $derived(this.link ? [this.link, ...this.others].sort((a, b) => this.hostOrder.indexOf(a.key) - this.hostOrder.indexOf(b.key)) : this.others);
+  /** @internal */
+  attachOnReady = false;
+  /** @internal Once the window shows a second host: the link of each client, which takes its connection state. */
+  linkOf: WeakMap<DaemonClient, HostLink> | null = null;
+  /** @internal */
+  slots = 0;
   conn = $state<ConnState>({ phase: 'idle', target: LOCAL });
   localNet = $state.raw<LocalNetworkReport | null>(null);
   data = $state.raw<Snapshot>({ lines: [], terms: [], tasks: [], activity: {} });
   projects = $state.raw<Project[]>([]);
   agents = $state.raw<AgentInfo[]>([]);
+  private installing = new Map<string, string>();
   profiles = $state.raw<ProfilesStore | null>(null);
   nextProfile = $state<string | null>(null);
   connected = $state(false);
@@ -71,8 +87,17 @@ class AppState {
   overlay = $state<Overlay>(null);
   overlayArg = $state<string | null>(null);
   fileArg = $state<FileArg | null>(null);
-  selectedKey = $state<string | null>(null);
+  #selectedKey = $state<string | null>(null);
+  get selectedKey(): string | null {
+    return this.#selectedKey;
+  }
+  set selectedKey(key: string | null) {
+    this.#selectedKey = key;
+    if (key) center.markSubjectRead(key);
+  }
   panelOpen = $state(true);
+  liveReview = $state(false);
+  gitWorktree = $state<{ project: string; path: string } | null>(null);
   sidebarOpen = $state(true);
   browserUrl = $state('');
   toast = $state<{ text: string; kind: 'info' | 'error'; action?: ToastAction; progress?: number } | null>(null);
@@ -86,8 +111,10 @@ class AppState {
   ws = $state.raw<WsData>(EMPTY_WS);
   wsPersistent = $state(true);
   sidebarMode = $state<SidebarMode>(settings.sidebarMode ?? 'workspaces');
+  sidebarGit = $state(settings.sidebarGit ?? false);
   workspaceId = $state<string>(NO_WORKSPACE);
-  private following: { id: string; goToWorkspace: boolean } | null = null;
+  /** @internal */
+  following: { id: string; goToWorkspace: boolean } | null = null;
   private pendingTab: 'graph' | 'worktrees' | null = initialTab();
   private wsChosen = false;
   multi = $state.raw<Set<string>>(new Set());
@@ -104,20 +131,28 @@ class AppState {
   currentWorkspace = $derived<Workspace | null>(this.ws.workspaces.find((w) => w.id === this.workspaceId) ?? null);
   aggregates = $derived(aggregatesOf(this.items, this.itemWs));
 
-  private unsubscribe: (() => void) | null = null;
+  /** @internal */
+  unsubscribe: (() => void) | null = null;
   private listeners = new Set<(prev: Snapshot, next: Snapshot, e: DaemonEvent) => void>();
   private toastTimer: ReturnType<typeof setTimeout> | undefined;
-  private activityTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  /** @internal */
+  activityTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private wsRetry: ReturnType<typeof setTimeout> | undefined;
   private wsAttempt = 0;
   private refreshing = 0;
-  private added = new Map<string, Term>();
+  /** @internal */
+  added = new Map<string, Term>();
   private eventSeq = 0;
-  private touched: Touched = new Map();
+  /** @internal */
+  touched: Touched = new Map();
+
+  requireClient(): DaemonClient {
+    if (!this.client) throw new Error('not connected');
+    return this.client;
+  }
 
   get api(): Api {
-    if (!this.client) throw new Error('not connected');
-    return api(this.client);
+    return api(this.requireClient());
   }
 
   async init() {
@@ -127,20 +162,24 @@ class AppState {
     this.os = platform.os;
     if (!platform.mobile) void this.askLocalNetwork();
     const hosts = platform.mobile ? await this.client.savedHosts().catch(() => []) : [];
-    const target = startupTarget({
+    const handed = platform.mobile || isMainWindow() ? null : await import('./handoff').then((m) => m.takeHandoff());
+    const target = handed ?? startupTarget({
       mobile: platform.mobile,
       lastHost: settings.lastHost,
       lastDirect: settings.lastDirect,
       explicitlyDisconnected: settings.explicitlyDisconnected,
       savedHosts: hosts,
-      mock: this.client.kind === 'mock',
+      mock: isMockClient(this.client),
       secondary: !isMainWindow(),
     });
     if (!target) {
       this.conn = { phase: 'idle', target: platform.mobile ? { kind: 'direct', label: '' } : LOCAL };
       return this.open('connect');
     }
+    if (!platform.mobile) await this.client.dropSlots?.().catch(() => {});
+    const restore = !platform.mobile && isMainWindow() && settings.hostReconnect && !settings.explicitlyDisconnected && (settings.windowHosts?.length ?? 0) > 1 ? settings.windowHosts : null;
     await this.connect(target);
+    if (restore) void hostOps().then((m) => m.restore(this, restore, target));
     if (this.conn.phase === 'error' && target.kind !== 'local') this.open('connect');
   }
 
@@ -164,8 +203,21 @@ class AppState {
     }
   }
 
-  async connect(target: HostTarget) {
+  async connect(target: HostTarget, how: 'replace' | 'add' = 'replace') {
+    const key = hostKey(target);
+    if (key !== hostKey(this.conn.target) && (this.others.some((l) => l.key === key) || (how === 'add' && (this.connected || this.others.length)))) {
+      return hostOps().then((m) => (this.others.some((l) => l.key === key) ? m.switchHost(this, key) : m.addHost(this, target, true)));
+    }
     const c = this.client ?? (this.client = await getClient());
+    const link = this.linkOf?.get(c);
+    if (!link && !this.others.length) this.link = null;
+    if (link) {
+      const prev = link.key;
+      link.ready = false;
+      link.target = target;
+      if (prev !== key) this.hostOrder = this.hostOrder.map((k) => (k === prev ? key : k));
+    }
+    this.attachOnReady = false;
     this.unsubscribe?.();
     this.cancelWsRetry();
     this.connected = false;
@@ -174,20 +226,21 @@ class AppState {
     this.conn = { phase: 'connecting', target };
     if (target.kind === 'ssh') await this.askLocalNetwork(target.host);
     try {
-      await c.connect(
-        target,
-        (s) => {
-          const resumed = this.conn.phase === 'reconnecting' && s.phase === 'connected';
-          this.conn = s;
-          if (resumed) this.refresh().catch(() => {});
-        },
-        { serverBinDir: settings.serverBinDir || undefined },
-      );
+      const onState = (st: ConnState) => {
+        const l = this.linkOf?.get(c);
+        if (l) l.onState(st);
+        else if (this.client === c) this.onActiveState(st, this.conn);
+      };
+      await c.connect(target, onState, { serverBinDir: settings.serverBinDir || undefined });
+      if (this.client !== c) return;
+      if (link) link.ready = true;
       this.connected = true;
       rememberHost(target, isMainWindow());
+      if (link) void hostOps().then((m) => m.saveHosts(this));
       this.unsubscribe = c.subscribe((e) => this.onEvent(e));
       await this.refresh();
     } catch (err) {
+      if (this.client !== c) return;
       const error = this.conn.phase === 'error' && this.conn.error ? this.conn.error : String((err as Error)?.message ?? err);
       this.conn = { phase: 'error', target, error, resolved: this.conn.resolved };
       if (target.kind === 'ssh' && isNoRoute(error)) this.localNet = await this.probeLocalNetwork(target.host);
@@ -198,7 +251,18 @@ class AppState {
     await this.client?.restartServer();
   }
 
+  /** @internal */
+  readonly onActiveState = (s: ConnState, prev: ConnState) => {
+    const resumed = this.conn.phase === 'reconnecting' && s.phase === 'connected';
+    this.conn = s;
+    if (s.phase === 'connected' && this.attachOnReady) {
+      this.attachOnReady = false;
+      void hostOps().then((m) => m.attach(this));
+    } else if (resumed || (prev.phase === 'reconnecting' && s.phase === 'connected' && this.connected)) this.refresh().catch(() => {});
+  };
+
   async disconnect() {
+    if (this.others.length && this.link) return this.removeHost(this.link.key);
     if (isMainWindow()) saveSettings({ explicitlyDisconnected: true });
     this.connected = false;
     this.synced = false;
@@ -207,8 +271,15 @@ class AppState {
     this.cancelWsRetry();
     const target = this.conn.target;
     this.conn = { phase: 'idle', target };
+    this.resetHost();
+    await this.client?.disconnect();
+  }
+
+  /** @internal */
+  resetHost() {
     this.data = EMPTY;
     this.agents = [];
+    this.installing.clear();
     this.profiles = null;
     this.nextProfile = null;
     this.selectedKey = null;
@@ -217,8 +288,30 @@ class AppState {
     this.wsChosen = false;
     forgetLayouts();
     workspace.layout = EMPTY_LAYOUT;
-    await this.client?.disconnect();
   }
+
+  addHost(target: HostTarget, activate: boolean): Promise<void> {
+    return hostOps().then((m) => m.addHost(this, target, activate));
+  }
+
+  switchHost(key: string): Promise<void> {
+    return hostOps().then((m) => m.switchHost(this, key));
+  }
+
+  removeHost(key: string): Promise<void> {
+    return hostOps().then((m) => m.removeHost(this, key));
+  }
+
+  moveToWindow(key: string): Promise<void> {
+    return hostOps().then((m) => m.moveToWindow(this, key));
+  }
+
+
+
+  onOther: LinkChange | null = null;
+
+
+
 
   async refresh() {
     if (!this.connected) return;
@@ -334,7 +427,8 @@ class AppState {
     }
   }
 
-  private cancelWsRetry() {
+  /** @internal */
+  cancelWsRetry() {
     clearTimeout(this.wsRetry);
     this.wsRetry = undefined;
   }
@@ -353,7 +447,7 @@ class AppState {
     const pref = live.find((w) => w.id === want);
     if (pref) return pref.id;
     const busy = live.filter((w) => this.aggregates.get(w.id)?.agents).sort((a, b) => Number(b.pinned) - Number(a.pinned) || a.rank - b.rank);
-    return (busy[0] ?? live[0])?.id ?? NO_WORKSPACE;
+    return (busy[0] ?? live.find((w) => !w.parentId) ?? live[0])?.id ?? NO_WORKSPACE;
   }
 
   membersOf(workspaceId: string) {
@@ -372,6 +466,7 @@ class AppState {
   }
 
   selectWorkspace(id: string) {
+    this.following = null;
     this.workspaceId = id;
     this.wsChosen = true;
     rememberWorkspace(this.conn.target, id);
@@ -382,8 +477,19 @@ class AppState {
     this.menu = { items, x: at.clientX, y: at.clientY, label };
   }
 
+  setSidebarGit(on: boolean) {
+    this.sidebarGit = on;
+    if (on) this.sidebarOpen = true;
+    saveSettings({ sidebarGit: on });
+  }
+
+  toggleSourceControl() {
+    this.setSidebarGit(!(this.sidebarGit && this.sidebarOpen));
+  }
+
   setSidebarMode(mode: SidebarMode) {
     this.sidebarMode = mode;
+    if (this.sidebarGit) this.setSidebarGit(false);
     saveSettings({ sidebarMode: mode });
   }
 
@@ -408,9 +514,7 @@ class AppState {
     }
   }
 
-  /** Set (or clear with null/blank) the custom title of a session or plain terminal; optimistic, reverted on failure. */
   renameItem(key: string, raw: string | null): Promise<void> {
-    // Once loaded (tabs preload it when idle) the optimistic update stays synchronous.
     return tabMod ? tabMod.renameItem(this, key, raw) : tabLazy().then((m) => m.renameItem(this, key, raw));
   }
 
@@ -426,6 +530,19 @@ class AppState {
 
   moveToWorkspace(key: string, workspaceId: string): Promise<boolean> {
     return tabMod ? tabMod.moveToWorkspace(this, key, workspaceId) : tabLazy().then((m) => m.moveToWorkspace(this, key, workspaceId));
+  }
+
+  private probedProjects = new Set<string>();
+
+  private probeProject(path: unknown) {
+    if (typeof path !== 'string' || !path.startsWith('/') || this.projects.some((p) => p.path === path) || this.probedProjects.has(path)) return;
+    this.probedProjects.add(path);
+    void this.api
+      .projects()
+      .then((list) => {
+        if (this.connected && list.some((p) => !this.projects.some((x) => x.path === p.path))) this.projects = list;
+      })
+      .catch(() => this.probedProjects.delete(path));
   }
 
   addProject(p: Project) {
@@ -484,6 +601,8 @@ class AppState {
       if (e.data?.lineId) for (const l of this.chatListeners) l(e.data);
       return;
     }
+    if (e.type === 'task.created') this.probeProject(e.data?.task?.project ?? e.data?.project);
+    else if (e.type === 'line.created') this.probeProject(String(e.data?.line?.repo ?? '').replace(/^local:/, ''));
     const prev = this.data;
     const next = applyEvent(prev, e);
     if (this.refreshing) {
@@ -572,16 +691,40 @@ class AppState {
     return term.id;
   }
 
-  async newSession(agent: string, opts: { cwd?: string; model?: string; effort?: Effort; worktree?: boolean; profile?: string } = {}): Promise<Term> {
+  async installAgent(id: string): Promise<Term> {
+    const term = await this.newSession('shell', { install: id, worktree: false });
+    this.installing.set(term.id, id);
+    void this.installsEnded(this.data.terms);
+    return term;
+  }
+
+  async installsEnded(terms: Term[]): Promise<void> {
+    if (!this.installing.size) return;
+    const ended = terms.filter((x) => x.exited && this.installing.has(x.id)).map((x) => ({ id: this.installing.get(x.id)!, ok: x.exitCode === 0 }));
+    if (!ended.length) return;
+    for (const x of terms) if (x.exited) this.installing.delete(x.id);
+    try {
+      this.agents = await this.api.rescanAgents();
+    } catch (e) {
+      this.notify(String((e as Error)?.message ?? e), 'error');
+      return;
+    }
+    for (const e of ended) {
+      const a = this.agents.find((x) => x.id === e.id);
+      if (a) this.notify(t(a.installed ? 'agents.installed' : e.ok ? 'agents.installNotFound' : 'agents.installFailed', { name: a.name }), a.installed ? 'info' : 'error');
+    }
+  }
+
+  async newSession(agent: string, opts: { cwd?: string; model?: string; effort?: Effort; worktree?: boolean; profile?: string; install?: string } = {}): Promise<Term> {
     const scoped = this.sidebarMode === 'workspaces' ? this.currentWorkspace : null;
     // A subject has no directory: the daemon starts the term in its cwd and assigns it.
     // A repo workspace is assigned too: the term runs in a worktree outside its path until it reports a line.
     const subject = scoped && (!opts.cwd || (scoped.kind !== 'subject' && !!scoped.path && within(opts.cwd, scoped.path))) ? scoped.id : undefined;
-    const cwd = opts.cwd ?? scoped?.path ?? undefined;
-    const worktree = (opts.worktree ?? (agent !== 'shell' && !settings.sessionsInCheckout)) && this.inProject(cwd ?? (subject ? (scoped?.cwd ?? undefined) : undefined));
+    const cwd = opts.cwd ?? (scoped?.kind === 'subject' ? undefined : (scoped?.cwd ?? scoped?.path)) ?? undefined;
+    const worktree = (opts.worktree ?? (isAgentId(agent) && !settings.sessionsInCheckout)) && this.inProject(cwd ?? (subject ? (scoped?.cwd ?? undefined) : undefined));
     const size = { cols: 120, rows: 32, ...(worktree ? { worktree: true } : {}) };
-    const profile = agent === 'shell' ? undefined : (opts.profile ?? this.nextProfile ?? undefined);
-    const term = await this.api.createTerm(agent === 'shell' ? { cwd, ...(subject ? { workspaceId: subject } : {}), ...size } : { agent, cwd, ...(subject ? { workspaceId: subject } : {}), model: opts.model || undefined, effort: opts.effort, ...(profile ? { profile } : {}), ...size });
+    const profile = isShellId(agent) ? undefined : (opts.profile ?? this.nextProfile ?? undefined);
+    const term = await this.api.createTerm(isShellId(agent) ? { cwd, ...(opts.install ? { install: opts.install } : {}), ...(subject ? { workspaceId: subject } : {}), ...size } : { agent, cwd, ...(subject ? { workspaceId: subject } : {}), model: opts.model || undefined, effort: opts.effort, ...(profile ? { profile } : {}), ...size });
     if (profile && !opts.profile) this.nextProfile = null;
     this.followSession(term, false);
     return term;
@@ -619,6 +762,7 @@ class AppState {
     if (!p) return;
     const key = newTabKey(kind, p);
     this.view = 'agents';
+    if (isPhone()) ui.tab = 'agents';
     update((l) => openInFocused(l, key));
     this.selectedKey = key;
   }
@@ -654,7 +798,7 @@ class AppState {
   }
 
   closeOverlay() {
-    this.open(this.overlay === 'uninstall' ? 'settings' : null);
+    this.open(parentOverlay(this.overlay));
   }
 
   openPage(url: string, from: { key?: string | null; termId?: string }): boolean {
@@ -683,7 +827,7 @@ class AppState {
   linkMenu(at: { clientX: number; clientY: number } | undefined, url: string, from?: LinkFrom) {
     const pos = at ?? { clientX: innerWidth / 2 - 100, clientY: innerHeight / 3 };
     const fail = (e: unknown) => this.notify(String((e as Error)?.message ?? e), 'error');
-    void Promise.all([browsers.load(!this.phoneLinks()), import('./linkmenu')]).then(([list, { linkItems }]) =>
+    void Promise.all([browsers.load(!this.phoneLinks()), import('./terminal/linkmenu')]).then(([list, { linkItems }]) =>
       this.openMenu(
         pos,
         url,
@@ -697,10 +841,11 @@ class AppState {
   }
 
   private phoneLinks(): boolean {
-    return this.mobile || ui.layout === 'phone';
+    return isPhoneOr(this.mobile);
   }
 
   notify(text: string, kind: 'info' | 'error' = 'info', action?: ToastAction, entry: EntryKind = 'error') {
+    if (kind === 'error') tap.note?.('toast', text);
     if (kind === 'error') dispatch(this, { kind: entry, title: text, coalesce: `error:${text}`, toast: false }, () => {});
     this.show(text, kind, action);
   }
@@ -783,20 +928,24 @@ function withColors(projects: Project[], colors: Record<string, string>): Projec
 export const app = new AppState();
 onPresence((p) => p.focused && app.reloadWs());
 
+/** Adding, switching and removing the hosts of a window, loaded once a window gets a second host. */
+const hostOps = () => import('./host/host-ops');
+
 /** Tab rename, move and full-title code, kept out of the startup bundle. */
-let tabMod: typeof import('./tab-lazy') | null = null;
+let tabMod: typeof import('./tabs/tab-lazy') | null = null;
 
 export function tabLazy() {
-  return import('./tab-lazy').then((m) => (tabMod = m));
+  return import('./tabs/tab-lazy').then((m) => (tabMod = m));
 }
 
 onTabClosed((key, end) => {
   const item = app.items.find((i) => i.key === key);
-  const cwd = item?.kind === 'shell' ? app.data.terms.find((t) => t.id === item.termId)?.cwd : undefined;
+  const cwd = item && isShellItem(item) ? app.data.terms.find((t) => t.id === item.termId)?.cwd : undefined;
   if (cwd) rememberShell(key, cwd);
   if (app.connected) void tabLazy().then((m) => m.tabClosed(app, key, end));
 });
 
 app.onChange((prev, next) => {
+  if (prev.terms !== next.terms) void app.installsEnded(next.terms);
   if (prev.terms !== next.terms && next.terms.some((t) => t.exited)) void tabLazy().then((m) => m.closeCleanExits(app, prev.terms, next.terms));
 });

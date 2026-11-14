@@ -1,3 +1,4 @@
+use crate::http::err;
 use crate::install::{atomic_write, diff, pretty, stamp};
 use crate::usage::{Limits, Window};
 use crate::util::shell_quote;
@@ -34,6 +35,7 @@ pub fn parse(v: &Value, now: i64) -> Option<Limits> {
         at: now,
         windows,
         plan: None,
+        ..Limits::default()
     })
 }
 
@@ -138,7 +140,7 @@ pub fn original_marker(cmd: &str, marker: &str) -> Option<Option<String>> {
 }
 
 pub fn settings_path() -> PathBuf {
-    crate::env_dir("CLAUDE_CONFIG_DIR", ".claude").join("settings.json")
+    crate::agents::config_dir("claude").join(crate::install::CLAUDE_SETTINGS_FILE)
 }
 
 pub struct Plan {
@@ -240,7 +242,7 @@ pub fn apply(
         settings,
         &p.before_text,
         &p.after_text,
-        &std::env::temp_dir().join("overseer-statusline"),
+        &state_dir.join(crate::paths::TMP_DIR),
     );
     let mut backup = None;
     if p.changed && !dry_run {
@@ -280,25 +282,19 @@ pub fn routes(method: &str, segs: &[&str], body: &Value, state_dir: &Path) -> Op
             dry,
             &bin,
             state_dir,
-            crate::procs::now_ms(),
+            crate::util::now_ms(),
         ) {
             Ok(v) => (200, v),
-            Err(e) => (409, json!({"error": e})),
+            Err(e) => err(409, e),
         },
     )
 }
 
 fn spawn(original: &str) -> std::io::Result<std::process::Child> {
-    let mut c = if cfg!(windows) {
-        let mut c = Command::new("sh");
-        c.arg("-c").arg(original);
-        c
-    } else {
-        let mut c = Command::new("/bin/sh");
-        c.arg("-c").arg(original);
-        c
-    };
-    c.stdin(Stdio::piped())
+    let mut c = Command::new(if cfg!(windows) { "sh" } else { "/bin/sh" });
+    c.arg("-c")
+        .arg(original)
+        .stdin(Stdio::piped())
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit())
         .spawn()
@@ -331,7 +327,7 @@ pub fn tap(args: &[String]) -> ExitCode {
     let _ = std::io::stdin().read_to_end(&mut input);
     let state = state.unwrap_or_else(crate::default_state_dir);
     if input.len() as u64 <= MAX_INPUT {
-        let _ = record(&state, &input, crate::procs::now_ms());
+        let _ = record(&state, &input, crate::util::now_ms());
     }
     match original {
         Some(o) => match wrap(&o, &input) {
@@ -357,7 +353,7 @@ fn cli(install: bool, args: &[String]) -> ExitCode {
         !apply_it,
         &bin,
         &state,
-        crate::procs::now_ms(),
+        crate::util::now_ms(),
     ) {
         Ok(v) => {
             if !v["changed"].as_bool().unwrap_or(false) {

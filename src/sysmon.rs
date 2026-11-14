@@ -1,6 +1,6 @@
-use crate::daemon::{q, respond_raw, Request};
-use crate::procs::now_ms;
+use crate::http::{q, respond_raw, Request};
 use crate::util::format_rfc3339;
+use crate::util::now_ms;
 use serde_json::{json, Value};
 use std::collections::{HashMap, VecDeque};
 use std::io::Write;
@@ -189,7 +189,7 @@ impl Hub {
 
 fn frame(seq: u64, data: &Value) -> Arc<String> {
     let env = json!({"id": seq.to_string(), "type": "system.sample", "at": format_rfc3339(now_ms()), "data": data});
-    Arc::new(format!("id: {seq}\nevent: system.sample\ndata: {env}\n\n"))
+    Arc::new(crate::board::sse_frame(seq, "system.sample", &env))
 }
 
 fn hub() -> &'static Arc<Hub> {
@@ -237,7 +237,7 @@ fn stream(s: &mut dyn Write) {
     loop {
         let out = match rx.recv_timeout(Duration::from_secs(15)) {
             Ok(f) => s.write_all(f.as_bytes()),
-            Err(RecvTimeoutError::Timeout) => s.write_all(b": ping\n\n"),
+            Err(RecvTimeoutError::Timeout) => s.write_all(crate::board::SSE_PING),
             Err(RecvTimeoutError::Disconnected) => return,
         };
         if out.and_then(|_| s.flush()).is_err() {
@@ -984,9 +984,9 @@ pub mod mac {
 
     #[cfg(target_os = "macos")]
     fn run(cmd: &str, args: &[&str]) -> String {
-        crate::git::output_within(
+        crate::exec::output_within(
             std::process::Command::new(cmd).args(args),
-            crate::git::PROBE_TIMEOUT,
+            crate::exec::PROBE_TIMEOUT,
         )
         .ok()
         .filter(|o| o.status.success())
@@ -1471,16 +1471,15 @@ map auto_home            0         0         0   100%    /System/Volumes/Data/ho
     }
 
     #[test]
+    #[cfg(target_os = "linux")]
     fn live_sample_on_this_machine() {
         let mut s = platform();
         s.sample(now_ms());
         std::thread::sleep(Duration::from_millis(50));
         let (v, pt) = s.sample(now_ms());
-        if cfg!(target_os = "linux") {
-            assert_eq!(v["supported"], true);
-            assert!(pt.mem_total > 0);
-            assert!(pt.cpu.is_some());
-            assert!(!v["top"]["mem"].as_array().unwrap().is_empty());
-        }
+        assert_eq!(v["supported"], true);
+        assert!(pt.mem_total > 0);
+        assert!(pt.cpu.is_some());
+        assert!(!v["top"]["mem"].as_array().unwrap().is_empty());
     }
 }

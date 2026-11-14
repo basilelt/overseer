@@ -1,5 +1,7 @@
 use crate::activity::read_lines;
+use crate::agents::Transcript;
 use crate::claude_limits::{outcome, read_creds, Auth, Outcome, Token, ACTIVE_MS, REFRESH_MS};
+use crate::http::err;
 use crate::util::{format_rfc3339, parse_rfc3339};
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
@@ -37,7 +39,11 @@ const fn p(input: f64, output: f64, cache_read: f64, write_5m: f64, write_1h: f6
     }
 }
 
+pub const PRICES_AS_OF: &str = "2026-11-11";
+
 pub const PRICES: &[(&str, Price)] = &[
+    ("claude-fable-5-2", p(8.0, 40.0, 0.2, 10.0, 16.0)),
+    ("claude-mythos-5-2", p(8.0, 40.0, 0.2, 10.0, 16.0)),
     ("claude-fable-", p(10.0, 50.0, 0.25, 12.5, 20.0)),
     ("claude-mythos-", p(10.0, 50.0, 0.25, 12.5, 20.0)),
     ("claude-opus-5-5", p(4.0, 20.0, 0.2, 5.0, 8.0)),
@@ -47,11 +53,18 @@ pub const PRICES: &[(&str, Price)] = &[
     ("claude-opus-4-7", p(5.0, 25.0, 0.5, 6.25, 10.0)),
     ("claude-opus-4-8", p(5.0, 25.0, 0.5, 6.25, 10.0)),
     ("claude-opus-4", p(15.0, 75.0, 1.5, 18.75, 30.0)),
+    ("claude-sonnet-5-5", p(2.0, 10.0, 0.1, 2.5, 4.0)),
     ("claude-sonnet-5", p(2.0, 10.0, 0.2, 2.5, 4.0)),
     ("claude-sonnet-4", p(3.0, 15.0, 0.3, 3.75, 6.0)),
     ("claude-3-7-sonnet", p(3.0, 15.0, 0.3, 3.75, 6.0)),
+    ("claude-haiku-5-5", p(0.1, 0.5, 0.01, 0.125, 0.2)),
     ("claude-haiku-4", p(1.0, 5.0, 0.1, 1.25, 2.0)),
     ("claude-3-5-haiku", p(0.8, 4.0, 0.08, 1.0, 1.6)),
+    ("gpt-5.5", p(5.0, 30.0, 0.5, 0.0, 0.0)),
+    ("gpt-5.4-mini", p(0.75, 4.5, 0.075, 0.0, 0.0)),
+    ("gpt-5.4", p(2.5, 15.0, 0.25, 0.0, 0.0)),
+    ("gpt-5.3-codex", p(1.75, 14.0, 0.175, 0.0, 0.0)),
+    ("gpt-5.2", p(1.75, 14.0, 0.175, 0.0, 0.0)),
     ("gpt-5-mini", p(0.25, 2.0, 0.025, 0.0, 0.0)),
     ("gpt-5-nano", p(0.05, 0.4, 0.005, 0.0, 0.0)),
     ("gpt-5", p(1.25, 10.0, 0.125, 0.0, 0.0)),
@@ -71,7 +84,10 @@ pub fn price(model: &str) -> Option<&'static Price> {
     let m = m.rsplit('/').next().unwrap_or(&m);
     PRICES
         .iter()
-        .filter(|(k, _)| m.starts_with(k))
+        .filter(|(k, _)| {
+            m.strip_prefix(k)
+                .is_some_and(|rest| k.ends_with('-') || rest.is_empty() || rest.starts_with('-'))
+        })
         .max_by_key(|(k, _)| k.len())
         .map(|(_, p)| p)
 }
@@ -90,7 +106,7 @@ impl Tokens {
         self.input + self.output + self.cache_read + self.cache_write
     }
 
-    fn add(&mut self, o: &Tokens) {
+    pub(crate) fn add(&mut self, o: &Tokens) {
         self.input += o.input;
         self.output += o.output;
         self.cache_read += o.cache_read;
@@ -147,6 +163,17 @@ pub struct Limits {
     pub at: i64,
     pub windows: Vec<Window>,
     pub plan: Option<String>,
+    #[serde(default)]
+    pub credits: Option<Credits>,
+    #[serde(default)]
+    pub reached: Option<String>,
+}
+
+#[derive(Default, Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Credits {
+    pub has_credits: bool,
+    pub unlimited: bool,
+    pub balance: Option<f64>,
 }
 
 #[derive(Default, Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -369,6 +396,18 @@ fn codex_limits(rl: &Value, ts: i64) -> Option<Limits> {
         at: ts,
         windows,
         plan: rl["plan_type"].as_str().map(str::to_string),
+        credits: rl["credits"].is_object().then(|| {
+            let c = &rl["credits"];
+            Credits {
+                has_credits: c["has_credits"].as_bool().unwrap_or(false),
+                unlimited: c["unlimited"].as_bool().unwrap_or(false),
+                balance: c["balance"]
+                    .as_str()
+                    .and_then(|b| b.parse().ok())
+                    .or_else(|| c["balance"].as_f64()),
+            }
+        }),
+        reached: rl["rate_limit_reached_type"].as_str().map(str::to_string),
     })
 }
 
@@ -457,6 +496,49 @@ fn gemini_msg(c: &mut Cursor, v: &Value, b: &mut Batch) {
     b.add(ts, &model, &delta, !same, a);
 }
 
+#[derive(Default)]
+pub(crate) struct Meter {
+    c: Cursor,
+}
+
+impl Meter {
+    pub(crate) fn line(
+        &mut self,
+        kind: Option<Transcript>,
+        line: &[u8],
+    ) -> Vec<(String, Tokens, bool)> {
+        let mut b = Batch::default();
+        match kind {
+            Some(Transcript::Codex) => codex_line(&mut self.c, line, &mut b),
+            Some(Transcript::Gemini) => {
+                if let Ok(v) = serde_json::from_slice::<Value>(line) {
+                    gemini_msg(&mut self.c, &v, &mut b);
+                }
+            }
+            Some(Transcript::Claude) | Some(Transcript::Vibe) | None => {
+                if !contains(line, "\"usage\"") {
+                    return vec![];
+                }
+                claude_line(&mut self.c, true, line, &mut b)
+            }
+        }
+        Self::turns(b)
+    }
+
+    pub(crate) fn gemini(&mut self, v: &Value) -> Vec<(String, Tokens, bool)> {
+        let mut b = Batch::default();
+        gemini_msg(&mut self.c, v, &mut b);
+        Self::turns(b)
+    }
+
+    fn turns(b: Batch) -> Vec<(String, Tokens, bool)> {
+        b.buckets
+            .into_iter()
+            .map(|((_, model), a)| (model, a.tokens, a.messages > 0))
+            .collect()
+    }
+}
+
 fn mtime_len(p: &Path) -> Option<(i64, u64)> {
     let m = std::fs::metadata(p).ok()?;
     let t = m
@@ -501,7 +583,7 @@ fn walk_jsonl(dir: &Path, depth: u32, out: &mut Vec<PathBuf>) {
 fn discover(d: &Dirs, cutoff: i64) -> Vec<Found> {
     let mut out = vec![];
     let fresh = |p: &Path| mtime_len(p).is_some_and(|(m, _)| m >= cutoff);
-    if let Ok(projects) = std::fs::read_dir(d.claude.join("projects")) {
+    if let Ok(projects) = std::fs::read_dir(crate::claude::projects_dir(&d.claude)) {
         for proj in projects.flatten().filter(|e| e.path().is_dir()) {
             let Ok(rd) = std::fs::read_dir(proj.path()) else {
                 continue;
@@ -666,11 +748,11 @@ impl Index {
                 })
                 .map_err(|e| e.to_string())?;
             for (path, agent, session, cwd, sub, cursor) in rows.flatten() {
-                let agent = match agent.as_str() {
-                    "claude" => "claude",
-                    "codex" => "codex",
-                    "gemini" => "gemini",
-                    _ => continue,
+                let Some(agent) = crate::agents::get(&agent)
+                    .filter(|a| a.metered)
+                    .map(|a| a.id)
+                else {
+                    continue;
                 };
                 files.insert(
                     PathBuf::from(path),
@@ -810,14 +892,17 @@ impl Index {
                 return Ok(false);
             };
             let (agent, sub) = (t.agent, t.sub);
-            let end = read_lines(&mut f, c.offset, len, |line| match agent {
-                "codex" => codex_line(&mut c, line, &mut b),
-                "gemini" => {
+            let kind = crate::agents::transcript_of(agent);
+            let end = read_lines(&mut f, c.offset, len, |line| match kind {
+                Some(Transcript::Codex) => codex_line(&mut c, line, &mut b),
+                Some(Transcript::Gemini) => {
                     if let Ok(v) = serde_json::from_slice::<Value>(line) {
                         gemini_msg(&mut c, &v, &mut b);
                     }
                 }
-                _ => claude_line(&mut c, sub, line, &mut b),
+                Some(Transcript::Claude) | Some(Transcript::Vibe) | None => {
+                    claude_line(&mut c, sub, line, &mut b)
+                }
             });
             if let Some(e) = end {
                 c.offset = e;
@@ -1011,6 +1096,15 @@ fn project_name(cwd: &str) -> String {
         .unwrap_or_else(|| "—".into())
 }
 
+fn repo_label(repo: &str) -> String {
+    repo.trim_end_matches('/')
+        .rsplit('/')
+        .next()
+        .filter(|n| !n.is_empty())
+        .unwrap_or(repo)
+        .to_string()
+}
+
 pub fn query(
     conn: &Connection,
     q: &Query,
@@ -1110,7 +1204,7 @@ pub fn query(
         }
         let line = lines.get(&(agent.clone(), session.clone()));
         let project = line
-            .map(|l| l.repo.clone())
+            .map(|l| repo_label(&l.repo))
             .filter(|r| !r.is_empty())
             .unwrap_or_else(|| project_name(cwd));
         let (key, meta) = match q.by {
@@ -1159,12 +1253,13 @@ pub fn query(
         .map(|(d, s)| json!({"day": day_label(*d), "usage": s.json()}))
         .collect();
     let mut agent_names: Vec<String> = seen_agents.into_iter().collect();
-    for a in ["claude", "codex", "gemini"] {
+    for agent in crate::agents::AGENTS.iter().filter(|a| a.metered) {
+        let a = agent.id;
         if !agent_names.iter().any(|x| x == a)
             && (kv_get::<Limits>(conn, &format!("limits.{a}")).is_some()
                 || kv_get::<LimitHit>(conn, &format!("hit.{a}")).is_some()
                 || (q.oauth && kv_get::<Auth>(conn, &format!("oauth.{a}.auth")).is_some())
-                || (a == "claude" && q.tap.is_some()))
+                || (agent.transcript == Some(Transcript::Claude) && q.tap.is_some()))
         {
             agent_names.push(a.to_string());
         }
@@ -1180,7 +1275,9 @@ pub fn query(
             json!({
                 "agent": a,
                 "today": today,
-                "limits": limits_json(conn, a, q.now, q.oauth, q.tap.as_ref().filter(|_| a == "claude")),
+                "limits": limits_json(conn, a, q.now, q.oauth, q.tap
+                    .as_ref()
+                    .filter(|_| crate::agents::get(a).is_some_and(|x| x.oauth_limits))),
             })
         })
         .collect();
@@ -1238,6 +1335,12 @@ fn limits_json(
                 })
             }).collect::<Vec<_>>(),
             "hit": hit,
+            "credits": l.credits.as_ref().map(|c| json!({
+                "hasCredits": c.has_credits,
+                "unlimited": c.unlimited,
+                "balance": c.balance,
+            })),
+            "reached": l.reached,
             "via": if via_tap { "statusline" } else { agent },
         }),
         None => json!({
@@ -1324,7 +1427,7 @@ pub fn init(state_dir: &Path, claude: PathBuf, codex: PathBuf, gemini: PathBuf) 
                 codex,
                 gemini,
             }),
-            db: state_dir.join("usage.db"),
+            db: state_dir.join(crate::paths::USAGE_DB),
             started: false,
             poked: false,
             full: true,
@@ -1365,7 +1468,7 @@ fn demand(now: i64, oauth: bool) -> Option<(PathBuf, bool)> {
         s.indexing = true;
         let dirs = s.dirs.take()?;
         let db = s.db.clone();
-        if !crate::util::supervise("usage", move || worker(db.clone(), dirs.clone())) {
+        if !crate::dlog::supervise("usage", move || worker(db.clone(), dirs.clone())) {
             return None;
         }
     } else if stale {
@@ -1386,7 +1489,7 @@ fn worker(db: PathBuf, dirs: Dirs) {
     };
     let first = !idx.indexed;
     let pace = first.then_some(Duration::from_millis(2));
-    match idx.sweep(crate::procs::now_ms(), true, pace) {
+    match idx.sweep(crate::util::now_ms(), true, pace) {
         Ok(_) => crate::board::publish("usage.updated", json!({})),
         Err(e) => crate::dlog::line("error", &format!("usage: {e}")),
     }
@@ -1402,7 +1505,7 @@ fn worker(db: PathBuf, dirs: Dirs) {
         let full = {
             let mut g = SHARED.lock().unwrap_or_else(|e| e.into_inner());
             loop {
-                let now = crate::procs::now_ms();
+                let now = crate::util::now_ms();
                 match g.as_mut() {
                     Some(s) if s.poked && demanded(s, now) => {
                         s.poked = false;
@@ -1416,7 +1519,7 @@ fn worker(db: PathBuf, dirs: Dirs) {
             }
         };
         std::thread::sleep(Duration::from_millis(DEBOUNCE_MS));
-        let swept = match idx.sweep(crate::procs::now_ms(), full, None) {
+        let swept = match idx.sweep(crate::util::now_ms(), full, None) {
             Ok(c) => c,
             Err(e) => {
                 crate::dlog::line("error", &format!("usage: {e}"));
@@ -1433,7 +1536,7 @@ fn worker(db: PathBuf, dirs: Dirs) {
 }
 
 fn claude_limits_due(idx: &Index, tap: Option<&Limits>) -> bool {
-    let now = crate::procs::now_ms();
+    let now = crate::util::now_ms();
     if crate::claude_limits::tap_covers(tap.map(|t| t.at), now) {
         return false;
     }
@@ -1463,43 +1566,35 @@ fn claude_limits_due(idx: &Index, tap: Option<&Limits>) -> bool {
     }
 }
 
-pub fn api(r: &crate::daemon::Request, lines: &[crate::Line]) -> (u16, Value) {
-    let now = crate::procs::now_ms();
-    let Some(range) = Range::parse(crate::daemon::q(r, "range")) else {
-        return (400, json!({"error": "range must be today, 7d or 30d"}));
+pub fn api(r: &crate::http::Request, lines: &[crate::Line]) -> (u16, Value) {
+    let now = crate::util::now_ms();
+    let Some(range) = Range::parse(crate::http::q(r, "range")) else {
+        return err(400, "range must be today, 7d or 30d");
     };
-    let by = crate::daemon::q(r, "by").unwrap_or("agent");
+    let by = crate::http::q(r, "by").unwrap_or("agent");
     if !matches!(by, "agent" | "project" | "model" | "session") {
-        return (
-            400,
-            json!({"error": "by must be agent, project, model or session"}),
-        );
+        return err(400, "by must be agent, project, model or session");
     }
-    let tz = match crate::daemon::q(r, "tzOffset").map(|s| s.parse::<i64>()) {
+    let tz = match crate::http::q(r, "tzOffset").map(|s| s.parse::<i64>()) {
         None => 0,
         Some(Ok(m)) if (-14 * 60..=14 * 60).contains(&m) => m,
-        _ => {
-            return (
-                400,
-                json!({"error": "tzOffset must be minutes east of UTC"}),
-            )
-        }
+        _ => return err(400, "tzOffset must be minutes east of UTC"),
     };
-    let wanted = crate::daemon::q(r, "line");
+    let wanted = crate::http::q(r, "line");
     let session = match wanted {
         None => None,
         Some(id) => match lines.iter().find(|l| l.id == id) {
             Some(l) => Some((l.agent, l.session_id.as_str())),
-            None => return (404, json!({"error": format!("no line {id}")})),
+            None => return err(404, format!("no line {id}")),
         },
     };
-    let oauth = crate::daemon::q(r, "claudeLimits") == Some("1");
+    let oauth = r.is_one("claudeLimits");
     let Some((db, indexing)) = demand(now, oauth) else {
-        return (503, json!({"error": "usage is not available"}));
+        return err(503, "usage is not available");
     };
     let conn = match open_db(&db) {
         Ok(c) => c,
-        Err(e) => return (500, json!({"error": e})),
+        Err(e) => return err(500, e),
     };
     let map: HashMap<(String, String), LineInfo> = lines
         .iter()
@@ -1528,7 +1623,7 @@ pub fn api(r: &crate::daemon::Request, lines: &[crate::Line]) -> (u16, Value) {
             v["indexing"] = json!(indexing);
             (200, v)
         }
-        Err(e) => (500, json!({"error": e})),
+        Err(e) => err(500, e),
     }
 }
 
@@ -1546,7 +1641,7 @@ mod tests {
         let d = std::env::temp_dir().join(format!(
             "sb-usage-{tag}-{}-{}",
             std::process::id(),
-            crate::procs::now_ms()
+            crate::util::now_ms()
         ));
         std::fs::create_dir_all(&d).unwrap();
         d
@@ -1568,9 +1663,6 @@ mod tests {
 
     #[test]
     fn many_threads_opening_a_fresh_database_at_once_all_get_a_connection() {
-        // Given a state dir without a usage database, as on the first request after a start
-        // When the indexer and several api requests open it at the same moment
-        // Then none of them fails with "database is locked"
         for round in 0..20 {
             let db = tmp(&format!("race{round}")).join("usage.db");
             let gate = std::sync::Barrier::new(8);
@@ -1628,7 +1720,7 @@ mod tests {
     }
 
     fn real_now() -> i64 {
-        crate::procs::now_ms()
+        crate::util::now_ms()
     }
 
     #[test]
@@ -1639,7 +1731,15 @@ mod tests {
         assert_eq!(price("claude-opus-4-6").unwrap().input, 5.0);
         assert_eq!(price("claude-fable-5-1").unwrap().output, 50.0);
         assert_eq!(price("claude-sonnet-4-6").unwrap().input, 3.0);
-        assert_eq!(price("gpt-5.4").unwrap().input, 1.25);
+        assert_eq!(price("gpt-5.4").unwrap().input, 2.5);
+        assert_eq!(price("gpt-5.5").unwrap().output, 30.0);
+        assert_eq!(price("gpt-5.4-mini").unwrap().input, 0.75);
+        assert_eq!(price("gpt-5-codex").unwrap().input, 1.25);
+        assert!(price("gpt-5.9").is_none());
+        assert!(price("gpt-6-luna").is_none());
+        assert_eq!(price("claude-fable-5-2").unwrap().input, 8.0);
+        assert_eq!(price("claude-sonnet-5-5").unwrap().cache_read, 0.1);
+        assert_eq!(price("claude-haiku-5-5").unwrap().output, 0.5);
         assert_eq!(price("gpt-5-mini").unwrap().input, 0.25);
         assert_eq!(price("gemini-2.5-flash-lite").unwrap().input, 0.1);
         assert_eq!(price("models/gemini-2.5-pro").unwrap().input, 1.25);
@@ -1774,7 +1874,7 @@ mod tests {
         assert_eq!(u["cacheRead"], 9_000);
         assert_eq!(u["output"], 400);
         assert_eq!(u["messages"], 2);
-        let expect = (6_000.0 * 1.25 + 9_000.0 * 0.125 + 400.0 * 10.0) / 1e6;
+        let expect = (6_000.0 * 2.5 + 9_000.0 * 0.25 + 400.0 * 15.0) / 1e6;
         assert!((u["cost"].as_f64().unwrap() - expect).abs() < 1e-4);
         let m = get(&idx, Range::Today, "model", 0);
         assert_eq!(m["groups"][0]["model"], "gpt-5.4");
@@ -1847,6 +1947,62 @@ mod tests {
         assert_eq!(limits["windows"][0]["stale"], false);
 
         std::fs::remove_dir_all(&d).unwrap();
+    }
+
+    #[test]
+    fn codex_spent_plan_window_reports_the_credits_still_in_use() {
+        let (d, mut idx) = home("codexcredits");
+        let r = d.join("codex/sessions/2026/10/29/rollout-2026-11-09T08-43-52-01a1bf7a-68b2-71c2-bc92-0e5477d8ed37.jsonl");
+        let line = json!({
+            "timestamp": "2026-11-09T08:45:34.126Z",
+            "type": "event_msg",
+            "payload": {
+                "type": "token_count",
+                "info": {"total_token_usage": {"input_tokens": 10, "output_tokens": 2}},
+                "rate_limits": {
+                    "limit_id": "codex",
+                    "limit_name": null,
+                    "primary": {"used_percent": 100.0, "window_minutes": 43_200, "resets_at": 1_795_622_413_i64},
+                    "secondary": null,
+                    "credits": {"has_credits": true, "unlimited": false, "balance": "1272.1821530000"},
+                    "individual_limit": null,
+                    "spend_control_reached": null,
+                    "plan_type": "go",
+                    "rate_limit_reached_type": null
+                }
+            }
+        })
+        .to_string();
+        std::fs::write(&r, format!("{line}\n")).unwrap();
+        touch_now(&r);
+        idx.sweep(now(), true, None).unwrap();
+
+        let v = get(&idx, Range::Today, "agent", 0);
+        let codex = v["agents"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|a| a["agent"] == "codex")
+            .unwrap();
+        let limits = &codex["limits"];
+        assert_eq!(limits["windows"][0]["usedPercent"], 100.0);
+        assert_eq!(limits["credits"]["hasCredits"], true);
+        assert_eq!(limits["credits"]["unlimited"], false);
+        assert_eq!(limits["credits"]["balance"], 1272.182153);
+        assert_eq!(limits["reached"], Value::Null);
+
+        std::fs::remove_dir_all(&d).unwrap();
+    }
+
+    #[test]
+    fn limits_stored_before_credits_still_load() {
+        let old: Limits = serde_json::from_str(
+            r#"{"at":5,"windows":[{"key":"mo","minutes":43200,"used":100.0,"resets_at":0}],"plan":"go"}"#,
+        )
+        .unwrap();
+        assert_eq!(old.windows.len(), 1);
+        assert_eq!(old.credits, None);
+        assert_eq!(old.reached, None);
     }
 
     #[test]
@@ -2075,6 +2231,7 @@ mod tests {
                 resets_at: now() + 3_600_000,
             }],
             plan: None,
+            ..Limits::default()
         };
         let v = lim_tap(&idx, true, Some(tapped.clone()));
         assert_eq!(v["via"], "statusline");
@@ -2086,6 +2243,14 @@ mod tests {
         let old = Limits { at: 0, ..tapped };
         assert_eq!(lim_tap(&idx, true, Some(old))["via"], "claude");
         let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn project_labels_are_the_repo_name_not_its_remote_or_path() {
+        assert_eq!(repo_label("github.com/acme/app"), "app");
+        assert_eq!(repo_label("local:/home/u/work/proj"), "proj");
+        assert_eq!(repo_label("app-repo"), "app-repo");
+        assert_eq!(repo_label(""), "");
     }
 
     #[test]
@@ -2102,7 +2267,7 @@ mod tests {
             );
         }
         init(&d, d.join("claude"), d.join("codex"), d.join("gemini"));
-        let req = |q: &[(&str, &str)]| crate::daemon::Request {
+        let req = |q: &[(&str, &str)]| crate::http::Request {
             method: "GET".into(),
             path: "/v1/usage".into(),
             query: q

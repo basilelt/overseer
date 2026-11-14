@@ -1,6 +1,7 @@
 use crate::git::Git;
 use crate::naming;
 use crate::registry::Registry;
+use crate::status::{self, Status};
 use crate::tasks::{self, Task};
 use crate::util::ulid;
 use crate::{Ctx, Line};
@@ -37,11 +38,7 @@ pub fn sync(ctx: &Ctx, reg: &Registry, lines: &[Line]) {
     };
     let now = ctx.now_ms;
     let fetch = ctx.config.worktree_fetch;
-    let merged = |t: &Task| {
-        t.branch
-            .as_deref()
-            .is_some_and(|b| crate::worktrees::landed(&t.project, b, fetch))
-    };
+    let merged = |t: &Task| crate::worktrees::branch_landed(&t.project, t.branch.as_deref(), fetch);
     run(
         reg,
         lines,
@@ -66,7 +63,10 @@ pub fn run(reg: &Registry, lines: &[Line], env: &Env) {
         let mut t = t.clone();
         let line = t.line_id.as_deref().and_then(|id| by_line.get(id)).copied();
         if refresh(&mut t, line, env) {
-            let _ = tasks::store(reg, &mut t, env.station);
+            tasks::logged(
+                "session task not saved",
+                tasks::store(reg, &mut t, env.station),
+            );
         }
     }
     for l in lines {
@@ -77,7 +77,10 @@ pub fn run(reg: &Registry, lines: &[Line], env: &Env) {
             continue;
         };
         let mut t = new_task(l, project, (env.activity)(l).as_ref());
-        let _ = tasks::insert(reg, &mut t, env.station);
+        tasks::logged(
+            "session task not created",
+            tasks::insert(reg, &mut t, env.station),
+        );
     }
 }
 
@@ -98,7 +101,7 @@ fn path_of(l: &Line) -> &str {
 
 pub fn eligible(l: &Line, now_ms: i64, days: i64) -> bool {
     days > 0
-        && l.state != "hung-up"
+        && l.state != crate::wire::STATE_HUNG_UP
         && !l.duplicate
         && !l.volatile
         && !l.cwd_missing
@@ -108,14 +111,14 @@ pub fn eligible(l: &Line, now_ms: i64, days: i64) -> bool {
 
 pub fn session_state(l: &Line, worked: bool) -> &'static str {
     match l.state {
-        "hung-up" => "closed",
-        "held" if l.held_reason == Some("user") => "held",
-        "held" => "lost",
+        crate::wire::STATE_HUNG_UP => "closed",
+        crate::wire::STATE_HELD if l.held_reason == Some("user") => "held",
+        crate::wire::STATE_HELD => "lost",
         _ if l.needs_input => "input",
         _ if l.busy => "busy",
         _ if !worked => "fresh",
         _ if l.busy_known => "done",
-        "active" => "busy",
+        crate::wire::STATE_ACTIVE => "busy",
         _ => "done",
     }
 }
@@ -126,45 +129,39 @@ pub fn status_for(
     review: bool,
 ) -> (&'static str, Option<&'static str>) {
     match state {
-        "merged" => ("merged", None),
-        "closed" => ("completed", None),
+        "merged" => (status::MERGED, None),
+        "closed" => (status::COMPLETED, None),
         "lost" | "done" => match current {
-            "in_testing" => ("in_testing", None),
-            "merged" => ("merged", None),
-            "in_progress" if review => ("in_testing", None),
-            _ => ("completed", None),
+            status::IN_TESTING => (status::IN_TESTING, None),
+            status::MERGED => (status::MERGED, None),
+            status::IN_PROGRESS if review => (status::IN_TESTING, None),
+            _ => (status::COMPLETED, None),
         },
         "held" => (
             match current {
-                "in_testing" => "in_testing",
-                "merged" => "merged",
-                "completed" => "completed",
-                _ => "in_progress",
+                status::IN_TESTING => status::IN_TESTING,
+                status::MERGED => status::MERGED,
+                status::COMPLETED => status::COMPLETED,
+                _ => status::IN_PROGRESS,
             },
             Some("paused"),
         ),
-        "input" | "fresh" => ("in_progress", Some("needs_input")),
-        _ => ("in_progress", None),
+        "input" | "fresh" => (status::IN_PROGRESS, Some("needs_input")),
+        _ => (status::IN_PROGRESS, None),
     }
 }
 
 fn order(status: &str) -> usize {
-    [
-        "pending",
-        "auto",
-        "in_progress",
-        "in_testing",
-        "merged",
-        "completed",
-    ]
-    .iter()
-    .position(|s| *s == status)
-    .unwrap_or(0)
+    Status::ALL
+        .iter()
+        .position(|s| s.as_str() == status)
+        .unwrap_or(0)
 }
 
 pub fn follow(t: &mut Task, state: &str, review: impl FnOnce() -> bool) -> bool {
     let same = t.manual_status.is_some() && t.session_state.as_deref() == Some(state);
-    let review = !same && matches!(state, "lost" | "done") && t.status == "in_progress" && review();
+    let review =
+        !same && matches!(state, "lost" | "done") && t.status == status::IN_PROGRESS && review();
     let (derived, badge) = status_for(state, &t.status, review);
     let keep = t.manual_status.as_deref().is_some_and(|m| {
         same || (!matches!(state, "busy" | "input") && order(derived) <= order(m))
@@ -343,7 +340,7 @@ pub fn model_of(args: &[String]) -> String {
 pub fn new_task(l: &Line, project: String, a: Option<&Value>) -> Task {
     let null = Value::Null;
     let a = a.unwrap_or(&null);
-    let now = crate::procs::now_ms();
+    let now = crate::util::now_ms();
     let mut t = Task {
         id: ulid(now),
         title: title_of(l.title.as_deref(), a, l.agent),
@@ -393,9 +390,7 @@ fn absorb(t: &mut Task, l: &Line, a: &Value) -> bool {
 pub fn refresh(t: &mut Task, line: Option<&Line>, env: &Env) -> bool {
     let Some(l) = line else {
         let changed = t.title_source.is_none() && retitle(t, None, &Value::Null);
-        return (!crate::tasks::is_done(&t.status)
-            && (env.merged)(t)
-            && follow(t, "merged", || true))
+        return (!status::is_done(&t.status) && (env.merged)(t) && follow(t, "merged", || true))
             || changed;
     };
     let mut changed = false;
@@ -417,7 +412,7 @@ pub fn refresh(t: &mut Task, line: Option<&Line>, env: &Env) -> bool {
             crate::worktrees::forget_landed(b);
         }
     }
-    if matches!(state, "lost" | "done") && !crate::tasks::is_done(&t.status) && (env.merged)(t) {
+    if matches!(state, "lost" | "done") && !status::is_done(&t.status) && (env.merged)(t) {
         state = "merged";
     }
     let branched = t.worktree_path.as_deref().is_some_and(|w| w != t.project);
@@ -449,7 +444,7 @@ mod tests {
         let dir = std::env::temp_dir().join(format!(
             "sb-session-tasks-{tag}-{}-{}",
             std::process::id(),
-            crate::procs::now_ms()
+            crate::util::now_ms()
         ));
         std::fs::create_dir_all(&dir).unwrap();
         (Registry::open(&dir).unwrap(), dir)

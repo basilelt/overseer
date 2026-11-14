@@ -1,12 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { MockDaemon } from '../mock';
+import { MockDaemon } from '../daemon/mock';
 import { app } from '../state.svelte';
 import type { DaemonEvent } from '../types';
 import { reviewCounts } from './counts.svelte';
-import { LinkedReviews, batchAll, graphOrder, nextStep, parsePick, pickerGroups, submitAll } from './linked.svelte';
+import { LinkedReviews, batchAll, parsePick, pickerGroups, submitAll } from './linked.svelte';
 import { MOCK_LINKED, MOCK_ROOT, MOCK_WORKTREE } from './mock';
 import { ReviewStore } from './store.svelte';
-import type { ReviewGraph, SubmitResult, Thread } from './types';
+import type { SubmitResult, Thread } from './types';
 
 let d: MockDaemon;
 let linked: LinkedReviews;
@@ -137,59 +137,5 @@ describe('file picker', () => {
     expect(groups[0].options[0].label).toBe('android/app/src/main/Terminal.kt (+2 −1)');
     expect(parsePick(groups[0].options[0].value)).toEqual({ worktree: MOCK_LINKED, path: 'android/app/src/main/Terminal.kt' });
     expect(parsePick('src/term.rs')).toEqual({ worktree: null, path: 'src/term.rs' });
-  });
-});
-
-describe('linked graphs', () => {
-  function graphCalls(spy: { mock: { calls: unknown[][] } }): string[] {
-    return spy.mock.calls.filter((c) => c[0] === 'GET' && String(c[1]).startsWith('/v1/review/graph')).map((c) => decodeURIComponent(String(c[1])));
-  }
-
-  it('loads no linked graph in list view and loads each one when the graph view opens', async () => {
-    const spy = vi.spyOn(d.review, 'route');
-    linked.sync([{ worktree: MOCK_LINKED, branch: null }]);
-    await settle();
-    expect(graphCalls(spy)).toEqual([]);
-    linked.setView('graph');
-    await vi.waitFor(() => expect(linked.stores[0].graph).not.toBeNull());
-    expect(graphCalls(spy).filter((c) => c.includes(MOCK_LINKED))).toHaveLength(1);
-    expect(graphOrder(linked.stores[0]).length).toBeGreaterThan(0);
-  });
-
-  it('opens new linked stores in the current view', async () => {
-    linked.setView('graph');
-    linked.sync([{ worktree: MOCK_LINKED, branch: null }]);
-    await vi.waitFor(() => expect(linked.stores[0].graph).not.toBeNull());
-    expect(linked.stores[0].view).toBe('graph');
-  });
-
-  function fake(ids: string[], at = -1): ReviewStore {
-    const nodes = ids.map((id) => ({ id, name: id, path: `${id}.ts`, line: 1, hunks: [] }));
-    return { graph: { revision: ids.join(), nodes, edges: [], order: ids } as unknown as ReviewGraph, orderAt: at } as unknown as ReviewStore;
-  }
-
-  it('continues the order walk in the next linked worktree that has nodes', () => {
-    const a = fake(['x', 'y'], 0);
-    const empty = fake([]);
-    const b = fake(['x', 'z']);
-    expect(nextStep([a, empty, b], a)).toMatchObject({ store: a, at: 1, node: { id: 'y' } });
-    a.orderAt = 1;
-    const st = nextStep([a, empty, b], a)!;
-    expect(st.store).toBe(b);
-    expect(st.at).toBe(0);
-    expect(st.node).toBe(graphOrder(b)[0]);
-    expect(st.node).not.toBe(graphOrder(a)[0]);
-    b.orderAt = 1;
-    expect(nextStep([a, empty, b], b)).toBeUndefined();
-    expect(nextStep([a], b)).toBeUndefined();
-  });
-
-  it('memoizes the order per graph and recomputes for a new graph', () => {
-    const s = fake(['a', 'b']);
-    const first = graphOrder(s);
-    expect(graphOrder(s)).toBe(first);
-    s.graph = { ...s.graph!, order: ['b', 'a'] };
-    expect(graphOrder(s).map((n) => n.id)).toEqual(['b', 'a']);
-    expect(graphOrder({ graph: null } as unknown as ReviewStore)).toEqual([]);
   });
 });

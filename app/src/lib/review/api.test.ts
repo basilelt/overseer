@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { DaemonClient } from '../client';
+import type { DaemonClient } from '../daemon/client';
 import { reviewApi, targetBody, targetQuery } from './api';
 
 function client() {
@@ -31,17 +31,17 @@ describe('targetBody', () => {
 });
 
 describe('reviewApi requests', () => {
-  it('adds the base to diff and graph only when one is picked', () => {
+  it('adds the base to the diff only when one is picked, and the extra worktrees to the map', () => {
     const { request, api } = client();
     api.diff({ lineId: 'L' });
     api.diff({ lineId: 'L' }, 'origin/main');
-    api.graph({ taskId: 'T' }, 'a~1');
-    api.graph({ taskId: 'T' });
+    api.map({ worktree: '/w/a b', branch: 'x' }, ['/w/api', '/w/c&d']);
+    api.map({ taskId: 'T' });
     expect(request.mock.calls).toEqual([
       ['GET', '/v1/review?line=L'],
       ['GET', '/v1/review?line=L&base=origin%2Fmain'],
-      ['GET', '/v1/review/graph?task=T&base=a~1'],
-      ['GET', '/v1/review/graph?task=T'],
+      ['GET', '/v1/review/map?worktree=%2Fw%2Fa%20b&with=%2Fw%2Fapi&with=%2Fw%2Fc%26d'],
+      ['GET', '/v1/review/map?task=T'],
     ]);
   });
 

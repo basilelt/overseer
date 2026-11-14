@@ -117,6 +117,42 @@ fn files_containing(dir: &Path, needle: &str) -> Vec<PathBuf> {
 }
 
 #[test]
+fn a_relay_that_cannot_apply_snapshots_is_not_flooded_and_recovers() {
+    let t = T::new();
+    let api = Api::start(&t.base);
+    let relay_db = || rusqlite::Connection::open(t.base.join("api.db")).unwrap();
+    let _agent = t.start_agent("a", SID, "claude");
+    let relay = relay_db();
+    relay
+        .execute_batch(
+            "CREATE TRIGGER block_insert BEFORE INSERT ON lines BEGIN SELECT RAISE(ABORT, 'blocked'); END",
+        )
+        .unwrap();
+    let _sync = sync(
+        &t,
+        &api,
+        "st1",
+        "vm",
+        json!({"stationId": "st1", "owner": "dev@example.com"}),
+    );
+    std::thread::sleep(std::time::Duration::from_secs(3));
+    let next_seq = rusqlite::Connection::open(t.base.join("state/sync.db"))
+        .unwrap()
+        .query_row("SELECT v FROM sync_meta WHERE k = 'next_seq'", [], |r| {
+            r.get::<_, i64>(0)
+        })
+        .unwrap();
+    assert!(next_seq <= 8, "station sent {next_seq} frames in 3 s");
+    let lines = |api: &Api| {
+        let (_, v) = api.http("GET", "/v1/lines?stationId=st1", ADMIN, None);
+        v.as_array().map(Vec::len).unwrap_or(0)
+    };
+    assert_eq!(lines(&api), 0);
+    relay.execute_batch("DROP TRIGGER block_insert").unwrap();
+    wait_for(|| (lines(&api) == 1).then_some(()));
+}
+
+#[test]
 fn board_actions_on_another_station_go_through_the_api() {
     let t = T::new();
     let api = Api::start(&t.base);
@@ -228,11 +264,9 @@ fn board_actions_on_another_station_go_through_the_api() {
     assert_eq!((code, v["ticketKey"].as_str()), (200, Some("AS-9")), "{v}");
     assert_eq!(t.line(SID)["line"]["ticketKey"], "AS-9");
     let (_, audit) = api.http("GET", &format!("/v1/lines/{id}/commands"), ADMIN, None);
-    assert!(audit
-        .as_array()
-        .unwrap()
-        .iter()
-        .all(|c| c["requestedBy"] == "bob"));
+    let audit = audit.as_array().unwrap();
+    assert!(!audit.is_empty(), "{audit:?}");
+    assert!(audit.iter().all(|c| c["requestedBy"] == "bob"));
 
     let mut stale = file.clone();
     stale["lastSeenAt"] = json!("2020-01-01T00:00:00Z");
@@ -323,12 +357,7 @@ fn feedback_hub_starts_and_relaunches_a_line_on_a_runner() {
     let c = hub.relaunch(&id, "rl-busy", "busy", false);
     assert_eq!(c["status"], "succeeded", "{c}");
     let c = wait_for(|| {
-        let c = hub.relaunch(
-            &id,
-            &format!("rl-{}", overseer::procs::now_ms()),
-            "x",
-            false,
-        );
+        let c = hub.relaunch(&id, &format!("rl-{}", overseer::util::now_ms()), "x", false);
         (c["status"] == "refused").then_some(c)
     });
     assert!(c["reason"].as_str().unwrap().contains("atPrompt"), "{c}");
@@ -340,6 +369,66 @@ fn feedback_hub_starts_and_relaunches_a_line_on_a_runner() {
             .collect();
         assert!(hits.is_empty(), "{needle} stored in {hits:?}");
     }
+}
+
+#[test]
+fn patch_local_refuses_a_line_whose_branch_is_not_a_branch_name() {
+    let t = T::new();
+    commit(&t.wt);
+    let origin = t.base.join("origin.git");
+    git(&t.base, &["init", "-q", "--bare", origin.to_str().unwrap()]);
+    git(
+        &t.wt,
+        &["remote", "set-url", "origin", origin.to_str().unwrap()],
+    );
+    let api = Api::start(&t.base);
+    let wt_root = t.base.join("worktrees");
+    config(
+        &t,
+        json!({
+            "stationId": "st1", "owner": "dev@example.com", "ssh": {"vm2": "dev@vm2.internal"},
+            "repos": {"github.com/acme/live": t.wt}, "worktreeDir": wt_root,
+        }),
+    );
+    let (_, v) = api.http(
+        "POST",
+        "/v1/stations",
+        ADMIN,
+        Some(json!({"stationId": "vm2", "kind": "runner"})),
+    );
+    let mut ws =
+        overseer::sync::Ws::connect(&api.url(), "vm2", v["token"].as_str().unwrap()).unwrap();
+    ws.send(&json!({"kind": "hello", "stationId": "vm2", "daemonVersion": "t", "lastAckedSeq": 0}))
+        .unwrap();
+    common::recv(&mut ws, "ack");
+    let marker = t.base.join("ran");
+    let branch = format!("--upload-pack=touch {}", marker.display());
+    ws.send(&json!({"kind": "snapshot", "seq": 1, "lines": [{
+        "id": "vm2-01JPATCH000000000000000AC", "owner": "feedback-bot", "stationId": "vm2",
+        "agent": "claude", "agentSessionId": "eeeeeeee-0000-4000-8000-000000000078",
+        "repo": "github.com/acme/live", "branch": branch, "ticketKey": "AS-78",
+        "worktreePath": "/w/live", "origin": "feedback", "state": "idle",
+        "lastActivityAt": "2099-01-01T00:00:00Z",
+    }]}))
+    .unwrap();
+    common::recv(&mut ws, "ack");
+    let o = common::sb_stdin(&t, &["login", "--api", &api.url()], &api.user("bob"));
+    assert!(o.status.success(), "{}", err(&o));
+
+    for args in [
+        &["patch", "AS-78", "--local"][..],
+        &["patch", "AS-78", "--local", "--print"][..],
+    ] {
+        let o = t.sb(args);
+        assert!(!o.status.success(), "{}", out(&o));
+        assert!(
+            err(&o).contains("is not a valid branch name"),
+            "{}",
+            err(&o)
+        );
+    }
+    assert!(!marker.exists());
+    assert!(!wt_root.exists());
 }
 
 #[test]

@@ -5,7 +5,7 @@
   import Play from '@lucide/svelte/icons/play';
   import PhoneOff from '@lucide/svelte/icons/phone-off';
   import { t, type Key } from '../../i18n.svelte';
-  import type { SessionAction, SessionView } from '../../session-state';
+  import type { SessionAction, SessionView } from '../../session/session-state';
 
   let { view, acting = null, confirmClose = false, onact }: { view: SessionView; acting?: SessionAction | null; confirmClose?: boolean; onact: (a: SessionAction) => void } = $props();
 
@@ -16,7 +16,6 @@
     resume: 'session.action.resume',
     close: 'session.action.close',
   };
-  // Pause and cancel pause share a slot: only one makes sense at a time.
   const shown = $derived((['interrupt', view.actions.cancelPause.enabled ? 'cancelPause' : 'pause', 'resume', 'close'] as const));
 
   const off = (a: SessionAction) => acting !== null || !view.actions[a].enabled;

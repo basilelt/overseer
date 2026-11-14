@@ -1,9 +1,9 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { setClient } from '../client';
-  import { MockDaemon } from '../mock';
+  import { setClient } from '../daemon/client';
+  import { MockDaemon } from '../daemon/mock';
   import { startPresence } from '../presence';
-  import { startRest } from '../rest';
+  import { startRest } from '../daemon/rest';
   import { app } from '../state.svelte';
   import Sidebar from '../components/sidebar/Sidebar.svelte';
   import TerminalPane from '../components/workspace/TerminalPane.svelte';

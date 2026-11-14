@@ -1,4 +1,4 @@
-import { isTauri } from './client';
+import { isTauri } from './platform';
 
 export interface Presence {
   visible: boolean;

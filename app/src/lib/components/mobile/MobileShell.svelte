@@ -10,8 +10,9 @@
   import { onMount, untrack } from 'svelte';
   import { t } from '../../i18n.svelte';
   import { app } from '../../state.svelte';
-  import { needsInputCount } from '../../notify';
-  import { isReviewKey, reviewTitle } from '../../review/open';
+  import { needsInputCount } from '../../notify/notify';
+  import { reviewTitle } from '../../review/open';
+  import { isReviewKey } from '../../review/keys';
   import { MOBILE_TABS, type MobileTab } from '../../mobile/layout';
   import { nextTab, viewForTab, type NavState } from '../../mobile/nav';
   import { ui } from '../../mobile/ui.svelte';
@@ -26,7 +27,7 @@
   import { apk, pillLabel } from '../../mobile/apk-update.svelte';
   import { backAction, backHandlers, closeTop, escapeCloses, pushTab, setBackRunner } from '../../mobile/back';
   import { native } from '../../mobile/native';
-  import { diag } from '../../diag.svelte';
+  import { diag } from '../../diag/diag.svelte';
   import { tour } from '../../tour/tour.svelte';
 
   const kanban = () => import('../kanban/KanbanView.svelte');
@@ -385,15 +386,15 @@
     position: fixed;
     inset: 0;
     background: var(--overlay);
-    z-index: 40;
+    z-index: var(--z-shell-scrim);
   }
   .drawer {
     position: fixed;
     top: 0;
     bottom: 0;
     left: 0;
-    width: min(86vw, 360px);
-    z-index: 41;
+    width: min(92vw, 400px);
+    z-index: var(--z-shell);
     display: flex;
     flex-direction: column;
     padding: var(--safe-top) 0 var(--safe-bottom) var(--safe-left);
@@ -417,7 +418,7 @@
   .sheet {
     position: fixed;
     inset: 0;
-    z-index: 41;
+    z-index: var(--z-shell);
     display: flex;
     flex-direction: column;
     padding: var(--safe-top) var(--safe-right) var(--safe-bottom) var(--safe-left);
@@ -438,6 +439,20 @@
   @keyframes rise {
     from {
       transform: translateY(100%);
+    }
+  }
+  @media (max-height: 500px) and (orientation: landscape) {
+    .subtitle {
+      display: none;
+    }
+    .bottom button {
+      flex-direction: row;
+      gap: 6px;
+      min-height: 40px;
+    }
+    .top {
+      padding-top: calc(var(--safe-top) + 2px);
+      padding-bottom: 2px;
     }
   }
 </style>

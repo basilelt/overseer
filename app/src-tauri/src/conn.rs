@@ -12,9 +12,68 @@ use std::time::Duration;
 use tokio::sync::watch;
 use tokio::task::JoinHandle;
 
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(from = "String", into = "String")]
+pub enum TargetKind {
+    Local,
+    Ssh,
+    Direct,
+    Other(String),
+}
+
+impl TargetKind {
+    pub fn as_str(&self) -> &str {
+        match self {
+            Self::Local => "local",
+            Self::Ssh => "ssh",
+            Self::Direct => "direct",
+            Self::Other(s) => s,
+        }
+    }
+
+    pub fn is_remote(&self) -> bool {
+        match self {
+            Self::Ssh | Self::Direct => true,
+            Self::Local | Self::Other(_) => false,
+        }
+    }
+}
+
+impl Default for TargetKind {
+    fn default() -> Self {
+        Self::Other(String::new())
+    }
+}
+
+impl From<String> for TargetKind {
+    fn from(s: String) -> Self {
+        match s.as_str() {
+            "local" => Self::Local,
+            "ssh" => Self::Ssh,
+            "direct" => Self::Direct,
+            _ => Self::Other(s),
+        }
+    }
+}
+
+impl From<&str> for TargetKind {
+    fn from(s: &str) -> Self {
+        s.to_string().into()
+    }
+}
+
+impl From<TargetKind> for String {
+    fn from(k: TargetKind) -> Self {
+        match k {
+            TargetKind::Other(s) => s,
+            k => k.as_str().to_string(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub struct Target {
-    pub kind: String,
+    pub kind: TargetKind,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub host: Option<String>,
     #[serde(default)]
@@ -186,6 +245,11 @@ impl Default for ConnManager {
 }
 
 impl ConnManager {
+    #[cfg(test)]
+    pub fn use_conn(&self, c: DaemonConn) {
+        self.tx.send_replace(Some(Arc::new(c)));
+    }
+
     pub fn current(&self) -> Option<Arc<DaemonConn>> {
         self.tx.borrow().clone()
     }
@@ -459,13 +523,13 @@ impl ConnManager {
 }
 
 fn is_local(t: &Target) -> bool {
-    !matches!(t.kind.as_str(), "ssh" | "direct")
+    !t.kind.is_remote()
 }
 
 fn target_label(t: &Target) -> String {
     match &t.host {
-        Some(h) => format!("{} {h}", t.kind),
-        None => t.kind.clone(),
+        Some(h) => format!("{} {h}", t.kind.as_str()),
+        None => t.kind.as_str().to_string(),
     }
 }
 
@@ -610,20 +674,23 @@ async fn open(
     if steps {
         step(rep, target, "connecting", None);
     }
-    match (target.kind.as_str(), &target.host) {
-        ("ssh", Some(host)) => establish_ssh(host, target, rep, ctx, steps, replace).await,
-        ("ssh", None) => Err("ssh target without a host".into()),
-        ("direct", Some(id)) => establish_direct(id, target, rep, ctx, steps, replace).await,
-        ("direct", None) => Err("direct target without a saved host".into()),
-        _ => establish_local(target, rep, ctx, steps, replace).await,
+    match (&target.kind, &target.host) {
+        (TargetKind::Ssh, Some(host)) => {
+            establish_ssh(host, target, rep, ctx, steps, replace).await
+        }
+        (TargetKind::Ssh, None) => Err("ssh target without a host".into()),
+        (TargetKind::Direct, Some(id)) => {
+            establish_direct(id, target, rep, ctx, steps, replace).await
+        }
+        (TargetKind::Direct, None) => Err("direct target without a saved host".into()),
+        (TargetKind::Local | TargetKind::Other(_), _) => {
+            establish_local(target, rep, ctx, steps, replace).await
+        }
     }
 }
 
 fn error_of(res: &http::Response) -> String {
-    http::json_body(&res.body)
-        .get("error")
-        .and_then(|e| e.as_str())
-        .map(String::from)
+    http::error_field(&http::json_body(&res.body))
         .unwrap_or_else(|| format!("HTTP {}", res.head.status))
 }
 
@@ -700,7 +767,15 @@ fn local_binary(ctx: &Ctx) -> Option<PathBuf> {
     if let Some(path) = std::env::var_os("PATH") {
         c.extend(std::env::split_paths(&path).map(|d| d.join(name)));
     }
-    c.into_iter().find(|p| p.is_file())
+    let bin = c.into_iter().find(|p| p.is_file())?;
+    let appdir = std::env::var_os("APPDIR").map(PathBuf::from);
+    let home = dirs::home_dir().unwrap_or_default();
+    Some(install::stable_local_binary(
+        &bin,
+        appdir.as_deref(),
+        &home,
+        SERVER_VERSION,
+    ))
 }
 
 async fn run(bin: &Path, args: &[&str]) -> Result<String, String> {
@@ -826,6 +901,10 @@ async fn establish_ssh(
     };
     let tunnel =
         Arc::new(ssh::connect(host, &ssh_options(ctx, replace), on_prompt, &on_step).await?);
+    opened_remote(tunnel).await
+}
+
+async fn opened_remote(tunnel: Arc<ssh::Tunnel>) -> Result<Opened, String> {
     ssh::watch_exit(&tunnel);
     let installed = tunnel.installed.clone();
     let conn = DaemonConn::Tunnel(tunnel);
@@ -859,14 +938,7 @@ async fn establish_direct(
     )
     .await?;
     rep.remember_resolved(&described);
-    let tunnel = Arc::new(tunnel);
-    ssh::watch_exit(&tunnel);
-    let installed = tunnel.installed.clone();
-    let conn = DaemonConn::Tunnel(tunnel);
-    let v = wait_version(&conn, 20)
-        .await
-        .map_err(|e| format!("remote daemon did not answer: {e}"))?;
-    Ok(Opened::remote(conn, v, installed))
+    opened_remote(Arc::new(tunnel)).await
 }
 
 #[cfg(test)]
@@ -952,8 +1024,6 @@ mod tests {
         assert!(m.current_within(Duration::from_millis(20)).await.is_none());
     }
 
-    static ENV: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
-
     async fn serve_version(path: &Path) {
         use tokio::io::{AsyncReadExt, AsyncWriteExt};
         let l = tokio::net::UnixListener::bind(path).unwrap();
@@ -975,7 +1045,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_local_daemon_that_comes_back_after_the_spawn_failed_is_reconnected_without_retry() {
-        let _g = ENV.lock().await;
+        let _g = crate::TEST_ENV.lock().await;
         let dir = std::env::temp_dir().join(format!("ov-watch-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
@@ -1133,5 +1203,53 @@ mod tests {
         let t: Target =
             serde_json::from_value(serde_json::json!({"kind":"local","label":"Local"})).unwrap();
         assert_eq!(t.host, None);
+    }
+
+    #[test]
+    fn target_kinds_keep_their_wire_strings() {
+        for (wire, kind) in [
+            ("local", TargetKind::Local),
+            ("ssh", TargetKind::Ssh),
+            ("direct", TargetKind::Direct),
+            ("future", TargetKind::Other("future".into())),
+        ] {
+            let t: Target = serde_json::from_value(json!({"kind": wire})).unwrap();
+            assert_eq!(t.kind, kind);
+            assert_eq!(serde_json::to_value(&t).unwrap()["kind"], wire);
+        }
+        assert_eq!(serde_json::to_value(Target::default()).unwrap()["kind"], "");
+    }
+
+    #[test]
+    fn only_ssh_and_direct_targets_are_remote() {
+        assert!(TargetKind::Ssh.is_remote());
+        assert!(TargetKind::Direct.is_remote());
+        assert!(!TargetKind::Local.is_remote());
+        assert!(!TargetKind::Other("anything".into()).is_remote());
+        assert!(!TargetKind::default().is_remote());
+        assert!(!is_local(&Target {
+            kind: "ssh".into(),
+            ..Default::default()
+        }));
+        assert!(is_local(&Target {
+            kind: "anything".into(),
+            ..Default::default()
+        }));
+    }
+
+    #[tokio::test]
+    async fn a_remote_target_without_a_host_is_refused() {
+        let ctx = Ctx::default();
+        for (kind, err) in [
+            ("ssh", "ssh target without a host"),
+            ("direct", "direct target without a saved host"),
+        ] {
+            let t = Target {
+                kind: kind.into(),
+                ..Default::default()
+            };
+            let rep = Arc::new(Reporter::new(Arc::new(|_| {}), &t));
+            assert_eq!(open(&t, &rep, &ctx, false, false).await.err().unwrap(), err);
+        }
     }
 }

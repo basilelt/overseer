@@ -92,7 +92,7 @@ For any change to what the app shows, build the frontend in mock mode (`VITE_MOC
 
 Every command has one home. Before adding a button, menu entry or shortcut, check whether the command palette (Ctrl/Cmd+P) already does it; if it does, do not add another entry point.
 
-- **The palette is the default**: opening a view (graphs, panels, review, usage, PR lists...) or running a command goes in `CommandPalette.svelte`, in the section it belongs to. Add a visible control only when the action is used constantly in that exact spot, and then remove the duplicates.
+- **The palette is the default**: opening a view (graphs, panels, review, usage, PR lists...) or running a command goes in the command registry (`app/src/lib/commands/commands.ts`, or `commands-more.ts` when only the palette and the phone More sheet use it), in the section it belongs to; the palette, the shortcuts, the phone More sheet and the title bar all read it. Add a visible control only when the action is used constantly in that exact spot, and then remove the duplicates.
 - **Menus stay on topic**: a menu only lists what its button says. The tab bar `+` starts sessions; it does not open views.
 - **Phone is the exception**: the phone has no keyboard palette shortcut, so `MobileMore` may list views the desktop only reaches through the palette.
 

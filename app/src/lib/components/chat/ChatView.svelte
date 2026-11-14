@@ -3,13 +3,13 @@
   import ArrowDown from '@lucide/svelte/icons/arrow-down';
   import SquareTerminal from '@lucide/svelte/icons/square-terminal';
   import { onMount, setContext, tick, untrack } from 'svelte';
-  import { DaemonError } from '../../client';
+  import { DaemonError } from '../../daemon/client';
   import { t } from '../../i18n.svelte';
-  import { pausedDays, sessionState, stateDot, type SessionAction } from '../../session-state';
-  import { runSessionAction } from '../../session-action';
+  import { pausedDays, sessionState, stateDot, type SessionAction } from '../../session/session-state';
+  import { runSessionAction } from '../../session/session-action';
   import SessionBar from '../session/SessionBar.svelte';
   import { app } from '../../state.svelte';
-  import type { SidebarItem } from '../../grouping';
+  import type { SidebarItem } from '../../session/grouping';
   import type { Term } from '../../types';
   import { applyEarlier, applyTail, applyUpdate, EMPTY_CHAT, needsFetch, type ChatState } from '../../chat/store';
   import { anchorOf, chats, type Anchor } from '../../chat/cache';
@@ -91,7 +91,6 @@
     return failedPred ?? body?.error ?? String((e as Error)?.message ?? e);
   }
 
-  // One cold load per line: watcher events and quick back-and-forth switches must not start parallel full parses.
   function load() {
     const id = lineId;
     return loads.run(id, () => loadTail(id));
@@ -246,7 +245,6 @@
   function remember() {
     clearTimeout(anchorTimer);
     capture();
-    // A cut window lacks the newest entries: coming back must load a fresh tail, not show it.
     if (cachedAs && chat.cut) chats.drop(cachedAs);
     else if (cachedAs && chat.loaded && !unsupported && !failed) chats.put(cachedAs, { state: chat, anchor: following ? null : anchor, following, shown });
     anchor = null;
@@ -289,7 +287,6 @@
     });
   });
 
-  // Scrolling near the top loads the previous window; the observer only fires on crossings, so no idle work.
   $effect(() => {
     const el = sentinel;
     const root = scroller;
@@ -374,6 +371,12 @@
     <div class="list" bind:this={scroller} {onscroll} {onclick} {oncontextmenu} role="presentation">
       {#if hiddenLocal > 0 || chat.more}
         <button class="earlier" bind:this={sentinel} onclick={earlier}>{t('chat.loadEarlier')}</button>
+      {/if}
+      {#if view?.starting}
+        <div class="starting">
+          <p class="muted">{t('chat.starting')}</p>
+          <button class="btn primary" onclick={toTerminal}><SquareTerminal size={13} />{t('chat.openTerminal')}</button>
+        </div>
       {/if}
       {#if failed}
         <p class="note error">{failed}</p>
@@ -510,6 +513,16 @@
     color: var(--text-2);
     font-size: 12px;
     cursor: pointer;
+  }
+  .starting {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    margin: 16px auto 0;
+    max-width: 420px;
+    text-align: center;
+    font-size: 13px;
   }
   .note {
     margin: 24px auto;

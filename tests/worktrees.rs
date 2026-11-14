@@ -1,4 +1,4 @@
-use overseer::daemon::Request;
+use overseer::http::Request;
 use overseer::procs::{Probe, ProcInfo};
 use overseer::registry::Registry;
 use overseer::worktrees::{self, New};
@@ -117,9 +117,10 @@ impl Fx {
             claude_dir: self.base.join("claude"),
             codex_dir: self.base.join("codex"),
             gemini_dir: self.base.join("gemini"),
+            vibe_dir: self.base.join("vibe"),
             state_dir: self.base.join("state"),
             snapshot: self.base.join("snapshot.json"),
-            now_ms: overseer::procs::now_ms(),
+            now_ms: overseer::util::now_ms(),
             probe: &self.probe,
             tmux: None,
             config: Config {
@@ -201,7 +202,7 @@ fn creates_worktrees_in_the_sibling_store_with_consistent_names() {
     let store = worktrees::store(&fx.ctx(), fx.r());
     assert_eq!(
         store.file_name().unwrap().to_str().unwrap(),
-        format!("repo-{}", worktrees::fnv(fx.r()))
+        format!("repo-{}", overseer::layout::store_hash(fx.r()))
     );
     assert_eq!(Path::new(&p), store.join("sb-claude-fix-the-login"));
     assert!(

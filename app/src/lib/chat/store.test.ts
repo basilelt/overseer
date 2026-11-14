@@ -55,9 +55,6 @@ describe('chat store', () => {
     expect(needsFetch(s, 0)).toBe(true);
   });
 
-  // Given a window already at its limit while the user reads history
-  // When an earlier page is prepended
-  // Then the newest entries are dropped and the window is flagged as cut
   it('flags the window as cut when earlier pages push out the newest', () => {
     const many = Array.from({ length: KEEP * 2 }, (_, i) => e(`n${i}`, 100 + i));
     const s = applyEarlier(applyTail(EMPTY_CHAT, page(many), KEEP * 2), page([e('o1', 1), e('o2', 2)], { more: true }));
@@ -66,9 +63,6 @@ describe('chat store', () => {
     expect(s.cut).toBe(true);
   });
 
-  // Given a cut window (its newest entries were dropped)
-  // When live entries arrive
-  // Then they are not appended after the gap, but visible entries still update
   it('does not append past the gap of a cut window', () => {
     const s0 = { ...applyTail(EMPTY_CHAT, page([e('a', 1), e('b', 2, 2, 'run')])), cut: true };
     const s = applyUpdate(s0, page([e('b', 2, 9, 'done'), e('z', 50, 10)]), KEEP, false);
@@ -76,9 +70,6 @@ describe('chat store', () => {
     expect(s.cut).toBe(true);
   });
 
-  // Given a scrolled-up window larger than KEEP
-  // When a live update arrives
-  // Then the oldest entries the user is reading are kept
   it('keeps the read history of a scrolled-up window', () => {
     const many = Array.from({ length: KEEP + 100 }, (_, i) => e(`n${i}`, i + 1));
     const s0 = applyTail(EMPTY_CHAT, page(many), KEEP * 2);
@@ -87,9 +78,6 @@ describe('chat store', () => {
     expect(s.entries.at(-1)!.id).toBe('new');
   });
 
-  // Given a scrolled-up window already at its hard limit
-  // When live entries arrive
-  // Then the oldest are kept, the newest dropped and the window flagged as cut
   it('cuts the newest of a full scrolled-up window', () => {
     const many = Array.from({ length: KEEP * 2 }, (_, i) => e(`n${i}`, i + 1));
     const s0 = applyTail(EMPTY_CHAT, page(many), KEEP * 2);
@@ -99,9 +87,6 @@ describe('chat store', () => {
     expect(s.cut).toBe(true);
   });
 
-  // Given a cut window
-  // When a fresh tail is loaded
-  // Then the cut flag is cleared
   it('clears the cut flag on a fresh tail', () => {
     const s = applyTail({ ...EMPTY_CHAT, cut: true }, page([e('a', 1)]));
     expect(s.cut).toBe(false);

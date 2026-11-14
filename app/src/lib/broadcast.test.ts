@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { api } from './api';
+import { api } from './daemon/api';
 import { broadcastBody, summarize, targetRows } from './broadcast';
-import type { SidebarItem } from './grouping';
-import { MockDaemon } from './mock';
-import { stateOfGroup } from './test-fixtures';
-import { idleTransitions } from './notify';
+import type { SidebarItem } from './session/grouping';
+import { MockDaemon } from './daemon/mock';
+import { stateOfGroup } from '../test/fixtures';
+import { idleTransitions } from './notify/notify';
 import type { DaemonEvent } from './types';
 
 const item = (key: string, group: SidebarItem['group'], over: Partial<SidebarItem> = {}): SidebarItem => ({

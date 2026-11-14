@@ -1,3 +1,5 @@
+use crate::agents::Transcript;
+use crate::usage::{Meter, Tokens};
 use crate::util::{format_rfc3339, parse_rfc3339};
 use serde_json::{json, Value};
 use std::collections::{HashMap, HashSet};
@@ -8,6 +10,23 @@ use std::time::{Duration, Instant};
 
 const MAX_ENTRIES: usize = 500;
 const MAX_DIRS: usize = 256;
+const MAX_SWITCHES: usize = 50;
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct Switch {
+    pub at: i64,
+    pub from: String,
+    pub to: String,
+    pub tokens: Tokens,
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Spend {
+    pub models: Vec<(String, Tokens)>,
+    pub model: Option<String>,
+    pub effort: Option<String>,
+    pub switches: Vec<Switch>,
+}
 
 struct Entry {
     id: String,
@@ -36,6 +55,13 @@ struct State {
     last_text: Option<String>,
     last_ts: i64,
     done: HashSet<String>,
+    edit_count: HashMap<String, u32>,
+    test_fails: HashMap<String, u32>,
+    since_test: HashSet<String>,
+    test_calls: HashSet<String>,
+    meter: Meter,
+    spend: Spend,
+    turn_model: Option<String>,
 }
 
 type Cache = Mutex<HashMap<PathBuf, (u64, State)>>;
@@ -61,14 +87,15 @@ pub fn find_transcript(
     agent: &str,
     session_id: &str,
 ) -> Option<PathBuf> {
-    if session_id.is_empty() || session_id.contains('/') || session_id.contains("..") {
+    if !crate::util::safe_session_id(session_id) {
         return None;
     }
-    let base = match agent {
-        "claude" => claude_dir,
-        "codex" => codex_dir,
-        "gemini" => gemini_dir,
-        _ => return None,
+    let kind = crate::agents::transcript_of(agent)?;
+    let base = match kind {
+        Transcript::Claude => claude_dir,
+        Transcript::Codex => codex_dir,
+        Transcript::Gemini => gemini_dir,
+        Transcript::Vibe => return crate::vibe::find(&crate::vibe::home(), session_id),
     };
     let key = (base.join(agent), session_id.to_string());
     let known = located()
@@ -81,7 +108,7 @@ pub fn find_transcript(
         Some(Err(at)) if at.elapsed() < MISS_RETRY => return None,
         _ => {}
     }
-    let found = locate(base, agent, session_id);
+    let found = locate(base, kind, session_id);
     let mut map = located().lock().unwrap_or_else(|e| e.into_inner());
     if map.len() >= 4096 {
         map.clear();
@@ -90,16 +117,18 @@ pub fn find_transcript(
     found
 }
 
-fn locate(base: &Path, agent: &str, session_id: &str) -> Option<PathBuf> {
-    match agent {
-        "claude" => std::fs::read_dir(base.join("projects"))
+fn locate(base: &Path, kind: Transcript, session_id: &str) -> Option<PathBuf> {
+    match kind {
+        Transcript::Claude => std::fs::read_dir(crate::claude::projects_dir(base))
             .ok()?
             .flatten()
-            .map(|e| e.path().join(format!("{session_id}.jsonl")))
+            .map(|e| crate::claude::session_file(&e.path(), session_id))
             .find(|p| p.is_file()),
-        "codex" => find_rollout(&base.join("sessions"), &format!("-{session_id}.jsonl"), 4),
-        "gemini" => crate::gemini::find(base, session_id),
-        _ => None,
+        Transcript::Codex => {
+            find_rollout(&base.join("sessions"), &format!("-{session_id}.jsonl"), 4)
+        }
+        Transcript::Gemini => crate::gemini::find(base, session_id),
+        Transcript::Vibe => None,
     }
 }
 
@@ -123,15 +152,72 @@ pub fn activity(agent: &str, path: &Path, since_ms: Option<i64>) -> Option<Value
     with_state(agent, path, |st| st.to_json(since_ms))
 }
 
-pub fn touched(agent: &str, path: &Path) -> (Vec<String>, Vec<String>) {
+pub fn is_test_run(text: &str) -> bool {
+    let t = text.to_ascii_lowercase();
+    t.split(|c: char| !c.is_ascii_alphanumeric()).any(|w| {
+        matches!(
+            w,
+            "test"
+                | "tests"
+                | "pytest"
+                | "vitest"
+                | "jest"
+                | "nextest"
+                | "rspec"
+                | "phpunit"
+                | "playwright"
+        )
+    })
+}
+
+pub fn edit_stats(agent: &str, path: &Path) -> HashMap<String, (u32, u32)> {
+    let mut out: HashMap<String, (u32, u32)> = HashMap::new();
+    for f in transcripts(path) {
+        let Some(stats) = with_state(agent, &f, |st| {
+            st.edit_count
+                .iter()
+                .map(|(p, n)| (p.clone(), (*n, st.test_fails.get(p).copied().unwrap_or(0))))
+                .collect::<Vec<_>>()
+        }) else {
+            continue;
+        };
+        for (p, (e, f)) in stats {
+            let slot = out.entry(p).or_default();
+            slot.0 += e;
+            slot.1 += f;
+        }
+    }
+    out
+}
+
+fn transcripts(path: &Path) -> Vec<std::path::PathBuf> {
     let mut files = vec![path.to_path_buf()];
-    if let Ok(rd) = std::fs::read_dir(path.with_extension("").join("subagents")) {
+    if let Ok(rd) = std::fs::read_dir(crate::claude::subagents_dir(path)) {
         files.extend(
             rd.flatten()
                 .map(|e| e.path())
                 .filter(|p| p.extension().is_some_and(|e| e == "jsonl")),
         );
     }
+    files
+}
+
+fn sub_transcripts(dir: &Path, depth: u32, out: &mut Vec<PathBuf>) {
+    let Ok(rd) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for e in rd.flatten() {
+        let p = e.path();
+        match e.file_type() {
+            Ok(t) if t.is_dir() && depth > 1 => sub_transcripts(&p, depth - 1, out),
+            Ok(t) if t.is_file() && p.extension().is_some_and(|x| x == "jsonl") => out.push(p),
+            _ => {}
+        }
+    }
+}
+
+pub fn touched(agent: &str, path: &Path) -> (Vec<String>, Vec<String>) {
+    let files = transcripts(path);
     let (mut edited, mut dirs) = (vec![], vec![]);
     for f in files {
         if let Some((e, d)) = with_state(agent, &f, |st| (st.edited.clone(), st.dirs.clone())) {
@@ -143,6 +229,19 @@ pub fn touched(agent: &str, path: &Path) -> (Vec<String>, Vec<String>) {
 }
 
 fn with_state<R>(agent: &str, path: &Path, f: impl FnOnce(&State) -> R) -> Option<R> {
+    let kind = crate::agents::transcript_of(agent);
+    if path.is_dir() {
+        let stamp = crate::vibe::stamp(path);
+        let mut cache = cache().lock().unwrap_or_else(|e| e.into_inner());
+        if cache.get(path).is_none_or(|s| s.0 != stamp) {
+            let mut st = State::default();
+            for e in crate::vibe::entries(path)? {
+                st.vibe(&e);
+            }
+            cache.insert(path.to_path_buf(), (stamp, st));
+        }
+        return cache.get(path).map(|s| f(&s.1));
+    }
     let mut file = std::fs::File::open(path).ok()?;
     let len = file.metadata().ok()?.len();
     let mut cache = cache().lock().unwrap_or_else(|e| e.into_inner());
@@ -162,19 +261,144 @@ fn with_state<R>(agent: &str, path: &Path, f: impl FnOnce(&State) -> R) -> Optio
                 st.summary = Some(t.to_string());
             }
             for m in v["messages"].as_array().into_iter().flatten() {
-                st.ingest(agent, m);
+                st.ingest(kind, m);
+                let turns = st.meter.gemini(m);
+                st.count(turns, false);
             }
             *slot = (len, st);
         }
     } else if len > slot.0 {
         let st = &mut slot.1;
         slot.0 = read_lines(&mut file, slot.0, len, |line| {
+            #[cfg(test)]
+            INGESTED.with(|n| n.set(n.get() + 1));
             if let Ok(v) = serde_json::from_slice::<Value>(line) {
-                st.ingest(agent, &v);
+                st.ingest(kind, &v);
+                let turns = st.meter.line(kind, line);
+                st.count(turns, v["isSidechain"] == true);
             }
         })?;
     }
     Some(f(&slot.1))
+}
+
+#[cfg(test)]
+thread_local! {
+    pub(crate) static INGESTED: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+pub fn spend(agent: &str, path: &Path) -> Option<Spend> {
+    let mut out: Option<Spend> = None;
+    let mut files = vec![path.to_path_buf()];
+    sub_transcripts(&crate::claude::subagents_dir(path), 3, &mut files);
+    for (i, f) in files.iter().enumerate() {
+        let Some(s) = with_state(agent, f, |st| st.spend.clone()) else {
+            continue;
+        };
+        let o = out.get_or_insert_with(Spend::default);
+        if i == 0 {
+            o.model = s.model;
+            o.effort = s.effort;
+            o.switches = s.switches;
+        }
+        for (m, t) in s.models {
+            match o.models.iter_mut().find(|(k, _)| *k == m) {
+                Some((_, x)) => x.add(&t),
+                None => o.models.push((m, t)),
+            }
+        }
+    }
+    out.filter(|s| !s.models.is_empty())
+}
+
+pub fn effort_of(args: &[String]) -> Option<String> {
+    args.iter().enumerate().find_map(|(i, a)| {
+        let v = match a.as_str() {
+            "--effort" | "--reasoning-effort" => args.get(i + 1)?.as_str(),
+            _ => a
+                .strip_prefix("--effort=")
+                .or_else(|| a.strip_prefix("model_reasoning_effort="))?,
+        };
+        let v = v.trim_matches(|c| c == '"' || c == '\'');
+        (!v.is_empty() && !v.starts_with('-')).then(|| v.to_string())
+    })
+}
+
+pub fn spend_json(s: &Spend, launch_args: &[String]) -> Value {
+    let mut v = s.to_json();
+    if v["effort"].is_null() {
+        v["effort"] = json!(effort_of(launch_args));
+    }
+    v
+}
+
+fn usd(c: f64) -> f64 {
+    (c * 10_000.0).round() / 10_000.0
+}
+
+fn tokens_json(t: &Tokens) -> Value {
+    json!({
+        "input": t.input,
+        "cacheWrite": t.cache_write,
+        "cacheRead": t.cache_read,
+        "output": t.output,
+    })
+}
+
+impl Spend {
+    pub fn total(&self) -> (Tokens, Option<f64>, bool) {
+        let mut sum = Tokens::default();
+        let (mut cost, mut priced, mut partial) = (0.0, false, false);
+        for (m, t) in &self.models {
+            sum.add(t);
+            match crate::usage::cost(m, t) {
+                Some(c) => {
+                    cost += c;
+                    priced = true;
+                }
+                None => partial = true,
+            }
+        }
+        (sum, priced.then_some(usd(cost)), partial)
+    }
+
+    pub fn to_json(&self) -> Value {
+        let (sum, cost, partial) = self.total();
+        let mut models: Vec<(f64, Value)> = self
+            .models
+            .iter()
+            .map(|(m, t)| {
+                let c = crate::usage::cost(m, t).map(usd);
+                let mut j = tokens_json(t);
+                j["model"] = json!(m);
+                j["cost"] = json!(c);
+                (c.unwrap_or(-1.0), j)
+            })
+            .collect();
+        models.sort_by(|a, b| b.0.total_cmp(&a.0));
+        let switches: Vec<Value> = self
+            .switches
+            .iter()
+            .map(|s| {
+                json!({
+                    "at": format_rfc3339(s.at),
+                    "from": s.from,
+                    "to": s.to,
+                    "cacheWrite": s.tokens.cache_write,
+                    "cost": crate::usage::cost(&s.to, &s.tokens).map(usd),
+                })
+            })
+            .collect();
+        let mut v = tokens_json(&sum);
+        v["model"] = json!(self.model);
+        v["effort"] = json!(self.effort);
+        v["cost"] = json!(cost);
+        v["partial"] = json!(partial);
+        v["models"] = json!(models.into_iter().map(|(_, j)| j).collect::<Vec<_>>());
+        v["switches"] = json!(switches);
+        v["pricesAsOf"] = json!(crate::usage::PRICES_AS_OF);
+        v
+    }
 }
 
 pub fn read_lines(
@@ -267,16 +491,45 @@ pub(crate) fn codex_failed(out: &Value) -> bool {
 }
 
 impl State {
-    fn ingest(&mut self, agent: &str, v: &Value) {
+    fn count(&mut self, turns: Vec<(String, Tokens, bool)>, side: bool) {
+        for (model, t, new) in turns {
+            if new && !side {
+                if let Some(prev) = self.turn_model.as_ref().filter(|p| **p != model) {
+                    if self.spend.switches.len() >= MAX_SWITCHES {
+                        self.spend.switches.remove(0);
+                    }
+                    self.spend.switches.push(Switch {
+                        at: self.last_ts,
+                        from: prev.clone(),
+                        to: model.clone(),
+                        tokens: Tokens {
+                            input: t.input,
+                            cache_write: t.cache_write,
+                            cache_write_1h: t.cache_write_1h,
+                            ..Tokens::default()
+                        },
+                    });
+                }
+                self.turn_model = Some(model.clone());
+                self.spend.model = Some(model.clone());
+            }
+            match self.spend.models.iter_mut().find(|(k, _)| *k == model) {
+                Some((_, x)) => x.add(&t),
+                None => self.spend.models.push((model, t)),
+            }
+        }
+    }
+
+    fn ingest(&mut self, kind: Option<Transcript>, v: &Value) {
         let ts = v["timestamp"]
             .as_str()
             .and_then(parse_rfc3339)
             .unwrap_or(self.last_ts);
         self.last_ts = self.last_ts.max(ts);
-        match agent {
-            "codex" => self.codex(v, ts),
-            "gemini" => self.gemini(v, ts),
-            _ => self.claude(v, ts),
+        match kind {
+            Some(Transcript::Codex) => self.codex(v, ts),
+            Some(Transcript::Gemini) => self.gemini(v, ts),
+            Some(Transcript::Claude) | Some(Transcript::Vibe) | None => self.claude(v, ts),
         }
     }
 
@@ -364,6 +617,90 @@ impl State {
         self.done.insert(id.to_string());
     }
 
+    fn vibe(&mut self, v: &Value) {
+        let ts = v["createdAt"].as_i64().unwrap_or(self.last_ts);
+        self.last_ts = self.last_ts.max(ts);
+        let id = v["id"].as_str().unwrap_or("");
+        match v["type"].as_str() {
+            Some("message") => {
+                let t: Vec<&str> = v["content"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .filter_map(|c| c["text"].as_str())
+                    .collect();
+                let t = t.join("\n");
+                match v["role"].as_str() {
+                    Some("user") => {
+                        self.prompt(&t);
+                        if !t.trim().is_empty() {
+                            self.last_prompt = Some(trunc(&t, 500));
+                        }
+                    }
+                    Some("assistant") => self.text(&t),
+                    _ => {}
+                }
+            }
+            Some("checkpoint") if v["kind"] == "model_change" => {
+                keep(&mut self.model, &v["details"]["model"])
+            }
+            Some("effect") if !id.is_empty() && !self.done.contains(id) => {
+                let d = &v["detail"];
+                let name = d["toolName"].as_str().unwrap_or("");
+                let input = &d["input"];
+                let s = |k: &str| input[k].as_str().filter(|x| !x.is_empty());
+                let (kind, label, path) = match name {
+                    "vibe.todo" => {
+                        if input["action"] == "write" {
+                            self.todos = todos(&input["todos"], "content");
+                        }
+                        self.done.insert(id.to_string());
+                        return;
+                    }
+                    "file_system.edit"
+                    | "file_system.write_file"
+                    | "file_system.search_replace" => {
+                        let p = s("file_path").or(s("path"));
+                        let verb = if name.ends_with("write_file") {
+                            "Write"
+                        } else {
+                            "Edit"
+                        };
+                        ("edit", format!("{verb} {}", base(p.unwrap_or(""))), p)
+                    }
+                    "file_system.bash" => {
+                        let cmd = s("command").unwrap_or("");
+                        self.shell(cmd);
+                        self.test_call(id, cmd);
+                        ("bash", trunc(cmd, 120), None)
+                    }
+                    "file_system.read_file" => {
+                        let p = s("path").or(s("file_path"));
+                        ("read", format!("Read {}", base(p.unwrap_or(""))), p)
+                    }
+                    _ => (
+                        "other",
+                        trunc(d["display"]["summary"].as_str().unwrap_or(name), 120),
+                        None,
+                    ),
+                };
+                self.push(id, id.into(), kind, label, path.map(str::to_string), ts);
+                let st = &v["state"];
+                let code = st["output"]["structuredContent"]["returncode"]
+                    .as_i64()
+                    .unwrap_or(0);
+                let at = v["updatedAt"].as_i64().unwrap_or(ts);
+                match st["status"].as_str() {
+                    Some("completed") => self.finish(id, code != 0, at),
+                    Some("failed" | "skipped") => self.finish(id, true, at),
+                    _ => return,
+                }
+                self.done.insert(id.to_string());
+            }
+            _ => {}
+        }
+    }
+
     fn prompt(&mut self, s: &str) {
         if self.first_prompt.is_none() {
             self.first_prompt = crate::naming::clean_prompt(s);
@@ -402,6 +739,8 @@ impl State {
             if self.edited_set.insert(p.clone()) {
                 self.edited.push(p.clone());
             }
+            *self.edit_count.entry(p.clone()).or_default() += 1;
+            self.since_test.insert(p.clone());
         }
         self.calls
             .entry(call.to_string())
@@ -428,7 +767,21 @@ impl State {
         }
     }
 
+    fn test_call(&mut self, call: &str, text: &str) {
+        if is_test_run(text) {
+            self.test_calls.insert(call.to_string());
+        }
+    }
+
     fn finish(&mut self, call: &str, failed: bool, ts: i64) {
+        if self.test_calls.remove(call) {
+            if failed {
+                for p in &self.since_test {
+                    *self.test_fails.entry(p.clone()).or_default() += 1;
+                }
+            }
+            self.since_test.clear();
+        }
         for seq in self.calls.remove(call).unwrap_or_default() {
             if let Some(e) = seq
                 .checked_sub(self.base)
@@ -499,6 +852,12 @@ impl State {
             }
             "Bash" => {
                 self.shell(s("command").unwrap_or(""));
+                let text = format!(
+                    "{} {}",
+                    s("command").unwrap_or(""),
+                    s("description").unwrap_or("")
+                );
+                self.test_call(c["id"].as_str().unwrap_or(""), &text);
                 (
                     "bash",
                     trunc(s("description").or(s("command")).unwrap_or(name), 120),
@@ -524,6 +883,7 @@ impl State {
         let p = &v["payload"];
         let call = p["call_id"].as_str().unwrap_or("");
         match (v["type"].as_str(), p["type"].as_str()) {
+            (Some("turn_context"), _) => keep(&mut self.spend.effort, &p["effort"]),
             (Some("event_msg"), Some("user_message")) => {
                 self.prompt(p["message"].as_str().unwrap_or(""))
             }
@@ -544,6 +904,7 @@ impl State {
                     "shell" | "exec_command" | "local_shell" | "shell_command" => {
                         let cmd = command_label(&args);
                         self.shell(&cmd);
+                        self.test_call(call, &cmd);
                         let label = trunc(&cmd, 120);
                         self.push(call, call.into(), "bash", label, None, ts)
                     }
@@ -656,7 +1017,7 @@ mod tests {
         let d = std::env::temp_dir().join(format!(
             "sb-activity-{tag}-{}-{}",
             std::process::id(),
-            crate::procs::now_ms()
+            crate::util::now_ms()
         ));
         std::fs::create_dir_all(&d).unwrap();
         d
@@ -952,5 +1313,243 @@ mod tests {
         assert_eq!(v["aiTitle"], "Login button fix");
         assert_eq!(v["title"], "Login button fix");
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    fn asst(id: &str, model: &str, s: u32, [inp, cw, cw1h, cr, out]: [u64; 5]) -> String {
+        json!({"type": "assistant", "timestamp": ts(s), "message": {"id": id, "model": model,
+            "content": [{"type": "text", "text": "x"}],
+            "usage": {"input_tokens": inp, "cache_creation_input_tokens": cw, "cache_read_input_tokens": cr,
+                      "output_tokens": out, "cache_creation": {"ephemeral_1h_input_tokens": cw1h}}}})
+        .to_string()
+    }
+
+    fn write(p: &Path, lines: &[String]) {
+        std::fs::write(p, lines.join("\n") + "\n").unwrap();
+    }
+
+    fn model<'a>(v: &'a Value, m: &str) -> &'a Value {
+        v["models"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|x| x["model"] == m)
+            .unwrap()
+    }
+
+    #[test]
+    fn claude_spend_counts_each_message_once_across_content_blocks() {
+        let d = tmp_dir("spend-dedupe");
+        let f = d.join("s.jsonl");
+        let a = asst("m1", "claude-opus-5-5", 1, [4, 2000, 2000, 10_000, 100]);
+        write(
+            &f,
+            &[
+                a.clone(),
+                a.clone(),
+                a,
+                asst("m2", "claude-opus-5-5", 2, [2, 0, 0, 12_000, 50]),
+            ],
+        );
+        let v = spend("claude", &f).unwrap().to_json();
+        assert_eq!(v["input"], 6);
+        assert_eq!(v["cacheWrite"], 2000);
+        assert_eq!(v["cacheRead"], 22_000);
+        assert_eq!(v["output"], 150);
+        assert_eq!(v["model"], "claude-opus-5-5");
+        let want = (6.0 * 4.0 + 2000.0 * 8.0 + 22_000.0 * 0.2 + 150.0 * 20.0) / 1e6;
+        assert!((v["cost"].as_f64().unwrap() - want).abs() < 1e-4);
+        assert_eq!(v["partial"], false);
+        assert_eq!(v["switches"], json!([]));
+        assert_eq!(v["pricesAsOf"], crate::usage::PRICES_AS_OF);
+    }
+
+    #[test]
+    fn claude_spend_adds_subagents_at_their_own_model_rates() {
+        let d = tmp_dir("spend-sub");
+        let f = d.join("s.jsonl");
+        write(
+            &f,
+            &[asst("m1", "claude-opus-5-5", 1, [0, 0, 0, 0, 1_000_000])],
+        );
+        let subs = d.join("s").join("subagents");
+        std::fs::create_dir_all(&subs).unwrap();
+        write(
+            &subs.join("agent-a.jsonl"),
+            &[asst("x1", "claude-haiku-5-5", 1, [0, 0, 0, 0, 1_000_000])],
+        );
+        let v = spend("claude", &f).unwrap().to_json();
+        assert_eq!(model(&v, "claude-opus-5-5")["cost"], 20.0);
+        assert_eq!(model(&v, "claude-haiku-5-5")["cost"], 0.5);
+        assert_eq!(v["cost"], 20.5);
+        assert_eq!(v["models"][0]["model"], "claude-opus-5-5");
+        assert_eq!(v["model"], "claude-opus-5-5");
+    }
+
+    #[test]
+    fn claude_spend_adds_workflow_agents_nested_under_subagents() {
+        let d = tmp_dir("spend-nested");
+        let f = d.join("s.jsonl");
+        write(&f, &[asst("m1", "claude-opus-5-5", 1, [0, 0, 0, 0, 10])]);
+        let wf = d.join("s").join("subagents").join("workflows").join("wf_1");
+        std::fs::create_dir_all(&wf).unwrap();
+        write(
+            &wf.join("agent-b.jsonl"),
+            &[asst("w1", "claude-haiku-5-5", 1, [0, 0, 0, 0, 7])],
+        );
+        let v = spend("claude", &f).unwrap().to_json();
+        assert_eq!(v["output"], 17);
+        assert_eq!(model(&v, "claude-haiku-5-5")["output"], 7);
+    }
+
+    #[test]
+    fn model_switch_is_recorded_with_its_cache_write_cost() {
+        let d = tmp_dir("spend-switch");
+        let f = d.join("s.jsonl");
+        let mut side: Value =
+            serde_json::from_str(&asst("sd", "claude-haiku-5-5", 2, [0, 0, 0, 0, 5])).unwrap();
+        side["isSidechain"] = json!(true);
+        write(
+            &f,
+            &[
+                asst("m1", "claude-opus-5-5", 1, [1, 100, 0, 0, 1]),
+                side.to_string(),
+                asst("m2", "claude-opus-5-5", 3, [1, 0, 0, 100, 1]),
+                asst("m3", "claude-sonnet-5-5", 4, [3, 50_000, 0, 0, 10]),
+            ],
+        );
+        let v = spend("claude", &f).unwrap().to_json();
+        let sw = v["switches"].as_array().unwrap();
+        assert_eq!(sw.len(), 1);
+        assert_eq!(sw[0]["from"], "claude-opus-5-5");
+        assert_eq!(sw[0]["to"], "claude-sonnet-5-5");
+        assert_eq!(sw[0]["cacheWrite"], 50_000);
+        assert_eq!(sw[0]["at"], ts(4));
+        let want = (3.0 * 2.0 + 50_000.0 * 2.5) / 1e6;
+        assert!((sw[0]["cost"].as_f64().unwrap() - want).abs() < 1e-4);
+        assert_eq!(v["model"], "claude-sonnet-5-5");
+    }
+
+    #[test]
+    fn unknown_model_keeps_tokens_and_marks_cost_partial() {
+        let d = tmp_dir("spend-unknown");
+        let f = d.join("s.jsonl");
+        write(&f, &[asst("m1", "mystery-1", 1, [10, 0, 0, 0, 10])]);
+        let v = spend("claude", &f).unwrap().to_json();
+        assert_eq!(v["cost"], Value::Null);
+        assert_eq!(v["partial"], true);
+        assert_eq!(v["input"], 10);
+        assert_eq!(model(&v, "mystery-1")["cost"], Value::Null);
+    }
+
+    #[test]
+    fn transcript_without_usage_has_no_spend() {
+        let d = tmp_dir("spend-none");
+        let f = d.join("s.jsonl");
+        write(
+            &f,
+            &[
+                json!({"type": "user", "timestamp": ts(1), "message": {"content": "hi"}})
+                    .to_string(),
+            ],
+        );
+        assert_eq!(spend("claude", &f), None);
+    }
+
+    #[test]
+    fn codex_spend_diffs_cumulative_totals_per_turn_model_and_reads_effort() {
+        let d = tmp_dir("spend-codex");
+        let f = d.join("rollout.jsonl");
+        let ctx = |m: &str, e: &str| {
+            json!({"timestamp": ts(1), "type": "turn_context", "payload": {"model": m, "effort": e}}).to_string()
+        };
+        let tc = |s: u32, i: u64, c: u64, o: u64| {
+            json!({"timestamp": ts(s), "type": "event_msg", "payload": {"type": "token_count",
+            "info": {"total_token_usage": {"input_tokens": i, "cached_input_tokens": c, "output_tokens": o}}}}).to_string()
+        };
+        write(
+            &f,
+            &[
+                ctx("gpt-5", "high"),
+                tc(2, 1000, 800, 10),
+                tc(3, 1000, 800, 10),
+                ctx("gpt-5-mini", "low"),
+                tc(4, 3000, 2000, 30),
+            ],
+        );
+        let v = spend("codex", &f).unwrap().to_json();
+        assert_eq!(model(&v, "gpt-5")["input"], 200);
+        assert_eq!(model(&v, "gpt-5")["cacheRead"], 800);
+        assert_eq!(model(&v, "gpt-5-mini")["input"], 800);
+        assert_eq!(model(&v, "gpt-5-mini")["cacheRead"], 1200);
+        assert_eq!(model(&v, "gpt-5-mini")["output"], 20);
+        assert_eq!(v["effort"], "low");
+        assert_eq!(v["model"], "gpt-5-mini");
+        assert_eq!(v["switches"][0]["to"], "gpt-5-mini");
+    }
+
+    #[test]
+    fn gemini_spend_reads_message_tokens() {
+        let d = tmp_dir("spend-gemini");
+        let f = d.join("session.json");
+        let msgs = json!([
+            {"id": "u1", "type": "user", "timestamp": ts(1), "content": "hi"},
+            {"id": "g1", "type": "gemini", "timestamp": ts(2), "model": "gemini-2.5-pro", "content": "ok",
+             "tokens": {"input": 1000, "cached": 400, "output": 20, "thoughts": 5, "tool": 0}}
+        ]);
+        std::fs::write(&f, json!({"messages": msgs}).to_string()).unwrap();
+        let v = spend("gemini", &f).unwrap().to_json();
+        assert_eq!(v["input"], 600);
+        assert_eq!(v["cacheRead"], 400);
+        assert_eq!(v["output"], 25);
+        assert_eq!(v["model"], "gemini-2.5-pro");
+    }
+
+    #[test]
+    fn spend_reads_only_appended_lines() {
+        let d = tmp_dir("spend-incr");
+        let f = d.join("s.jsonl");
+        let lines: Vec<String> = (0..200)
+            .map(|i| asst(&format!("m{i}"), "claude-opus-5-5", 1, [1, 0, 0, 0, 1]))
+            .collect();
+        write(&f, &lines);
+        INGESTED.with(|n| n.set(0));
+        assert_eq!(spend("claude", &f).unwrap().to_json()["output"], 200);
+        assert_eq!(INGESTED.with(|n| n.get()), 200);
+        assert_eq!(spend("claude", &f).unwrap().to_json()["output"], 200);
+        assert_eq!(INGESTED.with(|n| n.get()), 200);
+        use std::io::Write;
+        let mut h = std::fs::OpenOptions::new().append(true).open(&f).unwrap();
+        writeln!(h, "{}", asst("new", "claude-opus-5-5", 2, [1, 0, 0, 0, 1])).unwrap();
+        assert_eq!(spend("claude", &f).unwrap().to_json()["output"], 201);
+        assert_eq!(INGESTED.with(|n| n.get()), 201);
+    }
+
+    #[test]
+    fn effort_comes_from_launch_flags_when_the_transcript_has_none() {
+        let v = |a: &[&str]| a.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        assert_eq!(
+            effort_of(&v(&["claude", "--effort", "high"])).as_deref(),
+            Some("high")
+        );
+        assert_eq!(
+            effort_of(&v(&["codex", "-c", "model_reasoning_effort=xhigh"])).as_deref(),
+            Some("xhigh")
+        );
+        assert_eq!(effort_of(&v(&["claude", "--effort"])), None);
+        assert_eq!(effort_of(&v(&["claude"])), None);
+        let s = Spend {
+            models: vec![(
+                "claude-opus-5-5".into(),
+                Tokens {
+                    output: 1,
+                    ..Tokens::default()
+                },
+            )],
+            ..Spend::default()
+        };
+        assert_eq!(
+            spend_json(&s, &v(&["claude", "--effort", "max"]))["effort"],
+            "max"
+        );
     }
 }

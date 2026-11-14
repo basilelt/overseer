@@ -1,3 +1,4 @@
+import { isSubmitChord } from '../chord';
 import { rank } from '../fuzzy';
 import { composeRequest } from '../mobile/compose';
 import type { BroadcastRequest, BroadcastResult, CustomCommand } from '../types';
@@ -41,7 +42,7 @@ export interface KeyLike {
 
 export function enterAction(e: KeyLike, phone: boolean): 'send' | null {
   if (e.key !== 'Enter' || e.isComposing) return null;
-  if (e.ctrlKey || e.metaKey) return 'send';
+  if (isSubmitChord(e)) return 'send';
   if (phone || e.shiftKey || e.altKey) return null;
   return 'send';
 }
@@ -105,8 +106,27 @@ export const GEMINI_BUILTINS = b([
   ['/tools', 'List tools'],
 ]);
 
+export const VIBE_BUILTINS = b([
+  ['/branch', 'Fork into a new session'],
+  ['/clear', 'Start a new conversation'],
+  ['/compact', 'Summarize the context'],
+  ['/config', 'Open the settings'],
+  ['/context', 'Show context usage'],
+  ['/help', 'Show help'],
+  ['/mcp', 'Manage MCP servers and connectors'],
+  ['/model', 'Select the model'],
+  ['/plugins', 'List plugins'],
+  ['/resume', 'Resume a session'],
+  ['/retry', 'Retry the last reply'],
+  ['/rewind', 'Rewind the conversation'],
+  ['/skills', 'List skills'],
+  ['/status', 'Show session stats'],
+]);
+
+const BUILTINS: Record<string, SlashCommand[]> = { codex: CODEX_BUILTINS, gemini: GEMINI_BUILTINS, vibe: VIBE_BUILTINS };
+
 export function commandsFor(agent: string, custom: CustomCommand[]): SlashCommand[] {
-  const base = agent === 'codex' ? CODEX_BUILTINS : agent === 'gemini' ? GEMINI_BUILTINS : CLAUDE_BUILTINS;
+  const base = BUILTINS[agent] ?? CLAUDE_BUILTINS;
   const names = new Set(custom.map((c) => c.name));
   return [...custom, ...base.filter((c) => !names.has(c.name))];
 }
@@ -127,3 +147,12 @@ export function applySlash(text: string, cmd: SlashCommand): string {
   const rest = text.replace(/^\/\S*\s?/, '');
   return `${cmd.name} ${rest}`;
 }
+
+export interface SizeMark {
+  length: number;
+  lines: number;
+}
+
+export const STALE_SIZE: SizeMark = { length: Infinity, lines: Infinity };
+
+export const shrank = (prev: SizeMark, now: SizeMark): boolean => now.length < prev.length || now.lines < prev.lines;

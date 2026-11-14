@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { basename, bracketed, insertText, MAX_UPLOAD, planDrop, planPaste, shellQuote, uploadedPath } from './uploads';
+import { bracketed, insertText, MAX_UPLOAD, planDrop, planPaste, shellQuote, uploadedPath } from './uploads';
 
 const png = (name = 'image.png', size = 1000) => ({ name, type: 'image/png', size });
 
@@ -23,14 +23,6 @@ describe('insertText', () => {
     expect(insertText([])).toBe('');
     expect(insertText(['/x\ny'])).toBe(`'/x\ny' `);
     expect(insertText(['/a']).endsWith('\r')).toBe(false);
-  });
-});
-
-describe('basename', () => {
-  it('handles both separators', () => {
-    expect(basename('/Users/me/shot.png')).toBe('shot.png');
-    expect(basename('C:\\Users\\me\\shot.png')).toBe('shot.png');
-    expect(basename('/tmp/dir/')).toBe('dir');
   });
 });
 

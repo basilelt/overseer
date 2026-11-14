@@ -1,13 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { api } from '../api';
-import { MockDaemon } from '../mock';
+import { api } from '../daemon/api';
 import type { DaemonEvent } from '../types';
 import { parsePrompt } from './prompt';
 import { applyTail, applyUpdate, EMPTY_CHAT } from './store';
+import { quietMock } from '../../test/quiet-mock';
 
 describe('mock chat routes', () => {
   it('serves a tail, streams appended messages and answers prompts', async () => {
-    const m = new MockDaemon({ live: false, delayMs: 0 });
+    const m = quietMock();
     const events: DaemonEvent[] = [];
     m.subscribe((e) => events.push(e));
     const a = api(m);
@@ -29,7 +29,7 @@ describe('mock chat routes', () => {
   });
 
   it('pages a sub-agent transcript', async () => {
-    const a = api(new MockDaemon({ live: false, delayMs: 0 }));
+    const a = api(quietMock());
     const page = await a.chat('ln_03', { limit: 200 });
     const card = page.entries.find((e) => e.tool?.agent?.state === 'running')!;
     const sub = await a.chat('ln_03', { limit: 200 }, card.tool!.agent!.agentId!);

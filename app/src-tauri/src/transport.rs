@@ -9,7 +9,12 @@ pub trait Io: AsyncRead + AsyncWrite + Unpin + Send {}
 impl<T: AsyncRead + AsyncWrite + Unpin + Send> Io for T {}
 pub type BoxIo = Box<dyn Io>;
 
-pub const PROTOCOL: u64 = 1;
+#[allow(dead_code)]
+pub mod wire {
+    include!("../../../contract/wire.rs");
+}
+
+pub const PROTOCOL: u64 = wire::PROTOCOL as u64;
 
 pub enum DaemonConn {
     Local(PathBuf),
@@ -23,7 +28,9 @@ pub fn state_dir() -> PathBuf {
     }
     let home = dirs::home_dir().unwrap_or_default();
     if cfg!(windows) {
-        return dirs::data_local_dir().unwrap_or(home).join("overseer");
+        return dirs::data_local_dir()
+            .unwrap_or(home)
+            .join(wire::STATE_DIR_NAME);
     }
     if cfg!(target_os = "macos") {
         return home.join("Library/Application Support/overseer");
@@ -32,21 +39,21 @@ pub fn state_dir() -> PathBuf {
         .filter(|v| !v.is_empty())
         .map(PathBuf::from)
         .unwrap_or_else(|| home.join(".local/state"))
-        .join("overseer")
+        .join(wire::STATE_DIR_NAME)
 }
 
 pub fn local_socket() -> PathBuf {
     std::env::var_os("OVERSEER_SOCKET")
         .filter(|v| !v.is_empty())
         .map(PathBuf::from)
-        .unwrap_or_else(|| state_dir().join("daemon.sock"))
+        .unwrap_or_else(|| state_dir().join(wire::SOCKET_FILE))
 }
 
 pub fn local() -> Result<DaemonConn, String> {
     if !cfg!(windows) {
         return Ok(DaemonConn::Local(local_socket()));
     }
-    let file = state_dir().join("daemon.json");
+    let file = state_dir().join(wire::ENDPOINT_FILE);
     let raw = std::fs::read(&file).map_err(|e| format!("{}: {e}", file.display()))?;
     loopback_from(&raw).ok_or_else(|| format!("{}: no addr or token", file.display()))
 }

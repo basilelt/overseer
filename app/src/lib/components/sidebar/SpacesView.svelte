@@ -4,15 +4,19 @@
   import { onMount } from 'svelte';
   import { attention } from '../../attention';
   import { t } from '../../i18n.svelte';
-  import { saveSettings, settings } from '../../settings.svelte';
-  import { folderSpaces, hostFor, openOnPick, spaceTrail, spaces, toggleOpen } from '../../spaces';
+  import { saveSettings, settings } from '../../settings/settings.svelte';
+  import { folderSpaces, openOnPick, spaceTrail, spaces, toggleOpen } from '../../workspace/spaces';
   import { hostKey } from '../../window';
   import { visibleClock } from '../../visible-clock';
   import { app, NO_WORKSPACE } from '../../state.svelte';
-  import { aggregate, byRank } from '../../workspaces';
-  import { WsDrag } from '../../ws-drag.svelte';
-  import { WS_COLOR } from '../../ws-color';
-  import { createGroup, folderMenu, groupMenu, itemMenuAt, otherMenu, selectSession, workspaceMenu } from '../../wsactions';
+  import { aggregate, byRank } from '../../workspace/workspaces';
+  import { WsDrag } from '../../workspace/ws-drag.svelte';
+  import { WS_COLOR } from '../../workspace/ws-color';
+  import { loadKnown } from '../../tabs/known-tabs';
+  import { tabOrder } from '../../tabs/tab-order';
+  import { allTabs, savedLayouts, workspace } from '../../workspace/workspace.svelte';
+  import { createGroup, folderMenu, groupMenu, itemMenuAt, otherMenu, selectSession, startIn, workspaceMenu } from '../../workspace/wsactions';
+  import type { Workspace } from '../../types';
   import AttentionBanner from './AttentionBanner.svelte';
   import SpaceBlock from './SpaceBlock.svelte';
   import SpaceFolder from './SpaceFolder.svelte';
@@ -30,19 +34,21 @@
   const trail = $derived(spaceTrail(app.ws));
   const hk = $derived(hostKey(app.conn.target));
   const saved = $derived(settings.spacesOpen?.[hk]);
-  const opened = $derived(new Set(saved ?? [app.workspaceId]));
-  // Every session of a connection runs on that connection's host.
-  const host = $derived(hostFor(app.conn));
+  const opened = $derived(new Set([...(saved ?? [app.workspaceId]), ...(app.currentWorkspace?.parentId ? [app.currentWorkspace.parentId] : [])]));
   const q = $derived(filter.trim());
   const groups = $derived(app.ws.groups.slice().sort(byRank));
   const pinned = $derived(nodes.some((n) => n.type === 'folder' && !n.folder));
+  // Joined so the rows re-sort only when the tab list changes, not on a split resize or a tab switch.
+  const liveTabs = $derived(allTabs(workspace.layout).join('\n'));
+  const tabsOf = (id: string) =>
+    tabOrder(id, app.workspaceId, liveTabs ? liveTabs.split('\n') : [], savedLayouts, id === NO_WORKSPACE ? loadKnown(hk, '#other')?.tabs : app.ws.workspaces.find((w) => w.id === id)?.tabs);
+  const rowDrop = (key: string) => drag.posOf('session', key);
 
   function toggle(id: string) {
     if (drag.suppressed) return;
     saveSettings({ spacesOpen: { ...settings.spacesOpen, [hostKey(app.conn.target)]: toggleOpen(saved, id, new Set(['', ...app.ws.workspaces.map((w) => w.id)]), app.workspaceId) } });
   }
 
-  // Selects the workspace and opens it, so its tab bar and "+" show and its sessions are in view.
   function pick(id: string) {
     if (drag.suppressed) return;
     const next = openOnPick(saved, app.workspaceId, id);
@@ -50,7 +56,6 @@
     if (next) saveSettings({ spacesOpen: { ...settings.spacesOpen, [hostKey(app.conn.target)]: next } });
   }
 
-  // The daemon keeps the folded state per host. Flipped locally first so the click feels instant.
   async function toggleFolder(id: string) {
     if (drag.suppressed) return;
     if (q) return;
@@ -59,6 +64,26 @@
     app.ws = { ...app.ws, folders: app.ws.folders.map((x) => (x.id === id ? { ...x, collapsed: !x.collapsed } : x)) };
     await app.api.patchFolder(id, { collapsed: !f.collapsed }).catch(() => {});
   }
+
+  const kidsFor = (w: Workspace | null) =>
+    w && !w.parentId
+      ? {
+          isOpen: (id: string) => opened.has(id),
+          isClosedOpen: (id: string) => closedOpen.has(id),
+          selectedId: app.workspaceId,
+          tabDrop: app.tabDrop,
+          sessionDrop: drag.over?.type === 'workspace' && drag.over.pos === 'inside' ? drag.over.id : null,
+          ontoggle: toggle,
+          onpick: pick,
+          onclosed: toggleClosed,
+          onmenu: (e: MouseEvent, c: Workspace) => app.openMenu(e, c.name, workspaceMenu(c)),
+          onstart: (e: MouseEvent, c: Workspace) => !drag.suppressed && startIn(e, c),
+          onnew: w.path && w.kind !== 'subject' && app.wsPersistent ? () => app.open('workspaceNew', w.id) : undefined,
+          tabsOf,
+        }
+      : undefined;
+
+  const select = (key: string, e?: MouseEvent) => !drag.suppressed && selectSession(key, e);
 
   function toggleClosed(id: string) {
     const next = new Set(closedOpen);
@@ -88,7 +113,6 @@
         <SpaceBlock
           row={r}
           {now}
-          {host}
           open={opened.has(r.id)}
           closedOpen={closedOpen.has(r.id)}
           selectedKey={app.selectedKey}
@@ -96,10 +120,14 @@
           selected={app.workspaceId === r.id}
           tabDrop={!!r.workspace && app.tabDrop === r.id}
           dropPos={drag.posOf('workspace', r.id)}
+          kids={kidsFor(r.workspace)}
           ontoggle={() => toggle(r.id)}
           onpick={() => pick(r.id)}
           onclosed={() => toggleClosed(r.id)}
-          onselect={selectSession}
+          onselect={select}
+          tabs={tabsOf(r.id)}
+          {rowDrop}
+          onsessiondown={(e, key, zone) => drag.start(e, 'session', key, zone)}
           onitemmenu={itemMenuAt}
           onmenu={(e) => (r.workspace ? app.openMenu(e, r.workspace.name, workspaceMenu(r.workspace)) : app.openMenu(e, t('ws.other'), otherMenu()))}
           onpointerdown={r.workspace ? (e) => drag.start(e, 'workspace', r.id) : undefined}
@@ -133,7 +161,7 @@
       {/if}
     </div>
   {/each}
-  {#if drag.dragging && !pinned}<div class="ghost" data-drop="pinned" class:target={drag.over?.type === 'pinned'}>{t('ws.dropToPin')}</div>{/if}
+  {#if drag.dragging && drag.kind !== 'session' && !pinned}<div class="ghost" data-drop="pinned" class:target={drag.over?.type === 'pinned'}>{t('ws.dropToPin')}</div>{/if}
   {#if !nodes.length}<p class="none faint">{q ? t('common.none') : t('ws.empty')}</p>{/if}
   {#if !q && app.connected}
     <div class="gtitle">
@@ -157,7 +185,7 @@
       </button>
     {/each}
   {/if}
-  {#if drag.dragging}<div class="rootdrop" data-drop="root"></div>{/if}
+  {#if drag.dragging && drag.kind !== 'session'}<div class="rootdrop" data-drop="root"></div>{/if}
 </div>
 
 <style>
@@ -169,7 +197,6 @@
     gap: 2px;
     padding: 0 0 8px;
   }
-  /* 14px per level, on a faint guide line under the parent's chevron. */
   .node {
     padding-left: calc(var(--depth) * 14px);
   }
@@ -334,5 +361,36 @@
   .none {
     padding: 24px 12px;
     text-align: center;
+  }
+  :global(:root.phone) .empty {
+    padding: 4px 6px;
+  }
+  :global(:root.phone) .label {
+    font-size: 12px;
+  }
+  :global(:root.phone) .chips {
+    gap: 6px;
+    margin-top: 6px;
+  }
+  :global(:root.phone) .chip {
+    height: 40px;
+    padding: 0 14px;
+    border-radius: 20px;
+    font-size: 14px;
+  }
+  :global(:root.phone) .gtitle {
+    padding: 8px 6px 0 12px;
+    font-size: 12px;
+  }
+  :global(:root.phone) .add {
+    width: var(--touch);
+    height: var(--touch);
+  }
+  :global(:root.phone) .group {
+    flex: none;
+    gap: 10px;
+    height: var(--touch);
+    padding: 0 10px;
+    border-radius: 10px;
   }
 </style>

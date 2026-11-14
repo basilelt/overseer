@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { compareVersions, keyAction, modeFor, seenVersion, placeCard, STEPS, stepsFor, targetOf, TOUR_VERSION, union, visibleSteps, type Step } from './steps';
+import { compareVersions, keyAction, modeFor, seenVersion, STEPS, stepsFor, targetOf, TOUR_VERSION, visibleSteps, type Step } from './steps';
 
 const steps: Step[] = [
   { id: 'host', targets: ['host'], since: '0.15' },
@@ -33,13 +33,114 @@ describe('tour steps', () => {
     expect(STEPS.some((s) => s.since === TOUR_VERSION)).toBe(true);
   });
 
-  it('shows only the one-click update step to users who saw 0.34', () => {
-    expect(stepsFor('whatsNew', '0.34').map((s) => s.id)).toEqual(['autoUpdate']);
+  it('points the quorum step at its control', () => {
+    const step = STEPS.find((s) => s.id === 'quorum')!;
+    expect(step.since).toBe('0.36');
+    expect(targetOf(step, (n) => n === 'quorum' || n === 'kanban')).toBe('quorum');
+    expect(targetOf(step, (n) => n === 'kanban')).toBe('kanban');
+  });
+
+  it('points the task type step at the type field, else at the board', () => {
+    const step = STEPS.find((s) => s.id === 'taskType')!;
+    expect(step.since).toBe('0.36');
+    expect(targetOf(step, (n) => n === 'task-type' || n === 'kanban')).toBe('task-type');
+    expect(targetOf(step, (n) => n === 'kanban')).toBe('kanban');
+  });
+
+  it('points the recordBug step at its control', () => {
+    expect(STEPS.find((s) => s.id === 'recordBug')?.targets).toEqual(['palette']);
+  });
+
+  it('points the lidClosed step at its control', () => {
+    const step = STEPS.find((s) => s.id === 'lidClosed')!;
+    expect(targetOf(step, (n) => n === 'lid-closed' || n === 'settings')).toBe('lid-closed');
+    expect(targetOf(step, (n) => n === 'settings')).toBe('settings');
+  });
+
+  it('skips the keyboard shortcut step on a phone and keeps it elsewhere', () => {
+    const ids = (phone: boolean) => visibleSteps(STEPS, () => true, phone).map((s) => s.id);
+    expect(ids(false)).toContain('paletteKey');
+    expect(ids(true)).not.toContain('paletteKey');
+    expect(ids(true)).toContain('palette');
+    expect(visibleSteps(STEPS, () => true, true)).toHaveLength(STEPS.length - 1);
+  });
+
+  it('points the agentMessaging step at its switch, else at the settings', () => {
+    const step = STEPS.find((s) => s.id === 'agentMessaging')!;
+    expect(step.since).toBe('0.36');
+    expect(targetOf(step, (n) => n === 'agent-messaging' || n === 'settings')).toBe('agent-messaging');
+    expect(targetOf(step, (n) => n === 'settings')).toBe('settings');
+  });
+
+  it('points the agent install step at the + that starts sessions, else at the palette', () => {
+    const step = STEPS.find((s) => s.id === 'installAgent')!;
+    expect(step.since).toBe('0.36');
+    expect(targetOf(step, (n) => n === 'new-session' || n === 'palette')).toBe('new-session');
+    expect(targetOf(step, (n) => n === 'palette')).toBe('palette');
+  });
+
+  it('points the Mistral Vibe step at the + that starts sessions, else at the palette', () => {
+    const step = STEPS.find((s) => s.id === 'mistralVibe')!;
+    expect(step.since).toBe('0.36');
+    expect(targetOf(step, (n) => n === 'new-session' || n === 'palette')).toBe('new-session');
+    expect(targetOf(step, (n) => n === 'palette')).toBe('palette');
+  });
+
+  it('points the cost step at the session cost line, else at the side panel', () => {
+    const step = STEPS.find((s) => s.id === 'cost')!;
+    expect(step.since).toBe('0.36');
+    expect(targetOf(step, (n) => n === 'session-cost' || n === 'panel')).toBe('session-cost');
+    expect(targetOf(step, (n) => n === 'panel')).toBe('panel');
+  });
+
+  it('points the agentTasks step at its switch, else at the settings', () => {
+    const step = STEPS.find((s) => s.id === 'agentTasks')!;
+    expect(step.since).toBe('0.36');
+    expect(targetOf(step, (n) => n === 'agent-tasks' || n === 'settings')).toBe('agent-tasks');
+    expect(targetOf(step, (n) => n === 'settings')).toBe('settings');
+  });
+
+  it('points the sticky notes step at a session note button, else at the sidebar', () => {
+    const step = STEPS.find((s) => s.id === 'stickyNotes')!;
+    expect(step.since).toBe('0.36');
+    expect(targetOf(step, (n) => n === 'session-notes' || n === 'workspaces')).toBe('session-notes');
+    expect(targetOf(step, (n) => n === 'workspaces')).toBe('workspaces');
+  });
+
+  it('points the review map step at the map switch, else at the review', () => {
+    const step = STEPS.find((s) => s.id === 'reviewMap')!;
+    expect(step.since).toBe('0.36');
+    expect(targetOf(step, (n) => n === 'review-map' || n === 'review')).toBe('review-map');
+    expect(targetOf(step, (n) => n === 'review')).toBe('review');
+    expect(targetOf(step, (n) => n === 'palette' || n === 'workspaces')).toBe('palette');
+  });
+
+  it('keeps the review map step in What\'s new with no session open, on desktop and phone', () => {
+    const whatsNew = stepsFor('whatsNew', '0.35');
+    const desktop = new Set(['palette', 'settings', 'workspaces', 'host']);
+    const phone = new Set(['workspaces', 'host']);
+    expect(visibleSteps(whatsNew, (n) => desktop.has(n)).map((s) => s.id)).toContain('reviewMap');
+    expect(visibleSteps(whatsNew, (n) => phone.has(n)).map((s) => s.id)).toContain('reviewMap');
+  });
+
+  it('shows the subjects, source control and review map steps to users who saw 0.35, subjects on the open workspace or else the sidebar', () => {
+    expect(modeFor('0.35')).toBe('whatsNew');
+    expect(stepsFor('whatsNew', '0.35').map((s) => s.id)).toEqual(['subjects', 'sourceControl', 'reviewMap', 'lidClosed', 'recordBug', 'quorum', 'installAgent', 'agentMessaging', 'mistralVibe', 'cost', 'taskType', 'agentTasks', 'hosts', 'stickyNotes']);
+    const step = STEPS.find((s) => s.id === 'subjects')!;
+    expect(targetOf(step, (n) => n === 'subjects' || n === 'workspaces')).toBe('subjects');
+    expect(targetOf(step, (n) => n === 'workspaces')).toBe('workspaces');
+    const sc = STEPS.find((s) => s.id === 'sourceControl')!;
+    expect(targetOf(sc, (n) => n === 'git-button' || n === 'palette')).toBe('git-button');
+    expect(targetOf(sc, (n) => n === 'palette')).toBe('palette');
+  });
+
+  it('shows the one-click update, subjects and source control and review map steps to users who saw 0.34', () => {
+    expect(stepsFor('whatsNew', '0.34').map((s) => s.id)).toEqual(['autoUpdate', 'subjects', 'sourceControl', 'reviewMap', 'lidClosed', 'recordBug', 'quorum', 'installAgent', 'agentMessaging', 'mistralVibe', 'cost', 'taskType', 'agentTasks', 'hosts', 'stickyNotes']);
     expect(STEPS.find((s) => s.id === 'autoUpdate')?.targets).toContain('updates');
   });
 
   it('shows the three 0.34 steps to users who saw 0.33', () => {
-    expect(stepsFor('whatsNew', '0.33').map((s) => s.id)).toEqual(['autoApprove', 'merged', 'uninstall', 'autoUpdate']);
+    expect(stepsFor('whatsNew', '0.33').map((s) => s.id)).toEqual(['autoApprove', 'merged', 'uninstall', 'autoUpdate', 'subjects', 'sourceControl', 'reviewMap', 'lidClosed', 'recordBug', 'quorum', 'installAgent', 'agentMessaging', 'mistralVibe', 'cost', 'taskType', 'agentTasks', 'hosts', 'stickyNotes']);
     const step = STEPS.find((s) => s.id === 'autoApprove')!;
     expect(targetOf(step, (n) => n === 'auto-approve' || n === 'settings')).toBe('auto-approve');
     expect(targetOf(step, (n) => n === 'settings' || n === 'palette')).toBe('settings');
@@ -96,21 +197,21 @@ describe('tour versioning', () => {
 
   it('shows the organize step to users who saw the 0.15 tour', () => {
     expect(modeFor(1)).toBe('whatsNew');
-    expect(stepsFor('whatsNew', 1).map((s) => s.id)).toEqual(['organize', 'settings', 'paletteKey', 'demo', 'gpuTerminal', 'worktreeCleanup', 'switchboard', 'clickCursor', 'palettes', 'skills', 'autoApprove', 'merged', 'uninstall', 'autoUpdate']);
+    expect(stepsFor('whatsNew', 1).map((s) => s.id)).toEqual(['organize', 'settings', 'paletteKey', 'demo', 'gpuTerminal', 'worktreeCleanup', 'switchboard', 'clickCursor', 'palettes', 'skills', 'autoApprove', 'merged', 'uninstall', 'autoUpdate', 'subjects', 'sourceControl', 'reviewMap', 'lidClosed', 'recordBug', 'quorum', 'installAgent', 'agentMessaging', 'mistralVibe', 'cost', 'taskType', 'agentTasks', 'hosts', 'stickyNotes']);
     expect(stepsFor('full', undefined).map((s) => s.id)).toContain('organize');
     expect(targetOf(STEPS.find((s) => s.id === 'organize')!, (n) => n === 'workspaces')).toBe('workspaces');
   });
 
   it('shows the 0.25 to 0.29 steps to users who saw 0.24', () => {
     expect(modeFor('0.24')).toBe('whatsNew');
-    expect(stepsFor('whatsNew', '0.24').map((s) => s.id)).toEqual(['settings', 'paletteKey', 'demo', 'gpuTerminal', 'worktreeCleanup', 'switchboard', 'clickCursor', 'palettes', 'skills', 'autoApprove', 'merged', 'uninstall', 'autoUpdate']);
+    expect(stepsFor('whatsNew', '0.24').map((s) => s.id)).toEqual(['settings', 'paletteKey', 'demo', 'gpuTerminal', 'worktreeCleanup', 'switchboard', 'clickCursor', 'palettes', 'skills', 'autoApprove', 'merged', 'uninstall', 'autoUpdate', 'subjects', 'sourceControl', 'reviewMap', 'lidClosed', 'recordBug', 'quorum', 'installAgent', 'agentMessaging', 'mistralVibe', 'cost', 'taskType', 'agentTasks', 'hosts', 'stickyNotes']);
     expect(stepsFor('full', undefined).map((s) => s.id)).toContain('settings');
     expect(targetOf(STEPS.find((s) => s.id === 'settings')!, (n) => n === 'settings')).toBe('settings');
   });
 
   it('shows the GPU rendering, worktree cleanup and Switchboard steps to users who saw 0.27', () => {
     expect(modeFor('0.27')).toBe('whatsNew');
-    expect(stepsFor('whatsNew', '0.27').map((s) => s.id)).toEqual(['gpuTerminal', 'worktreeCleanup', 'switchboard', 'clickCursor', 'palettes', 'skills', 'autoApprove', 'merged', 'uninstall', 'autoUpdate']);
+    expect(stepsFor('whatsNew', '0.27').map((s) => s.id)).toEqual(['gpuTerminal', 'worktreeCleanup', 'switchboard', 'clickCursor', 'palettes', 'skills', 'autoApprove', 'merged', 'uninstall', 'autoUpdate', 'subjects', 'sourceControl', 'reviewMap', 'lidClosed', 'recordBug', 'quorum', 'installAgent', 'agentMessaging', 'mistralVibe', 'cost', 'taskType', 'agentTasks', 'hosts', 'stickyNotes']);
   });
 
   it('points the demo step at the Demo mode pill in the demo, else at the host chip', () => {
@@ -125,29 +226,29 @@ describe('tour versioning', () => {
 
   it('shows the steps added after 0.17 to users who saw the 0.17 tour', () => {
     expect(modeFor('0.17')).toBe('whatsNew');
-    expect(stepsFor('whatsNew', '0.17').map((s) => s.id)).toEqual(['settings', 'paletteKey', 'demo', 'gpuTerminal', 'worktreeCleanup', 'switchboard', 'clickCursor', 'palettes', 'skills', 'autoApprove', 'merged', 'uninstall', 'autoUpdate']);
+    expect(stepsFor('whatsNew', '0.17').map((s) => s.id)).toEqual(['settings', 'paletteKey', 'demo', 'gpuTerminal', 'worktreeCleanup', 'switchboard', 'clickCursor', 'palettes', 'skills', 'autoApprove', 'merged', 'uninstall', 'autoUpdate', 'subjects', 'sourceControl', 'reviewMap', 'lidClosed', 'recordBug', 'quorum', 'installAgent', 'agentMessaging', 'mistralVibe', 'cost', 'taskType', 'agentTasks', 'hosts', 'stickyNotes']);
     expect(STEPS.find((s) => s.id === 'paletteKey')?.since).toBe('0.25');
   });
 
   it('shows the 0.27, 0.28 and 0.29 steps to users who saw 0.26', () => {
     expect(modeFor('0.26')).toBe('whatsNew');
-    expect(stepsFor('whatsNew', '0.26').map((s) => s.id)).toEqual(['demo', 'gpuTerminal', 'worktreeCleanup', 'switchboard', 'clickCursor', 'palettes', 'skills', 'autoApprove', 'merged', 'uninstall', 'autoUpdate']);
+    expect(stepsFor('whatsNew', '0.26').map((s) => s.id)).toEqual(['demo', 'gpuTerminal', 'worktreeCleanup', 'switchboard', 'clickCursor', 'palettes', 'skills', 'autoApprove', 'merged', 'uninstall', 'autoUpdate', 'subjects', 'sourceControl', 'reviewMap', 'lidClosed', 'recordBug', 'quorum', 'installAgent', 'agentMessaging', 'mistralVibe', 'cost', 'taskType', 'agentTasks', 'hosts', 'stickyNotes']);
     expect(STEPS.find((s) => s.id === 'gpuTerminal')?.since).toBe('0.28');
   });
 
   it('shows the worktree cleanup and Switchboard steps to users who saw 0.28', () => {
-    expect(TOUR_VERSION).toBe('0.35');
+    expect(TOUR_VERSION).toBe('0.36');
     expect(modeFor('0.28')).toBe('whatsNew');
-    expect(stepsFor('whatsNew', '0.28').map((s) => s.id)).toEqual(['worktreeCleanup', 'switchboard', 'clickCursor', 'palettes', 'skills', 'autoApprove', 'merged', 'uninstall', 'autoUpdate']);
+    expect(stepsFor('whatsNew', '0.28').map((s) => s.id)).toEqual(['worktreeCleanup', 'switchboard', 'clickCursor', 'palettes', 'skills', 'autoApprove', 'merged', 'uninstall', 'autoUpdate', 'subjects', 'sourceControl', 'reviewMap', 'lidClosed', 'recordBug', 'quorum', 'installAgent', 'agentMessaging', 'mistralVibe', 'cost', 'taskType', 'agentTasks', 'hosts', 'stickyNotes']);
     expect(targetOf(STEPS.find((s) => s.id === 'switchboard')!, (n) => n === 'switchboard')).toBe('switchboard');
     expect(modeFor('0.33')).toBe('whatsNew');
     expect(targetOf(STEPS.find((s) => s.id === 'worktreeCleanup')!, (n) => n === 'palette')).toBe('palette');
   });
 
   it('shows the palettes step to users who saw 0.29 or 0.30', () => {
-    expect(stepsFor('whatsNew', '0.29').map((s) => s.id)).toEqual(['clickCursor', 'palettes', 'skills', 'autoApprove', 'merged', 'uninstall', 'autoUpdate']);
+    expect(stepsFor('whatsNew', '0.29').map((s) => s.id)).toEqual(['clickCursor', 'palettes', 'skills', 'autoApprove', 'merged', 'uninstall', 'autoUpdate', 'subjects', 'sourceControl', 'reviewMap', 'lidClosed', 'recordBug', 'quorum', 'installAgent', 'agentMessaging', 'mistralVibe', 'cost', 'taskType', 'agentTasks', 'hosts', 'stickyNotes']);
     expect(modeFor('0.30')).toBe('whatsNew');
-    expect(stepsFor('whatsNew', '0.30').map((s) => s.id)).toEqual(['palettes', 'skills', 'autoApprove', 'merged', 'uninstall', 'autoUpdate']);
+    expect(stepsFor('whatsNew', '0.30').map((s) => s.id)).toEqual(['palettes', 'skills', 'autoApprove', 'merged', 'uninstall', 'autoUpdate', 'subjects', 'sourceControl', 'reviewMap', 'lidClosed', 'recordBug', 'quorum', 'installAgent', 'agentMessaging', 'mistralVibe', 'cost', 'taskType', 'agentTasks', 'hosts', 'stickyNotes']);
     const step = STEPS.find((s) => s.id === 'palettes')!;
     expect(step.since).toBe('0.31');
     expect(targetOf(step, (n) => n === 'settings')).toBe('settings');
@@ -156,7 +257,7 @@ describe('tour versioning', () => {
 
   it('shows the click-to-move-cursor step to users who saw 0.29', () => {
     expect(modeFor('0.29')).toBe('whatsNew');
-    expect(stepsFor('whatsNew', '0.29').map((s) => s.id)).toEqual(['clickCursor', 'palettes', 'skills', 'autoApprove', 'merged', 'uninstall', 'autoUpdate']);
+    expect(stepsFor('whatsNew', '0.29').map((s) => s.id)).toEqual(['clickCursor', 'palettes', 'skills', 'autoApprove', 'merged', 'uninstall', 'autoUpdate', 'subjects', 'sourceControl', 'reviewMap', 'lidClosed', 'recordBug', 'quorum', 'installAgent', 'agentMessaging', 'mistralVibe', 'cost', 'taskType', 'agentTasks', 'hosts', 'stickyNotes']);
     expect(targetOf(STEPS.find((s) => s.id === 'clickCursor')!, (n) => n === 'tabs')).toBe('tabs');
   });
 
@@ -176,8 +277,8 @@ describe('tour versioning', () => {
 
   it('shows skills and auto-approval to users who saw 0.31 or 0.32', () => {
     expect(modeFor('0.31')).toBe('whatsNew');
-    expect(stepsFor('whatsNew', '0.31').map((s) => s.id)).toEqual(['skills', 'autoApprove', 'merged', 'uninstall', 'autoUpdate']);
-    expect(stepsFor('whatsNew', '0.32').map((s) => s.id)).toEqual(['skills', 'autoApprove', 'merged', 'uninstall', 'autoUpdate']);
+    expect(stepsFor('whatsNew', '0.31').map((s) => s.id)).toEqual(['skills', 'autoApprove', 'merged', 'uninstall', 'autoUpdate', 'subjects', 'sourceControl', 'reviewMap', 'lidClosed', 'recordBug', 'quorum', 'installAgent', 'agentMessaging', 'mistralVibe', 'cost', 'taskType', 'agentTasks', 'hosts', 'stickyNotes']);
+    expect(stepsFor('whatsNew', '0.32').map((s) => s.id)).toEqual(['skills', 'autoApprove', 'merged', 'uninstall', 'autoUpdate', 'subjects', 'sourceControl', 'reviewMap', 'lidClosed', 'recordBug', 'quorum', 'installAgent', 'agentMessaging', 'mistralVibe', 'cost', 'taskType', 'agentTasks', 'hosts', 'stickyNotes']);
     const step = STEPS.find((s) => s.id === 'skills')!;
     expect(step.since).toBe('0.33');
     expect(targetOf(step, (n) => n === 'settings')).toBe('settings');
@@ -185,7 +286,7 @@ describe('tour versioning', () => {
 
   it('shows the Merged column step to users who saw 0.33', () => {
     expect(modeFor('0.33')).toBe('whatsNew');
-    expect(stepsFor('whatsNew', '0.33').map((s) => s.id)).toEqual(['autoApprove', 'merged', 'uninstall', 'autoUpdate']);
+    expect(stepsFor('whatsNew', '0.33').map((s) => s.id)).toEqual(['autoApprove', 'merged', 'uninstall', 'autoUpdate', 'subjects', 'sourceControl', 'reviewMap', 'lidClosed', 'recordBug', 'quorum', 'installAgent', 'agentMessaging', 'mistralVibe', 'cost', 'taskType', 'agentTasks', 'hosts', 'stickyNotes']);
     const step = STEPS.find((s) => s.id === 'merged')!;
     expect(step.since).toBe('0.34');
     expect(targetOf(step, (n) => n === 'merged' || n === 'kanban')).toBe('merged');
@@ -197,7 +298,8 @@ describe('tour versioning', () => {
     expect(modeFor('0.26', '0.25')).toBeNull();
     expect(modeFor('0.33')).toBe('whatsNew');
     expect(modeFor('0.34')).toBe('whatsNew');
-    expect(modeFor('0.35')).toBeNull();
+    expect(modeFor('0.35')).toBe('whatsNew');
+    expect(modeFor('0.36')).toBeNull();
     expect(modeFor(2, '0.17')).toBeNull();
   });
 });
@@ -212,30 +314,12 @@ describe('tour keys', () => {
   });
 });
 
-describe('tour geometry', () => {
-  it('unions the visible rects', () => {
-    expect(
-      union([
-        { top: 10, left: 100, width: 20, height: 10 },
-        { top: 8, left: 130, width: 30, height: 14 },
-        { top: 0, left: 0, width: 0, height: 0 },
-      ]),
-    ).toEqual({ top: 8, left: 100, width: 60, height: 14 });
-    expect(union([])).toBeNull();
-  });
-
-  const view = { width: 1200, height: 800 };
-  const card = { width: 320, height: 150 };
-
-  it('places the card below the target when it fits', () => {
-    expect(placeCard({ top: 10, left: 1100, width: 80, height: 24 }, card, view)).toEqual({ top: 46, left: 868 });
-  });
-
-  it('places the card above a target near the bottom', () => {
-    expect(placeCard({ top: 700, left: 40, width: 80, height: 40 }, card, view)).toEqual({ top: 538, left: 40 });
-  });
-
-  it('places the card beside a tall target', () => {
-    expect(placeCard({ top: 40, left: 0, width: 260, height: 760 }, card, view)).toEqual({ top: 40, left: 272 });
+describe('0.36 tour', () => {
+  it('shows the shared-window step, then sticky notes, last to a user coming from 0.35', () => {
+    expect(stepsFor('whatsNew', '0.35').map((s) => s.id).slice(-2)).toEqual(['hosts', 'stickyNotes']);
+    const step = STEPS.find((s) => s.id === 'hosts')!;
+    expect(targetOf(step, (n) => n === 'host-sections' || n === 'hosts')).toBe('host-sections');
+    expect(targetOf(step, (n) => n === 'hosts')).toBe('hosts');
+    expect(step.targets).not.toContain('host');
   });
 });

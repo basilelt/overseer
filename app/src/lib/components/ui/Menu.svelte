@@ -1,13 +1,20 @@
 <script lang="ts">
+  import { dismiss } from '../../dismiss';
+  import { captureFocus } from '../../focus';
   import Check from '@lucide/svelte/icons/check';
-  import type { MenuItem } from '../../menu';
+  import ChevronRight from '@lucide/svelte/icons/chevron-right';
+  import { menuRows, pickItem, type MenuItem } from '../../commands/menu';
   import AgentGlyph from './AgentGlyph.svelte';
-  import { ui } from '../../mobile/ui.svelte';
+  import { isPhone } from '../../mobile/ui.svelte';
+  import { untrack } from 'svelte';
 
   let { items, x, y, label, onclose }: { items: MenuItem[]; x: number; y: number; label: string; onclose: () => void } = $props();
 
+  const restore = captureFocus();
   let menu: HTMLDivElement | undefined = $state();
   let pos = $state({ left: 0, top: 0 });
+  let expanded = $state(new Set<number>());
+  const rows = $derived(menuRows(items, expanded));
 
   $effect(() => {
     if (!menu) return;
@@ -16,9 +23,20 @@
     (menu.querySelector<HTMLElement>('button[data-default]:not([disabled])') ?? menu.querySelector<HTMLElement>('button:not([disabled])'))?.focus();
   });
 
+  $effect(() => {
+    if (!menu || !expanded.size) return;
+    const r = menu.getBoundingClientRect();
+    untrack(() => (pos = { left: pos.left, top: Math.max(4, Math.min(pos.top, innerHeight - r.height - 8)) }));
+  });
+
+  function toggle(index: number) {
+    const next = new Set(expanded);
+    if (!next.delete(index)) next.add(index);
+    expanded = next;
+  }
+
   function pick(it: MenuItem) {
-    onclose();
-    it.run?.();
+    pickItem(it, onclose, restore);
   }
 
   function onKey(e: KeyboardEvent) {
@@ -26,23 +44,28 @@
     const i = all.indexOf(document.activeElement as HTMLElement);
     if (e.key === 'ArrowDown') all[(i + 1) % all.length]?.focus();
     else if (e.key === 'ArrowUp') all[(i - 1 + all.length) % all.length]?.focus();
-    else if (e.key === 'Escape') onclose();
+    else if (e.key === 'Escape') (onclose(), restore());
     else return;
     e.preventDefault();
     e.stopPropagation();
   }
 </script>
 
-<svelte:window onpointerdown={(e) => menu && !menu.contains(e.target as Node) && onclose()} onblur={onclose} onkeydown={(e) => e.key === 'Escape' && onclose()} />
+<svelte:window onblur={onclose} />
 
-{#if ui.layout === 'phone'}<div class="scrim" role="presentation"></div>{/if}
-<div class="menu" role="menu" tabindex="-1" aria-label={label} bind:this={menu} style:left="{pos.left}px" style:top="{pos.top}px" onkeydown={onKey}>
-  {#if ui.layout === 'phone' && label}<div class="sheet-title">{label}</div>{/if}
-  {#each items as it, i (i)}
+{#if isPhone()}<div class="scrim" role="presentation"></div>{/if}
+<div class="menu" role="menu" tabindex="-1" aria-label={label} bind:this={menu} use:dismiss={{ onclose, escape: true, restore }} style:left="{pos.left}px" style:top="{pos.top}px" onkeydown={onKey}>
+  {#if isPhone() && label}<div class="sheet-title">{label}</div>{/if}
+  {#each rows as { item: it, index, child }, i (i)}
     {#if it.separator}
       <hr />
+    {:else if it.more && !child}
+      <button role="menuitem" class="more" aria-expanded={expanded.has(index)} onclick={() => toggle(index)}>
+        <span class="ic chev" class:open={expanded.has(index)}><ChevronRight size={13} /></span>
+        <span class="label">{it.label}</span>
+      </button>
     {:else}
-      <button role="menuitem" class:danger={it.danger} disabled={it.disabled} data-default={it.default || undefined} title={it.hint} onclick={() => pick(it)}>
+      <button role="menuitem" class:child class:danger={it.danger} disabled={it.disabled} data-default={it.default || undefined} title={it.hint} onclick={() => pick(it)}>
         <span class="ic">
           {#if it.agent}<AgentGlyph agent={it.agent} size={13} />{:else if it.icon}<it.icon size={13} />{:else if it.checked}<Check size={13} />{/if}
         </span>
@@ -62,7 +85,7 @@
     background: var(--surface);
     border-radius: var(--radius);
     box-shadow: var(--shadow);
-    z-index: 60;
+    z-index: var(--z-popover);
     outline: none;
   }
   button {
@@ -87,6 +110,18 @@
   }
   .danger {
     color: var(--st-failed);
+  }
+  .more {
+    color: var(--text-2);
+  }
+  .chev {
+    transition: transform 120ms;
+  }
+  .chev.open {
+    transform: rotate(90deg);
+  }
+  .child {
+    padding-left: 20px;
   }
   .ic {
     width: 16px;
@@ -118,7 +153,7 @@
   .scrim {
     position: fixed;
     inset: 0;
-    z-index: 59;
+    z-index: var(--z-popover-scrim);
     background: var(--overlay);
   }
   .sheet-title {

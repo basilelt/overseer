@@ -15,10 +15,10 @@
   import Modal from '../ui/Modal.svelte';
   import { t } from '../../i18n.svelte';
   import { app } from '../../state.svelte';
-  import { center, runEntry } from '../../notifications.svelte';
-  import type { EntryKind } from '../../notifications';
+  import { center, runEntry } from '../../notify/notifications.svelte';
+  import type { EntryKind } from '../../notify/notifications';
   import { age } from '../../time';
-  import { isTargetMuted, toggleTargetMute } from '../../os-notify';
+  import { isTargetMuted, toggleTargetMute } from '../../notify/os-notify';
 
   let { onclose }: { onclose: () => void } = $props();
 
@@ -55,7 +55,7 @@
           <button class="item" class:unread={!e.read} class:bad={e.kind === 'error' || e.kind === 'failed'} onclick={() => runEntry(app, e)}>
             <span class="ic"><Icon size={15} /></span>
             <span class="text">
-              <span class="title">{e.title}{#if e.count && e.count > 1}<span class="faint count">×{e.count}</span>{/if}</span>
+              <span class="title">{e.title}</span>
               {#if e.body || e.source}<span class="sub faint">{[e.source, e.body].filter(Boolean).join(' · ')}</span>{/if}
             </span>
             <span class="when faint">{age(new Date(e.at).toISOString(), now)}</span>
@@ -153,11 +153,6 @@
   }
   .unread .title {
     font-weight: 600;
-  }
-  .count {
-    margin-left: 6px;
-    font-weight: 400;
-    font-size: 12px;
   }
   .sub {
     font-size: 12px;

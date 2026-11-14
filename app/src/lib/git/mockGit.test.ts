@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { api } from '../api';
-import { MockDaemon } from '../mock';
+import { api } from '../daemon/api';
+import { MockDaemon } from '../daemon/mock';
 import type { DaemonEvent } from '../types';
 import { gitApi } from './api';
 import { chosen, cleanupTargets, planLines, runCleanup } from './cleanup';

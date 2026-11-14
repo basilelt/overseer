@@ -1,10 +1,48 @@
 use serde_json::{json, Value};
-use std::sync::OnceLock;
+use std::sync::{Mutex, OnceLock};
 
 #[cfg(unix)]
 use std::path::{Path, PathBuf};
 
 static OUTCOME: OnceLock<(&'static str, String)> = OnceLock::new();
+#[cfg(unix)]
+static AT_START: OnceLock<Vec<PathBuf>> = OnceLock::new();
+static EXTRA: Mutex<Vec<String>> = Mutex::new(vec![]);
+
+// Install dirs created after start join the PATH of detection and new terms. Kept apart from
+// the process env: set_var is not thread-safe once the daemon runs.
+pub fn extended() -> Option<String> {
+    let extra = EXTRA.lock().unwrap_or_else(|e| e.into_inner());
+    (!extra.is_empty()).then(|| merge_path(&path_var(), &extra.join(":")))
+}
+
+pub fn path() -> String {
+    extended().unwrap_or_else(path_var)
+}
+
+#[cfg(not(unix))]
+pub fn refresh() {}
+
+#[cfg(unix)]
+pub fn refresh() {
+    let home = crate::home();
+    let at_start = AT_START.get().map(Vec::as_slice).unwrap_or_default();
+    let new = new_dirs(&home, &path(), at_start);
+    if !new.is_empty() {
+        EXTRA
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .extend(new.iter().map(|p| p.to_string_lossy().into_owned()));
+    }
+}
+
+#[cfg(unix)]
+pub fn new_dirs(home: &Path, path: &str, at_start: &[PathBuf]) -> Vec<PathBuf> {
+    fallback_dirs(home, path)
+        .into_iter()
+        .filter(|d| !at_start.contains(d))
+        .collect()
+}
 
 fn path_var() -> String {
     std::env::var("PATH").unwrap_or_default()
@@ -68,6 +106,8 @@ fn scrub() {
 
 pub fn init() {
     scrub();
+    #[cfg(unix)]
+    let _ = AT_START.set(fallback_dirs(&crate::home(), ""));
     let source = load();
     let _ = OUTCOME.set((source, path_var()));
 }
@@ -77,6 +117,7 @@ pub fn to_json() -> Value {
         .get()
         .cloned()
         .unwrap_or_else(|| ("inherited", path_var()));
+    let path = extended().unwrap_or(path);
     json!({"path": path, "source": source})
 }
 
@@ -122,7 +163,6 @@ pub fn keep(k: &str) -> bool {
         && !k.starts_with("BASH_FUNC_")
 }
 
-#[cfg(unix)]
 pub fn merge_path(primary: &str, extra: &str) -> String {
     let mut out: Vec<&str> = vec![];
     for p in primary.split(':').chain(extra.split(':')) {
@@ -185,7 +225,7 @@ fn newest_node(dir: &Path) -> Option<PathBuf> {
 pub fn fallback_dirs(home: &Path, existing_path: &str) -> Vec<PathBuf> {
     let have: Vec<&str> = existing_path.split(':').collect();
     let mut dirs = vec![
-        home.join(".local/bin"),
+        home.join(crate::paths::USER_BIN),
         home.join(".cargo/bin"),
         home.join(".bun/bin"),
         home.join(".deno/bin"),
@@ -334,7 +374,7 @@ mod tests {
         let home = std::env::temp_dir().join(format!(
             "sb-shellenv-{}-{}",
             std::process::id(),
-            crate::procs::now_ms()
+            crate::util::now_ms()
         ));
         let _ = std::fs::remove_dir_all(&home);
         for d in [
@@ -371,6 +411,28 @@ mod tests {
         assert!(version("v24.9.1") > version("v8.0.0"));
         let _ = std::fs::remove_dir_all(&home);
     }
+
+    #[test]
+    fn new_dirs_are_only_those_created_after_start() {
+        let home = std::env::temp_dir().join(format!(
+            "sb-shellenv-new-{}-{}",
+            std::process::id(),
+            crate::util::now_ms()
+        ));
+        let _ = std::fs::remove_dir_all(&home);
+        std::fs::create_dir_all(home.join(".cargo/bin")).unwrap();
+        let at_start = fallback_dirs(&home, "");
+        assert!(new_dirs(&home, "/usr/bin", &at_start).is_empty());
+        for d in [".local/bin", ".bun/bin"] {
+            std::fs::create_dir_all(home.join(d)).unwrap();
+        }
+        let path = format!("/usr/bin:{}", home.join(".bun/bin").display());
+        assert_eq!(
+            new_dirs(&home, &path, &at_start),
+            vec![home.join(".local/bin")]
+        );
+        let _ = std::fs::remove_dir_all(&home);
+    }
 }
 
 #[cfg(test)]
@@ -404,9 +466,6 @@ mod session_tests {
         assert!(!session_bound("TERM", "screen"));
     }
 
-    // Given a daemon started from a Claude Code or Codex session
-    // When its inherited per-session agent markers are checked
-    // Then every one of them is session-bound and dropped from children
     #[test]
     fn drops_inherited_agent_session_markers() {
         for k in [
@@ -433,9 +492,6 @@ mod session_tests {
         }
     }
 
-    // Given the user's own Claude Code, Codex and Anthropic configuration
-    // When those variables are checked
-    // Then none of them is treated as session-bound
     #[test]
     fn keeps_agent_user_configuration() {
         for k in [

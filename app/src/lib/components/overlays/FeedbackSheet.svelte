@@ -6,30 +6,40 @@
   import Copy from '@lucide/svelte/icons/copy';
   import ExternalLink from '@lucide/svelte/icons/external-link';
   import CircleCheck from '@lucide/svelte/icons/circle-check';
+  import Clapperboard from '@lucide/svelte/icons/clapperboard';
+  import Replay from '../record/Replay.svelte';
+  import { fileName, formatLog } from '../../record/record';
+  import { rt } from '../../record/record.svelte';
   import Modal from '../ui/Modal.svelte';
+  import { api } from '../../daemon/api';
+  import { feedbackApi } from '../../feedback/feedback-api';
   import { app } from '../../state.svelte';
-  import { isTauri, DaemonError } from '../../client';
-  import { settings } from '../../settings.svelte';
-  import { findAgent, pickAgent } from '../../agents';
-  import { basename, MAX_UPLOAD } from '../../uploads';
-  import { openExternal } from '../../ports.svelte';
-  import { diagBackend, fetchServerLog } from '../../diag.svelte';
-  import { feedback, ft, type Result } from '../../feedback.svelte';
-  import { APP_LINES, attachProblem, ATTACH_ACCEPT, VIDEO_FREE_MAX, buildBody, buildDiagnostics, buildPrompt, DEFAULT_REPO, findClone, issueTitle, labelsFor, newIssueUrl, SERVER_LINES, validate, wantsDiagnostics, type Kind } from '../../feedback';
+  import { DaemonError } from '../../daemon/client';
+  import { isTauri } from '../../platform';
+  import { settings } from '../../settings/settings.svelte';
+  import { findAgent, pickAgent, isAgentId } from '../../agents';
+  import { MAX_UPLOAD } from '../../uploads';
+  import { openExternal } from '../../ports/ports.svelte';
+  import { diagBackend, fetchServerLog } from '../../diag/diag.svelte';
+  import { feedback, ft, type Result } from '../../feedback/feedback.svelte';
+  import { DRAFT_ID, feedbackDrafts, initialForm, ownsText } from '../../feedback/draft';
+  import { APP_LINES, attachProblem, ATTACH_ACCEPT, VIDEO_FREE_MAX, buildBody, clock, buildDiagnostics, buildPrompt, DEFAULT_REPO, findClone, issueTitle, labelsFor, newIssueUrl, SERVER_LINES, validate, wantsDiagnostics, type Kind } from '../../feedback/feedback';
   import type { Term } from '../../types';
+  import { basename } from '../../paths';
 
   const prefill = feedback.prefill;
   const repo = $derived((settings.feedbackRepo ?? '').trim() || DEFAULT_REPO);
   const agentId = $derived(pickAgent(app.agents, settings.defaultAgent));
   const agent = $derived(findAgent(app.agents, agentId));
-  const canAgent = $derived(app.connected && !!agent?.installed && agent.id !== 'shell');
+  const canAgent = $derived(app.connected && !!agent?.installed && isAgentId(agent.id));
   const host = $derived(app.conn.target.kind === 'local' ? 'local' : app.conn.target.label || app.conn.target.kind);
 
-  let kind = $state<Kind>(prefill?.kind ?? 'bug');
-  let title = $state(prefill?.title ?? '');
-  let description = $state(prefill?.description ?? '');
+  const initial = initialForm(prefill, feedbackDrafts.get(DRAFT_ID));
+  let kind = $state<Kind>(initial.kind);
+  let title = $state(initial.title);
+  let description = $state(initial.description);
   let attachments = $state<{ name: string; path: string }[]>([]);
-  let includeDiag = $state(wantsDiagnostics(prefill?.kind ?? 'bug'));
+  let includeDiag = $state(wantsDiagnostics(initial.kind));
   let investigate = $state(false);
   let showPreview = $state(false);
   let diagText = $state<string | null>(null);
@@ -38,13 +48,23 @@
   let dropping = $state(false);
   let zone = $state<HTMLElement | null>(null);
   let picker = $state<HTMLInputElement | null>(null);
+  let recording = $state.raw(prefill?.recording ?? null);
+  let recordingPath = $state<string | null>(null);
+  let replaying = $state(false);
+  let recUploading = $state(false);
 
-  const form = $derived({ kind, title, description, attachments: attachments.map((a) => a.path), diagnostics: includeDiag ? diagText : null });
+  const actions = $derived(recording ? { log: formatLog(recording.events), duration: recording.duration } : null);
+  const form = $derived({ kind, title, description, attachments: attachments.map((a) => a.path), diagnostics: includeDiag ? diagText : null, actions });
   const body = $derived(buildBody(form));
   const sentBody = $derived(buildBody(form, true));
   const fullTitle = $derived(issueTitle(form));
   const kinds: Kind[] = ['bug', 'idea', 'other'];
   const placeholder = $derived(ft(kind === 'bug' ? 'descriptionBug' : kind === 'idea' ? 'descriptionIdea' : 'descriptionOther'));
+
+  $effect(() => {
+    const d = { kind, title, description };
+    if (ownsText(prefill) && !feedback.result) feedbackDrafts.set(DRAFT_ID, d);
+  });
 
   const msg = (e: unknown) => String((e as Error)?.message ?? e);
 
@@ -52,7 +72,7 @@
     const client = app.client;
     const [info, version, appTail, server] = await Promise.all([
       diagBackend.info().catch(() => null),
-      client && app.connected ? client.request<{ version?: string; os?: string; arch?: string }>('GET', '/v1/version').catch(() => null) : Promise.resolve(null),
+      client && app.connected ? api(client).version().catch(() => null) : Promise.resolve(null),
       prefill?.crash ? Promise.resolve({ lines: prefill.crash.appLog }) : diagBackend.tail(APP_LINES).catch(() => ({ lines: [] as string[] })),
       fetchServerLog(client, app.connected, SERVER_LINES),
     ]);
@@ -125,6 +145,41 @@
     }
   }
 
+  async function attachRecording(r: NonNullable<typeof recording>) {
+    if (!r.video) return;
+    const client = app.client;
+    if (!client || !app.connected) return app.notify(rt('offlineVideo'), 'error');
+    const name = fileName(new Date(), r.mime);
+    if (!admit(name, r.video.size)) return;
+    uploading++;
+    recUploading = true;
+    try {
+      const local = await client.savePaste(name, new Uint8Array(await r.video.arrayBuffer()));
+      const up = await client.uploadFile(local);
+      if (recording !== r) return;
+      recordingPath = up.path;
+      attachments = [...attachments, { name: up.name, path: up.path }];
+    } catch (e) {
+      app.notify(ft('failed', { error: `${name}: ${msg(e)}` }), 'error');
+    } finally {
+      uploading--;
+      recUploading = false;
+    }
+  }
+
+  function removeRecording() {
+    const path = recordingPath;
+    recording = null;
+    recordingPath = null;
+    replaying = false;
+    if (path) attachments = attachments.filter((a) => a.path !== path);
+  }
+
+  function removeAttachment(i: number) {
+    if (attachments[i]?.path === recordingPath) recordingPath = null;
+    attachments = attachments.filter((_, j) => j !== i);
+  }
+
   function onPaste(e: ClipboardEvent) {
     const files = Array.from(e.clipboardData?.files ?? []);
     if (!files.length) return;
@@ -153,7 +208,7 @@
     try {
       const cwd = findClone(app.projects, repo);
       const same = agentId === settings.defaultAgent;
-      const res = await client.request<{ term: Term }>('POST', '/v1/feedback/start', {
+      const res = await feedbackApi(client).startFeedback({
         agent: agentId,
         model: same ? settings.defaultModel || undefined : undefined,
         effort: same && agent.efforts?.includes(settings.defaultEffort) ? settings.defaultEffort : undefined,
@@ -167,6 +222,7 @@
       const term = res.term;
       app.followSession(term);
       void feedback.watch(client, term.id, found);
+      feedbackDrafts.delete(DRAFT_ID);
       feedback.close();
       app.notify(ft('started', { agent: agent.name }));
     } catch (e) {
@@ -183,7 +239,8 @@
     if (!client) return;
     busy = true;
     try {
-      const res = await client.request<{ url: string; attachWarning?: string }>('POST', '/v1/feedback/direct', { repo, title: fullTitle, body: sentBody, labels: labelsFor(kind), attachments });
+      const res = await feedbackApi(client).directFeedback({ repo, title: fullTitle, body: sentBody, labels: labelsFor(kind), attachments });
+      feedbackDrafts.delete(DRAFT_ID);
       feedback.showResult({ url: res.url, comment: false });
       if (res.attachWarning) app.notify(ft('attachPartial', { error: res.attachWarning }), 'error');
     } catch (e) {
@@ -222,6 +279,7 @@
 
   onMount(() => {
     if (feedback.result) return;
+    if (recording) void attachRecording(recording);
     return dropZone({ el: () => zone?.closest('.modal'), rank: 3, hover: (on) => (dropping = on), drop: (paths) => void addPaths(paths) });
   });
 
@@ -281,13 +339,31 @@
             {#each attachments as a, i (a.path)}
               <li>
                 <span class="mono">{a.name}</span>
-                <button class="icon-btn" aria-label={ft('remove', { name: a.name })} title={ft('remove', { name: a.name })} onclick={() => (attachments = attachments.filter((_, j) => j !== i))}><X size={12} /></button>
+                <button class="icon-btn" aria-label={ft('remove', { name: a.name })} title={ft('remove', { name: a.name })} onclick={() => removeAttachment(i)}><X size={12} /></button>
               </li>
             {/each}
           </ul>
           <p class="faint small">{ft('attachNote')}</p>
         {/if}
       </div>
+
+      {#if recording}
+        <div class="field">
+          <span>{rt('attached')}</span>
+          <div class="rec">
+            <Clapperboard size={14} />
+            <span class="mono">{clock(recording.duration)}</span>
+            <span class="faint">· {rt('actions', { n: recording.events.length })}</span>
+            <button class="linkish" aria-expanded={replaying} onclick={() => (replaying = !replaying)}>{rt('replay')}</button>
+            {#if recording.video && !recordingPath && !recUploading}
+              <button class="linkish" onclick={() => recording && void attachRecording(recording)}>{rt('attachVideo')}</button>
+            {/if}
+            <span class="spacer"></span>
+            <button class="icon-btn" aria-label={rt('discard')} title={rt('discard')} onclick={removeRecording}><X size={12} /></button>
+          </div>
+          {#if replaying}<Replay {recording} />{/if}
+        </div>
+      {/if}
 
       <label class="check">
         <input type="checkbox" class="switch" bind:checked={includeDiag} />
@@ -408,6 +484,15 @@
     border: 1px solid var(--border);
     border-radius: 999px;
     font-size: 11px;
+  }
+  .rec {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 10px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    font-size: 12px;
   }
   .check {
     display: flex;

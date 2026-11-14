@@ -212,6 +212,7 @@ impl Fx {
             claude_dir: self.claude(),
             codex_dir: self.codex(),
             gemini_dir: self.base.join(".gemini"),
+            vibe_dir: self.base.join(".vibe"),
             state_dir: self.state(),
             snapshot: self.base.join("snapshot.json"),
             tmux: None,
@@ -345,6 +346,7 @@ fn ids_are_stable_and_launch_args_survive_process_death() {
     }
     let l1 = find(&second, S1);
     assert_eq!((l1.state, l1.held_reason), ("held", Some("lost")));
+    assert!(!l1.busy, "a line whose process is gone is not busy");
     assert_eq!(
         l1.resume_command,
         format!("cd {} && claude --model opus --resume {S1}", fx.wt_login)
@@ -352,10 +354,35 @@ fn ids_are_stable_and_launch_args_survive_process_death() {
 }
 
 #[test]
+fn a_line_whose_agent_died_mid_turn_is_held_and_not_busy() {
+    let fx = Fx::new();
+    let at = std::time::SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_millis() as i64
+        + 60_000;
+    let agents = [("claude", S2), ("codex", CX)];
+    for (agent, sid) in agents {
+        let rec = serde_json::json!({"agent": agent, "event": "UserPromptSubmit", "sessionId": sid, "at": at, "pid": 4343});
+        overseer::hooks::append_spool(&fx.state(), &rec).unwrap();
+    }
+    let alive = fx.scan(&fx.probe());
+    for (_, sid) in agents {
+        assert!(find(&alive, sid).busy, "{sid}");
+    }
+    let gone = fx.scan(&Fake(vec![(999, "1", argv("sleep 1"), None)]));
+    for (_, sid) in agents {
+        let l = find(&gone, sid);
+        assert_eq!((l.state, l.held_reason), ("held", Some("lost")), "{sid}");
+        assert!(
+            !l.busy,
+            "a held line keeps no busy flag from its last turn: {sid}"
+        );
+    }
+}
+
+#[test]
 fn an_empty_process_list_does_not_stamp_held_at_but_a_real_loss_does() {
-    // Given live lines, then a scan whose process list is empty (a failed probe)
-    // When the probe recovers without the agents, still listing other processes
-    // Then the failed scan stamps no heldAt, and the scan that sees the agents gone does
     let fx = Fx::new();
     fx.scan(&fx.probe());
     let blind = fx.scan(&Fake::default());
@@ -461,9 +488,6 @@ fn codex_state_db_is_read_from_a_copy() {
 
 #[test]
 fn codex_desktop_and_server_processes_are_not_sessions() {
-    // Given a Codex thread in a worktree and only Codex Desktop backends and app-servers running there
-    // When the station is scanned
-    // Then no process is attached to the thread, which shows as lost
     let fx = Fx::new();
     let cwd = Some(fx.wt_chore.clone());
     let probe = Fake(vec![
@@ -508,9 +532,6 @@ fn codex_desktop_and_server_processes_are_not_sessions() {
 
 #[test]
 fn codex_sandboxed_tool_call_does_not_wake_an_idle_thread() {
-    // Given an idle Codex thread in a worktree and a tool call of another thread sandboxed there by bwrap
-    // When the station is scanned
-    // Then the sandbox is not taken for a Codex session and the idle thread stays without a process
     let fx = Fx::new();
     let probe = Fake(vec![(
         7101,
@@ -580,10 +601,6 @@ fn pids(lines: &[Line], ids: &[&str]) -> Vec<Option<u32>> {
 
 #[test]
 fn codex_tuis_in_one_repo_keep_their_threads_whatever_was_used_last() {
-    // Given two fresh codex TUIs in one worktree, each owning the thread it created, the older one used last,
-    // and an idle thread created before both
-    // When the station is scanned
-    // Then each thread keeps the TUI that started before it and the idle thread has none
     let fx = Fx::new();
     codex_threads(
         &fx,
@@ -602,9 +619,6 @@ fn codex_tuis_in_one_repo_keep_their_threads_whatever_was_used_last() {
 
 #[test]
 fn two_fresh_codex_tuis_and_one_thread_leave_the_pid_unset() {
-    // Given two codex TUIs in one worktree, both started before the only thread was created
-    // When the station is scanned
-    // Then the thread names neither of them
     let fx = Fx::new();
     codex_threads(&fx, &[("cx-a", 120, 130)]);
     let lines = fx.scan(&tuis(&fx, &[(8001, "codex", 0), (8002, "codex", 100)]));
@@ -613,9 +627,6 @@ fn two_fresh_codex_tuis_and_one_thread_leave_the_pid_unset() {
 
 #[test]
 fn codex_tui_that_quits_takes_only_its_own_thread_down() {
-    // Given two codex threads in one worktree whose first TUI has quit
-    // When the station is scanned
-    // Then the thread of the remaining TUI keeps it and the other has no process
     let fx = Fx::new();
     codex_threads(&fx, &[("cx-a", 20, 300), ("cx-b", 120, 200)]);
     let lines = fx.scan(&tuis(&fx, &[(8002, "codex", 100)]));
@@ -624,9 +635,6 @@ fn codex_tui_that_quits_takes_only_its_own_thread_down() {
 
 #[test]
 fn fresh_codex_tui_does_not_wake_an_idle_thread_of_its_repo() {
-    // Given an idle codex thread in a worktree and a codex TUI opened there that has no thread yet
-    // When the station is scanned
-    // Then the idle thread stays without a process
     let fx = Fx::new();
     codex_threads(&fx, &[("cx-old", -600, -500)]);
     let lines = fx.scan(&tuis(&fx, &[(8003, "codex", 0)]));
@@ -635,9 +643,6 @@ fn fresh_codex_tui_does_not_wake_an_idle_thread_of_its_repo() {
 
 #[test]
 fn codex_resume_last_attaches_to_the_most_recent_thread_of_its_repo() {
-    // Given two older codex threads in a worktree and `codex resume --last` started there afterwards
-    // When the station is scanned
-    // Then the most recently used thread is the one resumed
     let fx = Fx::new();
     codex_threads(&fx, &[("cx-a", -900, -100), ("cx-b", -800, -400)]);
     let lines = fx.scan(&tuis(&fx, &[(8004, "codex resume --last", 0)]));
@@ -646,9 +651,6 @@ fn codex_resume_last_attaches_to_the_most_recent_thread_of_its_repo() {
 
 #[test]
 fn codex_tui_that_switches_to_an_older_thread_follows_it() {
-    // Given a codex TUI that resumed an older thread from inside, which it has used since it started
-    // When the station is scanned
-    // Then that thread has the TUI
     let fx = Fx::new();
     codex_threads(&fx, &[("cx-a", -900, 100)]);
     let lines = fx.scan(&tuis(&fx, &[(8005, "codex", 0)]));
@@ -681,9 +683,6 @@ impl Probe for Tree {
 
 #[test]
 fn codex_npm_wrapper_and_native_child_are_one_session() {
-    // Given two Codex threads in one worktree and `codex resume` run through the npm node wrapper and its native child
-    // When the station is scanned
-    // Then only the resumed thread is live, on the native child's pid and memory
     let fx = Fx::new();
     let db = rusqlite::Connection::open(fx.codex().join("state_5.sqlite")).unwrap();
     db.execute_batch(
@@ -888,6 +887,7 @@ fn ws(path: &str) -> overseer::workspaces::Workspace {
         updated_ms: 0,
         subject: false,
         cwd: None,
+        parent_id: None,
     }
 }
 
@@ -1069,9 +1069,6 @@ fn two_live_processes_on_one_transcript_stay_two_lines_that_follow_their_own_ses
 
 #[test]
 fn codex_resume_drops_the_resume_subcommand_of_the_process_it_came_from() {
-    // Given a codex thread whose live process was started as `codex resume <another thread>`
-    // When the station is scanned
-    // Then the stored flags and the resume command carry only the genuine flags and this thread
     const OLD: &str = "01a181a9-d0fe-7810-b802-ae037ed37fed";
     let fx = Fx::new();
     let probe = Fake(vec![(
@@ -1092,9 +1089,6 @@ fn codex_resume_drops_the_resume_subcommand_of_the_process_it_came_from() {
 
 #[test]
 fn codex_resume_repairs_flags_stored_with_a_resume_or_fork_subcommand() {
-    // Given codex launch flags stored with `resume <id>`, `fork --last` or `resume --last`
-    // When the resume command is built for thread CX
-    // Then only genuine flags are kept before CX and config overrides select embedded mode
     let s = |v: &[&str]| v.iter().map(|a| a.to_string()).collect::<Vec<_>>();
     for (stored, want) in [
         (
@@ -1120,7 +1114,6 @@ fn codex_resume_repairs_flags_stored_with_a_resume_or_fork_subcommand() {
 
 #[test]
 fn resume_rejoins_a_json_flag_stored_split() {
-    // Given launch flags stored when a JSON value was cut at its spaces
     let flags: Vec<String> = [
         "--mcp-config={\"c\":\"/Application",
         "Support/x\"}",
@@ -1129,8 +1122,6 @@ fn resume_rejoins_a_json_flag_stored_split() {
     ]
     .map(String::from)
     .to_vec();
-    // When the resume command is built
-    // Then the JSON value is passed back whole
     assert_eq!(
         overseer::resume_argv("claude", S1, &flags),
         [
@@ -1146,9 +1137,6 @@ fn resume_rejoins_a_json_flag_stored_split() {
 
 #[test]
 fn resuming_a_line_whose_session_changed_reattaches_the_process_to_that_line() {
-    // Given a line launched on KEY whose process moved to NOW_SID and then exited
-    // When Resume relaunches `claude --resume NOW_SID`, then a second Resume does the same
-    // Then the first process comes back on the original line, the second one is a duplicate
     const KEY: &str = "aaaaaaaa-0000-4000-8000-000000000020";
     const NOW_SID: &str = "aaaaaaaa-0000-4000-8000-000000000021";
     let fx = Fx::new();
@@ -1224,4 +1212,52 @@ fn resuming_a_line_whose_session_changed_reattaches_the_process_to_that_line() {
     let extra = lines.iter().find(|l| l.pid == Some(6003)).unwrap();
     assert_ne!(extra.id, line.id);
     assert!(back.duplicate && extra.duplicate);
+}
+
+#[test]
+fn a_vibe_session_lives_on_the_tui_above_its_app_server_lease() {
+    let fx = Fx::new();
+    let sid = "4a3b2c1d-0e9f-4a8b-b7c6-d5e4f3a2b1c0";
+    let root = fx.base.join(".vibe/logs/session");
+    let dir = root.join("unified").join(sid);
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::create_dir_all(root.join("active")).unwrap();
+    std::fs::write(dir.join("CURRENT"), "{}").unwrap();
+    std::fs::write(
+        dir.join("meta.json"),
+        serde_json::json!({"session_id": sid, "parent_session_id": null,
+            "start_time": "2026-10-28T09:00:00+00:00",
+            "environment": {"working_directory": fx.wt_chore}, "title": "Vibe work"})
+        .to_string(),
+    )
+    .unwrap();
+    std::fs::write(
+        root.join(format!("active/{sid}.lock.json")),
+        serde_json::json!({"lease_version": 1, "session_id": sid, "process_id": 7101}).to_string(),
+    )
+    .unwrap();
+    let cwd = Some(fx.wt_chore.clone());
+    let probe = Tree {
+        procs: Fake(vec![
+            (
+                7100,
+                "1",
+                argv("/u/.local/share/uv/tools/mistral-vibe/lib/python3.14/site-packages/vibe/_bin/vibe-rs --auto-approve -- fix the bug"),
+                cwd.clone(),
+            ),
+            (
+                7101,
+                "1",
+                argv("/u/.local/share/uv/tools/mistral-vibe/bin/python3 /u/.local/share/uv/tools/mistral-vibe/bin/vibe-app-server"),
+                cwd,
+            ),
+        ]),
+        parents: vec![(7101, 7100), (7100, 900)],
+        rss: vec![],
+    };
+    let lines = fx.scan(&probe);
+    let l = lines.iter().find(|l| l.session_id == sid).unwrap();
+    assert_eq!(l.agent, "vibe");
+    assert_eq!(l.pid, Some(7100));
+    assert_eq!(l.launch_args, ["--auto-approve"]);
 }

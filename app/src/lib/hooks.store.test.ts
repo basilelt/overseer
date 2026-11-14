@@ -1,10 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { agentName } from './agents';
-import { DaemonError, setClient } from './client';
+import { DaemonError, setClient } from './daemon/client';
 import { hooks, hooksLater, hooksNever, loadHooks, setHooks } from './hooks.svelte';
 import { t } from './i18n.svelte';
-import { MockDaemon } from './mock';
-import { settings } from './settings.svelte';
+import { MockDaemon } from './daemon/mock';
+import { settings } from './settings/settings.svelte';
 import { app } from './state.svelte';
 import type { ConnState, HooksRun, HostTarget } from './types';
 

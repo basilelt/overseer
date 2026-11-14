@@ -1,6 +1,7 @@
-use crate::procs::{now_ms, Probe};
+use crate::procs::Probe;
 use crate::registry::{HookState, Registry};
 use crate::sys::OpenOptionsExt;
+use crate::util::now_ms;
 use serde_json::{json, Value};
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::Path;
@@ -49,19 +50,36 @@ pub const COPILOT_EVENTS: &[&str] = &[
     "sessionEnd",
 ];
 
+pub const VIBE_EVENTS: &[&str] = &[
+    "session_start",
+    "pre_agent",
+    "post_agent",
+    "post_tool",
+    "notification",
+    "session_end",
+];
+
+pub const VIBE_MAIN_ONLY: &[&str] = &["pre_agent", "post_agent"];
+
 pub const CURSOR_EVENTS: &[&str] = &["sessionStart", "beforeSubmitPrompt", "stop", "sessionEnd"];
 
 const MAX_STDIN: u64 = 1 << 20;
 
 pub fn canonical<'a>(event: &'a str, notification_type: Option<&str>) -> &'a str {
     match event {
-        "BeforeAgent" | "userPromptSubmitted" | "beforeSubmitPrompt" => "UserPromptSubmit",
-        "AfterAgent" | "agentStop" | "stop" => "Stop",
-        "sessionStart" => "SessionStart",
-        "sessionEnd" => "SessionEnd",
+        "BeforeAgent" | "userPromptSubmitted" | "beforeSubmitPrompt" | "pre_agent" => {
+            "UserPromptSubmit"
+        }
+        "AfterAgent" | "agentStop" | "stop" | "post_agent" => "Stop",
+        "sessionStart" | "session_start" => "SessionStart",
+        "sessionEnd" | "session_end" => "SessionEnd",
+        "post_tool" => "PostToolUse",
         "errorOccurred" => "StopFailure",
         "notification" | "Notification" => match notification_type {
-            Some("agent_idle" | "agent_completed") => "Stop",
+            Some("agent_idle" | "agent_completed" | "turn_completed") => "Stop",
+            Some("turn_failed") => "StopFailure",
+            Some("approval_requested") => "PermissionRequest",
+            Some("question_asked") => "Elicitation",
             _ => "Notification",
         },
         e => e,
@@ -176,7 +194,7 @@ pub fn apply(h: &mut HookState, ev: &Value) {
 
 pub fn session_key(agent: &str, ev: &Value) -> Option<String> {
     let term = ev["termId"].as_str().filter(|t| !t.is_empty());
-    let by_session = matches!(agent, "claude" | "codex" | "gemini");
+    let by_session = crate::agents::get(agent).is_some_and(|a| a.sessions());
     match (ev["sessionId"].as_str(), term) {
         (Some(s), _) if by_session => Some(s.to_string()),
         (_, Some(t)) => Some(term_key(t)),
@@ -276,6 +294,56 @@ mod tests {
     }
 
     #[test]
+    fn vibe_events_map_to_line_states_by_session() {
+        let rec =
+            |stdin: &[u8]| spool_record("vibe", "x", stdin, Some(9), |_| Some("T1".into()), 1);
+        let ev = |name: &str, extra: &str| {
+            rec(format!(r#"{{"session_id":"v1","parent_session_id":null,"cwd":"/w","transcript_path":"/h/unified/v1","hook_event_name":"{name}"{extra}}}"#).as_bytes())
+        };
+        let mut h = HookState::default();
+        let start = ev(
+            "session_start",
+            r#","source":"startup","agent_name":"default","model":"m""#,
+        );
+        assert_eq!(start["event"], "SessionStart");
+        assert_eq!(session_key("vibe", &start).as_deref(), Some("v1"));
+        let pre = ev(
+            "pre_agent",
+            r#","agent_name":"default","turn_id":"t","prompt":"hi""#,
+        );
+        assert_eq!(pre["event"], "UserPromptSubmit");
+        apply(&mut h, &pre);
+        assert!(h.busy);
+        let ask = ev(
+            "notification",
+            r#","notification_type":"approval_requested","message":"m","tool_name":"file_system.bash""#,
+        );
+        assert_eq!(ask["event"], "PermissionRequest");
+        apply(&mut h, &ask);
+        assert!(h.needs_input);
+        let tool = ev(
+            "post_tool",
+            r#","tool_name":"file_system.bash","tool_status":"success""#,
+        );
+        apply(&mut h, &tool);
+        assert!(!h.needs_input && h.busy);
+        let q = ev("notification", r#","notification_type":"question_asked""#);
+        assert_eq!(q["event"], "Elicitation");
+        let done = ev("notification", r#","notification_type":"turn_completed""#);
+        assert_eq!(done["event"], "Stop");
+        let failed = ev("notification", r#","notification_type":"turn_failed""#);
+        assert_eq!(failed["event"], "StopFailure");
+        let post = ev("post_agent", r#","agent_name":"default""#);
+        assert_eq!(post["event"], "Stop");
+        apply(&mut h, &post);
+        assert!(!h.busy);
+        assert_eq!(
+            ev("session_end", r#","reason":"exit""#)["event"],
+            "SessionEnd"
+        );
+    }
+
+    #[test]
     fn native_events_map_to_line_states() {
         let rec = |agent: &str, ev: &str, stdin: &[u8]| {
             spool_record(
@@ -334,9 +402,6 @@ mod tests {
 
     #[test]
     fn a_lost_subagent_stop_is_cleared_by_stop_never_but_by_session_end_and_start() {
-        // Given a session whose turn ended with a subagent and a task still counted
-        // When Stop arrives, then SessionEnd, and separately SessionStart
-        // Then Stop keeps the counts and both SessionEnd and SessionStart reset them
         let ev = |e: &str| json!({"event": e, "at": 1});
         let mut h = HookState::default();
         for e in ["UserPromptSubmit", "SubagentStart", "TaskCreated", "Stop"] {

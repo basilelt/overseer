@@ -3,7 +3,8 @@
   import Search from '@lucide/svelte/icons/search';
   import { app, projectName } from '../../state.svelte';
   import { t, type Key } from '../../i18n.svelte';
-  import { depCandidates, isDone } from '../../kanban';
+  import { depCandidates } from '../../kanban/kanban';
+  import { isDone } from '../../kanban/task-status';
   import type { Task } from '../../types';
 
   let {

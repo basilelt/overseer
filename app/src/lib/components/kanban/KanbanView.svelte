@@ -8,30 +8,31 @@
   import Sparkles from '@lucide/svelte/icons/sparkles';
   import LoaderCircle from '@lucide/svelte/icons/loader-circle';
   import MessageSquare from '@lucide/svelte/icons/message-square';
-  import { isOff } from '../../grouping';
+  import { isOff } from '../../session/grouping';
   import { projectName, app } from '../../state.svelte';
-  import { saveSettings, settings } from '../../settings.svelte';
-  import { holdAll } from '../../wsactions';
+  import { pullAutoConcurrency } from '../../settings/auto-concurrency';
+  import { saveSettings, settings } from '../../settings/settings.svelte';
+  import { holdAll } from '../../workspace/wsactions';
   import { t, type Key } from '../../i18n.svelte';
-  import { autoSummary, blockers, byId, canDrop, cardStatus, chainOf, columns, dropTarget, edgeSpeed, insertIndex, isDone, isSession, matrix, moveTask, nextUp, organizing, QUADRANTS, quadrantFlags, rankAt, revertTask, shiftStatus, moveAction, shownCount, grown, newTaskId, CARD_EST, frameLoop, insertBefore, type Quadrant } from '../../kanban';
+  import { autoSummary, blockers, byId, canDrop, cardStatus, chainOf, columns, dropTarget, edgeSpeed, insertIndex, isSession, matrix, moveTask, nextUp, organizing, QUADRANTS, quadrantFlags, rankAt, revertTask, shiftStatus, moveAction, shownCount, grown, newTaskId, CARD_EST, frameLoop, insertBefore, type Quadrant } from '../../kanban/kanban';
   import { reveal } from '../../reveal';
-  import { inFlight, single } from '../../inflight';
+  import { inFlight, single } from '../../daemon/inflight';
   import { agentName } from '../../agents';
   import type { Task, TaskStatus } from '../../types';
   import KanbanColumn from './KanbanColumn.svelte';
-  import Segmented from './Segmented.svelte';
+  import Segmented from '../ui/Segmented.svelte';
   import TaskCard from './TaskCard.svelte';
   import Modal from '../ui/Modal.svelte';
   import ArrowUpToLine from '@lucide/svelte/icons/arrow-up-to-line';
   import ArrowDownToLine from '@lucide/svelte/icons/arrow-down-to-line';
   import ArrowRight from '@lucide/svelte/icons/arrow-right';
   import { isPhone } from '../../mobile/ui.svelte';
-  import { LONG_PRESS_MS, movedTooFar, swipeDirection } from '../../mobile/gestures';
+  import { LONG_PRESS_MS, pressTimer, swipeDirection } from '../../mobile/gestures';
   import { columnAfterSwipe } from '../../mobile/layout';
   import { edgeMoves, edgeRank, initialColumn, moveChoices, type Edge } from '../../mobile/kanbanPhone';
   import { tick, untrack } from 'svelte';
-
-  const FALLBACK = ['#64748b', '#0891b2', '#7c3aed', '#db2777', '#65a30d', '#ea580c'];
+  import { isDone, isQueued, isRunning, isTesting } from '../../kanban/task-status';
+  import { fallbackProjectColor } from './project-colors';
 
   let search = $state('');
   let project = $state(app.sidebarMode === 'workspaces' && app.currentWorkspace ? (app.currentWorkspace.path ?? '') : '');
@@ -62,6 +63,10 @@
     { value: 'matrix' as const, label: t('kanban.view.matrix') },
   ]);
   const summary = $derived(autoSummary(app.data.tasks));
+  $effect(() => {
+    if (!app.connected || app.conn.phase !== 'connected') return;
+    untrack(() => pullAutoConcurrency(app.api).catch(() => {}));
+  });
   const next = $derived(nextUp(app.data.tasks, settings.autoConcurrency));
   const ids = $derived(byId(app.data.tasks));
   const linked = $derived(new Set(app.data.tasks.flatMap((x) => x.dependsOn ?? [])));
@@ -82,7 +87,7 @@
   let sheetId = $state<string | null>(null);
   const sheetTask = $derived(sheetId ? app.data.tasks.find((x) => x.id === sheetId) : undefined);
   const sheetColumn = $derived(sheetTask ? (cols.find((c) => c.status === sheetTask.status)?.tasks ?? []) : []);
-  let press: { id: string; x: number; y: number; timer: ReturnType<typeof setTimeout> } | null = null;
+  const press = pressTimer(LONG_PRESS_MS, { swallow: true });
   let touch: { x: number; y: number } | null = null;
   let chipEls = $state<Record<string, HTMLElement | undefined>>({});
 
@@ -90,27 +95,14 @@
     if (phone && phoneCol) chipEls[phoneCol.status]?.scrollIntoView({ block: 'nearest', inline: 'center', behavior: 'smooth' });
   });
 
-  function cancelPress() {
-    if (press) clearTimeout(press.timer);
-    press = null;
-  }
-
   function onPhoneDown(e: PointerEvent, task: Task) {
     if ((e.target as HTMLElement).closest('button')) return;
-    cancelPress();
+    press.cancel();
     const id = task.id;
-    press = {
-      id,
-      x: e.clientX,
-      y: e.clientY,
-      timer: setTimeout(() => {
-        press = null;
-        suppressClick = true;
-        setTimeout(() => (suppressClick = false), 400);
-        globalThis.navigator?.vibrate?.(10);
-        sheetId = id;
-      }, LONG_PRESS_MS),
-    };
+    press.start(e.clientX, e.clientY, () => {
+      globalThis.navigator?.vibrate?.(10);
+      sheetId = id;
+    });
   }
 
   function onTouchStart(e: TouchEvent) {
@@ -124,7 +116,7 @@
     const d = swipeDirection(p.clientX - touch.x, p.clientY - touch.y);
     touch = null;
     if (d) {
-      cancelPress();
+      press.cancel();
       colIndex = columnAfterSwipe(colIndex, cols.length, d);
     }
   }
@@ -163,10 +155,7 @@
 
   function colorOf(name: string): string {
     const c = colors.get(name);
-    if (c) return c;
-    let h = 0;
-    for (const ch of name) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
-    return FALLBACK[h % FALLBACK.length];
+    return c ?? fallbackProjectColor(name);
   }
 
   const colLabel = (s: TaskStatus) => t(`kanban.col.${s}` as Key);
@@ -309,9 +298,9 @@
 
   function open(task: Task) {
     if (suppressClick) return;
-    if (task.status === 'in_testing') app.open('review', task.id);
+    if (isTesting(task.status)) app.open('review', task.id);
     else if (isSession(task) && task.lineId) app.select(`line:${task.lineId}`);
-    else if (task.status === 'in_progress' && (task.lineId || task.termId)) app.select(task.lineId ? `line:${task.lineId}` : `term:${task.termId}`);
+    else if (isRunning(task.status) && (task.lineId || task.termId)) app.select(task.lineId ? `line:${task.lineId}` : `term:${task.termId}`);
   }
 
   async function refresh() {
@@ -380,7 +369,7 @@
   const loop = frameLoop(settle);
 
   function onPointerMove(e: PointerEvent) {
-    if (press && movedTooFar(e.clientX - press.x, e.clientY - press.y)) cancelPress();
+    press.move(e.clientX, e.clientY);
     if (pending && !drag) {
       if (Math.hypot(e.clientX - pending.x, e.clientY - pending.y) < 5) return;
       const r = pending.el.getBoundingClientRect();
@@ -394,7 +383,7 @@
   }
 
   function onPointerUp() {
-    cancelPress();
+    press.cancel();
     pending = null;
     loop.cancel();
     if (!drag) return;
@@ -570,7 +559,7 @@
     {#if phoneCol}
       {@const ptasks = windowed(`p:${phoneCol.status}`, phoneCol.tasks)}
       <div class="pcol" role="tabpanel" tabindex="-1" aria-label={colLabel(phoneCol.status)} ontouchstart={onTouchStart} ontouchend={onTouchEnd} ontouchcancel={() => (touch = null)}>
-        {#if phoneCol.status === 'auto'}
+        {#if isQueued(phoneCol.status)}
           <div class="pextra">
             <span class="chip">{t('kanban.autoChip', { running: summary.running, queued: summary.queued })}</span>
             <span class="pill mono">{settings.defaultModel || t('model.default')}</span>
@@ -611,7 +600,7 @@
     <Modal title={t('mobile.tasks.moveTo', { n: st.number })} onclose={() => (sheetId = null)} width={420}>
       <div class="sheet">
         <div class="stitle">#{st.number} {st.title}</div>
-        {#if st.status === 'in_progress' || st.status === 'in_testing' || (isSession(st) && st.lineId)}
+        {#if isRunning(st.status) || isTesting(st.status) || (isSession(st) && st.lineId)}
           <button class="srow" onclick={() => { sheetId = null; open(st); }}><ArrowRight size={16} />{t('mobile.tasks.open')}</button>
         {/if}
         {#each edgeMoves(sheetColumn, st) as where (where)}
@@ -683,7 +672,7 @@
         ontoggle={() => toggle(col.status)}
       >
         {#snippet extra()}
-          {#if col.status === 'auto'}
+          {#if isQueued(col.status)}
             <span class="chip">{t('kanban.autoChip', { running: summary.running, queued: summary.queued })}</span>
             <span class="pill mono" title={`${t('kanban.defaultModel')} · ${agentName(app.agents, settings.defaultAgent)}`}>{settings.defaultModel || t('model.default')}</span>
           {/if}
@@ -854,7 +843,7 @@
     left: 0;
     top: 0;
     will-change: transform;
-    z-index: 60;
+    z-index: var(--z-drag);
     pointer-events: none;
   }
   .phone-board {

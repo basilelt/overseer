@@ -120,7 +120,7 @@ impl TwinFactory {
                 let mut body = vec![0; get("content-length").parse().unwrap_or(0)];
                 r.read_exact(&mut body).unwrap();
                 let body = String::from_utf8(body).unwrap();
-                let now = overseer::procs::now_ms() / 1000;
+                let now = overseer::util::now_ms() / 1000;
                 let ok = verify(
                     &secret.lock().unwrap(),
                     &get("x-overseer-signature"),

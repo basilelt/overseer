@@ -8,7 +8,7 @@
   import Loader from '@lucide/svelte/icons/loader-circle';
   import { t } from '../../i18n.svelte';
   import { app } from '../../state.svelte';
-  import { isTauri } from '../../client';
+  import { isTauri } from '../../platform';
   import { boundsOf, nativeBrowser, normalizeUrl, type NavEvent } from '../../browser';
 
   let { initialUrl = null, onurl }: { initialUrl?: string | null; onurl?: (url: string) => void } = $props();
@@ -168,6 +168,7 @@
   }
   form {
     flex: 1;
+    min-width: 0;
     display: flex;
     align-items: center;
     gap: 8px;
@@ -185,6 +186,7 @@
   }
   form input {
     flex: 1;
+    min-width: 0;
     border: 0;
     padding: 0;
     background: transparent;

@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -uo pipefail
+. "$(dirname "$0")/docs-paths.sh"
 
 jobs="rust app windows android macos_signing macos_procs actionlint store_guard tap ci_scripts"
 for j in $jobs; do declare "$j=false"; done
@@ -17,14 +18,12 @@ else
   while IFS= read -r f; do
     [ -n "$f" ] || continue
     echo "$f"
-    case $f in
-      docs/* | *.md | .github/ISSUE_TEMPLATE/*) continue ;;
-    esac
+    is_docs_path "$f" && continue
     case $f in
       .github/workflows/ci.yml | .github/actions/* | scripts/ci-*.sh | Makefile) wide=true ;;
     esac
     case $f in
-      src/* | api/* | tests/* | board/* | Cargo.toml | Cargo.lock | build.rs) rust=true app=true windows=true ;;
+      src/* | api/* | tests/* | board/* | contract/wire.rs | Cargo.toml | Cargo.lock | build.rs) rust=true app=true windows=true ;;
     esac
     case $f in
       app/src-tauri/gen/* | app/fastlane/*) ;;
@@ -44,7 +43,7 @@ else
       .github/*) actionlint=true ;;
     esac
     case $f in
-      .github/actions/* | scripts/ci-*.sh | scripts/check-version*.sh | scripts/set-version.sh) ci_scripts=true ;;
+      .github/actions/* | scripts/ci-*.sh | scripts/check-version*.sh | scripts/set-version.sh | scripts/version*.sh | scripts/docs-paths.sh) ci_scripts=true ;;
     esac
     case $f in
       scripts/update-tap.sh | scripts/update-tap.test.sh) tap=true ;;

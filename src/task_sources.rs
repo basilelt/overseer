@@ -1,7 +1,8 @@
-use crate::daemon::{q, Request};
 use crate::git::Git;
+use crate::http::{err, q, Request};
 use crate::registry::Registry;
-use crate::tasks::{bad, db, main_root, sql};
+use crate::registry::{db, sql};
+use crate::tasks::{bad, main_root};
 use crate::util::{ticket, ulid};
 use crate::Ctx;
 use rusqlite::params;
@@ -46,12 +47,12 @@ pub fn routes(ctx: &Ctx, r: &Request, segs: &[&str], body: &Value) -> Option<(u1
         }
         _ => return None,
     };
-    Some(out.unwrap_or_else(|(c, e)| (c, json!({ "error": e }))))
+    Some(out.unwrap_or_else(|(c, e)| err(c, e)))
 }
 
 fn project(r: &Request) -> Res<String> {
     q(r, "project")
-        .map(crate::board::decode)
+        .map(crate::util::percent_decode)
         .as_deref()
         .map(str::trim)
         .filter(|p| Path::new(p).is_absolute())
@@ -150,7 +151,7 @@ pub fn insert(reg: &Registry, project: &str, kind: &str, target: &str) -> Res<So
     {
         return Err((409, "this source is already added".into()));
     }
-    let now = crate::procs::now_ms();
+    let now = crate::util::now_ms();
     let s = Source {
         id: ulid(now),
         kind: kind.into(),
@@ -205,6 +206,7 @@ pub fn parse_github(out: &str, source: &str) -> Res<Vec<Value>> {
                 "title": i["title"].as_str().unwrap_or(""),
                 "body": i["body"].as_str().unwrap_or(""),
                 "url": i["url"].as_str().unwrap_or(""),
+                "taskType": task_type(&i["labels"], |l| l["name"].as_str()),
             }))
         })
         .collect())
@@ -223,15 +225,27 @@ pub fn parse_gitlab(out: &str, source: &str) -> Res<Vec<Value>> {
                 "title": i["title"].as_str().unwrap_or(""),
                 "body": i["description"].as_str().unwrap_or(""),
                 "url": i["web_url"].as_str().unwrap_or(""),
+                "taskType": task_type(&i["labels"], Value::as_str),
             }))
         })
         .collect())
 }
 
+fn task_type<'a>(labels: &'a Value, name: impl Fn(&'a Value) -> Option<&'a str>) -> Value {
+    let names: Vec<&str> = labels
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(name)
+        .collect();
+    json!(crate::profiles::task_type_from(&names))
+}
+
 pub fn parse_jira(out: &str, source: &str) -> Vec<Value> {
     out.lines()
         .filter_map(|l| {
-            let (key, title) = l.split_once('\t')?;
+            let (kind, rest) = l.split_once('\t')?;
+            let (key, title) = rest.trim_start_matches('\t').split_once('\t')?;
             let key = key.trim();
             (!key.is_empty()).then(|| {
                 json!({
@@ -242,6 +256,7 @@ pub fn parse_jira(out: &str, source: &str) -> Vec<Value> {
                     "body": "",
                     "url": "",
                     "ticketKey": ticket(key).filter(|t| t == key),
+                    "taskType": crate::profiles::task_type_from(&[kind]),
                 })
             })
         })
@@ -266,7 +281,7 @@ fn fetch(s: &Source) -> Res<Vec<Value>> {
                     "--limit",
                     LIMIT,
                     "--json",
-                    "number,title,body,url",
+                    "number,title,body,url,labels",
                 ],
             )?,
             &s.id,
@@ -288,7 +303,7 @@ fn fetch(s: &Source) -> Res<Vec<Value>> {
                     "--plain",
                     "--no-headers",
                     "--columns",
-                    "key,summary",
+                    "type,key,summary",
                     "--paginate",
                     LIMIT,
                 ],
@@ -403,9 +418,10 @@ mod tests {
 
     #[test]
     fn gitlab_output_becomes_items() {
-        let out = r#"[{"iid":8709,"title":"T","description":"d","web_url":"https://gitlab.com/g/w/-/issues/8709"},{"title":"x"}]"#;
+        let out = r#"[{"iid":8709,"title":"T","description":"d","web_url":"https://gitlab.com/g/w/-/issues/8709","labels":["type::bug"]},{"title":"x"}]"#;
         let v = parse_gitlab(out, "gitlab").unwrap();
         assert_eq!(v.len(), 1);
+        assert_eq!(v[0]["taskType"], "fix");
         assert_eq!(v[0]["key"], "#8709");
         assert_eq!(v[0]["body"], "d");
         assert_eq!(v[0]["url"], "https://gitlab.com/g/w/-/issues/8709");
@@ -414,9 +430,11 @@ mod tests {
 
     #[test]
     fn github_output_becomes_items() {
-        let out = r#"[{"number":50,"title":"Import","body":"b","url":"https://x/50"},{"title":"no number"}]"#;
+        let out = r#"[{"number":50,"title":"Import","body":"b","url":"https://x/50","labels":[{"name":"enhancement"}]},{"number":51,"title":"Plain"},{"title":"no number"}]"#;
         let v = parse_github(out, "github").unwrap();
-        assert_eq!(v.len(), 1);
+        assert_eq!(v.len(), 2);
+        assert_eq!(v[0]["taskType"], "feature");
+        assert!(v[1]["taskType"].is_null());
         assert_eq!(v[0]["key"], "#50");
         assert_eq!(v[0]["title"], "Import");
         assert_eq!(v[0]["url"], "https://x/50");
@@ -426,13 +444,17 @@ mod tests {
 
     #[test]
     fn jira_output_becomes_items() {
-        let out = "AS-12\tFix login\nOPS-3\tDeploy\tx\n\nbroken line\n";
+        let out = "Bug\t\tAS-12\tFix login\nStory\t\tOPS-3\tDeploy\tx\nWidget\tAS-9\tOther\n\nbroken line\nAS-1\tno type\n";
         let v = parse_jira(out, "j");
-        assert_eq!(v.len(), 2);
+        assert_eq!(v.len(), 3);
         assert_eq!(v[0]["key"], "AS-12");
+        assert_eq!(v[0]["title"], "Fix login");
         assert_eq!(v[0]["ticketKey"], "AS-12");
+        assert_eq!(v[0]["taskType"], "fix");
         assert_eq!(v[1]["title"], "Deploy\tx");
         assert_eq!(v[1]["ticketKey"], "OPS-3");
+        assert_eq!(v[1]["taskType"], "feature");
+        assert!(v[2]["taskType"].is_null());
     }
 
     #[test]

@@ -1,6 +1,10 @@
 use crate::actions;
-use crate::procs::{now_ms, System};
-use crate::util::ticket;
+use crate::http::{
+    dry_run, err, header, q, res, respond, respond_err, respond_raw, write_response, Request,
+};
+use crate::procs::System;
+use crate::util::now_ms;
+use crate::wire::{CMD_CLOSE, CMD_HOLD, CMD_LINK, CMD_RESUME, PROTOCOL};
 use crate::{scan, Ctx};
 use serde_json::{json, Value};
 use std::io::{BufRead, BufReader, ErrorKind, Read, Write};
@@ -8,8 +12,6 @@ use std::net::TcpStream;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::time::Duration;
-
-pub const PROTOCOL: u32 = 1;
 
 pub trait Stream: Read + Write + Send {
     fn set_read_timeout(&self, d: Option<Duration>) -> std::io::Result<()>;
@@ -60,9 +62,9 @@ pub fn socket_path(state_dir: &Path) -> PathBuf {
         .map(PathBuf::from)
         .unwrap_or_else(|| {
             state_dir.join(if cfg!(unix) {
-                "daemon.sock"
+                crate::wire::SOCKET_FILE
             } else {
-                "daemon.json"
+                crate::wire::ENDPOINT_FILE
             })
         })
 }
@@ -77,14 +79,6 @@ pub fn version() -> Value {
     })
 }
 
-pub struct Request {
-    pub method: String,
-    pub path: String,
-    pub query: Vec<(String, String)>,
-    pub headers: Vec<(String, String)>,
-    pub body: Vec<u8>,
-}
-
 pub(crate) const HEAD_TIMEOUT: Duration = Duration::from_secs(30);
 
 struct Head {
@@ -97,6 +91,8 @@ const ACCEPT_BACKOFF: Duration = Duration::from_millis(100);
 const MAX_LINE: usize = 8 << 10;
 const MAX_HEAD: usize = 64 << 10;
 const MAX_HEADERS: usize = 100;
+const MAX_BODY: u64 = 1 << 20;
+const MAX_DRAIN: u64 = 16 << 20;
 
 #[derive(Debug, PartialEq)]
 enum HeadErr {
@@ -175,30 +171,43 @@ fn read_head(r: &mut impl BufRead) -> Result<Head, HeadErr> {
     })
 }
 
-pub fn q<'a>(r: &'a Request, k: &str) -> Option<&'a str> {
-    r.query
-        .iter()
-        .find(|(a, _)| a == k)
-        .map(|(_, v)| v.as_str())
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
+pub(crate) enum Effect {
+    None,
+    Rescan,
+    Persist,
 }
 
-pub fn header<'a>(r: &'a Request, k: &str) -> Option<&'a str> {
-    r.headers
-        .iter()
-        .find(|(a, _)| a == k)
-        .map(|(_, v)| v.as_str())
+thread_local! {
+    static EFFECT: std::cell::Cell<Effect> = const { std::cell::Cell::new(Effect::None) };
 }
 
-pub fn dry_run(r: &Request) -> bool {
-    q(r, "dryRun") != Some("false")
+pub(crate) fn mark(e: Effect) {
+    EFFECT.with(|c| c.set(c.get().max(e)));
 }
 
-fn err(code: u16, msg: impl Into<String>) -> (u16, Value) {
-    (code, json!({ "error": msg.into() }))
+fn take_effect() -> Effect {
+    EFFECT.with(|c| c.replace(Effect::None))
 }
 
-fn res(code: u16, r: Result<Value, (u16, String)>) -> (u16, Value) {
-    r.map(|v| (code, v)).unwrap_or_else(|(c, e)| err(c, e))
+fn publish_line_updated(l: &crate::Line, local: Value) {
+    crate::board::publish(
+        "line.updated",
+        json!({"line": l.to_json()["line"], "local": local}),
+    );
+}
+
+const TEXT_REQUIRED: &str = "text (string) required";
+const NOTE_TEXT_REQUIRED: &str = "note text required";
+
+fn notes_reply(r: Result<(crate::Line, Value, Vec<Value>), crate::notes::Err>) -> (u16, Value) {
+    match r {
+        Ok((l, note, notes)) => {
+            publish_line_updated(&l, json!({"notes": notes}));
+            (200, json!({"lineId": l.id, "note": note, "notes": notes}))
+        }
+        Err((code, e)) => err(code, e),
+    }
 }
 
 fn term_spec(b: &Value, state_dir: &std::path::Path) -> Result<crate::term::Spec, String> {
@@ -241,6 +250,17 @@ fn term_spec(b: &Value, state_dir: &std::path::Path) -> Result<crate::term::Spec
         workspace_id: s("workspaceId")?,
         ..Default::default()
     };
+    if let Some(id) = s("install")? {
+        if !spec.cmd.is_empty() || !b["agent"].is_null() {
+            return Err("give either install, agent or cmd".into());
+        }
+        let a = crate::agents::get(&id).ok_or_else(|| format!("unknown agent {id}"))?;
+        spec.cmd = crate::agents::install_argv(a)?;
+        spec.shown = a.install_cmd().map(|c| vec![c.to_string()]);
+        if spec.title.is_none() {
+            spec.title = Some(format!("Install {}", a.name));
+        }
+    }
     if let Some(id) = s("agent")? {
         if !spec.cmd.is_empty() {
             return Err("give either agent or cmd, not both".into());
@@ -305,7 +325,7 @@ fn in_worktree(ctx: &Ctx, body: &Value, spec: &mut crate::term::Spec) -> Result<
     let agent = body["agent"]
         .as_str()
         .map(crate::agents::id_of)
-        .or_else(|| crate::agents::of_argv(&spec.cmd).map(|a| a.id))
+        .or_else(|| crate::agents::of_launch_argv(&spec.cmd).map(|a| a.id))
         .unwrap_or("shell");
     spec.cwd =
         crate::worktrees::for_term(ctx, &spec.cwd, agent, &opt).map_err(|(c, e)| err(c, e))?;
@@ -321,6 +341,7 @@ fn terms(r: &Request, segs: &[&str], body: &Value, ctx: &Ctx) -> Option<(u16, Va
             Value::Array(term::all().iter().map(|t| t.to_json()).collect()),
         ),
         ("POST", ["v1", "terms"]) => {
+            mark(Effect::Rescan);
             let started = match crate::workspaces::start_body(ctx, body) {
                 Ok(b) => b,
                 Err((c, e)) => return Some(err(c, e)),
@@ -354,40 +375,49 @@ fn terms(r: &Request, segs: &[&str], body: &Value, ctx: &Ctx) -> Option<(u16, Va
                 Ok(t.to_json())
             }),
         ),
-        ("PUT", ["v1", "terms", id, "title"]) => res(
-            200,
-            found(id).and_then(|t| {
-                let raw = body
-                    .get("title")
-                    .filter(|v| v.is_null() || v.is_string())
-                    .ok_or((400, "title (string or null) required".into()))?;
-                t.set_title(crate::actions::clean_title(raw.as_str()));
-                Ok(t.to_json())
-            }),
-        ),
-        ("POST", ["v1", "terms", id, "kill"]) => res(
-            202,
-            found(id).and_then(|t| {
-                if body["confirm"] != true {
-                    return Err((400, "kill needs {\"confirm\":true}".into()));
-                }
-                if t.exited() {
-                    return Err((409, "term has exited".into()));
-                }
-                t.kill().map_err(|e| (500, e))?;
-                Ok(t.to_json())
-            }),
-        ),
-        ("DELETE", ["v1", "terms", id]) => res(
-            200,
-            found(id).and_then(|t| {
-                if !t.exited() {
-                    return Err((409, "term is still running; kill it first".into()));
-                }
-                term::remove(id);
-                Ok(json!({"deleted": id}))
-            }),
-        ),
+        ("PUT", ["v1", "terms", id, "title"]) => {
+            mark(Effect::Persist);
+            res(
+                200,
+                found(id).and_then(|t| {
+                    let raw = body
+                        .get("title")
+                        .filter(|v| v.is_null() || v.is_string())
+                        .ok_or((400, "title (string or null) required".into()))?;
+                    t.set_title(crate::actions::clean_title(raw.as_str()));
+                    Ok(t.to_json())
+                }),
+            )
+        }
+        ("POST", ["v1", "terms", id, "kill"]) => {
+            mark(Effect::Rescan);
+            res(
+                202,
+                found(id).and_then(|t| {
+                    if body["confirm"] != true {
+                        return Err((400, "kill needs {\"confirm\":true}".into()));
+                    }
+                    if t.exited() {
+                        return Err((409, "term has exited".into()));
+                    }
+                    t.kill().map_err(|e| (500, e))?;
+                    Ok(t.to_json())
+                }),
+            )
+        }
+        ("DELETE", ["v1", "terms", id]) => {
+            mark(Effect::Rescan);
+            res(
+                200,
+                found(id).and_then(|t| {
+                    if !t.exited() {
+                        return Err((409, "term is still running; kill it first".into()));
+                    }
+                    term::remove(id);
+                    Ok(json!({"deleted": id}))
+                }),
+            )
+        }
         _ => return None,
     })
 }
@@ -397,8 +427,8 @@ fn tasks(r: &Request, segs: &[&str], body: &Value, ctx: &Ctx) -> Option<(u16, Va
     let st = ctx.config.station_id.as_str();
     Some(match (r.method.as_str(), segs) {
         ("GET", ["v1", "tasks"]) => {
-            let project = q(r, "project").map(crate::board::decode);
-            let status = q(r, "status").map(crate::board::decode);
+            let project = r.param("project");
+            let status = r.param("status");
             let wanted: Vec<&str> = status
                 .as_deref()
                 .map(|s| s.split(',').collect())
@@ -421,13 +451,10 @@ fn tasks(r: &Request, segs: &[&str], body: &Value, ctx: &Ctx) -> Option<(u16, Va
             200,
             crate::registry::Registry::open(&ctx.state_dir)
                 .map_err(|e| (500, e))
-                .map(|reg| {
-                    json!({"enabled": ctx.config.auto_organize
-                        || crate::task_agents::auto_organize_enabled(&reg)})
-                }),
+                .map(|reg| json!({"enabled": crate::task_agents::auto_organize_on(ctx, &reg)})),
         ),
         ("PUT", ["v1", "tasks", "auto-organize"]) => match body["enabled"].as_bool() {
-            None => (400, json!({"error": "enabled must be a boolean"})),
+            None => err(400, "enabled must be a boolean"),
             Some(on) => res(
                 200,
                 crate::registry::Registry::open(&ctx.state_dir)
@@ -438,6 +465,57 @@ fn tasks(r: &Request, segs: &[&str], body: &Value, ctx: &Ctx) -> Option<(u16, Va
                     .map(|_| json!({"enabled": on})),
             ),
         },
+        ("GET", ["v1", "tasks", "agent-messaging"]) => res(
+            200,
+            crate::registry::Registry::open(&ctx.state_dir)
+                .map_err(|e| (500, e))
+                .map(|reg| json!({"enabled": crate::task_agents::agent_messaging_enabled(&reg)})),
+        ),
+        ("PUT", ["v1", "tasks", "agent-messaging"]) => match body["enabled"].as_bool() {
+            None => err(400, "enabled must be a boolean"),
+            Some(on) => res(
+                200,
+                crate::registry::Registry::open(&ctx.state_dir)
+                    .map_err(|e| (500, e))
+                    .and_then(|reg| {
+                        crate::task_agents::set_agent_messaging(&reg, on).map_err(|e| (500, e))
+                    })
+                    .map(|_| json!({"enabled": on})),
+            ),
+        },
+        ("GET", ["v1", "tasks", "agent-tasks"]) => res(
+            200,
+            crate::registry::Registry::open(&ctx.state_dir)
+                .map_err(|e| (500, e))
+                .map(|reg| json!({"enabled": crate::task_agents::agent_tasks_enabled(&reg)})),
+        ),
+        ("PUT", ["v1", "tasks", "agent-tasks"]) => match body["enabled"].as_bool() {
+            None => err(400, "enabled must be a boolean"),
+            Some(on) => res(
+                200,
+                crate::registry::Registry::open(&ctx.state_dir)
+                    .map_err(|e| (500, e))
+                    .and_then(|reg| {
+                        crate::task_agents::set_agent_tasks(&reg, on).map_err(|e| (500, e))
+                    })
+                    .map(|_| json!({"enabled": on})),
+            ),
+        },
+        ("GET", ["v1", "tasks", "auto-concurrency"]) => res(
+            200,
+            crate::registry::Registry::open(&ctx.state_dir)
+                .map_err(|e| (500, e))
+                .map(|reg| {
+                    json!({"value": crate::task_agents::auto_concurrency(&reg, ctx.config.auto_concurrency)})
+                }),
+        ),
+        ("PUT", ["v1", "tasks", "auto-concurrency"]) => res(
+            200,
+            crate::registry::Registry::open(&ctx.state_dir)
+                .map_err(|e| (500, e))
+                .and_then(|reg| crate::task_agents::set_auto_concurrency(&reg, &body["value"]))
+                .map(|n| json!({"value": n})),
+        ),
         ("POST", ["v1", "tasks"]) => res(201, tasks::create(ctx, body).map(|t| t.to_json(st))),
         ("GET", ["v1", "tasks", id]) => res(
             200,
@@ -450,18 +528,27 @@ fn tasks(r: &Request, segs: &[&str], body: &Value, ctx: &Ctx) -> Option<(u16, Va
             res(200, tasks::patch(ctx, id, body).map(|t| t.to_json(st)))
         }
         ("DELETE", ["v1", "tasks", id]) => res(200, tasks::delete(ctx, id)),
-        ("POST", ["v1", "tasks", id, "start"]) => res(
-            200,
-            crate::term::size(body)
-                .map_err(|e| (400, e))
-                .and_then(|size| tasks::start_with(ctx, id, size, body["inPlace"] == true))
-                .map(|t| t.to_json(st)),
-        ),
-        ("POST", ["v1", "tasks", "organize"]) => res(
-            200,
-            crate::task_agents::organize(ctx, body["project"].as_str().filter(|p| !p.is_empty()))
+        ("POST", ["v1", "tasks", id, "start"]) => {
+            mark(Effect::Rescan);
+            res(
+                200,
+                crate::term::size(body)
+                    .map_err(|e| (400, e))
+                    .and_then(|size| tasks::start_with(ctx, id, size, body["inPlace"] == true))
+                    .map(|t| t.to_json(st)),
+            )
+        }
+        ("POST", ["v1", "tasks", "organize"]) => {
+            mark(Effect::Rescan);
+            res(
+                200,
+                crate::task_agents::organize(
+                    ctx,
+                    body["project"].as_str().filter(|p| !p.is_empty()),
+                )
                 .map(|ts| json!({"started": ts.iter().map(|t| t.to_json(st)).collect::<Vec<_>>()})),
-        ),
+            )
+        }
         ("GET", ["v1", "tasks", id, "messages"]) => res(
             200,
             crate::registry::Registry::open(&ctx.state_dir)
@@ -476,9 +563,14 @@ fn tasks(r: &Request, segs: &[&str], body: &Value, ctx: &Ctx) -> Option<(u16, Va
             201,
             crate::task_agents::send_message(ctx, id, body).map(|m| m.to_json()),
         ),
+        ("GET", ["v1", "tasks", id, "landed"]) => res(200, task_landed(ctx, id)),
         ("GET", ["v1", "tasks", id, "overlaps"]) => {
             res(200, crate::task_agents::overlaps(ctx, id).map(Value::from))
         }
+        ("POST", ["v1", "tasks", id, "votes"]) => res(
+            200,
+            crate::quorum::vote(ctx, id, body).map(|t| t.to_json(st)),
+        ),
         ("POST", ["v1", "tasks", id, "review"]) => res(200, tasks::review(ctx, id, body)),
         ("GET", ["v1", "projects"]) => res(
             200,
@@ -545,10 +637,13 @@ fn resume_term(ctx: &Ctx, r: &Request, id: &str, body: &Value) -> (u16, Value) {
         Err(e) => return err(404, e),
     };
     let attach_only = body["attachOnly"] == true;
-    if let Some(t) = actions::held_terms(l).into_iter().next() {
-        if !attach_only && q(r, "dryRun") != Some("true") {
+    if let Some(t) = actions::pending_terms(l).into_iter().next() {
+        if !attach_only && !r.is_true("dryRun") && actions::waits_for_enter(l, &t) {
             if let Err(e) = t.input(b"\r") {
                 return err(409, e.to_string());
+            }
+            if let Ok(reg) = crate::registry::Registry::open(&ctx.state_dir) {
+                let _ = reg.set_mark(&l.id, "held_by_user", None);
             }
         }
         return (200, t.to_json());
@@ -558,7 +653,7 @@ fn resume_term(ctx: &Ctx, r: &Request, id: &str, body: &Value) -> (u16, Value) {
             return (200, t.to_json());
         }
         if let Some(pane) = l.pane.as_deref() {
-            return attach_pane(ctx, l, pane, size, q(r, "dryRun") == Some("true"));
+            return attach_pane(ctx, l, pane, size, r.is_true("dryRun"));
         }
     }
     if attach_only {
@@ -570,7 +665,7 @@ fn resume_term(ctx: &Ctx, r: &Request, id: &str, body: &Value) -> (u16, Value) {
     };
     plan.r#where = "term";
     plan.pane = None;
-    if q(r, "dryRun") == Some("true") {
+    if r.is_true("dryRun") {
         return (200, plan.to_json());
     }
     let applied = crate::agents::get(l.agent)
@@ -671,26 +766,35 @@ fn activity(ctx: &Ctx, r: &Request, id: &str) -> (u16, Value) {
         Ok(l) => l,
         Err(e) => return err(404, e),
     };
-    let since = match q(r, "since").map(crate::board::decode) {
+    let since = match r.param("since") {
         None => None,
         Some(s) => match crate::util::parse_rfc3339(&s) {
             Some(ms) => Some(ms),
             None => return err(400, "since must be an RFC 3339 time"),
         },
     };
-    let a = crate::activity::find_transcript(
+    let path = crate::activity::find_transcript(
         &ctx.claude_dir,
         &ctx.codex_dir,
         &ctx.gemini_dir,
         l.agent,
         &l.session_id,
-    )
-    .and_then(|p| crate::activity::activity(l.agent, &p, since));
+    );
+    let a = path
+        .as_deref()
+        .and_then(|p| crate::activity::activity(l.agent, p, since));
+    let cost = path
+        .as_deref()
+        .and_then(|p| crate::activity::spend(l.agent, p))
+        .map(|s| crate::activity::spend_json(&s, &l.launch_args));
     let transcript = a.is_some();
     let mut a = a.unwrap_or_else(
         || json!({"workLog": [], "todos": [], "editedFiles": [], "lastAssistantText": ""}),
     );
     a["transcript"] = json!(transcript);
+    if let Some(c) = cost {
+        a["cost"] = c;
+    }
     if let Some(t) = &l.title {
         a["title"] = json!(t);
     }
@@ -762,7 +866,9 @@ fn chat(ctx: &Ctx, r: &Request, id: &str, agent: Option<&str>) -> (u16, Value) {
         None => path.and_then(|p| crate::chat::page(l.agent, &p, query)),
         Some(a) => {
             let page = path
-                .filter(|_| l.agent == "claude")
+                .filter(|_| {
+                    crate::agents::transcript_of(l.agent) == Some(crate::agents::Transcript::Claude)
+                })
                 .and_then(|p| crate::chat::agent_page(&p, a, query));
             if page.is_none() {
                 return err(404, format!("no sub-agent {a} for line {}", l.id));
@@ -821,13 +927,15 @@ pub fn handle(ctx: &Ctx, r: &Request) -> (u16, Value) {
     let body: Value = serde_json::from_slice(&r.body).unwrap_or(Value::Null);
     if let ("POST", ["v1", "lines", id, "resume"]) = (r.method.as_str(), segs.as_slice()) {
         if body["target"] == "term" {
+            mark(Effect::Rescan);
             return resume_term(ctx, r, id, &body);
         }
     }
-    if let ("POST", ["v1", "lines", id, kind @ ("hold" | "close" | "resume" | "link")]) =
+    if let ("POST", ["v1", "lines", id, kind @ (CMD_HOLD | CMD_CLOSE | CMD_RESUME | CMD_LINK)]) =
         (r.method.as_str(), segs.as_slice())
     {
         if let Some((station, online, seen)) = crate::board::remote_station(ctx, id) {
+            mark(Effect::Rescan);
             if !online {
                 return err(
                     409,
@@ -837,8 +945,8 @@ pub fn handle(ctx: &Ctx, r: &Request) -> (u16, Value) {
                     ),
                 );
             }
-            let mut args = json!({ "dryRun": *kind != "link" && dry_run(r) });
-            if *kind == "link" {
+            let mut args = json!({ "dryRun": *kind != CMD_LINK && dry_run(r) });
+            if *kind == CMD_LINK {
                 let Some(k) = body["ticketKey"].as_str() else {
                     return err(400, "ticketKey required");
                 };
@@ -852,6 +960,7 @@ pub fn handle(ctx: &Ctx, r: &Request) -> (u16, Value) {
         .or_else(|| crate::review::routes(r, &segs, &body, ctx))
         .or_else(|| crate::workspaces::route(r, &segs, &body, ctx))
         .or_else(|| crate::gitgraph::routes(ctx, r, &segs, &body))
+        .or_else(|| crate::gitops::routes(ctx, r, &segs, &body))
         .or_else(|| crate::worktrees::routes(ctx, &r.method, &segs, &body))
         .or_else(|| crate::install::routes(&r.method, &segs, &body, &ctx.state_dir))
         .or_else(|| crate::statusline::routes(&r.method, &segs, &body, &ctx.state_dir))
@@ -859,6 +968,7 @@ pub fn handle(ctx: &Ctx, r: &Request) -> (u16, Value) {
         .or_else(|| crate::import::routes(&r.method, &segs, &body, &ctx.state_dir))
         .or_else(|| crate::lifecycle::routes(&r.method, &segs, &body, &ctx.state_dir))
         .or_else(|| crate::termtheme::routes(&r.method, &segs, &body))
+        .or_else(|| crate::power::routes(&r.method, &segs, &body, &ctx.state_dir))
         .or_else(|| crate::feedback::routes(ctx, &r.method, &segs, &body))
         .or_else(|| crate::github::routes(ctx, r, &segs, &body))
         .or_else(|| crate::profiles::routes(ctx, r, &segs, &body))
@@ -890,19 +1000,15 @@ pub fn handle(ctx: &Ctx, r: &Request) -> (u16, Value) {
         },
         ("GET", ["v1", "lines"]) => match crate::current_lines(ctx) {
             Ok(lines) => {
-                let all = q(r, "all") == Some("true");
-                let tk = q(r, "ticketKey").and_then(ticket);
-                let repo = q(r, "repo").map(str::to_ascii_lowercase);
-                let state = q(r, "state");
+                let filter = crate::LineFilter::new(
+                    r.is_true("all"),
+                    q(r, "ticketKey"),
+                    q(r, "repo"),
+                    q(r, "state"),
+                );
                 let v: Vec<Value> = lines
                     .iter()
-                    .filter(|l| all || l.recent(ctx.now_ms))
-                    .filter(|l| tk.is_none() || l.ticket == tk)
-                    .filter(|l| {
-                        repo.as_ref()
-                            .is_none_or(|x| l.repo.to_ascii_lowercase().contains(x))
-                    })
-                    .filter(|l| state.is_none_or(|s| l.state == s))
+                    .filter(|l| filter.matches(l, ctx.now_ms))
                     .map(|l| l.to_json())
                     .collect();
                 (200, Value::Array(v))
@@ -910,39 +1016,40 @@ pub fn handle(ctx: &Ctx, r: &Request) -> (u16, Value) {
             Err(e) => err(500, e),
         },
         ("POST", ["v1", "lines", id, "hold"]) => {
-            let held = if q(r, "afterTurn") == Some("true") {
+            mark(Effect::Rescan);
+            let held = if r.is_true("afterTurn") {
                 actions::hold_after_turn(ctx, id, !dry_run(r))
             } else {
                 actions::hold(ctx, id, !dry_run(r))
             };
             match held {
-                Ok(rep) => (if rep.ok() { 200 } else { 409 }, rep.to_json()),
+                Ok(rep) => (rep.http_status(), rep.to_json()),
                 Err(e) => err(404, e),
             }
         }
-        ("DELETE", ["v1", "lines", id, "hold"]) => match actions::cancel_pending_hold(ctx, id) {
-            Ok(id) => (200, json!({"lineId": id, "holdPending": false})),
-            Err((code, e)) => err(code, e),
-        },
+        ("DELETE", ["v1", "lines", id, "hold"]) => {
+            mark(Effect::Rescan);
+            match actions::cancel_pending_hold(ctx, id) {
+                Ok(id) => (200, json!({"lineId": id, "holdPending": false})),
+                Err((code, e)) => err(code, e),
+            }
+        }
         ("POST", ["v1", "lines", id, "close"]) => {
-            match actions::close(
-                ctx,
-                id,
-                !dry_run(r),
-                q(r, "shell") == Some("true"),
-                q(r, "force") == Some("true"),
-            ) {
-                Ok(rep) => (if rep.ok() { 200 } else { 409 }, rep.to_json()),
+            mark(Effect::Rescan);
+            match actions::close(ctx, id, !dry_run(r), r.is_true("shell"), r.is_true("force")) {
+                Ok(rep) => (rep.http_status(), rep.to_json()),
                 Err(e) => err(404, e),
             }
         }
         ("POST", ["v1", "lines", id, "resume"]) => {
+            mark(Effect::Rescan);
             match actions::resume(ctx, id, dry_run(r), actions::Launch::Detached) {
                 Ok(p) => (200, p.to_json()),
                 Err(e) => err(409, e),
             }
         }
         ("POST", ["v1", "lines", id, "link"]) => {
+            mark(Effect::Rescan);
             let Some(k) = body["ticketKey"].as_str() else {
                 return err(400, "ticketKey required");
             };
@@ -952,6 +1059,7 @@ pub fn handle(ctx: &Ctx, r: &Request) -> (u16, Value) {
             }
         }
         ("PUT", ["v1", "lines", id, "pin"]) => {
+            mark(Effect::Persist);
             let Some(p) = body["pinned"].as_bool() else {
                 return err(400, "pinned required");
             };
@@ -961,27 +1069,54 @@ pub fn handle(ctx: &Ctx, r: &Request) -> (u16, Value) {
             }
         }
         ("PUT", ["v1", "lines", id, "title"]) => {
+            mark(Effect::Persist);
             let Some(raw) = body.get("title").filter(|v| v.is_null() || v.is_string()) else {
                 return err(400, "title (string or null) required");
             };
             let title = actions::clean_title(raw.as_str());
             match actions::set_title(ctx, id, title.as_deref()) {
                 Ok(l) => {
-                    crate::board::publish(
-                        "line.updated",
-                        json!({"line": l.to_json()["line"], "local": {"titleOverride": title}}),
-                    );
+                    publish_line_updated(&l, json!({"titleOverride": title}));
                     (200, json!({"lineId": l.id, "titleOverride": title}))
                 }
                 Err((code, e)) => err(code, e),
             }
+        }
+        ("POST", ["v1", "lines", id, "notes"]) => {
+            let Some(text) = body["text"].as_str() else {
+                return err(400, TEXT_REQUIRED);
+            };
+            let Some(text) = crate::notes::clean_note(Some(text)) else {
+                return err(400, NOTE_TEXT_REQUIRED);
+            };
+            let now = now_ms();
+            notes_reply(actions::notes(ctx, id, |n| {
+                crate::notes::add(n, &text, now)
+            }))
+        }
+        ("PUT", ["v1", "lines", id, "notes", note]) => {
+            let Some(text) = body["text"].as_str() else {
+                return err(400, TEXT_REQUIRED);
+            };
+            let Some(text) = crate::notes::clean_note(Some(text)) else {
+                return err(400, NOTE_TEXT_REQUIRED);
+            };
+            let now = now_ms();
+            notes_reply(actions::notes(ctx, id, |n| {
+                crate::notes::edit(n, note, &text, now)
+            }))
+        }
+        ("DELETE", ["v1", "lines", id, "notes", note]) => {
+            notes_reply(actions::notes(ctx, id, |n| {
+                crate::notes::remove(n, note).map(|_| Value::Null)
+            }))
         }
         ("POST", ["v1", "hook-events"]) => {
             let (Some(agent), Some(event)) = (body["agent"].as_str(), body["event"].as_str())
             else {
                 return err(400, "agent and event required");
             };
-            if crate::agents::get(agent).is_none_or(|a| a.id == "shell") {
+            if !crate::agents::task_agent(agent) {
                 return err(400, "agent must be a known coding agent");
             }
             let event = crate::hooks::canonical(event, body["notificationType"].as_str());
@@ -1009,50 +1144,10 @@ pub fn handle(ctx: &Ctx, r: &Request) -> (u16, Value) {
     }
 }
 
-fn reason(code: u16) -> &'static str {
-    match code {
-        200 => "OK",
-        201 => "Created",
-        202 => "Accepted",
-        400 => "Bad Request",
-        403 => "Forbidden",
-        404 => "Not Found",
-        408 => "Request Timeout",
-        409 => "Conflict",
-        411 => "Length Required",
-        413 => "Payload Too Large",
-        414 => "URI Too Long",
-        415 => "Unsupported Media Type",
-        422 => "Unprocessable Content",
-        431 => "Request Header Fields Too Large",
-        501 => "Not Implemented",
-        502 => "Bad Gateway",
-        504 => "Gateway Timeout",
-        _ => "Internal Server Error",
-    }
-}
-
-pub fn respond_raw(s: &mut (impl Write + ?Sized), code: u16, ctype: &str, body: &[u8]) {
-    write_response(s, code, ctype, "", body)
-}
-
-fn write_response(s: &mut (impl Write + ?Sized), code: u16, ctype: &str, extra: &str, body: &[u8]) {
-    let _ = write!(
-        s,
-        "HTTP/1.1 {code} {}\r\nContent-Type: {ctype}\r\nContent-Length: {}\r\nCache-Control: no-store\r\n{extra}Connection: close\r\n\r\n",
-        reason(code),
-        body.len()
-    );
-    let _ = s.write_all(body);
-}
-
-pub(crate) fn respond(s: &mut impl Write, code: u16, v: &Value) {
-    respond_raw(
-        s,
-        code,
-        "application/json",
-        &serde_json::to_vec(v).unwrap_or_default(),
-    );
+fn task_landed(ctx: &Ctx, id: &str) -> Result<Value, (u16, String)> {
+    let reg = crate::registry::Registry::open(&ctx.state_dir).map_err(|e| (500, e))?;
+    let t = crate::tasks::get(&reg, id)?;
+    crate::worktrees::task_landed(ctx, &t.project, t.branch)
 }
 
 fn upload(r: &mut BufReader<&mut impl Stream>, h: &Head) -> (u16, Value) {
@@ -1074,23 +1169,21 @@ pub fn conn(mut s: impl Stream, token: Option<&str>) {
             drop(r);
             return match e {
                 HeadErr::Io(ErrorKind::WouldBlock | ErrorKind::TimedOut) => {
-                    respond(&mut s, 408, &json!({"error": "request head timed out"}))
+                    respond_err(&mut s, 408, "request head timed out")
                 }
-                HeadErr::TooLarge(code) => respond(
-                    &mut s,
-                    code,
-                    &json!({"error": "request line or headers too large"}),
-                ),
-                HeadErr::Io(_) => respond(&mut s, 400, &json!({"error": "bad request"})),
+                HeadErr::TooLarge(code) => {
+                    respond_err(&mut s, code, "request line or headers too large")
+                }
+                HeadErr::Io(_) => respond_err(&mut s, 400, "bad request"),
             };
         }
     };
     if token.is_some_and(|t| !crate::board::authorized(&head.req, t)) {
         drop(r);
-        return respond(
+        return respond_err(
             &mut s,
             403,
-            &json!({"error": "token required: open the URL printed by `overseer board`"}),
+            "token required: open the URL printed by `overseer board`",
         );
     }
     if head.req.method == "POST" && head.req.path.trim_matches('/') == "v1/uploads" {
@@ -1099,11 +1192,19 @@ pub fn conn(mut s: impl Stream, token: Option<&str>) {
         return respond(&mut s, code, &v);
     }
     let Head { mut req, len, .. } = head;
-    let mut body = vec![0; len.unwrap_or(0).min(1 << 20) as usize];
+    let len = len.unwrap_or(0);
+    if len > MAX_BODY {
+        // Drained first: a client still writing its body would get EPIPE and never read the answer.
+        let _ = r.get_ref().set_read_timeout(Some(HEAD_TIMEOUT));
+        let _ = std::io::copy(&mut (&mut r).take(len.min(MAX_DRAIN)), &mut std::io::sink());
+        drop(r);
+        return respond_err(&mut s, 413, "request body exceeds 1 MiB");
+    }
+    let mut body = vec![0; len as usize];
     let read = r.read_exact(&mut body);
     drop(r);
     if read.is_err() {
-        return respond(&mut s, 400, &json!({"error": "bad request"}));
+        return respond_err(&mut s, 400, "bad request");
     }
     req.body = body;
     let segs: Vec<&str> = req.path.trim_matches('/').split('/').collect();
@@ -1124,10 +1225,12 @@ pub fn conn(mut s: impl Stream, token: Option<&str>) {
     {
         return;
     }
+    take_effect();
     let (code, v) = handle(&ctx, &req);
-    if changes_lines(&req.method, &req.path, code) {
+    let effect = take_effect();
+    if req.method != "GET" && (200..300).contains(&code) && effect != Effect::None {
         crate::scanner::poke();
-        if settles_lines(&req.method, &req.path) {
+        if effect == Effect::Persist {
             if let Ok(lines) = crate::scan(&ctx) {
                 crate::lifecycle::persist(&ctx.state_dir, &lines);
             }
@@ -1153,41 +1256,6 @@ pub fn conn(mut s: impl Stream, token: Option<&str>) {
         }
         std::process::exit(0);
     }
-}
-
-fn settles_lines(method: &str, path: &str) -> bool {
-    let segs: Vec<&str> = path.trim_matches('/').split('/').collect();
-    method == "PUT"
-        && matches!(
-            segs.as_slice(),
-            ["v1", "lines", _, "pin" | "title" | "workspace"]
-                | ["v1", "terms", _, "title" | "workspace"]
-        )
-}
-
-fn changes_lines(method: &str, path: &str, code: u16) -> bool {
-    if method == "GET" || !(200..300).contains(&code) {
-        return false;
-    }
-    let segs: Vec<&str> = path.trim_matches('/').split('/').collect();
-    matches!(
-        (method, segs.as_slice()),
-        (
-            _,
-            [
-                "v1",
-                "lines",
-                _,
-                "hold" | "close" | "resume" | "link" | "pin" | "title" | "workspace"
-            ]
-        ) | ("POST", ["v1", "terms"])
-            | ("POST", ["v1", "terms", _, "kill"])
-            | ("PUT", ["v1", "terms", _, "title" | "workspace"])
-            | ("DELETE", ["v1", "terms" | "workspaces", _])
-            | ("POST", ["v1", "tasks", _, "start"])
-            | ("POST", ["v1", "tasks", "organize"])
-            | ("POST", ["v1", "import", "switchboard"])
-    )
 }
 
 pub(crate) fn accept<S: Stream + 'static>(s: S, token: Option<String>) {
@@ -1233,7 +1301,7 @@ fn listen(path: &Path, adopt: Option<i32>) -> Result<(), String> {
         None => bind(path)?,
     };
     crate::upgrade::set_listener(l.as_raw_fd());
-    crate::util::supervise("listener", move || {
+    crate::dlog::supervise("listener", move || {
         for s in l.incoming() {
             match s {
                 Ok(s) => {
@@ -1256,7 +1324,7 @@ fn listen(path: &Path, adopt: Option<i32>) -> Result<(), String> {
     let tok = crate::board::token()?;
     let info = json!({"addr": addr.to_string(), "token": tok, "pid": std::process::id()});
     std::fs::write(path, info.to_string()).map_err(|e| format!("{}: {e}", path.display()))?;
-    crate::util::supervise("listener", move || {
+    crate::dlog::supervise("listener", move || {
         for s in l.incoming() {
             match s {
                 Ok(s) => {
@@ -1331,11 +1399,7 @@ fn watch_transcripts(claude_dir: PathBuf, codex_dir: PathBuf, gemini_dir: PathBu
                     now,
                 );
             }
-            let Some(len) =
-                p.0.as_ref()
-                    .and_then(|p| std::fs::metadata(p).ok())
-                    .map(|m| m.len())
-            else {
+            let Some(len) = p.0.as_deref().and_then(crate::chat::transcript_stamp) else {
                 continue;
             };
             let len = len.wrapping_add(p.0.as_deref().map_or(0, crate::chat::agents_stamp));
@@ -1396,6 +1460,7 @@ pub fn run(
     let adopted = crate::upgrade::resume(saved, &state_dir);
     crate::shellenv::init();
     crate::lifecycle::on_start(&state_dir, restarted || once);
+    crate::power::on_start(&state_dir);
     let path = socket_path(&state_dir);
     crate::scanner::share();
     listen(&path, adopted)?;
@@ -1416,18 +1481,18 @@ pub fn run(
     );
     crate::usage::init(&state_dir, cd.clone(), xd.clone(), gd.clone());
     crate::github::resume_pending(&state_dir);
-    crate::util::supervise("transcripts", move || {
+    crate::dlog::supervise("transcripts", move || {
         watch_transcripts(cd.clone(), xd.clone(), gd.clone())
     });
-    crate::util::supervise("gitgraph", crate::gitgraph::watch_loop);
+    crate::dlog::supervise("gitgraph", crate::gitgraph::watch_loop);
     let sd = state_dir.clone();
-    crate::util::supervise("review-watch", move || {
+    crate::dlog::supervise("review-watch", move || {
         crate::review::watch::run(sd.clone())
     });
-    crate::util::supervise("ports", crate::ports::watch);
+    crate::dlog::supervise("ports", crate::ports::watch);
     if !once {
         let ld = state_dir.clone();
-        crate::util::supervise("log-rotate", move || {
+        crate::dlog::supervise("log-rotate", move || {
             crate::dlog::rotate_forever(ld.clone())
         });
     }
@@ -1437,7 +1502,7 @@ pub fn run(
             chores = now_ms() + 600_000;
             crate::uploads::cleanup(
                 &crate::uploads::dir(),
-                &state_dir.join("uploads"),
+                &state_dir.join(crate::paths::STATE_UPLOADS_DIR),
                 std::time::SystemTime::now(),
             );
             crate::discover::background();
@@ -1549,9 +1614,9 @@ fn command_line(pid: i32) -> Option<String> {
         let raw = std::fs::read(format!("/proc/{pid}/cmdline")).ok()?;
         return Some(String::from_utf8_lossy(&raw).replace('\0', " "));
     }
-    let out = crate::git::output_within(
+    let out = crate::exec::output_within(
         std::process::Command::new("ps").args(["-o", "command=", "-p", &pid.to_string()]),
-        crate::git::PROBE_TIMEOUT,
+        crate::exec::PROBE_TIMEOUT,
     )
     .ok()?;
     Some(String::from_utf8_lossy(&out.stdout).trim().to_string())
@@ -1863,26 +1928,73 @@ mod tests {
             .starts_with("HTTP/1.1 431 Request Header Fields Too Large\r\n"));
     }
 
+    fn effect_of(ctx: &Ctx, method: &str, path: &str, body: &str) -> Effect {
+        let req = Request {
+            method: method.into(),
+            path: path.into(),
+            query: vec![],
+            headers: vec![],
+            body: body.as_bytes().to_vec(),
+        };
+        take_effect();
+        handle(ctx, &req);
+        take_effect()
+    }
+
     #[test]
-    fn successful_writes_ask_for_a_rescan() {
-        assert!(changes_lines("POST", "/v1/lines/x/hold", 200));
-        assert!(changes_lines("POST", "/v1/terms", 201));
-        assert!(changes_lines("PUT", "/v1/lines/x/pin", 200));
-        assert!(changes_lines("PUT", "/v1/lines/x/title", 200));
-        assert!(changes_lines("PUT", "/v1/lines/x/workspace", 200));
-        assert!(changes_lines("PUT", "/v1/terms/x/title", 200));
-        assert!(changes_lines("PUT", "/v1/terms/x/workspace", 200));
-        assert!(settles_lines("PUT", "/v1/lines/x/pin"));
-        assert!(settles_lines("PUT", "/v1/terms/x/title"));
-        assert!(!settles_lines("POST", "/v1/terms"));
-        assert!(!settles_lines("PUT", "/v1/lines/x/hold"));
-        assert!(changes_lines("DELETE", "/v1/workspaces/w", 200));
-        assert!(!changes_lines("POST", "/v1/terms", 400));
-        assert!(!changes_lines("GET", "/v1/lines", 200));
-        assert!(!changes_lines("POST", "/v1/hook-events", 202));
-        assert!(!changes_lines("POST", "/v1/terms/t1/resize", 200));
-        assert!(!changes_lines("POST", "/v1/lines/x/keys", 200));
-        assert!(changes_lines("POST", "/v1/tasks/t/start", 200));
+    fn routes_that_change_lines_declare_what_the_daemon_does_after_them() {
+        let dir = std::env::temp_dir().join(format!("ov-effects-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let probe = System;
+        let ctx = Ctx {
+            claude_dir: dir.join("claude"),
+            codex_dir: dir.join("codex"),
+            gemini_dir: dir.join("gemini"),
+            vibe_dir: dir.join("vibe"),
+            snapshot: dir.join("snapshot.json"),
+            config: crate::load_config(&dir),
+            state_dir: dir.clone(),
+            now_ms: 1_000_000,
+            probe: &probe,
+            tmux: None,
+        };
+        use Effect::{None as No, Persist, Rescan};
+        let cases: [(&str, &str, &str, Effect); 29] = [
+            ("POST", "/v1/lines/x/hold", "", Rescan),
+            ("DELETE", "/v1/lines/x/hold", "", Rescan),
+            ("POST", "/v1/lines/x/close", "", Rescan),
+            ("POST", "/v1/lines/x/resume", "", Rescan),
+            ("POST", "/v1/lines/x/resume", r#"{"target":"term"}"#, Rescan),
+            ("POST", "/v1/lines/x/link", "", Rescan),
+            ("PUT", "/v1/lines/x/pin", "", Persist),
+            ("PUT", "/v1/lines/x/title", "", Persist),
+            ("PUT", "/v1/lines/x/workspace", "", Persist),
+            ("POST", "/v1/terms", r#"{"cmd":5}"#, Rescan),
+            ("POST", "/v1/terms/x/kill", "", Rescan),
+            ("PUT", "/v1/terms/x/title", "", Persist),
+            ("PUT", "/v1/terms/x/workspace", "", Persist),
+            ("DELETE", "/v1/terms/x", "", Rescan),
+            ("DELETE", "/v1/workspaces/w", "", Rescan),
+            ("POST", "/v1/tasks/t/start", "", Rescan),
+            ("POST", "/v1/tasks/organize", "", Rescan),
+            ("GET", "/v1/lines", "", No),
+            ("GET", "/v1/terms", "", No),
+            ("POST", "/v1/hook-events", "", No),
+            ("POST", "/v1/terms/t1/resize", "", No),
+            ("POST", "/v1/lines/x/keys", "", No),
+            ("POST", "/v1/lines/x/notes", "", No),
+            ("PATCH", "/v1/workspaces/w", "", No),
+            ("POST", "/v1/workspaces", "", No),
+            ("PATCH", "/v1/tasks/t", "", No),
+            ("DELETE", "/v1/tasks/t", "", No),
+            ("GET", "/v1/lines/x/screen", "", No),
+            ("PUT", "/v1/nowhere", "", No),
+        ];
+        for (m, p, b, want) in cases {
+            assert_eq!(effect_of(&ctx, m, p, b), want, "{m} {p}");
+        }
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

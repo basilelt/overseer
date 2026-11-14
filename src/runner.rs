@@ -5,7 +5,7 @@ use crate::registry::Registry;
 use crate::sync::safe_id;
 use crate::sys::OpenOptionsExt;
 use crate::tmux::Tmux;
-use crate::util::{ticket, ticket_any};
+use crate::util::{ticket, ticket_exact};
 use crate::{mkdir_private, scan, Ctx, Line};
 use serde_json::{json, Value};
 use std::io::Write;
@@ -17,7 +17,7 @@ type Outcome = (&'static str, Option<String>);
 const READY_CHECKS: [&str; 4] = ["alive", "inTmux", "atPrompt", "inputEmpty"];
 
 fn refused(e: impl Into<String>) -> Outcome {
-    ("refused", Some(e.into()))
+    (crate::wire::STATUS_REFUSED, Some(e.into()))
 }
 
 pub fn uuid() -> Result<String, String> {
@@ -68,22 +68,8 @@ pub fn clone_for(ctx: &Ctx, repo: &str) -> Option<PathBuf> {
         })
 }
 
-fn slug(s: &str) -> String {
-    s.chars()
-        .map(|c| {
-            if c.is_ascii_alphanumeric() || c == '.' || c == '_' {
-                c
-            } else {
-                '-'
-            }
-        })
-        .collect::<String>()
-        .trim_matches(['-', '.'])
-        .to_string()
-}
-
 fn content_file(ctx: &Ctx, id: &str, text: &str) -> Result<PathBuf, String> {
-    let dir = ctx.state_dir.join("tmp");
+    let dir = ctx.state_dir.join(crate::paths::TMP_DIR);
     mkdir_private(&dir).map_err(|e| e.to_string())?;
     let path = dir.join(format!("{id}.prompt"));
     let _ = std::fs::remove_file(&path);
@@ -138,7 +124,7 @@ struct Plan {
 
 fn plan(ctx: &Ctx, line_id: &str, args: &Value) -> Result<Plan, String> {
     let s = |k: &str| args[k].as_str().unwrap_or_default();
-    if s("agent") != "claude" {
+    if s("agent") != crate::agents::DEFAULT_ID {
         return Err(format!(
             "start supports agent claude only, not '{}'",
             s("agent")
@@ -156,19 +142,8 @@ fn plan(ctx: &Ctx, line_id: &str, args: &Value) -> Result<Plan, String> {
         ("", None) => return Err("start needs a branch or a ticketKey".into()),
         (b, _) => b.to_string(),
     };
-    let c = clone.to_string_lossy();
-    if git(&c, &["check-ref-format", "--branch", &branch]).is_none() {
-        return Err(format!("'{branch}' is not a valid branch name"));
-    }
-    let name = clone
-        .file_name()
-        .map(|n| n.to_string_lossy().into_owned())
-        .unwrap_or_else(|| "repo".into());
-    let path = ctx
-        .config
-        .worktree_dir
-        .join(slug(&name))
-        .join(slug(&branch));
+    valid_branch(&clone, &branch)?;
+    let path = crate::layout::feedback_checkout_dir(&ctx.config.worktree_dir, &clone, &branch);
     if path.exists() {
         return Err(format!("worktree path {} already exists", path.display()));
     }
@@ -186,7 +161,7 @@ pub fn start(ctx: &Ctx, line_id: &str, args: &Value, dry: bool) -> Outcome {
     }
     let reg = match Registry::open(&ctx.state_dir) {
         Ok(r) => r,
-        Err(e) => return ("failed", Some(e)),
+        Err(e) => return (crate::wire::STATUS_FAILED, Some(e)),
     };
     let known: Option<String> = reg
         .conn
@@ -197,7 +172,10 @@ pub fn start(ctx: &Ctx, line_id: &str, args: &Value, dry: bool) -> Outcome {
         )
         .ok();
     if let Some(w) = known {
-        return ("succeeded", Some(format!("already started in {w}")));
+        return (
+            crate::wire::STATUS_SUCCEEDED,
+            Some(format!("already started in {w}")),
+        );
     }
     let p = match plan(ctx, line_id, args) {
         Ok(p) => p,
@@ -210,19 +188,25 @@ pub fn start(ctx: &Ctx, line_id: &str, args: &Value, dry: bool) -> Outcome {
         p.session
     );
     if dry {
-        return ("succeeded", Some(format!("would start {what}")));
+        return (
+            crate::wire::STATUS_SUCCEEDED,
+            Some(format!("would start {what}")),
+        );
     }
     let r = launch(ctx, &reg, line_id, args, &p);
     log_action(
         ctx,
         &json!({
-            "action": "start", "lineId": line_id, "worktree": p.path, "branch": p.branch,
+            "action": crate::wire::CMD_START, "lineId": line_id, "worktree": p.path, "branch": p.branch,
             "session": p.session, "error": r.as_ref().err(),
         }),
     );
     match r {
-        Ok(()) => ("succeeded", Some(format!("started {what}"))),
-        Err(e) => ("failed", Some(e)),
+        Ok(()) => (
+            crate::wire::STATUS_SUCCEEDED,
+            Some(format!("started {what}")),
+        ),
+        Err(e) => (crate::wire::STATUS_FAILED, Some(e)),
     }
 }
 
@@ -254,7 +238,7 @@ fn launch(ctx: &Ctx, reg: &Registry, line_id: &str, args: &Value, p: &Plan) -> R
     let wt_top = p.path.canonicalize().unwrap_or(p.path.clone());
     let line = Line {
         id: line_id.into(),
-        agent: "claude",
+        agent: crate::agents::DEFAULT_ID,
         session_id: sid.clone(),
         owner: s("owner"),
         station_id: ctx.config.station_id.clone(),
@@ -271,11 +255,12 @@ fn launch(ctx: &Ctx, reg: &Registry, line_id: &str, args: &Value, p: &Plan) -> R
     )?;
     let argv = claude_argv(reg, &ctx.config.start_args, sid)?;
     let cmd = format!(
-        "{}; exec \"${{SHELL:-/bin/sh}}\"",
+        "{}; {}",
         argv.iter()
             .map(|a| crate::util::shell_quote(a))
             .collect::<Vec<_>>()
-            .join(" ")
+            .join(" "),
+        crate::util::SHELL_FALLBACK
     );
     tmux.ok(&[
         "new-session",
@@ -289,11 +274,18 @@ fn launch(ctx: &Ctx, reg: &Registry, line_id: &str, args: &Value, p: &Plan) -> R
     deliver(ctx, &tmux, &p.session, line_id, &s("prompt"))
 }
 
+fn claude_bin() -> &'static str {
+    crate::agents::get(crate::agents::CLAUDE).map_or(crate::agents::CLAUDE, |a| a.bin)
+}
+
 fn claude_argv(reg: &Registry, start_args: &[String], sid: String) -> Result<Vec<String>, String> {
-    let mut argv = vec!["claude".to_string()];
+    let mut argv = vec![claude_bin().to_string()];
     argv.extend(start_args.iter().cloned());
-    if crate::agents::auto_approve_enabled(reg, "claude")? {
-        argv.extend(crate::agents::auto_approve_flags("claude", start_args));
+    if crate::agents::auto_approve_enabled(reg, crate::agents::CLAUDE)? {
+        argv.extend(crate::agents::auto_approve_flags(
+            crate::agents::CLAUDE,
+            start_args,
+        ));
     }
     argv.extend(["--session-id".into(), sid]);
     Ok(argv)
@@ -305,7 +297,7 @@ pub fn relaunch(ctx: &Ctx, line_id: &str, message: &str, dry: bool) -> Outcome {
     }
     let lines = match scan(ctx) {
         Ok(l) => l,
-        Err(e) => return ("failed", Some(e)),
+        Err(e) => return (crate::wire::STATUS_FAILED, Some(e)),
     };
     let Ok(l) = find_line(&lines, line_id) else {
         return refused(format!("line {line_id} is not on this station"));
@@ -323,7 +315,7 @@ pub fn relaunch(ctx: &Ctx, line_id: &str, message: &str, dry: bool) -> Outcome {
         let pane = l.pane.clone().unwrap_or_default();
         if dry {
             return (
-                "succeeded",
+                crate::wire::STATUS_SUCCEEDED,
                 Some(format!("would send the message to {pane}")),
             );
         }
@@ -333,7 +325,7 @@ pub fn relaunch(ctx: &Ctx, line_id: &str, message: &str, dry: bool) -> Outcome {
             return actions::resume_plan(ctx, &lines, l, Launch::Detached)
                 .map(|p| {
                     (
-                        "succeeded",
+                        crate::wire::STATUS_SUCCEEDED,
                         Some(format!(
                             "would resume in {} and send the message",
                             p.r#where
@@ -354,11 +346,11 @@ pub fn relaunch(ctx: &Ctx, line_id: &str, message: &str, dry: bool) -> Outcome {
     };
     log_action(
         ctx,
-        &json!({"action": "relaunch", "lineId": l.id, "error": r.as_ref().err()}),
+        &json!({"action": crate::wire::CMD_RELAUNCH, "lineId": l.id, "error": r.as_ref().err()}),
     );
     match r {
-        Ok(m) => ("succeeded", Some(m)),
-        Err(e) => ("failed", Some(e)),
+        Ok(m) => (crate::wire::STATUS_SUCCEEDED, Some(m)),
+        Err(e) => (crate::wire::STATUS_FAILED, Some(e)),
     }
 }
 
@@ -384,9 +376,7 @@ pub fn summary(l: &Line, pr: Option<&str>, titles: &[String]) -> String {
 }
 
 pub fn pick(ctx: &Ctx, key: &str) -> Result<Line, String> {
-    let key = ticket_any(key)
-        .filter(|t| t.eq_ignore_ascii_case(key))
-        .ok_or_else(|| format!("'{key}' is not a ticket key (PROJECT-123)"))?;
+    let key = ticket_exact(key)?;
     let mut all = scan(ctx)?;
     if let Some(u) = crate::remote::user(&ctx.state_dir) {
         match crate::remote::lines(ctx, &u, None) {
@@ -396,7 +386,9 @@ pub fn pick(ctx: &Ctx, key: &str) -> Result<Line, String> {
             }
         }
     }
-    all.retain(|l| l.ticket.as_deref() == Some(key.as_str()) && l.state != "hung-up");
+    all.retain(|l| {
+        l.ticket.as_deref() == Some(key.as_str()) && l.state != crate::wire::STATE_HUNG_UP
+    });
     all.sort_by_key(|l| (l.owner == ctx.config.owner, -l.last_activity_ms));
     all.into_iter()
         .next()
@@ -414,13 +406,21 @@ fn remote_titles(ctx: &Ctx, l: &Line) -> Vec<String> {
         "titles".into(),
         l.id.clone(),
     ]);
-    crate::git::output_within(
+    crate::exec::output_within(
         std::process::Command::new(&argv[0]).args(&argv[1..]),
-        crate::git::PROBE_TIMEOUT,
+        crate::exec::PROBE_TIMEOUT,
     )
     .ok()
     .and_then(|o| serde_json::from_slice::<Vec<String>>(&o.stdout).ok())
     .unwrap_or_default()
+}
+
+fn valid_branch(clone: &Path, branch: &str) -> Result<(), String> {
+    let c = clone.to_string_lossy();
+    if branch.starts_with('-') || git(&c, &["check-ref-format", "--branch", branch]).is_none() {
+        return Err(format!("'{branch}' is not a valid branch name"));
+    }
+    Ok(())
 }
 
 fn add_worktree(clone: &Path, dir: &Path, branch: &str) -> Result<(), String> {
@@ -450,11 +450,12 @@ pub fn patch_local(ctx: &Ctx, l: &Line, print: bool) -> Result<String, String> {
             l.repo
         )
     })?;
+    valid_branch(&clone, &l.branch)?;
     let dir = patch_dir(ctx, l);
     if dir.exists() {
         return Err(format!("{} already exists", dir.display()));
     }
-    let session = format!("sb-patch-{}", slug(&l.branch).replace('.', "-"));
+    let session = crate::layout::patch_session_name(&l.branch);
     if print {
         return Ok(format!(
             "would add worktree {} on branch {} from {}, start claude in tmux session {session} and send it a summary of line {}",
@@ -486,7 +487,7 @@ pub fn patch_local(ctx: &Ctx, l: &Line, print: bool) -> Result<String, String> {
     let top = dir.canonicalize().unwrap_or(dir.clone());
     let line = Line {
         id: id.clone(),
-        agent: "claude",
+        agent: crate::agents::DEFAULT_ID,
         session_id: sid.clone(),
         owner: ctx.config.owner.clone(),
         station_id: ctx.config.station_id.clone(),
@@ -499,8 +500,10 @@ pub fn patch_local(ctx: &Ctx, l: &Line, print: bool) -> Result<String, String> {
     Registry::open(&ctx.state_dir)?.reserve(&line, "dev", ctx.now_ms)?;
     let tmux = ctx.tmux.clone().ok_or("tmux unavailable")?;
     let cmd = format!(
-        "claude --session-id {}; exec \"${{SHELL:-/bin/sh}}\"",
-        crate::util::shell_quote(&sid)
+        "{} --session-id {}; {}",
+        claude_bin(),
+        crate::util::shell_quote(&sid),
+        crate::util::SHELL_FALLBACK
     );
     tmux.ok(&[
         "new-session",
@@ -524,14 +527,7 @@ pub fn patch_local(ctx: &Ctx, l: &Line, print: bool) -> Result<String, String> {
 }
 
 pub fn patch_dir(ctx: &Ctx, l: &Line) -> PathBuf {
-    let name = Path::new(&l.repo)
-        .file_name()
-        .map(|n| n.to_string_lossy().into_owned())
-        .unwrap_or_else(|| "repo".into());
-    ctx.config
-        .worktree_dir
-        .join(slug(&name))
-        .join(format!("{}-patch", slug(&l.branch)))
+    crate::layout::patch_checkout_dir(&ctx.config.worktree_dir, Path::new(&l.repo), &l.branch)
 }
 
 #[cfg(test)]
@@ -547,6 +543,11 @@ mod claude_argv_tests {
 
     fn v(a: &[&str]) -> Vec<String> {
         a.iter().map(|s| (*s).to_string()).collect()
+    }
+
+    #[test]
+    fn the_claude_binary_name_comes_from_the_descriptor() {
+        assert_eq!(claude_bin(), "claude");
     }
 
     #[test]
@@ -586,5 +587,29 @@ mod claude_argv_tests {
             ])
         );
         let _ = std::fs::remove_dir_all(dir);
+    }
+}
+
+#[cfg(test)]
+mod slug_tests {
+    use crate::layout::checkout_slug as slug;
+
+    #[test]
+    fn keeps_dots_and_underscores_and_trims_edges() {
+        let table = [
+            ("feature/AS-77_x", "feature-AS-77_x"),
+            ("a..b", "a..b"),
+            ("-lead-and-trail-", "lead-and-trail"),
+            ("..hidden.", "hidden"),
+            ("a//b  c", "a--b--c"),
+            ("Été", "t"),
+            ("é", ""),
+            ("", ""),
+            ("---", ""),
+            ("my_repo.git", "my_repo.git"),
+        ];
+        for (i, o) in table {
+            assert_eq!(slug(i), o, "{i:?}");
+        }
     }
 }

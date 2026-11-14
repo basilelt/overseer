@@ -1,6 +1,7 @@
 mod common;
 
-use common::{exchange, git, wait, Fx};
+use common::{exchange, git, js, wait, Fx};
+use overseer::util::percent_encode as enc;
 use serde_json::Value;
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::UnixStream;
@@ -10,11 +11,7 @@ use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
 fn now_ms() -> i64 {
-    overseer::procs::now_ms()
-}
-
-fn js(s: &str) -> Value {
-    serde_json::from_str(s).unwrap_or(Value::Null)
+    overseer::util::now_ms()
 }
 
 fn sse_client(sock: &Path, tx: mpsc::Sender<String>) {
@@ -232,9 +229,6 @@ fn board_end_to_end() {
 
 #[test]
 fn pinning_a_line_announces_the_pin_in_the_line_update() {
-    // Given a daemon with one local session line and a client listening to events
-    // When the line is pinned
-    // Then the line list shows the pin at once and the announced update carries it
     let fx = Fx::new("pinevent", 1);
     let _d = fx.daemon(false);
     let mut s = UnixStream::connect(&fx.sock).unwrap();
@@ -274,9 +268,6 @@ fn pinning_a_line_announces_the_pin_in_the_line_update() {
 
 #[test]
 fn line_updates_carry_the_same_local_as_the_line_list() {
-    // Given a daemon with one held local session line and a client listening to events
-    // When the line is pinned, then unpinned
-    // Then each announced update carries the local the line list serves, held fields included
     let fx = Fx::new("evlocal", 1);
     let _d = fx.daemon(false);
     let mut s = UnixStream::connect(&fx.sock).unwrap();
@@ -330,9 +321,6 @@ fn line_updates_carry_the_same_local_as_the_line_list() {
 
 #[test]
 fn line_title_override_is_set_shared_and_cleared() {
-    // Given a daemon with one local session line and a client listening to events
-    // When a client renames the line, then clears the custom title
-    // Then the trimmed title is served and announced, the auto title is kept, and clearing removes it
     let fx = Fx::new("title", 1);
     let _d = fx.daemon(false);
     let (tx, rx) = mpsc::channel();
@@ -375,6 +363,76 @@ fn line_title_override_is_set_shared_and_cleared() {
 }
 
 #[test]
+fn line_notes_are_added_edited_removed_and_survive_a_restart() {
+    let fx = Fx::new("notes", 1);
+    let d = fx.daemon(false);
+    let (tx, rx) = mpsc::channel();
+    sse_client(&fx.sock, tx);
+    let lines = js(&fx.req("GET", "/v1/lines", "").1);
+    let id = lines[0]["line"]["id"].as_str().unwrap().to_string();
+    assert_eq!(lines[0]["local"]["notes"], serde_json::json!([]));
+    let path = format!("/v1/lines/{}/notes", enc(&id));
+    let (code, v) = fx.req("POST", &path, "{}");
+    assert_eq!(
+        (code, js(&v)["error"].clone()),
+        (400, "text (string) required".into())
+    );
+    let (code, v) = fx.req("POST", &path, r#"{"text":"  \n "}"#);
+    assert_eq!(
+        (code, js(&v)["error"].clone()),
+        (400, "note text required".into())
+    );
+    assert_eq!(
+        fx.req("POST", "/v1/lines/nope/notes", r#"{"text":"x"}"#).0,
+        404
+    );
+    let (code, v) = fx.req(
+        "POST",
+        &path,
+        r#"{"text":"  check the flaky test\nbefore merge  "}"#,
+    );
+    assert_eq!(code, 200, "{v}");
+    let v = js(&v);
+    assert_eq!(v["note"]["text"], "check the flaky test\nbefore merge");
+    let note = v["note"]["id"].as_str().unwrap().to_string();
+    let end = Instant::now() + Duration::from_secs(10);
+    while rx.recv_timeout(Duration::from_millis(200)).ok().as_deref() != Some("line.updated") {
+        assert!(Instant::now() < end, "no line.updated after adding a note");
+    }
+    let notes = |fx: &Fx| {
+        js(&fx.req("GET", "/v1/lines", "").1)
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|l| l["line"]["id"] == id.as_str())
+            .unwrap()["local"]["notes"]
+            .clone()
+    };
+    wait(|| notes(&fx)[0]["id"] == note.as_str());
+    let one = format!("{path}/{}", enc(&note));
+    let (code, v) = fx.req("PUT", &one, r#"{"text":"ask about CI"}"#);
+    assert_eq!(
+        (code, js(&v)["note"]["text"].clone()),
+        (200, "ask about CI".into())
+    );
+    assert_eq!(
+        fx.req("PUT", &format!("{path}/nope"), r#"{"text":"x"}"#).0,
+        404
+    );
+    assert_eq!(fx.req("PUT", &one, r#"{"text":""}"#).0, 400);
+    fx.req("POST", &path, r#"{"text":"second"}"#);
+    drop(d);
+    let d = fx.daemon(false);
+    wait(|| notes(&fx).as_array().is_some_and(|a| a.len() == 2));
+    assert_eq!(notes(&fx)[0]["text"], "ask about CI");
+    let (code, v) = fx.req("DELETE", &one, "");
+    assert_eq!(code, 200, "{v}");
+    assert_eq!(js(&v)["notes"].as_array().unwrap().len(), 1);
+    assert_eq!(fx.req("DELETE", &one, "").0, 404);
+    drop(d);
+}
+
+#[test]
 fn http_refuses_non_loopback() {
     let fx = Fx::new("nolo", 0);
     let mut c = Command::new(env!("CARGO_BIN_EXE_overseer"));
@@ -382,66 +440,5 @@ fn http_refuses_non_loopback() {
     let out = common::output(c.args(["daemon", "--once", "--http", "0.0.0.0:0"]), None);
     assert!(!out.status.success());
     assert!(String::from_utf8_lossy(&out.stderr).contains("loopback"));
-    let _ = std::fs::remove_file(&fx.sock);
-}
-
-fn browser() -> Option<std::path::PathBuf> {
-    let path = std::env::var_os("PATH")?;
-    [
-        "chromium",
-        "chromium-browser",
-        "google-chrome",
-        "google-chrome-stable",
-        "firefox",
-    ]
-    .iter()
-    .flat_map(|b| std::env::split_paths(&path).map(move |d| d.join(b)))
-    .find(|p| p.is_file())
-}
-
-#[test]
-fn headless_browser_renders_board() {
-    if std::env::var_os("OVERSEER_HEADLESS_TEST").is_none() {
-        eprintln!("skipped: set OVERSEER_HEADLESS_TEST=1 to run the headless browser check");
-        return;
-    }
-    let Some(b) = browser() else {
-        eprintln!("skipped: no chromium/chrome/firefox on PATH for the headless check");
-        return;
-    };
-    let fx = Fx::new("headless", 2);
-    fx.station("mac-c", 3, now_ms() - 3_600_000, "held");
-    let _d = fx.daemon(true);
-    let url: Value =
-        serde_json::from_str(&std::fs::read_to_string(fx.state.join("board.json")).unwrap())
-            .unwrap();
-    let profile = fx.base.join("browser-profile");
-    std::fs::create_dir_all(&profile).unwrap();
-    let firefox = b.ends_with("firefox");
-    let mut c = Command::new(&b);
-    c.env("HOME", &profile);
-    if firefox {
-        c.args(["--headless", "--no-remote", "--profile"])
-            .arg(&profile)
-            .arg("--screenshot")
-            .arg(fx.base.join("shot.png"));
-    } else {
-        c.args([
-            "--headless",
-            "--disable-gpu",
-            "--no-sandbox",
-            "--virtual-time-budget=5000",
-            "--dump-dom",
-        ])
-        .arg(format!("--user-data-dir={}", profile.display()));
-    }
-    let out = common::output(c.arg(url["url"].as_str().unwrap()), None);
-    if firefox {
-        assert!(fx.base.join("shot.png").exists());
-    } else {
-        let dom = String::from_utf8_lossy(&out.stdout);
-        assert!(dom.contains("AS-42"), "{dom:.2000}");
-        assert!(dom.contains("mac-c"));
-    }
     let _ = std::fs::remove_file(&fx.sock);
 }

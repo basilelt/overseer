@@ -18,7 +18,8 @@
   import { chunks, watchNear } from '../../review/window';
   import Boxes from '@lucide/svelte/icons/boxes';
   import { saveBase } from '../../review/base';
-  import { openReviewNear, reviewKey } from '../../review/open';
+  import { openReviewNear } from '../../review/open';
+  import { reviewKey } from '../../review/keys';
 
   let { store, file }: { store: ReviewStore; file: ReviewFile } = $props();
 

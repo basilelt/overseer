@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { applyUpdate, type ChatState } from '../chat/store';
-import { groupItems, sidebarItems, stableItems } from '../grouping';
+import { groupItems, sidebarItems, stableItems } from '../session/grouping';
 import { applyEvent, type Snapshot } from '../reduce';
 import type { Activity, ChatEntry, DaemonEvent, LocalLine, Task, Term, Workspace } from '../types';
-import { aggregate, itemWorkspaces, sameMap } from '../workspaces';
+import { aggregate, itemWorkspaces, sameMap } from '../workspace/workspaces';
 
 const at = '2026-10-29T10:00:00Z';
 const event = (type: DaemonEvent['type'], data: unknown): DaemonEvent => ({ id: '1', type, at, data });

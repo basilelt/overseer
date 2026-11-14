@@ -9,18 +9,18 @@
   import RotateCcw from '@lucide/svelte/icons/rotate-ccw';
   import SquareTerminal from '@lucide/svelte/icons/square-terminal';
   import { t } from '../../i18n.svelte';
-  import { colorPalette, customColors } from '../../settings.svelte';
+  import { colorPalette, customColors } from '../../settings/settings.svelte';
   import { app } from '../../state.svelte';
-  import { focusPane, update, type Pane } from '../../workspace.svelte';
+  import { focusPane, update, type Pane } from '../../workspace/workspace.svelte';
   import TabBar from './TabBar.svelte';
   import TerminalPane from './TerminalPane.svelte';
   import GitCompare from '@lucide/svelte/icons/git-compare';
-  import { renameTab } from '../../workspace.svelte';
-  import { newTabKey, TAB_KINDS, tabInfo } from '../../tabs';
-  import { paneAction } from '../../workspaces';
+  import { renameTab } from '../../workspace/workspace.svelte';
+  import { newTabKey, refocusReview, TAB_KINDS, tabInfo } from '../../tabs/tabs';
+  import { paneAction } from '../../workspace/workspaces';
   import { modeOf } from '../../chat/viewmode.svelte';
-  import { ui } from '../../mobile/ui.svelte';
-  import { pages } from '../../session-pages.svelte';
+  import { isPhone } from '../../mobile/ui.svelte';
+  import { pages } from '../../session/session-pages.svelte';
   import Boundary from '../ui/Boundary.svelte';
   import { claim, KEEP_TERMS, KEEP_TERMS_PHONE, retain, same, type Claim } from '../../keepalive';
 
@@ -35,7 +35,7 @@
   const item = $derived(pane.active ? app.items.find((i) => i.key === pane.active) : undefined);
   const tab = $derived(pane.active ? tabInfo(pane.active, app.items, modeOf) : null);
   const webKey = $derived(item && pages.byKey[item.key]?.open ? item.key : null);
-  const phone = $derived(ui.layout === 'phone');
+  const phone = $derived(isPhone());
   const line = $derived(item?.lineId ? app.data.lines.find((l) => l.line.id === item.lineId) : undefined);
   const action = $derived(item ? paneAction(item, line) : null);
   const running = $derived(action === 'attach');
@@ -70,7 +70,7 @@
     untrack(() => {
       const base = l === keptLook ? kept : [];
       keptLook = l;
-      const next = retain(base, active, (id) => mine.has(id), ui.layout === 'phone' ? KEEP_TERMS_PHONE : KEEP_TERMS);
+      const next = retain(base, active, (id) => mine.has(id), isPhone() ? KEEP_TERMS_PHONE : KEEP_TERMS);
       if (!same(next, kept)) kept = next;
     });
   });
@@ -96,7 +96,7 @@
   }
 </script>
 
-<section class="pane" class:focused role="group" onpointerdown={focus}>
+<section class="pane" class:focused role="group" onpointerdown={focus} onpointerup={(e) => refocusReview(e.currentTarget, e.target as Element | null)}>
   <TabBar {pane} {index} {focused} {canClose} />
   <div class="body">
     <div class="main" class:hidden={!!webKey && phone}>
@@ -120,7 +120,7 @@
           {/await}
         {/key}
       {:else if item?.lineId && tab?.kind === 'chat'}
-        <Boundary name="chat">{#await chatView() then { default: ChatView }}<ChatView {item} phone={ui.layout === 'phone'} />{/await}</Boundary>
+        <Boundary name="chat">{#await chatView() then { default: ChatView }}<ChatView {item} phone={isPhone()} />{/await}</Boundary>
       {:else if item?.lineId && !item.termId}
         <div class="empty">
           <SquareTerminal size={28} strokeWidth={1.5} />

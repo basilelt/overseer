@@ -8,20 +8,25 @@ use std::time::{Duration, Instant};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, ReadBuf};
 use tokio::sync::{mpsc, oneshot, watch};
 
-pub const OPEN: u8 = 1;
-pub const OPEN_OK: u8 = 2;
-pub const OPEN_ERR: u8 = 3;
-pub const DATA: u8 = 4;
-pub const WINDOW: u8 = 5;
-pub const EOF: u8 = 6;
-pub const CLOSE: u8 = 7;
-pub const PING: u8 = 8;
-pub const PONG: u8 = 9;
+use crate::transport::wire;
+
+pub const OPEN: u8 = wire::MUX_OPEN;
+pub const OPEN_OK: u8 = wire::MUX_OPEN_OK;
+pub const OPEN_ERR: u8 = wire::MUX_OPEN_ERR;
+pub const DATA: u8 = wire::MUX_DATA;
+pub const WINDOW: u8 = wire::MUX_WINDOW;
+pub const EOF: u8 = wire::MUX_EOF;
+pub const CLOSE: u8 = wire::MUX_CLOSE;
+pub const PING: u8 = wire::MUX_PING;
+pub const PONG: u8 = wire::MUX_PONG;
 
 pub const INITIAL_WINDOW: u32 = 262_144;
 pub const MAX_DATA: usize = 32_768;
 pub const MAX_PAYLOAD: usize = 65_536;
-pub const BANNER: &str = "SB:MUX 1";
+pub const BANNER: &str = match std::str::from_utf8(wire::MUX_BANNER.split_last().unwrap().1) {
+    Ok(s) => s,
+    Err(_) => panic!(),
+};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Frame {

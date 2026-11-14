@@ -4,9 +4,10 @@
   import AgentIcon from '../sidebar/AgentIcon.svelte';
   import { app } from '../../state.svelte';
   import { t } from '../../i18n.svelte';
-  import type { HoldPlan } from '../../api';
-  import { isOff } from '../../grouping';
-  import { targetItems, targetName } from '../../wsactions';
+  import type { HoldPlan } from '../../daemon/api';
+  import { isOff } from '../../session/grouping';
+  import { stalled } from '../../session/close-force';
+  import { targetItems, targetName } from '../../workspace/wsactions';
 
   let { onclose }: { onclose: () => void } = $props();
 
@@ -53,7 +54,7 @@
     for (const id of chosen) {
       try {
         if (mode === 'hold') await app.api.hold(id);
-        else if (mode === 'close') await app.api.close(id);
+        else if (mode === 'close') await app.api.close(id, false, !!stalled(plans[id]));
         else await app.resumeLine({ key: `line:${id}`, lineId: id, kind: '', group: 'stopped', state: 'closed', title: '', at: '' });
         done = { ...done, [id]: 'ok' };
       } catch (e) {
@@ -74,15 +75,18 @@
       {@const id = l.lineId!}
       {@const p = plans[id]}
       {@const ok = mode === 'resume' || okOf(p)}
+      {@const waiting = mode === 'close' ? stalled(p) : null}
       <li>
-        <label class:off={!ok}>
-          <input type="checkbox" disabled={!ok || finished} checked={chosen.has(id)} onchange={() => toggle(id)} />
+        <label class:off={!ok && !waiting}>
+          <input type="checkbox" disabled={(!ok && !waiting) || finished} checked={chosen.has(id)} onchange={() => toggle(id)} />
           <AgentIcon kind={l.kind} size={12} />
           <span class="title">{l.title}</span>
           {#if done[id]}
-            <span class="st" class:bad={done[id] !== 'ok'}>{done[id] === 'ok' ? t(mode === 'hold' ? 'hold.held' : mode === 'close' ? 'hold.closed' : 'hold.resumed') : done[id]}</span>
+            <span class="st" class:bad={done[id] !== 'ok'} title={done[id] === 'ok' ? undefined : done[id]}>{done[id] === 'ok' ? t(mode === 'hold' ? 'hold.held' : mode === 'close' ? 'hold.closed' : 'hold.resumed') : done[id]}</span>
           {:else if p === 'loading'}
             <span class="st">{t('common.loading')}</span>
+          {:else if waiting}
+            <span class="st bad">{t(waiting === 'waiting' ? 'hold.waiting' : 'hold.turn')}</span>
           {:else if checked}
             <span class="st" class:good={ok} class:bad={!ok}>{ok ? t(mode === 'close' ? 'hold.safeClose' : 'hold.safe') : failures(p).join(' · ')}</span>
           {/if}

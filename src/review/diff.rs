@@ -1,4 +1,4 @@
-use crate::board::git_out;
+use crate::git::git_out;
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::path::Path;
@@ -70,12 +70,7 @@ pub struct Review {
 }
 
 pub fn fnv(bytes: &[u8]) -> u64 {
-    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
-    for b in bytes {
-        h ^= *b as u64;
-        h = h.wrapping_mul(0x0100_0000_01b3);
-    }
-    h
+    crate::util::fnv1a(bytes)
 }
 
 pub fn hex(h: u64) -> String {
@@ -874,23 +869,7 @@ mod tests {
     }
 
     fn run(d: &Path, args: &[&str]) {
-        let ok = std::process::Command::new("git")
-            .current_dir(d)
-            .env("GIT_CONFIG_GLOBAL", "/dev/null")
-            .env("GIT_CONFIG_NOSYSTEM", "1")
-            .args([
-                "-c",
-                "user.email=t@example.com",
-                "-c",
-                "user.name=T",
-                "-c",
-                "commit.gpgsign=false",
-            ])
-            .args(args)
-            .status()
-            .unwrap()
-            .success();
-        assert!(ok, "git {args:?}");
+        crate::git::fixture::run(d, args);
     }
 
     #[test]

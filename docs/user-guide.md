@@ -6,8 +6,8 @@ Overseer keeps track of AI coding agent sessions (Claude Code and Codex) across 
 machines. Its unit is the **line**: one agent session, in one worktree, on one station, for one
 owner. A station (a dev Mac, a VM, a runner container) runs the `overseer` daemon/CLI; a shared
 `overseer-api` merges the lines of every station, relays commands between them and serves
-read endpoints, events and webhooks. The design and its reasons are in [`BRIEF.md`](../BRIEF.md)
-and [`docs/adr/`](adr/); line states are detailed in [`docs/line-states.md`](line-states.md).
+read endpoints, events and webhooks. The original design and its reasons are in [`BRIEF.md`](../BRIEF.md)
+and later decisions are in [`docs/adr/`](adr/); line states are detailed in [`docs/line-states.md`](line-states.md).
 
 ## 2. Build and install
 
@@ -110,6 +110,7 @@ per file with its diff and backup.
 | Gemini CLI (0.26+) | hooks | `~/.gemini/settings.json` | SessionStart, BeforeAgent, AfterAgent, Notification (ToolPermission), SessionEnd |
 | Copilot CLI | hooks | `$COPILOT_HOME/hooks/overseer.json` (`~/.copilot`) | sessionStart, userPromptSubmitted, agentStop, notification, sessionEnd |
 | Cursor Agent | hooks | `~/.cursor/hooks.json` | sessionStart, beforeSubmitPrompt, stop, sessionEnd |
+| Mistral Vibe (3.0+) | hooks | `$VIBE_HOME/hooks.toml` (`~/.vibe`) | session_start, pre_agent and post_agent (main agent only), post_tool, notification (approval_requested, question_asked, turn_completed, turn_failed), session_end |
 | opencode | plugin | `$XDG_CONFIG_HOME/opencode/plugins/overseer.js` | session.status, session.idle, permission.asked/replied, session.error |
 | Amp | plugin | `$XDG_CONFIG_HOME/amp/plugins/overseer.js` | session.start, agent.start, agent.end |
 | Antigravity (`agy`) | terminal activity | none | none |
@@ -121,7 +122,9 @@ those transitions into OS notifications: "<agent> finished in <workspace>" and
 "<agent> needs your input"; clicking one focuses that tab (see 14.4a.1 to tune or mute them). Agents without hooks, and agents whose
 hooks did not fire, fall back to terminal activity: in a daemon terminal, a line is busy while the
 agent keeps writing after you pressed Enter, and its turn ends after 4 s without output. Amp has no
-needs-input event; Cursor Agent fires only some hooks in the CLI.
+needs-input event; Cursor Agent fires only some hooks in the CLI; Mistral Vibe fires no hook
+when you interrupt a turn, so its line stays busy until the next turn ends.
+A Codex whose hooks are not trusted yet falls back the same way in a daemon terminal, and its task then moves to Review when the turn ends; a Codex started outside Overseer terminals needs its hooks.
 
 Hooks call `~/.overseer/bin/overseer`, a symlink the daemon points at its own binary on
 every start and hot upgrade, so a server upgrade never breaks them. When the daemon starts and
@@ -129,10 +132,12 @@ finds Overseer hook entries that name another binary (older installs wrote
 `~/.overseer/server/<version>/overseer`), it rewrites them in place with the same merge,
 backup and validation. Files without Overseer entries are never touched.
 
-Codex runs edited hooks only after you trust them again (open codex and accept the prompt);
-Overseer never edits `config.toml`. Gemini CLI before 0.26 needs hooks enabled in its settings.
-Files that Overseer owns (the Copilot hook file, the opencode and Amp plugins) are refused if a
-file of the same name was not written by Overseer.
+Codex runs new or edited hooks only after you trust them: start `codex` and choose "Review hooks" or
+"Trust all and continue" at its "Hooks need review" prompt, or run `/hooks` inside it (`codex exec` cannot
+review hooks). Overseer never edits `config.toml`; `overseer doctor` shows which events still lack a trust entry. Gemini CLI before 0.26 needs hooks enabled in its settings.
+Files that Overseer owns (the Copilot hook file, the Mistral Vibe `hooks.toml`, the opencode and
+Amp plugins) are refused if a file of the same name was not written by Overseer. Mistral Vibe
+before 3.0 used other hook names behind an experimental flag and is not supported by the hooks.
 
 The hook program only appends `{agent, event, at, sessionId, cwd, pid, tmuxPane, termId}` to
 `<state>/spool/<pid>.jsonl`. Prompts and messages are never stored.
@@ -771,7 +776,7 @@ fake consumer against the API and checks every payload against the schemas.
 | `board`: `daemon not reachable` | Start `overseer daemon --http 127.0.0.1:0` (or the service). `no loopback board`: restart it with `--http`. |
 | Board answers 403 | Missing or stale token (new at each daemon start): open the URL from `overseer board`; use `127.0.0.1`/`localhost` as host. |
 | States lag or `!input` missing | Hooks not installed: `overseer hooks install --apply`. |
-| Codex lines not tracked live | Codex needs you to re-trust edited hooks: open codex and accept. |
+| Codex lines not tracked live | Codex needs you to trust new or edited hooks: start codex and review them at the "Hooks need review" prompt, or run `/hooks`. `overseer doctor` lists the events without a trust entry. |
 | `api unreachable, showing this station only` | API down or wrong URL in `user.json`; `doctor` shows `api reachable`. `ls` falls back to local lines. |
 | `the api refused the user token` | Token revoked: `overseer login` again. |
 | `refused: disabled: acceptRemoteCommands is false on this station` | Set `"acceptRemoteCommands": true` in that station's `config.json`. |
@@ -833,6 +838,32 @@ them too. With an older `gh`, or when GitHub refuses a file, the issue is still 
 that file as not uploaded with the reason, and the app shows GitHub's message. GitHub may require
 write access to the repository to attach files.
 
+### Recording a bug
+
+Palette > **Record a bug** (phone: More > Record a bug) records what you do while you show a
+problem. The setup dialog offers **Record the screen too** where the webview can capture the
+screen (`getDisplayMedia` and `MediaRecorder`; a browser asks which screen or window to share);
+elsewhere, such as iOS, Android and the Linux desktop app (WebKitGTK cannot capture), the option
+is not offered and only the action log is recorded. If the webview rejects the
+request, Overseer asks once more in the plain form; if the screen still cannot be captured, the
+recording goes on with the action log only and says so. Declining
+the share prompt cancels the recording as before. While it runs, a red pill at
+the bottom shows the time and the number of actions, with **Stop** and a discard button; a
+notification shows above the pill, never under it. The log
+has the start, clicks (the control's label, never a field's content), shortcuts (Ctrl/Cmd/Alt
+combinations, Escape, function keys, arrows), "typed in <field>" once per field without the text,
+view and dialog changes, uncaught errors and error toasts, each with its time since the start.
+Recordings stop on their own after 2 minutes (about 10 MB of video, the free GitHub limit) or when
+the screen share ends.
+
+**Stop** opens the feedback sheet on Bug with the recording: the video is uploaded to the active
+host as a `recording-<date>-<time>.webm` (or `.mp4`) attachment, and the log goes into the report
+as a "Recorded actions" block whose times match the video. **Replay** plays the video in the sheet
+with the action list beside it: the current action is highlighted as it plays and clicking one
+seeks the video there. The x on the Recording row removes both the video and the log. When the
+upload fails (offline, daemon restarting), the log and Replay still work and **Attach video** on
+the Recording row tries again.
+
 ### `doctor` items
 
 Levels: `ok` (fine), `warn` (works, but something is missing or suspicious), `fail` (broken;
@@ -843,7 +874,8 @@ non-zero exit), `skip` (not configured, not checked), `info` (a setting worth kn
 | state dir | exists with mode 700 |
 | daemon | answers on its socket (CLI works without it; hooks spool to disk) |
 | claude hooks | how many Overseer events are in `settings.json` |
-| codex hooks | same for `hooks.json` (only when `~/.codex` exists); reminder to re-trust |
+| codex hooks | same for `hooks.json` (only when `~/.codex` exists) |
+| codex trust | read-only look at `config.toml`: `warn` listing the Overseer events with no trust entry, or disabled (`enabled = false`), with the step to take. When every event has an entry the item is `info`, not `ok`: Codex compares a hash of each hook, doctor does not, so an entry left from before Overseer rewrote `hooks.json` looks the same; run `/hooks` in codex to see the hooks needing review |
 | claude, codex, tmux | version found on PATH (hold needs tmux) |
 | daemon PATH | `info`: the running daemon's `PATH` and its source (`login-shell`, `fallback`, `inherited`; 14.1a) |
 | station enrolment | `sync.json` present (`skip` when not enrolled) |
@@ -898,7 +930,7 @@ On first launch, once the app is connected (immediately in local mode, after the
 connection on a phone), a welcome card offers **Take the tour** or **Skip**. The tour dims the
 window and highlights the real controls one at a time: host chip, workspaces sidebar, tabs and the
 new-session menu, the Terminal/Chat toggle, the side panel, Tasks, Review, the usage, system and ports
-chips, notifications and hooks, the command palette and Feedback, in 0.25 the Cmd/Ctrl+P palette shortcut, and in 0.27 the demo mode (on the **Demo mode** pill while in the demo, else on the host chip), and in 0.28 the GPU rendering option for terminals, and in 0.29 the clean up of unused worktrees and the import from Switchboard (on its button in Settings, Help, or on the Settings button), and in 0.30 click to move the cursor in a terminal (on the tabs), and in 0.31 the Light and Dark palettes (on Settings, or More on a phone), and in 0.33 the one-click install of skills and plugins (on Settings), and in 0.34 the auto-approval defaults (on Settings, Agents), the Review, Merged and Closed columns (on the Merged column when the board is open, else on the Tasks tab) and the clean removal of everything Overseer added (on Settings, Connection, **Remove**), and in 0.35 one-click in-app updates for every install (on Settings, Updates, else on the Settings button). Steps whose control is not on
+chips, notifications and hooks, the command palette and Feedback, in 0.25 the Cmd/Ctrl+P palette shortcut (not shown on a phone), and in 0.27 the demo mode (on the **Demo mode** pill while in the demo, else on the host chip), and in 0.28 the GPU rendering option for terminals, and in 0.29 the clean up of unused worktrees and the import from Switchboard (on its button in Settings, Help, or on the Settings button), and in 0.30 click to move the cursor in a terminal (on the tabs), and in 0.31 the Light and Dark palettes (on Settings, or More on a phone), and in 0.33 the one-click install of skills and plugins (on Settings), and in 0.34 the auto-approval defaults (on Settings, Agents), the Review, Merged and Closed columns (on the Merged column when the board is open, else on the Tasks tab) and the clean removal of everything Overseer added (on Settings, Connection, **Remove**), and in 0.35 one-click in-app updates for every install (on Settings, Updates, else on the Settings button), and in 0.36 subjects inside a workspace (on **+ New subject** in the open workspace, else on the sidebar), and the live review behind the git button (on the git button of a session's tab bar, else on the command palette), and the review map (on List | Map in a review, else on the Review tab), and keeping agents running with the lid closed (on its switch in Settings, Connection, else on the Settings button), and Record a bug (centred, on the command palette), and the Quorum option of a new task (on the Quorum control in the New task dialog, else on the Tasks tab), and installing a missing agent from the app (on the title bar **+**, else on the palette), and agents kept inside their project (on **Agents message each other** in Settings, Defaults, else on the Settings button), and Mistral Vibe as a new agent (on the title bar **+**, else on the palette), and the real cost of each session and task (on the cost line of the side panel, else on the side panel), and profiles by task type (on the **Type** field of the New task dialog, else on the Tasks tab), and the choice between agents filing what they find as tasks or fixing it themselves (on **Agents file what they find as tasks** in Settings, Defaults, else on the Settings button), and several hosts in one window (on the host sections of the sidebar when a window shows several hosts, else on the host chip), and sticky notes on sessions (on the note icon of a session that has notes, else on the sidebar). Steps whose control is not on
 screen (no session selected, a feature the server lacks, phone layout) are skipped. On a phone the
 card is a sheet at the bottom (or top, when the control sits low) and points at the bottom
 navigation, the session strip and the menu.
@@ -979,6 +1011,11 @@ attaches to a process that is already running; a tab whose agent is not running 
 `claude --resume`. The daemon enforces it: `POST /v1/lines/<id>/resume` with `"attachOnly": true`
 answers 409 instead of starting anything.
 
+An agent can ask something before it starts, such as Claude Code asking whether to trust the
+folder. Until it is answered the session reads **Starting**:
+Resume is disabled and the chat offers **Open terminal** to answer it. Resuming again returns the
+same terminal instead of starting a second agent, and Close ends it.
+
 ```
 S=$(overseer socket-path)
 curl --unix-socket "$S" -X POST -d '{"cwd":"/home/me/src/app","cmd":["claude"],"cols":120,"rows":32}' http://unix/v1/terms
@@ -1024,8 +1061,10 @@ In the app:
   ```
 
   (bash and fish do this by default or ignore it; Overseer never edits your dotfiles.)
-- **Images and files**: paste an image (Cmd/Ctrl+V with a screenshot on the clipboard) or drop
-  files on a terminal. The app uploads them to the daemon (`POST /v1/uploads`, 50 MB per file)
+- **Images and files**: paste an image (Cmd+V, or Ctrl+Shift+V on Linux and Windows, with a screenshot
+  on the clipboard; right-click a terminal for Copy and Paste; the desktop app shows no other
+  webview menu with Back, Forward or Reload, only the native menu in text fields and an app Copy
+  over selected text) or drop files on a terminal. The app uploads them to the daemon (`POST /v1/uploads`, 50 MB per file)
   which stores each one as `~/.overseer/u/<6-character id>.<ext>` (mode `0600`, deleted after 7
   days), then types the path followed by a space as a bracketed paste when the program asked for
   it. Other files are typed short, `~/.overseer/u/a1b2c3.pdf`; images keep their absolute path
@@ -1036,7 +1075,7 @@ In the app:
   "~/.overseer/u/a1b2c3.png", "name", "size"}`.
 - **Font**: Settings → Terminal → Font family takes any installed font by name (suggestions:
   MesloLGS NF, JetBrainsMono Nerd Font, FiraCode Nerd Font, Hack Nerd Font, SF Mono, Menlo;
-  several comma-separated), with the font size and the line height (1–2). The default is the
+  several comma-separated), with the font size (8–28) and the line height (1–2). The default is the
   bundled JetBrains Mono. The bundled "Symbols Nerd Font Mono" (Nerd Fonts 3.5.1, MIT, 1.2 MB
   woff2) always ends the chain, so Nerd Font and powerline icons of oh-my-zsh, powerlevel10k or
   starship prompts render with any font.
@@ -1051,25 +1090,34 @@ In the app:
   input of Claude Code, Codex or another agent) moves the cursor there by sending Left/Right
   arrows, like in a text editor. Only the cursor's own row is handled; clicks on other rows,
   with a modifier, while scrolled back, on a phone, or in a program that reads the mouse itself
-  (tmux with mouse on, vim with `mouse=a`, htop) do nothing.
+  (tmux with mouse on, vim with `mouse=a`, htop) do nothing. It only works where a line editor
+  reads the input with bracketed paste on (bash 5.1+, zsh, fish, Claude Code): a shell without
+  one, such as `sh` on Debian (dash), would type the arrows, so clicks there do nothing.
 
 ### 14.1a Agents
 
 `GET /v1/agents` lists the agent CLIs the daemon knows — Claude Code, Codex, Gemini CLI,
-Antigravity (`agy`), opencode, Amp, Copilot CLI, Cursor Agent (`cursor-agent`) and the login
-shell — with `installed` and `version` (from `<bin> --version`, cached a minute), the models and
+Antigravity (`agy`), opencode, Amp, Copilot CLI, Cursor Agent (`cursor-agent`), Mistral Vibe
+(`vibe`) and the login shell — with `installed` and `version` (from `<bin> --version`, cached a minute), the models and
 efforts it maps, and whether it can resume. Start one in a term without writing its argv:
 
 ```
 curl --unix-socket "$S" -X POST -d '{"cwd":"/home/me/src/app","agent":"gemini","model":"gemini-2.5-pro"}' http://unix/v1/terms
 ```
 
-The flags per agent are in `contract/app-daemon.md` §2a. Claude, Codex and Gemini sessions are
-found in their own files (with the activity panel); a term running another agent is a line of
+The flags per agent are in `contract/app-daemon.md` §2a. Claude, Codex, Gemini and Mistral Vibe
+sessions are found in their own files (with the activity panel and the chat view); a term running another agent is a line of
 its own while the term exists, and resuming it continues the agent's latest session in that
 directory (Copilot resumes the exact session: the daemon gives it a session id at start). Only
-Claude and Codex report the end of a turn (hooks): a task on another agent moves to `in_testing`
-when the agent exits or calls the MCP tool `set_task_status`.
+Claude, Codex and Mistral Vibe report the end of a turn (hooks): a task on another agent moves to
+`in_testing` when the agent exits or calls the MCP tool `set_task_status`.
+
+Mistral Vibe 2 sessions are not read: a Vibe 2 started from Overseer runs in its terminal but gets
+no line (no chat, resume or restore); run `vibe update` to get Vibe 3. Mistral Vibe 3 sessions are read from `$VIBE_HOME/logs/session/unified/<id>/` (`meta.json` for
+the folder, title and model, the session store for the chat); a session is live while Vibe holds
+its lease in `logs/session/active/`. Forks (`/branch`) are lines of their own, subagents are not.
+Vibe has no launch flag for the model: a profile sets it with `VIBE_ACTIVE_MODEL`. A task started
+on Vibe gets `--trust`, since its new worktree would otherwise stop at Vibe's trust prompt.
 
 Detection uses the daemon's `PATH`. A daemon started over SSH by the app gets a minimal
 environment, so at start it asks the login shell for the real one (`$SHELL -l -i -c`, 5 s
@@ -1081,12 +1129,20 @@ daemon keeps its environment: the new one applies from its next start (the next 
 it is never restarted for this since that would end its terms. **Rescan** in the agent picker
 runs the detection again (`POST /v1/agents/rescan`), for instance after installing an agent.
 
+The **+** menus (tab bar and title bar) list only the agents that are installed; the others are
+folded under one **Not installed (N)** row at the bottom, which unfolds in place. An agent with a
+known install command shows **Install** there: click it and the command runs in a new terminal,
+then Overseer rescans, so the agent is ready to start. On a phone the palette lists **Install
+<agent>** for each missing agent.
+
 **Auto-approve** in Settings → Agents chooses which supported CLIs Overseer starts with their
 native automatic permission mode. It is on by default for Claude Code, Codex, Gemini CLI,
-Antigravity, opencode, Copilot CLI and Cursor Agent. The settings are stored on the connected
+Antigravity, opencode, Copilot CLI, Cursor Agent and Mistral Vibe (`--auto-approve`). The settings are stored on the connected
 daemon host and apply to new sessions, task agents and feedback agents; changing a setting does
 not change sessions that are already running. Amp currently auto-approves by default unless its
-own permission configuration enables a policy, so it has no Overseer toggle.
+own permission configuration enables a policy, so it has no Overseer toggle. The switch on the
+**Auto approve agent requests** row turns it on or off for every agent at once; it shows a mixed
+state when only some agents auto-approve.
 
 **Skills and plugins** (Settings > Agents, or **Install skills and plugins** in the command
 palette) installs a tool for one agent in one click, on the host the app is connected to. Each
@@ -1094,9 +1150,9 @@ install runs in a new terminal titled `<tool> · <agent>` that stays open on `Do
 close.`, so the output and any prompt are visible. The picker lists only installed agents the tool
 supports.
 
-| Tool | What it is | Claude Code | Gemini CLI | Codex, opencode, Copilot, Cursor, Amp, Antigravity |
+| Tool | What it is | Claude Code | Gemini CLI | Codex, opencode, Copilot, Cursor, Amp, Antigravity, Mistral Vibe |
 |---|---|---|---|---|
-| RTK | a CLI proxy (binary + hook), not a skill | `rtk init -g --auto-patch` | `rtk init -g --gemini --auto-patch` | `rtk init -g` with `--codex`, `--opencode --auto-patch`, `--copilot`, `--agent cursor`, `--agent antigravity`; no Amp |
+| RTK | a CLI proxy (binary + hook), not a skill | `rtk init -g --auto-patch` | `rtk init -g --gemini --auto-patch` | `rtk init -g` with `--codex`, `--opencode --auto-patch`, `--copilot`, `--agent cursor`, `--agent antigravity`, `--agent vibe`; no Amp |
 | Caveman | a plugin with skills | `claude plugin marketplace add JuliusBrussee/caveman && claude plugin install caveman@caveman` | `gemini extensions install https://github.com/JuliusBrussee/caveman` | `npx -y skills add JuliusBrussee/caveman --skill '*' -g -a <agent> -y` |
 | Ponytail | a plugin with skills | same with `DietrichGebert/ponytail`, `ponytail@ponytail` | same with `DietrichGebert/ponytail` | same with `DietrichGebert/ponytail` |
 
@@ -1133,10 +1189,23 @@ Which profile applies, most specific first:
 
 1. the profile picked for a task (Add Task → **Profile**) or for the next session (**+** menu →
    **Next session**, used once);
-2. the workspace's profile (the longest workspace path containing the session's directory or the
+2. for a task, the profile mapped to its **Type** (see below);
+3. the workspace's profile (the longest workspace path containing the session's directory or the
    task's project);
-3. the default profile (**Settings → Agents & models**); out of the box this is **CLI defaults**,
+4. the default profile (**Settings → Agents & models**); out of the box this is **CLI defaults**,
    so nothing changes until you pick one.
+
+**By task type.** The right model and effort depend more on the kind of work than on the repo,
+so a task can carry a **Type**: **Bug fix**, **Feature**, **Engineering** (everyday work and
+debugging), **Migration / refactor** or **Search / triage**. Under **Agents & models → By task
+type**, map each type to a profile (or to **CLI defaults**); an unmapped type falls through to the
+workspace and default profiles. Nothing is mapped out of the box. A sensible start for Claude,
+after the model guide's advice to pick the model in code by task type: bug fixes and features on
+`sonnet` or `opus` at `medium`, engineering on `opus` at `medium`, migrations on `fable` at
+`medium`, triage on `haiku`. Make those profiles, then map them. A task imported from GitHub or
+GitLab takes its type from its labels (`bug`, `enhancement`, `refactor`, `question`…), and one
+from Jira from its issue type (Bug, Story, Task, Epic, Spike…); you can change it before
+creating the task. A task whose mapped profile was deleted falls back to the workspace one.
 
 A model or effort typed explicitly (task form, API) wins over the profile. The session tab shows
 the profile name, and the activity panel shows it in full (`Balanced · sonnet · effort medium`).
@@ -1153,6 +1222,7 @@ How each CLI gets the values (agent files change only when you explicitly apply 
 | Antigravity | `--model` | `--effort` | — | `model:` tier in `.agents/agents` or `~/.gemini/config/agents`, via **Apply to agent files** | — |
 | Cursor Agent | `--model` | — | — | — | — |
 | Amp | — | `--mode` (max → `ultra`) | — | — | — |
+| Mistral Vibe | `VIBE_ACTIVE_MODEL` (env) | — | — | — | — |
 
 To change a named subagent, set it under **Named subagents**, save, then choose **Apply to agent
 files…**. Gemini CLI definitions come from `~/.gemini/agents` and `<project>/.gemini/agents`;
@@ -1165,10 +1235,23 @@ effort flag, so profiles cannot set Gemini effort.
 Profiles live in the daemon's state dir (`profiles.json`), so the desktop and phone apps share
 them. API: `GET/PUT /v1/profiles`, `GET /v1/profiles/subagents?cwd=`, `POST
 /v1/profiles/apply-files` (dry run unless `"dryRun": false` with the confirmed `files`), and
-`profile` on `POST /v1/terms` and `POST /v1/tasks` (`none` for CLI defaults).
+`profile` on `POST /v1/terms` and `POST /v1/tasks` (`none` for CLI defaults). Task types:
+`types` (`{"fix": "<profile id>"}`) on `PUT /v1/profiles`, the list in `taskTypes` on `GET`,
+and `taskType` on `POST`/`PATCH /v1/tasks` (`null` clears it; `"effort": ""` on `PATCH` clears
+an explicit effort so the profile's applies).
 Resuming a held session keeps its model and effort flags; environment-only values (Claude
 subagent and background models, opencode config) are taken from the profile that applies to
-the session's directory at resume time.
+the session's directory at resume time, without the task type: a resumed task session takes them
+from its workspace or default profile, as it already does for an explicit task profile.
+
+**Claude's built-in Explore subagent** declares `model: inherit`, so it runs on the session's
+model whatever `CLAUDE_CODE_SUBAGENT_MODEL` says, and **Override every subagent**
+(`CLAUDE_CODE_SUBAGENT_MODEL_FORCE=1`) does not change that either: it keeps `inherit` (checked in
+Claude Code 2.1.322). To move it to a cheaper model, add your own `Explore` agent in
+`~/.claude/agents/Explore.md` with `model: haiku`. Claude merges agents by name, and a user or
+project file replaces the built-in one whole, so that file must carry its own description,
+tools and prompt; once it exists, **Named subagents** and **Apply to agent files** manage its
+`model:` like any other.
 
 ### 14.2 Tasks (Kanban)
 
@@ -1186,7 +1269,7 @@ and `completed` (Closed). Merged and Closed are both done; they start collapsed 
   opencode and Copilot get them with their prompt flag instead). The prompt is never written to
   disk or logs.
 - Tasks in `auto` start by themselves in column order (`rank`), while fewer than `autoConcurrency` tasks run
-  (`config.json`, default 2).
+  (Settings, Defaults, **Auto concurrency**, 1 to 16, applied at once and kept by the daemon; `config.json` gives the starting value, default 2).
 - A running task moves to `in_testing` when the agent finishes a turn (`Stop` hook) or exits.
 - An `in_testing` task, or a `completed` one whose worktree is still on disk, moves to `merged` once its branch has landed in the project's default
   branch (`origin/HEAD`, else `main`/`master`; `origin/<default>` when it is ahead of the local
@@ -1239,6 +1322,21 @@ curl --unix-socket "$S" 'http://unix/v1/tasks?status=in_progress,in_testing'
   same files, Overseer messages both agents by itself (`[Overseer] Overlap: task #A ... and
   task #B ... both change: ...`) so they agree who changes what. The same pair is not alerted
   again unless the set of shared files changes.
+- **Agent messaging control**: agents only message tasks of their own project; a message to a
+  task of another project is refused (403, "belongs to another project"), and `list_tasks`
+  lists the agent's own project unless it names another. **Settings → Defaults → Agents
+  message each other** (on by default, `GET`/`PUT /v1/tasks/agent-messaging {"enabled": bool}`)
+  turns agent-to-agent messages off: a task's agent can then still message its own subtasks
+  and its parent (quorum keeps working), your messages and Overseer's own messages still
+  arrive, overlap alerts stop, and the organizer no longer messages agents.
+- **Side tasks or autonomous agents**: **Settings → Defaults → Agents file what they find as
+  tasks** (on by default, `GET`/`PUT /v1/tasks/agent-tasks {"enabled": bool}`) chooses what an
+  agent does with a bug or improvement it finds outside its task while working, merging or
+  reviewing. On, the Overseer MCP tells it to `create_task` it (urgent and important) instead of
+  fixing it off-scope. Off, it tells the agent to fix it itself in its own task and branch, and
+  `create_task` says to create a task only when you ask for one or a quorum orchestrator splits
+  its work; `create_task` itself still works. Agents read the setting when they start, so it
+  applies to agents started after the change.
 - **Matrix**: the **Board | Matrix** switch in the Tasks header shows the open tasks (not
   merged or closed, not session tasks) on an Eisenhower matrix: Do first (urgent and important),
   Schedule (important), Delegate (urgent) and Eliminate (neither), plus an Unsorted strip for
@@ -1252,6 +1350,35 @@ curl --unix-socket "$S" 'http://unix/v1/tasks?status=in_progress,in_testing'
   files, create tasks or start tasks, and its task stays off the board: an "Organizing…" label
   replaces the button while it runs. **Settings → Auto organize** runs it by itself, shortly
   after new tasks arrive (off by default).
+
+#### 14.2c Quorum
+
+Tick **Quorum** in the New task dialog to have several agent CLIs share one task and check each
+other. It is only offered when the task's agent is Claude Code or Codex (the orchestrator, which
+needs the Overseer MCP); with another agent the switch is disabled with a hint.
+
+- **Workers** (one or more installed agents) get the subtasks the orchestrator cuts the task into.
+  **Reviewers** (one or two installed agents) review each worker's result. Neither list can hold
+  `shell` or the same agent twice. The defaults are every installed agent as a worker and two
+  other agents as reviewers.
+- The orchestrator creates the subtasks, which start by themselves on their own branches, with one
+  worker agent each. The root card carries a **Quorum** chip (hover for the agents); a subtask's
+  reviewer tasks carry a **Reviewer #N** chip and start by themselves when the worker reaches Review.
+- Every reviewer and the orchestrator vote approve or reject, with a reason. A result is accepted on a
+  strict majority of all voters: with one reviewer both must approve (2 of 2), with two reviewers 2 of 3.
+  The worker card shows the tally (for example **2/3 accepted · Round 1**, **1/3 rejected**, or
+  **1/3 voting** until the daemon decides); the task detail lists each vote with its reason.
+- The daemon sends the outcome and every reason to the orchestrator, which merges accepted branches
+  into its own branch. After a rejection a worker that still runs goes back to In progress; the
+  orchestrator sends it the fixes, and when its next turn ends it is reviewed in a new round. A
+  reviewer that ends without voting counts as a rejection.
+- While it waits for subtasks, the orchestrator's card can sit in Review between its turns; its
+  messages still reach it.
+- Agents that have the Overseer MCP (Claude Code, Codex) vote with the `cast_vote` tool. Any other
+  reviewer votes from its task terminal with the CLI: `overseer vote approve "<reason>"` or
+  `overseer vote reject "<reason>"`.
+- The quorum is set when the task is created and can only change while the task is Pending or Auto.
+  A subtask cannot run its own quorum.
 
 #### 14.2a Session tasks
 
@@ -1328,6 +1455,27 @@ request, the event stream, every terminal and every forwarded port over that one
   Closing a window closes its connection only (the daemon and its terminals keep running). Only
   the first window decides which host reopens at launch; the selected workspace is remembered per
   host. Two windows on the same host both show its notifications.
+- **Several hosts in one window** (desktop, opt-in): Settings → Connection → **Windows and hosts**
+  picks **One window per host** (the default, as above) or **One window, all hosts**. In the second
+  mode, connecting to a host adds it to the window instead of replacing the current one; the
+  palette's **Add a host to this window…** and the sidebar's **Add a host to this window** do it in
+  either mode. **Ask each time I connect to a host** makes the connect dialog ask "Where should
+  <host> open?" with **Add to this window** and **Open in a new window** (the mode's choice first,
+  Enter picks it); **Remember for <host>** keeps the answer for that host, and **Forget the
+  remembered choices** clears them. A window with several hosts shows one sidebar section per host:
+  its name, address or connection state, session count and a **…** menu (**Show in the main area**,
+  **Collapse**, **Move to its own window**, **Disconnect, sessions keep running**, and **Retry** after a
+  failure). The main area (tabs, panel, tasks, review) shows one host at a time: clicking a session
+  or a workspace of another section brings that host into the main area at once, without
+  reconnecting, with its own tabs and layout; the palette's **Show <host> in the main area** and
+  the host chip menu (the chip reads "N hosts") does the same. Every host stays connected and its
+  section stays live; a session waiting for input on a background host still notifies, titled
+  "<host>: …", and opening the notification switches to that host. With **Show the host on tabs**
+  (on by default) tabs carry the host's name and colour. Disconnecting the host in the main area
+  brings another host of the window into it. **Reconnect every host at launch** (on by default)
+  reopens the hosts of the first window; disconnected hosts stay closed. Phones keep one host.
+- Session rows in the sidebar do not repeat the host name: the host chip, and the host sections
+  when a window shows several hosts, already say where the sessions run.
 - **Keep the server running**: after the first connection to a host the app offers once to start
   the server at boot. **Keep running** (or Settings → Server → **Keep server running after
   reboot**) writes and enables `~/.config/systemd/user/overseer-daemon.service`
@@ -1340,6 +1488,21 @@ request, the event stream, every terminal and every forwarded port over that one
   run the command on the server yourself). Turning the switch off disables and removes the unit.
   API: `GET /v1/lifecycle`, `PATCH /v1/lifecycle {"autostart": true|false, "linger": true,
   "afterReboot": "agents"|"shells"|"nothing"}`.
+- **Keep agents running with the lid closed** (Settings → Connection → Server, desktop app on a
+  local server only, off by default): closing the laptop lid no longer puts the computer to sleep,
+  so agents keep working with the network on. It drains the battery and the laptop can get hot:
+  plug it in, and turn the option off before putting the laptop in a bag. On Linux the daemon holds
+  a `systemd-inhibit --what=handle-lid-switch` lock while it runs (taken again when it restarts,
+  gone when it stops). polkit allows it from your desktop session but may refuse it when the
+  daemon runs as a boot service (**Keep server running after reboot**) with no active session;
+  Settings then shows the reason. Check with `systemd-run --user --wait systemd-inhibit
+  --what=handle-lid-switch --mode=block --who=t --why=t true`. A desktop that handles the lid
+  itself (KDE's power settings, for example) ignores this lock: set its lid action there;
+  `systemd-inhibit --list` shows who holds the lid switch. On macOS it runs `pmset -a disablesleep 1`
+  after asking for an administrator password, and `0` when you turn it off. On Windows it sets the
+  lid close action of the current power plan to **Do nothing** (plugged in and on battery) and puts
+  the previous actions back when you turn it off. If the system refuses, the switch stays off and
+  the reason is shown under it. API: `GET`/`PUT /v1/power/lid {"enabled": true|false}`.
 - **After a server reboot or restart**: the daemon keeps its terminal list (folder, title, size,
   line, task, and for a running agent its current session and flags) in `overseer.db`, written
   only when it changes. When it starts after a machine reboot, a crash or a plain restart (anything
@@ -1409,11 +1572,15 @@ are reachable directly. Windows daemons do not detect ports yet.
 The bell in the title bar (Notifications in More on the phone) lists what happened in the
 background on the connected host: an agent needs input, finished or failed, a task reached
 testing, a workspace went idle, ports forwarded or closed, an app or server update, uploads and
-errors. Each entry shows its time, its source and an unread dot; click it to act (open the line,
-open the port in the browser, open the update). Mark all read and Clear sit at the top. The list
-is kept per host in the app (last 200 entries) and survives a reload; a replayed event after a
-reconnect never adds a second entry. The bell counts unread entries; port and upload entries
-arrive already read, so they never light it.
+errors. Each session, task, workspace and port has one entry that shows its latest event: a new
+event replaces the old one, moves it to the top and makes it unread again. When an agent moves its
+task to testing, the "finished" that follows within a minute is folded into that entry (no second
+toast or system notification). Opening a session marks its entry read. Each entry shows its time,
+its source and an unread dot; click it to act (open the line, open the port in the browser, open
+the update). Mark all read and Clear sit at the top. The list is kept per host in the app (last
+100 entries) and survives a reload; a replayed event after a reconnect never adds a second entry,
+and lists saved by older versions are reduced to one entry per session. The bell counts unread
+entries; port and upload entries arrive already read, so they never light it.
 
 Toasts are kept for errors and for direct answers to what you just did (copied, saved, a failed
 forward). In-app events only go to the center, unless Settings > Notifications > "Show toasts for
@@ -1508,12 +1675,28 @@ Clicking it (or "Agent usage" in the palette, or Usage in the phone's More tab) 
 panel: plan gauges per agent with a reset countdown, totals for today, 7 or 30 days (tokens with
 input / output / cache, estimated cost marked ≈, requests, active time), tokens per day, and a
 breakdown by project, session, model or agent; a session row opens that session. "Open in a tab"
-keeps it as a workspace tab. The side panel shows the selected session's tokens, cost and
-requests over the last 30 days.
+keeps it as a workspace tab.
+
+**Cost per session and task.** The side panel shows what the selected session cost, with its
+main model and effort ("≈$1.23 · claude-opus-5-5 · effort high"), and a **Cost** section that
+splits it per model (subagents included, each at its own model's price) into uncached input,
+cache writes, cache reads and output. A switch to another model mid-session is listed as its own
+line with what rebuilding the cache cost, since the new model writes the whole context again. The session tab
+shows the same total, and each task card the total of the task's sessions. Tasks keep that number
+after the transcripts are gone. At the bottom of the Usage panel, **Cost per task** groups the
+tasks by profile (and agent), by ticket or lists each task, with the average cost per finished
+task (in testing, merged or completed) for each profile: run the same kind of work under two
+profiles and compare. The numbers are real token counts from the transcripts (Claude Code,
+Codex, Gemini CLI) priced at API list prices dated in the hint; a model without a known price
+keeps its tokens but adds nothing to the cost (marked "+"), and agents whose logs have no token
+counts show no cost at all rather than an estimate. Subscriptions are not billed per token, so
+read it as what the same work would cost on the API.
 
 Where the numbers come from (contract §7c): Claude Code transcripts, Codex rollouts and Gemini
 CLI sessions (when they record token counts) on the machine the app is connected to, read
-incrementally by the daemon. Claude Code does not store its 5-hour and weekly percentages on
+incrementally by the daemon. Settings → Usage lists each of these providers: Claude Code with its two
+plan-limit switches below, Codex (tokens, cost and its plan limits, always read from its session
+logs) and Gemini CLI (tokens and cost only; it records no plan limits). Claude Code does not store its 5-hour and weekly percentages on
 disk, but it passes them to its status line command (`rate_limits` in the status line's JSON input,
 for Pro and Max plans). Settings → Usage → "Plan limits from the status line" (off until you turn it
 on, per host) wraps your status line command in `~/.claude/settings.json` (a backup is written
@@ -1591,6 +1774,24 @@ Each target answers `sent`, `skipped` (busy or waiting for a permission answer),
 (typed when the agent becomes idle, within an hour, unless the daemon restarts) or `refused`
 (not running, no terminal). `actions.log` records the outcome and the text length, never the text.
 
+A workspace can be **nested** in a top-level directory workspace with `parentId`: a sub-folder or a
+submodule (`{"path":"/home/u/endurance/20_processus/onboarding","parentId":"<id>","cwd":"/home/u/endurance"}`),
+or a subject (`{"kind":"subject","name":"Archi V3","parentId":"<id>"}`, whose `cwd` defaults to the
+parent's path). The path must be inside the parent's, the parent must be a top-level `dir` workspace
+(one level only), and a nested workspace has no folder and cannot be pinned (each refused with a 400).
+`cwd` on a nested folder is where its sessions start (`null` starts them in its own folder) and can be
+patched; on a top-level directory it is refused. Creating a nested folder on a path that already has a
+top-level workspace adopts that workspace, keeping its id, tabs and sessions. Every checked-out
+submodule of a top-level workspace (the `path =` entries of its `.gitmodules` whose folder holds a
+`.git`) becomes a nested workspace on its own, when the workspace is created, at start, every 10 minutes
+and on **Rescan folders**; one you delete stays deleted. Deleting a workspace deletes its nested ones
+(the answer lists them under `children`). A session goes to the innermost workspace whose path holds
+it, so a session in a sub-folder or a submodule joins the nested workspace, and a worktree of a
+submodule kept outside the repository joins the submodule's when that submodule is checked out in
+one clone only; with several clones of the same repository (as for any repository cloned several
+times), such a worktree belongs to none of them unless it was started from the subject or moved
+there by hand.
+
 A **subject** is a workspace without a directory of its own, for work organised by topic rather than
 by folder. Create it with `POST /v1/workspaces` and `{"kind":"subject","name":"Acme deal","cwd":"~/code/app"}`
 (`folderId` and `pinned` optional); `cwd` is its default working directory, `~` accepted, and several
@@ -1609,9 +1810,23 @@ browser and review tab that belongs to it. The sidebar shows **Workspaces** (def
 **By status** (the session list grouped by Needs input, Needs testing, Working, Pushed, Idle,
 Stopped: no live agent process, resumable); the toggle is at the top of the sidebar.
 
+- **Sticky notes**: hover an agent session in the sidebar (on a phone or a touch screen the icon is always there)
+  and click the note icon to open its sticky notes. Write in the box and press **Add note** (or
+  Ctrl/Cmd+Enter); click a note to change it (saved when you leave it, or with Ctrl/Cmd+Enter;
+  clearing its text deletes it) and the bin deletes it. Escape or a click outside closes them,
+  saving what you changed and adding what is left in the box. A
+  session with notes keeps its note icon lit, with the count in its tooltip. Notes are yours only:
+  they are never sent to the agent, live in the daemon's registry (they survive restarts and show on
+  every client of the station), and stay with the session until it is forgotten. Up to 50 notes of
+  4000 characters each per session. Plain shells have no notes.
+
 - **Spaces**: pinned workspaces on top, then your folders (one level of sub-folders) and the
   workspaces outside any folder. Each workspace is one block with its sessions under it: click its
-  name to open it (its tab strip and `+` show), the chevron only folds it. A group section at the
+  name to open it (its tab strip and `+` show), the chevron only folds it. Its sessions are listed in
+  the order of its tabs (split panes left or top first), then the ones without a tab by urgency and
+  age; drag a session above or below another of the same workspace to move its tab there too. Running
+  plain shells are listed after its sessions, in tab order as well, muted with a terminal icon, and are
+  not counted in its pills. A group section at the
   bottom lists your groups; click one to open it. Every project the daemon knows gets a workspace: the
   repositories its agents ran in, and the git repositories it finds under `discoverRoots`
   (3.1; by default `~/Documents/Github`, `~/src`, `~/code`, `~/projects`, `~/dev`), scanned at
@@ -1629,6 +1844,18 @@ Stopped: no live agent process, resumable); the toggle is at the top of the side
 - **Block**: the most urgent state of its sessions (Needs input, then Running, then Needs testing,
   then Idle; shells do not count) with how many agents are in it, the last status line ("Claude
   finished", "Asking: …"), the host and its connection state, and the folder path.
+- **Subjects**: a workspace can hold subjects, listed inside its block after its own sessions:
+  sub-folders (folder icon), submodules (git icon, added on their own for every checked-out
+  submodule) and subjects without a folder (# icon). A session running inside a subject's folder
+  joins it; drag any session onto a subject, or use **Move to workspace…** in its context menu, to
+  put it there by hand. **+ New subject** at the bottom of the block (also in the workspace's
+  context menu and the palette, **New subject in the current workspace**) asks for a path inside the
+  workspace (Browse starts there), a name, and where its sessions start: the workspace root, so
+  agents read the instructions at the root, or the subject's own folder. The `+` of a subject
+  (shown on hover, always on a touch screen) opens the new-session menu and starts the session in
+  the subject; a subject's context menu toggles **Start sessions at the workspace root**. A subject
+  has no folder or pin of its own; deleting a workspace deletes its subjects, and a deleted
+  submodule subject does not come back. The attention banner shows `workspace › subject`.
 - **Membership**: a line belongs to the workspace of its task's project, else to the workspace
   whose folder contains its worktree, unless the line's repository has its own workspace that
   does not contain that folder (so a workspace on your home folder does not take every
@@ -1639,8 +1866,11 @@ Stopped: no live agent process, resumable); the toggle is at the top of the side
   the selected tab shows its full title; when they do not fit, the strip scrolls with the mouse
   wheel or trackpad, and hovering a tab shows its full title. `+` starts any installed agent or a shell in the
   workspace folder. Views (browser, **Review changes**, Git graph, worktrees, System, Usage, PR reviews)
-  open from the **Views** section of the command palette (Cmd/Ctrl+P). Drag tabs
-  to reorder, middle-click or `×` to close (this ends the agent or shell; right-click > **Hide tab
+  open from the **Views** section of the command palette (Cmd/Ctrl+P). The palette and the phone
+  **More** sheet list only the commands that can run now: a command that needs a connection (or a
+  project, or no recording in progress) is hidden, not greyed out. A destructive button (end a terminal, delete a task, restart the server
+  from the phone **More** sheet) arms on the first press and acts on a second press within 3 seconds. Drag tabs
+  to reorder (the sidebar follows), middle-click or `×` to close (a live agent or shell asks "End this session?" first, as Ctrl+W does; **Hide tab
   (keep running)** only hides it), split right or down. The
   order is saved in the daemon, so it comes back on another machine.
   Keyboard: see 14.7a (close with Cmd+W or Ctrl+W, reopen with Cmd/Ctrl+Shift+T, new tab with
@@ -1713,7 +1943,7 @@ reopens the agent in a terminal, **Open in workspace** jumps to it, **Dismiss** 
 
 ### 14.7a Keyboard shortcuts
 
-macOS uses Cmd, Linux and Windows use Ctrl. The palette (Cmd/Ctrl+K or Cmd/Ctrl+P) shows the shortcut next to
+macOS uses Cmd, Linux and Windows use Ctrl. The palette (Cmd/Ctrl+P) shows the shortcut next to
 each action, and **Keyboard shortcuts** (palette, or `?` in Settings > Keyboard, or
 Cmd+/ / Ctrl+Shift+/) lists them all for the current platform. Shortcuts are caught before the
 terminal, but on Linux and Windows the Ctrl+letter keys a shell needs (Ctrl+D EOF, Ctrl+F, Ctrl+B,
@@ -1731,9 +1961,9 @@ shortcuts.
 | Split down | Cmd+Shift+D | Ctrl+Shift+D |
 | Focus the pane left / right / up / down | Cmd+Option+arrows | Ctrl+Alt+arrows |
 | Find in terminal (Enter: older match, Shift+Enter: newer, Esc closes) | Cmd+F | Ctrl+Shift+F (Ctrl+F outside a terminal) |
-| Copy the selection / paste | Cmd+C / Cmd+V | Ctrl+Shift+C / Ctrl+Shift+V |
+| Copy the selection / paste | Cmd+C / Cmd+V | Ctrl+Shift+C / Ctrl+Shift+V, or Ctrl+Insert / Shift+Insert |
 | Terminal font larger / smaller / default | Cmd+= / Cmd+- / Cmd+0 | Ctrl+= / Ctrl+- / Ctrl+0 |
-| Command palette | Cmd+K or Cmd+P | Ctrl+K, Ctrl+P (Ctrl+Shift+P in a terminal) |
+| Command palette (the search button in the title bar opens it too and shows the key) | Cmd+P | Ctrl+P (Ctrl+Shift+P in a terminal) |
 | Settings | Cmd+, | Ctrl+, |
 | Keyboard shortcuts | Cmd+/ | Ctrl+Shift+/ (Ctrl+/ outside a terminal) |
 | Show or hide the sidebar | Cmd+B | Ctrl+Shift+B (Ctrl+B outside a terminal) |
@@ -1782,7 +2012,8 @@ A GitHub-style review of what an agent changed, while it works (ADR 0030, contra
   collapsed entry (`old → new` commits) with **Review this submodule**, which opens its own
   review from the old commit; files inside submodules are never listed, and a submodule with
   only uncommitted changes is skipped, so large submodules cost nothing. File tree, unified or split diff, syntax highlighting, unchanged lines folded
-  (click to expand), a Viewed box per file (unticked again when the file changes). The view
+  (click to expand), a Viewed box per file (unticked again when the file changes). J and K walk
+  the files after a click anywhere in the review pane, its toolbar included, except on a text field. The view
   follows the agent's edits live: the daemon watches the worktree (file system events, polling as a fallback) and sends
   `review.changed`.
 - **Triage**: every changed line is sorted into moved code, formatting, reordered imports,
@@ -1793,11 +2024,25 @@ A GitHub-style review of what an agent changed, while it works (ADR 0030, contra
   file tree shows a risk score per file (what is left to read, weighted up for changed
   signatures and down for tests) and can sort by it. Copied files show as `C` when the repository
   sets `git config diff.renames copies`.
-- **Graph**: List | Graph in the header shows the changed functions, types and components as a
-  graph, with an edge when one uses or imports another; colour is the kind of change, size the
-  number of changed lines. Drag to pan, scroll to zoom, click a node to jump to its change.
-  Review order lists them definitions first, callers after; Next walks through it. On a phone only
-  the list is shown.
+- **Map**: List | Map in the header (the choice is remembered) draws every worktree of the review
+  on one map: the review's worktree, the worktrees the session's agent also edited, and their
+  checked-out submodules, each a region, files sized by bytes, unchanged folders folded into
+  grey blocks. Changed files take the colour of the indicator picked above the map: **Real
+  logic** (changed lines that are not moves, formatting, renames, imports or generated code),
+  **Blast radius** (changed files that use this one, double for another repository), **Contract
+  change** (public signatures and shared types), **Agent struggle** (times the agent rewrote the
+  file, and test runs that failed after it did), **Untested** (logic no changed test reaches),
+  **Not yet seen** (lines not marked viewed, open comments) and **Priority**, their weighted
+  mean (real logic 1.2, agent struggle 1.1, blast radius and contract 1, untested 0.9, not yet
+  seen 0.6). Hovering a file draws what it uses (blue) and what uses it (orange); a link to
+  another repository is dashed violet, and one found only through a shared name is marked so.
+  **Every link of the change** shows them all faintly. The side lists the files in that order,
+  and the picked file's six scores with plain reasons ("used by 3 changed files, 1 in another
+  repository"); **Open the diff** (or a double click) jumps to it in the list. In the list, a heat
+  band along the files shows the same colours top to bottom, and **Next hottest file** (or J and
+  K) walks the files hottest first across every worktree. On a phone the ranking comes first and
+  the map below it. The daemon serves it at `GET /v1/review/map?worktree=…` (or `line=`, `task=`),
+  plus `with=` for each extra worktree the review already shows.
 - **Comment**: click a line number (shift-click or drag for a range), write, Add review comment
   (Ctrl/Cmd+Enter). Suggest inserts a ```` ```suggestion ```` block prefilled with the lines; the
   thread then offers Apply suggestion, which writes it into the worktree if the lines did not
@@ -1890,9 +2135,55 @@ curl --unix-socket "$S" -X POST -d '{"dryRun":false}' "http://unix/v1/worktrees/
 `POST /v1/worktrees/<id>/cherry-pick {"sha"}` picks a commit into it; both refuse uncommitted
 changes and abort on conflicts (the error names the files).
 
-### 14.10 Git graph
+### 14.10 Live review and the Git tab
 
-The app's Git graph tab (command palette, "Open the Git graph") draws a project's history with lanes (branches, remote branches, tags, HEAD,
+The git button in a session's tab bar (or the palette's "Open or close the live review") turns the
+window into a live review of that session: the agent stays where it is, its review opens beside it,
+the sidebar becomes a rail of the workspace's sessions (click one to switch; the review follows),
+the side panel steps aside, and a bar at the bottom runs git. Press the button again to go back.
+
+The bar acts on one repository only: the worktree named on its left. Its menu lists every worktree
+of the session with its changes, and the submodules under their parent, plus the branches to switch
+to and **New branch…**. Next to it, **N changed** opens the files: stage, unstage, discard (asks
+first and cannot be undone); a submodule shows as one row, **Stage pointer** when its commit moved,
+**Open <name>** when it only has changes inside. Write a message and press Enter: **Commit** takes the
+staged files, or every change when nothing is staged. When there is nothing to commit, the button
+becomes **Push n**, **Publish branch** or **Pull n**, whichever is next. The ⋯ menu holds fetch,
+pull, push, commit and push, amend, stage all, unstage all, **Discard all changes…** (confirmed),
+**Merge <base> into it**, **Merge…**, stash and pop, and **Open the Git graph**. Comments and **Send to
+agent** stay at the bottom of the review, for the whole session. A pull or merge that conflicts is
+aborted and names the files; a merge started elsewhere shows as in progress; a push is refused while
+a submodule has commits that are not pushed. While the agent is running, the bar warns that files can
+still change. Everything refreshes on file and ref changes, never by polling.
+
+The sidebar has a **Git** tab next to **Workspaces** and **By status** (Ctrl+Shift+G, or the palette's
+"Show or hide source control in the sidebar"; it reopens a hidden sidebar). It keeps source control
+next to the terminal, like VS Code: the worktree of the selected session (its menu lists the session's
+other worktrees and submodules), the branch to switch or create, Fetch, Pull and Push or Publish, the
+commit message (Ctrl/Cmd+Enter) with Commit and its options, conflicts, staged files and changes with
+stage, unstage and discard (confirmed), outgoing and incoming commits, and merge and stash. A file
+opens its diff beside the session. It follows the selected session, and the tab is remembered.
+
+The **Git tab** of the project (command palette, "Open Git (graph and source control)", ⋯ › **Open the
+Git graph**; on a phone **More**, **Git**; both list it only while connected with a project) shows the graph with an **Uncommitted changes** row on top,
+and source control in a column the toolbar button shows (hidden by default), for the worktree picked
+at the top. A commit's detail adds **Merge into <branch>** and **Revert in <branch>**. On a phone the
+tab has **Changes** and **Graph** sub-tabs.
+
+```
+curl --unix-socket "$S" "http://unix/v1/git/status?worktree=$W"
+curl --unix-socket "$S" -X POST http://unix/v1/git/commit -d '{"worktree":"'$W'","message":"fix: x","all":true,"push":true}'
+```
+
+Routes (`worktree` or `lineId` in the body, `worktree=` or `line=` in the query; every reply holds
+the new `status`): `GET /v1/git/status`, `POST /v1/git/stage|unstage|discard` (`files`: paths or
+`"all"`), `commit` (`message`, `amend`, `all`, `push`), `fetch`, `pull`, `push`, `switch`
+(`branch`, `create`), `merge` (`rev`), `stash` (`pop`), `revert` (`sha`). Each change sends
+`git.changed` and `worktree.updated`.
+
+### 14.10a Git graph
+
+The Git tab draws a project's history with lanes (branches, remote branches, tags, HEAD,
 merges), with Overseer's knowledge on top: the agent and its state on the tip of its branch,
 the task number, the ticket and the PR state. Filters: all branches, current, agents only (the
 branches of lines, tasks and worktrees), author; search by sha or subject. A commit shows its
@@ -1969,7 +2260,7 @@ exits: Resume then reopens the session it was last in (`lines.session_now`). Two
 Overseer writes outside its own folders, so deleting the app alone leaves things behind: hook
 entries in the agents' config files (for example `~/.claude/settings.json`), the statusline
 wrapper, the boot service (a systemd user unit, or `~/Library/LaunchAgents/dev.overseer.daemon.plist`)
-and its linger setting, `~/.overseer` (the `bin/` shim, `server/`, `u/`, `tasks/`, `reviews/`), the
+its linger setting, the lid keep-awake setting when it was on (macOS `pmset disablesleep`, the Windows lid close action; both are system-wide and put back, macOS asking for your administrator password), `~/.overseer` (the `bin/` shim, `server/`, `u/`, `tasks/`, `reviews/`), the
 config backups it made, worktrees and `task/*` branches it created, the state dir
 (`~/.local/state/overseer` on Linux, `~/Library/Application Support/overseer` on macOS,
 `%LOCALAPPDATA%\overseer` on Windows, or `$OVERSEER_STATE_DIR`) and the app's own data.
@@ -2006,7 +2297,9 @@ Per platform:
 - Writes: the state dir (including `usage.db`), files sent from the app in `~/.overseer/u/`,
   the daemon's service file when you turn on **Keep server running after reboot**
   (`~/.config/systemd/user/overseer-daemon.service` or
-  `~/Library/LaunchAgents/dev.overseer.daemon.plist`), plus `hooks install --apply` and the app's hook switches (the agents' hook files, with backups, and Overseer's own plugin files), the `~/.overseer/bin/overseer` symlink,
+  `~/Library/LaunchAgents/dev.overseer.daemon.plist`), the lid close setting when you turn on
+  **Keep agents running with the lid closed** (`pmset disablesleep` on macOS, the power plan's lid
+  action on Windows; restored when turned off), plus `hooks install --apply` and the app's hook switches (the agents' hook files, with backups, and Overseer's own plugin files), the `~/.overseer/bin/overseer` symlink,
   `hold`/`close --yes` (SIGTERM to the agent, `@sb_held` and the stub in its pane), `resume`
   (relaunches the agent), Board commit/stash, relayed commands when `acceptRemoteCommands` is on,
   and the worktrees and tmux sessions created by `start` and `patch --local`; the worktree store

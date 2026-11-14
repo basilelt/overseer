@@ -14,6 +14,7 @@ pub mod deliver;
 pub mod discover;
 pub mod dlog;
 pub mod doctor;
+pub mod exec;
 pub mod feedback;
 pub mod files;
 pub mod fsdirs;
@@ -22,19 +23,27 @@ pub mod gh;
 pub mod git;
 pub mod gitgraph;
 pub mod github;
+pub mod gitops;
 pub mod hold;
 pub mod hooks;
+pub mod http;
 pub mod import;
 pub mod inbox;
 pub mod install;
+pub mod layout;
+pub mod legacy;
 pub mod lifecycle;
 pub mod mcp;
 pub mod naming;
+pub mod notes;
 pub mod organize;
+pub mod paths;
 pub mod ports;
+pub mod power;
 pub mod procs;
 pub mod profiles;
 pub mod proxy;
+pub mod quorum;
 pub mod registry;
 pub mod remote;
 pub mod review;
@@ -43,14 +52,17 @@ pub mod scanner;
 pub mod screen;
 pub mod session_tasks;
 pub mod shellenv;
+pub mod status;
 pub mod statusline;
 pub mod sync;
 pub mod sys;
 pub mod sysmon;
 pub mod task_agents;
 pub mod task_sources;
+pub mod task_transition;
 pub mod tasks;
 pub mod term;
+pub mod termmodes;
 pub mod termtheme;
 pub mod tmux;
 pub mod uninstall;
@@ -58,6 +70,7 @@ pub mod upgrade;
 pub mod uploads;
 pub mod usage;
 pub mod util;
+pub mod vibe;
 pub mod workspaces;
 pub mod worktrees;
 
@@ -95,6 +108,7 @@ pub struct Ctx<'a> {
     pub claude_dir: PathBuf,
     pub codex_dir: PathBuf,
     pub gemini_dir: PathBuf,
+    pub vibe_dir: PathBuf,
     pub state_dir: PathBuf,
     pub snapshot: PathBuf,
     pub now_ms: i64,
@@ -144,6 +158,7 @@ pub struct Line {
     pub workspace_id: Option<String>,
     pub hold_pending: bool,
     pub held_at: Option<String>,
+    pub notes: Vec<Value>,
 }
 
 struct Found {
@@ -239,9 +254,9 @@ fn raw_hostname() -> Option<String> {
 
 #[cfg(not(unix))]
 fn raw_hostname() -> Option<String> {
-    git::output_within(
+    exec::output_within(
         &mut std::process::Command::new("hostname"),
-        git::PROBE_TIMEOUT,
+        exec::PROBE_TIMEOUT,
     )
     .ok()
     .map(|o| String::from_utf8_lossy(&o.stdout).into_owned())
@@ -308,7 +323,7 @@ pub fn load_config(state_dir: &Path) -> Config {
             .unwrap_or_default(),
         worktree_dir: s("worktreeDir")
             .map(|p| expand(&p))
-            .unwrap_or_else(|| home().join(".overseer/worktrees")),
+            .unwrap_or_else(paths::default_worktrees_dir),
         start_args: strs("startArgs"),
         memory_policy: (v["memoryPolicy"]["enabled"] == true).then(|| {
             v["memoryPolicy"]["thresholdPercent"]
@@ -347,7 +362,7 @@ pub fn default_state_dir() -> PathBuf {
 pub fn platform_state_dir() -> PathBuf {
     if cfg!(windows) {
         if let Some(d) = std::env::var_os("LOCALAPPDATA").filter(|v| !v.is_empty()) {
-            return PathBuf::from(d).join("overseer");
+            return PathBuf::from(d).join(wire::STATE_DIR_NAME);
         }
     }
     let home = PathBuf::from(std::env::var_os("HOME").unwrap_or_default());
@@ -358,16 +373,17 @@ pub fn platform_state_dir() -> PathBuf {
         .filter(|v| !v.is_empty())
         .map(PathBuf::from)
         .unwrap_or_else(|| home.join(".local/state"))
-        .join("overseer")
+        .join(wire::STATE_DIR_NAME)
 }
 
 impl<'a> Ctx<'a> {
     pub fn from_env(probe: &'a dyn Probe) -> Ctx<'a> {
         let state_dir = default_state_dir();
         Ctx {
-            claude_dir: env_dir("CLAUDE_CONFIG_DIR", ".claude"),
-            codex_dir: env_dir("CODEX_HOME", ".codex"),
-            gemini_dir: home().join(".gemini"),
+            claude_dir: agents::config_dir("claude"),
+            codex_dir: agents::config_dir(agents::CODEX),
+            gemini_dir: agents::config_dir(agents::GEMINI),
+            vibe_dir: agents::config_dir(agents::VIBE),
             snapshot: std::env::var_os("OVERSEER_TMUX_SNAPSHOT")
                 .filter(|v| !v.is_empty())
                 .map(PathBuf::from)
@@ -377,7 +393,7 @@ impl<'a> Ctx<'a> {
             now_ms: std::env::var("OVERSEER_NOW")
                 .ok()
                 .and_then(|s| util::parse_rfc3339(&s))
-                .unwrap_or_else(procs::now_ms),
+                .unwrap_or_else(util::now_ms),
             probe,
             tmux: Some(tmux::Tmux::from_env()),
         }
@@ -393,13 +409,13 @@ pub fn line_state(
     idle_after_ms: i64,
 ) -> (&'static str, Option<&'static str>) {
     if archived {
-        ("hung-up", None)
+        (wire::STATE_HUNG_UP, None)
     } else if !alive {
-        ("held", Some("lost"))
+        (wire::STATE_HELD, Some("lost"))
     } else if busy || now_ms - activity_ms <= idle_after_ms {
-        ("active", None)
+        (wire::STATE_ACTIVE, None)
     } else {
-        ("idle", None)
+        (wire::STATE_IDLE, None)
     }
 }
 
@@ -409,8 +425,8 @@ pub fn apply_marks(
     closed: bool,
 ) -> (&'static str, Option<&'static str>) {
     match state {
-        ("held", _) if closed => ("hung-up", None),
-        ("held", _) if held_by_user => ("held", Some("user")),
+        (wire::STATE_HELD, _) if closed => (wire::STATE_HUNG_UP, None),
+        (wire::STATE_HELD, _) if held_by_user => (wire::STATE_HELD, Some("user")),
         s => s,
     }
 }
@@ -476,7 +492,7 @@ fn claude_found_from(
         );
         let f = by_sid
             .entry(t.session_id.clone())
-            .or_insert_with(|| Found::new("claude", t.session_id.clone()));
+            .or_insert_with(|| Found::new(agents::CLAUDE, t.session_id.clone()));
         f.cwd = cwd;
         f.branch = t.branch;
         f.activity_ms = activity;
@@ -514,7 +530,7 @@ fn claude_found_from(
         let Some(args) = l.alive else {
             let f = by_sid
                 .entry(l.session_id.clone())
-                .or_insert_with(|| Found::new("claude", l.session_id.clone()));
+                .or_insert_with(|| Found::new(agents::CLAUDE, l.session_id.clone()));
             f.cwd = live_cwd(&f.cwd, [l.cwd.clone()]);
             f.activity_ms = f.activity_ms.max(l.updated_ms);
             continue;
@@ -536,7 +552,7 @@ fn claude_found_from(
         taken.insert(key.clone());
         let f = by_sid
             .entry(key.clone())
-            .or_insert_with(|| Found::new("claude", key.clone()));
+            .or_insert_with(|| Found::new(agents::CLAUDE, key.clone()));
         if f.session_id != l.session_id {
             f.session_id = l.session_id.clone();
             if let Some((cwd, branch, activity, title)) = seen.get(&l.session_id) {
@@ -578,7 +594,7 @@ fn claude_found_from(
         };
         let f = by_sid
             .entry(key.clone())
-            .or_insert_with(|| Found::new("claude", key.clone()));
+            .or_insert_with(|| Found::new(agents::CLAUDE, key.clone()));
         f.session_id = now.clone();
         f.cwd = cwd;
         f.branch = branch;
@@ -738,15 +754,23 @@ fn codex_found(ctx: &Ctx, hooks: &HashMap<String, HookState>) -> Vec<Found> {
         .into_iter()
         .zip(owner)
         .map(|(t, j)| {
-            let mut f = Found::new("codex", t.id.clone());
+            let mut f = Found::new(agents::CODEX, t.id.clone());
             let hook = hooks.get(&t.id);
             if let Some((pid, argv, _)) = j.map(|j| &procs[j]) {
-                let flags = flags_after(argv, codex::is_codex).unwrap_or_default();
+                let flags =
+                    flags_after(argv, |a| agents::runs_as(agents::CODEX, a)).unwrap_or_default();
                 f.alive = Some((*pid, codex::launch_flags(&flags)));
             }
             if let Some(h) = hook {
                 f.busy = h.busy;
                 f.busy_known = f.alive.is_some();
+            } else if let Some(b) = j
+                .and_then(|j| terms[j].as_ref())
+                .and_then(|x| x.turn_busy(ctx.now_ms))
+                .filter(|_| f.alive.is_some())
+            {
+                f.busy = b;
+                f.busy_known = true;
             }
             f.cwd = t.cwd.unwrap_or_default();
             f.branch = t.branch;
@@ -770,7 +794,11 @@ fn gemini_found(ctx: &Ctx, hooks: &HashMap<String, HookState>) -> Vec<Found> {
         .probe
         .list()
         .into_iter()
-        .filter(|(_, argv)| argv.iter().take(3).any(|a| gemini::is_gemini(a)))
+        .filter(|(_, argv)| {
+            argv.iter()
+                .take(3)
+                .any(|a| agents::runs_as(agents::GEMINI, a))
+        })
         .collect();
     let procs: Vec<&(u32, Vec<String>)> = all
         .iter()
@@ -786,7 +814,7 @@ fn gemini_found(ctx: &Ctx, hooks: &HashMap<String, HookState>) -> Vec<Found> {
     sessions
         .into_iter()
         .map(|s| {
-            let mut f = Found::new("gemini", s.id.clone());
+            let mut f = Found::new(agents::GEMINI, s.id.clone());
             let first_in_cwd = s.cwd.as_ref().is_some_and(|c| cwd_taken.insert(c.clone()));
             let hit = procs
                 .iter()
@@ -807,7 +835,8 @@ fn gemini_found(ctx: &Ctx, hooks: &HashMap<String, HookState>) -> Vec<Found> {
                 });
             if let Some((pid, argv)) = hit {
                 claimed.insert(*pid);
-                let flags = flags_after(argv, gemini::is_gemini).unwrap_or_default();
+                let flags =
+                    flags_after(argv, |a| agents::runs_as(agents::GEMINI, a)).unwrap_or_default();
                 f.alive = Some((*pid, without_prompt(&procs::strip_resume(&flags))));
             }
             if let Some(h) = hooks.get(&s.id) {
@@ -824,6 +853,85 @@ fn gemini_found(ctx: &Ctx, hooks: &HashMap<String, HookState>) -> Vec<Found> {
         .collect()
 }
 
+fn vibe_found(ctx: &Ctx, hooks: &HashMap<String, HookState>) -> Vec<Found> {
+    let mut sessions = vibe::sessions(&ctx.vibe_dir);
+    if sessions.is_empty() {
+        return vec![];
+    }
+    sessions.sort_by_key(|s| -s.activity_ms);
+    let procs: HashMap<u32, Vec<String>> = ctx
+        .probe
+        .list()
+        .into_iter()
+        .filter(|(_, argv)| {
+            argv.iter()
+                .take(3)
+                .any(|a| agents::runs_as(agents::VIBE, a))
+        })
+        .collect();
+    let tui = |pid: u32| {
+        let mut p = Some(pid);
+        for _ in 0..4 {
+            let cur = p?;
+            if procs.contains_key(&cur) {
+                return Some(cur);
+            }
+            p = ctx.probe.ppid(cur);
+        }
+        None
+    };
+    let mut claimed = HashSet::new();
+    sessions
+        .into_iter()
+        .map(|s| {
+            let mut f = Found::new(agents::VIBE, s.id.clone());
+            let leased = s
+                .pid
+                .filter(|p| ctx.probe.info(*p).is_some())
+                .and_then(tui)
+                .filter(|t| !claimed.contains(t));
+            let named = || {
+                procs
+                    .iter()
+                    .find(|(pid, argv)| !claimed.contains(*pid) && argv.contains(&s.id))
+                    .map(|(pid, _)| *pid)
+            };
+            let live = leased.or_else(named);
+            if let Some(t) = live {
+                claimed.insert(t);
+                let flags = procs
+                    .get(&t)
+                    .and_then(|argv| flags_after(argv, |a| agents::runs_as(agents::VIBE, a)))
+                    .unwrap_or_default();
+                f.alive = Some((t, without_prompt(&procs::strip_resume(&flags))));
+            }
+            let hook = hooks.get(&s.id);
+            if let Some(h) = hook {
+                f.busy = h.busy;
+                f.busy_known = f.alive.is_some();
+            }
+            if let (Some(h), Some((pid, _))) = (hook, &f.alive) {
+                if let Some(t) = term::of_pid(*pid, ctx.probe) {
+                    f.busy = term::effective_busy(
+                        h.busy,
+                        h.at_ms,
+                        t.submit_ms(),
+                        t.turn_busy(ctx.now_ms),
+                    );
+                }
+            }
+            f.cwd = s.cwd.unwrap_or_default();
+            f.title = s.title;
+            f.archived = s.archived;
+            f.activity_ms = s
+                .activity_ms
+                .max(s.started_ms.unwrap_or(0))
+                .max(hook.map_or(0, |h| h.at_ms));
+            f
+        })
+        .collect()
+}
+
 fn without_prompt(flags: &[String]) -> Vec<String> {
     let mut out = vec![];
     let mut it = flags.iter();
@@ -832,6 +940,7 @@ fn without_prompt(flags: &[String]) -> Vec<String> {
             "-i" | "--prompt-interactive" | "-p" | "--prompt" => {
                 it.next();
             }
+            "--" => break,
             s if s.starts_with("--prompt-interactive=") || s.starts_with("--prompt=") => {}
             _ => out.push(f.clone()),
         }
@@ -847,7 +956,7 @@ fn term_found(states: &HashMap<(&'static str, String), HookState>, now_ms: i64) 
             .agent
             .as_deref()
             .and_then(agents::get)
-            .filter(|a| !a.sessions && !a.bin.is_empty())
+            .filter(|a| a.polled())
         else {
             continue;
         };
@@ -906,20 +1015,20 @@ pub fn snapshot_args(path: &Path) -> HashMap<String, Vec<String>> {
     out.into_iter().map(|(k, (_, a))| (k, a)).collect()
 }
 
-// Stored flags as resume passes them back, repairing rows captured before a fix.
 pub fn resume_flags(agent: &str, flags: &[String]) -> Vec<String> {
     let flags = procs::rejoin_split_json(flags);
-    match agent {
-        "codex" => {
+    let Some(a) = agents::get(agent) else {
+        return flags;
+    };
+    match a.repair {
+        agents::Repair::Codex => {
             let mut flags = codex::launch_flags(&flags);
-            if let Some(a) = agents::get("codex") {
-                let mode = a.mode_flags("", &flags);
-                flags.splice(0..0, mode);
-            }
+            let mode = a.mode_flags("", &flags);
+            flags.splice(0..0, mode);
             flags
         }
-        "claude" => claude::launch_flags(&flags),
-        _ => flags,
+        agents::Repair::Claude => claude::launch_flags(&flags),
+        agents::Repair::None => flags,
     }
 }
 
@@ -986,7 +1095,7 @@ type Upsert = (u64, String, Vec<String>);
 type Upserted = HashMap<UpsertKey, Upsert>;
 
 fn db_id(state_dir: &Path) -> u64 {
-    let Ok(m) = std::fs::metadata(state_dir.join("overseer.db")) else {
+    let Ok(m) = std::fs::metadata(state_dir.join(paths::REGISTRY_DB)) else {
         return 0;
     };
     #[cfg(unix)]
@@ -1104,14 +1213,14 @@ fn scan_now(ctx: &Ctx) -> Result<Vec<Line>, String> {
     let hook_map = |agent| -> Result<HashMap<String, HookState>, String> {
         Ok(reg.hook_sessions(agent)?.into_iter().collect())
     };
-    let claude_hooks = hook_map("claude")?;
-    let codex_hooks = hook_map("codex")?;
-    let gemini_hooks = hook_map("gemini")?;
+    let mut session_hooks: HashMap<&'static str, HashMap<String, HookState>> = HashMap::new();
+    for a in agents::AGENTS.iter().filter(|a| a.sessions()) {
+        session_hooks.insert(a.id, hook_map(a.id)?);
+    }
+    let no_hooks = HashMap::new();
+    let hooks_of = |id: &str| session_hooks.get(id).unwrap_or(&no_hooks);
     let mut term_hooks = HashMap::new();
-    for a in agents::AGENTS
-        .iter()
-        .filter(|a| !a.sessions && !a.bin.is_empty())
-    {
+    for a in agents::AGENTS.iter().filter(|a| a.polled()) {
         for (k, h) in reg.hook_sessions(a.id)? {
             if k.starts_with("term:") {
                 term_hooks.insert((a.id, k), h);
@@ -1122,9 +1231,19 @@ fn scan_now(ctx: &Ctx) -> Result<Vec<Line>, String> {
     let panes = ctx.tmux.as_ref().map(|t| t.panes()).unwrap_or_default();
     let mut g = git::Git::default();
     let mut repo_dirs: BTreeSet<(String, String)> = BTreeSet::new();
-    let mut found = claude_found(ctx, &claude_hooks, &reg.divergent("claude")?);
-    found.extend(codex_found(ctx, &codex_hooks));
-    found.extend(gemini_found(ctx, &gemini_hooks));
+    let mut found = vec![];
+    for a in agents::AGENTS.iter().filter(|a| a.sessions()) {
+        let hooks = hooks_of(a.id);
+        match a.transcript {
+            Some(agents::Transcript::Claude) => {
+                found.extend(claude_found(ctx, hooks, &reg.divergent(a.id)?))
+            }
+            Some(agents::Transcript::Codex) => found.extend(codex_found(ctx, hooks)),
+            Some(agents::Transcript::Gemini) => found.extend(gemini_found(ctx, hooks)),
+            Some(agents::Transcript::Vibe) => found.extend(vibe_found(ctx, hooks)),
+            None => {}
+        }
+    }
     found.extend(term_found(&term_hooks, ctx.now_ms));
     let probed: Vec<_> = found
         .into_iter()
@@ -1202,13 +1321,12 @@ fn scan_now(ctx: &Ctx) -> Result<Vec<Line>, String> {
             .as_ref()
             .map(|i| i.top.clone())
             .unwrap_or_else(|| f.cwd.clone());
-        let hook = match f.agent {
-            "claude" => claude_hooks
+        let hook = if agents::get(f.agent).is_some_and(|a| a.sessions()) {
+            hooks_of(f.agent)
                 .get(&f.session_id)
-                .filter(|h| !f.shared || h.pid == pid),
-            "codex" => codex_hooks.get(&f.session_id),
-            "gemini" => gemini_hooks.get(&f.session_id),
-            _ => f.hook.as_ref(),
+                .filter(|h| !f.shared || h.pid == pid)
+        } else {
+            f.hook.as_ref()
         }
         .cloned();
         let mut l = Line {
@@ -1240,10 +1358,11 @@ fn scan_now(ctx: &Ctx) -> Result<Vec<Line>, String> {
             cwd_missing: f.cwd.is_empty() || !Path::new(&f.cwd).is_dir(),
             cwd: f.cwd,
             pid,
-            busy: f.busy,
+            busy: alive && f.busy,
             busy_known: f.busy_known,
             title: f.title,
             title_override: marks.title_override.clone(),
+            notes: marks.notes.clone(),
             tmux: f.tmux,
             orphan: pane.as_ref().is_some_and(|p| !p.attached),
             pane: pane.map(|p| p.id),
@@ -1257,7 +1376,8 @@ fn scan_now(ctx: &Ctx) -> Result<Vec<Line>, String> {
             session_id: f.session_id,
             ..Default::default()
         };
-        let fallback = (f.agent == "claude")
+        let fallback = agents::get(f.agent)
+            .is_some_and(|a| a.tmux_snapshot)
             .then(|| snap.get(&l.session_id))
             .flatten();
         let alive_args = f.alive.as_ref().map(|a| &a.1);
@@ -1269,7 +1389,7 @@ fn scan_now(ctx: &Ctx) -> Result<Vec<Line>, String> {
         // The line left the held state (resumed) or hung up: drop stale pause marks.
         let still_held = marks.held_pid != 0 && pid == Some(marks.held_pid as u32);
         l.held_at = marks.held_at.clone();
-        if l.state == "held" {
+        if l.state == wire::STATE_HELD {
             if l.held_at.is_none() && (marks.held_pid != 0 || probe_ok()) {
                 let at = format_rfc3339(ctx.now_ms);
                 reg.set_mark(&id, "held_at", Some(&at))?;
@@ -1334,7 +1454,48 @@ fn scan_now(ctx: &Ctx) -> Result<Vec<Line>, String> {
     Ok(lines)
 }
 
+pub mod wire {
+    include!("../contract/wire.rs");
+}
+
 pub const RECENT_MS: i64 = 7 * 24 * 3600 * 1000;
+
+#[derive(Default)]
+pub struct LineFilter {
+    all: bool,
+    ticket: Option<String>,
+    repo: Option<String>,
+    state: Option<String>,
+}
+
+impl LineFilter {
+    pub fn new(
+        all: bool,
+        ticket: Option<&str>,
+        repo: Option<&str>,
+        state: Option<&str>,
+    ) -> LineFilter {
+        LineFilter {
+            all,
+            ticket: ticket.map(|t| util::ticket(t).unwrap_or_else(|| t.to_ascii_uppercase())),
+            repo: repo.map(str::to_ascii_lowercase),
+            state: state.map(str::to_string),
+        }
+    }
+
+    pub fn matches(&self, l: &Line, now_ms: i64) -> bool {
+        (self.all || l.recent(now_ms))
+            && self
+                .ticket
+                .as_ref()
+                .is_none_or(|t| l.ticket.as_ref() == Some(t))
+            && self
+                .repo
+                .as_ref()
+                .is_none_or(|r| l.repo.to_ascii_lowercase().contains(r.as_str()))
+            && self.state.as_ref().is_none_or(|s| l.state == *s)
+    }
+}
 
 impl Line {
     pub fn registry_key(&self) -> &str {
@@ -1389,6 +1550,7 @@ impl Line {
             "resumeCommand": self.resume_command,
             "resumeVerified": agents::get(self.agent).is_some_and(|a| a.resume_verified),
             "titleOverride": self.title_override,
+            "notes": self.notes,
         });
         if let Some(p) = self.pid {
             local["pid"] = json!(p);

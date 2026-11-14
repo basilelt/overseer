@@ -23,6 +23,9 @@
   --st-done: #71717a;
   --st-held: #a1a1aa;
   --st-paused: #d97706;
+  --note-ink: #b45309;
+  --note-bg: #fef9c3;
+  --note-border: #fde68a;
   --state-running: #3fb950;
   --state-attention: #f0883e;
   --state-open: #58a6ff;
@@ -48,10 +51,40 @@
   --lane-3: #a8804f;
   --lane-4: #8a6fa8;
   --lane-5: #b0655f;
+  --heat-0: #fde9a8;
+  --heat-1: #fcc66b;
+  --heat-2: #f59c45;
+  --heat-3: #e2672b;
+  --heat-4: #bd3a1d;
+  --heat-5: #7a1c12;
+  --heat-ink-0: #3d1a00;
+  --heat-ink-1: #3d1a00;
+  --heat-ink-2: #3d1a00;
+  --heat-ink-3: #ffffff;
+  --heat-ink-4: #ffffff;
+  --heat-ink-5: #ffffff;
+  --link-out: #2563eb;
+  --link-in: #c2410c;
+  --link-cross: #7c3aed;
   --font: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
   --mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
   --radius: 6px;
   --radius-lg: 10px;
+  --z-shell-scrim: 40;
+  --z-shell: 41;
+  --z-modal: 50;
+  --z-popover-scrim: 59;
+  --z-popover: 60;
+  --z-picker: 70;
+  --z-tour: 80;
+  --z-tour-card: 81;
+  --z-record: 90;
+  --z-toast: 100;
+  --z-dropdown: 40;
+  --z-drag: 60;
+  --z-screen: 60;
+  --z-update: 70;
+  --z-crash: 80;
   --ease: 140ms cubic-bezier(0.2, 0, 0, 1);
   --titlebar-h: 40px;
 }
@@ -86,6 +119,9 @@
   --st-done: #71717a;
   --st-held: #52525b;
   --st-paused: #f59e0b;
+  --note-ink: #fbbf24;
+  --note-bg: color-mix(in srgb, var(--note-ink) 12%, var(--surface));
+  --note-border: color-mix(in srgb, var(--note-ink) 30%, var(--surface));
   --overlay: rgba(0, 0, 0, 0.5);
   --shadow: 0 12px 36px rgba(0, 0, 0, 0.5), 0 0 0 1px var(--border-strong);
   --diff-add-bg: rgba(34, 197, 94, 0.1);
@@ -101,6 +137,21 @@
   --lane-3: #c49b70;
   --lane-4: #a991c4;
   --lane-5: #cc8580;
+  --heat-0: #32204f;
+  --heat-1: #64235f;
+  --heat-2: #9c3358;
+  --heat-3: #d2523b;
+  --heat-4: #f08c26;
+  --heat-5: #fbe26b;
+  --heat-ink-0: #f6f0ff;
+  --heat-ink-1: #f6f0ff;
+  --heat-ink-2: #f6f0ff;
+  --heat-ink-3: #fff7f0;
+  --heat-ink-4: #1a0d00;
+  --heat-ink-5: #1a0d00;
+  --link-out: #60a5fa;
+  --link-in: #fb923c;
+  --link-cross: #c084fc;
 }
 
 :root[data-palette='custom'] {
@@ -300,6 +351,15 @@ input.switch:checked::after {
   transform: translate(14px, -50%);
 }
 
+input.switch:indeterminate {
+  border-color: var(--accent);
+}
+
+input.switch:indeterminate::after {
+  background: var(--accent);
+  transform: translate(7px, -50%);
+}
+
 input.switch:disabled {
   opacity: 0.45;
   cursor: default;
@@ -319,6 +379,10 @@ input.switch:disabled {
 
 :root.phone input.switch:checked::after {
   transform: translate(20px, -50%);
+}
+
+:root.phone input.switch:indeterminate::after {
+  transform: translate(10px, -50%);
 }
 
 ::placeholder {

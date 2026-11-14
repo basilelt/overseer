@@ -1,9 +1,10 @@
 use crate::board::publish;
 use crate::deliver::{self, Channel, Job, NotIdle, Queue, Rules};
-use crate::procs::now_ms;
+use crate::registry::db;
 use crate::term;
+use crate::util::now_ms;
 use crate::util::ulid;
-use crate::workspaces::{bad, db, Index, Res};
+use crate::workspaces::{bad, Index, Res};
 use crate::{Ctx, Line};
 use serde_json::{json, Value};
 
@@ -32,7 +33,12 @@ fn check(target: &str, lines: &[Line]) -> Check {
             let Some(l) = lines.iter().find(|l| l.id == id) else {
                 return Check::Refused("unknown line");
             };
-            if !l.alive() || matches!(l.state, "held" | "hung-up") {
+            if !l.alive()
+                || matches!(
+                    l.state,
+                    crate::wire::STATE_HELD | crate::wire::STATE_HUNG_UP
+                )
+            {
                 return Check::Refused("not running");
             }
             match deliver::channel(l) {

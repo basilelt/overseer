@@ -4,24 +4,14 @@ use std::sync::Arc;
 use sha2::{Digest, Sha256};
 
 use crate::install::{Platform, SERVER_VERSION};
-use crate::release_http::{asset_url, client, get, hex, ApkError};
+use crate::release_http::{
+    asset_url, client, get, hex, network, signed, sums_first_match, ApkError, GITHUB, RELEASE_KEY,
+    SUMS, SUMS_SIG,
+};
 use crate::ssh::{Fetch, FetchFuture};
 
-const GITHUB: &str = "https://github.com";
-pub const SUMS: &str = "SHA256SUMS";
 pub fn asset_name(version: &str, platform: Platform) -> String {
     format!("overseer-{version}-{}", platform.target_triple())
-}
-
-pub fn parse_sums(text: &str, name: &str) -> Option<String> {
-    text.lines()
-        .find_map(|line| {
-            let mut words = line.split_whitespace();
-            let hash = words.next()?;
-            (words.next()?.trim_start_matches('*') == name).then_some(hash)
-        })
-        .filter(|h| h.len() == 64 && h.bytes().all(|b| b.is_ascii_hexdigit()))
-        .map(str::to_ascii_lowercase)
 }
 
 pub fn cached(cache: &Path, version: &str, platform: Platform) -> PathBuf {
@@ -62,22 +52,40 @@ pub(crate) fn server_urls(base: &str, version: &str, platform: Platform) -> (Str
 }
 
 async fn from_github(version: &str, platform: Platform) -> Result<Vec<u8>, ApkError> {
-    from_base(GITHUB, version, platform).await
+    from_base(GITHUB, RELEASE_KEY, version, platform).await
 }
 
-async fn from_base(base: &str, version: &str, platform: Platform) -> Result<Vec<u8>, ApkError> {
+fn unsigned(version: &str) -> ApkError {
+    ApkError::Failed {
+        message: format!(
+            "the {SUMS} of release v{version} has no valid signature ({SUMS_SIG}), so the server was not installed"
+        ),
+    }
+}
+
+async fn from_base(
+    base: &str,
+    key: &str,
+    version: &str,
+    platform: Platform,
+) -> Result<Vec<u8>, ApkError> {
     let client = client()?;
     let name = asset_name(version, platform);
     let (sums_url, bin_url) = server_urls(base, version, platform);
-    let network = |e: reqwest::Error| ApkError::Network {
-        message: e.without_url().to_string(),
-    };
     let text = get(&client, &sums_url)
         .await?
         .text()
         .await
         .map_err(network)?;
-    let want = parse_sums(&text, &name).ok_or_else(|| ApkError::Failed {
+    let signature = match get(&client, &asset_url(base, version, SUMS_SIG)).await {
+        Ok(res) => res.text().await.map_err(network)?,
+        Err(ApkError::Failed { .. }) => return Err(unsigned(version)),
+        Err(e) => return Err(e),
+    };
+    if !signed(key, text.as_bytes(), &signature) {
+        return Err(unsigned(version));
+    }
+    let want = sums_first_match(&text, &name).ok_or_else(|| ApkError::Failed {
         message: format!("release v{version} has no {name} line in {SUMS}"),
     })?;
     let bytes = get(&client, &bin_url)
@@ -127,6 +135,7 @@ pub fn source(cache: PathBuf) -> Arc<Fetch> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::release_http::testhttp::{TEST_KEY, TEST_SUMS, TEST_SUMS_SIG};
 
     fn dir(name: &str) -> PathBuf {
         let d = std::env::temp_dir().join(format!("sb-fetch-{name}-{}", std::process::id()));
@@ -155,35 +164,6 @@ mod tests {
         );
         assert_eq!(name("Darwin x86_64"), "overseer-0.9.0-x86_64-apple-darwin");
         assert_eq!(name("Darwin arm64"), "overseer-0.9.0-aarch64-apple-darwin");
-    }
-
-    #[test]
-    fn parses_release_sha256sums() {
-        let a = "a".repeat(64);
-        let b = "B".repeat(64);
-        let sums = format!(
-            "{a}  Overseer_0.9.0_android.apk\n{b}  overseer-0.9.0-x86_64-unknown-linux-musl\n{a} *overseer-0.9.0-aarch64-apple-darwin\n{a}  overseer-0.9.0-x86_64-unknown-linux-musl.sig\n"
-        );
-        assert_eq!(
-            parse_sums(&sums, "overseer-0.9.0-x86_64-unknown-linux-musl"),
-            Some("b".repeat(64))
-        );
-        assert_eq!(
-            parse_sums(&sums, "overseer-0.9.0-aarch64-apple-darwin"),
-            Some(a.clone())
-        );
-        assert_eq!(
-            parse_sums(&sums, "overseer-0.9.0-aarch64-unknown-linux-musl"),
-            None
-        );
-        assert_eq!(
-            parse_sums(
-                "xyz  overseer-0.9.0-x86_64-apple-darwin\n",
-                "overseer-0.9.0-x86_64-apple-darwin"
-            ),
-            None
-        );
-        assert_eq!(parse_sums("", "x"), None);
     }
 
     #[tokio::test]
@@ -239,51 +219,85 @@ mod tests {
         );
     }
 
+    const BIN: &str = "#!/bin/sh\necho hi\n";
+
     #[tokio::test]
     async fn downloads_and_verifies_the_server_without_authorization() {
-        let bin = "#!/bin/sh\necho hi\n";
         let name = asset_name("0.9.0", Platform::LinuxX86_64);
-        let sums: &'static str = Box::leak(
-            format!("{}  {name}\n", hex(&Sha256::digest(bin.as_bytes()))).into_boxed_str(),
+        assert_eq!(
+            TEST_SUMS,
+            format!("{}  {name}\n", hex(&Sha256::digest(BIN.as_bytes())))
         );
         let (base, reqs) = crate::release_http::testhttp::serve_script(vec![
-            (200, vec![], sums),
+            (200, vec![], TEST_SUMS),
+            (200, vec![], TEST_SUMS_SIG),
             (302, vec![("location", "/cdn")], ""),
-            (200, vec![], bin),
+            (200, vec![], BIN),
         ])
         .await;
-        let got = from_base(&base, "0.9.0", Platform::LinuxX86_64)
+        let got = from_base(&base, TEST_KEY, "0.9.0", Platform::LinuxX86_64)
             .await
             .unwrap();
-        assert_eq!(got, bin.as_bytes());
+        assert_eq!(got, BIN.as_bytes());
         let reqs = reqs.await.unwrap();
         assert!(reqs[0].starts_with("get /basilelt/overseer/releases/download/v0.9.0/sha256sums "));
-        assert!(reqs[1].contains(&format!("/v0.9.0/{name} ")));
-        assert!(reqs[2].starts_with("get /cdn "));
+        assert!(
+            reqs[1].starts_with("get /basilelt/overseer/releases/download/v0.9.0/sha256sums.sig ")
+        );
+        assert!(reqs[2].contains(&format!("/v0.9.0/{name} ")));
+        assert!(reqs[3].starts_with("get /cdn "));
         assert!(reqs.iter().all(|r| !r.contains("authorization")));
     }
 
     #[tokio::test]
     async fn a_corrupt_server_download_fails_the_checksum() {
-        let name = asset_name("0.9.0", Platform::LinuxX86_64);
-        let sums: &'static str =
-            Box::leak(format!("{}  {name}\n", "a".repeat(64)).into_boxed_str());
         let (base, _reqs) = crate::release_http::testhttp::serve_script(vec![
-            (200, vec![], sums),
+            (200, vec![], TEST_SUMS),
+            (200, vec![], TEST_SUMS_SIG),
             (200, vec![], "tampered"),
         ])
         .await;
         assert_eq!(
-            from_base(&base, "0.9.0", Platform::LinuxX86_64).await,
+            from_base(&base, TEST_KEY, "0.9.0", Platform::LinuxX86_64).await,
             Err(ApkError::Checksum)
         );
+    }
+
+    #[tokio::test]
+    async fn checksums_without_a_valid_signature_are_refused_before_the_download() {
+        let rewritten: &'static str = Box::leak(
+            format!(
+                "{}  {}\n",
+                hex(&Sha256::digest(b"other")),
+                asset_name("0.9.0", Platform::LinuxX86_64)
+            )
+            .into_boxed_str(),
+        );
+        let cases = [
+            (TEST_KEY, TEST_SUMS, 404, "Not Found"),
+            (TEST_KEY, rewritten, 200, TEST_SUMS_SIG),
+            (RELEASE_KEY, TEST_SUMS, 200, TEST_SUMS_SIG),
+        ];
+        for (key, sums, status, signature) in cases {
+            let (base, reqs) = crate::release_http::testhttp::serve_script(vec![
+                (200, vec![], sums),
+                (status, vec![], signature),
+            ])
+            .await;
+            let err = from_base(&base, key, "0.9.0", Platform::LinuxX86_64)
+                .await
+                .unwrap_err();
+            assert_eq!(err, unsigned("0.9.0"));
+            assert!(describe(err, "0.9.0").contains("no valid signature (SHA256SUMS.sig)"));
+            assert_eq!(reqs.await.unwrap().len(), 2);
+        }
     }
 
     #[tokio::test]
     async fn a_missing_release_reports_the_github_status() {
         let (base, _reqs) =
             crate::release_http::testhttp::serve_script(vec![(404, vec![], "Not Found")]).await;
-        let err = from_base(&base, "9.9.9", Platform::LinuxX86_64)
+        let err = from_base(&base, TEST_KEY, "9.9.9", Platform::LinuxX86_64)
             .await
             .unwrap_err();
         assert!(

@@ -1,12 +1,11 @@
 <script lang="ts">
   import { untrack } from 'svelte';
-  import { titleEdit } from '../../titles';
+  import { titleEdit } from '../../tabs/titles';
   import { t } from '../../i18n.svelte';
   import { app } from '../../state.svelte';
 
   let { tabKey, initial, openedAt, ondone }: { tabKey: string; initial: string; openedAt: number; ondone: () => void } = $props();
 
-  // The draft starts from the title shown when editing began, then belongs to the user.
   let draft = $state(untrack(() => initial));
   let done = false;
 

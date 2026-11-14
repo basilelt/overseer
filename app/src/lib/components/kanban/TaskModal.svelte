@@ -5,19 +5,23 @@
   import Modal from '../ui/Modal.svelte';
   import AgentPicker from '../ui/AgentPicker.svelte';
   import ModelField from '../ui/ModelField.svelte';
-  import Segmented from './Segmented.svelte';
+  import Segmented from '../ui/Segmented.svelte';
   import { app } from '../../state.svelte';
-  import { settings } from '../../settings.svelte';
+  import { settings } from '../../settings/settings.svelte';
   import { t, type Key } from '../../i18n.svelte';
   import { findAgent, hasModel, pickAgent, taskAgents } from '../../agents';
-  import { initialChoice, resolveProfile } from '../../profiles';
+  import { initialChoice, resolveProfile, TASK_TYPES } from '../../profiles/profiles';
   import ProfileSelect from '../ui/ProfileSelect.svelte';
   import DepPicker from './DepPicker.svelte';
-  import type { Effort } from '../../types';
-  import { taskDrafts, type TaskDraft } from '../../task-drafts';
-  import { ft } from '../../feedback.svelte';
+  import QuorumField from './QuorumField.svelte';
+  import { defaultQuorum, quorumBody } from '../../kanban/quorum';
+  import type { Effort, TaskType } from '../../types';
+  import { taskDrafts, type TaskDraft } from '../../kanban/task-drafts';
+  import { ft } from '../../feedback/feedback.svelte';
   import { dropZone } from '../../drop';
-  import { uploadBlobs, uploadPaths, type Attachment, type Failure } from '../../task-attachments';
+  import { uploadBlobs, uploadPaths, type Attachment, type Failure } from '../../kanban/task-attachments';
+  import { isSubmitChord } from '../../chord';
+  import { uploadFailures } from '../../upload-pipeline';
 
   let { onclose }: { onclose: () => void } = $props();
 
@@ -36,12 +40,15 @@
   let description = $state(saved?.description ?? '');
   let project = $state(initialProject);
   let profile = $state('');
+  let taskType = $state<TaskType | ''>('');
   let agent = $state(initialAgent);
   let model = $state(initial.model);
   let effort = $state<Effort | undefined>(initial.effort);
   let ticketKey = $state(saved?.ticketKey ?? '');
   let dependsOn = $state<string[]>(after ? [after.id] : []);
   let inheritBranch = $state<boolean | null>(null);
+  let quorumOn = $state(false);
+  let quorum = $state(defaultQuorum(app.agents, initialAgent));
   let error = $state('');
   let busy = $state(false);
   let importing = $state(false);
@@ -60,18 +67,25 @@
   const effortOptions = $derived(info?.efforts ?? []);
 
   function reset() {
-    ({ model, effort } = initialChoice(resolveProfile(app.profiles, { explicit: profile, cwd: project }), findAgent(app.agents, agent), fallback(agent)));
+    ({ model, effort } = initialChoice(resolveProfile(app.profiles, { explicit: profile, taskType: taskType || undefined, cwd: project }), findAgent(app.agents, agent), fallback(agent)));
   }
 
-  function pick(fill: { title: string; description: string; ticketKey: string }) {
+  function pick(fill: { title: string; description: string; ticketKey: string; taskType?: TaskType }) {
     ({ title, description, ticketKey } = fill);
+    if (fill.taskType && app.profiles?.taskTypes) setTaskType(fill.taskType);
     error = '';
     importing = false;
   }
 
   function setAgent(id: string) {
     agent = id;
+    quorum = defaultQuorum(app.agents, id);
     reset();
+  }
+
+  function setTaskType(ty: TaskType | '') {
+    taskType = ty;
+    if (!profile) reset();
   }
 
   function setProfile(id: string) {
@@ -79,21 +93,22 @@
     reset();
   }
 
-  const failed = (f: Failure) => app.notify(t('upload.failed', f), 'error');
-
-  async function attach(run: (c: NonNullable<typeof app.client>) => Promise<Attachment[]>) {
+  async function attach(run: (c: NonNullable<typeof app.client>, fail: (f: Failure) => void) => Promise<Attachment[]>) {
     const client = app.client;
     if (!client || !app.connected) return app.notify(t('ports.disconnected'), 'error');
     uploading++;
+    const failures = uploadFailures();
     try {
-      attachments = [...attachments, ...(await run(client))];
+      attachments = [...attachments, ...(await run(client, (f) => failures.fail(f.name, f.error)))];
     } finally {
       uploading--;
     }
+    const failure = failures.summary();
+    if (failure) app.notify(failure, 'error');
   }
 
-  const addFiles = (files: File[]) => files.length && attach((c) => uploadBlobs(c, files, failed));
-  const addPaths = (paths: string[]) => paths.length && attach((c) => uploadPaths(c, paths, failed));
+  const addFiles = (files: File[]) => files.length && attach((c, fail) => uploadBlobs(c, files, fail));
+  const addPaths = (paths: string[]) => paths.length && attach((c, fail) => uploadPaths(c, paths, fail));
 
   function onPaste(e: ClipboardEvent) {
     const files = Array.from(e.clipboardData?.files ?? []);
@@ -129,8 +144,10 @@
         effort: effortOptions.length ? effort : undefined,
         ticketKey: ticketKey.trim() || undefined,
         ...(profile ? { profile } : {}),
+        ...(taskType ? { taskType } : {}),
         ...(dependsOn.length ? { dependsOn } : {}),
         ...(dependsOn.length === 1 && inheritBranch !== null ? { inheritBranch } : {}),
+        ...quorumBody(quorumOn, agent, quorum),
         ...(attachments.length ? { attachments: attachments.map(({ path, name }) => ({ path, name })) } : {}),
       });
       if (!app.data.tasks.some((x) => x.id === task.id)) app.data = { ...app.data, tasks: [...app.data.tasks, task] };
@@ -144,7 +161,7 @@
   }
 
   function onKey(e: KeyboardEvent) {
-    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+    if (isSubmitChord(e)) {
       e.preventDefault();
       submit();
     }
@@ -239,7 +256,21 @@
       <span>{t('task.dependsOn')}</span>
       <DepPicker value={dependsOn} {project} inherit={inheritBranch} onchange={(ids) => (dependsOn = ids)} oninherit={(on) => (inheritBranch = on)} />
     </div>
-    {#if app.profiles}
+    {#if app.profiles?.taskTypes}
+      <div class="row">
+        <label>
+          <span>{t('task.type')}</span>
+          <select data-tour="task-type" value={taskType} onchange={(e) => setTaskType(e.currentTarget.value as TaskType | '')}>
+            <option value="">{t('taskType.unset')}</option>
+            {#each TASK_TYPES as ty (ty)}<option value={ty}>{t(`taskType.${ty}` as Key)}</option>{/each}
+          </select>
+        </label>
+        <div class="field">
+          <span>{t('profile.label')}</span>
+          <ProfileSelect value={profile} cwd={project} {taskType} {agent} onchange={setProfile} />
+        </div>
+      </div>
+    {:else if app.profiles}
       <div class="field">
         <span>{t('profile.label')}</span>
         <ProfileSelect value={profile} cwd={project} {agent} onchange={setProfile} />
@@ -256,6 +287,7 @@
         />
       </div>
     {/if}
+    <QuorumField agents={app.agents} {agent} on={quorumOn} value={quorum} onon={(v) => (quorumOn = v)} onchange={(q) => (quorum = q)} />
     {#if info && !info.turns}
       <p class="hint faint">{t('task.noTurns', { agent: info.name })}</p>
     {/if}

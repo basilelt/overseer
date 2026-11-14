@@ -12,6 +12,6 @@
 <style>
   .layer {
     position: relative;
-    z-index: 70;
+    z-index: var(--z-update);
   }
 </style>

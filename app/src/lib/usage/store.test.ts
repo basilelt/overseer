@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
-import { DaemonError } from '../client';
+import { DaemonError } from '../daemon/client';
 import type { DaemonEvent } from '../types';
 import { CHIP_MIN_MS, DEBOUNCE_MS, PANEL_MIN_MS, RESET_MARGIN_MS, STALE_MS, UsageFeed, limitsRefreshIn } from './store.svelte';
 import type { UsageResponse } from './types';

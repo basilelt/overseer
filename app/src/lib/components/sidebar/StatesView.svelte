@@ -1,14 +1,14 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { attention } from '../../attention';
-  import { byState } from '../../by-state';
+  import { byState } from '../../session/by-state';
   import { t } from '../../i18n.svelte';
-  import { saveSettings, settings } from '../../settings.svelte';
-  import { filterItems, hostFor, toggleOpen, visibleIds } from '../../spaces';
+  import { saveSettings, settings } from '../../settings/settings.svelte';
+  import { filterItems, toggleOpen, visibleIds } from '../../workspace/spaces';
   import { app } from '../../state.svelte';
   import { TIME_BUCKETS } from '../../time-bucket';
   import { hostKey } from '../../window';
-  import { itemMenuAt, selectSession } from '../../wsactions';
+  import { itemMenuAt, selectSession } from '../../workspace/wsactions';
   import { visibleClock } from '../../visible-clock';
   import AttentionBanner from './AttentionBanner.svelte';
   import StateGroups from './StateGroups.svelte';
@@ -23,7 +23,6 @@
   const items = $derived(filterItems(app.items, (key) => names.get(app.itemWs.get(key) ?? '') ?? '', q));
   const sections = $derived(byState(items, app.itemWs, now, visibleIds(app.ws.workspaces)));
   const banner = $derived(attention(items, app.itemWs));
-  const host = $derived(hostFor(app.conn));
   const saved = $derived(settings.statesOpen?.[hostKey(app.conn.target)]);
   const opened = $derived(new Set(saved ?? []));
   const empty = $derived(!banner.length && sections.every((s) => !s.count));
@@ -47,11 +46,11 @@
               <span class="n">{b.count}</span>
             </button>
             {#if opened.has(b.bucket)}
-              <StateGroups groups={b.groups} {names} {now} {host} selectedKey={app.selectedKey} onselect={selectSession} onmenu={itemMenuAt} />
+              <StateGroups groups={b.groups} {names} {now} selectedKey={app.selectedKey} onselect={selectSession} onmenu={itemMenuAt} />
             {/if}
           {/each}
         {:else}
-          <StateGroups groups={s.groups} {names} {now} {host} selectedKey={app.selectedKey} onselect={selectSession} onmenu={itemMenuAt} />
+          <StateGroups groups={s.groups} {names} {now} selectedKey={app.selectedKey} onselect={selectSession} onmenu={itemMenuAt} />
         {/if}
       </section>
     {/if}
@@ -116,5 +115,14 @@
   .none {
     padding: 24px 12px;
     text-align: center;
+  }
+  :global(:root.phone) .head {
+    font-size: 12px;
+  }
+  :global(:root.phone) .bucket {
+    flex: none;
+    height: var(--touch);
+    padding: 0 10px;
+    border-radius: 10px;
   }
 </style>

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { dismiss } from '../../dismiss';
   import Check from '@lucide/svelte/icons/check';
   import ChevronDown from '@lucide/svelte/icons/chevron-down';
   import LoaderCircle from '@lucide/svelte/icons/loader-circle';
@@ -59,12 +60,7 @@
     else if (e.key === 'Enter' && matches[0]) pick(matches[0].name);
   }
 
-  function outside(e: PointerEvent) {
-    if (open && root && !root.contains(e.target as Node)) open = false;
-  }
 </script>
-
-<svelte:window onpointerdown={outside} />
 
 {#snippet item(b: BaseRef)}
   <button class="opt" class:on={b.name === current} onclick={() => pick(b.name)} title={b.subject}>
@@ -74,7 +70,7 @@
   </button>
 {/snippet}
 
-<div class="picker" bind:this={root}>
+<div class="picker" bind:this={root} use:dismiss={{ active: open, onclose: () => (open = false) }}>
   <button class="cur mono" bind:this={btn} aria-haspopup="listbox" aria-expanded={open} title={source ? t(`review.source.${source}` as Key, { base: label }) : t('review.pickBase')} onclick={toggle}>
     <span class="lbl">{label}</span><ChevronDown size={12} />
   </button>

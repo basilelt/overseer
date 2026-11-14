@@ -62,7 +62,7 @@
     display: grid;
     place-items: start center;
     padding-top: 12vh;
-    z-index: 50;
+    z-index: var(--z-modal);
   }
   .modal {
     max-width: calc(100vw - 32px);
@@ -104,6 +104,7 @@
   footer {
     display: flex;
     justify-content: flex-end;
+    flex-wrap: wrap;
     gap: 8px;
     padding: 12px 16px;
     border-top: 1px solid var(--border);

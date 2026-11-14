@@ -1,6 +1,8 @@
 use crate::board::publish;
-use crate::daemon::{header, respond_raw, Request, Stream};
-use crate::procs::{now_ms, Probe};
+use crate::daemon::Stream;
+use crate::http::{header, respond_raw, Request};
+use crate::procs::Probe;
+use crate::util::now_ms;
 use crate::util::{format_rfc3339, ulid};
 use portable_pty::{native_pty_system, ChildKiller, CommandBuilder, MasterPty, PtySize};
 use serde_json::{json, Value};
@@ -48,6 +50,60 @@ pub struct Info {
     pub resume: Option<(String, String)>,
 }
 
+impl From<Info> for crate::upgrade::SavedTerm {
+    fn from(i: Info) -> Self {
+        Self {
+            id: i.id,
+            pid: i.pid,
+            cwd: i.cwd,
+            cmd: i.cmd,
+            title: i.title,
+            title_override: i.title_override,
+            cols: i.cols,
+            rows: i.rows,
+            created_ms: i.created_ms,
+            exited: i.exited,
+            exit_code: i.exit_code,
+            line_id: i.line_id,
+            task_id: i.task_id,
+            agent: i.agent,
+            session: i.session,
+            flags: i.flags,
+            sized_by: i.sized_by,
+            profile: i.profile,
+            workspace_id: i.workspace_id,
+            ..Default::default()
+        }
+    }
+}
+
+impl From<crate::upgrade::SavedTerm> for Info {
+    fn from(s: crate::upgrade::SavedTerm) -> Self {
+        Self {
+            id: s.id,
+            pid: s.pid,
+            cwd: s.cwd,
+            cmd: s.cmd,
+            title: s.title,
+            title_override: s.title_override,
+            cols: s.cols,
+            rows: s.rows,
+            created_ms: s.created_ms,
+            exited: s.exited,
+            exit_code: s.exit_code,
+            line_id: s.line_id,
+            task_id: s.task_id,
+            agent: s.agent,
+            session: s.session,
+            flags: s.flags,
+            sized_by: s.sized_by,
+            profile: s.profile,
+            workspace_id: s.workspace_id,
+            resume: None,
+        }
+    }
+}
+
 struct Sub {
     tx: Sender<Arc<[u8]>>,
     backlog: Option<Arc<AtomicUsize>>,
@@ -67,6 +123,30 @@ impl Sub {
 }
 
 impl Out {
+    fn trim(&mut self, n: usize) -> usize {
+        if n == 0 {
+            return 0;
+        }
+        let (a, b) = self.ring.as_slices();
+        let k = n.min(a.len());
+        self.base.feed(&a[..k]);
+        self.base.feed(&b[..n - k]);
+        let mut n = n;
+        let end = self.ring.len().min(n + crate::termmodes::MAX_SEQ);
+        while n < end && !self.base.idle() {
+            self.base.byte(self.ring[n]);
+            n += 1;
+        }
+        self.ring.drain(..n);
+        n
+    }
+
+    fn replay(&self) -> Vec<u8> {
+        let mut out = self.base.preamble();
+        out.extend(self.ring.iter());
+        out
+    }
+
     fn hang_up(&mut self) {
         for s in self.subs.drain(..) {
             let _ = s.tx.send(Arc::from(&[][..]));
@@ -84,6 +164,7 @@ struct Out {
     burst_ms: i64,
     submit_ms: i64,
     scan: crate::termtheme::Scanner,
+    base: crate::termmodes::Modes,
 }
 
 pub const TURN_GRACE_MS: i64 = 1_500;
@@ -463,6 +544,9 @@ fn launch(
     for (k, v) in crate::shellenv::term_env() {
         cb.env(k, v);
     }
+    if let Some(path) = crate::shellenv::extended() {
+        cb.env("PATH", path);
+    }
     if let Some(v) = crate::termtheme::colorfgbg() {
         cb.env("COLORFGBG", v);
     }
@@ -559,7 +643,7 @@ pub fn spawn(s: Spec) -> Result<Arc<Term>, String> {
             created_ms: now_ms(),
             exited: false,
             exit_code: None,
-            agent: crate::agents::of_argv(&s.cmd).map(|a| a.id.to_string()),
+            agent: crate::agents::of_launch_argv(&s.cmd).map(|a| a.id.to_string()),
             line_id: s.line_id,
             task_id: s.task_id,
             session: s.session,
@@ -689,7 +773,9 @@ impl Term {
     fn may_fall_back(&self) -> bool {
         let i = lock(&self.info);
         cfg!(unix)
-            && i.agent.as_deref().is_some_and(|a| a != "shell")
+            && i.agent
+                .as_deref()
+                .is_some_and(|a| !crate::agents::is_shell(a))
             && i.task_id.is_none()
             && !self.killed.load(Ordering::SeqCst)
     }
@@ -719,7 +805,10 @@ impl Term {
         self.respawn(vec![
             "/bin/sh".into(),
             "-c".into(),
-            "printf '\\r\\n%s\\r\\n\\r\\n' \"$1\"; exec \"${SHELL:-/bin/sh}\"".into(),
+            format!(
+                "printf '\\r\\n%s\\r\\n\\r\\n' \"$1\"; {}",
+                crate::util::SHELL_FALLBACK
+            ),
             "sh".into(),
             note,
         ])
@@ -813,7 +902,7 @@ impl Term {
         o.last_ms = now;
         o.ring.extend(b);
         let over = o.ring.len().saturating_sub(RING);
-        o.ring.drain(..over);
+        let _ = o.trim(over);
         let chunk: Arc<[u8]> = b.into();
         o.subs.retain(|s| s.feed(&chunk));
         let reply = o.scan.feed(b, crate::termtheme::current());
@@ -837,7 +926,7 @@ impl Term {
     #[cfg(test)]
     fn subscribe(&self) -> (Vec<u8>, Option<Chunks>) {
         let mut o = lock(&self.out);
-        let replay = o.ring.iter().copied().collect();
+        let replay = o.replay();
         if o.closed {
             return (replay, None);
         }
@@ -848,7 +937,7 @@ impl Term {
 
     fn subscribe_waking(&self, backlog: &Arc<AtomicUsize>) -> (Vec<u8>, Option<(Waker, Chunks)>) {
         let mut o = lock(&self.out);
-        let replay = o.ring.iter().copied().collect();
+        let replay = o.replay();
         if o.closed {
             return (replay, None);
         }
@@ -1019,34 +1108,14 @@ impl Term {
             lock(&self.master).raw_fd().unwrap_or(-1)
         };
         let o = lock(&self.out);
-        let (a, b) = o.ring.as_slices();
-        let mut ring = crate::upgrade::hex(a);
-        ring.push_str(&crate::upgrade::hex(b));
+        let ring = crate::upgrade::hex(&o.replay());
         crate::upgrade::SavedTerm {
-            id: i.id,
-            pid: i.pid,
             fd,
-            cwd: i.cwd,
-            cmd: i.cmd,
-            title: i.title,
-            title_override: i.title_override,
-            cols: i.cols,
-            rows: i.rows,
-            created_ms: i.created_ms,
-            exited: i.exited,
-            exit_code: i.exit_code,
-            line_id: i.line_id,
-            task_id: i.task_id,
-            agent: i.agent,
-            session: i.session,
-            flags: i.flags,
-            sized_by: i.sized_by,
-            profile: i.profile,
-            workspace_id: i.workspace_id,
             total: o.total,
             last_ms: o.last_ms,
             closed: o.closed,
             ring,
+            ..i.into()
         }
     }
 
@@ -1114,38 +1183,20 @@ pub fn adopt(s: crate::upgrade::SavedTerm) -> Result<Arc<Term>, String> {
     } else {
         (Master::Gone, Box::new(std::io::sink()), None)
     };
-    let pid = s.pid;
+    let (pid, id, closed, total, last_ms) = (s.pid, s.id.clone(), s.closed, s.total, s.last_ms);
     let mut scan = crate::termtheme::Scanner::default();
     scan.feed(&ring, None);
     let term = Arc::new(Term {
         info: Mutex::new(Info {
-            id: s.id.clone(),
-            pid,
-            cwd: s.cwd,
-            cmd: s.cmd,
-            title: s.title,
-            title_override: s.title_override,
-            cols: s.cols,
-            rows: s.rows,
-            created_ms: s.created_ms,
             exited: !live,
-            exit_code: s.exit_code,
-            line_id: s.line_id,
-            task_id: s.task_id,
-            agent: s.agent,
-            session: s.session,
-            flags: s.flags,
-            sized_by: s.sized_by,
-            profile: s.profile,
-            workspace_id: s.workspace_id,
-            resume: None,
+            ..s.into()
         }),
         out: Mutex::new(Out {
             ring: ring.into(),
             subs: vec![],
-            closed: !live || s.closed,
-            total: s.total,
-            last_ms: s.last_ms,
+            closed: !live || closed,
+            total,
+            last_ms,
             scan,
             ..Default::default()
         }),
@@ -1157,7 +1208,7 @@ pub fn adopt(s: crate::upgrade::SavedTerm) -> Result<Arc<Term>, String> {
         killed: AtomicBool::new(false),
         thread: Mutex::new(None),
     });
-    lock(&TERMS).insert(s.id, term.clone());
+    lock(&TERMS).insert(id, term.clone());
     if live {
         let (done_tx, done_rx) = channel::<()>();
         if let Some(r) = reader {
@@ -1197,7 +1248,6 @@ pub fn get(id: &str) -> Option<Arc<Term>> {
     lock(&TERMS).get(id).cloned()
 }
 
-/// The workspace a term is assigned to, read without cloning its whole info.
 pub fn workspace_of(id: &str) -> Option<String> {
     get(id)?.workspace_id()
 }
@@ -1243,9 +1293,8 @@ pub fn trim_exited(now: i64) -> usize {
         let mut o = lock(&t.out);
         if o.subs.is_empty() && now - o.last_ms >= EXITED_TRIM_MS && o.ring.len() > EXITED_RING {
             let over = o.ring.len() - EXITED_RING;
-            o.ring.drain(..over);
+            freed += o.trim(over);
             o.ring.shrink_to_fit();
-            freed += over;
         }
     }
     freed
@@ -1262,7 +1311,14 @@ pub fn link_lines(lines: &[crate::Line]) {
     }
 }
 
+pub fn plain(text: &str) -> String {
+    text.chars()
+        .filter(|&c| matches!(c, '\n' | '\r' | '\t') || !c.is_control())
+        .collect()
+}
+
 pub fn insert(t: &Term, text: &str) -> std::io::Result<()> {
+    let text = plain(text);
     let screen = t.screen();
     let bracketed = screen.windows(8).any(|w| w == b"\x1b[?2004h");
     let body = if bracketed {
@@ -1271,12 +1327,6 @@ pub fn insert(t: &Term, text: &str) -> std::io::Result<()> {
         text.replace(['\r', '\n'], " ")
     };
     t.input(body.as_bytes())
-}
-
-pub fn paste(t: &Term, text: &str) -> std::io::Result<()> {
-    insert(t, text)?;
-    std::thread::sleep(Duration::from_millis(300));
-    t.input(b"\r")
 }
 
 pub fn ws(id: &str, req: &Request, mut s: impl Stream) {
@@ -1422,6 +1472,42 @@ fn ws_output<S: Stream>(ws: &mut WebSocket<S>, t: &Term, ctl: &Ctl, rx: &Chunks)
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn info_survives_the_saved_term_round_trip() {
+        let info = Info {
+            id: "t".into(),
+            pid: 4,
+            cwd: "/w".into(),
+            cmd: vec!["a".into()],
+            title: "T".into(),
+            title_override: Some("O".into()),
+            cols: 80,
+            rows: 24,
+            created_ms: 9,
+            exited: true,
+            exit_code: Some(2),
+            line_id: Some("l".into()),
+            task_id: Some("k".into()),
+            agent: Some("claude".into()),
+            session: Some("s".into()),
+            flags: vec!["--x".into()],
+            sized_by: Some("web".into()),
+            profile: Some(crate::profiles::Chip {
+                id: "p".into(),
+                ..Default::default()
+            }),
+            workspace_id: Some("w".into()),
+            resume: None,
+        };
+        let saved = crate::upgrade::SavedTerm::from(info);
+        let again = crate::upgrade::SavedTerm::from(Info::from(saved.clone()));
+        assert_eq!(again, saved);
+        assert_eq!(saved.fd, 0);
+        assert_eq!(saved.agent.as_deref(), Some("claude"));
+        assert_eq!(saved.workspace_id.as_deref(), Some("w"));
+        assert!(saved.exited && saved.exit_code == Some(2));
+    }
+
     use super::*;
 
     #[test]
@@ -1588,6 +1674,48 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
+    fn inserted_text_cannot_leave_the_paste_frame() {
+        let script = r#"stty -echo -icanon min 1; printf '\033[?2004h'; echo ready; head -c 24 | od -An -c | tr -d ' \n'; echo; echo got; sleep 30"#;
+        let t = spawn(Spec {
+            cwd: std::env::temp_dir().to_string_lossy().into_owned(),
+            cmd: vec!["/bin/sh".into(), "-c".into(), script.into()],
+            cols: 80,
+            rows: 24,
+            ..Default::default()
+        })
+        .unwrap();
+        let (replay, rx) = t.subscribe();
+        let rx = rx.unwrap();
+        let mut seen = replay;
+        let mut wait_for = |word: &str| {
+            let deadline = std::time::Instant::now() + Duration::from_secs(5);
+            while !String::from_utf8_lossy(&seen).contains(word) {
+                assert!(std::time::Instant::now() < deadline, "no {word}");
+                if let Ok(c) = rx.recv_timeout(Duration::from_millis(100)) {
+                    seen.extend_from_slice(&c);
+                }
+            }
+            String::from_utf8_lossy(&seen).into_owned()
+        };
+        wait_for("ready");
+        insert(&t, "a\x1b[201~b\x07c\u{9b}d\n\u{e9}").unwrap();
+        let out = wait_for("got");
+        assert!(out.contains(r"033[200~a[201~bcd\n303251033[201~"), "{out}");
+        t.kill().unwrap();
+        remove(&t.info().id);
+    }
+
+    #[test]
+    fn plain_keeps_text_and_line_breaks_only() {
+        assert_eq!(
+            plain("a\tb\r\nc \u{e9}\u{1f600}"),
+            "a\tb\r\nc \u{e9}\u{1f600}"
+        );
+        assert_eq!(plain("\x1b[201~\x00\x08\x7f\u{9b}x\u{9d}"), "[201~x");
+    }
+
+    #[cfg(unix)]
+    #[test]
     fn the_first_cursor_query_is_answered_by_the_daemon_and_hidden() {
         let script = r#"stty -echo -icanon min 1; printf 'a\033[6nb'; head -c 6 | od -An -c | tr -d ' \n'; echo; printf 'c\033[6nd'; echo done; sleep 30"#;
         ANSWER_CURSOR_QUERY.set(true);
@@ -1647,6 +1775,45 @@ mod tests {
         assert!(rx.is_none());
         assert_eq!(replay.len(), EXITED_RING);
         assert!(String::from_utf8_lossy(&replay).contains("the-end"));
+        remove(&id);
+    }
+
+    #[test]
+    fn a_trimmed_ring_replays_the_modes_it_dropped_from_a_boundary() {
+        let mut o = Out::default();
+        o.ring
+            .extend(b"\x1b[?1049h\x1b[?1000hold\x1b[?1000l\x1b[?1006hnew");
+        let cut = o.ring.len() - b"06hnew".len();
+        assert_eq!(o.trim(cut), cut + 3);
+        assert_eq!(o.replay(), b"\x1b[?1049h\x1b[?1006hnew");
+        assert_eq!(o.trim(1), 1);
+        assert_eq!(o.replay(), b"\x1b[?1049h\x1b[?1006hew");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn an_upgrade_carries_the_modes_of_a_trimmed_ring() {
+        let t = spawn(Spec {
+            cwd: std::env::temp_dir().to_string_lossy().into_owned(),
+            cmd: vec![
+                "/bin/sh".into(),
+                "-c".into(),
+                "printf '\\033[?1049h'; head -c 2200000 /dev/zero | tr '\\0' x".into(),
+            ],
+            cols: 80,
+            rows: 24,
+            ..Default::default()
+        })
+        .unwrap();
+        let id = t.info().id;
+        let deadline = std::time::Instant::now() + Duration::from_secs(10);
+        while !(t.exited() && t.out_closed()) {
+            assert!(std::time::Instant::now() < deadline, "term did not exit");
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        let ring = crate::upgrade::unhex(&t.save().ring).unwrap();
+        assert!(ring.starts_with(b"\x1b[?1049hx"), "{:?}", &ring[..16]);
+        assert_eq!(ring.len(), RING + b"\x1b[?1049h".len());
         remove(&id);
     }
 

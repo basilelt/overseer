@@ -2,9 +2,6 @@ import { describe, expect, it } from 'vitest';
 import { Flights } from './flight';
 
 describe('single flight per key', () => {
-  // Given a load already running for a line
-  // When the same line is asked again before it settles
-  // Then the second call is skipped instead of starting another full load
   it('skips a key already in flight', async () => {
     const f = new Flights();
     let calls = 0;
@@ -17,9 +14,6 @@ describe('single flight per key', () => {
     expect(calls).toBe(1);
   });
 
-  // Given a load running for one line
-  // When another line is asked
-  // Then it runs at once
   it('runs different keys independently', async () => {
     const f = new Flights();
     const a = f.run('a', () => new Promise<void>(() => {}));
@@ -27,9 +21,6 @@ describe('single flight per key', () => {
     void a;
   });
 
-  // Given a load that failed
-  // When the same line is asked again
-  // Then it runs again
   it('frees the key once settled, even on failure', async () => {
     const f = new Flights();
     await expect(f.run('a', async () => { throw new Error('x'); })).rejects.toThrow('x');

@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { tour } from './tour.svelte';
-import { saveSettings, settings } from '../settings.svelte';
+import { saveSettings, settings } from '../settings/settings.svelte';
 import { TOUR_VERSION } from './steps';
 
 const all = () => true;
@@ -75,7 +75,7 @@ describe('tour store', () => {
 
   it('only keeps steps whose target is on screen', () => {
     tour.start('full', (n) => n === 'host' || n === 'kanban');
-    expect(tour.steps.map((s) => s.id)).toEqual(['host', 'demo', 'kanban', 'palette', 'paletteKey', 'worktreeCleanup', 'merged']);
+    expect(tour.steps.map((s) => s.id)).toEqual(['host', 'demo', 'kanban', 'palette', 'paletteKey', 'worktreeCleanup', 'merged', 'recordBug', 'quorum', 'taskType']);
   });
 
   it('upgrades an old numeric version to the current release when finished', () => {

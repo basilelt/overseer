@@ -2,10 +2,10 @@
 [ "${1:-}" = "--version" ] && { echo "codex-cli 0.0.0 (stub)"; exit 0; }
 echo "$$ codex $*" >> "${SB_STUB_LOG:?}"
 sid=
-prev=
+resuming=
 for a in "$@"; do
-  [ "$prev" = "resume" ] && [ "$a" != "--last" ] && sid=$a
-  prev=$a
+  [ "$a" = "resume" ] && resuming=1
+  [ -n "$resuming" ] && case $a in ????????-????-????-????-????????????) sid=$a ;; esac
 done
 dir=${CODEX_HOME:?}
 day=$(date -u +%Y/%m/%d)
@@ -20,6 +20,7 @@ thread() {
     "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$sid" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$PWD" > "$rollout"
 }
 hook() {
+  [ -n "${SB_STUB_NO_HOOKS:-}" ] && return 0
   printf '{"session_id":"%s","cwd":"%s","hook_event_name":"%s"}' "$sid" "$PWD" "$1" |
     "${SB_BIN:?}" hook codex "$1" 1
 }
@@ -37,6 +38,8 @@ while IFS= read -r l; do
   case $l in
     exit) cleanup ;;
     busy) [ -n "$rollout" ] || { thread; hook SessionStart; }; echo '{}' >> "$rollout"; hook UserPromptSubmit ;;
+    work) [ -n "$rollout" ] || { thread; hook SessionStart; }; echo '{}' >> "$rollout"; hook UserPromptSubmit
+      i=0; while [ $i -lt 14 ]; do printf 'Working (%ss)\r\n' $i; sleep 0.5; i=$((i+1)); done; hook Stop ;;
     ask) hook PermissionRequest ;;
     approved) hook PostToolUse ;;
     done) [ -n "$rollout" ] && { echo '{}' >> "$rollout"; hook Stop; } ;;

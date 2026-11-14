@@ -1,13 +1,14 @@
 <script lang="ts">
   import { app } from '../../state.svelte';
-  import { settings } from '../../settings.svelte';
+  import { settings } from '../../settings/settings.svelte';
   import { t, getLocale } from '../../i18n.svelte';
   import { agentName } from '../../agents';
   import AgentGlyph from '../ui/AgentGlyph.svelte';
   import Bars from './Bars.svelte';
+  import TaskCosts from './TaskCosts.svelte';
   import { UsageFeed } from '../../usage/store.svelte';
-  import { agentLevel, authNote, countdown, formatCost, formatDuration, formatPct, formatTokens, level, liveWindows, shortDay } from '../../usage/format';
-  import { ust } from '../../usage/strings';
+  import { agentLevel, authNote, countdown, formatCost, formatDuration, formatPct, formatTokens, liveWindows, onCredits, shortDay, windowLevel } from '../../usage/format';
+  import { creditsNote, ust } from '../../usage/strings';
   import type { UsageBy, UsageGroup, UsageRange } from '../../usage/types';
 
   let { compact = false }: { compact?: boolean } = $props();
@@ -103,7 +104,7 @@
                 <p class="hit">{ust('limitHitLong')}{a.limits.hit.message ? ` · ${a.limits.hit.message}` : ''}</p>
               {/if}
               {#each windows as w (w.key)}
-                {@const tone = level(w.usedPercent)}
+                {@const tone = windowLevel(a, w)}
                 <div class="gauge" title={w.resetsAt ? ust('resetAt', { at: new Date(w.resetsAt).toLocaleString(locale) }) : ''}>
                   <span class="wkey mono">{w.key}</span>
                   <span class="bar"><span class="fill {tone}" style:width="{Math.min(100, w.usedPercent)}%"></span></span>
@@ -111,6 +112,9 @@
                   <span class="when faint small">{w.stale ? ust('wasReset') : w.resetsAt ? ust('resets', { t: countdown(w.resetsAt, now) ?? '' }) : ''}</span>
                 </div>
               {/each}
+              {#if onCredits(a)}
+                <p class="credits small">{creditsNote(a)}</p>
+              {/if}
               {#if authNote(a.limits)}
                 <p class="auth small">{ust(authNote(a.limits)!)}</p>
               {/if}
@@ -190,6 +194,7 @@
         </table>
       {/if}
     </section>
+    {#if !compact}<TaskCosts />{/if}
   {/if}
 </div>
 
@@ -294,7 +299,8 @@
     gap: 6px;
     font-weight: 500;
   }
-  .auth {
+  .auth,
+  .credits {
     margin: 4px 0 0;
     color: var(--text-2);
   }

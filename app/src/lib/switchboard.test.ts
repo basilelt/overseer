@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { applySettings, canImport, countKeys, DISMISS_KEY, dismissForever, isDismissed, shouldOffer } from './switchboard';
 import type { ConnState, SwitchboardStatus } from './types';
 
@@ -12,10 +12,6 @@ const status = (o: Partial<SwitchboardStatus> = {}): SwitchboardStatus => ({ fou
 
 beforeEach(() => {
   vi.stubGlobal('localStorage', memory());
-});
-
-afterEach(() => {
-  vi.unstubAllGlobals();
 });
 
 describe('shouldOffer', () => {

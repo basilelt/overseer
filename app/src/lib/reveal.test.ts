@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { reveal, REVEAL_MARGIN } from './reveal';
 
 class FakeIO {
@@ -18,8 +18,6 @@ class FakeIO {
     this.disconnected = true;
   }
 }
-
-afterEach(() => vi.unstubAllGlobals());
 
 describe('reveal', () => {
   it('watches the sentinel inside its scrolling list and calls the latest handler', () => {

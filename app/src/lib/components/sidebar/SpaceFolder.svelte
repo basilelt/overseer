@@ -3,10 +3,9 @@
   import FolderClosed from '@lucide/svelte/icons/folder';
   import FolderOpen from '@lucide/svelte/icons/folder-open';
   import { t } from '../../i18n.svelte';
-  import type { SpaceNode } from '../../spaces';
+  import type { SpaceNode } from '../../workspace/spaces';
   import StatePills from './StatePills.svelte';
 
-  // dropPos and target mark where a dragged item would land; the folder and pinned zones are found by their data-drop.
   let {
     node,
     ontoggle,
@@ -151,5 +150,16 @@
   }
   .chev.open {
     transform: rotate(90deg);
+  }
+  :global(:root.phone) .section {
+    min-height: 40px;
+    padding: 12px 10px 4px;
+    font-size: 12px;
+  }
+  :global(:root.phone) .row {
+    height: var(--touch);
+    padding: 0 10px;
+    gap: 8px;
+    border-radius: 10px;
   }
 </style>

@@ -274,7 +274,7 @@ pub struct Fx {
 }
 
 fn now_ms() -> i64 {
-    overseer::procs::now_ms()
+    overseer::util::now_ms()
 }
 
 pub fn git(dir: &Path, args: &[&str]) -> String {
@@ -658,6 +658,76 @@ pub fn wait_for<V>(mut f: impl FnMut() -> Option<V>) -> V {
     }
 }
 
+pub fn mcp(app: &App, own: Option<&str>, input: &[Value]) -> Vec<Value> {
+    let mut c = Command::new(bin());
+    app.fx.env(&mut c);
+    if let Some(o) = own {
+        c.env("OVERSEER_TASK_ID", o);
+    }
+    let mut child = c
+        .arg("mcp")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap();
+    let mut stdin = child.stdin.take().unwrap();
+    for m in input {
+        writeln!(stdin, "{m}").unwrap();
+    }
+    drop(stdin);
+    let out = child.wait_with_output().unwrap();
+    String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .map(|l| serde_json::from_str(l).unwrap())
+        .collect()
+}
+
+pub fn read_events(s: &mut UnixStream, buf: &mut String, want: &[&str], within: Duration) {
+    let end = Instant::now() + within;
+    while !want.iter().all(|w| buf.contains(w)) {
+        assert!(Instant::now() < end, "missing {want:?} in {buf}");
+        let mut b = [0u8; 4096];
+        if let Ok(n) = s.read(&mut b) {
+            buf.push_str(&String::from_utf8_lossy(&b[..n]));
+        }
+    }
+}
+
+pub fn enc_uri_component(s: &str) -> String {
+    let mut out = String::new();
+    for b in s.bytes() {
+        if b.is_ascii_alphanumeric() || b"-_.!~*'()".contains(&b) {
+            out.push(b as char);
+        } else {
+            out.push_str(&format!("%{b:02X}"));
+        }
+    }
+    out
+}
+
+pub fn js(s: &str) -> Value {
+    serde_json::from_str(s).unwrap_or(Value::Null)
+}
+
+pub fn strs(v: &Value) -> Vec<String> {
+    v.as_array()
+        .unwrap()
+        .iter()
+        .map(|a| a.as_str().unwrap().to_string())
+        .collect()
+}
+
+pub fn line_json(app: &App, line: &str) -> Value {
+    app.ok("GET", "/v1/lines?all=true", Value::Null)
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|l| l["line"]["id"] == line)
+        .cloned()
+        .unwrap()
+}
+
 pub struct App {
     pub fx: Fx,
     env: Vec<(String, String)>,
@@ -724,6 +794,17 @@ impl App {
         let (code, v) = self.req(method, target, body);
         assert!((200..300).contains(&code), "{method} {target}: {code} {v}");
         v
+    }
+
+    pub fn events(&self, within: Duration) -> (UnixStream, String) {
+        let mut s = UnixStream::connect(&self.fx.sock).unwrap();
+        s.set_read_timeout(Some(Duration::from_millis(200)))
+            .unwrap();
+        s.write_all(b"GET /v1/events HTTP/1.1\r\nHost: unix\r\n\r\n")
+            .unwrap();
+        let mut buf = String::new();
+        read_events(&mut s, &mut buf, &["retry:"], within);
+        (s, buf)
     }
 
     pub fn ws(&self, id: &str) -> WebSocket<UnixStream> {

@@ -1,6 +1,9 @@
 pub mod events;
 pub mod sync;
 pub mod util;
+pub mod wire {
+    include!("../../contract/wire.rs");
+}
 
 use axum::extract::{Path, Query, State};
 use axum::http::{HeaderMap, StatusCode};
@@ -16,14 +19,13 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
 use tokio::sync::{broadcast, mpsc};
 use util::{rfc3339, sha256, token, ulid, valid_id};
+use wire::*;
 
 pub type Clock = Arc<dyn Fn() -> i64 + Send + Sync>;
 
 pub const OFFLINE_AFTER_MS: i64 = 45_000;
 pub const RETENTION_MS: i64 = 7 * 86_400_000;
-const STATES: [&str; 4] = ["active", "idle", "held", "hung-up"];
 const KINDS: [&str; 3] = ["mac", "vm", "runner"];
-const COMMANDS: [&str; 5] = ["resume", "hold", "close", "link", "relaunch"];
 const CONTENT_ARGS: [&str; 2] = ["message", "prompt"];
 
 const SCHEMA: &str = "
@@ -98,6 +100,7 @@ pub struct App {
     clock: Clock,
     admin: Option<String>,
     events: broadcast::Sender<Value>,
+    revoked: broadcast::Sender<String>,
     hooks: mpsc::UnboundedSender<Value>,
     hooks_rx: Mutex<Option<mpsc::UnboundedReceiver<Value>>>,
     conns: Mutex<HashMap<String, Conn>>,
@@ -185,6 +188,7 @@ impl App {
             clock,
             admin: admin_token.filter(|t| !t.is_empty()).map(sha256),
             events: broadcast::channel(1024).0,
+            revoked: broadcast::channel(64).0,
             hooks,
             hooks_rx: Mutex::new(Some(hooks_rx)),
             conns: Mutex::new(HashMap::new()),
@@ -330,16 +334,16 @@ impl App {
                 .unwrap_or(false)
     }
 
-    fn upsert_line(&self, db: &Connection, station: &str, line: &Value) -> bool {
+    fn upsert_line(&self, db: &Connection, station: &str, line: &Value) -> rusqlite::Result<bool> {
         let (Some(id), Some(owner), Some(state)) = (
             str_field(line, "id"),
             str_field(line, "owner"),
-            line["state"].as_str().filter(|s| STATES.contains(s)),
+            line["state"].as_str().filter(|s| LINE_STATES.contains(s)),
         ) else {
-            return false;
+            return Ok(false);
         };
         if line["stationId"].as_str() != Some(station) {
-            return false;
+            return Ok(false);
         }
         let old: Option<(String, String)> = db
             .query_row(
@@ -350,18 +354,15 @@ impl App {
             .optional()
             .unwrap_or(None);
         if old.as_ref().is_some_and(|(s, _)| s != station) {
-            return false;
+            return Ok(false);
         }
-        let written = db.execute(
+        db.execute(
             "INSERT INTO lines (id, station_id, owner, ticket_key, state, body, synced_ms)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
              ON CONFLICT (id) DO UPDATE SET owner = excluded.owner, ticket_key = excluded.ticket_key,
                state = excluded.state, body = excluded.body, synced_ms = excluded.synced_ms",
             params![id, station, owner, line["ticketKey"].as_str(), state, line.to_string(), self.now()],
-        );
-        if written.is_err() {
-            return false;
-        }
+        )?;
         let old: Option<Value> = old.and_then(|(_, b)| serde_json::from_str(&b).ok());
         match old {
             None => self.emit(db, "line.created", json!({ "line": line })),
@@ -371,7 +372,7 @@ impl App {
                     "line.state_changed",
                     json!({ "line": line, "from": o["state"], "to": state }),
                 );
-                if state == "hung-up" {
+                if state == STATE_HUNG_UP {
                     self.emit(db, "line.hung_up", json!({ "line": line }));
                 }
             }
@@ -388,7 +389,7 @@ impl App {
                 }
             }
         }
-        true
+        Ok(true)
     }
 
     fn relay(
@@ -431,7 +432,7 @@ impl App {
         stored.retain(|k, _| !CONTENT_ARGS.contains(&k.as_str()));
         let mut cmd = json!({
             "id": id, "lineId": line_id, "kind": kind, "requestedBy": by,
-            "requestedAt": rfc3339(now), "status": "pending",
+            "requestedAt": rfc3339(now), "status": STATUS_PENDING,
         });
         if !stored.is_empty() {
             cmd["args"] = Value::Object(stored);
@@ -446,7 +447,7 @@ impl App {
         if !args.is_empty() {
             full["args"] = Value::Object(args);
         }
-        let frame = json!({ "kind": "command", "command": full }).to_string();
+        let frame = json!({ "kind": FRAME_COMMAND, "command": full }).to_string();
         lock(&self.inflight).insert(id.into(), (station.clone(), frame.clone()));
         self.send(&station, frame);
         Ok((cmd, true))
@@ -580,7 +581,9 @@ async fn create_user(State(app): State<Arc<App>>, h: HeaderMap, Json(b): Json<Va
 
 async fn revoke_user(State(app): State<Arc<App>>, h: HeaderMap, Path(name): Path<String>) -> Reply {
     app.admin(&h)?;
-    revoke(&app, "users", "name", &name)
+    let r = revoke(&app, "users", "name", &name);
+    let _ = app.revoked.send(name);
+    r
 }
 
 async fn list_stations(State(app): State<Arc<App>>, h: HeaderMap) -> Reply {
@@ -637,7 +640,7 @@ async fn list_lines(
 ) -> Reply {
     app.who(&h)?;
     if q.get("state")
-        .is_some_and(|s| !STATES.contains(&s.as_str()))
+        .is_some_and(|s| !LINE_STATES.contains(&s.as_str()))
     {
         return Err(bad("state: active, idle, held or hung-up"));
     }
@@ -700,10 +703,10 @@ fn command_args(kind: &str, args: &Value) -> Result<Map<String, Value>, ApiError
             return Err(bad(&format!("invalid args.{k}")));
         }
     }
-    if kind == "link" && !args.contains_key("ticketKey") {
+    if kind == CMD_LINK && !args.contains_key("ticketKey") {
         return Err(bad("link needs args.ticketKey"));
     }
-    if kind == "relaunch" && !args.contains_key("message") {
+    if kind == CMD_RELAUNCH && !args.contains_key("message") {
         return Err(bad("relaunch needs args.message"));
     }
     Ok(args)
@@ -720,7 +723,7 @@ async fn relay(
         .filter(|s| valid_id(s))
         .ok_or_else(|| bad("id: letters, digits, . _ - @ only"))?;
     let kind = str_field(&b, "kind")
-        .filter(|k| COMMANDS.contains(k))
+        .filter(|k| RELAY_COMMANDS.contains(k))
         .ok_or_else(|| bad("kind: resume, hold, close, link or relaunch"))?;
     let args = command_args(kind, &b["args"])?;
     let (cmd, _) = app.relay(id, &line_id, kind, args, &who.name())?;
@@ -805,13 +808,13 @@ async fn create_line(State(app): State<Arc<App>>, h: HeaderMap, Json(b): Json<Va
             let mut line = json!({
                 "id": line_id, "owner": owner, "stationId": station, "agent": agent,
                 "agentSessionId": "pending", "repo": repo, "branch": branch,
-                "worktreePath": "pending", "origin": origin, "state": "active",
+                "worktreePath": "pending", "origin": origin, "state": STATE_ACTIVE,
                 "lastActivityAt": rfc3339(now),
             });
             if let Some(t) = ticket {
                 line["ticketKey"] = json!(t);
             }
-            app.upsert_line(&db, &station, &line);
+            let _ = app.upsert_line(&db, &station, &line);
             drop(db);
             let mut args = Map::new();
             for (k, v) in [
@@ -830,15 +833,15 @@ async fn create_line(State(app): State<Arc<App>>, h: HeaderMap, Json(b): Json<Va
             if let Some(d) = dry {
                 args.insert("dryRun".into(), json!(d));
             }
-            app.relay(&key, &line_id, "start", args, &who.name())?;
+            app.relay(&key, &line_id, CMD_START, args, &who.name())?;
             line_id
         }
     };
     for _ in 0..100 {
         let status = app.command_status(&key).map(|c| c["status"].clone());
         match status.as_ref().and_then(Value::as_str) {
-            Some("pending") => tokio::time::sleep(Duration::from_millis(100)).await,
-            Some("refused" | "failed") => {
+            Some(STATUS_PENDING) => tokio::time::sleep(Duration::from_millis(100)).await,
+            Some(STATUS_REFUSED | STATUS_FAILED) => {
                 return Err(fail(StatusCode::CONFLICT, "runner refused the line"))
             }
             _ => break,
@@ -846,7 +849,7 @@ async fn create_line(State(app): State<Arc<App>>, h: HeaderMap, Json(b): Json<Va
     }
     if app
         .command_status(&key)
-        .is_some_and(|c| c["status"] == "pending")
+        .is_some_and(|c| c["status"] == STATUS_PENDING)
     {
         return Err(fail(
             StatusCode::GATEWAY_TIMEOUT,

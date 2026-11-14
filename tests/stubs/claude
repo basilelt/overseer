@@ -29,12 +29,26 @@ hook() {
 tool=
 cleanup() { [ -n "$tool" ] && kill "$tool" 2>/dev/null; rm -f "$dir/sessions/$$.json"; exit 0; }
 trap cleanup TERM HUP
+[ -n "${SB_STUB_STUBBORN:-}" ] && trap '' TERM
 [ -n "${SB_STUB_BOOT:-}" ] && sleep "$SB_STUB_BOOT"
+if [ -e "$SB_STUB_LOG.trust" ]; then
+  printf '%s\n' ' Accessing workspace:' '' " $PWD" '' ' Quick safety check: Is this a project you created or one you trust?' '' ' ❯ No, exit' '   Yes, I trust this folder' '' ' Enter to confirm · Esc to cancel'
+  IFS= read -r answer || exit 0
+  [ "$answer" = "trust" ] || exit 0
+fi
 status idle
 hook SessionStart
 prompt() { printf '%s\n' "────────────────────────────────────────"; printf '❯ '; }
 prompt
+held=
 while IFS= read -r line; do
+  if [ -n "${SB_STUB_DROP_ENTER:-}" ]; then
+    SB_STUB_DROP_ENTER=
+    held=$line
+    printf '%s\n❯ %s\n%s\n' "────────────────────────────────────────" "$line" "────────────────────────────────────────"
+    continue
+  fi
+  [ -z "$line" ] && [ -n "$held" ] && { line=$held; held=; }
   case $line in
     busy) status busy; hook UserPromptSubmit ;;
     done) status idle; hook Stop ;;

@@ -1,7 +1,7 @@
 import { agentName } from './agents';
 import { hostId, outcome } from './hooks';
 import { t } from './i18n.svelte';
-import { saveSettings, settings } from './settings.svelte';
+import { saveSettings, settings } from './settings/settings.svelte';
 import { app } from './state.svelte';
 import type { HooksStatus } from './types';
 

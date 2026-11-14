@@ -1,20 +1,13 @@
+import { splitMinutes } from '../duration';
 import type { SysAgent, SysPoint, SysSample } from './types';
 
-export type Level = 'ok' | 'warn' | 'crit';
-export const WARN = 80;
-export const CRIT = 95;
+import { level, worst, type Level } from '../severity';
+
+import { basename } from '../paths';
+
+import { SHORT_NAMES } from '../agents';
+
 export const WINDOW_MS = 600_000;
-
-export function level(pct: number | null | undefined): Level {
-  if (pct == null || !Number.isFinite(pct)) return 'ok';
-  if (pct >= CRIT) return 'crit';
-  if (pct >= WARN) return 'warn';
-  return 'ok';
-}
-
-export function worst(...levels: Level[]): Level {
-  return levels.includes('crit') ? 'crit' : levels.includes('warn') ? 'warn' : 'ok';
-}
 
 const UNITS = ['B', 'KB', 'MB', 'GB', 'TB', 'PB'];
 
@@ -42,9 +35,7 @@ export function formatPct(n: number | null | undefined): string {
 
 export function formatUptime(sec: number | null | undefined): string {
   if (sec == null || !Number.isFinite(sec) || sec < 0) return '—';
-  const d = Math.floor(sec / 86400);
-  const h = Math.floor((sec % 86400) / 3600);
-  const m = Math.floor((sec % 3600) / 60);
+  const { d, h, m } = splitMinutes(Math.floor(sec / 60));
   if (d) return `${d}d ${h}h`;
   if (h) return `${h}h ${m}m`;
   return `${m}m`;
@@ -65,7 +56,7 @@ export function chipText(s: SysSample | null | undefined): string | null {
 }
 
 export function chipLevel(s: SysSample | null | undefined): Level {
-  return worst(level(cpuPct(s)), level(memPct(s)));
+  return worst([level(cpuPct(s)), level(memPct(s))]);
 }
 
 export function niceMax(max: number): number {
@@ -129,14 +120,8 @@ export function mergeHistory(prev: SysPoint[], add: SysPoint[], now: number, win
   return out.filter((p) => p.t >= now - windowMs);
 }
 
-const AGENT_NAMES: Record<string, string> = { claude: 'Claude', codex: 'Codex', gemini: 'Gemini', shell: 'Shell' };
-
-export function basename(p: string): string {
-  const parts = p.replace(/[\\/]+$/, '').split(/[\\/]/);
-  return parts[parts.length - 1] || p;
-}
 
 export function agentLabel(a: Pick<SysAgent, 'agent' | 'cwd' | 'title'>, inWord = 'in'): string {
-  const name = a.agent ? (AGENT_NAMES[a.agent] ?? a.agent.charAt(0).toUpperCase() + a.agent.slice(1)) : a.title || AGENT_NAMES.shell;
+  const name = a.agent ? (SHORT_NAMES[a.agent] ?? a.agent.charAt(0).toUpperCase() + a.agent.slice(1)) : a.title || SHORT_NAMES.shell;
   return a.cwd ? `${name} ${inWord} ${basename(a.cwd)}` : name;
 }

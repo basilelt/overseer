@@ -22,7 +22,6 @@ describe('composer height registry', () => {
   afterEach(() => {
     clearComposerHeight(a);
     clearComposerHeight(b);
-    vi.unstubAllGlobals();
   });
 
   it('publishes the height of a single composer', () => {

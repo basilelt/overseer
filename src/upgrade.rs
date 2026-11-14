@@ -1,5 +1,5 @@
-use crate::daemon::PROTOCOL;
 use crate::deliver::Job;
+use crate::wire::PROTOCOL;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
@@ -247,10 +247,7 @@ fn target(body: &Value) -> Result<PathBuf, String> {
         {
             return Err(format!("bad version {v:?}"));
         }
-        crate::home()
-            .join(".overseer/server")
-            .join(v)
-            .join("overseer")
+        crate::paths::server_dir().join(v).join("overseer")
     } else {
         return Err("path or version required".into());
     };
@@ -266,7 +263,7 @@ pub use unix::*;
 #[cfg(unix)]
 mod unix {
     use super::*;
-    use crate::daemon::{respond, Request};
+    use crate::http::{respond, respond_err, Request};
     use std::io::Write;
     use std::os::fd::{FromRawFd, OwnedFd};
     use std::os::unix::net::UnixListener;
@@ -363,12 +360,13 @@ mod unix {
         if let Some(f) = file {
             c.arg(f);
         }
-        let out = crate::git::run_within(&mut c, Duration::from_secs(10)).map_err(|e| match e {
-            crate::git::RunError::TimedOut(_) => {
-                format!("{} --takeover-check timed out", bin.display())
-            }
-            e => format!("{}: {e}", bin.display()),
-        })?;
+        let out =
+            crate::exec::run_within(&mut c, Duration::from_secs(10)).map_err(|e| match e {
+                crate::exec::RunError::TimedOut(_) => {
+                    format!("{} --takeover-check timed out", bin.display())
+                }
+                e => format!("{}: {e}", bin.display()),
+            })?;
         let stdout = String::from_utf8_lossy(&out.stdout);
         let parsed = stdout
             .lines()
@@ -449,11 +447,7 @@ mod unix {
     pub fn serve(req: &Request, mut s: impl Write) {
         let body: Value = serde_json::from_slice(&req.body).unwrap_or(Value::Null);
         if UPGRADING.swap(true, Ordering::SeqCst) {
-            return respond(
-                &mut s,
-                409,
-                &json!({"error": "an upgrade is already in progress"}),
-            );
+            return respond_err(&mut s, 409, "an upgrade is already in progress");
         }
         match plan(&body) {
             Ok(p) => {
@@ -474,7 +468,7 @@ mod unix {
             }
             Err((code, e)) => {
                 UPGRADING.store(false, Ordering::SeqCst);
-                respond(&mut s, code, &json!({ "error": e }));
+                respond_err(&mut s, code, &e);
             }
         }
     }
@@ -523,6 +517,64 @@ mod tests {
             }],
             theme: json!({"dark": true, "fg": "#ededef", "bg": "#0b0b0c"}),
         }
+    }
+
+    fn chip() -> crate::profiles::Chip {
+        crate::profiles::Chip {
+            id: "p1".into(),
+            name: "Fast".into(),
+            model: "m".into(),
+            effort: "high".into(),
+        }
+    }
+
+    const FULL_TERM: &str = r#"{"id":"t","pid":4,"fd":5,"cwd":"/w","cmd":["a","b"],"title":"T","title_override":"O","cols":80,"rows":24,"created_ms":99,"exited":true,"exit_code":3,"line_id":"l","task_id":"k","agent":"claude","session":"s","flags":["--x"],"sized_by":"web","profile":{"id":"p1","name":"Fast","model":"m","effort":"high"},"workspace_id":"w1","total":7,"last_ms":8,"closed":true,"ring":"ab"}"#;
+
+    #[test]
+    fn saved_term_json_is_pinned() {
+        let st = SavedTerm {
+            id: "t".into(),
+            pid: 4,
+            fd: 5,
+            cwd: "/w".into(),
+            cmd: vec!["a".into(), "b".into()],
+            title: "T".into(),
+            title_override: Some("O".into()),
+            cols: 80,
+            rows: 24,
+            created_ms: 99,
+            exited: true,
+            exit_code: Some(3),
+            line_id: Some("l".into()),
+            task_id: Some("k".into()),
+            agent: Some("claude".into()),
+            session: Some("s".into()),
+            flags: vec!["--x".into()],
+            sized_by: Some("web".into()),
+            profile: Some(chip()),
+            workspace_id: Some("w1".into()),
+            total: 7,
+            last_ms: 8,
+            closed: true,
+            ring: "ab".into(),
+        };
+        let want: Value = serde_json::from_str(FULL_TERM).unwrap();
+        assert_eq!(serde_json::to_value(&st).unwrap(), want);
+        assert_eq!(serde_json::from_str::<SavedTerm>(FULL_TERM).unwrap(), st);
+    }
+
+    #[test]
+    fn saved_term_minimal_json_takes_defaults() {
+        let st: SavedTerm = serde_json::from_str(r#"{"id":"t"}"#).unwrap();
+        assert_eq!(
+            st,
+            SavedTerm {
+                id: "t".into(),
+                ..Default::default()
+            }
+        );
+        assert_eq!(st.fd, 0);
+        assert!(st.cmd.is_empty() && st.profile.is_none() && !st.closed);
     }
 
     #[test]

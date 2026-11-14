@@ -1,8 +1,6 @@
 use overseer::actions::Launch;
 use overseer::install;
-use overseer::{
-    actions, board, daemon, doctor, hooks, procs::System, remote, scan, util::ticket, Ctx, Line,
-};
+use overseer::{actions, board, daemon, doctor, hooks, procs::System, remote, scan, Ctx, Line};
 use serde_json::Value;
 use std::process::ExitCode;
 use std::time::Duration;
@@ -24,6 +22,7 @@ const USAGE: &str = "usage:
   overseer socket-path
   overseer version [--json]
   overseer mcp                                          (stdio MCP server for agents)
+  overseer vote approve|reject <reason> [--task <id>]   (quorum vote from a task's terminal)
   overseer proxy                                        (stdio multiplexer for the remote app)
   overseer uninstall [--apply]                          (remove everything Overseer added; dry run by default)
   overseer hooks install|uninstall [AGENT...] [--apply]
@@ -123,7 +122,8 @@ fn table(lines: &[Line], now_ms: i64) -> String {
 }
 
 fn ls(ctx: &Ctx, args: &[String]) -> ExitCode {
-    let (mut json, mut all, mut tk, mut repo, mut state) = (false, false, None, None, None);
+    let (mut json, mut all, mut tk, mut repo, mut state) =
+        (false, false, None, None, None::<String>);
     let (mut local_only, mut owner) = (false, Some(ctx.config.owner.clone()));
     let mut it = args.iter();
     while let Some(a) = it.next() {
@@ -136,8 +136,8 @@ fn ls(ctx: &Ctx, args: &[String]) -> ExitCode {
                     return usage();
                 };
                 match a.as_str() {
-                    "--ticket" => tk = Some(ticket(v).unwrap_or_else(|| v.to_ascii_uppercase())),
-                    "--repo" => repo = Some(v.to_ascii_lowercase()),
+                    "--ticket" => tk = Some(v.clone()),
+                    "--repo" => repo = Some(v.clone()),
                     "--owner" => owner = (v != "all").then(|| v.clone()),
                     _ => state = Some(v.clone()),
                 }
@@ -164,15 +164,10 @@ fn ls(ctx: &Ctx, args: &[String]) -> ExitCode {
         }
     }
     rows.sort_by_key(|(l, _)| -l.last_activity_ms);
+    let filter = overseer::LineFilter::new(all, tk.as_deref(), repo.as_deref(), state.as_deref());
     let rows: Vec<(Line, Value)> = rows
         .into_iter()
-        .filter(|(l, _)| all || l.recent(ctx.now_ms))
-        .filter(|(l, _)| tk.as_ref().is_none_or(|t| l.ticket.as_ref() == Some(t)))
-        .filter(|(l, _)| {
-            repo.as_ref()
-                .is_none_or(|r| l.repo.to_ascii_lowercase().contains(r.as_str()))
-        })
-        .filter(|(l, _)| state.as_ref().is_none_or(|s| l.state == s))
+        .filter(|(l, _)| filter.matches(l, ctx.now_ms))
         .collect();
     if json {
         let v: Vec<&Value> = rows.iter().map(|(_, j)| j).collect();
@@ -242,11 +237,7 @@ fn report(r: &actions::Report, verb: &str, json: bool, apply: bool) -> ExitCode 
         };
         println!("{verb} {}{mode}\n{}", r.line_id, r.text());
     }
-    if r.ok() {
-        ExitCode::SUCCESS
-    } else {
-        ExitCode::from(3)
-    }
+    ExitCode::from(r.exit_code())
 }
 
 fn hooks_cmd(args: &[String]) -> ExitCode {
@@ -267,7 +258,7 @@ fn hooks_cmd(args: &[String]) -> ExitCode {
     let bin = install::hook_bin();
     let state = overseer::default_state_dir();
     let state = state.canonicalize().unwrap_or(state);
-    let stamp = install::stamp(overseer::procs::now_ms());
+    let stamp = install::stamp(overseer::util::now_ms());
     let r = install::Run {
         mode,
         apply,
@@ -307,8 +298,10 @@ fn hooks_cmd(args: &[String]) -> ExitCode {
         if let Some(b) = &o.backup {
             println!("   backup: {}", b.display());
         }
-        if o.agent == "codex" && mode == install::Mode::Install {
-            println!("   {}", install::note("codex").unwrap_or_default());
+        if overseer::agents::get(o.agent).is_some_and(|a| a.retrust_hooks)
+            && mode == install::Mode::Install
+        {
+            println!("   {}", install::note(o.agent).unwrap_or_default());
         }
     }
     code
@@ -370,6 +363,7 @@ fn main() -> ExitCode {
         "enroll" => return overseer::sync::cli_enroll(rest),
         "sync" => return overseer::sync::cli_sync(rest),
         "mcp" => return overseer::mcp::run(),
+        "vote" => return overseer::mcp::cli_vote(rest),
         "proxy" => return overseer::proxy::run(),
         "statusline-tap" => return overseer::statusline::tap(rest),
         "socket-path" => {

@@ -1,13 +1,13 @@
 import { app } from '../state.svelte';
-import { allTabs, openInFocused, update, workspace } from '../workspace.svelte';
+import { isMockClient } from '../daemon/client';
+import { allTabs, openInFocused, update, workspace } from '../workspace/workspace.svelte';
 import { isPhone } from '../mobile/ui.svelte';
 import { beside } from './beside.svelte';
 import { closeReviews, follow, openBeside, reviewMode, type ReviewMode } from './pane';
 import { isReviewKey, parseReviewKey, reviewKey, titleOf, worktreeOf } from './keys';
 import type { ScopeOption } from './scope';
 import type { ReviewTarget } from './types';
-
-export { isReviewKey, parseReviewKey, reviewKey };
+import { isTesting } from '../kanban/task-status';
 
 export function reviewTitle(key: string): string | null {
   const t = parseReviewKey(key);
@@ -25,7 +25,7 @@ export function openReviewTabs(): ScopeOption[] {
 export function testingReviews(tasks = app.data.tasks, lines = app.data.lines, tabs = allTabs(workspace.layout)) {
   const open = new Set(tabs);
   return tasks.filter(
-    (x) => x.status === 'in_testing' && (x.lineId || x.worktreePath) && (open.has(reviewKey({ taskId: x.id })) || lines.some((l) => l.line.id === x.lineId && l.local?.pid)),
+    (x) => isTesting(x.status) && (x.lineId || x.worktreePath) && (open.has(reviewKey({ taskId: x.id })) || lines.some((l) => l.line.id === x.lineId && l.local?.pid)),
   );
 }
 
@@ -104,13 +104,13 @@ export function followReview(selected: string | null) {
 export function reviewTargetFor(item: { lineId?: string; taskId?: string } | null, tasks = app.data.tasks): ReviewTarget | null {
   if (item?.lineId) return { lineId: item.lineId };
   if (item?.taskId) return { taskId: item.taskId };
-  const testing = tasks.find((t) => t.status === 'in_testing' && (t.lineId || t.worktreePath));
+  const testing = tasks.find((t) => isTesting(t.status) && (t.lineId || t.worktreePath));
   return testing ? { taskId: testing.id } : null;
 }
 
 export function openReviewFromHash() {
   const hash = globalThis.location?.hash ?? '';
-  if (app.client?.kind !== 'mock' || !hash.startsWith('#review')) return;
+  if (!isMockClient(app.client) || !hash.startsWith('#review')) return;
   const target = hash.startsWith('#review=') ? parseReviewKey(decodeURIComponent(hash.slice(8))) : hash === '#review' ? reviewTargetFor(null) : null;
   if (hash === '#review-beside') {
     app.panelOpen = false;

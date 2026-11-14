@@ -144,7 +144,6 @@ export function langOf(tag: string): string | null {
   return LANG_ALIAS[t] ?? EXT[t] ?? null;
 }
 
-// Keyed by the code string itself (shared with the parsed markdown), so remounts skip hljs.
 const highlighted = new Lru<string, { lang: string; html: string }>(200);
 
 export function cachedHighlight(code: string, tag: string): string | null {

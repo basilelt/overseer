@@ -1,7 +1,8 @@
 mod common;
 
 use common::Fx;
-use overseer::procs::{now_ms, System};
+use overseer::procs::System;
+use overseer::util::now_ms;
 use overseer::{board, daemon, scan, Ctx};
 use serde_json::Value;
 use std::io::{Cursor, Read, Write};

@@ -1,11 +1,11 @@
 <script lang="ts">
+  import { lidAvailable } from '../../lifecycle/lid.svelte';
   import { untrack } from 'svelte';
   import X from '@lucide/svelte/icons/x';
   import Search from '@lucide/svelte/icons/search';
   import ChevronLeft from '@lucide/svelte/icons/chevron-left';
   import ChevronRight from '@lucide/svelte/icons/chevron-right';
-  import { isMac } from '../../keyboard';
-  import { ui } from '../../mobile/ui.svelte';
+  import { isMac } from '../../platform';
   import Modal from '../ui/Modal.svelte';
   import AgentPicker from '../ui/AgentPicker.svelte';
   import ModelField from '../ui/ModelField.svelte';
@@ -13,17 +13,20 @@
   import ServerSettings from './ServerSettings.svelte';
   import NotificationSettings from './NotificationSettings.svelte';
   import { adaptChoice, findAgent, hasModel, taskAgents } from '../../agents';
+  import { allState, setAll } from '../../auto-approve';
   import { localeName, locales, t, type Key } from '../../i18n.svelte';
-  import { COLOR_TOKENS, saveSettings, settings, type ColorToken, type Mode, type PresetColors, type ThemePref } from '../../settings.svelte';
-  import { contrastWarnings, fullColors, presetsFor, readableOn } from '../../theme-edit';
-  import { createPreset, deletePreset, editPreset, selectPreset } from '../../theme-edit.svelte';
+  import { pullAutoConcurrency, pushAutoConcurrency } from '../../settings/auto-concurrency';
+  import { saveSettings, settings } from '../../settings/settings.svelte';
+  import { COLOR_TOKENS, type ColorToken, type Mode, type PresetColors, type ThemePref } from '../../theme/theme';
+  import { contrastWarnings, fullColors, presetsFor, readableOn } from '../../theme/theme-edit';
+  import { createPreset, deletePreset, editPreset, selectPreset } from '../../theme/theme-edit.svelte';
   import { app } from '../../state.svelte';
-  import { diag, dt } from '../../diag.svelte';
-  import { feedback, ft } from '../../feedback.svelte';
-  import { DEFAULT_REPO, PRIVACY_URL } from '../../feedback';
-  import { openExternal } from '../../ports.svelte';
-  import { organizer } from '../../organize.svelte';
-  import { BUNDLED_FONT, clampLineHeight, FONT_SUGGESTIONS } from '../../fonts';
+  import { diag, dt } from '../../diag/diag.svelte';
+  import { feedback, ft } from '../../feedback/feedback.svelte';
+  import { DEFAULT_REPO, PRIVACY_URL } from '../../feedback/feedback';
+  import { openExternal } from '../../ports/ports.svelte';
+  import { organizer } from '../../workspace/organize.svelte';
+  import { BUNDLED_FONT, clampLineHeight, FONT_SUGGESTIONS } from '../../theme/fonts';
   import type { AgentInfo, Effort, HookAgentStatus } from '../../types';
   import type { StatuslineStatus } from '../../usage/types';
   import { hookable } from '../../hooks';
@@ -33,13 +36,16 @@
   import { canImport } from '../../switchboard';
   import { tt } from '../../tour/strings';
   import { replayTour } from '../../tour/replay';
-  import { clampScrollback, MAX_SCROLLBACK_LINES, MIN_SCROLLBACK_LINES } from '../../scroll';
+  import { clampScrollback, MAX_SCROLLBACK_LINES, MIN_SCROLLBACK_LINES } from '../../terminal/scroll';
   import { browsers } from '../../browsers.svelte';
-  import { toHex6 } from '../../color-hex';
+  import { toHex6 } from '../../theme/color-hex';
   import { updater } from '../../updater.svelte';
   import { apk } from '../../mobile/apk-update.svelte';
   import { en } from '../../i18n/en';
-  import { availableCategories, availableSections, categoryCounts, escapeAction, initialCategory, isHit, phonePage, pickCategory, search, SECTIONS, showEntry, showSection, type CategoryId, type Gates, type SectionId } from '../../settings-index';
+  import { availableCategories, availableSections, categoryCounts, escapeAction, initialCategory, isHit, phonePage, pickCategory, search, SECTIONS, showEntry, showSection, type CategoryId, type Gates, type SectionId } from '../../settings/settings-index';
+  import { phoneOrMobile } from '../../mobile/phone.svelte';
+  import { clampFinite, commitNumber } from '../../clamp';
+  import { FONT_SIZE_MAX, FONT_SIZE_MIN } from '../../terminal/terminal-font';
 
   let { onclose }: { onclose: () => void } = $props();
   const apkSettings = __SELF_UPDATE__ ? () => import('../mobile/ApkUpdateSettings.svelte') : null;
@@ -100,6 +106,7 @@
   let autoApproveLoaded = $state(false);
   let autoApproveBusy = $state<string | null>(null);
   const autoApproveAgents = $derived(app.agents.filter((agent) => Object.hasOwn(autoApprove, agent.id)));
+  const autoApproveAll = $derived(allState(autoApprove, autoApproveAgents.map((agent) => agent.id)));
 
   function setAgent(id: string) {
     const next = adaptChoice(findAgent(app.agents, id), { model: settings.defaultModel, effort: settings.defaultEffort });
@@ -157,13 +164,50 @@
 
   $effect(() => {
     if (!app.connected || app.conn.phase !== 'connected') return;
-    untrack(() =>
+    untrack(() => {
       app.api
         .autoOrganize()
         .then((r) => saveSettings({ autoOrganize: r.enabled }))
-        .catch(() => {}),
-    );
+        .catch(() => {});
+      app.api
+        .agentMessaging()
+        .then((r) => saveSettings({ agentMessaging: r.enabled }))
+        .catch(() => {});
+      app.api
+        .agentTasks()
+        .then((r) => saveSettings({ agentTasks: r.enabled }))
+        .catch(() => {});
+      pullAutoConcurrency(app.api).catch(() => {});
+    });
   });
+  async function setAgentMessaging(el: HTMLInputElement) {
+    const on = el.checked;
+    try {
+      const r = await app.api.setAgentMessaging(on);
+      saveSettings({ agentMessaging: r.enabled });
+    } catch (e) {
+      el.checked = !on;
+      app.notify(String((e as Error)?.message ?? e), 'error');
+    }
+  }
+  async function setAutoConcurrency(el: HTMLInputElement, v: number) {
+    try {
+      await pushAutoConcurrency(app.api, v);
+    } catch (e) {
+      el.value = String(settings.autoConcurrency);
+      app.notify(String((e as Error)?.message ?? e), 'error');
+    }
+  }
+  async function setAgentTasks(el: HTMLInputElement) {
+    const on = el.checked;
+    try {
+      const r = await app.api.setAgentTasks(on);
+      saveSettings({ agentTasks: r.enabled });
+    } catch (e) {
+      el.checked = !on;
+      app.notify(String((e as Error)?.message ?? e), 'error');
+    }
+  }
   async function setAutoOrganize(el: HTMLInputElement) {
     const on = el.checked;
     try {
@@ -213,7 +257,22 @@
     }
   }
 
-  const phoneLinks = $derived(app.mobile || ui.layout === 'phone');
+  async function setAllAutoApprove(el: HTMLInputElement) {
+    if (!autoApproveLoaded || autoApproveBusy) return;
+    autoApproveBusy = '*';
+    try {
+      autoApprove = await setAll(app.api, autoApprove, autoApproveAgents.map((agent) => agent.id), el.checked);
+    } catch (e) {
+      autoApprove = (e as { autoApprove?: Record<string, boolean> }).autoApprove ?? autoApprove;
+      app.notify(String((e as Error)?.message ?? e), 'error');
+    } finally {
+      autoApproveBusy = null;
+      el.checked = autoApproveAll === 'on';
+      el.indeterminate = autoApproveAll === 'mixed';
+    }
+  }
+
+  const phoneLinks = $derived(phoneOrMobile());
   const linkValue = $derived(settings.linkTarget === 'browser' && !phoneLinks ? `browser:${settings.linkBrowser}` : settings.linkTarget === 'browser' ? 'default' : settings.linkTarget);
   $effect(() => void browsers.load(!phoneLinks));
   function setLink(v: string) {
@@ -221,11 +280,12 @@
     else saveSettings({ linkTarget: v === 'default' ? 'default' : 'overseer' });
   }
 
-  const phone = $derived(app.mobile || ui.layout === 'phone');
+  const phone = $derived(phoneOrMobile());
   const gates = $derived<Gates>({
     desktop: !phone,
     nonMac: !isMac,
     connected: app.connected,
+    localServer: lidAvailable(),
     profiles: !!app.profiles,
     hooks: !!hooks.status,
     updater: updater.enabled && !app.mobile,
@@ -234,7 +294,7 @@
   });
   const text = (k: Key) => [t(k), en[k]];
   let query = $state('');
-  let cat = $state<CategoryId | null>(untrack(() => (app.mobile || ui.layout === 'phone' ? (app.overlayArg === 'notifications' ? 'notifications' : null) : initialCategory(app.overlayArg))));
+  let cat = $state<CategoryId | null>(untrack(() => (phoneOrMobile() ? (app.overlayArg === 'notifications' ? 'notifications' : null) : initialCategory(app.overlayArg))));
   let searchEl: HTMLInputElement | undefined;
   const result = $derived(query.trim() ? search(query, gates, text) : null);
   const categories = $derived(availableCategories(gates));
@@ -264,7 +324,6 @@
     searchEl?.focus();
   }
 
-  const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, Number.isFinite(v) ? v : lo));
 </script>
 
 <Modal title={t('settings.title')} {onclose} width={780}>
@@ -389,19 +448,19 @@
           {#if row('terminal', 'fontSize')}
             <label class="row" class:hit={hit('terminal', 'fontSize')}>
               <span>{t('settings.fontSize')}</span>
-              <input type="number" min="9" max="24" value={settings.fontSize} onchange={(e) => saveSettings({ fontSize: clamp(e.currentTarget.valueAsNumber, 9, 24) })} />
+              <input type="number" min={FONT_SIZE_MIN} max={FONT_SIZE_MAX} value={settings.fontSize} onchange={(e) => commitNumber(e.currentTarget, (v) => clampFinite(v, FONT_SIZE_MIN, FONT_SIZE_MAX), (fontSize) => saveSettings({ fontSize }))} />
             </label>
           {/if}
           {#if row('terminal', 'lineHeight')}
             <label class="row" class:hit={hit('terminal', 'lineHeight')}>
               <span>{t('settings.lineHeight')}</span>
-              <input type="number" min="1" max="2" step="0.05" value={settings.lineHeight} onchange={(e) => saveSettings({ lineHeight: clampLineHeight(e.currentTarget.valueAsNumber) })} />
+              <input type="number" min="1" max="2" step="0.05" value={settings.lineHeight} onchange={(e) => commitNumber(e.currentTarget, clampLineHeight, (lineHeight) => saveSettings({ lineHeight }))} />
             </label>
           {/if}
           {#if row('terminal', 'scrollback')}
             <label class="row" class:hit={hit('terminal', 'scrollback')}>
               <span>{t('settings.scrollback')}<small>{t('settings.scrollbackHint')}</small></span>
-              <input type="number" min={MIN_SCROLLBACK_LINES} max={MAX_SCROLLBACK_LINES} step="1000" value={settings.scrollbackLines} onchange={(e) => saveSettings({ scrollbackLines: clampScrollback(e.currentTarget.valueAsNumber) })} />
+              <input type="number" min={MIN_SCROLLBACK_LINES} max={MAX_SCROLLBACK_LINES} step="1000" value={settings.scrollbackLines} onchange={(e) => commitNumber(e.currentTarget, clampScrollback, (scrollbackLines) => saveSettings({ scrollbackLines }))} />
             </label>
           {/if}
           {#if row('terminal', 'gpuTerminal')}
@@ -485,7 +544,11 @@
           {#if row('defaults', 'autoApprove')}
             <div class="row" class:hit={hit('defaults', 'autoApprove')} data-tour="auto-approve">
               <span>{t('settings.autoApprove')}<small>{autoApproveLoaded ? t('settings.autoApproveHint') : t('settings.autoApproveConnect')}</small></span>
-              <span></span>
+              {#if autoApproveAgents.length}
+                <input type="checkbox" class="switch" aria-label={t('settings.autoApproveAll')} checked={autoApproveAll === 'on'} indeterminate={autoApproveAll === 'mixed'} disabled={!autoApproveLoaded || autoApproveBusy !== null} onchange={(e) => setAllAutoApprove(e.currentTarget)} />
+              {:else}
+                <span></span>
+              {/if}
             </div>
             {#each autoApproveAgents as agent (agent.id)}
               <label class="row" class:hit={hit('defaults', 'autoApprove')}>
@@ -515,13 +578,25 @@
           {#if row('defaults', 'autoConcurrency')}
             <label class="row" class:hit={hit('defaults', 'autoConcurrency')}>
               <span>{t('settings.autoConcurrency')}<small>{t('settings.autoConcurrencyHint')}</small></span>
-              <input type="number" min="1" max="16" value={settings.autoConcurrency} onchange={(e) => saveSettings({ autoConcurrency: clamp(e.currentTarget.valueAsNumber, 1, 16) })} />
+              <input type="number" min="1" max="16" value={settings.autoConcurrency} onchange={(e) => commitNumber(e.currentTarget, (v) => clampFinite(v, 1, 16), (v) => setAutoConcurrency(e.currentTarget, v))} />
             </label>
           {/if}
           {#if row('defaults', 'autoOrganize')}
             <label class="row" class:hit={hit('defaults', 'autoOrganize')}>
               <span>{t('settings.autoOrganize')}<small>{t('settings.autoOrganizeHint')}</small></span>
               <input type="checkbox" class="switch" checked={settings.autoOrganize} onchange={(e) => setAutoOrganize(e.currentTarget)} />
+            </label>
+          {/if}
+          {#if row('defaults', 'agentMessaging')}
+            <label class="row" class:hit={hit('defaults', 'agentMessaging')}>
+              <span>{t('settings.agentMessaging')}<small>{t('settings.agentMessagingHint')}</small></span>
+              <input type="checkbox" class="switch" data-tour="agent-messaging" checked={settings.agentMessaging} onchange={(e) => setAgentMessaging(e.currentTarget)} />
+            </label>
+          {/if}
+          {#if row('defaults', 'agentTasks')}
+            <label class="row" class:hit={hit('defaults', 'agentTasks')}>
+              <span>{t('settings.agentTasks')}<small>{t('settings.agentTasksHint')}</small></span>
+              <input type="checkbox" class="switch" data-tour="agent-tasks" checked={settings.agentTasks} onchange={(e) => setAgentTasks(e.currentTarget)} />
             </label>
           {/if}
         </section>
@@ -603,7 +678,7 @@
 
       {#if vis('usage')}
         <section>
-          <h3>{t('settings.usage')}</h3>
+          <h3>{t('settings.usage.claude')}</h3>
           {#if row('usage', 'claudeLimits')}
             <label class="row" class:hit={hit('usage', 'claudeLimits')}>
               <span>{t('settings.fetchClaudeLimits')}<small>{t('settings.fetchClaudeLimitsHint')}</small></span>
@@ -623,11 +698,67 @@
         </section>
       {/if}
 
+      {#if vis('usageCodex')}
+        <section>
+          <h3>{t('settings.usage.codex')}</h3>
+          {#if row('usageCodex', 'codexLimits')}
+            <div class="row" class:hit={hit('usageCodex', 'codexLimits')}>
+              <span>{t('settings.codexLimits')}<small>{t('settings.codexLimitsHint')}</small></span>
+            </div>
+          {/if}
+        </section>
+      {/if}
+
+      {#if vis('usageGemini')}
+        <section>
+          <h3>{t('settings.usage.gemini')}</h3>
+          {#if row('usageGemini', 'geminiTokens')}
+            <div class="row" class:hit={hit('usageGemini', 'geminiTokens')}>
+              <span>{t('settings.geminiTokens')}<small>{t('settings.geminiTokensHint')}</small></span>
+            </div>
+          {/if}
+        </section>
+      {/if}
+
       {#if vis('notifications')}<NotificationSettings row={(e) => row('notifications', e)} hit={(e) => hit('notifications', e)} />{/if}
 
       {#if vis('hosts')}
         <section>
           <h3>{t('settings.hosts')}</h3>
+          {#if !app.mobile && row('hosts', 'hostWindows')}
+            <div class="row stacked" class:hit={hit('hosts', 'hostWindows')}>
+              <span>{t('settings.hostWindows')}</span>
+              <div class="host-modes" role="radiogroup" aria-label={t('settings.hostWindows')}>
+                {#each [['shared', 'settings.hostShared'], ['separate', 'settings.hostSeparate']] as const as [mode, label] (mode)}
+                  <label class="host-mode" class:on={settings.hostWindows === mode}>
+                    <input type="radio" name="host-windows" value={mode} checked={settings.hostWindows === mode} onchange={() => saveSettings({ hostWindows: mode })} />
+                    <span><b>{t(label)}</b></span>
+                  </label>
+                {/each}
+              </div>
+              {#if Object.keys(settings.hostChoice).length}
+                <button class="btn" onclick={() => saveSettings({ hostChoice: {} })}>{t('settings.hostChoiceForget', { n: Object.keys(settings.hostChoice).length })}</button>
+              {/if}
+            </div>
+          {/if}
+          {#if !app.mobile && row('hosts', 'hostAsk')}
+            <label class="row" class:hit={hit('hosts', 'hostAsk')}>
+              <span>{t('settings.hostAsk')}</span>
+              <input type="checkbox" class="switch" checked={settings.hostAsk} onchange={(e) => saveSettings({ hostAsk: e.currentTarget.checked })} />
+            </label>
+          {/if}
+          {#if !app.mobile && row('hosts', 'hostTabColor')}
+            <label class="row" class:hit={hit('hosts', 'hostTabColor')}>
+              <span>{t('settings.hostTabColor')}</span>
+              <input type="checkbox" class="switch" checked={settings.hostTabColor} onchange={(e) => saveSettings({ hostTabColor: e.currentTarget.checked })} />
+            </label>
+          {/if}
+          {#if !app.mobile && row('hosts', 'hostReconnect')}
+            <label class="row" class:hit={hit('hosts', 'hostReconnect')}>
+              <span>{t('settings.hostReconnect')}</span>
+              <input type="checkbox" class="switch" checked={settings.hostReconnect} onchange={(e) => saveSettings({ hostReconnect: e.currentTarget.checked })} />
+            </label>
+          {/if}
           {#if row('hosts', 'hosts')}
             {#if settings.recentHosts.length}
               <ul class="hosts">
@@ -715,6 +846,34 @@
 </Modal>
 
 <style>
+  .host-modes {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 8px;
+    width: 100%;
+  }
+  .host-mode {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 10px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    cursor: pointer;
+  }
+  .host-mode.on {
+    border-color: var(--accent);
+    background: var(--accent-soft);
+  }
+  .host-mode input {
+    margin-top: 2px;
+    accent-color: var(--accent);
+  }
+  .host-mode b {
+    display: block;
+    font-weight: 600;
+    color: var(--text);
+  }
   .settings {
     display: grid;
     grid-template-columns: 188px minmax(0, 1fr);

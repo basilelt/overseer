@@ -11,11 +11,13 @@ self-hosted runner.
 | `store.yml` | manual, from `main` only | App Store submission (iOS) and Play Store upload (Android) of a release tag |
 | `release-pr.yml` | manual | opens the draft release PR from `next` to `main` (skips when one is open or `next` is not ahead) |
 | `mobile-init.yml` | manual | generates `app/src-tauri/gen/{android,apple}` and commits them to the branch |
-| `pages.yml` | push to `next` that changes `docs/showreel/` or this workflow, manual | deploys `docs/showreel/` (the showreel page, the repository's website) to GitHub Pages |
+| `pages.yml` | push to `next` that changes `docs/showreel/` or this workflow, manual | renders both cuts of the showreel and its poster, then deploys `docs/showreel/` (the showreel page, the repository's website) to GitHub Pages; a manual run on another branch renders without deploying |
 
 Concurrency: `ci-pr-<PR number or ref>` cancels the previous run of the same PR;
 `release-refs/heads/main` never cancels a running release (a newer push waits); `store` never
-cancels a running store upload; `pages` never cancels a running deployment.
+cancels a running store upload; `pages` never cancels a running deployment. The showreel render is cached on a hash of its
+sources (`reel.html`, `audio.mjs`, `render.py`, `build.sh`, `shots/`, `fonts/`) and the Playwright
+version, so a change to the page alone deploys without rendering again.
 
 Runner budget: CI runs nothing on draft PRs, only the jobs the change needs on ready PRs
 ([Path filtering](#path-filtering)), and is not repeated on `main` when the merged PR already passed
@@ -162,7 +164,8 @@ its `changes` job runs, a few seconds on `ubuntu-slim`. Pushes by `github-action
 | release | `app-windows-arm` | `windows-11-arm` | arm64 daemon `overseer-<v>-aarch64-pc-windows-msvc.exe` (artifact `servers-windows-arm`), NSIS installer `*_arm64-setup.exe` and `Overseer_<v>_arm64.msix` bundling it, built natively |
 | release | `app-macos` | `macos-26` | `.dmg` for Apple Silicon (`aarch64-apple-darwin`) and Intel (`x86_64-apple-darwin`, cross-built) |
 | release | `app-android` | `ubuntu-24.04` | signed universal APK (arm64-v8a, armeabi-v7a) `Overseer_<v>_android.apk` + `.sha256`, for Obtainium and the GitHub Release (the publish job adds a copy named `Overseer_android.apk` for the README's fixed `releases/latest/download/` link); skipped without the keystore secrets |
-| release | `publish` | `ubuntu-slim` | GitHub Release with generated release notes, every artifact and `SHA256SUMS`, then the updater manifest `latest.json` when the updater key is set |
+| release | `sums` | `ubuntu-24.04` | `SHA256SUMS` of every artifact and, when the updater key is set, its minisign signature `SHA256SUMS.sig` (`scripts/ci-sign-sums.sh`, which also verifies the signature against `plugins.updater.pubkey` and fails the release when it does not match) |
+| release | `publish` | `ubuntu-slim` | checks every artifact against `SHA256SUMS`, then the GitHub Release with generated release notes, every artifact, `SHA256SUMS` and `SHA256SUMS.sig`, then the updater manifest `latest.json` when the updater key is set |
 | release | `tap` | `ubuntu-24.04` | `scripts/update-tap.sh` writes the cask and formula of `basilelt/homebrew-tap` and pushes `overseer <version>` to `bump/overseer-<version>`; the tap's own CI audits it and fast-forwards `main`; skipped without `HOMEBREW_TAP_DEPLOY_KEY` |
 | store | `ios` | `macos-26` | fastlane `app_store` lane: `tauri ios build` signed from `IOS_CERTIFICATE` and `IOS_MOBILE_PROVISION`, `upload_to_app_store` with `submit_for_review` (manual release after approval) |
 | store | `android` | `ubuntu-24.04` | signed Google Play App Bundle (`pnpm tauri android build --aab` with `OVERSEER_DISTRIBUTION=play`, checked by `scripts/android-aab.sh` and `scripts/android-16k.sh`), uploaded with `r0adkll/upload-google-play` to the chosen track, status `completed` |
@@ -179,7 +182,7 @@ offers the daemon upgrade as on the other platforms.
 The x64 Windows installer stays cross-built on Linux: `servers` needs `cargo-xwin` on Linux anyway
 for `overseer.exe` (`make dist-cross`). The arm64 installer builds natively on `windows-11-arm`
 in Git Bash, which has no `make`, so the job calls `scripts/app-resources.sh` directly. Every
-desktop app job must succeed for `publish` to run.
+desktop app job must succeed for `sums`, then `publish`, to run.
 
 ## Runner setup
 
@@ -344,7 +347,7 @@ asked, so a missing secret fails them.
 
 | Secret | Enables | Without it |
 |---|---|---|
-| `TAURI_SIGNING_PRIVATE_KEY` | minisign signatures of the self-updating bundles (`.AppImage.sig`, `-setup.exe.sig`, `.app.tar.gz.sig`, `.deb.sig`, `.rpm.sig`) and `latest.json`, so installed apps update themselves | bundles built without updater artifacts, no `.sig`, no `latest.json`: installed apps do not see the release |
+| `TAURI_SIGNING_PRIVATE_KEY` | minisign signatures of the self-updating bundles (`.AppImage.sig`, `-setup.exe.sig`, `.app.tar.gz.sig`, `.deb.sig`, `.rpm.sig`) and `latest.json`, so installed apps update themselves; and `SHA256SUMS.sig`, which the phone app requires before it installs the server on a host | bundles built without updater artifacts, no `.sig`, no `latest.json`: installed apps do not see the release. No `SHA256SUMS.sig`: the phone app refuses to install the server of that release on a host (install it there yourself) |
 | `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | password of that key (leave unset if the key has none) | |
 | `MACOS_SELF_SIGN_P12_BASE64`, `MACOS_SELF_SIGN_P12_PASSWORD` | stable self-signed macOS code signature ([macOS signing](#macos-signing)) | ad-hoc signature: macOS forgets the Local Network grant on every update |
 | `APPLE_CERTIFICATE`, `APPLE_CERTIFICATE_PASSWORD`, `APPLE_SIGNING_IDENTITY` | Developer ID signature of the macOS app (wins over the self-signed one) | self-signed or ad-hoc, as above |
@@ -408,6 +411,11 @@ The app updates itself with `tauri-plugin-updater` from the GitHub releases (`ap
   `Overseer_<v>_x64.app.tar.gz` with their `.sig` (renamed from `bundle/macos/Overseer.app.tar.gz`),
   and the `.deb.sig` and `.rpm.sig` files tauri already produced for the Linux packages. The
   `.dmg` and `.msix` have no signature; the app checks a downloaded `.msix` against `SHA256SUMS`.
+- `SHA256SUMS` itself is signed with the same key by the `sums` job (`SHA256SUMS.sig`, in the
+  format of the other `.sig` files: base64 of a minisign signature). The app has the public key
+  built in (`RELEASE_KEY` in `app/src-tauri/src/release_http.rs`, pinned to
+  `plugins.updater.pubkey` by a test) and the phone app verifies the signature before it trusts a
+  checksum of a server binary. The key is only given to the `sums` job, not to `publish`.
 - `publish` then runs `scripts/latest-json.sh <version>`: it reads `gh release view --json
   assets,body,publishedAt`, downloads the `.sig` files and writes `latest.json` with `version`,
   `notes` (the release body), `pub_date` and `platforms` (`darwin-aarch64`, `darwin-x86_64`,
