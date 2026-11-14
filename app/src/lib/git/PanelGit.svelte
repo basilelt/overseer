@@ -75,7 +75,7 @@
   }
 </script>
 
-<section class="side-git" aria-label={gt('scm')} data-tour="sidebar-git">
+<section class="panel-git" aria-label={gt('scm')} data-tour="panel-git">
   {#if !target}
     <p class="empty">{gt('side.empty')}</p>
   {:else}
@@ -89,7 +89,7 @@
 </section>
 
 <style>
-  .side-git {
+  .panel-git {
     flex: 1;
     min-height: 0;
     display: flex;

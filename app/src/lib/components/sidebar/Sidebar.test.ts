@@ -5,11 +5,10 @@ import { ui } from '../../mobile/ui.svelte';
 import type { LocalLine, Term } from '../../types';
 import Sidebar from './Sidebar.svelte';
 
-const before = { layout: ui.layout, mode: app.sidebarMode, scm: app.sidebarGit, data: app.data, multi: app.multi };
+const before = { layout: ui.layout, mode: app.sidebarMode, data: app.data, multi: app.multi };
 afterEach(() => {
   ui.layout = before.layout;
   app.sidebarMode = before.mode;
-  app.sidebarGit = before.scm;
   app.data = before.data;
   app.multi = before.multi;
 });
@@ -17,7 +16,6 @@ afterEach(() => {
 const html = (layout: 'desktop' | 'phone', mode: 'workspaces' | 'status') => {
   ui.layout = layout;
   app.sidebarMode = mode;
-  app.sidebarGit = false;
   return render(Sidebar).body;
 };
 const header = (h: string) => h.slice(h.indexOf('<header'), h.indexOf('</header>'));
@@ -60,18 +58,12 @@ describe('Sidebar workspace actions', () => {
   });
 });
 
-describe('Sidebar source control tab', () => {
-  const tab = (h: string, selected: boolean) => h.match(new RegExp(`<button[^>]*role="tab"[^>]*class="[^"]*\\bgit\\b[^"]*"[^>]*aria-selected="${selected}"|<button[^>]*role="tab"[^>]*aria-selected="${selected}"[^>]*class="[^"]*\\bgit\\b`));
-
-  it('sits next to the mode tabs and swaps the filter and tools for source control when selected', () => {
-    const off = html('desktop', 'workspaces');
-    expect(tab(off, false)).not.toBeNull();
-    expect(off).toContain('class="tools');
-    ui.layout = 'desktop';
-    app.sidebarGit = true;
-    const on = render(Sidebar).body;
-    expect(tab(on, true)).not.toBeNull();
-    expect(on).not.toContain('class="tools');
+describe('Sidebar without source control', () => {
+  it('has only the Workspaces and By status tabs, source control lives in the side panel', () => {
+    const h = html('desktop', 'workspaces');
+    expect(h.match(/role="tab"/g)).toHaveLength(2);
+    expect(h).not.toContain('Source control');
+    expect(h).toContain('class="tools');
   });
 });
 

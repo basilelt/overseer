@@ -24,9 +24,10 @@
   import { modeOf, setMode } from '../../chat/viewmode.svelte';
   import { pages } from '../../session/session-pages.svelte';
   import { GROUP_COLOR } from '../../workspace/ws-color';
+  import { itemTarget } from '../../review/open';
 
   const tabs = $derived(activeTabs(workspace.layout).map((k) => tabInfo(k, app.items)).filter((x): x is TabInfo => !!x));
-  const canPanel = $derived(!!app.selected?.lineId);
+  const canPanel = $derived(!!itemTarget(app.selected?.key));
   const web = $derived(app.selected ? pages.byKey[app.selected.key] : undefined);
   const chatItem = $derived(app.selected && chatCapable(app.selected) ? app.selected : null);
   const inChat = $derived(chatItem ? modeOf(chatItem) === 'chat' : false);
