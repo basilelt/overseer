@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { DaemonError } from '../daemon/client';
 import { MockDaemon } from '../daemon/mock';
 import { reviewApi, type ReviewApi } from './api';
-import { ReviewMapStore, WEIGHTS, band, fid, heat, heatInk, heatLevel, layout, ranking, reasons, saveView, savedView, score, squarify, step } from './map.svelte';
+import { ReviewMapStore, WEIGHTS, band, fid, heat, heatInk, heatLevel, layout, moveSelection, nearest, ranking, reasons, saveView, savedView, score, squarify, step } from './map.svelte';
 import { MOCK_LINKED, MOCK_MISSING, MOCK_SUBMODULE, MOCK_WORKTREE } from './mock';
 import type { MapFile, ReviewMap } from './types';
 
@@ -150,6 +150,40 @@ describe('list band and walk', () => {
     expect(step(r, r[0].id, 1)).toBe(r[1]);
     expect(step(r, r[0].id, -1)).toBe(r[r.length - 1]);
     expect(step([], null, 1)).toBeUndefined();
+  });
+});
+
+describe('keyboard moves on the map', () => {
+  const grid = new Map<string, readonly [number, number]>([
+    ['mid', [100, 100]],
+    ['right', [200, 105]],
+    ['farRightUp', [400, 20]],
+    ['up', [110, 20]],
+    ['down', [95, 220]],
+    ['left', [10, 100]],
+  ]);
+
+  it('moves to the closest file in each direction, preferring files in line', () => {
+    expect(nearest(grid, 'mid', 'right')).toBe('right');
+    expect(nearest(grid, 'mid', 'left')).toBe('left');
+    expect(nearest(grid, 'mid', 'up')).toBe('up');
+    expect(nearest(grid, 'mid', 'down')).toBe('down');
+  });
+
+  it('stays put at the edge and for an unknown file', () => {
+    expect(nearest(grid, 'farRightUp', 'right')).toBeNull();
+    expect(nearest(grid, 'gone', 'left')).toBeNull();
+  });
+
+  it('walks the ranking with next and previous, and starts arrows from the hottest file', () => {
+    const rank = ranking(score(review()), 'priority');
+    const pts = new Map(rank.map((s, i) => [s.id, [i * 10, 0] as const]));
+    expect(moveSelection('next', null, rank, pts)).toBe(rank[0].id);
+    expect(moveSelection('prev', rank[0].id, rank, pts)).toBe(rank[rank.length - 1].id);
+    expect(moveSelection('right', null, rank, pts)).toBe(rank[0].id);
+    expect(moveSelection('right', rank[0].id, rank, pts)).toBe(rank[1].id);
+    expect(moveSelection('down', 'not on the map', rank, pts)).toBe(rank[0].id);
+    expect(moveSelection('next', null, [], new Map())).toBeNull();
   });
 });
 

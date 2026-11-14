@@ -102,8 +102,9 @@ send the comments back to the agent; threads follow the code as it changes. Appr
 commit from the Kanban card when the task is in Review. When an agent works across several
 repositories, one review covers them all: the Map view draws every worktree on one map with the
 links between files, colours each file by what makes it worth your attention (real logic, blast
-radius, contract changes, where the agent struggled, untested or not yet seen code), and J and K
-walk the files hottest first.
+radius, contract changes, where the agent struggled, untested or not yet seen code), and the
+keyboard drives it: J and K walk the files hottest first, the arrows move across the map, Enter
+opens a diff, Esc clears the selection and M switches between list and map.
 
 ![Live review](app/docs/screenshots/review-light.png)
 ![Review map](app/docs/screenshots/review-map-dark.png)

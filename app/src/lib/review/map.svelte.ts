@@ -2,6 +2,7 @@ import type { ReviewApi } from './api';
 import type { MapFile, MapLink, MapRegion, ReviewMap, ReviewTarget } from './types';
 import { readItem, writeItem, KEY_REVIEW_VIEW } from '../storage';
 import { OneShot } from '../timer';
+import type { Arrow } from './review-keys';
 
 export const SIGNALS = ['logic', 'reach', 'contract', 'struggle', 'untested', 'unseen'] as const;
 export type Signal = (typeof SIGNALS)[number];
@@ -280,6 +281,28 @@ export function step(rank: Scored[], current: string | null, dir: 1 | -1): Score
   const i = rank.findIndex((s) => s.id === current);
   if (i < 0) return dir > 0 ? rank[0] : rank[rank.length - 1];
   return rank[(i + dir + rank.length) % rank.length];
+}
+
+export type Point = readonly [number, number];
+
+export function nearest(points: Map<string, Point>, from: string, dir: Arrow): string | null {
+  const a = points.get(from);
+  if (!a) return null;
+  let best: string | null = null, cost = Infinity;
+  for (const [id, [x, y]] of points) {
+    const dx = x - a[0], dy = y - a[1];
+    const along = dir === 'left' ? -dx : dir === 'right' ? dx : dir === 'up' ? -dy : dy;
+    if (id === from || along <= 0) continue;
+    const c = along + 2 * Math.abs(dir === 'left' || dir === 'right' ? dy : dx);
+    if (c < cost) (cost = c), (best = id);
+  }
+  return best;
+}
+
+export function moveSelection(a: 'next' | 'prev' | Arrow, current: string | null, rank: Scored[], points: Map<string, Point>): string | null {
+  if (a === 'next' || a === 'prev') return step(rank, current, a === 'next' ? 1 : -1)?.id ?? null;
+  if (!current || !points.has(current)) return rank[0]?.id ?? null;
+  return nearest(points, current, a);
 }
 
 const VIEW_KEY = KEY_REVIEW_VIEW;
