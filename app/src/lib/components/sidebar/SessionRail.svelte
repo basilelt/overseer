@@ -4,7 +4,7 @@
   import { beside } from '../../review/beside.svelte';
   import { focusPane, update, workspace } from '../../workspace/workspace.svelte';
   import AgentGlyph from '../ui/AgentGlyph.svelte';
-  import { GROUP_COLOR } from '../../workspace/ws-color';
+  import { STATE_COLOR } from '../../workspace/ws-color';
 
   const items = $derived(app.scopeItems().filter((i) => i.lineId || i.termId));
 
@@ -19,7 +19,7 @@
   {#each items as it (it.key)}
     <button class="s" class:on={it.key === app.selectedKey} title={it.title} aria-label={it.title} aria-current={it.key === app.selectedKey ? 'true' : undefined} onclick={() => pick(it.key)}>
       <AgentGlyph agent={it.kind} size={15} />
-      <span class="dot" style:background={GROUP_COLOR[it.group]}></span>
+      <span class="dot" style:background={STATE_COLOR[it.state]}></span>
     </button>
   {/each}
 </nav>

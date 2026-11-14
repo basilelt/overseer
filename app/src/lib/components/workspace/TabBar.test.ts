@@ -6,7 +6,7 @@ import { MockDaemon } from '../../daemon/mock';
 import { settings } from '../../settings/settings.svelte';
 import { app } from '../../state.svelte';
 import { newSessionItems } from '../../workspace/wsactions';
-import type { AgentInfo, LocalLine } from '../../types';
+import type { AgentInfo, LocalLine, Task } from '../../types';
 import TabBar from './TabBar.svelte';
 import bar from './TabBar.svelte?raw';
 
@@ -29,6 +29,14 @@ describe('tab strip content', () => {
   it('shows the session cost on its tab only when the transcript has one', () => {
     expect(html()).not.toMatch(/class="[^"]*\bcost\b/);
     expect(html({ l1: { workLog: [], todos: [], editedFiles: [], needsInput: false, lastAssistantText: '', cost } })).toMatch(/<span[^>]*class="[^"]*\bcost\b[^"]*"[^>]*>\$1\.23</);
+  });
+
+  it('colours the dot of a running session in testing by its state, like the sidebar row', () => {
+    const busy: LocalLine = { ...line(), local: { title: 'Fix login', pid: 1, busy: true } };
+    app.data = { ...app.data, lines: [busy], tasks: [{ id: 't1', lineId: 'l1', status: 'in_testing', title: 'T', description: '' } as Task], activity: {} };
+    const h = render(TabBar, { props: { pane: { tabs: ['line:l1'], active: 'line:l1' }, index: 0, focused: true, canClose: true } }).body;
+    expect(h).toMatch(/class="dot[^"]*" style="background: var\(--state-running\);"/);
+    expect(h).not.toContain('--st-testing');
   });
 
   it('puts the tab number and the close button in one slot, so hovering does not change the width', () => {

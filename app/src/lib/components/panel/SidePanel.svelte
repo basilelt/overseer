@@ -29,7 +29,7 @@
   import { diffs, relateds } from '../../panel/panel-cache';
   import { loadPanel } from '../../panel/panel-load';
   import { hostKey } from '../../window';
-  import { GROUP_COLOR } from '../../workspace/ws-color';
+  import { STATE_COLOR } from '../../workspace/ws-color';
 
   const EFFORTS = new Set(['low', 'medium', 'high', 'xhigh', 'max']);
   const item = $derived(app.selected);
@@ -193,7 +193,7 @@
   {:else}
     <header>
       <div class="title">
-        <span class="dot" style:background={GROUP_COLOR[item.group]}></span>
+        <span class="dot" style:background={STATE_COLOR[item.state]}></span>
         <h3>{item.renamed ? item.title : act?.title || item.title}</h3>
       </div>
       {#if act?.goal || item.goal}<p class="goal muted">{act?.goal || item.goal}</p>{/if}
