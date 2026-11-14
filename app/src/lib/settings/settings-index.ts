@@ -96,7 +96,6 @@ export const ENTRIES: Entry[] = [
   { id: 'notifyMutes', section: 'notifications', keys: ['nb.mutes', 'nb.mutesHint', 'nb.mutedSessions'] },
   { id: 'hostWindows', section: 'hosts', keys: ['settings.hostWindows', 'settings.hostShared', 'settings.hostSeparate', 'settings.hostChoiceForget'] },
   { id: 'hostAsk', section: 'hosts', keys: ['settings.hostAsk'] },
-  { id: 'hostTabColor', section: 'hosts', keys: ['settings.hostTabColor'] },
   { id: 'hostReconnect', section: 'hosts', keys: ['settings.hostReconnect'] },
   { id: 'hosts', section: 'hosts', keys: ['settings.removeHost'] },
   { id: 'serverBinDir', section: 'hosts', keys: ['settings.serverBinDir', 'settings.serverBinDirHint'] },
