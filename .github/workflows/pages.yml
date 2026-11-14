@@ -24,7 +24,7 @@ jobs:
     timeout-minutes: 120
     strategy:
       matrix:
-        cut: ["15", "30"]
+        cut: ["15", "45"]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -35,7 +35,7 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: out
-          key: showreel-${{ matrix.cut }}-${{ env.PLAYWRIGHT_VERSION }}-${{ hashFiles('docs/showreel/reel.html', 'docs/showreel/audio.mjs', 'docs/showreel/render.py', 'docs/showreel/build.sh', 'docs/showreel/shots/**', 'docs/showreel/fonts/**') }}
+          key: showreel-${{ matrix.cut }}-${{ env.PLAYWRIGHT_VERSION }}-${{ hashFiles('docs/showreel/reel.html', 'docs/showreel/audio.mjs', 'docs/showreel/render.py', 'docs/showreel/build.sh', 'docs/showreel/fonts/**') }}
 
       - if: steps.cache.outputs.cache-hit != 'true'
         run: |
