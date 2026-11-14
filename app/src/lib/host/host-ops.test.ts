@@ -286,6 +286,64 @@ describe('launch', () => {
   });
 });
 
+describe('one window, all hosts, with this computer', () => {
+  const fresh = async (over: Record<string, unknown>) => {
+    await app.disconnect();
+    const s = settings as unknown as Record<string, unknown>;
+    delete s.windowHosts;
+    Object.assign(settings, { lastHost: prod, explicitlyDisconnected: false, hostReconnect: true, ...over });
+    await app.init();
+  };
+
+  it('adds this computer beside the remote host the window opens on', async () => {
+    await fresh({ hostWindows: 'shared' });
+    await vi.waitFor(() => expect(app.hosts.map((l) => l.key)).toEqual(['ssh:prod', 'local']));
+    expect(app.conn.target).toEqual(prod);
+    expect((made[0] as Made).connects).toEqual([local]);
+  });
+
+  it('adds this computer when the remote host was remembered as added to the window', async () => {
+    await fresh({ hostWindows: 'separate', hostChoice: { 'ssh:prod': 'add' } });
+    await vi.waitFor(() => expect(app.others.map((l) => l.key)).toEqual(['local']));
+  });
+
+  it('opens the remote host alone in one window per host', async () => {
+    await fresh({ hostWindows: 'separate' });
+    expect(app.conn.target).toEqual(prod);
+    expect(app.others).toEqual([]);
+    expect(made).toEqual([]);
+  });
+
+  it('does not bring back this computer once the user took it out of the window', async () => {
+    await fresh({ hostWindows: 'shared', windowHosts: [] });
+    await app.addLocal();
+    expect(app.others.map((l) => l.key)).toEqual(['local']);
+    await app.removeHost('local');
+    await fresh({ hostWindows: 'shared', windowHosts: [] });
+    expect(app.others).toEqual([]);
+  });
+
+  it('adds this computer when one window for all hosts is chosen while on a remote host', async () => {
+    await app.connect(prod);
+    expect(app.hosts).toEqual([]);
+    settings.hostWindows = 'shared';
+    await app.addLocal();
+    expect(app.hosts.map((l) => l.key)).toEqual(['ssh:prod', 'local']);
+    expect(app.conn.target).toEqual(prod);
+    await app.addLocal();
+    expect(made).toHaveLength(1);
+  });
+
+  it('adds nothing when the window already shows this computer or is disconnected', async () => {
+    await app.addLocal();
+    expect(made).toEqual([]);
+    await app.connect(prod);
+    await app.disconnect();
+    await app.addLocal();
+    expect(made).toEqual([]);
+  });
+});
+
 describe('restoreHosts', () => {
   const local: HostTarget = { kind: 'local', label: 'Local' };
   const p: HostTarget = { kind: 'ssh', host: 'prod', label: 'prod' };
