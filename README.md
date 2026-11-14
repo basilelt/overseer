@@ -191,7 +191,7 @@ connect.
 - **Usage and system monitor**: agent quotas, token usage, CPU and RAM in the title bar.
 - **Real cost per session and task**: what each session cost, from the token counts in its
   transcript, per model with cache reads and writes apart and model switches shown as their own
-  cost. Tabs and task cards carry the total, and the usage view compares the cost per finished
+  cost. Task cards carry the total, and the usage view compares the cost per finished
   task by profile, ticket or task, so you can see whether a cheaper profile really saves money.
 - **Keep agents running with the lid closed**: an opt-in switch (Settings → Connection) stops the
   laptop running Overseer from sleeping when you close it, on Linux, macOS and Windows, so agents

@@ -82,7 +82,6 @@ export interface Settings {
   hostWindows: HostWindows;
   hostAsk: boolean;
   hostChoice: Record<string, HostChoice>;
-  hostTabColor: boolean;
   hostReconnect: boolean;
   windowHosts?: HostTarget[];
   hostsFolded?: string[];
@@ -140,7 +139,6 @@ export const DEFAULT_SETTINGS: Settings = {
   hostWindows: 'separate',
   hostAsk: false,
   hostChoice: {},
-  hostTabColor: true,
   hostReconnect: true,
 };
 

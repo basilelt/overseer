@@ -1472,8 +1472,8 @@ request, the event stream, every terminal and every forwarded port over that one
   reconnecting, with its own tabs and layout; the palette's **Show <host> in the main area** and
   the host chip menu (the chip reads "N hosts") does the same. Every host stays connected and its
   section stays live; a session waiting for input on a background host still notifies, titled
-  "<host>: …", and opening the notification switches to that host. With **Show the host on tabs**
-  (on by default) tabs carry the host's name and colour. Disconnecting the host in the main area
+  "<host>: …", and opening the notification switches to that host. Tabs do not repeat the host:
+  the sidebar section already says where each session runs. Disconnecting the host in the main area
   brings another host of the window into it. **Reconnect every host at launch** (on by default)
   reopens the hosts of the first window; disconnected hosts stay closed. Phones keep one host.
 - Session rows in the sidebar do not repeat the host name: the host chip, and the host sections
@@ -1683,8 +1683,8 @@ keeps it as a workspace tab.
 main model and effort ("≈$1.23 · claude-opus-5-5 · effort high"), and a **Cost** section that
 splits it per model (subagents included, each at its own model's price) into uncached input,
 cache writes, cache reads and output. A switch to another model mid-session is listed as its own
-line with what rebuilding the cache cost, since the new model writes the whole context again. The session tab
-shows the same total, and each task card the total of the task's sessions. Tasks keep that number
+line with what rebuilding the cache cost, since the new model writes the whole context again. Each task card
+shows the total of the task's sessions; tabs stay free of it. Tasks keep that number
 after the transcripts are gone. At the bottom of the Usage panel, **Cost per task** groups the
 tasks by profile (and agent), by ticket or lists each task, with the average cost per finished
 task (in testing, merged or completed) for each profile: run the same kind of work under two
