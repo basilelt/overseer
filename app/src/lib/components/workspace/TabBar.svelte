@@ -5,7 +5,6 @@
 </script>
 
 <script lang="ts">
-  import { hostColor, hostName } from '../../host/hosts';
   import Columns2 from '@lucide/svelte/icons/columns-2';
   import Rows2 from '@lucide/svelte/icons/rows-2';
   import X from '@lucide/svelte/icons/x';
@@ -31,7 +30,6 @@
   import { chatCapable } from '../../chat/viewmode';
   import ModeToggle from '../chat/ModeToggle.svelte';
   import { chipLabel, chipShort } from '../../profiles/profiles';
-  import { formatCost } from '../../usage/format';
   import { pages } from '../../session/session-pages.svelte';
   import { STATE_COLOR } from '../../workspace/ws-color';
 
@@ -76,7 +74,6 @@
   });
 
   const chipOf = (tab: TabInfo) => (tab.item?.termId ? app.data.terms.find((x) => x.id === tab.item!.termId)?.profile : undefined);
-  const costOf = (tab: TabInfo) => (tab.item?.lineId ? app.data.activity[tab.item.lineId]?.cost : undefined);
   const effortLabel = (e: string) => t('profile.effortOf', { effort: t(`effort.${e}` as Key).toLowerCase() });
 
   const label = (tab: TabInfo) => tabLabel(tab);
@@ -221,7 +218,6 @@
     if (Extra) editing = edit;
     else void loadExtra().then(() => (editing = edit));
   }
-  const hostTag = $derived(app.hosts.length > 1 && settings.hostTabColor && app.link ? { name: hostName(app.link.target), color: hostColor(app.link.key) } : null);
 </script>
 
 <svelte:window onpointermove={tabMove} onpointerup={tabUp} onpointercancel={tabUp} />
@@ -248,7 +244,6 @@
         onpointerdown={(e) => tabDown(e, key)}
         ondblclick={(e) => startEdit(e, tab)}
       >
-        {#if hostTag}<span class="host mono" style:--host={hostTag.color}>{hostTag.name}</span>{/if}
         {#if tab.item}
           <AgentIcon kind={tab.item.kind} size={12} />
           <span class="dot" style:background={STATE_COLOR[tab.item.state]}></span>
@@ -268,7 +263,6 @@
           {/if}
         </span>
         {#if chipOf(tab)}{@const chip = chipOf(tab)}<span class="chip mono" title={chipLabel(chip, effortLabel)}>{chipShort(chip)}</span>{/if}
-        {#if costOf(tab)}{@const c = costOf(tab)!}<span class="chip cost mono" title={t('cost.tab', { cost: formatCost(c.cost, c.partial) })}>{formatCost(c.cost, c.partial).replace('≈', '')}</span>{/if}
         <ReviewBadge tabKey={key} />
         <span class="slot"><span class="num faint">{i < 9 ? i + 1 : ''}</span><button class="x" aria-label={t('common.close')} onclick={(e) => close(e, key)}><svg class="i" width="12" height="12" aria-hidden="true"><use href="#sbi-x" /></svg></button></span>
       </div>
@@ -394,19 +388,6 @@
   .tab:has(:global(.name-input)) {
     max-width: none;
   }
-  .host {
-    flex: none;
-    max-width: 64px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    padding: 1px 5px;
-    border-radius: 4px;
-    font-size: 10.5px;
-    color: var(--text);
-    background: color-mix(in srgb, var(--host) 22%, transparent);
-    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--host) 45%, transparent);
-  }
   .tab.active {
     background: var(--bg);
     color: var(--text);
@@ -447,9 +428,6 @@
   }
   .label:has(:global(.name-input)) > .name {
     display: none;
-  }
-  .chip.cost {
-    flex: 0 8 auto;
   }
   .chip {
     flex: 0 6 auto;

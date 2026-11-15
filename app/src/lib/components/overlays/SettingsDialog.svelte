@@ -747,12 +747,6 @@
               <input type="checkbox" class="switch" checked={settings.hostAsk} onchange={(e) => saveSettings({ hostAsk: e.currentTarget.checked })} />
             </label>
           {/if}
-          {#if !app.mobile && row('hosts', 'hostTabColor')}
-            <label class="row" class:hit={hit('hosts', 'hostTabColor')}>
-              <span>{t('settings.hostTabColor')}</span>
-              <input type="checkbox" class="switch" checked={settings.hostTabColor} onchange={(e) => saveSettings({ hostTabColor: e.currentTarget.checked })} />
-            </label>
-          {/if}
           {#if !app.mobile && row('hosts', 'hostReconnect')}
             <label class="row" class:hit={hit('hosts', 'hostReconnect')}>
               <span>{t('settings.hostReconnect')}</span>

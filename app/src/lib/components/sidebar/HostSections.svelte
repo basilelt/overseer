@@ -64,7 +64,7 @@
     {@const isActive = l === app.link}
     {@const open = !folded.has(l.key)}
     {@const name = hostName(l.target)}
-    <section class="host" class:active={isActive} aria-label={name}>
+    <section class="host" class:active={isActive} class:open aria-label={name}>
       <div class="head" role="presentation" oncontextmenu={(e) => menu(e, l)}>
         <button class="fold" type="button" aria-expanded={open} aria-label={t(open ? 'ws.collapse' : 'ws.expand', { name })} onclick={() => toggleFold(l.key)}>
           <ChevronDown size={12} class={open ? '' : 'shut'} />
@@ -123,22 +123,32 @@
     overflow: visible;
   }
   .host {
+    flex: none;
     display: flex;
     flex-direction: column;
     gap: 2px;
+    margin: 4px 6px 0;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+  }
+  .host.active {
+    border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
+  }
+  .host.open {
+    padding-bottom: 4px;
   }
   .head {
     display: flex;
     align-items: center;
     gap: 2px;
-    margin: 4px 8px 2px;
     padding: 2px 2px 2px 4px;
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
+    border-radius: calc(var(--radius) - 1px);
     background: var(--surface-2);
   }
-  .active .head {
-    border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
+  .open .head {
+    border-radius: calc(var(--radius) - 1px) calc(var(--radius) - 1px) 0 0;
+    margin-bottom: 4px;
+    border-bottom: 1px solid var(--border);
   }
   .fold {
     display: flex;
@@ -215,7 +225,7 @@
     display: flex;
     align-items: center;
     gap: 8px;
-    margin: 6px 8px 0;
+    margin: 6px 6px 0;
     padding: 7px 10px;
     border: 1px dashed var(--border-strong);
     border-radius: var(--radius);
