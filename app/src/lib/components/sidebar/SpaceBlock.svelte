@@ -37,6 +37,7 @@
     selectedKey,
     multi,
     selected = false,
+    flush = false,
     tabDrop = false,
     dropPos = null,
     kids,
@@ -58,6 +59,7 @@
     selectedKey: string | null;
     multi?: ReadonlySet<string>;
     selected?: boolean;
+    flush?: boolean;
     tabDrop?: boolean;
     dropPos?: 'before' | 'after' | 'inside' | null;
     kids?: ChildHooks;
@@ -181,13 +183,17 @@
     {/if}
   </WorkspaceFrame>
 {:else}
-  <div class="solo">{@render line()}</div>
+  <div class="solo" class:flush>{@render line()}</div>
 {/if}
 
 <style>
   .solo {
     margin: 0 6px;
     padding: 0 4px;
+  }
+  .solo.flush {
+    margin-left: 0;
+    padding-left: 2px;
   }
   .line {
     position: relative;
@@ -358,6 +364,9 @@
     width: 36px;
     font-size: 18px;
     border-radius: 10px;
+  }
+  :global(:root.phone) .solo.flush {
+    padding-left: 0;
   }
   :global(:root.phone) .child {
     padding-left: 0;

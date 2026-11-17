@@ -97,6 +97,16 @@ describe('SpacesView sessions', () => {
     expect(h).not.toContain('T-2');
   });
 
+  it('aligns the top-level Other sessions line with the folder sections, but not a workspace nested in a folder', () => {
+    app.workspaceId = 'x';
+    app.data = { ...app.data, lines: [line('1', 'a'), line('2', '')] };
+    const h = view([ws('a', { folderId: 'f1' }), ws('x')], [folder('f1')]);
+    const solo = (label: string) => h.match(new RegExp(`<div class="solo[^"]*">(?:(?!<div class="solo).)*?${label}`, 's'))?.[0].match(/<div class="solo[^"]*"/)?.[0];
+    expect(solo(t('ws.other'))).toMatch(/\bflush\b/);
+    expect(solo('Space a')).toMatch(/^<div class="solo/);
+    expect(solo('Space a')).not.toMatch(/\bflush\b/);
+  });
+
   it('keeps the parent of the active nested workspace open', () => {
     app.workspaceId = 'c';
     const h = withLines([ws('p'), ws('c', { parentId: 'p' })], [line('1', 'p'), line('2', 'c')]);
