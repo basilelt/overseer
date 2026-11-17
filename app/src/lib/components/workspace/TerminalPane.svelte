@@ -28,7 +28,7 @@
   import { termLink, type TermLink } from '../../terminal/termlink';
   import { replayGuard, replayPaint } from '../../terminal/termreplay';
   import { LONG_PRESS_MS, pinchFontSize, pressTimer, touchDistance } from '../../mobile/gestures';
-  import { canResize, fitTo, isAgentTerm, shouldReassert, sizedElsewhere } from '../../mobile/termsize';
+  import { canResize, fitTo, isAgentTerm, shouldReassert, sizedElsewhere, startSize } from '../../mobile/termsize';
   import { ui, isPhone } from '../../mobile/ui.svelte';
   import { isNativeAndroid, native } from '../../mobile/native';
   import { colorPalette, customColors, resolvedTheme, saveSettings, settings } from '../../settings/settings.svelte';
@@ -276,6 +276,7 @@
         const theme = resolvedTheme();
         term = new g.Terminal({
           ghostty,
+          ...startSize(info),
           fontFamily: fontChain(settings.terminalFont),
           fontSize,
           theme: termTheme(theme, customColors(), colorPalette()),
