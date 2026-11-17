@@ -466,3 +466,45 @@ export function installWholeLineViewport(mod: GhosttyClasses): boolean {
   };
   return true;
 }
+
+const BLANK_CELL_SKIP = Symbol.for('overseer.blankCellSkip');
+const DECORATED = 4 | 8;
+
+export interface PaintedCell {
+  codepoint: number;
+  flags: number;
+  grapheme_len: number;
+  hyperlink_id: number;
+}
+
+export interface CellPainter {
+  hoveredHyperlinkId?: number;
+  hoveredLinkRange?: unknown;
+}
+
+export function drawsNothing(cell: PaintedCell, r: CellPainter): boolean {
+  return (
+    (cell.codepoint === 0 || cell.codepoint === 32) &&
+    !cell.grapheme_len &&
+    !(cell.flags & DECORATED) &&
+    !r.hoveredLinkRange &&
+    !(cell.hyperlink_id > 0 && cell.hyperlink_id === r.hoveredHyperlinkId)
+  );
+}
+
+// ghostty-web's canvas renderer sets the font and the fill style and calls fillText for every cell,
+// spaces included: a full paint of an empty 130x50 screen took about 45 ms in WebKit, and a new
+// terminal paints one before its first output. A space with no underline, strikethrough or hovered
+// link draws nothing, so leave the canvas alone for it.
+export function installBlankCellSkip(mod: GhosttyClasses): boolean {
+  const ren = mod.CanvasRenderer?.prototype as (Proto & { [BLANK_CELL_SKIP]?: boolean }) | undefined;
+  if (!ren || typeof ren.renderCellText !== 'function') return false;
+  if (ren[BLANK_CELL_SKIP]) return true;
+  ren[BLANK_CELL_SKIP] = true;
+  const text = ren.renderCellText as (...a: unknown[]) => unknown;
+  ren.renderCellText = function (this: CellPainter, cell: PaintedCell, ...rest: unknown[]) {
+    if (drawsNothing(cell, this)) return;
+    return text.call(this, cell, ...rest);
+  };
+  return true;
+}

@@ -1,6 +1,6 @@
 import type { Ghostty, ITheme } from 'ghostty-web';
 import wasmUrl from 'ghostty-web/ghostty-vt.wasm?url';
-import { installBlankResize, installDeferredRender, installOnDemandRendering, installWholeLineViewport } from './termrender';
+import { installBlankCellSkip, installBlankResize, installDeferredRender, installOnDemandRendering, installWholeLineViewport } from './termrender';
 import { settings } from '../settings/settings.svelte';
 import { GRAPHITE_COLORS, SOLARIZED_COLORS, type ColorPalette } from '../theme/theme';
 
@@ -113,6 +113,7 @@ export function loadGhostty(): Promise<GhosttyRuntime> {
     installOnDemandRendering(mod);
     installBlankResize(mod);
     installWholeLineViewport(mod);
+    installBlankCellSkip(mod);
     const gl = webglMode();
     installWebglRenderer(mod, (r) => attachOverlay(r, gl === 'force'), () => gl !== 'off' || settings.gpuTerminal);
     installDeferredRender(mod);
