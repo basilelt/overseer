@@ -56,6 +56,7 @@ export class FrameScheduler {
   private dirty = new Set<PaintTarget>();
   private pending = false;
   private focus: PaintTarget | null = null;
+  private held = new Set<PaintTarget>();
   private blink: unknown = null;
   paints = 0;
 
@@ -89,6 +90,7 @@ export class FrameScheduler {
     if (!e) return;
     this.entries.delete(t);
     this.dirty.delete(t);
+    this.held.delete(t);
     e.watchers.clear();
     if (this.focus === t) this.setFocus(null);
     for (const fn of e.cleanup.splice(0)) {
@@ -102,6 +104,14 @@ export class FrameScheduler {
     if (!this.entries.has(t)) return;
     this.dirty.add(t);
     this.schedule();
+  }
+
+  hold(t: PaintTarget): void {
+    if (this.entries.has(t)) this.held.add(t);
+  }
+
+  release(t: PaintTarget): void {
+    if (this.held.delete(t) && this.dirty.has(t)) this.schedule();
   }
 
   setOnScreen(t: PaintTarget, on: boolean): void {
@@ -190,6 +200,7 @@ export class FrameScheduler {
 
   private schedule(): void {
     if (this.pending || !this.dirty.size || !this.state().visible) return;
+    if (this.held.size && [...this.dirty].every((t) => this.held.has(t))) return;
     this.pending = true;
     this.clock.frame((now) => this.flush(now));
   }
@@ -209,6 +220,7 @@ export class FrameScheduler {
         this.dirty.delete(t);
         continue;
       }
+      if (this.held.has(t)) continue;
       const gap = !s.focused ? INACTIVE_FRAME_MS : t !== this.focus ? BACKGROUND_FRAME_MS : 0;
       if (gap && now - e.last < gap) {
         again = true;
@@ -353,6 +365,41 @@ export function installBlankResize(mod: GhosttyClasses): boolean {
     if (this.isOpen && (cols !== this.cols || rows !== this.rows)) this.reset();
     return resize.call(this, cols, rows);
   };
+  return true;
+}
+
+const DEFERRED_RENDER = Symbol.for('overseer.deferredRender');
+
+// ghostty-web draws the whole canvas synchronously inside open() and resize(). A terminal that was
+// just opened or resized is empty (installBlankResize), so those draws only delay the caller: skip
+// them and let the next scheduled paint draw everything once, with the output replayed by then.
+export function installDeferredRender(mod: GhosttyClasses, sched: FrameScheduler = scheduler): boolean {
+  const term = mod.Terminal?.prototype as (Proto & { [DEFERRED_RENDER]?: boolean }) | undefined;
+  const ren = mod.CanvasRenderer?.prototype as Proto | undefined;
+  if (!term || !ren || typeof term.open !== 'function' || typeof term.resize !== 'function' || typeof ren.render !== 'function') return false;
+  if (term[DEFERRED_RENDER]) return true;
+  term[DEFERRED_RENDER] = true;
+  let holding: unknown = null;
+  const owed = new WeakSet<object>();
+  const render = ren.render as (...a: unknown[]) => unknown;
+  ren.render = function (this: unknown, buf: unknown, force: unknown, viewportY: unknown, provider: unknown, ...rest: unknown[]) {
+    const key = typeof provider === 'object' && provider ? provider : null;
+    if (key && key === holding) return void owed.add(key);
+    return render.call(this, buf, !!force || (!!key && owed.delete(key)), viewportY, provider, ...rest);
+  };
+  for (const name of ['open', 'resize'] as const) {
+    const orig = term[name] as (...a: unknown[]) => unknown;
+    term[name] = function (this: PaintTarget, ...args: unknown[]) {
+      const prev = holding;
+      holding = this;
+      try {
+        return orig.apply(this, args);
+      } finally {
+        holding = prev;
+        sched.invalidate(this);
+      }
+    };
+  }
   return true;
 }
 
