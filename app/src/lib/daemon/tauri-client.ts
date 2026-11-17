@@ -1,3 +1,4 @@
+import { eventBatcher } from './event-batch';
 import * as CMD from './tauri-commands';
 import { Channel, invoke } from '@tauri-apps/api/core';
 import { DaemonError, type ConnectOptions, type DaemonClient, type TermIO } from './client';
@@ -38,11 +39,13 @@ export class TauriDaemon implements DaemonClient {
     }
   }
 
-  subscribe(onEvent: (e: DaemonEvent) => void): () => void {
+  subscribe(onEvent: (e: DaemonEvent) => void, onBatch?: (events: DaemonEvent[]) => void): () => void {
     const channel = new Channel<DaemonEvent>();
-    channel.onmessage = onEvent;
+    const batcher = eventBatcher<DaemonEvent>(onBatch ?? ((events) => events.forEach(onEvent)));
+    channel.onmessage = batcher.push;
     const id = invoke<number>(CMD.daemonEvents, this.s({ onEvent: channel }));
     return () => {
+      batcher.stop();
       id.then((sub) => invoke(CMD.daemonEventsStop, this.s({ sub }))).catch(() => {});
     };
   }

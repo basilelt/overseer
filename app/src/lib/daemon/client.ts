@@ -18,7 +18,9 @@ export interface DaemonClient {
   readonly kind: 'tauri' | 'mock';
   request<T = unknown>(method: string, path: string, body?: unknown): Promise<T>;
   fetchBytes(path: string): Promise<ArrayBuffer>;
-  subscribe(onEvent: (e: DaemonEvent) => void): () => void;
+  // A client that receives events in bursts hands each burst to onBatch, when given, instead of
+  // calling onEvent once per event.
+  subscribe(onEvent: (e: DaemonEvent) => void, onBatch?: (events: DaemonEvent[]) => void): () => void;
   attachTerm(termId: string, onData: (bytes: Uint8Array) => void, onClose?: () => void): Promise<TermIO>;
   connect(target: HostTarget, onState: (s: ConnState) => void, opts?: ConnectOptions): Promise<void>;
   disconnect(): Promise<void>;
