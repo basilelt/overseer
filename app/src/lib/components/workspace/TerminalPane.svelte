@@ -26,7 +26,7 @@
   import { applyMods, NO_MODS, type Mods } from '../../mobile/accessory';
   import { attachRetryMs } from '../../conn';
   import { termLink, type TermLink } from '../../terminal/termlink';
-  import { replayGuard } from '../../terminal/termreplay';
+  import { replayGuard, replayPaint } from '../../terminal/termreplay';
   import { LONG_PRESS_MS, pinchFontSize, pressTimer, touchDistance } from '../../mobile/gestures';
   import { canResize, fitTo, isAgentTerm, shouldReassert, sizedElsewhere } from '../../mobile/termsize';
   import { ui, isPhone } from '../../mobile/ui.svelte';
@@ -169,6 +169,10 @@
     const stopTouch = touchGestures();
     const modes = new ModeTracker();
     const replay = replayGuard();
+    const painting = replayPaint(
+      () => term && scheduler.hold(term as unknown as PaintTarget),
+      () => term && scheduler.release(term as unknown as PaintTarget),
+    );
     const wheel = new WheelAccumulator();
 
     const send = (text: string) => {
@@ -320,6 +324,7 @@
             modes.reset();
             closed = false;
             replay.begin();
+            painting.begin();
           },
           data: (bytes) => {
             replay.chunk();
@@ -333,18 +338,26 @@
             } finally {
               writing = false;
               wrote();
+              painting.chunk(bytes.length);
             }
           },
           up: (conn) => {
             io = conn;
             error = null;
+            painting.up();
             if (!term) return;
             if (!scheduler.shown(term as unknown as PaintTarget)) conn.background?.(true);
             if (!fixed) conn.resize(term.cols, term.rows);
             measured();
           },
-          down: () => (io = null),
-          failed: (e) => (error = message(e)),
+          down: () => {
+            io = null;
+            painting.end();
+          },
+          failed: (e) => {
+            error = message(e);
+            painting.end();
+          },
           retryMs: (attempt, e) => attachRetryMs(attempt, !!info?.exited, e),
           ended: () => (closed = true),
         });
@@ -426,6 +439,7 @@
       stopShown?.();
       link?.dispose();
       replay.dispose();
+      painting.end();
       link = null;
       io = null;
       term?.dispose();
