@@ -35,7 +35,7 @@
   import { app } from '../../state.svelte';
   import { loadGhostty, termTheme } from '../../terminal/terminal';
   import { pathRanges } from '../../terminal/termlinks';
-  import { scheduler, type PaintTarget } from '../../terminal/termrender';
+  import type { FrameScheduler, PaintTarget } from '../../terminal/termrender';
   import { finishSelectionOnInterruption, routeCopies } from '../../terminal/selection-copy';
   import { hint as keyHint } from '../../commands/keyboard';
   import { termMenuItems } from '../../terminal/termmenu';
@@ -56,6 +56,7 @@
   let dropping = $state(false);
   let picker = $state<HTMLInputElement>();
   let term: Terminal | null = null;
+  let scheduler!: FrameScheduler;
   let io: TermIO | null = null;
   let link: TermLink | null = null;
   let refit: (() => void) | null = null;
@@ -267,7 +268,8 @@
 
     (async () => {
       try {
-        const { mod: g, ghostty } = await loadGhostty();
+        const { mod: g, ghostty, scheduler: frames } = await loadGhostty();
+        scheduler = frames;
         await loadFonts(settings.terminalFont, fontSize);
         if (disposed) return;
         const opened = busy.since('term.open');
