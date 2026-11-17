@@ -22,7 +22,7 @@ import { startupTarget } from './conn';
 import { rememberShell } from './tabs/closed-tabs';
 import { activeKey, allTabs, EMPTY_LAYOUT, forgetLayouts, onTabClosed, openInFocused, update, workspace } from './workspace/workspace.svelte';
 import { newTabKey } from './tabs/tabs';
-import { aggregate, applyWsEvent, EMPTY_WS, isGhost, itemWorkspaces, resolveTab, sameMap, synthesize, upsert, within, type Aggregate, type WsData } from './workspace/workspaces';
+import { aggregate, applyWsEvent, EMPTY_WS, isGhost, itemWorkspaces, keepWs, resolveTab, sameMap, synthesize, upsert, within, type Aggregate, type WsData } from './workspace/workspaces';
 import type { Workspace } from './types';
 import type { MenuItem, OpenMenu } from './commands/menu';
 import { isWebLink, resolveLink, type LinkFrom, type LinkGesture, type LinkRoute } from './links';
@@ -385,7 +385,7 @@ class AppState {
   }
 
   private setWs(ws: WsData | null, projects: Project[]) {
-    this.ws = ws ?? { ...EMPTY_WS, workspaces: synthesize(projects) };
+    this.ws = keepWs(this.ws, ws ?? { ...EMPTY_WS, workspaces: synthesize(projects) });
     this.wsPersistent = !!ws;
     if (!this.workspaceStillExists()) {
       this.workspaceId = this.initialWorkspace();

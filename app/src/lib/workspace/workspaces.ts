@@ -1,3 +1,4 @@
+import { indexBy } from '../index-by';
 import { isOff, newestFirst, type GroupId, type SidebarItem } from '../session/grouping';
 import { isKnown } from '../tabs/known-tabs';
 import type { Snapshot } from '../reduce';
@@ -323,12 +324,28 @@ export function workspaceTabs(saved: string[], members: SidebarItem[], items: Si
 
 export function resolveTab(key: string, items: SidebarItem[]): string | null {
   if (!key.startsWith('line:') && !key.startsWith('term:')) return key;
-  if (items.some((i) => i.key === key)) return key;
-  if (key.startsWith('term:')) {
-    const id = key.slice(5);
-    return items.find((i) => i.termId === id)?.key ?? null;
-  }
+  if (indexBy(items, 'key', (i) => i.key).has(key)) return key;
+  if (key.startsWith('term:')) return indexBy(items, 'termId', (i) => i.termId).get(key.slice(5))?.key ?? null;
   return null;
+}
+
+function keepList<T extends { id: string }>(prev: T[], next: T[]): T[] {
+  const old = new Map(prev.map((x) => [x.id, x]));
+  let same = prev.length === next.length;
+  const out = next.map((x, i) => {
+    const p = old.get(x.id);
+    const kept = p && JSON.stringify(p) === JSON.stringify(x) ? p : x;
+    if (kept !== prev[i]) same = false;
+    return kept;
+  });
+  return same ? prev : out;
+}
+
+export function keepWs(prev: WsData, next: WsData): WsData {
+  const workspaces = keepList(prev.workspaces, next.workspaces);
+  const folders = keepList(prev.folders, next.folders);
+  const groups = keepList(prev.groups, next.groups);
+  return workspaces === prev.workspaces && folders === prev.folders && groups === prev.groups ? prev : { workspaces, folders, groups };
 }
 
 export function upsert<T extends { id: string }>(list: T[], item: T): T[] {

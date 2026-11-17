@@ -32,6 +32,7 @@
   import { chipLabel, chipShort } from '../../profiles/profiles';
   import { pages } from '../../session/session-pages.svelte';
   import { STATE_COLOR } from '../../workspace/ws-color';
+  import { indexBy } from '../../index-by';
 
   let { pane, index, focused, canClose }: { pane: Pane; index: number; focused: boolean; canClose: boolean } = $props();
 
@@ -73,7 +74,7 @@
     return () => cancelAnimationFrame(frame);
   });
 
-  const chipOf = (tab: TabInfo) => (tab.item?.termId ? app.data.terms.find((x) => x.id === tab.item!.termId)?.profile : undefined);
+  const chipOf = (tab: TabInfo) => (tab.item?.termId ? indexBy(app.data.terms, 'id', (x) => x.id).get(tab.item.termId)?.profile : undefined);
   const effortLabel = (e: string) => t('profile.effortOf', { effort: t(`effort.${e}` as Key).toLowerCase() });
 
   const label = (tab: TabInfo) => tabLabel(tab);
