@@ -19,6 +19,7 @@ pub const PREVIOUS_LINES: usize = 500;
 const PING: Duration = Duration::from_secs(2);
 const FROZEN_AFTER: Duration = Duration::from_secs(5);
 const FROZEN_REPEAT: Duration = Duration::from_secs(10);
+const LATE_PING: Duration = Duration::from_secs(1);
 pub const SLOW_COMMAND: Duration = Duration::from_secs(1);
 pub const SLOW_DAEMON: Duration = Duration::from_secs(2);
 const FRONTEND_BURST: u32 = 30;
@@ -775,6 +776,7 @@ struct Watch {
     view: String,
     frozen_at: Option<Instant>,
     reported: Option<Instant>,
+    main_beat: Option<Instant>,
 }
 
 impl Watch {
@@ -786,6 +788,7 @@ impl Watch {
             view: String::new(),
             frozen_at: None,
             reported: None,
+            main_beat: None,
         }
     }
 
@@ -805,6 +808,7 @@ impl Watch {
         if self.last_pong.is_some() {
             self.last_pong = Some(now);
         }
+        self.main_beat = None;
         self.watching()
     }
 }
@@ -897,12 +901,33 @@ pub fn start_watchdog(app: AppHandle) {
                     continue;
                 }
                 seq += 1;
-                let _ = app.emit_to("main", "diag:ping", seq);
+                let _ = app.emit_to("main", "diag:ping", Ping { seq, at: now_ms() });
+                let _ = app.run_on_main_thread(|| main_beat(Instant::now()));
                 tick(Instant::now());
             }
         });
     if let Err(e) = spawned {
         warn("ui", format!("watchdog not started: {e}"));
+    }
+}
+
+#[derive(Clone, Serialize)]
+struct Ping {
+    seq: u64,
+    at: u64,
+}
+
+fn main_beat(now: Instant) {
+    lock(&WATCH).main_beat = Some(now);
+}
+
+/// Which side is stuck: the pings go through the app's main thread, then the webview. A main thread
+/// that still runs its own beat leaves the webview (page script or its process) as the one blocked.
+fn main_thread(beat: Option<Instant>, now: Instant) -> String {
+    match beat.map(|b| now.saturating_duration_since(b)) {
+        None => "app main thread: not checked yet".into(),
+        Some(d) if d >= FROZEN_AFTER => format!("app main thread: blocked for {} s", d.as_secs()),
+        Some(_) => "app main thread: responsive, the webview is blocked".into(),
     }
 }
 
@@ -926,11 +951,12 @@ fn tick(now: Instant) {
     w.reported = Some(now);
     let secs = gap.as_secs();
     let view = w.view.clone();
+    let main = main_thread(w.main_beat, now);
     drop(w);
     warn(
         "ui",
         format!(
-            "UI unresponsive for {secs} s (view: {view}; {})",
+            "UI unresponsive for {secs} s (view: {view}; {}; {main})",
             activity()
         ),
     );
@@ -938,6 +964,21 @@ fn tick(now: Instant) {
         s.frozen = secs;
         s.view = view;
     });
+}
+
+/// What the page measured since its previous answer: how late this ping reached it and where its
+/// own time went. Logged when the page was held up, so a stall names its cause without a freeze.
+pub fn page_report(late_ms: u64, busy: &str) -> Option<String> {
+    let busy = clip(busy.trim(), 600);
+    if late_ms < LATE_PING.as_millis() as u64 && busy.is_empty() {
+        return None;
+    }
+    let late = format!("ping answered {:.1} s late", late_ms as f64 / 1000.0);
+    Some(if busy.is_empty() {
+        format!("{late}; page time not accounted for")
+    } else {
+        format!("{late}; page time: {busy}")
+    })
 }
 
 pub fn pong(view: String) {
@@ -1073,10 +1114,14 @@ pub fn diag_log(level: String, message: String, stack: Option<String>) {
 }
 
 #[tauri::command]
-pub fn diag_pong(window: tauri::Window, view: String) {
-    if window.label() == "main" {
-        pong(view);
+pub fn diag_pong(window: tauri::Window, view: String, late: Option<u64>, busy: Option<String>) {
+    if window.label() != "main" {
+        return;
     }
+    if let Some(r) = page_report(late.unwrap_or(0), busy.as_deref().unwrap_or("")) {
+        warn("perf", format!("ui stalled: {r}"));
+    }
+    pong(view);
 }
 
 #[tauri::command]
@@ -1417,6 +1462,46 @@ mod tests {
             "the time spent asleep is not a freeze"
         );
         assert!(!w.set(true, true, later));
+    }
+
+    #[test]
+    fn a_freeze_names_the_side_that_is_stuck() {
+        let t0 = Instant::now();
+        let now = t0 + Duration::from_secs(8);
+        assert_eq!(main_thread(None, now), "app main thread: not checked yet");
+        assert_eq!(
+            main_thread(Some(t0), now),
+            "app main thread: blocked for 8 s"
+        );
+        assert_eq!(
+            main_thread(Some(now - Duration::from_secs(2)), now),
+            "app main thread: responsive, the webview is blocked"
+        );
+    }
+
+    #[test]
+    fn the_main_thread_check_restarts_with_the_watch() {
+        let t0 = Instant::now();
+        let mut w = Watch::new();
+        w.main_beat = Some(t0);
+        w.set(true, false, t0);
+        w.set(true, true, t0 + Duration::from_secs(60));
+        assert_eq!(w.main_beat, None, "a beat from before the pause is stale");
+    }
+
+    #[test]
+    fn a_held_up_page_is_reported_with_where_its_time_went() {
+        assert_eq!(page_report(0, ""), None);
+        assert_eq!(page_report(900, "  "), None);
+        assert_eq!(
+            page_report(7_400, ""),
+            Some("ping answered 7.4 s late; page time not accounted for".into())
+        );
+        assert_eq!(
+            page_report(120, "term.write 0.9 s x3 (max 0.6 s)"),
+            Some("ping answered 0.1 s late; page time: term.write 0.9 s x3 (max 0.6 s)".into())
+        );
+        assert!(page_report(0, &"x".repeat(5000)).unwrap().len() < 700);
     }
 
     #[test]

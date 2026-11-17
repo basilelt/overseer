@@ -1,3 +1,4 @@
+import { busy } from '../diag/busy';
 import { onPresence, presence, type Presence } from '../presence';
 
 export const BLINK_MS = 600;
@@ -225,6 +226,7 @@ export class FrameScheduler {
     const buf = t.wasmTerm;
     if (!r || !buf) return;
     this.paints++;
+    const done = busy.since('term.paint');
     try {
       r.render(buf, false, t.viewportY, t, t.scrollbarOpacity);
       const c = buf.getCursor();
@@ -235,6 +237,7 @@ export class FrameScheduler {
     } catch (err) {
       console.error('terminal render failed', err);
     }
+    done();
   }
 }
 

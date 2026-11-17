@@ -45,6 +45,7 @@
   import { openFile } from '../../preview';
   import { bracketed, clipboardFiles, fileInfos, insertText, planDrop, planPaste, refusalMessage, uploadedPath, type Refusal } from '../../uploads';
   import { preload } from '../../idle';
+  import { busy } from '../../diag/busy';
   const pipeline = preload(() => import('../../upload-pipeline'));
   const accessoryBar = () => import('../mobile/AccessoryBar.svelte');
 
@@ -265,6 +266,7 @@
         const { mod: g, ghostty } = await loadGhostty();
         await loadFonts(settings.terminalFont, fontSize);
         if (disposed) return;
+        const opened = busy.since('term.open');
         const theme = resolvedTheme();
         term = new g.Terminal({
           ghostty,
@@ -300,13 +302,15 @@
         quietInput(el);
         const area = el.querySelector('textarea');
         if (area) quietInput(area);
-        refit = () => {
-          const tm = term;
-          if (!tm) return;
-          if (!fixed) return void fitTo(tm, fit.proposeDimensions());
-          if (info && (tm.cols !== info.cols || tm.rows !== info.rows)) tm.resize(info.cols, info.rows);
-        };
+        refit = () =>
+          busy.run('term.fit', () => {
+            const tm = term;
+            if (!tm) return;
+            if (!fixed) return void fitTo(tm, fit.proposeDimensions());
+            if (info && (tm.cols !== info.cols || tm.rows !== info.rows)) tm.resize(info.cols, info.rows);
+          });
         applyFont();
+        opened();
         link = termLink({
           open: (onData, onClose) => app.requireClient().attachTerm(termId, onData, onClose),
           reset: () => {
@@ -322,11 +326,13 @@
             modes.feed(bytes);
             if (!term) return;
             writing = true;
+            const wrote = busy.since('term.write', bytes.length);
             try {
               scrolledBack = writeAnchored(term, bytes);
               if (scrolledBack) unseen = true;
             } finally {
               writing = false;
+              wrote();
             }
           },
           up: (conn) => {
