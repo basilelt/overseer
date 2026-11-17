@@ -118,6 +118,7 @@
           selectedKey={app.selectedKey}
           multi={app.multi}
           selected={app.workspaceId === r.id}
+          flush={n.depth === 0}
           tabDrop={!!r.workspace && app.tabDrop === r.id}
           dropPos={drag.posOf('workspace', r.id)}
           kids={kidsFor(r.workspace)}
