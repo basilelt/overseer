@@ -20,12 +20,40 @@ type Watch = (near: boolean) => void;
 const observers = new WeakMap<Element, { io: IntersectionObserver; cbs: Map<Element, Watch> }>();
 const MARGIN = '1200px 0px';
 
-export function scrollParent(el: Element): Element | null {
+function scrollRoot(el: Element, memo: Map<Element, Element | null>): Element | null {
+  const path: Element[] = [];
+  let found: Element | null = null;
   for (let p = el.parentElement; p; p = p.parentElement) {
+    const known = memo.get(p);
+    if (known !== undefined) {
+      found = known;
+      break;
+    }
+    path.push(p);
     const o = getComputedStyle(p).overflowY;
-    if ((o === 'auto' || o === 'scroll') && p.scrollHeight > p.clientHeight) return p;
+    if ((o === 'auto' || o === 'scroll') && p.scrollHeight > p.clientHeight) {
+      found = p;
+      break;
+    }
   }
-  return null;
+  for (const p of path) memo.set(p, found);
+  return found;
+}
+
+export function scrollParent(el: Element): Element | null {
+  return scrollRoot(el, new Map());
+}
+
+// Mounting a diff or a chat registers many elements in one flush, each read forcing a layout
+// of the freshly changed DOM; ancestors already walked in the same task are not read again.
+let walked: Map<Element, Element | null> | null = null;
+
+function cachedScrollParent(el: Element): Element | null {
+  if (!walked) {
+    walked = new Map();
+    queueMicrotask(() => (walked = null));
+  }
+  return scrollRoot(el, walked);
 }
 
 export function watchNear(el: Element, cb: Watch): () => void {
@@ -33,7 +61,7 @@ export function watchNear(el: Element, cb: Watch): () => void {
     cb(true);
     return () => {};
   }
-  const root = scrollParent(el) ?? document.documentElement;
+  const root = cachedScrollParent(el) ?? document.documentElement;
   let entry = observers.get(root);
   if (!entry) {
     const cbs = new Map<Element, Watch>();

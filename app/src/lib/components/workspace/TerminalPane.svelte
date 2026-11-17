@@ -26,16 +26,16 @@
   import { applyMods, NO_MODS, type Mods } from '../../mobile/accessory';
   import { attachRetryMs } from '../../conn';
   import { termLink, type TermLink } from '../../terminal/termlink';
-  import { replayGuard } from '../../terminal/termreplay';
+  import { replayGuard, replayPaint } from '../../terminal/termreplay';
   import { LONG_PRESS_MS, pinchFontSize, pressTimer, touchDistance } from '../../mobile/gestures';
-  import { canResize, fitTo, isAgentTerm, shouldReassert, sizedElsewhere } from '../../mobile/termsize';
+  import { canResize, fitTo, isAgentTerm, shouldReassert, sizedElsewhere, startSize } from '../../mobile/termsize';
   import { ui, isPhone } from '../../mobile/ui.svelte';
   import { isNativeAndroid, native } from '../../mobile/native';
   import { colorPalette, customColors, resolvedTheme, saveSettings, settings } from '../../settings/settings.svelte';
   import { app } from '../../state.svelte';
   import { loadGhostty, termTheme } from '../../terminal/terminal';
   import { pathRanges } from '../../terminal/termlinks';
-  import { scheduler, type PaintTarget } from '../../terminal/termrender';
+  import type { FrameScheduler, PaintTarget } from '../../terminal/termrender';
   import { finishSelectionOnInterruption, routeCopies } from '../../terminal/selection-copy';
   import { hint as keyHint } from '../../commands/keyboard';
   import { termMenuItems } from '../../terminal/termmenu';
@@ -45,6 +45,7 @@
   import { openFile } from '../../preview';
   import { bracketed, clipboardFiles, fileInfos, insertText, planDrop, planPaste, refusalMessage, uploadedPath, type Refusal } from '../../uploads';
   import { preload } from '../../idle';
+  import { busy } from '../../diag/busy';
   const pipeline = preload(() => import('../../upload-pipeline'));
   const accessoryBar = () => import('../mobile/AccessoryBar.svelte');
 
@@ -55,6 +56,7 @@
   let dropping = $state(false);
   let picker = $state<HTMLInputElement>();
   let term: Terminal | null = null;
+  let scheduler!: FrameScheduler;
   let io: TermIO | null = null;
   let link: TermLink | null = null;
   let refit: (() => void) | null = null;
@@ -168,6 +170,10 @@
     const stopTouch = touchGestures();
     const modes = new ModeTracker();
     const replay = replayGuard();
+    const painting = replayPaint(
+      () => term && scheduler.hold(term as unknown as PaintTarget),
+      () => term && scheduler.release(term as unknown as PaintTarget),
+    );
     const wheel = new WheelAccumulator();
 
     const send = (text: string) => {
@@ -262,12 +268,15 @@
 
     (async () => {
       try {
-        const { mod: g, ghostty } = await loadGhostty();
+        const { mod: g, ghostty, scheduler: frames } = await loadGhostty();
+        scheduler = frames;
         await loadFonts(settings.terminalFont, fontSize);
         if (disposed) return;
+        const opened = busy.since('term.open');
         const theme = resolvedTheme();
         term = new g.Terminal({
           ghostty,
+          ...startSize(info),
           fontFamily: fontChain(settings.terminalFont),
           fontSize,
           theme: termTheme(theme, customColors(), colorPalette()),
@@ -300,13 +309,15 @@
         quietInput(el);
         const area = el.querySelector('textarea');
         if (area) quietInput(area);
-        refit = () => {
-          const tm = term;
-          if (!tm) return;
-          if (!fixed) return void fitTo(tm, fit.proposeDimensions());
-          if (info && (tm.cols !== info.cols || tm.rows !== info.rows)) tm.resize(info.cols, info.rows);
-        };
+        refit = () =>
+          busy.run('term.fit', () => {
+            const tm = term;
+            if (!tm) return;
+            if (!fixed) return void fitTo(tm, fit.proposeDimensions());
+            if (info && (tm.cols !== info.cols || tm.rows !== info.rows)) tm.resize(info.cols, info.rows);
+          });
         applyFont();
+        opened();
         link = termLink({
           open: (onData, onClose) => app.requireClient().attachTerm(termId, onData, onClose),
           reset: () => {
@@ -316,29 +327,40 @@
             modes.reset();
             closed = false;
             replay.begin();
+            painting.begin();
           },
           data: (bytes) => {
             replay.chunk();
             modes.feed(bytes);
             if (!term) return;
             writing = true;
+            const wrote = busy.since('term.write', bytes.length);
             try {
               scrolledBack = writeAnchored(term, bytes);
               if (scrolledBack) unseen = true;
             } finally {
               writing = false;
+              wrote();
+              painting.chunk(bytes.length);
             }
           },
           up: (conn) => {
             io = conn;
             error = null;
+            painting.up();
             if (!term) return;
             if (!scheduler.shown(term as unknown as PaintTarget)) conn.background?.(true);
             if (!fixed) conn.resize(term.cols, term.rows);
             measured();
           },
-          down: () => (io = null),
-          failed: (e) => (error = message(e)),
+          down: () => {
+            io = null;
+            painting.end();
+          },
+          failed: (e) => {
+            error = message(e);
+            painting.end();
+          },
           retryMs: (attempt, e) => attachRetryMs(attempt, !!info?.exited, e),
           ended: () => (closed = true),
         });
@@ -420,6 +442,7 @@
       stopShown?.();
       link?.dispose();
       replay.dispose();
+      painting.end();
       link = null;
       io = null;
       term?.dispose();

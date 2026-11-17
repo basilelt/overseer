@@ -15,7 +15,10 @@ export function watch(link: HostLink, seed?: { data: Snapshot; ws: WsData; proje
   }
   link.watching = true;
   link.reload = () => void load(link);
-  link.off = link.client.subscribe((e) => onEvent(link, e));
+  link.off = link.client.subscribe(
+    (e) => onEvent(link, e),
+    (events) => events.forEach((e) => onEvent(link, e)),
+  );
   void load(link);
 }
 

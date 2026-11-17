@@ -2,13 +2,13 @@ import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vite
 
 const h = vi.hoisted(() => ({
   invoke: vi.fn(async (..._a: unknown[]): Promise<unknown> => undefined),
-  ping: null as (() => void) | null,
+  ping: null as ((e?: { payload: unknown }) => void) | null,
   unlisten: vi.fn(),
   listenGate: null as Promise<void> | null,
 }));
 
 vi.mock('@tauri-apps/api/event', () => ({
-  listen: async (name: string, fn: () => void) => {
+  listen: async (name: string, fn: (e?: { payload: unknown }) => void) => {
     if (h.listenGate) await h.listenGate;
     if (name === 'diag:ping') h.ping = fn;
     return h.unlisten;
@@ -267,6 +267,17 @@ describe('startDiagnostics inside Tauri', () => {
     await vi.waitFor(() => expect(h.ping).not.toBeNull());
     h.ping!();
     await vi.waitFor(() => expect(calls('diag_pong')).toEqual([{ view: 'agents' }, { view: 'kanban' }]));
+  });
+
+  it('tells how late a ping reached the page and where the time went, once per stall', async () => {
+    const { busy } = await import('./busy');
+    start();
+    await vi.waitFor(() => expect(h.ping).not.toBeNull());
+    busy.add('term.write', 7200, 3 << 20);
+    h.ping!({ payload: { seq: 1, at: Date.now() - 7400 } });
+    h.ping!({ payload: { seq: 2, at: Date.now() - 5400 } });
+    await vi.waitFor(() => expect(calls('diag_pong')).toHaveLength(3));
+    expect(calls('diag_pong').slice(1)).toEqual([{ view: 'agents', late: 7400, busy: 'term.write 7.2 s x1 (max 7.2 s, 3.0 MB)' }, { view: 'agents' }]);
   });
 
   it('opens the previous session report when the last run ended badly', async () => {

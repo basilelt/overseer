@@ -32,6 +32,7 @@ const LAZY_ONLY = [
   'UsageChip',
   'SystemChip',
   'os-send',
+  'termrender',
 ];
 
 async function chunks(): Promise<Rolldown.OutputChunk[]> {

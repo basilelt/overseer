@@ -1,6 +1,6 @@
 import type { Ghostty, ITheme } from 'ghostty-web';
 import wasmUrl from 'ghostty-web/ghostty-vt.wasm?url';
-import { installBlankResize, installOnDemandRendering, installWholeLineViewport } from './termrender';
+import type { FrameScheduler } from './termrender';
 import { settings } from '../settings/settings.svelte';
 import { GRAPHITE_COLORS, SOLARIZED_COLORS, type ColorPalette } from '../theme/theme';
 
@@ -104,18 +104,22 @@ type GhosttyModule = typeof import('ghostty-web');
 export interface GhosttyRuntime {
   mod: GhosttyModule;
   ghostty: Ghostty;
+  scheduler: FrameScheduler;
 }
 
 let loading: Promise<GhosttyRuntime> | null = null;
 
 export function loadGhostty(): Promise<GhosttyRuntime> {
-  loading ??= Promise.all([import('ghostty-web'), import('./termgl')]).then(async ([mod, { attachOverlay, installWebglRenderer, webglMode }]) => {
+  loading ??= Promise.all([import('ghostty-web'), import('./termgl'), import('./termrender')]).then(async ([mod, { attachOverlay, installWebglRenderer, webglMode }, render]) => {
+    const { installBlankCellSkip, installBlankResize, installDeferredRender, installOnDemandRendering, installWholeLineViewport } = render;
     installOnDemandRendering(mod);
     installBlankResize(mod);
     installWholeLineViewport(mod);
+    installBlankCellSkip(mod);
     const gl = webglMode();
     installWebglRenderer(mod, (r) => attachOverlay(r, gl === 'force'), () => gl !== 'off' || settings.gpuTerminal);
-    return { mod, ghostty: await mod.Ghostty.load(wasmUrl) };
+    installDeferredRender(mod);
+    return { mod, ghostty: await mod.Ghostty.load(wasmUrl), scheduler: render.scheduler };
   });
   return loading;
 }

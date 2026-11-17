@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { replayGuard } from './termreplay';
+import { REPLAY_FRAME, replayGuard, replayPaint } from './termreplay';
 
 beforeEach(() => vi.useFakeTimers());
 afterEach(() => vi.useRealTimers());
@@ -58,5 +58,81 @@ describe('replayGuard', () => {
     vi.advanceTimersByTime(100);
     g.begin();
     expect(g.allow(CPR)).toBe(false);
+  });
+});
+
+describe('replayPaint', () => {
+  function setup() {
+    const log: string[] = [];
+    const p = replayPaint(
+      () => log.push('hold'),
+      () => log.push('release'),
+      60,
+      1000,
+    );
+    return { log, p };
+  }
+
+  it('holds the paints from the attach to the short frame that ends the replay', () => {
+    const { log, p } = setup();
+    p.begin();
+    p.up();
+    p.chunk(REPLAY_FRAME);
+    vi.advanceTimersByTime(40);
+    p.chunk(REPLAY_FRAME);
+    vi.advanceTimersByTime(40);
+    expect(log).toEqual(['hold']);
+    p.chunk(120);
+    expect(log).toEqual(['hold', 'release']);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('releases after a pause when the replay ends on a full frame or is empty', () => {
+    const { log, p } = setup();
+    p.begin();
+    p.up();
+    p.chunk(REPLAY_FRAME);
+    vi.advanceTimersByTime(59);
+    expect(log).toEqual(['hold']);
+    vi.advanceTimersByTime(1);
+    expect(log).toEqual(['hold', 'release']);
+    p.begin();
+    p.up();
+    vi.advanceTimersByTime(60);
+    expect(log).toEqual(['hold', 'release', 'hold', 'release']);
+  });
+
+  it('never holds longer than the cap while the attach is pending', () => {
+    const { log, p } = setup();
+    p.begin();
+    vi.advanceTimersByTime(999);
+    expect(log).toEqual(['hold']);
+    vi.advanceTimersByTime(1);
+    expect(log).toEqual(['hold', 'release']);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('releases once when the connection drops and ignores live output afterwards', () => {
+    const { log, p } = setup();
+    p.up();
+    p.chunk(REPLAY_FRAME);
+    p.end();
+    expect(log).toEqual([]);
+    p.begin();
+    p.end();
+    p.end();
+    p.chunk(REPLAY_FRAME);
+    vi.advanceTimersByTime(2000);
+    expect(log).toEqual(['hold', 'release']);
+  });
+
+  it('starts over on a new attach with one cap timer', () => {
+    const { log, p } = setup();
+    p.begin();
+    p.up();
+    p.begin();
+    expect(vi.getTimerCount()).toBe(1);
+    vi.advanceTimersByTime(1000);
+    expect(log).toEqual(['hold', 'hold', 'release']);
   });
 });
