@@ -4056,6 +4056,36 @@ fn two_quick_resumes_of_a_paused_session_press_enter_on_its_stub_once() {
 }
 
 #[test]
+fn finds_an_agent_installed_under_an_older_nvm_node() {
+    let mut app = App::with_env("nvm-old-node", json!({}), &[("OVERSEER_LOGIN_ENV", "1")]);
+    let installed = |app: &App, id: &str| {
+        app.ok("GET", "/v1/agents", Value::Null)
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|a| a["id"] == id)
+            .unwrap()["installed"]
+            .clone()
+    };
+    assert_eq!(installed(&app, "amp"), false);
+    let nvm = app.fx.base.join("home/.nvm/versions/node");
+    std::fs::create_dir_all(nvm.join("v26.0.0/bin")).unwrap();
+    let old = nvm.join("v24.0.0/bin");
+    std::fs::create_dir_all(&old).unwrap();
+    let stub = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/stubs/agent");
+    std::fs::copy(stub, old.join("amp")).unwrap();
+    app.crash_and_restart();
+
+    assert_eq!(installed(&app, "amp"), true);
+    let env = app.ok("GET", "/v1/env", Value::Null);
+    assert_eq!(env["source"], "login-shell", "{env}");
+    let dirs: Vec<&str> = env["path"].as_str().unwrap().split(':').collect();
+    let at = |d: &Path| dirs.iter().position(|x| *x == d.to_str().unwrap());
+    assert!(at(&nvm.join("v26.0.0/bin")) < at(&old), "{env}");
+    assert!(at(&old).is_some(), "{env}");
+}
+
+#[test]
 fn rescan_finds_an_agent_installed_into_a_dir_created_after_start() {
     let app = App::new("rescan-new-dir", json!({}));
     let cursor = |agents: &Value| {

@@ -136,7 +136,12 @@ fn load() -> &'static str {
     if let Some(vars) = vars {
         for (k, v) in &vars {
             if k == "PATH" {
-                std::env::set_var("PATH", merge_path(v, &original));
+                let nodes: Vec<String> = node_dirs(&crate::home())
+                    .iter()
+                    .map(|p| p.to_string_lossy().into_owned())
+                    .collect();
+                let path = merge_path(&merge_path(v, &original), &nodes.join(":"));
+                std::env::set_var("PATH", path);
             } else if keep(k) && !session_bound(k, v) {
                 std::env::set_var(k, v);
             }
@@ -207,18 +212,23 @@ fn version(name: &str) -> Option<Vec<u64>> {
         .collect()
 }
 
+// Every nvm version, newest first: `npm install -g` under an older version than the active one
+// leaves its agents out of the login PATH, though the user installed them.
 #[cfg(unix)]
-fn newest_node(dir: &Path) -> Option<PathBuf> {
-    std::fs::read_dir(dir)
-        .ok()?
+pub fn node_dirs(home: &Path) -> Vec<PathBuf> {
+    let Ok(rd) = std::fs::read_dir(home.join(".nvm/versions/node")) else {
+        return vec![];
+    };
+    let mut v: Vec<(Vec<u64>, PathBuf)> = rd
         .flatten()
         .filter_map(|e| {
             let v = version(e.file_name().to_str()?)?;
             let bin = e.path().join("bin");
             bin.is_dir().then_some((v, bin))
         })
-        .max_by(|a, b| a.0.cmp(&b.0))
-        .map(|(_, p)| p)
+        .collect();
+    v.sort_by(|a, b| b.0.cmp(&a.0));
+    v.into_iter().map(|(_, p)| p).collect()
 }
 
 #[cfg(unix)]
@@ -230,7 +240,7 @@ pub fn fallback_dirs(home: &Path, existing_path: &str) -> Vec<PathBuf> {
         home.join(".bun/bin"),
         home.join(".deno/bin"),
     ];
-    dirs.extend(newest_node(&home.join(".nvm/versions/node")));
+    dirs.extend(node_dirs(home));
     dirs.extend([
         home.join(".volta/bin"),
         home.join(".asdf/shims"),
@@ -396,6 +406,7 @@ mod tests {
                 home.join(".local/bin"),
                 home.join(".cargo/bin"),
                 home.join(".nvm/versions/node/v24.1.0/bin"),
+                home.join(".nvm/versions/node/v9.11.2/bin"),
             ]
         );
         let existing = format!("/usr/bin:{}", home.join(".cargo/bin").display());
@@ -404,6 +415,7 @@ mod tests {
             vec![
                 home.join(".local/bin"),
                 home.join(".nvm/versions/node/v24.1.0/bin"),
+                home.join(".nvm/versions/node/v9.11.2/bin"),
             ]
         );
         assert_eq!(version("v24.10.0").unwrap(), vec![24, 10, 0]);
