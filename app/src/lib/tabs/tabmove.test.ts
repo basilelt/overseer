@@ -56,4 +56,21 @@ describe('moving a session to another workspace', () => {
     expect(await app.moveToWorkspace(key, from)).toBe(false);
     expect(allTabs(workspace.layout)).toContain(key);
   });
+
+  it('saves the moved tab on the target workspace tabs, after the ones it already has', async () => {
+    const { key, to } = setup((k) => k.startsWith('line:'));
+    await app.api.patchWorkspace(to, { tabs: ['term:other'] });
+    app.upsertWorkspace({ ...app.ws.workspaces.find((w) => w.id === to)!, tabs: ['term:other'] });
+    expect(await app.moveToWorkspace(key, to)).toBe(true);
+    const want = ['term:other', key];
+    expect(app.ws.workspaces.find((w) => w.id === to)!.tabs).toEqual(want);
+    expect((await app.api.workspaces()).find((w) => w.id === to)!.tabs).toEqual(want);
+  });
+
+  it('does not save the target tabs when the daemon refuses the move', async () => {
+    const { key, to } = setup((k) => k.startsWith('term:'));
+    m.fail = true;
+    await app.moveToWorkspace(key, to);
+    expect(app.ws.workspaces.find((w) => w.id === to)!.tabs).not.toContain(key);
+  });
 });
