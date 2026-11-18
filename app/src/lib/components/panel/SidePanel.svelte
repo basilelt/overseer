@@ -108,14 +108,15 @@
 
   onMount(() => {
     const off = app.onChange((_p, _n, e) => {
+      const activity = e.type === 'line.activity';
+      if (!activity && e.type !== 'review.changed' && e.type !== 'worktree.created' && e.type !== 'worktree.removed') return;
       if (!lineId || app.panelGit) return;
       const id = lineId;
-      if (e.type === 'line.activity' && e.data?.lineId === id) {
+      if (!activity) relatedSoon(id, 2000);
+      else if (e.data?.lineId === id) {
         clearTimeout(timer);
         timer = setTimeout(() => loadDiff(id), 1500);
         relatedSoon(id, 1500);
-      } else if (e.type === 'review.changed' || e.type === 'worktree.created' || e.type === 'worktree.removed') {
-        relatedSoon(id, 2000);
       }
     });
     return () => {

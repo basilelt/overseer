@@ -1124,6 +1124,8 @@ environment, so at start it asks the login shell for the real one (`$SHELL -l -i
 timeout), the way VS Code Remote-SSH does: agents in `~/.local/bin`, `~/.nvm/…/bin`,
 `~/.bun/bin` and so on are found, and every term it starts gets the same environment. If the
 shell does not answer, the usual user directories that exist are added to `PATH` instead.
+The `bin` of every nvm Node version is appended after the active one, so an agent installed
+with `npm install -g` under an older version than the current default is still found.
 `overseer doctor` and `GET /v1/env` show the `PATH` in use and where it came from. A running
 daemon keeps its environment: the new one applies from its next start (the next server update),
 it is never restarted for this since that would end its terms. **Rescan** in the agent picker

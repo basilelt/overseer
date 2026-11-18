@@ -767,3 +767,23 @@ describe('fault injection', () => {
     });
   });
 });
+
+describe('mock spaces option', () => {
+  it('spreads the scaled sessions over that many extra workspaces', async () => {
+    const { app } = await import('../state.svelte');
+    const { connectMock } = await import('../../test/connect-mock');
+    const m = quietMock({ scale: 6, spaces: 3 });
+    expect(m.workspaces.filter((w) => w.id.startsWith('ws_s')).map((w) => w.id)).toEqual(['ws_s0', 'ws_s1', 'ws_s2']);
+    try {
+      await connectMock(m);
+      expect(app.membersOf('ws_s1').map((i) => i.lineId)).toEqual(expect.arrayContaining(['ln_x1', 'ln_x4']));
+      expect(app.membersOf('ws_s1')).toHaveLength(2);
+    } finally {
+      await app.disconnect();
+    }
+  });
+
+  it('adds no workspace without the option', () => {
+    expect(quietMock({ scale: 6 }).workspaces.some((w) => w.id.startsWith('ws_s'))).toBe(false);
+  });
+});

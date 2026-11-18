@@ -218,6 +218,9 @@ export async function attach(app: App) {
   if (!app.client) return;
   app.connected = true;
   app.unsubscribe?.();
-  app.unsubscribe = app.client.subscribe((e) => app.onEvent(e));
+  app.unsubscribe = app.client.subscribe(
+    (e) => app.onEvent(e),
+    (events) => app.onEvents(events),
+  );
   await app.refresh();
 }

@@ -13,7 +13,7 @@
   import { WsDrag } from '../../workspace/ws-drag.svelte';
   import { WS_COLOR } from '../../workspace/ws-color';
   import { loadKnown } from '../../tabs/known-tabs';
-  import { tabOrder } from '../../tabs/tab-order';
+  import { stableTabs, tabOrder } from '../../tabs/tab-order';
   import { allTabs, savedLayouts, workspace } from '../../workspace/workspace.svelte';
   import { createGroup, folderMenu, groupMenu, itemMenuAt, otherMenu, selectSession, startIn, workspaceMenu } from '../../workspace/wsactions';
   import type { Workspace } from '../../types';
@@ -40,8 +40,13 @@
   const pinned = $derived(nodes.some((n) => n.type === 'folder' && !n.folder));
   // Joined so the rows re-sort only when the tab list changes, not on a split resize or a tab switch.
   const liveTabs = $derived(allTabs(workspace.layout).join('\n'));
+  const tabMemo = new Map<string, string[]>();
   const tabsOf = (id: string) =>
-    tabOrder(id, app.workspaceId, liveTabs ? liveTabs.split('\n') : [], savedLayouts, id === NO_WORKSPACE ? loadKnown(hk, '#other')?.tabs : app.ws.workspaces.find((w) => w.id === id)?.tabs);
+    stableTabs(
+      tabMemo,
+      id,
+      tabOrder(id, app.workspaceId, liveTabs ? liveTabs.split('\n') : [], savedLayouts, id === NO_WORKSPACE ? loadKnown(hk, '#other')?.tabs : app.ws.workspaces.find((w) => w.id === id)?.tabs),
+    );
   const rowDrop = (key: string) => drag.posOf('session', key);
 
   function toggle(id: string) {
@@ -118,6 +123,7 @@
           selectedKey={app.selectedKey}
           multi={app.multi}
           selected={app.workspaceId === r.id}
+          flush={n.depth === 0}
           tabDrop={!!r.workspace && app.tabDrop === r.id}
           dropPos={drag.posOf('workspace', r.id)}
           kids={kidsFor(r.workspace)}

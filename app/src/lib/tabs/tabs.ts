@@ -4,6 +4,7 @@ import type { Term } from '../types';
 import { REVIEW_PREFIX } from '../review/keys';
 import { isShellItem } from '../agents';
 import { TEXT_FIELD } from '../review/walk-key';
+import { indexBy } from '../index-by';
 
 export type TabKind = 'agent' | 'chat' | 'shell' | 'browser' | 'review' | 'graph' | 'worktrees' | 'system' | 'usage' | 'prs';
 
@@ -63,7 +64,7 @@ export function tabInfo(key: string, items: SidebarItem[], mode?: (item: Sidebar
   for (const [kind, def] of Object.entries(TAB_KINDS) as [TabKind, TabKindDef][]) {
     if (key.startsWith(def.prefix)) return { key, kind, arg: key.slice(def.prefix.length) };
   }
-  const item = items.find((i) => i.key === key);
+  const item = indexBy(items, 'key', (i) => i.key).get(key);
   if (!item) return null;
   const kind: TabKind = isShellItem(item) ? 'shell' : mode?.(item) === 'chat' ? 'chat' : 'agent';
   return { key, kind, arg: item.lineId ?? item.termId ?? '', item };
@@ -76,7 +77,7 @@ export function rememberTerms(termOf: Map<string, string>, items: SidebarItem[],
 
 export function followTerm(key: string, items: SidebarItem[], termOf: Map<string, string>): string | null {
   const id = key.startsWith('line:') ? termOf.get(key) : undefined;
-  return (id && items.find((i) => i.termId === id && !i.lineId)?.key) || null;
+  return (id && indexBy(items, 'shellTerm', (i) => (i.lineId ? null : i.termId)).get(id)?.key) || null;
 }
 
 export function newTabKey(kind: 'browser' | 'review' | 'graph' | 'worktrees' | 'system' | 'usage' | 'prs', arg: string): string {

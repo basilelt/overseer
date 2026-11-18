@@ -3,7 +3,7 @@ import { applyMods, ctrlChar, NO_MODS, nextModState, pressKey, type Mods } from 
 import { composeOutcome, composeRequest, composeTarget } from './compose';
 import { movedTooFar, pinchFontSize, swipeDirection } from './gestures';
 import { columnAfterSwipe, keyboardInset, layoutFor, mobileUserAgent, phoneParam, tabForView } from './layout';
-import { canResize, fitTo, isAgentTerm, shouldReassert, sizedElsewhere } from './termsize';
+import { canResize, fitTo, isAgentTerm, shouldReassert, sizedElsewhere, startSize } from './termsize';
 
 describe('layout', () => {
   it('switches to the phone layout under the breakpoint', () => {
@@ -199,5 +199,26 @@ describe('fitTo', () => {
     const t = term(46, 40);
     expect(fitTo(t, undefined)).toBe(false);
     expect(t.calls).toEqual([]);
+  });
+});
+
+describe('startSize', () => {
+  it('starts a terminal at the size its process has, so the first fit of the same pane resizes nothing', () => {
+    const size = startSize({ cols: 132, rows: 43 });
+    expect(size).toEqual({ cols: 132, rows: 43 });
+    const calls: [number, number][] = [];
+    const t = { cols: size.cols!, rows: size.rows!, resize: (c: number, r: number) => void calls.push([c, r]) };
+    expect(fitTo(t, { cols: 132, rows: 43 })).toBe(false);
+    expect(calls).toEqual([]);
+  });
+
+  it('leaves the default size for an unknown terminal or a size that makes no sense', () => {
+    expect(startSize(undefined)).toEqual({});
+    expect(startSize({ cols: 0, rows: 24 })).toEqual({});
+    expect(startSize({ cols: 80, rows: 0 })).toEqual({});
+    expect(startSize({ cols: 80.5, rows: 24 })).toEqual({});
+    expect(startSize({ cols: 5000, rows: 24 })).toEqual({});
+    expect(startSize({ cols: 80, rows: 5000 })).toEqual({});
+    expect(startSize({ cols: Number.NaN, rows: 24 })).toEqual({});
   });
 });

@@ -653,6 +653,88 @@ describe('daemon events', () => {
     expect(app.data).toBe(data);
   });
 
+  it('publishes a burst of events once and tells listeners about each event in order', () => {
+    const id = app.data.lines[0]!.line.id;
+    const other = app.data.lines[1]!.line.id;
+    const before = app.data;
+    const seen: [string, string | null | undefined, string | null | undefined][] = [];
+    const published: unknown[] = [];
+    const title = (d: typeof app.data, of: string) => d.lines.find((l) => l.line.id === of)?.local?.title;
+    const order: string[] = [];
+    let chatSaw: string | null | undefined;
+    app.onChange((prev, next, e) => {
+      published.push(app.data);
+      order.push(e.type);
+      seen.push([e.type, title(prev, id), title(next, id)]);
+    });
+    const offChat = app.onChat(() => {
+      order.push('line.chat');
+      chatSaw = title(app.data, id);
+    });
+    app.onEvents([
+      event('line.updated', { line: { ...before.lines[0]!.line }, local: { title: 'one' } }),
+      event('line.chat', { lineId: id, cursor: 1 }),
+      event('line.updated', { line: { ...before.lines[1]!.line }, local: { title: 'side' } }),
+      event('line.updated', { line: { ...before.lines[0]!.line }, local: { title: 'two' } }),
+    ]);
+    expect(order).toEqual(['line.updated', 'line.chat', 'line.updated', 'line.updated']);
+    expect(chatSaw).toBe('two');
+    expect(seen.map((x) => x[0])).toEqual(['line.updated', 'line.updated', 'line.updated']);
+    expect(seen.map((x) => x[2])).toEqual(['one', 'one', 'two']);
+    expect(seen[2]![1]).toBe('one');
+    expect(title(app.data, id)).toBe('two');
+    expect(title(app.data, other)).toBe('side');
+    expect(new Set(published).size).toBe(1);
+    expect(published[0]).toBe(app.data);
+    offChat();
+  });
+
+  it('keeps telling the listeners of a burst after one of them throws', () => {
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const seen: number[] = [];
+    const off = app.onChat((d) => {
+      seen.push(d.cursor);
+      if (d.cursor === 1) throw new Error('listener');
+    });
+    app.onEvents([event('line.chat', { lineId: 'ln_01', cursor: 1 }), event('line.chat', { lineId: 'ln_01', cursor: 2 })]);
+    off();
+    expect(seen).toEqual([1, 2]);
+    expect(err).toHaveBeenCalledTimes(1);
+    err.mockRestore();
+  });
+
+  it('lets its client hand over bursts of events', async () => {
+    await app.disconnect();
+    const sub = vi.spyOn(fresh(), 'subscribe');
+    await connect();
+    const batch = (sub.mock.calls.at(-1) as unknown as [unknown, (events: DaemonEvent[]) => void])[1];
+    const id = app.data.lines[0]!.line.id;
+    batch([event('line.updated', { line: { ...app.data.lines[0]!.line }, local: { title: 'from a burst' } })]);
+    expect(app.data.lines.find((l) => l.line.id === id)?.local?.title).toBe('from a burst');
+  });
+
+  it('keeps applying a burst when one of its events cannot be applied', () => {
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const id = app.data.lines[0]!.line.id;
+    const bad = { id: 'e', type: 'line.updated', at: '', get data(): never {
+      throw new Error('broken event');
+    } } as unknown as DaemonEvent;
+    app.onEvents([bad, event('line.updated', { line: { ...app.data.lines[0]!.line }, local: { title: 'still applied' } })]);
+    expect(app.data.lines.find((l) => l.line.id === id)?.local?.title).toBe('still applied');
+    expect(err).toHaveBeenCalledTimes(1);
+    err.mockRestore();
+  });
+
+  it('leaves the data untouched by a burst that changes nothing', () => {
+    const before = app.data;
+    const changed = vi.fn();
+    app.onChange(changed);
+    app.onEvents([event('line.chat', { lineId: 'x', cursor: 1 }), event('ports.changed', {})]);
+    app.onEvents([]);
+    expect(app.data).toBe(before);
+    expect(changed).not.toHaveBeenCalled();
+  });
+
   it('fetches the activity of a background session once after a burst of events', async () => {
     vi.useFakeTimers();
     app.selectedKey = 'line:ln_01';

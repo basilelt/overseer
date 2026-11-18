@@ -8,6 +8,15 @@ export function tabOrder(id: string, activeId: string, live: string[], cached: R
   return l ? allTabs(l) : (saved ?? []);
 }
 
+// The array handed out last time for `id` when the order is the same, so that what is derived
+// from it (the session rows of that workspace) is not computed again.
+export function stableTabs(memo: Map<string, string[]>, id: string, next: string[]): string[] {
+  const prev = memo.get(id);
+  if (prev && prev.length === next.length && prev.every((k, i) => k === next[i])) return prev;
+  memo.set(id, next);
+  return next;
+}
+
 export function moveTab(l: Layout, key: string, anchor: string, pos: 'before' | 'after'): Layout {
   const to = l.panes.findIndex((p) => p.tabs.includes(anchor));
   if (key === anchor || to < 0) return l;

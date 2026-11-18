@@ -674,13 +674,35 @@ interface MockOptions {
   delayMs?: number;
   scale?: number;
   storm?: number;
+  spaces?: number;
   platform?: PlatformInfo;
   switchboard?: boolean;
 }
 
 const urlNumber = (k: string) => (typeof location !== 'undefined' ? Number(new URLSearchParams(location.search).get(k)) || 0 : 0);
 
-function scaledLines(n: number, now: number): LocalLine[] {
+function scaledSpaces(n: number, now: number, rank: number): Workspace[] {
+  const at = iso(60 * 24, now);
+  return Array.from({ length: n }, (_, i): Workspace => ({
+    id: `ws_s${i}`,
+    name: `space ${i}`,
+    path: `${HOME}/spaces/s${i}`,
+    station: 'atlas',
+    kind: 'dir',
+    cwd: null,
+    folderId: null,
+    pinned: false,
+    archived: false,
+    auto: false,
+    rank: rank + i + 1,
+    tabs: [],
+    notifyIdle: false,
+    createdAt: at,
+    updatedAt: at,
+  }));
+}
+
+function scaledLines(n: number, now: number, spaces = 0): LocalLine[] {
   const agents: Agent[] = ['claude', 'codex', 'gemini'];
   const repos = Object.keys(REPOS);
   return Array.from({ length: n }, (_, i) => {
@@ -699,7 +721,7 @@ function scaledLines(n: number, now: number): LocalLine[] {
         state,
         lastActivityAt: iso(i, now),
       },
-      local: { pid: 9000 + i, busy: i % 3 === 0, needsInput: i % 11 === 0, title: `Scaled session ${i}` },
+      local: { pid: 9000 + i, busy: i % 3 === 0, needsInput: i % 11 === 0, title: `Scaled session ${i}`, ...(spaces ? { workspaceId: `ws_s${i % spaces}` } : {}) },
     };
   });
 }
@@ -802,8 +824,9 @@ export class MockDaemon implements DaemonClient {
     const now = Date.now();
     const scattered = opts.scattered ?? (typeof location !== 'undefined' && new URLSearchParams(location.search).has('scattered'));
     const scale = opts.scale ?? urlNumber('scale');
+    const spaces = opts.spaces ?? urlNumber('spaces');
     this.storm = opts.storm ?? urlNumber('storm');
-    this.lines = [...seedLines(now), ...(scattered ? scatteredLines(now) : []), ...scaledLines(scale, now)];
+    this.lines = [...seedLines(now), ...(scattered ? scatteredLines(now) : []), ...scaledLines(scale, now, spaces)];
     this.terms = seedTerms(this.lines, now);
     if (scale) this.terms.push(...this.lines.slice(-scale).filter((l) => l.line.state === 'active').map((l, i) => ({ id: `tm_${l.line.id}`, pid: 20000 + i, cwd: l.line.worktreePath ?? ROOT, cmd: [l.line.agent], title: l.local?.title ?? l.line.id, cols: 120, rows: 32, createdAt: l.line.lastActivityAt, exited: false, lineId: l.line.id, agent: l.line.agent })));
     this.detected = seedPorts(this.terms);
@@ -811,6 +834,7 @@ export class MockDaemon implements DaemonClient {
     this.messages = seedMessages(this.tasks, now);
     this.activity = seedActivity();
     ({ workspaces: this.workspaces, folders: this.folders, groups: this.groups } = seedWs(now));
+    this.workspaces.push(...scaledSpaces(spaces, now, this.workspaces.length));
     this.live = opts.live ?? true;
     if (opts.switchboard ?? (typeof location !== 'undefined' && new URLSearchParams(location.search).has('switchboard')))
       this.switchboard = { found: true, dir: '/home/dev/.switchboard', imported: false, running: true, sessions: 12, tasks: 4, workspaces: 3, hooks: true, settings: { 'overseer.mockImported': '1' } };

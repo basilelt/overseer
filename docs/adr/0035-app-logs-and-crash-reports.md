@@ -56,6 +56,17 @@ no IPC) while the page is hidden or, on desktop, the main window is unfocused (n
 `WindowEvent::Focused`, so a frozen webview cannot keep it asleep); it is unparked when the window
 is visible and focused again, and the time asleep does not count as a freeze.
 
+A freeze names the side that is stuck. With each ping the thread also posts a beat to the app's main
+thread: a beat that still runs means the webview is blocked ("app main thread: responsive, the
+webview is blocked"), a stale one means the native side is ("app main thread: blocked for N s").
+The ping carries its send time and the page answers with how late it got it and where its own time
+went since the previous ping (`diag_pong {view, late, busy}`): the page times its known heavy
+sections (`app/src/lib/diag/busy.ts`: daemon events, workspace switch, terminal open, fit, write
+and paint) and reports them only when a ping was more than 1 s late or one section ran for more
+than 500 ms, logged as `perf: ui stalled: ping answered 7.4 s late; page time: events 6.9 s x1500
+(max 0.0 s)`. A stall with "page time not accounted for" is outside the timed sections (or the
+whole web process was not scheduled).
+
 **Daemon log.** `dlog::line` prefixes the daemon's lifecycle messages with a timestamp and level.
 `daemon.log` is rotated by copy-truncate (its fd is the daemon's inherited stderr, kept across hot
 upgrades) at 5 MB, at `--detach` and every 60 s, keeping 5 files. `GET /v1/logs?tail=N` (default

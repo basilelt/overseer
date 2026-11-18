@@ -1,4 +1,6 @@
+import { tick } from 'svelte';
 import { activityDelay } from './activity';
+import { busy } from './diag/busy';
 import { FALLBACK_AGENTS, isAgentId, isShellId, isShellItem, sessionsAvailable } from './agents';
 import { parentOverlay } from './overlay-route';
 import { onPresence, presence } from './presence';
@@ -22,7 +24,7 @@ import { startupTarget } from './conn';
 import { rememberShell } from './tabs/closed-tabs';
 import { activeKey, allTabs, EMPTY_LAYOUT, forgetLayouts, onTabClosed, openInFocused, update, workspace } from './workspace/workspace.svelte';
 import { newTabKey } from './tabs/tabs';
-import { aggregate, applyWsEvent, EMPTY_WS, isGhost, itemWorkspaces, resolveTab, sameMap, synthesize, upsert, within, type Aggregate, type WsData } from './workspace/workspaces';
+import { aggregate, applyWsEvent, EMPTY_WS, isGhost, itemWorkspaces, keepWs, resolveTab, sameMap, synthesize, upsert, within, type Aggregate, type WsData } from './workspace/workspaces';
 import type { Workspace } from './types';
 import type { MenuItem, OpenMenu } from './commands/menu';
 import { isWebLink, resolveLink, type LinkFrom, type LinkGesture, type LinkRoute } from './links';
@@ -241,7 +243,10 @@ class AppState {
       this.connected = true;
       rememberHost(target, isMainWindow());
       if (link) void hostOps().then((m) => m.saveHosts(this));
-      this.unsubscribe = c.subscribe((e) => this.onEvent(e));
+      this.unsubscribe = c.subscribe(
+        (e) => this.onEvent(e),
+        (events) => this.onEvents(events),
+      );
       await this.refresh();
     } catch (err) {
       if (this.client !== c) return;
@@ -385,7 +390,7 @@ class AppState {
   }
 
   private setWs(ws: WsData | null, projects: Project[]) {
-    this.ws = ws ?? { ...EMPTY_WS, workspaces: synthesize(projects) };
+    this.ws = keepWs(this.ws, ws ?? { ...EMPTY_WS, workspaces: synthesize(projects) });
     this.wsPersistent = !!ws;
     if (!this.workspaceStillExists()) {
       this.workspaceId = this.initialWorkspace();
@@ -474,6 +479,7 @@ class AppState {
   }
 
   selectWorkspace(id: string) {
+    void tick().then(busy.since('workspace.switch'));
     this.following = null;
     this.workspaceId = id;
     this.wsChosen = true;
@@ -573,57 +579,103 @@ class AppState {
   }
 
   onEvent(e: DaemonEvent) {
+    this.onEvents([e]);
+  }
+
+  // Events that arrive together are reduced into one snapshot and published once: everything
+  // derived from the data is recomputed per burst, not per event. Listeners run after it, in the
+  // order of their events, each with the snapshots around its own event.
+  onEvents(events: DaemonEvent[]) {
+    const done = busy.since('events');
+    const after: (() => void)[] = [];
+    let data = this.data;
+    let changed = false;
+    for (const e of events) {
+      try {
+        const prev = data;
+        const next = this.reduceEvent(prev, e, after);
+        if (!next) continue;
+        changed = true;
+        data = next;
+        after.push(() => {
+          for (const l of this.listeners) l(prev, next, e);
+          if (e.type === 'line.activity' && e.data?.lineId && !e.data.activity) this.scheduleActivity(e.data.lineId);
+        });
+      } catch (err) {
+        console.error(err);
+      }
+    }
+    if (data !== this.data) this.data = data;
+    if (changed) this.settleFollow();
+    for (const run of after) {
+      try {
+        run();
+      } catch (err) {
+        console.error(err);
+      }
+    }
+    done();
+  }
+
+  private reduceEvent(prev: Snapshot, e: DaemonEvent, after: (() => void)[]): Snapshot | null {
     if (e.type === 'profiles.changed') {
       this.loadProfiles();
-      return;
+      return null;
     }
     if (/^(workspace|folder|group|project)\./.test(e.type)) {
       if (e.data?.project) this.addProject(e.data.project);
       else this.ws = applyWsEvent(this.ws, e);
-      return;
+      return null;
     }
     if (e.type === 'broadcast.delivered') {
-      for (const l of this.broadcastListeners) l(e.data);
-      return;
+      after.push(() => {
+        for (const l of this.broadcastListeners) l(e.data);
+      });
+      return null;
     }
     if (e.type === 'review.failed') {
       const d = e.data ?? {};
       void import('./github/strings').then(({ gt }) =>
         this.notice({ kind: 'error', title: gt('startFailed', { error: String(d.error ?? '') }), source: d.repo && d.number ? `${d.repo}#${d.number}` : d.title }),
       );
-      return;
+      return null;
     }
     if (e.type === 'organize.proposal') {
-      if (e.data?.proposal) for (const l of this.organizeListeners) l(e.data.proposal);
-      return;
+      if (e.data?.proposal)
+        after.push(() => {
+          for (const l of this.organizeListeners) l(e.data.proposal);
+        });
+      return null;
     }
     if (e.type === 'task.message') {
-      if (e.data?.message?.id) for (const l of this.messageListeners) l(e.data.message);
-      return;
+      if (e.data?.message?.id)
+        after.push(() => {
+          for (const l of this.messageListeners) l(e.data.message);
+        });
+      return null;
     }
     if (e.type === 'line.hold_refused') {
       const failed = (e.data?.failed ?? []) as { name: string; detail?: string }[];
       const why = failed.map((c) => c.detail || c.name).join(', ') || (e.data?.error as string | null | undefined) || '';
       this.notify(why ? t('chat.pauseRefused', { reason: why }) : t('chat.pauseCancelled'));
-      return;
+      return null;
     }
     if (e.type === 'line.chat') {
-      if (e.data?.lineId) for (const l of this.chatListeners) l(e.data);
-      return;
+      if (e.data?.lineId)
+        after.push(() => {
+          for (const l of this.chatListeners) l(e.data);
+        });
+      return null;
     }
     if (e.type === 'task.created') this.probeProject(e.data?.task?.project ?? e.data?.project);
     else if (e.type === 'line.created') this.probeProject(String(e.data?.line?.repo ?? '').replace(/^local:/, ''));
-    const prev = this.data;
     const next = applyEvent(prev, e);
     if (this.refreshing) {
       const k = touchedKey(e);
       if (k) this.touched.set(k, ++this.eventSeq);
     }
-    if (next === prev && e.type !== 'line.activity' && !/^(review|worktree)\./.test(e.type) && e.type !== 'git.changed') return;
-    this.data = next;
-    this.settleFollow();
-    for (const l of this.listeners) l(prev, next, e);
-    if (e.type === 'line.activity' && e.data?.lineId && !e.data.activity) this.scheduleActivity(e.data.lineId);
+    if (next === prev && e.type !== 'line.activity' && !/^(review|worktree)\./.test(e.type) && e.type !== 'git.changed') return null;
+    return next;
   }
 
   private scheduleActivity(lineId: string) {

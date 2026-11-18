@@ -87,3 +87,49 @@ describe('watchNear', () => {
     expect(ca).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('watchNear scroll root lookup', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  function stubObserver() {
+    const roots: unknown[] = [];
+    vi.stubGlobal(
+      'IntersectionObserver',
+      class {
+        constructor(_cb: unknown, opts: IntersectionObserverInit) {
+          roots.push(opts.root);
+        }
+        observe() {}
+        unobserve() {}
+      },
+    );
+    return roots;
+  }
+
+  it('walks the shared ancestors once for elements registered in the same task', () => {
+    const reads = vi.fn((el: Fake) => el.style);
+    vi.stubGlobal('getComputedStyle', reads);
+    vi.stubGlobal('document', { documentElement: node(null) });
+    const roots = stubObserver();
+    const scroller = node(null, 'auto', 5000, 800);
+    const body = node(node(node(scroller)));
+    for (let i = 0; i < 50; i++) watchNear(node(body) as unknown as Element, () => {});
+    expect(reads).toHaveBeenCalledTimes(4);
+    expect(roots).toEqual([scroller]);
+  });
+
+  it('reads the ancestors again in a later task, when the scroller may have changed', async () => {
+    const reads = vi.fn((el: Fake) => el.style);
+    vi.stubGlobal('getComputedStyle', reads);
+    vi.stubGlobal('document', { documentElement: node(null) });
+    const roots = stubObserver();
+    const scroller = node(null, 'auto', 500, 800);
+    const body = node(scroller);
+    watchNear(node(body) as unknown as Element, () => {});
+    await Promise.resolve();
+    scroller.scrollHeight = 5000;
+    watchNear(node(body) as unknown as Element, () => {});
+    expect(reads).toHaveBeenCalledTimes(4);
+    expect(roots).toEqual([null, scroller]);
+  });
+});

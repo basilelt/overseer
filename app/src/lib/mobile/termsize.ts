@@ -29,6 +29,15 @@ export function shouldReassert(visible: boolean, focused: boolean, hint: ReturnT
   return resizable && visible && focused && hint !== null;
 }
 
+// The size to create a terminal with: the one its process already has, which is the size this
+// pane gave it last time in the common case. The first fit then changes nothing, instead of
+// resizing a terminal created at 80x24 (a second canvas and a second empty wasm terminal).
+export function startSize(term: Pick<TermSize, 'cols' | 'rows'> | undefined): { cols?: number; rows?: number } {
+  if (!term) return {};
+  const ok = (n: number, max: number) => Number.isInteger(n) && n >= 2 && n <= max;
+  return ok(term.cols, 1000) && ok(term.rows, 500) ? { cols: term.cols, rows: term.rows } : {};
+}
+
 export function fitTo(term: { cols: number; rows: number; resize(cols: number, rows: number): void }, want: { cols: number; rows: number } | undefined): boolean {
   if (!want || (want.cols === term.cols && want.rows === term.rows)) return false;
   term.resize(want.cols, want.rows);

@@ -32,6 +32,9 @@
   import { chipLabel, chipShort } from '../../profiles/profiles';
   import { pages } from '../../session/session-pages.svelte';
   import { STATE_COLOR } from '../../workspace/ws-color';
+  import { indexBy } from '../../index-by';
+  import { tick } from 'svelte';
+  import { fitWindow, MIN_TAB_PX, TAB_PX, visibleRange, windowSpan, type TabWindow } from '../../tabs/tab-window';
 
   let { pane, index, focused, canClose }: { pane: Pane; index: number; focused: boolean; canClose: boolean } = $props();
 
@@ -44,17 +47,62 @@
   let dropAt = $state<number | null>(null);
   let strip: HTMLDivElement | undefined = $state();
 
+  const span = windowSpan(typeof window === 'undefined' ? 1440 : Math.max(window.innerWidth || 0, window.screen?.width || 0));
+  let scrolledTo = $state.raw<{ first: number; last: number; active: string | null } | null>(null);
+  let tabPx = $state(TAB_PX);
+  let mounted: TabWindow = { from: 0, to: 0 };
+  const win = $derived.by(() => {
+    const n = tabs.length;
+    if (settings.wrapTabs) return (mounted = fitWindow(mounted, n, n, 0));
+    const seen = scrolledTo?.active === pane.active ? scrolledTo : null;
+    const at = seen ? seen.first : Math.max(0, tabs.findIndex((x) => x.key === pane.active));
+    return (mounted = fitWindow(mounted, n, span, at, seen ? seen.last : at));
+  });
+  const shown = $derived(win.from === 0 && win.to >= tabs.length ? tabs : tabs.slice(win.from, win.to));
+
   function wheel(e: WheelEvent) {
     if (!strip || settings.wrapTabs || Math.abs(e.deltaX) > Math.abs(e.deltaY) || strip.scrollWidth <= strip.clientWidth) return;
     e.preventDefault();
     strip.scrollLeft += e.deltaY;
   }
 
+  let scrollFrame = 0;
+  function scrolled() {
+    scrollFrame = 0;
+    const el = strip;
+    if (!el || tabs.length <= span || settings.wrapTabs || drag?.active || editing) return;
+    const els = [...el.querySelectorAll<HTMLElement>('[data-tab]')];
+    const rects = els.map((x) => x.getBoundingClientRect());
+    const box = el.getBoundingClientRect();
+    const seen = visibleRange(win, rects, box, el.scrollLeft, tabPx, tabs.length);
+    const next = fitWindow(win, tabs.length, span, seen.first, seen.last);
+    if (next === win) return;
+    const j = seen.first - win.from;
+    const anchor = j >= 0 && j < els.length ? { key: els[j]!.dataset.tab!, left: rects[j]!.left } : null;
+    if (rects.length) tabPx = Math.max(MIN_TAB_PX, Math.round((rects[rects.length - 1]!.right - rects[0]!.left) / rects.length));
+    scrolledTo = { ...seen, active: pane.active };
+    if (!anchor) return;
+    void tick().then(() => {
+      const now = el.querySelector<HTMLElement>(`[data-tab="${CSS.escape(anchor.key)}"]`);
+      if (now) el.scrollLeft += now.getBoundingClientRect().left - anchor.left;
+    });
+  }
+
+  function onScroll() {
+    if (!scrollFrame && tabs.length > span) scrollFrame = requestAnimationFrame(scrolled);
+  }
+
   $effect(() => {
     const el = strip;
     if (!el) return;
     el.addEventListener('wheel', wheel, { passive: false });
-    return () => el.removeEventListener('wheel', wheel);
+    el.addEventListener('scroll', onScroll, { passive: true });
+    return () => {
+      el.removeEventListener('wheel', wheel);
+      el.removeEventListener('scroll', onScroll);
+      cancelAnimationFrame(scrollFrame);
+      scrollFrame = 0;
+    };
   });
 
   $effect(() => {
@@ -73,7 +121,7 @@
     return () => cancelAnimationFrame(frame);
   });
 
-  const chipOf = (tab: TabInfo) => (tab.item?.termId ? app.data.terms.find((x) => x.id === tab.item!.termId)?.profile : undefined);
+  const chipOf = (tab: TabInfo) => (tab.item?.termId ? indexBy(app.data.terms, 'id', (x) => x.id).get(tab.item.termId)?.profile : undefined);
   const effortLabel = (e: string) => t('profile.effortOf', { effort: t(`effort.${e}` as Key).toLowerCase() });
 
   const label = (tab: TabInfo) => tabLabel(tab);
@@ -114,7 +162,7 @@
         break;
       }
     }
-    dropAt = at;
+    dropAt = win.from + at;
   }
 
   function tabUp() {
@@ -225,8 +273,10 @@
 <div class="tabbar-box">
 <div class="tabbar" class:focused class:wrap={settings.wrapTabs} class:dragging={dropAt !== null} role="tablist" data-tour="tabs">
   <div class="tabs" bind:this={strip}>
-    {#each tabs as tab, i (tab.key)}
+    {#if win.from > 0}<div class="gap" style:width="{win.from * tabPx}px"></div>{/if}
+    {#each shown as tab, j (tab.key)}
       {@const key = tab.key}
+      {@const i = win.from + j}
       <div
         class="tab"
         class:active={pane.active === key}
@@ -267,6 +317,7 @@
         <span class="slot"><span class="num faint">{i < 9 ? i + 1 : ''}</span><button class="x" aria-label={t('common.close')} onclick={(e) => close(e, key)}><svg class="i" width="12" height="12" aria-hidden="true"><use href="#sbi-x" /></svg></button></span>
       </div>
     {/each}
+    {#if win.to < tabs.length}<div class="gap" style:width="{(tabs.length - win.to) * tabPx}px"></div>{/if}
     <div class="end" class:drop={dropAt === tabs.length}></div>
   </div>
   <div class="actions">
@@ -466,6 +517,10 @@
   .end {
     width: 4px;
     flex: none;
+  }
+  .gap {
+    flex: none;
+    height: 1px;
   }
   .kind {
     display: inline-grid;

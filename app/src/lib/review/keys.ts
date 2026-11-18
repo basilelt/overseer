@@ -1,4 +1,5 @@
 import type { ReviewTarget } from './types';
+import { indexBy } from '../index-by';
 
 export const REVIEW_PREFIX = 'review:';
 
@@ -38,11 +39,12 @@ export interface Known {
 
 export function worktreeOf(t: ReviewTarget, k: Known): string | null {
   if (t.worktree) return t.worktree;
-  if (t.lineId) return k.lines.find((l) => l.line.id === t.lineId)?.line.worktreePath ?? null;
+  const line = (id: string) => indexBy(k.lines, 'id', (l) => l.line.id).get(id)?.line.worktreePath ?? null;
+  if (t.lineId) return line(t.lineId);
   if (t.taskId) {
-    const task = k.tasks.find((x) => x.id === t.taskId);
+    const task = indexBy(k.tasks, 'id', (x) => x.id).get(t.taskId);
     if (task?.worktreePath) return task.worktreePath;
-    return task?.lineId ? (k.lines.find((l) => l.line.id === task.lineId)?.line.worktreePath ?? null) : null;
+    return task?.lineId ? line(task.lineId) : null;
   }
   return null;
 }

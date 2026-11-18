@@ -14,6 +14,7 @@ import {
   buildTree,
   EMPTY_WS,
   isGhost,
+  keepWs,
   itemWorkspaces,
   lineActions,
   paneAction,
@@ -473,6 +474,65 @@ describe('workspaces load after a daemon error', () => {
     await vi.advanceTimersByTimeAsync(60_000);
 
     expect(m.failures).toBe(99);
+  });
+});
+
+describe('workspaces reload on window focus', () => {
+  const local: HostTarget = { kind: 'local', label: 'Local' };
+
+  afterEach(async () => {
+    await app.disconnect();
+  });
+
+  it('keeps the same workspace data when nothing changed', async () => {
+    const m = new MockDaemon({ live: false, delayMs: 0 });
+    setClient(m);
+    app.client = m;
+    await app.connect(local);
+    const before = app.ws;
+    await app.reloadWs();
+    expect(app.ws).toBe(before);
+  });
+
+  it('replaces only the workspace that changed', async () => {
+    const m = new MockDaemon({ live: false, delayMs: 0 });
+    setClient(m);
+    app.client = m;
+    await app.connect(local);
+    const before = app.ws;
+    await m.request('PATCH', '/v1/workspaces/ws_overseer', { name: 'renamed' });
+    await app.reloadWs();
+    expect(app.ws).not.toBe(before);
+    expect(app.ws.workspaces.find((w) => w.id === 'ws_overseer')?.name).toBe('renamed');
+    expect(app.ws.workspaces.find((w) => w.id === 'ws_webshop')).toBe(before.workspaces.find((w) => w.id === 'ws_webshop'));
+    expect(app.ws.folders).toBe(before.folders);
+    expect(app.ws.groups).toBe(before.groups);
+  });
+});
+
+describe('keepWs', () => {
+  const ws = (id: string, name = id) => ({ id, name }) as Workspace;
+  const data = (workspaces: Workspace[]) => ({ workspaces, folders: [] as Folder[], groups: [] });
+
+  it('returns the previous data when every entry is equal', () => {
+    const prev = data([ws('a'), ws('b')]);
+    expect(keepWs(prev, data([ws('a'), ws('b')]))).toBe(prev);
+  });
+
+  it('reuses equal entries and takes the changed ones', () => {
+    const prev = data([ws('a'), ws('b')]);
+    const next = keepWs(prev, data([ws('a'), ws('b', 'B')]));
+    expect(next).not.toBe(prev);
+    expect(next.workspaces[0]).toBe(prev.workspaces[0]);
+    expect(next.workspaces[1]?.name).toBe('B');
+    expect(next.folders).toBe(prev.folders);
+  });
+
+  it('takes a new list when entries were added, removed or reordered', () => {
+    const prev = data([ws('a'), ws('b')]);
+    expect(keepWs(prev, data([ws('b'), ws('a')])).workspaces.map((w) => w.id)).toEqual(['b', 'a']);
+    expect(keepWs(prev, data([ws('a')])).workspaces.map((w) => w.id)).toEqual(['a']);
+    expect(keepWs(prev, data([ws('a'), ws('b'), ws('c')])).workspaces.map((w) => w.id)).toEqual(['a', 'b', 'c']);
   });
 });
 

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import * as ghostty from 'ghostty-web';
-import { BACKGROUND_FRAME_MS, BLINK_MS, INACTIVE_FRAME_MS, canPatch, FrameScheduler, installOnDemandRendering, type Clock, type PaintTarget } from './termrender';
+import { BACKGROUND_FRAME_MS, BLINK_MS, INACTIVE_FRAME_MS, canPatch, FrameScheduler, installDeferredRender, installOnDemandRendering, type Clock, type PaintTarget } from './termrender';
 import type { Presence } from '../presence';
 
 function fakeClock() {
@@ -140,6 +140,46 @@ describe('FrameScheduler', () => {
     expect(c.frames.length).toBe(0);
     s.setOnScreen(t, true);
     c.run(200);
+    expect(t.renders).toBe(2);
+  });
+
+  it('holds the paints of a terminal until it is released, without asking for frames meanwhile', () => {
+    const { c, s } = setup();
+    const t = target();
+    const other = target();
+    s.add(t);
+    s.add(other);
+    c.run(0);
+    s.hold(t);
+    s.invalidate(t);
+    expect(c.frames.length).toBe(0);
+    s.invalidate(other);
+    s.invalidate(t);
+    c.run(100);
+    expect(t.renders).toBe(1);
+    expect(other.renders).toBe(2);
+    expect(c.frames.length).toBe(0);
+    s.release(t);
+    s.release(t);
+    c.run(200);
+    expect(t.renders).toBe(2);
+    expect(c.frames.length).toBe(0);
+  });
+
+  it('asks for no frame when a clean terminal is released and forgets the hold of a removed one', () => {
+    const { c, s } = setup();
+    const t = target();
+    s.hold(t);
+    s.add(t);
+    c.run(0);
+    expect(t.renders).toBe(1);
+    s.hold(t);
+    s.release(t);
+    expect(c.frames.length).toBe(0);
+    s.hold(t);
+    s.remove(t);
+    s.add(t);
+    c.run(100);
     expect(t.renders).toBe(2);
   });
 
@@ -336,5 +376,117 @@ describe('ghostty-web patch', () => {
     t.dispose();
     t.startRenderLoop();
     expect(onScroll).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('deferred render', () => {
+  function classes() {
+    const draws: boolean[] = [];
+    class Ren {
+      cursorVisible = true;
+      render(_buf: unknown, force?: boolean, _viewportY?: number, _provider?: unknown) {
+        draws.push(!!force);
+      }
+      stopCursorBlink() {}
+      setHoveredHyperlinkId() {}
+      setHoveredLinkRange() {}
+    }
+    class Sel {
+      requestRender() {}
+    }
+    class Term {
+      renderer = new Ren();
+      wasmTerm = { getCursor: () => ({ y: 0 }) };
+      viewportY = 0;
+      scrollbarOpacity = 0;
+      lastCursorY = 0;
+      isDisposed = false;
+      isOpen = false;
+      open() {
+        this.isOpen = true;
+        this.renderer.render(this.wasmTerm, true, 0, this);
+        this.startRenderLoop();
+      }
+      resize(fail?: boolean) {
+        if (fail) throw new Error('resize failed');
+        this.renderer.render(this.wasmTerm, true, 0, this);
+      }
+      startRenderLoop() {}
+      writeInternal() {}
+      dispose() {}
+    }
+    return { draws, Ren, Sel, Term };
+  }
+
+  it('matches the pinned ghostty-web internals', () => {
+    const proto = ghostty.Terminal.prototype as unknown as Record<string, unknown>;
+    expect(typeof proto.open).toBe('function');
+    expect(typeof proto.resize).toBe('function');
+    expect(typeof (ghostty.CanvasRenderer.prototype as unknown as Record<string, unknown>).render).toBe('function');
+  });
+
+  it('draws a terminal once after open and resize instead of once in each', () => {
+    const { c, s } = setup();
+    const { draws, Ren, Sel, Term } = classes();
+    const mod = { Terminal: Term, SelectionManager: Sel, CanvasRenderer: Ren };
+    installOnDemandRendering(mod, s);
+    expect(installDeferredRender(mod, s)).toBe(true);
+    expect(installDeferredRender(mod, s)).toBe(true);
+    const t = new Term();
+    t.open();
+    t.resize();
+    t.resize();
+    expect(draws).toEqual([]);
+    c.run(0);
+    expect(draws).toEqual([true]);
+    t.writeInternal();
+    c.run(100);
+    expect(draws).toEqual([true, false]);
+  });
+
+  it('keeps the draws asked for outside open and resize, and the ones of other terminals', () => {
+    const { c, s } = setup();
+    const { draws, Ren, Sel, Term } = classes();
+    const mod = { Terminal: Term, SelectionManager: Sel, CanvasRenderer: Ren };
+    installOnDemandRendering(mod, s);
+    installDeferredRender(mod, s);
+    const t = new Term();
+    const other = new Term();
+    t.open();
+    c.run(0);
+    draws.length = 0;
+    t.renderer.render(t.wasmTerm, true, 0, t);
+    t.renderer.render(t.wasmTerm, false, 0);
+    expect(draws).toEqual([true, false]);
+    draws.length = 0;
+    const resize = Term.prototype.resize as (this: InstanceType<typeof Term>) => void;
+    (Term.prototype as { resize: unknown }).resize = function (this: InstanceType<typeof Term>) {
+      other.renderer.render(other.wasmTerm, true, 0, other);
+      resize.call(this);
+    };
+    t.resize();
+    expect(draws).toEqual([true]);
+  });
+
+  it('stops holding draws back when resize throws', () => {
+    const { c, s } = setup();
+    const { draws, Ren, Sel, Term } = classes();
+    const mod = { Terminal: Term, SelectionManager: Sel, CanvasRenderer: Ren };
+    installOnDemandRendering(mod, s);
+    installDeferredRender(mod, s);
+    const t = new Term();
+    t.open();
+    c.run(0);
+    draws.length = 0;
+    expect(() => t.resize(true)).toThrow('resize failed');
+    t.renderer.render(t.wasmTerm, false, 0, t);
+    expect(draws).toEqual([false]);
+    t.resize();
+    c.run(100);
+    expect(draws).toEqual([false, true]);
+  });
+
+  it('leaves unknown versions alone', () => {
+    expect(installDeferredRender({ Terminal: class {} })).toBe(false);
   });
 });

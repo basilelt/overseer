@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { layoutKeyOf, moveSavedTab, moveTab, tabOrder } from './tab-order';
+import { layoutKeyOf, moveSavedTab, moveTab, stableTabs, tabOrder } from './tab-order';
 import { EMPTY_LAYOUT, type Layout } from '../workspace/workspace.svelte';
 
 const one = (tabs: string[], active: string | null = tabs[0] ?? null): Layout => ({ ...EMPTY_LAYOUT, panes: [{ tabs, active }] });
@@ -73,5 +73,35 @@ describe('moveSavedTab', () => {
   it('gives null when the anchor has no tab or is the moved key', () => {
     expect(moveSavedTab(['a'], 'a', 'zz', 'before')).toBeNull();
     expect(moveSavedTab(['a'], 'a', 'a', 'before')).toBeNull();
+  });
+});
+
+describe('stableTabs', () => {
+  it('hands out the same array while the order is the same', () => {
+    const memo = new Map<string, string[]>();
+    const first = stableTabs(memo, 'w1', ['a', 'b']);
+    expect(stableTabs(memo, 'w1', ['a', 'b'])).toBe(first);
+    expect(stableTabs(memo, 'w1', [...first])).toBe(first);
+  });
+
+  it('takes the new array when a tab is added, removed or moved', () => {
+    const memo = new Map<string, string[]>();
+    const first = stableTabs(memo, 'w1', ['a', 'b']);
+    const moved = stableTabs(memo, 'w1', ['b', 'a']);
+    expect(moved).toEqual(['b', 'a']);
+    expect(moved).not.toBe(first);
+    const shorter = stableTabs(memo, 'w1', ['b']);
+    expect(shorter).toEqual(['b']);
+    expect(stableTabs(memo, 'w1', ['b', 'c'])).toEqual(['b', 'c']);
+    expect(stableTabs(memo, 'w1', ['b', 'c'])).toBe(memo.get('w1'));
+  });
+
+  it('keeps one list per workspace', () => {
+    const memo = new Map<string, string[]>();
+    const a = stableTabs(memo, 'w1', ['a']);
+    const b = stableTabs(memo, 'w2', ['a']);
+    expect(b).not.toBe(a);
+    expect(stableTabs(memo, 'w1', ['a'])).toBe(a);
+    expect(stableTabs(memo, '', [])).toEqual([]);
   });
 });

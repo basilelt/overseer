@@ -3,6 +3,7 @@ import * as CMD from '../daemon/tauri-commands';
 import { DaemonError, type DaemonClient } from '../daemon/client';
 import { isTauri } from '../platform';
 import { type Sub, t } from '../i18n.svelte';
+import { busy } from './busy';
 import { errorText, forwardWarning, Limiter, type DiagInfo, type LogTail, type PreviousSession, type ServerLog } from './diag';
 
 export type DiagMode = 'previous' | 'live';
@@ -119,7 +120,10 @@ export function startDiagnostics(viewOf: () => string): () => void {
   let unlisten: (() => void) | null = null;
   let stopped = false;
   void import('@tauri-apps/api/event').then(async ({ listen }) => {
-    const u = await listen('diag:ping', () => void call(CMD.diagPong, { view: viewOf() }).catch(() => {}));
+    const u = await listen<{ at?: number } | null>('diag:ping', (e) => {
+      const { late, busy: text } = busy.take(e?.payload?.at, Date.now());
+      void call(CMD.diagPong, late || text ? { view: viewOf(), late, busy: text } : { view: viewOf() }).catch(() => {});
+    });
     if (stopped) u();
     else unlisten = u;
   });
