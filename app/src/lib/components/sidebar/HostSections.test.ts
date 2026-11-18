@@ -47,6 +47,25 @@ describe('HostSections', () => {
     expect(html()).toContain(name!);
   });
 
+  it('lists the sessions of a background workspace in its saved tab order', () => {
+    const items = itemsOf(prod).items;
+    const keys = ['line:ln_01', 'line:ln_02', 'line:ln_08', 'line:ln_12'].filter((k) => items.find((i) => i.key === k)!.state !== 'closed');
+    expect(keys.length).toBeGreaterThan(2);
+    const titles = (order: string[]) => order.map((k) => items.find((i) => i.key === k)!.title);
+    const at = (tabs: string[]) => {
+      prod.ws = { ...prod.ws, workspaces: prod.ws.workspaces.map((w) => (w.id === 'ws_webshop' ? { ...w, tabs } : w)) };
+      const full = html();
+      const out = full.slice(full.indexOf('aria-label="prod"'));
+      return titles(keys)
+        .map((n) => [n, out.indexOf(n)] as const)
+        .sort((a, b) => a[1] - b[1])
+        .map((x) => x[0]);
+    };
+    const reversed = keys.slice().reverse();
+    expect(at(reversed)).toEqual(titles(reversed));
+    expect(at(keys)).toEqual(titles(keys));
+  });
+
   it('folds a host section to its header', () => {
     settings.hostsFolded = ['ssh:prod', 'local'];
     const out = html();
