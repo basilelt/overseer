@@ -106,6 +106,8 @@
     flex-direction: column;
     gap: 10px;
     min-width: 0;
+    user-select: text;
+    -webkit-user-select: text;
   }
   .path {
     margin: 0;
