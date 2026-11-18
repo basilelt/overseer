@@ -44,6 +44,7 @@ export const en = {
   'hosts.needsAnswer': '{host} needs an answer to connect',
   'hosts.answer': 'Answer',
   'hosts.waiting': 'Needs an answer',
+  'hosts.reconnecting': 'Reconnecting ({n})',
   'conn.idle': 'Disconnected',
   'conn.connecting': 'Connecting',
   'conn.checking': 'Checking server',
