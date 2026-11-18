@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { app } from '../state.svelte';
 import { ui } from './ui.svelte';
 import { drawerPick } from './drawer';
@@ -45,13 +45,40 @@ describe('drawer pick', () => {
 });
 
 describe('drawer pick action', () => {
-  it('listens in capture then bubble and removes both on destroy', () => {
+  const target = () => {
     const calls: [string, boolean | undefined][] = [];
-    const node = {
-      addEventListener: (t: string, _f: unknown, c?: boolean) => calls.push([`add ${t}`, c]),
-      removeEventListener: (t: string, _f: unknown, c?: boolean) => calls.push([`remove ${t}`, c]),
-    } as unknown as HTMLElement;
-    drawerPick.watch(node).destroy();
-    expect(calls).toEqual([['add click', true], ['add click', undefined], ['remove click', true], ['remove click', undefined]]);
+    const handlers: Record<string, (e: Event) => void> = {};
+    const add = (who: string) => (t: string, f: (e: Event) => void, c?: boolean) => {
+      calls.push([`${who} add ${t}`, c]);
+      handlers[`${who}${c ? ' capture' : ''}`] = f;
+    };
+    const remove = (who: string) => (t: string, _f: unknown, c?: boolean) => calls.push([`${who} remove ${t}`, c]);
+    return { calls, handlers, add, remove };
+  };
+
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('marks in capture on the drawer and checks on the window, after the delegated handlers of the app root', () => {
+    const t = target();
+    vi.stubGlobal('window', { addEventListener: t.add('window'), removeEventListener: t.remove('window') });
+    const node = { addEventListener: t.add('node'), removeEventListener: t.remove('node') } as unknown as HTMLElement;
+    const action = drawerPick.watch(node);
+    const tap = new Event('click');
+    t.handlers['node capture'](tap);
+    app.select(app.selectedKey);
+    t.handlers['window'](tap);
+    expect(ui.drawer).toBe(false);
+    action.destroy();
+    expect(t.calls).toEqual([['node add click', true], ['window add click', undefined], ['node remove click', true], ['window remove click', undefined]]);
+  });
+
+  it('ignores a click outside the drawer even when it selects', () => {
+    const t = target();
+    vi.stubGlobal('window', { addEventListener: t.add('window'), removeEventListener: t.remove('window') });
+    drawerPick.watch({ addEventListener: t.add('node'), removeEventListener: t.remove('node') } as unknown as HTMLElement);
+    t.handlers['node capture'](new Event('click'));
+    app.select(app.selectedKey);
+    t.handlers['window'](new Event('click'));
+    expect(ui.drawer).toBe(true);
   });
 });
