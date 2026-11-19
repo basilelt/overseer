@@ -631,7 +631,10 @@ const CODEX_SLACK_MS: i64 = 2_000;
 const CODEX_TYPED_MS: i64 = 3_000;
 
 fn codex_found(ctx: &Ctx, hooks: &HashMap<String, HookState>) -> Vec<Found> {
-    let threads = codex::threads(&ctx.codex_dir, &ctx.state_dir);
+    let (threads, parents) = codex::load(&ctx.codex_dir, &ctx.state_dir);
+    // Hooks fire for sub-agent threads too; they belong to the root session.
+    let hooks = codex::root_hooks(hooks, &parents);
+    let hooks = &hooks;
     let mut procs: Vec<(u32, Vec<String>, Option<i64>)> = codex::fold_wrappers(
         ctx.probe
             .list()
@@ -774,6 +777,7 @@ fn codex_found(ctx: &Ctx, hooks: &HashMap<String, HookState>) -> Vec<Found> {
             }
             f.cwd = t.cwd.unwrap_or_default();
             f.branch = t.branch;
+            f.title = t.title;
             f.activity_ms = t
                 .activity_ms
                 .max(t.started_ms.unwrap_or(0))
@@ -1213,9 +1217,20 @@ fn scan_now(ctx: &Ctx) -> Result<Vec<Line>, String> {
     let hook_map = |agent| -> Result<HashMap<String, HookState>, String> {
         Ok(reg.hook_sessions(agent)?.into_iter().collect())
     };
+    // Load the codex threads once here so sub-agent hook sessions can be keyed by their root
+    // session before any lookup below.
+    let (_, codex_parents) = codex::load(&ctx.codex_dir, &ctx.state_dir);
     let mut session_hooks: HashMap<&'static str, HashMap<String, HookState>> = HashMap::new();
     for a in agents::AGENTS.iter().filter(|a| a.sessions()) {
-        session_hooks.insert(a.id, hook_map(a.id)?);
+        let m = hook_map(a.id)?;
+        session_hooks.insert(
+            a.id,
+            if a.id == agents::CODEX {
+                codex::root_hooks(&m, &codex_parents)
+            } else {
+                m
+            },
+        );
     }
     let no_hooks = HashMap::new();
     let hooks_of = |id: &str| session_hooks.get(id).unwrap_or(&no_hooks);

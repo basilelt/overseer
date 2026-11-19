@@ -146,9 +146,20 @@ pub fn snapshot(terms: &[Info], lines: &[Line]) -> Vec<Saved> {
             if i.exited {
                 return None;
             }
+            // Several lines can point at one term (a codex sub-agent used to): the term's own
+            // line is the session it runs, not the most recently active one.
             let line = lines
                 .iter()
-                .find(|l| l.term_id.as_deref() == Some(i.id.as_str()) && l.alive());
+                .find(|l| {
+                    l.term_id.as_deref() == Some(i.id.as_str())
+                        && l.alive()
+                        && i.line_id.as_deref() == Some(l.id.as_str())
+                })
+                .or_else(|| {
+                    lines
+                        .iter()
+                        .find(|l| l.term_id.as_deref() == Some(i.id.as_str()) && l.alive())
+                });
             if line.is_none() && is_stub_wrapper(&i.cmd) {
                 return None;
             }
@@ -227,6 +238,20 @@ pub fn after_reboot(reg: &Registry) -> AfterReboot {
         .unwrap_or(AfterReboot::Agents)
 }
 
+fn remap_codex_roots(codex_dir: &Path, state_dir: &Path, mut saved: Vec<Saved>) -> Vec<Saved> {
+    let (_, parents) = crate::codex::load(codex_dir, state_dir);
+    for s in &mut saved {
+        if s.agent.as_deref() == Some(crate::agents::CODEX) {
+            if let Some(sid) = s.session.clone() {
+                if let Some(root) = crate::codex::root_in(&parents, &sid) {
+                    s.session = Some(root);
+                }
+            }
+        }
+    }
+    saved
+}
+
 pub fn on_start(state_dir: &Path, takeover: bool) {
     let reg = match Registry::open(state_dir) {
         Ok(r) => r,
@@ -252,6 +277,10 @@ pub fn on_start(state_dir: &Path, takeover: bool) {
         .flatten()
         .and_then(|s| serde_json::from_str(&s).ok())
         .unwrap_or_default();
+    // A codex multi-agent v2 sub-agent thread must never be resumed directly: point the saved
+    // term at the root session so the restart resumes the thread codex can actually load.
+    let codex_dir = crate::agents::config_dir(crate::agents::CODEX);
+    let saved = remap_codex_roots(&codex_dir, state_dir, saved);
     let todo = plan(saved, mode, |p| Path::new(p).is_dir());
     let (mut agents, mut shells) = (0, 0);
     for r in todo {
@@ -568,6 +597,93 @@ mod tests {
             s[2].session, None,
             "an agent that was not running stays stopped"
         );
+    }
+
+    #[test]
+    fn a_term_shared_by_several_lines_snapshots_its_own_line() {
+        // A codex multi-agent session used to bind its sub-agent line to the term when the
+        // sub-agent was the most recently active one; the term must keep its own line.
+        let mut t = info("t1", &["codex"], false);
+        t.line_id = Some("L-root".into());
+        let lines = [
+            line("L-sub", "t1", "sub-sid", true),
+            line("L-root", "t1", "root-sid", true),
+        ];
+        let s = snapshot(&[t], &lines);
+        assert_eq!(s.len(), 1);
+        assert_eq!(s[0].line_id.as_deref(), Some("L-root"));
+        assert_eq!(s[0].session.as_deref(), Some("root-sid"));
+        // without the term's own line, the most recently active one still applies
+        let lines2 = [
+            line("L-sub", "t2", "sub-sid", true),
+            line("L-root", "t2", "root-sid", true),
+        ];
+        let s = snapshot(&[info("t2", &["codex"], false)], &lines2);
+        assert_eq!(s[0].line_id.as_deref(), Some("L-sub"));
+    }
+
+    #[test]
+    fn a_saved_codex_sub_agent_session_is_remapped_to_its_root() {
+        let d = std::env::temp_dir().join(format!(
+            "sb-lifecycle-codex-{}-{}",
+            std::process::id(),
+            crate::util::now_ms()
+        ));
+        let _ = std::fs::remove_dir_all(&d);
+        let day = d.join("sessions/2026/11/19");
+        std::fs::create_dir_all(&day).unwrap();
+        let meta = |id: &str, ts: &str, parent: Option<&str>| {
+            let source = match parent {
+                Some(p) => {
+                    serde_json::json!({"subagent": {"thread_spawn": {"parent_thread_id": p}}})
+                }
+                None => serde_json::json!("vscode"),
+            };
+            serde_json::json!({
+                "type": "session_meta",
+                "payload": {"id": id, "timestamp": format!("2026-11-19T{ts}Z"), "cwd": "/w",
+                            "source": source, "thread_source": parent.map(|_| "subagent")}
+            })
+            .to_string()
+        };
+        std::fs::write(
+            day.join("rollout-10-00-00-root-r.jsonl"),
+            format!("{}\n", meta("root-r", "10-00-00", None)),
+        )
+        .unwrap();
+        std::fs::write(
+            day.join("rollout-12-00-00-sub-s.jsonl"),
+            format!("{}\n", meta("sub-s", "12-00-00", Some("root-r"))),
+        )
+        .unwrap();
+        let saved = vec![Saved {
+            id: "t1".into(),
+            cwd: "/w".into(),
+            agent: Some("codex".into()),
+            session: Some("sub-s".into()),
+            ..Default::default()
+        }];
+        let out = remap_codex_roots(&d, &d.join("state"), saved);
+        assert_eq!(
+            out[0].session.as_deref(),
+            Some("root-r"),
+            "the persisted sub-agent id resumes the root session"
+        );
+        let saved = vec![Saved {
+            id: "t2".into(),
+            cwd: "/w".into(),
+            agent: Some("codex".into()),
+            session: Some("root-r".into()),
+            ..Default::default()
+        }];
+        assert_eq!(
+            remap_codex_roots(&d, &d.join("state"), saved)[0]
+                .session
+                .as_deref(),
+            Some("root-r"),
+            "a root session is left alone"
+        );
+        let _ = std::fs::remove_dir_all(&d);
     }
 
     #[test]

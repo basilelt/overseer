@@ -1,7 +1,7 @@
 use overseer::procs::{Probe, ProcInfo};
 use overseer::util::parse_rfc3339;
 use overseer::{scan, Config, Ctx, Line};
-use serde_json::Value;
+use serde_json::{json, Value};
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -484,6 +484,90 @@ fn codex_state_db_is_read_from_a_copy() {
         0
     );
     drop(db);
+}
+
+#[test]
+fn a_codex_multi_agent_sub_agent_row_is_the_root_session_not_a_line_of_its_own() {
+    let fx = Fx::new();
+    // root + sub-agent rollouts, as codex multi-agent v2 writes them
+    let day = fx.codex().join("sessions/2026/10/28");
+    std::fs::create_dir_all(&day).unwrap();
+    let write = |name: &str, id: &str, ts: &str, parent: Option<&str>| {
+        let source = match parent {
+            Some(p) => json!({"subagent": {"thread_spawn": {"parent_thread_id": p}}}),
+            None => json!("vscode"),
+        };
+        std::fs::write(
+            day.join(name),
+            format!(
+                "{}\n",
+                json!({"type": "session_meta", "payload": {
+                    "id": id, "timestamp": format!("2026-10-28T{ts}Z"), "cwd": fx.wt_chore,
+                    "source": source, "thread_source": parent.map(|_| "subagent")
+                }})
+            ),
+        )
+        .unwrap();
+    };
+    write(
+        "rollout-09-00-00-cx-root.jsonl",
+        "cx-root",
+        "09-00-00",
+        None,
+    );
+    write(
+        "rollout-11-00-00-cx-sub.jsonl",
+        "cx-sub",
+        "11-00-00",
+        Some("cx-root"),
+    );
+    let db = rusqlite::Connection::open(fx.codex().join("state_5.sqlite")).unwrap();
+    db.execute_batch(
+        "CREATE TABLE threads (id TEXT, rollout_path TEXT, created_at INTEGER, updated_at INTEGER, cwd TEXT,
+           title TEXT, archived INTEGER, git_branch TEXT, first_user_message TEXT);",
+    )
+    .unwrap();
+    let t = parse_rfc3339("2026-10-28T09:00:00Z").unwrap() / 1000;
+    db.execute(
+        "INSERT INTO threads VALUES ('cx-root', ?2, ?1, ?1, ?3, 'Fix the login', 0, NULL, NULL)",
+        rusqlite::params![
+            t,
+            day.join("rollout-09-00-00-cx-root.jsonl").to_string_lossy(),
+            fx.wt_chore
+        ],
+    )
+    .unwrap();
+    db.execute(
+        "INSERT INTO threads VALUES ('cx-sub', ?2, ?1, ?1, ?3, 'Review', 0, NULL, NULL)",
+        rusqlite::params![
+            t,
+            day.join("rollout-11-00-00-cx-sub.jsonl").to_string_lossy(),
+            fx.wt_chore
+        ],
+    )
+    .unwrap();
+    drop(db);
+    let probe = Fake(vec![(
+        6100,
+        "1",
+        argv("codex resume cx-root"),
+        Some(fx.wt_chore.clone()),
+    )]);
+    let lines = fx.scan(&probe);
+    let codex: Vec<&Line> = lines.iter().filter(|l| l.agent == "codex").collect();
+    assert_eq!(
+        codex.len(),
+        1,
+        "the sub-agent row is not a session of its own: {codex:?}"
+    );
+    let l = codex[0];
+    assert_eq!(l.session_id, "cx-root");
+    assert_eq!(l.title.as_deref(), Some("Fix the login"));
+    assert_eq!(l.pid, Some(6100));
+    assert_eq!(
+        l.resume_command,
+        format!("cd {} && codex resume cx-root", fx.wt_chore)
+    );
 }
 
 #[test]
