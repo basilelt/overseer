@@ -19,6 +19,7 @@
   import SpacesView from './SpacesView.svelte';
   import StatesView from './StatesView.svelte';
   import { isAgentItem } from '../../agents';
+  import { loadKnown } from '../../tabs/known-tabs';
 
   let { filter, showArchived }: { filter: string; showArchived: boolean } = $props();
 
@@ -51,6 +52,10 @@
     if (l.target.kind === 'local') return t('connect.local');
     const addr = c.resolved?.split(' ')[0] ?? l.target.host ?? '';
     return addr === hostName(l.target) ? '' : addr;
+  }
+
+  function savedTabs(l: HostLink, id: string): string[] | undefined {
+    return id === '' ? loadKnown(l.key, '#other')?.tabs : l.ws.workspaces.find((w) => w.id === id)?.tabs;
   }
 
   function menu(e: MouseEvent, l: HostLink) {
@@ -92,6 +97,7 @@
               <SpaceBlock
                 row={r}
                 {now}
+                tabs={savedTabs(l, r.id)}
                 open
                 closedOpen={false}
                 selectedKey={null}
