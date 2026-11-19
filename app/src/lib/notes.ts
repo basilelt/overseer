@@ -76,3 +76,26 @@ export function editNote(app: Host, lineId: string, id: string, raw: string): Pr
 export function removeNote(app: Host, lineId: string, id: string): Promise<boolean> {
   return change(app, lineId, (p) => p.filter((n) => n.id !== id), (api) => api.remove(lineId, id));
 }
+
+/** Unsent note edits kept outside $state: Svelte teardowns read state as it was before the flush, so a blur-time take would be invisible to onDestroy. */
+export function noteEdits(onchange: (edits: Record<string, string>) => void) {
+  let pending: Record<string, string> = {};
+  const set = (next: Record<string, string>) => {
+    pending = next;
+    onchange(next);
+  };
+  return {
+    put: (id: string, text: string) => set({ ...pending, [id]: text }),
+    take(id: string): string | undefined {
+      if (!Object.hasOwn(pending, id)) return undefined;
+      const { [id]: text, ...rest } = pending;
+      set(rest);
+      return text;
+    },
+    takeAll() {
+      const all = pending;
+      set({});
+      return all;
+    },
+  };
+}
