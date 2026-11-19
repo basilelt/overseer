@@ -1,19 +1,26 @@
 <script lang="ts">
   import Bot from '@lucide/svelte/icons/bot';
+  import Pencil from '@lucide/svelte/icons/pencil';
   import Send from '@lucide/svelte/icons/send';
   import Modal from '../ui/Modal.svelte';
+  import AgentPicker from '../ui/AgentPicker.svelte';
+  import ModelField from '../ui/ModelField.svelte';
+  import ProfileSelect from '../ui/ProfileSelect.svelte';
+  import Segmented from '../ui/Segmented.svelte';
   import { app, projectName } from '../../state.svelte';
   import { t, type Key } from '../../i18n.svelte';
   import { flagPatch, hearsMessages, isSession, mergeMessage, quadrant, quadrantFlags } from '../../kanban/kanban';
   import { onDestroy, untrack } from 'svelte';
   import DepPicker from './DepPicker.svelte';
   import QuorumChips from './QuorumChips.svelte';
-  import { agentName } from '../../agents';
+  import { adaptChoice, agentName, efforts, findAgent, hasModel, taskAgents } from '../../agents';
   import { fromOverseer } from '../../kanban/quorum';
-  import type { Task, TaskMessage } from '../../types';
+  import { TASK_TYPES } from '../../profiles/profiles';
+  import { editPatch } from '../../kanban/task-edit';
+  import type { Effort, Task, TaskMessage, TaskType } from '../../types';
   import { isSubmitChord } from '../../chord';
 
-  let { onclose }: { onclose: () => void } = $props();
+  let { onclose, startEditing = false }: { onclose: () => void; startEditing?: boolean } = $props();
 
   const MAX = 8000;
 
@@ -28,6 +35,39 @@
   let draft = $state('');
   let sending = $state(false);
   let list = $state<HTMLElement>();
+
+  interface EditState {
+    title: string;
+    description: string;
+    agent: string;
+    model: string;
+    effort: Effort | undefined;
+    ticketKey: string;
+    taskType: TaskType | '';
+    profile: string;
+  }
+
+  function capture(t: Task): EditState {
+    return {
+      title: t.title,
+      description: t.description,
+      agent: t.agent,
+      model: t.model,
+      effort: adaptChoice(findAgent(app.agents, t.agent), { model: t.model, effort: t.effort || undefined }).effort,
+      ticketKey: t.ticketKey ?? '',
+      taskType: t.taskType ?? '',
+      profile: t.profile ?? '',
+    };
+  }
+
+  const initialTask = untrack(() => (startEditing ? task : null));
+  let edit = $state<EditState | null>(initialTask ? capture(initialTask) : null);
+  let saving = $state(false);
+  let eError = $state('');
+
+  const agents = $derived(taskAgents(app.agents));
+  const info = $derived(findAgent(app.agents, edit?.agent ?? task?.agent ?? ''));
+  const effortOptions = $derived(efforts(info));
 
   async function load(id: string) {
     try {
@@ -59,15 +99,59 @@
     app.data = { ...app.data, tasks: app.data.tasks.map((x) => (x.id === next.id ? next : x)) };
   }
 
-  async function patch(change: Partial<Task>) {
-    if (!task) return;
+  async function patch(change: Partial<Task>): Promise<boolean> {
+    if (!task) return false;
     const prev = task;
     replace({ ...prev, ...change });
     try {
       replace(await app.api.patchTask(prev.id, change));
+      return true;
     } catch (e) {
       replace(prev);
       app.notify(errText(e), 'error');
+      return false;
+    }
+  }
+
+  function startEdit() {
+    if (!task) return;
+    edit = capture(task);
+    eError = '';
+  }
+
+  function setAgent(id: string) {
+    if (!edit) return;
+    edit.agent = id;
+    ({ model: edit.model, effort: edit.effort } = adaptChoice(findAgent(app.agents, id), { model: edit.model, effort: edit.effort }));
+  }
+
+  async function saveEdit() {
+    if (!task || !edit || saving) return;
+    if (!edit.title.trim()) {
+      eError = t('task.titleRequired');
+      return;
+    }
+    const change = editPatch(task, {
+      title: edit.title,
+      description: edit.description,
+      agent: edit.agent,
+      model: edit.model,
+      effort: edit.effort,
+      hasModel: hasModel(info),
+      effortOptions,
+      ticketKey: edit.ticketKey,
+      taskType: edit.taskType,
+      profile: edit.profile,
+    });
+    if (!change) {
+      edit = null;
+      return;
+    }
+    saving = true;
+    try {
+      if (await patch(change)) edit = null;
+    } finally {
+      saving = false;
     }
   }
 
@@ -107,18 +191,86 @@
 <Modal title={task ? t('task.detail', { n: task.number }) : t('common.error')} {onclose} width={620}>
   {#if task}
     <div class="body">
-      <div class="head">
-        <div class="title">{task.title}</div>
-        <div class="meta">
-          <span>{projectName(app.allProjects, task.project)}</span>
-          <span class="stat {task.status}">{t(`kanban.col.${task.status}` as Key)}</span>
-          {#if task.origin === 'agent'}
-            <span class="by"><Bot size={11} />{parent ? t('task.createdByTask', { n: parent.number }) : t('task.createdByAgent')}</span>
+      {#if edit}
+        {@const e = edit}
+        <div class="edit">
+          <label class="field">
+            <span>{t('task.title')}</span>
+            <input bind:value={e.title} aria-invalid={!!eError} oninput={() => (eError = '')} />
+          </label>
+          {#if eError}<em class="err">{eError}</em>{/if}
+          <label class="field">
+            <span>{t('task.description')}</span>
+            <textarea rows="4" bind:value={e.description} placeholder={t('task.descriptionPlaceholder')} spellcheck="true"></textarea>
+          </label>
+          {#if !isSession(task)}
+            <div class="row">
+              <div class="field">
+                <span>{t('task.agent')}</span>
+                <AgentPicker {agents} value={e.agent} label={t('task.agent')} onchange={setAgent} />
+              </div>
+              {#if hasModel(info)}
+                <div class="field">
+                  <span>{t('task.model')}</span>
+                  <ModelField agent={info} value={e.model} label={t('task.model')} onchange={(v) => (e.model = v)} />
+                </div>
+              {/if}
+            </div>
+            <div class="row">
+              <label class="field">
+                <span>{t('task.ticketKey')}</span>
+                <input bind:value={e.ticketKey} placeholder="PROJ-123" class="mono" />
+              </label>
+              {#if app.profiles?.taskTypes}
+                <label class="field">
+                  <span>{t('task.type')}</span>
+                  <select value={e.taskType} onchange={(ev) => (e.taskType = ev.currentTarget.value as TaskType | '')}>
+                    <option value="">{t('taskType.unset')}</option>
+                    {#each TASK_TYPES as ty (ty)}<option value={ty}>{t(`taskType.${ty}` as Key)}</option>{/each}
+                  </select>
+                </label>
+              {/if}
+              {#if app.profiles}
+                <div class="field">
+                  <span>{t('profile.label')}</span>
+                  <ProfileSelect value={e.profile} cwd={task.project} taskType={e.taskType || undefined} agent={e.agent} onchange={(v) => (e.profile = v)} />
+                </div>
+              {/if}
+            </div>
+            {#if effortOptions.length}
+              <div class="field">
+                <span>{t('task.effort')}</span>
+                <Segmented
+                  label={t('task.effort')}
+                  value={e.effort ?? effortOptions[effortOptions.length - 1]}
+                  options={effortOptions.map((v) => ({ value: v, label: t(`effort.${v}` as Key) }))}
+                  onchange={(v) => (e.effort = v)}
+                />
+              </div>
+            {/if}
           {/if}
-          <QuorumChips {task} />
+          <div class="edit-actions">
+            <button class="btn ghost" onclick={() => (edit = null)}>{t('common.cancel')}</button>
+            <button class="btn primary" disabled={saving} onclick={saveEdit}>{t('common.save')}</button>
+          </div>
         </div>
-        {#if task.description}<p class="desc">{task.description}</p>{/if}
-      </div>
+      {:else}
+        <div class="head">
+          <div class="title-row">
+            <div class="title">{task.title}</div>
+            <button class="btn ghost small" data-tour="task-edit" title={t('task.edit')} aria-label={t('task.edit')} onclick={startEdit}><Pencil size={12} />{t('task.edit')}</button>
+          </div>
+          <div class="meta">
+            <span>{projectName(app.allProjects, task.project)}</span>
+            <span class="stat {task.status}">{t(`kanban.col.${task.status}` as Key)}</span>
+            {#if task.origin === 'agent'}
+              <span class="by"><Bot size={11} />{parent ? t('task.createdByTask', { n: parent.number }) : t('task.createdByAgent')}</span>
+            {/if}
+            <QuorumChips {task} />
+          </div>
+          {#if task.description}<p class="desc">{task.description}</p>{/if}
+        </div>
+      {/if}
 
       {#if task.quorum}
         <section>
@@ -197,11 +349,68 @@
     gap: 16px;
     min-width: 0;
   }
+  .title-row {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 8px;
+  }
   .title {
     font-size: 15px;
     font-weight: 600;
     line-height: 1.35;
     overflow-wrap: anywhere;
+    min-width: 0;
+  }
+  .edit {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .edit .row {
+    display: flex;
+    gap: 12px;
+  }
+  :global(.phone) .edit .row {
+    flex-direction: column;
+  }
+  .edit .field {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    flex: 1;
+    min-width: 0;
+  }
+  .edit .field > span {
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text-2);
+  }
+  .edit textarea {
+    resize: vertical;
+    min-height: 72px;
+  }
+  .edit .err {
+    font-style: normal;
+    font-size: 12px;
+    color: var(--st-failed);
+  }
+  .edit input[aria-invalid='true'] {
+    border-color: var(--st-failed);
+  }
+  .edit-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+  }
+  /* the body turns text selection off; the task's own text stays selectable and copyable */
+  .title,
+  .desc,
+  .meta,
+  .msg,
+  .votes li {
+    user-select: text;
+    -webkit-user-select: text;
   }
   .meta {
     display: flex;

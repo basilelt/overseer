@@ -1839,6 +1839,38 @@ export class MockDaemon implements DaemonClient {
     throw new DaemonError(400, `taskType must be one of ${TASK_TYPES.join(', ')}`);
   }
 
+  /** The same field checks the daemon's PATCH does, so the mock never accepts what the daemon refuses. */
+  private validateTaskPatch(patch: Record<string, any>, t: Task) {
+    if ('title' in patch) {
+      if (typeof patch.title !== 'string') throw new DaemonError(400, 'title must be a string');
+      if (!patch.title.trim()) throw new DaemonError(400, 'title must not be empty');
+      patch.title = patch.title.trim();
+    }
+    if ('description' in patch && typeof patch.description !== 'string') throw new DaemonError(400, 'description must be a string');
+    if ('model' in patch) {
+      if (typeof patch.model !== 'string') throw new DaemonError(400, 'model must be a string');
+      patch.model = patch.model.trim();
+    }
+    if ('agent' in patch) {
+      const ids = MOCK_AGENTS.filter((a) => a.id !== 'shell').map((a) => a.id);
+      if (patch.agent == null) throw new DaemonError(400, 'agent must not be null');
+      if (typeof patch.agent !== 'string' || !ids.includes(patch.agent)) throw new DaemonError(400, `agent must be one of ${ids.join(', ')}`);
+    }
+    if ('effort' in patch && patch.effort !== '') {
+      const levels = agentInfo(typeof patch.agent === 'string' ? patch.agent : t.agent)?.efforts ?? [...ALL_EFFORTS];
+      if (typeof patch.effort !== 'string' || !levels.includes(patch.effort as Effort)) throw new DaemonError(400, `effort must be one of ${levels.join(', ')}`);
+    }
+    if ('ticketKey' in patch && patch.ticketKey != null) {
+      if (typeof patch.ticketKey !== 'string') throw new DaemonError(400, 'ticketKey must be a string or null');
+      const m = /(?:^|[^A-Za-z0-9_])([A-Za-z][A-Za-z0-9_]{1,})-(\d+)/.exec(patch.ticketKey.toUpperCase());
+      if (!m) throw new DaemonError(400, 'ticketKey must look like PROJ-1234');
+    }
+    if ('profile' in patch && patch.profile != null && patch.profile !== '') {
+      if (typeof patch.profile !== 'string') throw new DaemonError(400, 'profile must be a string or null');
+      if (patch.profile !== 'none' && !this.profileStore.profiles.some((p) => p.id === patch.profile)) throw new DaemonError(400, `unknown profile ${patch.profile}`);
+    }
+  }
+
   private messagesRoute(method: string, id: string, body: any): unknown {
     const t = this.findTask(id);
     if (method === 'GET') return structuredClone(this.messages.filter((m) => m.taskId === id || m.from === id));
@@ -2035,6 +2067,7 @@ export class MockDaemon implements DaemonClient {
     if (!action && method === 'PATCH') {
       const { id: _id, number: _n, ...patch } = body ?? {};
       if (Array.isArray(patch.dependsOn) && patch.dependsOn.includes(id)) throw new DaemonError(400, 'a task cannot depend on itself');
+      this.validateTaskPatch(patch, t);
       if (typeof patch.status === 'string') {
         if (t.origin === 'session') {
           if (!SESSION_STATUSES.includes(patch.status)) throw new DaemonError(400, 'a session task follows its session: status must be one of in_progress, in_testing, merged, completed');
@@ -2060,6 +2093,9 @@ export class MockDaemon implements DaemonClient {
         else delete t.taskType;
       }
       Object.assign(t, patch);
+      // the daemon omits cleared optionals from the JSON instead of sending null
+      if ('ticketKey' in patch && t.ticketKey == null) delete t.ticketKey;
+      if ('profile' in patch && (t.profile == null || t.profile === '')) delete t.profile;
       if (t.origin === 'session' && patch.status) t.manualStatus = patch.status;
       return this.touch(t);
     }

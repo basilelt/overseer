@@ -371,6 +371,96 @@ fn tasks_crud_numbers_and_projects() {
 }
 
 #[test]
+fn a_task_is_edited_through_patch_with_the_daemons_field_validations() {
+    let app = App::new("taskedit", json!({}));
+    let wt = app.fx.wt.to_string_lossy().into_owned();
+    let id = app.ok(
+        "POST",
+        "/v1/tasks",
+        json!({"title": "Original", "description": "first body", "project": wt}),
+    )["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let url = format!("/v1/tasks/{id}");
+    // the whole edit form in one patch: text, CLI, model, effort, ticket, type, profile
+    let v = app.ok(
+        "PATCH",
+        &url,
+        json!({
+            "title": "  Renamed  ",
+            "description": "second body",
+            "agent": "codex",
+            "model": "gpt-5.4",
+            "effort": "max",
+            "ticketKey": "proj-42",
+            "taskType": "fix",
+            "profile": "balanced",
+        }),
+    );
+    assert_eq!(v["title"], "Renamed");
+    assert_eq!(v["description"], "second body");
+    assert_eq!(v["agent"], "codex");
+    assert_eq!(v["model"], "gpt-5.4");
+    assert_eq!(v["effort"], "max");
+    assert_eq!(v["ticketKey"], "PROJ-42");
+    assert_eq!(v["taskType"], "fix");
+    assert_eq!(v["profile"], "balanced");
+    // the stored task reads back the same
+    let got = app.task(&id);
+    assert_eq!(got["title"], "Renamed");
+    assert_eq!(got["agent"], "codex");
+    // cleared fields come back absent, effort as an empty string
+    let v = app.ok(
+        "PATCH",
+        &url,
+        json!({"ticketKey": null, "taskType": null, "profile": null, "effort": "", "model": ""}),
+    );
+    assert!(v.get("ticketKey").is_none());
+    assert!(v.get("taskType").is_none());
+    assert!(v.get("profile").is_none());
+    assert_eq!(v["effort"], "");
+    assert_eq!(v["model"], "");
+    // the daemon refuses what the edit form must never send
+    let (code, e) = app.req("PATCH", &url, json!({"title": "   "}));
+    assert_eq!(
+        (code, e["error"].as_str().unwrap()),
+        (400, "title must not be empty")
+    );
+    let (code, e) = app.req("PATCH", &url, json!({"agent": "shell"}));
+    assert_eq!(code, 400);
+    assert!(e["error"]
+        .as_str()
+        .unwrap()
+        .starts_with("agent must be one of "));
+    let (code, e) = app.req("PATCH", &url, json!({"agent": "codex", "effort": "huge"}));
+    assert_eq!(
+        (code, e["error"].as_str().unwrap()),
+        (400, "effort must be one of low, medium, high, max")
+    );
+    let (code, e) = app.req("PATCH", &url, json!({"ticketKey": "nope"}));
+    assert_eq!(
+        (code, e["error"].as_str().unwrap()),
+        (400, "ticketKey must look like PROJ-1234")
+    );
+    let (code, e) = app.req("PATCH", &url, json!({"profile": "ghost"}));
+    assert_eq!(
+        (code, e["error"].as_str().unwrap()),
+        (400, "unknown profile ghost")
+    );
+    let (code, e) = app.req("PATCH", &url, json!({"taskType": "chore"}));
+    assert_eq!(
+        (code, e["error"].as_str().unwrap()),
+        (
+            400,
+            "taskType must be one of fix, feature, engineering, refactor, triage"
+        )
+    );
+    // none of the refused patches changed the task
+    assert_eq!(app.task(&id)["title"], "Renamed");
+}
+
+#[test]
 fn a_websocket_head_that_arrives_late_still_attaches() {
     let app = App::new("latehead", json!({}));
     let wt = app.fx.wt.to_string_lossy().into_owned();
