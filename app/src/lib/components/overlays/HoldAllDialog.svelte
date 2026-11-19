@@ -6,7 +6,7 @@
   import { t } from '../../i18n.svelte';
   import type { HoldPlan } from '../../daemon/api';
   import { isOff } from '../../session/grouping';
-  import { stalled } from '../../session/close-force';
+  import { blockers, stalled } from '../../session/close-force';
   import { targetItems, targetName } from '../../workspace/wsactions';
 
   let { onclose }: { onclose: () => void } = $props();
@@ -24,8 +24,6 @@
   let done = $state<Record<string, string>>({});
 
   const okOf = (p: HoldPlan | 'loading' | undefined) => !!p && p !== 'loading' && !p.error && Object.values(p.predicates ?? {}).every((c) => c.ok);
-  const failures = (p: HoldPlan | 'loading' | undefined) =>
-    !p || p === 'loading' ? [] : [...(p.error ? [p.error] : []), ...Object.entries(p.predicates ?? {}).filter(([, c]) => !c.ok).map(([k, c]) => `${k}: ${c.detail ?? ''}`)];
 
   onMount(async () => {
     if (mode === 'resume') {
@@ -88,7 +86,7 @@
           {:else if waiting}
             <span class="st bad">{t(waiting === 'waiting' ? 'hold.waiting' : 'hold.turn')}</span>
           {:else if checked}
-            <span class="st" class:good={ok} class:bad={!ok}>{ok ? t(mode === 'close' ? 'hold.safeClose' : 'hold.safe') : failures(p).join(' · ')}</span>
+            <span class="st" class:good={ok} class:bad={!ok}>{ok ? t(mode === 'close' ? 'hold.safeClose' : 'hold.safe') : blockers(p).join(' · ')}</span>
           {/if}
         </label>
       </li>
@@ -140,10 +138,8 @@
   .st {
     font-size: 11px;
     color: var(--text-3);
-    max-width: 220px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    max-width: 55%;
+    text-align: right;
   }
   .good {
     color: var(--st-input);
