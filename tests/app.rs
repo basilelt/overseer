@@ -4086,6 +4086,63 @@ fn finds_an_agent_installed_under_an_older_nvm_node() {
 }
 
 #[test]
+fn a_daemon_started_locally_and_one_started_over_ssh_detect_the_same_agents() {
+    let stub = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/stubs/agent");
+    // A CLI in ~/.local/bin, off the fake login PATH, and one under an older nvm Node.
+    let plant = |app: &App| {
+        let local = app.fx.base.join("home/.local/bin");
+        std::fs::create_dir_all(&local).unwrap();
+        std::fs::copy(&stub, local.join("amp")).unwrap();
+        let old = app.fx.base.join("home/.nvm/versions/node/v24.0.0/bin");
+        std::fs::create_dir_all(&old).unwrap();
+        std::fs::copy(&stub, old.join("codex")).unwrap();
+    };
+    let installed = |app: &App| -> Vec<(String, bool)> {
+        app.ok("GET", "/v1/agents", Value::Null)
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|a| {
+                (
+                    a["id"].as_str().unwrap().to_string(),
+                    a["installed"].as_bool().unwrap(),
+                )
+            })
+            .collect()
+    };
+    // Local boot or desktop app: the inherited PATH is minimal, the login shell answers.
+    let mut local = App::with_env("cli-local-start", json!({}), &[("OVERSEER_LOGIN_ENV", "1")]);
+    plant(&local);
+    local.crash_and_restart();
+    let env = local.ok("GET", "/v1/env", Value::Null);
+    assert_eq!(env["source"], "login-shell", "{env}");
+    assert!(
+        env["path"].as_str().unwrap().contains(".local/bin"),
+        "{env}"
+    );
+    let local_list = installed(&local);
+    // SSH: the daemon inherits the sshd-minimal PATH and the login shell may not answer;
+    // the fallback dirs must give the same detection, not a different one.
+    let mut ssh = App::with_env(
+        "cli-ssh-start",
+        json!({}),
+        &[("OVERSEER_LOGIN_ENV", "1"), ("SHELL", "/nonexistent-shell")],
+    );
+    plant(&ssh);
+    ssh.crash_and_restart();
+    let env = ssh.ok("GET", "/v1/env", Value::Null);
+    assert_eq!(env["source"], "fallback", "{env}");
+    assert!(
+        env["path"].as_str().unwrap().contains(".local/bin"),
+        "{env}"
+    );
+    assert_eq!(installed(&ssh), local_list);
+    let find = |l: &[(String, bool)], id: &str| l.iter().find(|(i, _)| i == id).unwrap().1;
+    assert!(find(&local_list, "amp"), "{local_list:?}");
+    assert!(find(&local_list, "codex"), "{local_list:?}");
+}
+
+#[test]
 fn rescan_finds_an_agent_installed_into_a_dir_created_after_start() {
     let app = App::new("rescan-new-dir", json!({}));
     let cursor = |agents: &Value| {

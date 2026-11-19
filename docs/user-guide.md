@@ -1122,8 +1122,9 @@ on Vibe gets `--trust`, since its new worktree would otherwise stop at Vibe's tr
 Detection uses the daemon's `PATH`. A daemon started over SSH by the app gets a minimal
 environment, so at start it asks the login shell for the real one (`$SHELL -l -i -c`, 5 s
 timeout), the way VS Code Remote-SSH does: agents in `~/.local/bin`, `~/.nvm/…/bin`,
-`~/.bun/bin` and so on are found, and every term it starts gets the same environment. If the
-shell does not answer, the usual user directories that exist are added to `PATH` instead.
+`~/.bun/bin` and so on are found, and every term it starts gets the same environment. Whether
+the shell answers or not, the same usual user directories that exist are then appended to
+`PATH`, so a daemon started at boot, by the desktop app or over SSH detects the same agents.
 The `bin` of every nvm Node version is appended after the active one, so an agent installed
 with `npm install -g` under an older version than the current default is still found.
 `overseer doctor` and `GET /v1/env` show the `PATH` in use and where it came from. A running
