@@ -46,6 +46,7 @@
   function meta(l: HostLink): string {
     const c = stateOf(l);
     if (c.prompt) return t('hosts.waiting');
+    if (c.phase === 'reconnecting') return t('hosts.reconnecting', { n: c.attempt ?? 1 });
     if (c.phase !== 'connected') return connLabel(c);
     if (l.target.kind === 'local') return t('connect.local');
     const addr = c.resolved?.split(' ')[0] ?? l.target.host ?? '';
@@ -64,6 +65,8 @@
     {@const isActive = l === app.link}
     {@const open = !folded.has(l.key)}
     {@const name = hostName(l.target)}
+    {@const info = meta(l)}
+    {@const full = stateOf(l).phase === 'connected' ? info : connLabel(stateOf(l))}
     <section class="host" class:active={isActive} class:open aria-label={name}>
       <div class="head" role="presentation" oncontextmenu={(e) => menu(e, l)}>
         <button class="fold" type="button" aria-expanded={open} aria-label={t(open ? 'ws.collapse' : 'ws.expand', { name })} onclick={() => toggleFold(l.key)}>
@@ -73,7 +76,7 @@
           {#if l.target.kind === 'local'}<Monitor size={13} />{:else}<Server size={13} />{/if}
           <span class="dot" style:background={dot(l)}></span>
           <span class="name">{name}</span>
-          <span class="meta mono" class:warn={stateOf(l).phase !== 'connected'}>{meta(l)}</span>
+          <span class="meta mono" class:warn={stateOf(l).phase !== 'connected'} title={full || undefined}>{info}</span>
           <span class="n">{count(l)}</span>
         </button>
         <button class="icon-btn more" type="button" aria-label={t('hosts.menu', { name })} aria-haspopup="menu" onclick={(e) => menu(e, l)}><Ellipsis size={13} /></button>

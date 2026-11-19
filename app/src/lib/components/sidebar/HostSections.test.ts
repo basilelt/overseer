@@ -70,6 +70,11 @@ describe('HostSections', () => {
     expect(html()).toMatch(/class="meta mono svelte-[\w-]+ warn"[^>]*>[^<]*2/);
   });
 
+  it('shows a short reconnecting state that fits the header, with the full state in a tooltip', () => {
+    prod.conn = { phase: 'reconnecting', target: prod.target, attempt: 3 };
+    expect(html()).toMatch(/class="meta mono svelte-[\w-]+ warn" title="Reconnecting \(attempt 3\)">Reconnecting \(3\)</);
+  });
+
   it('offers to add a host to the window', () => {
     expect(html()).toContain('Add a host to this window');
   });
