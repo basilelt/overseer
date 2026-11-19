@@ -24,6 +24,7 @@ beforeEach(() => {
   app.view = 'agents';
   app.selectedKey = 'line:ln_03';
   app.liveReview = false;
+  app.sidebarOpen = true;
   live.worktree = null;
 });
 
@@ -33,6 +34,7 @@ afterEach(() => {
   app.data = snapshot;
   app.liveReview = false;
   app.selectedKey = null;
+  app.sidebarOpen = true;
   workspace.layout = EMPTY_LAYOUT;
   beside.key = null;
   live.worktree = null;
@@ -92,6 +94,37 @@ describe('live review', () => {
     toggleLiveReview();
     app.view = 'kanban';
     expect(liveOn()).toBe(false);
+  });
+
+  it('collapses the left bar to the rail while on and restores it when off', () => {
+    expect(app.sidebarOpen).toBe(true);
+    toggleLiveReview();
+    expect(liveOn()).toBe(true);
+    expect(app.sidebarOpen).toBe(false);
+    app.sidebarOpen = true; // expanded again from the rail, e.g. with the sidebar toggle
+    toggleLiveReview();
+    expect(liveOn()).toBe(false);
+    expect(app.sidebarOpen).toBe(true);
+  });
+
+  it('keeps a hidden sidebar hidden after the live review ends', () => {
+    app.sidebarOpen = false;
+    toggleLiveReview();
+    expect(app.sidebarOpen).toBe(false);
+    toggleLiveReview();
+    expect(app.sidebarOpen).toBe(false);
+  });
+
+  it('collapses the left bar when the live review comes back after a reload', () => {
+    toggleLiveReview();
+    app.liveReview = false;
+    beside.key = null;
+    app.sidebarOpen = true;
+    expect(restoreLiveReview()).toBe(true);
+    expect(liveOn()).toBe(true);
+    expect(app.sidebarOpen).toBe(false);
+    toggleLiveReview();
+    expect(app.sidebarOpen).toBe(true);
   });
 
   it('targets the picked worktree for git and the session for the review', () => {

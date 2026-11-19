@@ -2151,7 +2151,7 @@ changes and abort on conflicts (the error names the files).
 
 The git button in a session's tab bar (or the palette's "Open or close the live review") turns the
 window into a live review of that session: the agent stays where it is, its review opens beside it,
-the sidebar becomes a rail of the workspace's sessions (click one to switch; the review follows),
+the sidebar becomes a rail of the workspace's sessions (click one to switch; the review follows) — drag the rail's right edge, double-click it or press Ctrl+B (the palette's "Toggle sidebar") to bring the full sidebar back while the review stays open,
 the side panel steps aside, and a bar at the bottom runs git. Press the button again to go back.
 
 The bar acts on one repository only: the worktree named on its left. Its menu lists every worktree
