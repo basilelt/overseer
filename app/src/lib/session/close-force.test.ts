@@ -3,6 +3,7 @@ import { stalled } from './close-force';
 
 const ok = { ok: true };
 const no = { ok: false, detail: 'x' };
+const unreadable = { ok: false, detail: 'prompt not found on screen', unknown: true };
 
 describe('stalled', () => {
   it('says waiting when the agent waiting for the user is among the turn blockers', () => {
@@ -16,10 +17,17 @@ describe('stalled', () => {
     expect(stalled({ predicates: { noToolRunning: no } })).toBe('turn');
   });
 
+  it('says unknown when the prompt could not be read on screen, alone or with turn blockers', () => {
+    expect(stalled({ predicates: { inputEmpty: unreadable } })).toBe('unknown');
+    expect(stalled({ predicates: { atPrompt: no, inputEmpty: unreadable } })).toBe('unknown');
+    expect(stalled({ predicates: { inputEmpty: { ok: false, detail: 'terminal content unavailable', unknown: true } } })).toBe('unknown');
+  });
+
   it('stays blocked when a check that protects data also fails', () => {
     expect(stalled({ predicates: { notNeedsInput: no, notPinned: no } })).toBeNull();
     expect(stalled({ predicates: { atPrompt: no, inputEmpty: no } })).toBeNull();
     expect(stalled({ predicates: { noToolRunning: no, alive: no } })).toBeNull();
+    expect(stalled({ predicates: { inputEmpty: unreadable, notPinned: no } })).toBeNull();
   });
 
   it('stays blocked for other single blockers, errors, loading and no plan', () => {

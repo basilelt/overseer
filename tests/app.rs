@@ -3611,6 +3611,38 @@ fn ending_a_busy_agent_session_needs_force_and_then_ends_its_term() {
 }
 
 #[test]
+fn close_plan_reports_typed_input_without_the_unknown_flag_and_force_closes_past_it() {
+    let sid = "eeeeeeee-0000-4000-8000-0000000000aa";
+    let app = App::new("closeunknown", json!({}));
+    let (tid, line) = claude_term(&app, json!(["claude", "--session-id", sid]), sid);
+    let mut ws = app.ws(&tid);
+    read_until(&mut ws, "❯");
+
+    // Typed text is a real refusal and is not flagged unknown: the app must not offer to force past it.
+    send(&mut ws, "half typed");
+    std::thread::sleep(Duration::from_millis(500));
+    let (code, plan) = app.req("POST", &format!("/v1/lines/{line}/close"), Value::Null);
+    assert_eq!(code, 409, "{plan}");
+    assert_eq!(plan["predicates"]["inputEmpty"]["ok"], false, "{plan}");
+    assert_eq!(
+        plan["predicates"]["inputEmpty"]["detail"],
+        "input box is not empty"
+    );
+    assert!(
+        plan["predicates"]["inputEmpty"]["unknown"].is_null(),
+        "{plan}"
+    );
+
+    let closed = app.ok(
+        "POST",
+        &format!("/v1/lines/{line}/close?dryRun=false&force=true"),
+        Value::Null,
+    );
+    assert_eq!(closed["action"], "closed", "{closed}");
+    wait(|| line_json(&app, &line)["line"]["state"] == "hung-up");
+}
+
+#[test]
 fn killing_an_agent_term_closes_it_without_a_shell() {
     let app = App::new("agentkill", json!({}));
     let wt = app.fx.wt.to_string_lossy().into_owned();

@@ -1309,6 +1309,7 @@ export const en = {
   'hold.closed': 'Closed',
   'hold.waiting': 'Waiting for you. Tick to close.',
   'hold.turn': 'Mid-turn? Tick to close.',
+  'hold.unknown': 'Prompt not found on screen? Tick to close.',
   'hold.confirmClose': 'Close {n}',
   'notify.allIdle': 'All agents in {name} are idle',
   'palette.newWorkspace': 'New workspace from a folder…',
