@@ -205,6 +205,7 @@ pub fn launch(
         cwd,
         shown,
         cmd,
+        env: crate::agents::session_env(agent.id),
         cols,
         rows,
         title: Some(title.into()),

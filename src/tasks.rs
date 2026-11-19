@@ -1165,6 +1165,7 @@ pub(crate) fn start_with_args(
     );
     let mut env = vec![("OVERSEER_TASK_ID".into(), t.id.clone())];
     env.extend(p.env.iter().cloned());
+    env.extend(crate::agents::session_env(agent.id));
     let base = env
         .iter()
         .rev()

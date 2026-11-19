@@ -260,11 +260,15 @@ pub fn on_start(state_dir: &Path, takeover: bool) {
         let applied = agent
             .map(|a| crate::profiles::for_restore(state_dir, a, &s.cwd, s.profile.as_ref()))
             .unwrap_or_default();
+        let mut env = applied.env;
+        if let Some(a) = agent {
+            env.extend(crate::agents::session_env(a.id));
+        }
         let spawned = crate::term::spawn(crate::term::Spec {
             id: Some(s.id.clone()),
             cwd: s.cwd.clone(),
             cmd: r.cmd,
-            env: applied.env,
+            env,
             cols: s.cols.max(20),
             rows: s.rows.max(5),
             title: Some(s.title.clone()).filter(|t| !t.is_empty()),

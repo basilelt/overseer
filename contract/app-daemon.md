@@ -146,6 +146,11 @@ shows `<prompt>` in its place. `vibe` takes the prompt as its positional argumen
 and a task launch adds `--trust` (a new worktree would stop at Vibe's trust prompt). Claude and Codex keep the paste: their argv is read back from
 `/proc` to build resume commands, so a prompt in argv would be replayed on resume.
 
+Every `vibe` session the daemon starts (term, task, resume, restore) also gets `BROWSER=true`:
+Vibe's browser sign-in then just prints the URL in the terminal instead of opening a window on
+the machine the terminal runs on, and the URL is opened from the app's browser where the user
+is. Other agents keep the caller's `BROWSER`.
+
 ## 3. Terminals
 
 The daemon owns PTYs (`portable-pty`; ConPTY on Windows). A term survives the app closing and
@@ -193,7 +198,7 @@ list in the registry in one transaction (persists across restarts) and publishes
 
 | Route | Body | Result |
 |---|---|---|
-| `POST /v1/terms` | `{cwd?, cmd?:[str] \| agent?:str \| install?:str, model?, effort?, env?:{str:str}, cols?, rows?, title?, lineId?, taskId?}` | **201** Term. `cwd` defaults to `$HOME`, `cmd` to the login shell (`$SHELL`, else `/bin/sh`; `%COMSPEC%` on Windows), `cols`×`rows` to 80×24 (each 1..=1000). `title` defaults to the basename of `cmd[0]`. The child gets the daemon's environment plus `env`, `TERM=xterm-256color`, `COLORTERM=truecolor`, `OVERSEER_TERM_ID=<id>`. With `agent` (instead of `cmd`) the daemon builds the argv from §2a with `model`/`effort`, a fresh session id when the agent takes one, and `title` = the agent's name. With `install` (an agent id, instead of `agent` and `cmd`; Unix only) the term runs `/bin/sh -c` with that agent's install command from §2a, shows it as `cmd` (`["npm install -g @openai/codex"]`), is titled `Install <name>`, and exits with the command's status after printing `Install failed with exit code N` on a failure. With `worktree: true` (or `{branch?, base?, slug?}`) and a `cwd` inside a git repository, the daemon first creates a worktree as `POST /v1/worktrees` does (branch `sb/<agent>/<slug>`, `shell` for a plain shell) and starts the term in it. 400: bad body, `cwd` not a directory, `cmd[0]` not found, both `agent` and `cmd`, `install` with `agent` or `cmd` (`give either install, agent or cmd`), an `install` agent without an install command (`<name> has no install command`), unknown or not installed agent, bad `effort`, `worktree` with a `cwd` outside a repository; 409: the worktree could not be created. |
+| `POST /v1/terms` | `{cwd?, cmd?:[str] \| agent?:str \| install?:str, model?, effort?, env?:{str:str}, cols?, rows?, title?, lineId?, taskId?}` | **201** Term. `cwd` defaults to `$HOME`, `cmd` to the login shell (`$SHELL`, else `/bin/sh`; `%COMSPEC%` on Windows), `cols`×`rows` to 80×24 (each 1..=1000). `title` defaults to the basename of `cmd[0]`. The child gets the daemon's environment plus `env`, `TERM=xterm-256color`, `COLORTERM=truecolor`, `OVERSEER_TERM_ID=<id>`. With `agent` (instead of `cmd`) the daemon builds the argv from §2a with `model`/`effort`, a fresh session id when the agent takes one, and `title` = the agent's name; a `vibe` session also gets `BROWSER=true` (§2a). With `install` (an agent id, instead of `agent` and `cmd`; Unix only) the term runs `/bin/sh -c` with that agent's install command from §2a, shows it as `cmd` (`["npm install -g @openai/codex"]`), is titled `Install <name>`, and exits with the command's status after printing `Install failed with exit code N` on a failure. With `worktree: true` (or `{branch?, base?, slug?}`) and a `cwd` inside a git repository, the daemon first creates a worktree as `POST /v1/worktrees` does (branch `sb/<agent>/<slug>`, `shell` for a plain shell) and starts the term in it. 400: bad body, `cwd` not a directory, `cmd[0]` not found, both `agent` and `cmd`, `install` with `agent` or `cmd` (`give either install, agent or cmd`), an `install` agent without an install command (`<name> has no install command`), unknown or not installed agent, bad `effort`, `worktree` with a `cwd` outside a repository; 409: the worktree could not be created. |
 | `GET /v1/terms` | | 200 `[Term]` (running and exited, oldest first) |
 | `GET /v1/terms/{id}` | | 200 Term · 404 |
 | `POST /v1/terms/{id}/resize` | `{cols, rows, client?}` | 200 Term · 400 · 404 · 409 exited |
@@ -467,7 +472,7 @@ a new daemon term in the worktree runs the agent:
 - `codex [-m <model>] -c model_reasoning_effort=<low|medium|high|xhigh>` (`max` → `xhigh`)
 - the other agents per the table of §2a (`config.json` `startArgs` apply to Claude only)
 
-with `OVERSEER_TASK_ID=<task id>` in its environment. Agents with a prompt flag get
+with `OVERSEER_TASK_ID=<task id>` in its environment (plus `BROWSER=true` for a `vibe` task, §2a). Agents with a prompt flag get
 `"<title>\n\n<description>"` in argv. For the others, when the agent is ready (1.5 s of
 output silence after its first output, at most 30 s) the prompt `"<title>\n\n<description>"`
 (trimmed) is typed into the PTY followed by Enter: as a bracketed paste when the program enabled

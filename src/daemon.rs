@@ -306,6 +306,7 @@ fn term_spec(b: &Value, state_dir: &std::path::Path) -> Result<crate::term::Spec
             auto_approve,
         });
         spec.env.extend(applied.env);
+        spec.env.extend(crate::agents::session_env(a.id));
         spec.profile = applied.chip;
         spec.session = session;
         if spec.title.is_none() && !a.bin.is_empty() {
@@ -671,10 +672,12 @@ fn resume_term(ctx: &Ctx, r: &Request, id: &str, body: &Value) -> (u16, Value) {
     let applied = crate::agents::get(l.agent)
         .map(|a| crate::profiles::for_resume(&ctx.state_dir, a, &plan.cwd))
         .unwrap_or_default();
+    let mut env = applied.env;
+    env.extend(crate::agents::session_env(l.agent));
     let t = crate::term::spawn(crate::term::Spec {
         cwd: plan.cwd.clone(),
         cmd: plan.argv.clone(),
-        env: applied.env,
+        env,
         cols: size.0,
         rows: size.1,
         title: l.title.clone(),

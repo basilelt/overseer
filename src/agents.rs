@@ -469,6 +469,20 @@ pub fn transcript_of(id: &str) -> Option<Transcript> {
     get(id).and_then(|a| a.transcript)
 }
 
+/// Environment every session of an agent starts with, on top of the profile's.
+/// Mistral Vibe's browser sign-in auto-opens the OS browser of the machine the
+/// terminal runs on: on a headless or remote workstation that pops a window
+/// nobody can see or use. With `BROWSER=true` the opener is a no-op
+/// (`webbrowser.open` and every BROWSER-respecting opener), so Vibe just prints
+/// the sign-in URL in the terminal, where a click opens it in the app's
+/// browser on the machine the user is actually looking at.
+pub fn session_env(id: &str) -> Vec<(String, String)> {
+    match id {
+        VIBE => vec![("BROWSER".to_string(), "true".to_string())],
+        _ => vec![],
+    }
+}
+
 pub fn task_agent(id: &str) -> bool {
     get(id).is_some_and(Agent::coding)
 }
@@ -1165,6 +1179,19 @@ mod tests {
         assert_eq!(transcript_of("vibe"), Some(Transcript::Vibe));
         assert_eq!(transcript_of("cursor"), None);
         assert_eq!(transcript_of("nope"), None);
+    }
+
+    #[test]
+    fn only_vibe_gets_a_noop_browser_so_its_signin_stays_in_the_terminal() {
+        assert_eq!(
+            session_env(VIBE),
+            vec![("BROWSER".to_string(), "true".to_string())]
+        );
+        for id in [
+            CLAUDE, CODEX, GEMINI, COPILOT, CURSOR, OPENCODE, AMP, SHELL, "nope",
+        ] {
+            assert!(session_env(id).is_empty(), "{id}");
+        }
     }
 
     #[test]
