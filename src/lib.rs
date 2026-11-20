@@ -1222,20 +1222,20 @@ fn scan_now(ctx: &Ctx) -> Result<Vec<Line>, String> {
     // still runs fires no session_end. Record the SessionEnd the hook would have
     // sent, so the line stops being mid-turn (docs/adr/0042-mistral-vibe.md).
     let vibe_sessions = vibe::sessions(&ctx.vibe_dir);
-    if probe_ok() {
-        for s in &vibe_sessions {
-            let open = vibe::open(&ctx.vibe_dir, &s.id, |p| ctx.probe.info(p).is_some());
-            if open {
-                continue;
-            }
-            let Ok(Some(mut h)) = reg.hook_state(agents::VIBE, &s.id) else {
-                continue;
-            };
-            if !h.busy
-                && !h.needs_input
-                && h.subagents == 0
-                && h.tasks == 0
-                && h.event == "SessionEnd"
+    let mid_turn = |h: &HookState| h.busy || h.needs_input || h.subagents != 0 || h.tasks != 0;
+    let stuck: Vec<(String, HookState)> = if vibe_sessions.is_empty() {
+        vec![]
+    } else {
+        reg.hook_sessions(agents::VIBE)?
+            .into_iter()
+            .filter(|(_, h)| mid_turn(h) || h.event != "SessionEnd")
+            .collect()
+    };
+    if !stuck.is_empty() && probe_ok() {
+        let known: HashSet<&str> = vibe_sessions.iter().map(|s| s.id.as_str()).collect();
+        for (id, mut h) in stuck {
+            if !known.contains(id.as_str())
+                || vibe::open(&ctx.vibe_dir, &id, |p| ctx.probe.info(p).is_some())
             {
                 continue;
             }
@@ -1245,7 +1245,7 @@ fn scan_now(ctx: &Ctx) -> Result<Vec<Line>, String> {
             h.subagents = 0;
             h.tasks = 0;
             h.at_ms = h.at_ms.max(ctx.now_ms);
-            let _ = reg.put_hook_state(agents::VIBE, &s.id, &h);
+            let _ = reg.put_hook_state(agents::VIBE, &id, &h);
         }
     }
     let hook_map = |agent| -> Result<HashMap<String, HookState>, String> {
