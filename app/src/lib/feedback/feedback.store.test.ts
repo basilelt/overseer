@@ -172,5 +172,6 @@ describe('feedback store', () => {
     expect(ft('title')).toBe('Envoyer un retour');
     setLocale('en');
     expect(ft('send', { agent: 'Claude Code' })).toBe('Send with Claude Code');
+    expect(ft('sendWith')).toBe('Send with…');
   });
 });

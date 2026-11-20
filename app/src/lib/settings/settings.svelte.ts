@@ -70,6 +70,7 @@ export interface Settings {
   phoneFontSize?: number;
   hideSessionTasks?: boolean;
   feedbackRepo?: string;
+  feedbackAgent?: Agent;
   tourSeen?: number | string;
   organizeNudgeAt?: number;
   fetchClaudeLimits: boolean;

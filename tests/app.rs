@@ -3611,6 +3611,37 @@ fn ending_a_busy_agent_session_needs_force_and_then_ends_its_term() {
 }
 
 #[test]
+fn close_plan_reports_typed_input_without_the_unknown_flag_and_force_closes_past_it() {
+    let sid = "eeeeeeee-0000-4000-8000-0000000000aa";
+    let app = App::new("closeunknown", json!({}));
+    let (tid, line) = claude_term(&app, json!(["claude", "--session-id", sid]), sid);
+    let mut ws = app.ws(&tid);
+    read_until(&mut ws, "❯");
+
+    send(&mut ws, "half typed");
+    std::thread::sleep(Duration::from_millis(500));
+    let (code, plan) = app.req("POST", &format!("/v1/lines/{line}/close"), Value::Null);
+    assert_eq!(code, 409, "{plan}");
+    assert_eq!(plan["predicates"]["inputEmpty"]["ok"], false, "{plan}");
+    assert_eq!(
+        plan["predicates"]["inputEmpty"]["detail"],
+        "input box is not empty"
+    );
+    assert!(
+        plan["predicates"]["inputEmpty"]["unknown"].is_null(),
+        "{plan}"
+    );
+
+    let closed = app.ok(
+        "POST",
+        &format!("/v1/lines/{line}/close?dryRun=false&force=true"),
+        Value::Null,
+    );
+    assert_eq!(closed["action"], "closed", "{closed}");
+    wait(|| line_json(&app, &line)["line"]["state"] == "hung-up");
+}
+
+#[test]
 fn killing_an_agent_term_closes_it_without_a_shell() {
     let app = App::new("agentkill", json!({}));
     let wt = app.fx.wt.to_string_lossy().into_owned();
@@ -4083,6 +4114,59 @@ fn finds_an_agent_installed_under_an_older_nvm_node() {
     let at = |d: &Path| dirs.iter().position(|x| *x == d.to_str().unwrap());
     assert!(at(&nvm.join("v26.0.0/bin")) < at(&old), "{env}");
     assert!(at(&old).is_some(), "{env}");
+}
+
+#[test]
+fn a_daemon_started_locally_and_one_started_over_ssh_detect_the_same_agents() {
+    let stub = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/stubs/agent");
+    let plant = |app: &App| {
+        let local = app.fx.base.join("home/.local/bin");
+        std::fs::create_dir_all(&local).unwrap();
+        std::fs::copy(&stub, local.join("amp")).unwrap();
+        let old = app.fx.base.join("home/.nvm/versions/node/v24.0.0/bin");
+        std::fs::create_dir_all(&old).unwrap();
+        std::fs::copy(&stub, old.join("codex")).unwrap();
+    };
+    let installed = |app: &App| -> Vec<(String, bool)> {
+        app.ok("GET", "/v1/agents", Value::Null)
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|a| {
+                (
+                    a["id"].as_str().unwrap().to_string(),
+                    a["installed"].as_bool().unwrap(),
+                )
+            })
+            .collect()
+    };
+    let mut local = App::with_env("cli-local-start", json!({}), &[("OVERSEER_LOGIN_ENV", "1")]);
+    plant(&local);
+    local.crash_and_restart();
+    let env = local.ok("GET", "/v1/env", Value::Null);
+    assert_eq!(env["source"], "login-shell", "{env}");
+    assert!(
+        env["path"].as_str().unwrap().contains(".local/bin"),
+        "{env}"
+    );
+    let local_list = installed(&local);
+    let mut ssh = App::with_env(
+        "cli-ssh-start",
+        json!({}),
+        &[("OVERSEER_LOGIN_ENV", "1"), ("SHELL", "/nonexistent-shell")],
+    );
+    plant(&ssh);
+    ssh.crash_and_restart();
+    let env = ssh.ok("GET", "/v1/env", Value::Null);
+    assert_eq!(env["source"], "fallback", "{env}");
+    assert!(
+        env["path"].as_str().unwrap().contains(".local/bin"),
+        "{env}"
+    );
+    assert_eq!(installed(&ssh), local_list);
+    let find = |l: &[(String, bool)], id: &str| l.iter().find(|(i, _)| i == id).unwrap().1;
+    assert!(find(&local_list, "amp"), "{local_list:?}");
+    assert!(find(&local_list, "codex"), "{local_list:?}");
 }
 
 #[test]

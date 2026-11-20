@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { holdPopup } from '../../popup.svelte';
   import { dismiss } from '../../dismiss';
   import Check from '@lucide/svelte/icons/check';
   import ChevronDown from '@lucide/svelte/icons/chevron-down';
@@ -12,6 +13,7 @@
   let { store }: { store: ReviewStore } = $props();
 
   let open = $state(false);
+  $effect(() => (open ? holdPopup() : undefined));
   let query = $state('');
   let bases = $state.raw<Bases | null>(null);
   let failed = $state('');

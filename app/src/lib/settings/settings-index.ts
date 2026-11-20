@@ -110,6 +110,7 @@ export const ENTRIES: Entry[] = [
   { id: 'diag', section: 'diag', keys: ['diag.show', 'diag.sectionHint'] },
   { id: 'switchboard', section: 'switchboard', keys: ['switchboard.title', 'switchboard.settingsHint', 'switchboard.run'] },
   { id: 'feedback', section: 'feedback', keys: ['feedback.title', 'feedback.sectionHint', 'feedback.repo', 'feedback.repoHint'] },
+  { id: 'feedbackAgent', section: 'feedback', keys: ['feedback.agent', 'feedback.agentHint'] },
   { id: 'privacy', section: 'feedback', keys: ['feedback.privacy', 'feedback.privacyHint'] },
 ];
 

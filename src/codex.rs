@@ -1,15 +1,17 @@
 use crate::claude::mtime_ms;
 use crate::util::parse_rfc3339;
 use serde_json::Value;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Thread {
     pub id: String,
+    pub parent: Option<String>,
+    pub title: Option<String>,
     pub cwd: Option<String>,
     pub branch: Option<String>,
     pub started_ms: Option<i64>,
@@ -35,14 +37,130 @@ fn state_db(codex_dir: &Path) -> Option<PathBuf> {
 }
 
 pub fn threads(codex_dir: &Path, state_dir: &Path) -> Vec<Thread> {
-    state_db(codex_dir)
+    load(codex_dir, state_dir).0
+}
+
+pub fn load(codex_dir: &Path, state_dir: &Path) -> (Vec<Thread>, HashMap<String, String>) {
+    let raw = state_db(codex_dir)
         .and_then(|db| from_db(&db, state_dir))
-        .unwrap_or_else(|| from_rollouts(codex_dir))
+        .unwrap_or_else(|| from_rollouts(codex_dir));
+    resolve_roots(raw)
+}
+
+pub fn root_in(parents: &HashMap<String, String>, id: &str) -> Option<String> {
+    let mut cur = id.to_string();
+    for _ in 0..64 {
+        match parents.get(&cur) {
+            Some(p) if p != &cur => cur = p.clone(),
+            _ => break,
+        }
+    }
+    (cur != id).then_some(cur)
+}
+
+pub fn root_hooks(
+    hooks: &HashMap<String, crate::registry::HookState>,
+    parents: &HashMap<String, String>,
+) -> HashMap<String, crate::registry::HookState> {
+    let mut out: HashMap<String, crate::registry::HookState> = HashMap::new();
+    for (k, h) in hooks {
+        let key = root_in(parents, k).unwrap_or_else(|| k.clone());
+        match out.get(&key) {
+            Some(prev) if prev.at_ms >= h.at_ms => {}
+            _ => {
+                out.insert(key, h.clone());
+            }
+        }
+    }
+    out
+}
+
+pub fn subagent_parent(v: &Value) -> Option<String> {
+    let p = &v["payload"];
+    let is_sub = [&v["payload"], v]
+        .iter()
+        .any(|x| x["thread_source"].as_str() == Some("subagent"))
+        || p["source"]["subagent"].is_object()
+        || v["source"]["subagent"].is_object();
+    if !is_sub {
+        return None;
+    }
+    [&v["payload"], v].iter().find_map(|x| {
+        x["source"]["subagent"]["thread_spawn"]["parent_thread_id"]
+            .as_str()
+            .or_else(|| x["parent_thread_id"].as_str())
+            .map(str::to_string)
+    })
+}
+
+static PARENTS: Mutex<Option<HashMap<PathBuf, Option<String>>>> = Mutex::new(None);
+
+#[cfg(test)]
+thread_local!(static HEADER_READS: std::cell::Cell<u64> = const { std::cell::Cell::new(0) });
+
+fn read_parent(path: &Path) -> Option<Option<String>> {
+    #[cfg(test)]
+    HEADER_READS.with(|c| c.set(c.get() + 1));
+    let mut first = String::new();
+    BufReader::new(std::fs::File::open(path).ok()?)
+        .read_line(&mut first)
+        .ok()?;
+    Some(subagent_parent(&serde_json::from_str(&first).ok()?))
+}
+
+fn rollout_parent(path: &Path) -> Option<String> {
+    if let Some(p) = PARENTS
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .as_ref()
+        .and_then(|m| m.get(path))
+    {
+        return p.clone();
+    }
+    let p = read_parent(path)?;
+    PARENTS
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .get_or_insert_with(HashMap::new)
+        .insert(path.to_path_buf(), p.clone());
+    p
+}
+
+fn resolve_roots(raw: Vec<Thread>) -> (Vec<Thread>, HashMap<String, String>) {
+    let mut parent_of: HashMap<String, String> = HashMap::new();
+    for t in &raw {
+        if let Some(p) = &t.parent {
+            parent_of.insert(t.id.clone(), p.clone());
+        }
+    }
+    let mut by_root: HashMap<String, Vec<Thread>> = HashMap::new();
+    for t in raw {
+        let r = root_in(&parent_of, &t.id).unwrap_or_else(|| t.id.clone());
+        by_root.entry(r).or_default().push(t);
+    }
+    let mut out = Vec::with_capacity(by_root.len());
+    for (r, mut group) in by_root {
+        group.sort_by_key(|t| (t.id != r, std::cmp::Reverse(t.activity_ms)));
+        let mut best = group.remove(0);
+        best.activity_ms = group
+            .iter()
+            .map(|t| t.activity_ms)
+            .max()
+            .unwrap_or(best.activity_ms);
+        if best.title.is_none() {
+            best.title = group.iter().find_map(|t| t.title.clone());
+        }
+        best.id = r;
+        best.parent = None;
+        out.push(best);
+    }
+    (out, parent_of)
 }
 
 #[derive(Clone)]
 struct Row {
     thread: Thread,
+    parent: Option<String>,
     rollout: Option<String>,
     updated_ms: i64,
 }
@@ -113,33 +231,83 @@ fn copy_and_query(db: &Path, tmp: &Path) -> Option<Vec<Row>> {
         std::fs::copy(&wal, tmp.join(format!("{name}-wal"))).ok()?;
     }
     let conn = rusqlite::Connection::open(&copy).ok()?;
-    let mut stmt = conn
-        .prepare("SELECT id, rollout_path, created_at, updated_at, cwd, archived, git_branch FROM threads")
-        .ok()?;
+    let mut stmt = conn.prepare("SELECT * FROM threads").ok()?;
     let rows = stmt
         .query_map([], |r| {
-            let updated: Option<i64> = r.get(3)?;
+            let text = |col: &str| -> Option<String> {
+                r.get::<_, Option<String>>(col)
+                    .ok()
+                    .flatten()
+                    .filter(|s| !s.is_empty())
+            };
+            let updated: Option<i64> = r.get("updated_at").ok();
+            let rollout = text("rollout_path");
             Ok(Row {
-                rollout: r.get(1)?,
+                parent: rollout
+                    .as_deref()
+                    .and_then(|p| rollout_parent(Path::new(p))),
+                rollout,
                 updated_ms: updated.unwrap_or(0).saturating_mul(1000),
                 thread: Thread {
-                    id: r.get(0)?,
-                    started_ms: r.get::<_, Option<i64>>(2)?.map(|s| s * 1000),
+                    id: text("id").unwrap_or_default(),
+                    parent: None,
+                    title: text("title").or_else(|| {
+                        text("first_user_message").map(|m| crate::session_tasks::summarize(&m, 80))
+                    }),
+                    started_ms: r
+                        .get::<_, Option<i64>>("created_at")
+                        .ok()
+                        .flatten()
+                        .map(|s| s * 1000),
                     activity_ms: 0,
-                    cwd: r.get::<_, Option<String>>(4)?.filter(|c| !c.is_empty()),
-                    archived: r.get::<_, Option<i64>>(5)?.unwrap_or(0) != 0,
-                    branch: r.get::<_, Option<String>>(6)?.filter(|b| !b.is_empty()),
+                    cwd: text("cwd"),
+                    archived: r
+                        .get::<_, Option<i64>>("archived")
+                        .ok()
+                        .flatten()
+                        .unwrap_or(0)
+                        != 0,
+                    branch: text("git_branch"),
                 },
             })
         })
         .ok()?;
-    Some(rows.flatten().collect())
+    let mut rows: Vec<Row> = rows.flatten().collect();
+    rows.retain(|r| !r.thread.id.is_empty());
+    for r in &mut rows {
+        r.thread.parent = r.parent.clone();
+    }
+    Some(rows)
 }
+
+type RolloutStamp = Vec<(PathBuf, u64, i64)>;
+static ROLLOUTS: Mutex<Option<(RolloutStamp, Vec<Thread>)>> = Mutex::new(None);
 
 fn from_rollouts(codex_dir: &Path) -> Vec<Thread> {
     let mut files = vec![];
     collect(&codex_dir.join("sessions"), 4, &mut files);
-    files
+    let stamp: RolloutStamp = files
+        .iter()
+        .map(|p| {
+            let m = std::fs::metadata(p).ok();
+            (
+                p.clone(),
+                m.as_ref().map(|m| m.len()).unwrap_or(0),
+                m.and_then(|m| m.modified().ok())
+                    .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                    .map_or(0, |d| d.as_nanos() as i64),
+            )
+        })
+        .collect();
+    {
+        let c = ROLLOUTS.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some((s, v)) = c.as_ref() {
+            if *s == stamp {
+                return v.clone();
+            }
+        }
+    }
+    let parsed: Vec<Thread> = files
         .into_iter()
         .filter_map(|path| {
             let mut first = String::new();
@@ -153,6 +321,8 @@ fn from_rollouts(codex_dir: &Path) -> Vec<Thread> {
             let p = &v["payload"];
             Some(Thread {
                 id: p["id"].as_str()?.to_string(),
+                parent: subagent_parent(&v),
+                title: p["title"].as_str().map(str::to_string),
                 cwd: p["cwd"].as_str().map(str::to_string),
                 branch: p["git"]["branch"].as_str().map(str::to_string),
                 started_ms: p["timestamp"].as_str().and_then(parse_rfc3339),
@@ -160,7 +330,9 @@ fn from_rollouts(codex_dir: &Path) -> Vec<Thread> {
                 archived: false,
             })
         })
-        .collect()
+        .collect();
+    *ROLLOUTS.lock().unwrap_or_else(|e| e.into_inner()) = Some((stamp, parsed.clone()));
+    parsed
 }
 
 fn collect(dir: &Path, depth: u32, out: &mut Vec<PathBuf>) {
@@ -342,6 +514,7 @@ pub fn reopens(argv: &[String]) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
 
     #[test]
     fn overseer_mcp_passes_task_and_state_dir_as_toml() {
@@ -366,6 +539,277 @@ mod tests {
 
     fn session(cmd: &str) -> bool {
         is_session(&cmd.split(' ').map(str::to_string).collect::<Vec<_>>())
+    }
+
+    fn tmp(name: &str) -> PathBuf {
+        let d = std::env::temp_dir().join(format!("sb-codex-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(d.join("sessions/2026/11/19")).unwrap();
+        d
+    }
+
+    fn write_rollout(dir: &Path, sid: &str, ts: &str, parent: Option<&str>, title: Option<&str>) {
+        let source = match parent {
+            Some(p) => json!({
+                "subagent": {"thread_spawn": {"parent_thread_id": p}, "agent_role": "worker"},
+            }),
+            None => json!("vscode"),
+        };
+        let mut payload = json!({
+            "id": sid, "timestamp": format!("2026-11-19T{ts}Z"), "cwd": "/w",
+            "source": source, "thread_source": parent.map(|_| "subagent"),
+        });
+        if let Some(t) = title {
+            payload["title"] = json!(t);
+        }
+        let meta = json!({"timestamp": format!("2026-11-19T{ts}Z"), "type": "session_meta", "payload": payload});
+        std::fs::write(
+            dir.join(format!("sessions/2026/11/19/rollout-{ts}-{sid}.jsonl")),
+            format!("{meta}\n"),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn subagent_parent_is_read_from_the_rollout_meta() {
+        let root = json!({"type": "session_meta", "payload": {"id": "r", "source": "vscode"}});
+        assert_eq!(subagent_parent(&root), None);
+        let sub = json!({
+            "type": "session_meta",
+            "payload": {
+                "id": "s", "thread_source": "subagent", "depth": 2,
+                "source": {"subagent": {"thread_spawn": {"parent_thread_id": "r"}}},
+            }
+        });
+        assert_eq!(subagent_parent(&sub).as_deref(), Some("r"));
+        let sub2 = json!({
+            "type": "session_meta",
+            "thread_source": "subagent",
+            "payload": {"id": "s2", "source": {"subagent": {"thread_spawn": {"parent_thread_id": "r2"}}}},
+        });
+        assert_eq!(subagent_parent(&sub2).as_deref(), Some("r2"));
+    }
+
+    #[test]
+    fn sub_agent_threads_resolve_to_their_root_and_keep_one_line() {
+        let d = tmp("roots");
+        write_rollout(&d, "root-1", "10-00-00", None, Some("Fix the login"));
+        write_rollout(&d, "mid-1", "11-00-00", Some("root-1"), None);
+        write_rollout(&d, "leaf-1", "12-00-00", Some("mid-1"), None);
+        write_rollout(&d, "other-2", "12-30-00", None, None);
+        let (ts, roots) = load(&d, &d.join("state"));
+        let mut ids: Vec<&str> = ts.iter().map(|t| t.id.as_str()).collect();
+        ids.sort();
+        assert_eq!(
+            ids,
+            ["other-2", "root-1"],
+            "sub-agents collapse into their root"
+        );
+        let root = ts.iter().find(|t| t.id == "root-1").unwrap();
+        assert_eq!(root.title.as_deref(), Some("Fix the login"));
+        assert_eq!(root_in(&roots, "leaf-1").as_deref(), Some("root-1"));
+        assert_eq!(root_in(&roots, "mid-1").as_deref(), Some("root-1"));
+        assert_eq!(root_in(&roots, "root-1"), None);
+        assert_eq!(root_in(&roots, "unknown"), None);
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn rollout_headers_are_read_once_per_thread_not_on_every_db_change() {
+        let d = tmp("header-reads");
+        let day = d.join("sessions/2026/11/19");
+        let db = rusqlite::Connection::open(d.join("state_5.sqlite")).unwrap();
+        db.execute_batch(
+            "CREATE TABLE threads (id TEXT, rollout_path TEXT, created_at INTEGER, updated_at INTEGER, cwd TEXT, title TEXT, archived INTEGER, git_branch TEXT);",
+        )
+        .unwrap();
+        let add = |i: usize| {
+            let id = format!("t-{i}");
+            write_rollout(&d, &id, &format!("1{i}-00-00"), None, None);
+            let path = day.join(format!("rollout-1{i}-00-00-{id}.jsonl"));
+            db.execute(
+                "INSERT INTO threads VALUES (?1, ?2, 1, 1, '/w', 'x', 0, NULL)",
+                rusqlite::params![id, path.to_string_lossy()],
+            )
+            .unwrap();
+        };
+        for i in 0..5 {
+            add(i);
+        }
+        let state = d.join("state");
+        let reads = || HEADER_READS.with(|c| c.get());
+        let (ts, _) = load(&d, &state);
+        assert_eq!(ts.len(), 5);
+        let after_first = reads();
+        add(5);
+        let (ts, _) = load(&d, &state);
+        assert_eq!(ts.len(), 6);
+        assert!(
+            reads() - after_first <= 1,
+            "only the new thread's rollout is read, got {} reads",
+            reads() - after_first
+        );
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn a_guardian_review_thread_resolves_to_its_root() {
+        let meta = json!({
+            "timestamp": "2026-11-08T18:47:33.072Z", "ordinal": 0, "type": "session_meta",
+            "payload": {
+                "session_id": "root-g", "id": "guardian-g", "parent_thread_id": "root-g",
+                "timestamp": "2026-11-08T18:29:26.402Z", "cwd": "/w", "originator": "codex-tui",
+                "source": {"subagent": {"other": "guardian"}},
+                "thread_source": "guardian_review"
+            }
+        });
+        assert_eq!(subagent_parent(&meta).as_deref(), Some("root-g"));
+        let plain = json!({"type": "session_meta", "payload": {"id": "x", "parent_thread_id": "y", "source": "cli"}});
+        assert_eq!(subagent_parent(&plain), None);
+    }
+
+    #[test]
+    fn a_sub_agent_without_its_root_still_points_at_the_root() {
+        let d = tmp("orphan-sub");
+        write_rollout(&d, "leaf-9", "12-00-00", Some("gone-root"), None);
+        let (ts, roots) = load(&d, &d.join("state"));
+        assert_eq!(ts.len(), 1);
+        assert_eq!(ts[0].id, "gone-root");
+        assert_eq!(root_in(&roots, "leaf-9").as_deref(), Some("gone-root"));
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn codex_hook_sessions_of_sub_agents_are_keyed_by_the_root() {
+        let mut hooks = HashMap::new();
+        hooks.insert(
+            "leaf-1".to_string(),
+            crate::registry::HookState {
+                at_ms: 100,
+                busy: true,
+                ..Default::default()
+            },
+        );
+        hooks.insert(
+            "root-1".to_string(),
+            crate::registry::HookState {
+                at_ms: 50,
+                ..Default::default()
+            },
+        );
+        let d = tmp("hooks");
+        write_rollout(&d, "root-1", "10-00-00", None, None);
+        write_rollout(&d, "leaf-1", "12-00-00", Some("root-1"), None);
+        let (_, roots) = load(&d, &d.join("state"));
+        let remapped = root_hooks(&hooks, &roots);
+        assert_eq!(remapped.len(), 1, "{remapped:?}");
+        assert!(remapped.contains_key("root-1"));
+        assert!(remapped["root-1"].busy, "the latest hook wins");
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn the_state_db_title_and_first_user_message_name_the_thread() {
+        let d = tmp("db-title");
+        let db = d.join("state_9.sqlite");
+        let conn = rusqlite::Connection::open(&db).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE threads (id TEXT, rollout_path TEXT, created_at INTEGER, updated_at INTEGER, cwd TEXT,
+               title TEXT, archived INTEGER, git_branch TEXT, first_user_message TEXT);",
+        )
+        .unwrap();
+        let t = parse_rfc3339("2026-11-19T10:00:00Z").unwrap() / 1000;
+        conn.execute(
+            "INSERT INTO threads VALUES ('cx-t', NULL, ?1, ?1, '/w', 'Thread title', 0, NULL, 'prompt text')",
+            rusqlite::params![t],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO threads VALUES ('cx-p', NULL, ?1, ?1, '/w', NULL, 0, NULL, 'Fix the login bug in src/auth.rs please')",
+            rusqlite::params![t],
+        )
+        .unwrap();
+        drop(conn);
+        let ts = threads(&d, &d.join("state"));
+        let titled = ts.iter().find(|t| t.id == "cx-t").unwrap();
+        assert_eq!(titled.title.as_deref(), Some("Thread title"));
+        let prompted = ts.iter().find(|t| t.id == "cx-p").unwrap();
+        assert_eq!(
+            prompted.title.as_deref(),
+            Some("Fix the login bug in src/auth.rs please")
+        );
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn an_older_state_db_without_title_columns_still_loads() {
+        let d = tmp("db-old");
+        let db = d.join("state_1.sqlite");
+        let conn = rusqlite::Connection::open(&db).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE threads (id TEXT, rollout_path TEXT, created_at INTEGER, updated_at INTEGER, cwd TEXT,
+               archived INTEGER, git_branch TEXT);",
+        )
+        .unwrap();
+        let t = parse_rfc3339("2026-11-19T10:00:00Z").unwrap() / 1000;
+        conn.execute(
+            "INSERT INTO threads VALUES ('cx-old', NULL, ?1, ?1, '/w', 0, 'main')",
+            rusqlite::params![t],
+        )
+        .unwrap();
+        drop(conn);
+        let ts = threads(&d, &d.join("state"));
+        assert_eq!(ts.len(), 1);
+        assert_eq!(ts[0].id, "cx-old");
+        assert_eq!(ts[0].branch.as_deref(), Some("main"));
+        assert_eq!(ts[0].title, None);
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn a_state_db_sub_agent_row_points_at_its_root_via_its_rollout() {
+        let d = tmp("db-sub");
+        write_rollout(&d, "root-r", "10-00-00", None, None);
+        write_rollout(&d, "sub-s", "12-00-00", Some("root-r"), None);
+        let sub_rollout = d.join("sessions/2026/11/19/rollout-12-00-00-sub-s.jsonl");
+        let db = d.join("state_2.sqlite");
+        let conn = rusqlite::Connection::open(&db).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE threads (id TEXT, rollout_path TEXT, created_at INTEGER, updated_at INTEGER, cwd TEXT,
+               title TEXT, archived INTEGER, git_branch TEXT, first_user_message TEXT);",
+        )
+        .unwrap();
+        let t = parse_rfc3339("2026-11-19T10:00:00Z").unwrap() / 1000;
+        conn.execute(
+            "INSERT INTO threads VALUES ('root-r', ?2, ?1, ?1, '/w', 'Root', 0, NULL, NULL)",
+            rusqlite::params![
+                t,
+                d.join("sessions/2026/11/19/rollout-10-00-00-root-r.jsonl")
+                    .to_string_lossy()
+            ],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO threads VALUES ('sub-s', ?2, ?1, ?1, '/w', 'Review', 0, NULL, NULL)",
+            rusqlite::params![t, sub_rollout.to_string_lossy()],
+        )
+        .unwrap();
+        drop(conn);
+        let ts = threads(&d, &d.join("state"));
+        assert_eq!(
+            ts.len(),
+            1,
+            "the sub-agent row collapses into the root: {ts:?}"
+        );
+        assert_eq!(ts[0].id, "root-r");
+        assert_eq!(
+            ts[0].title.as_deref(),
+            Some("Root"),
+            "the root's title wins"
+        );
+        let (_, roots) = load(&d, &d.join("state"));
+        assert_eq!(root_in(&roots, "sub-s").as_deref(), Some("root-r"));
+        let _ = std::fs::remove_dir_all(&d);
     }
 
     #[test]

@@ -5,6 +5,9 @@ pub struct Check {
     pub name: &'static str,
     pub ok: bool,
     pub detail: String,
+    /// The check failed because the state could not be determined (no screen, no prompt
+    /// recognised), not because it was observed to be unsafe. Closing may offer to force past it.
+    pub unknown: bool,
 }
 
 fn check(name: &'static str, ok: bool, detail: impl Into<String>) -> Check {
@@ -12,6 +15,16 @@ fn check(name: &'static str, ok: bool, detail: impl Into<String>) -> Check {
         name,
         ok,
         detail: if ok { String::new() } else { detail.into() },
+        unknown: false,
+    }
+}
+
+fn check_unknown(name: &'static str, detail: impl Into<String>) -> Check {
+    Check {
+        name,
+        ok: false,
+        detail: detail.into(),
+        unknown: true,
     }
 }
 
@@ -255,11 +268,11 @@ pub fn input_text(screen: &str) -> Option<String> {
 
 pub fn input_empty(screen: Option<&str>) -> Check {
     let Some(screen) = screen else {
-        return check("inputEmpty", false, "terminal content unavailable");
+        return check_unknown("inputEmpty", "terminal content unavailable");
     };
     match prompt_input(screen) {
         Ok(typed) => check("inputEmpty", typed.is_empty(), "input box is not empty"),
-        Err(e) => check("inputEmpty", false, e),
+        Err(e) => check_unknown("inputEmpty", e),
     }
 }
 
@@ -281,6 +294,9 @@ pub fn to_json(checks: &[Check]) -> Value {
         let mut v = json!({ "ok": c.ok });
         if !c.ok {
             v["detail"] = json!(c.detail);
+            if c.unknown {
+                v["unknown"] = json!(true);
+            }
         }
         m.insert(c.name.to_string(), v);
     }
@@ -345,6 +361,28 @@ mod tests {
         assert!(!input_empty(Some("")).ok);
         assert!(!input_empty(Some("Do you want to proceed?\n 1. Yes\n 2. No")).ok);
         assert!(!input_empty(Some("$ ")).ok);
+    }
+
+    #[test]
+    fn unreadable_input_is_marked_unknown_but_typed_text_is_not() {
+        for c in [
+            input_empty(None),
+            input_empty(Some("")),
+            input_empty(Some("$ ")),
+            input_empty(Some("Do you want to proceed?\n 1. Yes\n 2. No")),
+        ] {
+            assert!(!c.ok && c.unknown, "{c:?}");
+        }
+        let typed = input_empty(Some(&format!("{RULE}\n❯ half typed\n{RULE}")));
+        assert!(!typed.ok && !typed.unknown, "{typed:?}");
+        assert_eq!(typed.detail, "input box is not empty");
+        let ok = input_empty(Some(&format!("{RULE}\n❯ \n{RULE}")));
+        assert!(ok.ok && !ok.unknown, "{ok:?}");
+        let j = to_json(&[typed]);
+        assert_eq!(j["inputEmpty"]["ok"], false);
+        assert!(j["inputEmpty"]["unknown"].is_null(), "{j}");
+        let j = to_json(&[input_empty(Some("$ "))]);
+        assert_eq!(j["inputEmpty"]["unknown"], true, "{j}");
     }
 
     #[test]
