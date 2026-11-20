@@ -1853,6 +1853,17 @@ fn demanded(s: &Shared, now: i64) -> bool {
     s.demand_at > 0 && (now - s.demand_at < DEMAND_MS || crate::board::subscribers() > 0)
 }
 
+pub fn tap_changed(state_dir: &Path, seen: &mut Option<std::time::SystemTime>) -> bool {
+    let now = std::fs::metadata(crate::statusline::path(state_dir))
+        .and_then(|m| m.modified())
+        .ok();
+    if now == *seen {
+        return false;
+    }
+    *seen = now;
+    true
+}
+
 pub fn poke(full: bool) {
     let mut g = SHARED.lock().unwrap_or_else(|e| e.into_inner());
     let Some(s) = g.as_mut() else { return };
@@ -2057,6 +2068,27 @@ mod tests {
         ));
         std::fs::create_dir_all(&d).unwrap();
         d
+    }
+
+    #[test]
+    fn a_new_or_rewritten_statusline_file_asks_for_one_refresh() {
+        let d = tmp("tap-poke");
+        let mut seen = None;
+        assert!(!tap_changed(&d, &mut seen));
+        std::fs::write(crate::statusline::path(&d), "{}").unwrap();
+        assert!(tap_changed(&d, &mut seen));
+        assert!(!tap_changed(&d, &mut seen));
+        let later = std::time::SystemTime::now() + Duration::from_secs(5);
+        std::fs::File::options()
+            .write(true)
+            .open(crate::statusline::path(&d))
+            .unwrap()
+            .set_modified(later)
+            .unwrap();
+        assert!(tap_changed(&d, &mut seen));
+        std::fs::remove_file(crate::statusline::path(&d)).unwrap();
+        assert!(tap_changed(&d, &mut seen));
+        assert!(!tap_changed(&d, &mut seen));
     }
 
     fn home(tag: &str) -> (PathBuf, Index) {
