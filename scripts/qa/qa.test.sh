@@ -35,6 +35,8 @@ check "drive.py defaults to the same dir" "$work/xdg/sbqa" \
   "$(cd "$root/scripts/qa" && env -u QA_DIR XDG_CACHE_HOME="$work/xdg" python3 -c 'import sys, types; sys.modules["playwright"] = types.ModuleType("playwright"); m = types.ModuleType("playwright.sync_api"); m.sync_playwright = None; sys.modules["playwright.sync_api"] = m; import drive; print(drive.D)')"
 check "QA_DISPLAY accepts a bare number" 97 "$(QA_DISPLAY=97 "$root/scripts/qa/sandbox.sh" display)"
 check "QA_DISPLAY accepts a leading colon" 97 "$(QA_DISPLAY=:97 "$root/scripts/qa/sandbox.sh" display)"
+check "QA_PATH_FIRST puts a directory before the stubs on the daemon PATH" "$work/mybin:$root/tests/stubs" \
+  "$(QA_PATH_FIRST="$work/mybin" "$root/scripts/qa/sandbox.sh" daemon-path | cut -d: -f1,2)"
 check "daemon PATH has the stubs first and Homebrew when present" "$root/tests/stubs" \
   "$("$root/scripts/qa/sandbox.sh" daemon-path | cut -d: -f1)"
 
