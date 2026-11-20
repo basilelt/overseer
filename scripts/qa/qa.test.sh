@@ -37,6 +37,8 @@ check "QA_DISPLAY accepts a bare number" 97 "$(QA_DISPLAY=97 "$root/scripts/qa/s
 check "QA_DISPLAY accepts a leading colon" 97 "$(QA_DISPLAY=:97 "$root/scripts/qa/sandbox.sh" display)"
 check "QA_PATH_FIRST puts a directory before the stubs on the daemon PATH" "$work/mybin:$root/tests/stubs" \
   "$(QA_PATH_FIRST="$work/mybin" "$root/scripts/qa/sandbox.sh" daemon-path | cut -d: -f1,2)"
+check "QA_STUBS keeps only the named stubs on the daemon PATH" "claude gh" \
+  "$(QA_DIR="$work/qa" QA_STUBS="claude gh" "$root/scripts/qa/sandbox.sh" daemon-path >/dev/null && ls "$work/qa/stubs" | tr '\n' ' ' | sed 's/ $//')"
 check "daemon PATH has the stubs first and Homebrew when present" "$root/tests/stubs" \
   "$("$root/scripts/qa/sandbox.sh" daemon-path | cut -d: -f1)"
 
