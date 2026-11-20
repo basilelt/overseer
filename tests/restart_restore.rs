@@ -58,7 +58,6 @@ fn a_codex_sub_agent_thread_is_not_a_session_and_never_resumed() {
         .to_string();
     eprintln!("root session id: {root}");
 
-    // codex multi-agent v2 writes one rollout per sub-agent thread, parented to the root
     let codex_home = app.fx.base.join("home/.codex");
     let before_activity = line_json["line"]["lastActivityAt"]
         .as_str()
@@ -71,8 +70,6 @@ fn a_codex_sub_agent_thread_is_not_a_session_and_never_resumed() {
         Some(&root),
     );
 
-    // wait until a scan has picked the new rollout up (the root line's activity moves to it),
-    // then the sub-agent must not be a line of its own
     wait_for(|| {
         let v = app.ok("GET", "/v1/lines?all=true", Value::Null);
         let l = v.as_array().unwrap().iter().find(|l| {

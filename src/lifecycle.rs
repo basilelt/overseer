@@ -146,8 +146,6 @@ pub fn snapshot(terms: &[Info], lines: &[Line]) -> Vec<Saved> {
             if i.exited {
                 return None;
             }
-            // Several lines can point at one term (a codex sub-agent used to): the term's own
-            // line is the session it runs, not the most recently active one.
             let line = lines
                 .iter()
                 .find(|l| {
@@ -277,8 +275,6 @@ pub fn on_start(state_dir: &Path, takeover: bool) {
         .flatten()
         .and_then(|s| serde_json::from_str(&s).ok())
         .unwrap_or_default();
-    // A codex multi-agent v2 sub-agent thread must never be resumed directly: point the saved
-    // term at the root session so the restart resumes the thread codex can actually load.
     let codex_dir = crate::agents::config_dir(crate::agents::CODEX);
     let saved = remap_codex_roots(&codex_dir, state_dir, saved);
     let todo = plan(saved, mode, |p| Path::new(p).is_dir());
@@ -601,8 +597,6 @@ mod tests {
 
     #[test]
     fn a_term_shared_by_several_lines_snapshots_its_own_line() {
-        // A codex multi-agent session used to bind its sub-agent line to the term when the
-        // sub-agent was the most recently active one; the term must keep its own line.
         let mut t = info("t1", &["codex"], false);
         t.line_id = Some("L-root".into());
         let lines = [
@@ -613,7 +607,6 @@ mod tests {
         assert_eq!(s.len(), 1);
         assert_eq!(s[0].line_id.as_deref(), Some("L-root"));
         assert_eq!(s[0].session.as_deref(), Some("root-sid"));
-        // without the term's own line, the most recently active one still applies
         let lines2 = [
             line("L-sub", "t2", "sub-sid", true),
             line("L-root", "t2", "root-sid", true),

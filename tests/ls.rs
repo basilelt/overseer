@@ -489,7 +489,6 @@ fn codex_state_db_is_read_from_a_copy() {
 #[test]
 fn a_codex_multi_agent_sub_agent_row_is_the_root_session_not_a_line_of_its_own() {
     let fx = Fx::new();
-    // root + sub-agent rollouts, as codex multi-agent v2 writes them
     let day = fx.codex().join("sessions/2026/10/28");
     std::fs::create_dir_all(&day).unwrap();
     let write = |name: &str, id: &str, ts: &str, parent: Option<&str>| {

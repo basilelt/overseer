@@ -10,7 +10,6 @@ use std::sync::Mutex;
 #[derive(Clone, Debug)]
 pub struct Thread {
     pub id: String,
-    // Multi-agent v2 sub-agent: the root thread this one was spawned from.
     pub parent: Option<String>,
     pub title: Option<String>,
     pub cwd: Option<String>,
@@ -41,7 +40,6 @@ pub fn threads(codex_dir: &Path, state_dir: &Path) -> Vec<Thread> {
     load(codex_dir, state_dir).0
 }
 
-/// The threads and the sub-agent map (thread id -> root id) of one load.
 pub fn load(codex_dir: &Path, state_dir: &Path) -> (Vec<Thread>, HashMap<String, String>) {
     let raw = state_db(codex_dir)
         .and_then(|db| from_db(&db, state_dir))
@@ -60,7 +58,6 @@ pub fn root_in(parents: &HashMap<String, String>, id: &str) -> Option<String> {
     (cur != id).then_some(cur)
 }
 
-/// Hook sessions keyed by a sub-agent thread belong to the root session.
 pub fn root_hooks(
     hooks: &HashMap<String, crate::registry::HookState>,
     parents: &HashMap<String, String>,
@@ -78,8 +75,6 @@ pub fn root_hooks(
     out
 }
 
-// Sub-agent threads carry their parent in the rollout's session_meta: never list or resume them
-// as sessions of their own, the root thread is the session.
 pub fn subagent_parent(v: &Value) -> Option<String> {
     let p = &v["payload"];
     let is_sub = [&v["payload"], v]
@@ -93,6 +88,7 @@ pub fn subagent_parent(v: &Value) -> Option<String> {
     [&v["payload"], v].iter().find_map(|x| {
         x["source"]["subagent"]["thread_spawn"]["parent_thread_id"]
             .as_str()
+            .or_else(|| x["parent_thread_id"].as_str())
             .map(str::to_string)
     })
 }
@@ -112,7 +108,6 @@ fn read_parent(path: &Path) -> Option<Option<String>> {
     Some(subagent_parent(&serde_json::from_str(&first).ok()?))
 }
 
-// A thread's parent never changes: read each rollout header once, not on every database change.
 fn rollout_parent(path: &Path) -> Option<String> {
     if let Some(p) = PARENTS
         .lock()
@@ -131,8 +126,6 @@ fn rollout_parent(path: &Path) -> Option<String> {
     p
 }
 
-// Threads keyed by their root: a sub-agent and its root are one session, the root's own row wins,
-// the most recent activity and any title carry over.
 fn resolve_roots(raw: Vec<Thread>) -> (Vec<Thread>, HashMap<String, String>) {
     let mut parent_of: HashMap<String, String> = HashMap::new();
     for t in &raw {
@@ -238,8 +231,6 @@ fn copy_and_query(db: &Path, tmp: &Path) -> Option<Vec<Row>> {
         std::fs::copy(&wal, tmp.join(format!("{name}-wal"))).ok()?;
     }
     let conn = rusqlite::Connection::open(&copy).ok()?;
-    // Older state databases lack the title columns: read every column by name and let missing
-    // ones come back empty instead of failing the whole query.
     let mut stmt = conn.prepare("SELECT * FROM threads").ok()?;
     let rows = stmt
         .query_map([], |r| {
@@ -295,7 +286,6 @@ static ROLLOUTS: Mutex<Option<(RolloutStamp, Vec<Thread>)>> = Mutex::new(None);
 fn from_rollouts(codex_dir: &Path) -> Vec<Thread> {
     let mut files = vec![];
     collect(&codex_dir.join("sessions"), 4, &mut files);
-    // Re-read the rollout headers only when a file appeared, grew or was touched.
     let stamp: RolloutStamp = files
         .iter()
         .map(|p| {
@@ -592,7 +582,6 @@ mod tests {
             }
         });
         assert_eq!(subagent_parent(&sub).as_deref(), Some("r"));
-        // top-level spelling
         let sub2 = json!({
             "type": "session_meta",
             "thread_source": "subagent",
@@ -661,6 +650,22 @@ mod tests {
             reads() - after_first
         );
         let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn a_guardian_review_thread_resolves_to_its_root() {
+        let meta = json!({
+            "timestamp": "2026-11-08T18:47:33.072Z", "ordinal": 0, "type": "session_meta",
+            "payload": {
+                "session_id": "root-g", "id": "guardian-g", "parent_thread_id": "root-g",
+                "timestamp": "2026-11-08T18:29:26.402Z", "cwd": "/w", "originator": "codex-tui",
+                "source": {"subagent": {"other": "guardian"}},
+                "thread_source": "guardian_review"
+            }
+        });
+        assert_eq!(subagent_parent(&meta).as_deref(), Some("root-g"));
+        let plain = json!({"type": "session_meta", "payload": {"id": "x", "parent_thread_id": "y", "source": "cli"}});
+        assert_eq!(subagent_parent(&plain), None);
     }
 
     #[test]

@@ -1217,7 +1217,6 @@ fn scan_now(ctx: &Ctx) -> Result<Vec<Line>, String> {
     let hook_map = |agent| -> Result<HashMap<String, HookState>, String> {
         Ok(reg.hook_sessions(agent)?.into_iter().collect())
     };
-    // Hooks fire for sub-agent threads too: key them by their root session once per scan.
     let (codex_threads, codex_parents) = codex::load(&ctx.codex_dir, &ctx.state_dir);
     let mut codex_threads = Some(codex_threads);
     let mut session_hooks: HashMap<&'static str, HashMap<String, HookState>> = HashMap::new();
