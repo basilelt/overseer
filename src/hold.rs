@@ -276,13 +276,26 @@ pub fn input_empty(screen: Option<&str>) -> Check {
     }
 }
 
+fn harness_child(agent: &str, argv: &[String]) -> bool {
+    agent == crate::agents::VIBE
+        && argv
+            .first()
+            .is_some_and(|a| a.rsplit('/').next() == Some("vibe-app-server"))
+}
+
 pub fn evaluate(i: &HoldInput) -> Vec<Check> {
+    let children: Vec<Vec<String>> = i
+        .children
+        .iter()
+        .filter(|c| !harness_child(&i.agent, c))
+        .cloned()
+        .collect();
     vec![
         alive(i.alive, i.duplicate),
         in_tmux(i.pane.as_deref(), i.term.as_deref()),
         at_prompt(i.busy, i.last_event.as_deref()),
         input_empty(i.screen.as_deref()),
-        no_tool_running(&i.children, &i.mcp_hints, i.subagents, i.tasks),
+        no_tool_running(&children, &i.mcp_hints, i.subagents, i.tasks),
         not_pinned(i.pinned),
         not_needs_input(i.needs_input),
     ]
@@ -471,6 +484,34 @@ mod tests {
         assert!(r.iter().all(|c| c.ok), "{r:?}");
         let j = to_json(&r);
         assert_eq!(j["inputEmpty"]["ok"], true);
+    }
+
+    #[test]
+    fn a_vibe_line_is_not_blocked_by_its_own_app_server() {
+        let rule = "\u{2500}".repeat(30);
+        let i = HoldInput {
+            agent: "vibe".into(),
+            alive: true,
+            busy: Some(false),
+            term: Some("t1".into()),
+            screen: Some(format!("{rule}\n> \n{rule}")),
+            children: vec![vec!["vibe-app-server".into()]],
+            ..Default::default()
+        };
+        assert!(evaluate(&i).iter().all(|c| c.ok), "{:?}", evaluate(&i));
+        let other = HoldInput {
+            agent: "codex".into(),
+            ..i.clone()
+        };
+        assert!(!evaluate(&other).iter().all(|c| c.ok));
+        let tool = HoldInput {
+            children: vec![
+                vec!["vibe-app-server".into()],
+                vec!["sleep".into(), "9".into()],
+            ],
+            ..i
+        };
+        assert!(!evaluate(&tool).iter().all(|c| c.ok));
     }
 
     #[test]
