@@ -147,7 +147,7 @@
     'plugin:notification|register_listener': () => null,
     save_download: (a, o) => { const bytes = bytesOf(a); if (!bytes) throw 'expected bytes'; window.__qaDownload = { name: pasteName(pctDecode(o?.headers?.['x-name'] ?? '')), size: bytes.length }; return '/home/qa/Downloads/' + window.__qaDownload.name; },
     conn_restart_server: (a) => { log('conn_restart_server', a.slot ?? ''); return null; },
-    conn_connect: async (a) => { const w = watches.get(a.slot ?? ''); if (w) w.stop = true; log('conn_connect', a.slot ?? '', JSON.stringify(a.target)); send(a.onState, { phase: 'connected', target: a.target, version: (await alive(a.slot))?.version ?? '0.2.0', server: serverUpdate() }); monitor(a.onState, a.target, a.slot); },
+    conn_connect: async (a) => { const w = watches.get(a.slot ?? ''); if (w) w.stop = true; if (new URLSearchParams(location.search).has('qafail') && a.target?.kind !== 'local') { log('conn_connect', a.slot ?? '', JSON.stringify(a.target), 'failed'); send(a.onState, { phase: 'error', target: a.target, error: 'qa: connection refused' }); return; } log('conn_connect', a.slot ?? '', JSON.stringify(a.target)); send(a.onState, { phase: 'connected', target: a.target, version: (await alive(a.slot))?.version ?? '0.2.0', server: serverUpdate() }); monitor(a.onState, a.target, a.slot); },
     conn_disconnect: (a) => { const slot = a?.slot ?? ''; log('conn_disconnect', slot); const w = watches.get(slot); if (w) w.stop = true; watches.delete(slot); const h = H(slot); h.wake?.(); h.wake = null; h.up = Promise.resolve(); return null; },
     window_new: (a) => { window.__qaWindows.push(a?.connect ?? null); return 'w-' + (window.__qaWindows.length + 1); },
     window_handoff: () => null,

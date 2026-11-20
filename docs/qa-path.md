@@ -256,7 +256,7 @@ Run in `android` and `iphone` at least, and in `web`. Start from a fresh browser
 - **N3** In the demo: Agents lists sessions; open one → its terminal shows output and echoes what you type. Tasks → **Add Task** → a card appears; drag or move it to **In progress**. Review: open a review → the diff shows. Switch a session to Chat → the transcript and composer show. Open Settings and change the theme.
 - **N4** Reload the app (a relaunch) → still in the demo, with the theme set in **N3**.
 - **N5** **Exit demo** on the pill → the app reloads on the real connect flow: the real daemon's sessions (or the connect screen on a phone), the real theme, and no **Demo mode** pill. `localStorage` holds no `overseer.demo` key and the real `overseer.settings` is byte for byte what it was before **N2**.
-- **N6** Enter the demo again, open the connect screen → **Exit demo** is offered there, and not **Try the demo**. Connect to a real host that fails (outside the demo) → **Try the demo** is offered next to **Retry**.
+- **N6** Enter the demo again, open the connect screen → **Exit demo** is offered there, and not **Try the demo**. Connect to a real host that fails (outside the demo; open the app with `?qafail=1`, which makes the shim reject every connection to a host that is not local) → **Try the demo** is offered next to **Retry**.
 
 ## Keeping the path current
 
