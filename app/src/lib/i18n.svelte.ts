@@ -60,5 +60,7 @@ export function getLocale(): Locale {
 
 export function t(key: Key, params?: Record<string, string | number>): string {
   const s = loaded[locale]?.[key] ?? en[key] ?? key;
-  return params ? s.replace(/\{(\w+)\}/g, (_, k) => String(params[k] ?? `{${k}}`)) : s;
+  if (!params) return s;
+  const one = params.n === 1;
+  return s.replace(/\{(\w+)\}/g, (m, k) => k === 's' || k === 'es' ? (one ? '' : k) : String(params[k] ?? m));
 }
