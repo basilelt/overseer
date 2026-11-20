@@ -129,12 +129,13 @@ pub fn check(cmd: &str, rest: &[String]) -> Result<(), String> {
 mod tests {
     use super::*;
 
-    const UNCHECKED: [&str; 9] = [
+    const UNCHECKED: [&str; 10] = [
         "login",
         "enroll",
         "sync",
         "mcp",
         "vote",
+        "tool",
         "proxy",
         "statusline-tap",
         "ls",

@@ -612,6 +612,48 @@ pub fn cli_vote(args: &[String]) -> std::process::ExitCode {
     }
 }
 
+pub fn tool_args(args: &[String]) -> Result<(String, Value), String> {
+    let usage = "usage: overseer tool <name> [<json arguments>]";
+    let (name, rest) = args.split_first().ok_or(usage)?;
+    let arguments = match rest {
+        [] => json!({}),
+        [json] => serde_json::from_str::<Value>(json)
+            .ok()
+            .filter(Value::is_object)
+            .ok_or("the arguments must be a JSON object")?,
+        _ => return Err(usage.into()),
+    };
+    Ok((name.clone(), arguments))
+}
+
+pub fn cli_tool(args: &[String]) -> std::process::ExitCode {
+    let own = std::env::var("OVERSEER_TASK_ID")
+        .ok()
+        .filter(|s| !s.is_empty());
+    let socket = crate::daemon::socket_path(&crate::default_state_dir());
+    let mut call = |m: &str, t: &str, b: Option<&Value>| crate::daemon::request(&socket, m, t, b);
+    let out = tool_args(args).and_then(|(name, arguments)| {
+        let params = json!({"name": name, "arguments": arguments});
+        let r = call_tool(&Value::Null, &params, own.as_deref(), &mut call);
+        let text = |v: &Value| v["content"][0]["text"].as_str().map(str::to_string);
+        match (&r["result"], &r["error"]) {
+            (res, _) if res["isError"] == false => Ok(text(res).unwrap_or_default()),
+            (res, _) if res["isError"] == true => Err(text(res).unwrap_or_default()),
+            (_, e) => Err(e["message"].as_str().unwrap_or("tool failed").to_string()),
+        }
+    });
+    match out {
+        Ok(t) => {
+            println!("{t}");
+            std::process::ExitCode::SUCCESS
+        }
+        Err(e) => {
+            eprintln!("overseer tool: {e}");
+            std::process::ExitCode::FAILURE
+        }
+    }
+}
+
 pub fn run() -> std::process::ExitCode {
     let own = std::env::var("OVERSEER_TASK_ID")
         .ok()
@@ -1458,6 +1500,23 @@ not json\n";
             ok,
         );
         assert_eq!(log[1].2.as_ref().unwrap()["agent"], "gemini");
+    }
+
+    #[test]
+    fn tool_args_reads_the_name_and_a_json_object() {
+        let a = |v: &[&str]| tool_args(&v.iter().map(|s| s.to_string()).collect::<Vec<_>>());
+        assert_eq!(
+            a(&["create_task", r#"{"title":"t"}"#]).unwrap(),
+            ("create_task".to_string(), json!({"title": "t"}))
+        );
+        assert_eq!(
+            a(&["list_tasks"]).unwrap(),
+            ("list_tasks".to_string(), json!({}))
+        );
+        assert!(a(&[]).unwrap_err().starts_with("usage: overseer tool"));
+        assert!(a(&["x", "{}", "extra"]).is_err());
+        assert!(a(&["x", "nope"]).unwrap_err().contains("JSON object"));
+        assert!(a(&["x", "[1]"]).is_err());
     }
 
     #[test]
