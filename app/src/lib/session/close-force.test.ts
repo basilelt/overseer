@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { stalled } from './close-force';
+import { blockers, stalled } from './close-force';
 
 const ok = { ok: true };
 const no = { ok: false, detail: 'x' };
@@ -40,5 +40,32 @@ describe('stalled', () => {
 
   it('is null when every check passes', () => {
     expect(stalled({ predicates: { notNeedsInput: ok, atPrompt: ok } })).toBeNull();
+  });
+});
+
+describe('blockers', () => {
+  const busy = { ok: false, detail: 'agent is mid-turn' };
+  const unknown = { ok: false, detail: 'turn state unknown (no hook event or status)' };
+
+  it('words each failing check in plain text, without check ids', () => {
+    const out = blockers({ predicates: { atPrompt: busy, notPinned: no, notNeedsInput: no, noToolRunning: { ok: false, detail: 'a subagent is running' } } });
+    expect(out).toEqual(['The session is pinned', 'The agent is waiting for you', 'a subagent is running']);
+    expect(out.join(' ')).not.toMatch(/atPrompt|notPinned|notNeedsInput|mid-turn/);
+  });
+
+  it('does not call a waiting agent mid-turn', () => {
+    expect(blockers({ predicates: { atPrompt: busy, notNeedsInput: no } })).toEqual(['The agent is waiting for you']);
+  });
+
+  it('says the agent is working when only the turn check fails', () => {
+    expect(blockers({ predicates: { atPrompt: busy } })).toEqual(['The agent is working']);
+    expect(blockers({ predicates: { atPrompt: unknown } })).toEqual(['Cannot tell what the agent is doing']);
+  });
+
+  it('keeps the error, skips passing checks and handles loading', () => {
+    expect(blockers({ error: 'boom', predicates: { alive: ok } })).toEqual(['boom']);
+    expect(blockers({ predicates: { inputEmpty: { ok: false } } })).toEqual(['Not safe right now']);
+    expect(blockers('loading')).toEqual([]);
+    expect(blockers(undefined)).toEqual([]);
   });
 });

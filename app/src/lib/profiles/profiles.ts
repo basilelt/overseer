@@ -80,6 +80,13 @@ export function chipLabel(chip: ProfileChip | undefined, effortLabel: (e: string
   return [chip.name, chip.model, chip.effort ? effortLabel(chip.effort) : ''].filter(Boolean).join(' · ');
 }
 
+export function chipBeside(chip: ProfileChip | undefined, cost: { model?: string | null; effort?: string | null } | null | undefined): ProfileChip | undefined {
+  if (!chip || !cost) return chip;
+  const model = chip.model && cost.model?.toLowerCase().includes(chip.model.toLowerCase()) ? undefined : chip.model;
+  const effort = chip.effort && chip.effort === cost.effort ? undefined : chip.effort;
+  return chip.name || model || effort ? { ...chip, model, effort } : undefined;
+}
+
 export function chipShort(chip: ProfileChip | undefined): string {
   return chip?.name || chip?.model || '';
 }

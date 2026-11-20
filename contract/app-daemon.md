@@ -813,7 +813,9 @@ Per target:
 - State, from the daemon's last scan (up to one interval stale): a held, hung-up or not alive line
   → refused `not running`. `needsInput` → not idle, reason `needs input` (typing would answer a
   permission prompt). Agents with a known busy state (hooks, session files): `busy` → reason
-  `busy`. Otherwise (no known busy state, shell terms, term-only agents): busy when the term
+  `busy`, and a known not-busy state → idle; output recency never overrides a known state (a TUI
+  such as Mistral Vibe redraws on a timer, so its terminal always looks busy by output recency).
+  Otherwise (no known busy state, shell terms, term-only agents): busy when the term
   printed something in the last 1.5 s; no known state and no term (tmux) → idle.
 - Idle → typed like a task prompt (bracketed paste when the program enabled it, else newlines
   become spaces; Enter 300 ms later) → `sent`. A failed write → refused with the error.
