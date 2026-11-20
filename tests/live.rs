@@ -141,8 +141,6 @@ fn hold_refuses_each_unsafe_case() {
 #[test]
 fn close_plan_marks_an_unreadable_prompt_unknown_so_the_app_can_offer_to_force() {
     let t = T::new();
-    // A fake agent CLI whose input line uses no recognised marker (`~ $`), like a real CLI
-    // Overseer does not know: the line is alive in a pane but the prompt cannot be read.
     let fakebin = t.base.join("fakebin");
     std::fs::create_dir_all(&fakebin).unwrap();
     let fake = fakebin.join("claude");

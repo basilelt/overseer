@@ -3618,7 +3618,6 @@ fn close_plan_reports_typed_input_without_the_unknown_flag_and_force_closes_past
     let mut ws = app.ws(&tid);
     read_until(&mut ws, "❯");
 
-    // Typed text is a real refusal and is not flagged unknown: the app must not offer to force past it.
     send(&mut ws, "half typed");
     std::thread::sleep(Duration::from_millis(500));
     let (code, plan) = app.req("POST", &format!("/v1/lines/{line}/close"), Value::Null);
