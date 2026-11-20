@@ -241,7 +241,7 @@ describe('useChipFeed', () => {
     const offChip = useChipFeed('local:', s.client, s.subscribe, q);
     await vi.runOnlyPendingTimersAsync();
     const offPanel = useChipFeed('local:', s.client, s.subscribe, q);
-    await vi.runOnlyPendingTimersAsync();
+    await vi.advanceTimersByTimeAsync(DEBOUNCE_MS);
     expect(s.calls.length).toBe(1);
     expect(chipFeed.data?.agents.length).toBe(9);
     offChip();
@@ -253,5 +253,19 @@ describe('useChipFeed', () => {
     s.emit('usage.updated');
     await vi.advanceTimersByTimeAsync(CHIP_MIN_MS + 10);
     expect(s.calls.length).toBe(2);
+  });
+
+  it('keeps the timed limits refresh when a second user mounts on the same query', async () => {
+    vi.resetModules();
+    const { useChipFeed } = await import('./store.svelte');
+    const s = setup();
+    const q = { range: 'today' as const, by: 'agent' as const };
+    const offChip = useChipFeed('local:', s.client, s.subscribe, q);
+    await vi.runOnlyPendingTimersAsync();
+    const offPanel = useChipFeed('local:', s.client, s.subscribe, q);
+    await vi.advanceTimersByTimeAsync(STALE_MS + 10);
+    expect(s.calls.length).toBe(2);
+    offPanel();
+    offChip();
   });
 });

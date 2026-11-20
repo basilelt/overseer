@@ -179,14 +179,25 @@ export const chipFeed = new UsageFeed();
 chipFeed.minInterval = CHIP_MIN_MS;
 
 let chipUsers = 0;
+let chipOff: (() => void) | null = null;
+let chipKey = '';
+let chipClient: Client | null = null;
 
 export function useChipFeed(session: string, client: Client, subscribe: Subscribe, query: Query): () => void {
   chipUsers++;
-  const off = chipFeed.use(session, client, subscribe, query);
+  const key = `${session}|${JSON.stringify(query)}`;
+  if (!chipOff || key !== chipKey || client !== chipClient) {
+    chipOff = chipFeed.use(session, client, subscribe, query);
+    chipKey = key;
+    chipClient = client;
+  }
   let done = false;
   return () => {
     if (done) return;
     done = true;
-    if (--chipUsers === 0) off();
+    if (--chipUsers > 0) return;
+    chipOff?.();
+    chipOff = null;
+    chipClient = null;
   };
 }
