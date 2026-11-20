@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Terminal text can be selected again in CLIs that read the mouse
+
+- **Drag to select and copy in any CLI**: a full-screen program that asks for mouse reports, such
+  as Mistral Vibe's login screen, used to swallow every drag as mouse reports, so nothing could be
+  selected or copied from it. Drags now always select text locally (they are not sent to the
+  program), while plain clicks still reach the CLI.
+
 ### Sessions survive a server crash
 
 - **A crashed or restarted server brings its sessions back**: the server restored terminals and

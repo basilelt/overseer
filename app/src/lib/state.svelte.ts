@@ -117,6 +117,7 @@ class AppState {
   sidebarMode = $state<SidebarMode>(settings.sidebarMode ?? 'workspaces');
   panelGit = $state(settings.panelGit ?? false);
   workspaceId = $state<string>(NO_WORKSPACE);
+  picks = 0;
   /** @internal */
   following: { id: string; goToWorkspace: boolean } | null = null;
   private pendingTab: 'graph' | 'worktrees' | null = initialTab();
@@ -480,6 +481,7 @@ class AppState {
   }
 
   selectWorkspace(id: string) {
+    this.picks++;
     void tick().then(busy.since('workspace.switch'));
     this.following = null;
     this.workspaceId = id;
@@ -846,6 +848,7 @@ class AppState {
   }
 
   select(key: string | null) {
+    this.picks++;
     if (key && this.sidebarMode === 'workspaces' && !allTabs(workspace.layout).includes(key)) {
       const ws = this.itemWs.get(key) ?? (key.includes(':') && this.items.some((i) => i.key === key) ? NO_WORKSPACE : this.workspaceId);
       if (ws !== this.workspaceId) this.workspaceId = ws;

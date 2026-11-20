@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { holdPopup } from '../../popup.svelte';
   import { dismiss } from '../../dismiss';
   import { captureFocus } from '../../focus';
   import Check from '@lucide/svelte/icons/check';
@@ -11,6 +12,7 @@
   let { items, x, y, label, onclose }: { items: MenuItem[]; x: number; y: number; label: string; onclose: () => void } = $props();
 
   const restore = captureFocus();
+  $effect(holdPopup);
   let menu: HTMLDivElement | undefined = $state();
   let pos = $state({ left: 0, top: 0 });
   let expanded = $state(new Set<number>());
