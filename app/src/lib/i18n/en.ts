@@ -1310,6 +1310,7 @@ export const en = {
   'hold.closed': 'Closed',
   'hold.waiting': 'Waiting for you. Tick to close.',
   'hold.turn': 'Mid-turn? Tick to close.',
+  'hold.unknown': 'Prompt unreadable, typed text may be lost. Tick to close.',
   'hold.why.busy': 'The agent is working',
   'hold.why.unknown': 'Cannot tell what the agent is doing',
   'hold.why.pinned': 'The session is pinned',

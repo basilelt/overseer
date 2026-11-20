@@ -84,7 +84,8 @@
           {:else if p === 'loading'}
             <span class="st">{t('common.loading')}</span>
           {:else if waiting}
-            <span class="st bad">{t(waiting === 'waiting' ? 'hold.waiting' : 'hold.turn')}</span>
+            {@const msg = t(waiting === 'waiting' ? 'hold.waiting' : waiting === 'turn' ? 'hold.turn' : 'hold.unknown')}
+            <span class="st bad" title={msg}>{msg}</span>
           {:else if checked}
             <span class="st" class:good={ok} class:bad={!ok}>{ok ? t(mode === 'close' ? 'hold.safeClose' : 'hold.safe') : blockers(p).join(' · ')}</span>
           {/if}

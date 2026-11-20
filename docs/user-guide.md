@@ -411,7 +411,7 @@ logged to `<state>/actions.log`. Exit code 3 = refused; `--json` prints the repo
 | alive | no live process, or two processes on the same session |
 | inTmux | the agent is neither in a tmux pane nor in an Overseer (daemon) terminal |
 | atPrompt | a turn is running (hook `UserPromptSubmit` without `Stop`, or `status: busy`) |
-| inputEmpty | text is typed in the prompt, or the prompt cannot be recognised on screen |
+| inputEmpty | text is typed in the prompt, or the prompt cannot be recognised on screen (reported with `unknown: true`; the app's Close dialog then offers "Tick to close" to force past it) |
 | noToolRunning | a Bash tool, a subagent, a background task or an unknown child process runs |
 | notPinned | the line is pinned |
 | notNeedsInput | the agent waits for a permission / answer |
