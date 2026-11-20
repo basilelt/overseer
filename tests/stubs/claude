@@ -56,6 +56,8 @@ while IFS= read -r line; do
     untool) kill "$tool"; tool= ;;
     mcp) set -m; sh -c ': mcp-server; sleep 300; :' & echo $! > "$SB_STUB_LOG.mcp"; set +m ;;
     mcpstubborn) set -m; sh -c ': mcp-server; trap "" TERM; while :; do sleep 1; done' & echo $! > "$SB_STUB_LOG.mcpstubborn"; set +m ;;
+    mouse) printf '\033[?1049h\033[?1000h\033[?1002h\033[?1006h\r\n' ;;
+    nomouse) printf '\033[?1006l\033[?1002l\033[?1000l\033[?1049l' ;;
     ask) hook PermissionRequest ;;
     multiask)
       printf '%s\n' '←  ☐ Fruits  ✔ Submit  →' '' 'Which fruits do you like?' '' '❯ 1. [ ] Apple' '         red' '  2. [ ] Banana' '         yellow' \
