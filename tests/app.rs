@@ -2788,6 +2788,37 @@ fn uploads_stream_to_a_short_home_path_and_report_env() {
 }
 
 #[test]
+fn a_refused_upload_still_reads_the_whole_body_so_the_client_sees_the_error() {
+    use std::io::{Read, Write};
+    let app = App::new("upload-refused", json!({}));
+    let u = app.fx.base.join("home/.overseer/u");
+    std::fs::create_dir_all(u.parent().unwrap()).unwrap();
+    std::fs::write(&u, "not a directory").unwrap();
+    let body = vec![b'x'; 8 << 20];
+    let mut w = UnixStream::connect(&app.fx.sock).unwrap();
+    let mut r = w.try_clone().unwrap();
+    let head = format!(
+        "POST /v1/uploads?name=a.png HTTP/1.1\r\nHost: unix\r\nContent-Length: {}\r\n\r\n",
+        body.len()
+    );
+    let sender = std::thread::spawn(move || {
+        w.write_all(head.as_bytes())?;
+        w.write_all(&body)
+    });
+    let mut out = String::new();
+    let _ = r.read_to_string(&mut out);
+    sender
+        .join()
+        .unwrap()
+        .expect("the daemon closed before the body was read");
+    assert!(out.starts_with("HTTP/1.1 500 "), "{out}");
+    assert!(
+        out.contains("File exists") || out.contains("Not a directory"),
+        "{out}"
+    );
+}
+
+#[test]
 fn agent_sessions_become_tasks_that_follow_them() {
     let app = App::new("session-tasks", json!({}));
     let wt = app.fx.wt.to_string_lossy().into_owned();
