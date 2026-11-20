@@ -314,8 +314,6 @@ fn an_ended_vibe_session_stops_being_mid_turn_even_when_no_hook_fires() {
     let sid = "9d2c3b4a-5e6f-4a7b-8c9d-0e1f2a3b4c5d";
     let home = app.fx.base.join("home");
     store(&home, sid, &wt, &[message("m1", "user", "hi")]);
-    // The term runs `vibe --resume <sid>`, so its process stays matched to the
-    // session by argv even after the session itself has ended.
     let t = app.ok(
         "POST",
         "/v1/terms",
@@ -330,8 +328,6 @@ fn an_ended_vibe_session_stops_being_mid_turn_even_when_no_hook_fires() {
     let l = wait_for(|| vibe_line(&app, sid).filter(|l| l["local"]["termId"] == tid.as_str()));
     let line = l["line"]["id"].as_str().unwrap().to_string();
 
-    // While the session is open (live lease) a turn runs: the line is mid-turn and
-    // the close plan refuses on atPrompt.
     let active = home.join(".vibe/logs/session/active");
     std::fs::create_dir_all(&active).unwrap();
     let lock = active.join(format!("{sid}.lock.json"));
@@ -352,9 +348,6 @@ fn an_ended_vibe_session_stops_being_mid_turn_even_when_no_hook_fires() {
     assert_eq!(code, 409, "{plan}");
     assert_eq!(plan["predicates"]["atPrompt"]["ok"], false, "{plan}");
 
-    // The session ends while its process lives on and no session_end hook fires
-    // (an interrupted turn fires none): Vibe releases the lease. The line must be
-    // detected as ended and stop being mid-turn.
     std::fs::remove_file(&lock).unwrap();
     wait(|| vibe_line(&app, sid).is_some_and(|l| l["local"]["busy"] == false));
     let (_, plan) = app.req("POST", &format!("/v1/lines/{line}/close"), Value::Null);
@@ -495,19 +488,16 @@ fn chat_mode_reaches_an_idle_vibe_line_despite_its_terminal_redrawing() {
         v["hook_event_name"] = json!(name);
         v
     };
-    // Prove the line state is known, then leave it idle (a turn that ended).
     hook(&app, "pre_agent", pid, with("pre_agent"));
     wait(|| vibe_line(&app, sid).is_some_and(|l| l["local"]["busy"] == true));
     hook(&app, "post_agent", pid, with("post_agent"));
     wait(|| vibe_line(&app, sid).is_some_and(|l| l["local"]["busy"] == false));
 
-    // Fresh terminal output, like a TUI redrawing on a timer at its prompt.
     let mut ws = app.ws(&tid);
     read_until(&mut ws, "> ");
     send(&mut ws, "x\r");
     read_until(&mut ws, "got: x");
 
-    // The exact request the chat composer sends in idle mode.
     let r = app.ok(
         "POST",
         "/v1/broadcast",
@@ -515,4 +505,86 @@ fn chat_mode_reaches_an_idle_vibe_line_despite_its_terminal_redrawing() {
     );
     assert_eq!(r["results"][0]["result"], "sent", "{r}");
     read_until(&mut ws, "got: hello from chat mode");
+}
+
+#[test]
+fn a_vibe_session_is_a_line_from_its_lease_before_its_first_prompt_saves_a_store() {
+    let app = App::new("vibe-pending", json!({}));
+    let wt = app.fx.wt.to_string_lossy().into_owned();
+    let home = app.fx.base.join("home");
+    let sid = "3c4d5e6f-7a8b-4c9d-8e0f-1a2b3c4d5e6f";
+    let t = app.ok("POST", "/v1/terms", json!({"cwd": wt, "agent": "vibe"}));
+    let tid = t["id"].as_str().unwrap().to_string();
+    let pid = wait_for(|| {
+        app.ok("GET", &format!("/v1/terms/{tid}"), Value::Null)["pid"]
+            .as_u64()
+            .filter(|p| *p > 0)
+    });
+    let active = home.join(".vibe/logs/session/active");
+    std::fs::create_dir_all(&active).unwrap();
+    let lock = active.join(format!("{sid}.lock.json"));
+    std::fs::write(
+        &lock,
+        json!({"acquired_at": "2026-11-11T10:00:00.000Z", "lease_version": 1,
+            "process_id": pid, "session_id": sid})
+        .to_string(),
+    )
+    .unwrap();
+
+    let l = wait_for(|| vibe_line(&app, sid).filter(|l| l["local"]["termId"] == tid.as_str()));
+    let line = l["line"]["id"].as_str().unwrap().to_string();
+    assert_eq!(l["local"]["pid"], pid, "{l}");
+    assert_eq!(l["local"]["cwd"], wt, "{l}");
+
+    store(
+        &home,
+        sid,
+        &wt,
+        &[message("m1", "user", "Fix the login bug")],
+    );
+    let l =
+        wait_for(|| vibe_line(&app, sid).filter(|l| l["local"]["title"] == "Fix the login bug"));
+    assert_eq!(l["line"]["id"], line.as_str());
+    assert_eq!(l["local"]["termId"], tid.as_str());
+}
+
+#[test]
+fn a_busy_terminal_detector_is_cleared_once_the_store_says_the_turn_is_over() {
+    let app = App::new("vibe-detector", json!({}));
+    let wt = app.fx.wt.to_string_lossy().into_owned();
+    let home = app.fx.base.join("home");
+    let sid = "8e3b2c1d-0f9a-4b8c-9d7e-2f3a4b5c6d7e";
+    let dir = store(&home, sid, &wt, &[message("m1", "user", "hi")]);
+    std::fs::write(
+        dir.join("journal/0000000000000001.jsonl"),
+        envelope("completed", Some(now_ms() - 60_000)),
+    )
+    .unwrap();
+    let t = app.ok("POST", "/v1/terms", json!({"cwd": wt, "agent": "vibe"}));
+    let tid = t["id"].as_str().unwrap().to_string();
+    let pid = wait_for(|| {
+        app.ok("GET", &format!("/v1/terms/{tid}"), Value::Null)["pid"]
+            .as_u64()
+            .filter(|p| *p > 0)
+    });
+    let active = home.join(".vibe/logs/session/active");
+    std::fs::create_dir_all(&active).unwrap();
+    std::fs::write(
+        active.join(format!("{sid}.lock.json")),
+        json!({"lease_version": 1, "session_id": sid, "process_id": pid}).to_string(),
+    )
+    .unwrap();
+    wait_for(|| vibe_line(&app, sid).filter(|l| l["local"]["termId"] == tid.as_str()));
+    hook(
+        &app,
+        "session_start",
+        pid,
+        json!({"session_id": sid, "parent_session_id": null, "cwd": wt, "transcript_path": "",
+            "hook_event_name": "session_start"}),
+    );
+    let mut ws = app.ws(&tid);
+    read_until(&mut ws, "> ");
+    send(&mut ws, "spin\r");
+    wait(|| vibe_line(&app, sid).is_some_and(|l| l["local"]["busy"] == true));
+    wait(|| vibe_line(&app, sid).is_some_and(|l| l["local"]["busy"] == false));
 }

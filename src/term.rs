@@ -123,6 +123,28 @@ impl Sub {
 }
 
 impl Out {
+    fn catch_up(&mut self, to: usize) {
+        let Out {
+            ring,
+            screen,
+            trimmed,
+            ..
+        } = self;
+        let Some(s) = screen else {
+            return;
+        };
+        let seen = s.fed().saturating_sub(*trimmed) as usize;
+        let (a, b) = ring.as_slices();
+        if seen < a.len() {
+            s.advance(&a[seen..to.min(a.len())]);
+            if to > a.len() {
+                s.advance(&b[..to - a.len()]);
+            }
+        } else if seen < to {
+            s.advance(&b[seen - a.len()..to - a.len()]);
+        }
+    }
+
     fn trim(&mut self, n: usize) -> usize {
         if n == 0 {
             return 0;
@@ -137,7 +159,9 @@ impl Out {
             self.base.byte(self.ring[n]);
             n += 1;
         }
+        self.catch_up(n);
         self.ring.drain(..n);
+        self.trimmed += n as u64;
         n
     }
 
@@ -165,6 +189,8 @@ struct Out {
     submit_ms: i64,
     scan: crate::termtheme::Scanner,
     base: crate::termmodes::Modes,
+    trimmed: u64,
+    screen: Option<crate::screen::Screen>,
 }
 
 pub const TURN_GRACE_MS: i64 = 1_500;
@@ -885,11 +911,19 @@ impl Term {
             let i = lock(&self.info);
             (i.cols, i.rows)
         };
-        let o = lock(&self.out);
-        let from = o.ring.len().saturating_sub(crate::screen::TAIL);
-        let bytes: Vec<u8> = o.ring.range(from..).copied().collect();
-        drop(o);
-        crate::screen::render(&bytes, cols, rows)
+        let mut o = lock(&self.out);
+        let start = o.trimmed;
+        if o.screen
+            .as_ref()
+            .is_none_or(|s| s.size() != (cols, rows) || s.fed() < start)
+        {
+            o.screen = Some(crate::screen::Screen::new(cols, rows, start));
+        }
+        let all = o.ring.len();
+        o.catch_up(all);
+        o.screen
+            .as_ref()
+            .map_or_else(|| crate::screen::render(&[], cols, rows), |s| s.grid())
     }
 
     fn push(&self, b: &[u8]) {
@@ -1781,6 +1815,71 @@ mod tests {
         assert_eq!(replay.len(), EXITED_RING);
         assert!(String::from_utf8_lossy(&replay).contains("the-end"));
         remove(&id);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn the_screen_keeps_rows_painted_once_before_the_tail_of_a_long_session() {
+        let t = spawn(Spec {
+            cwd: std::env::temp_dir().to_string_lossy().into_owned(),
+            cmd: vec![
+                "/bin/sh".into(),
+                "-c".into(),
+                "printf '\\033[?1049h\\033[24;1H> \\033[23;1H--rule--'; i=0; while [ $i -lt 6000 ]; do printf '\\033[3;1Hframe %0100d' $i; i=$((i+1)); done; printf '\\033[5;1Hdone-marker'; sleep 30".into(),
+            ],
+            cols: 80,
+            rows: 24,
+            ..Default::default()
+        })
+        .unwrap();
+        let id = t.info().id;
+        let deadline = std::time::Instant::now() + Duration::from_secs(10);
+        while !t.grid().text().contains("done-marker") {
+            assert!(std::time::Instant::now() < deadline, "no output");
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        assert!(lock(&t.out).total > crate::screen::TAIL as u64);
+        let text = t.grid().text();
+        assert!(text.lines().any(|l| l == ">"), "{text}");
+        assert!(text.contains("--rule--"), "{text}");
+        remove(&id);
+    }
+
+    #[test]
+    fn reading_the_screen_again_without_new_output_feeds_nothing() {
+        let mut o = Out {
+            screen: Some(crate::screen::Screen::new(40, 6, 0)),
+            ..Default::default()
+        };
+        o.ring.extend(b"one two three");
+        o.catch_up(o.ring.len());
+        let fed = o.screen.as_ref().unwrap().fed();
+        o.catch_up(o.ring.len());
+        o.catch_up(o.ring.len());
+        assert_eq!(o.screen.as_ref().unwrap().fed(), fed);
+        assert_eq!(fed, 13);
+    }
+
+    #[test]
+    fn the_screen_survives_the_ring_dropping_its_oldest_bytes() {
+        let mut o = Out {
+            screen: Some(crate::screen::Screen::new(40, 6, 0)),
+            ..Default::default()
+        };
+        o.ring.extend(b"\x1b[6;1Hprompt> \x1b[1;1Hone");
+        o.catch_up(o.ring.len());
+        o.ring.extend(b"\x1b[2;1Htwo \xe2\x94");
+        o.trim(o.ring.len() - 2);
+        o.ring.extend(b"\x80 end");
+        let all = o.ring.len();
+        o.catch_up(all);
+        let text = o.screen.as_ref().unwrap().grid().text();
+        assert!(text.contains("prompt>"), "{text}");
+        assert!(text.contains("two \u{2500} end"), "{text}");
+        assert_eq!(
+            o.screen.as_ref().unwrap().fed(),
+            o.trimmed + o.ring.len() as u64
+        );
     }
 
     #[test]

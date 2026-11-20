@@ -290,6 +290,67 @@ pub fn find(home: &Path, session_id: &str) -> Option<PathBuf> {
     session_dir(home, session_id)
 }
 
+pub fn pending(home: &Path, known: &[Session], is_alive: impl Fn(u32) -> bool) -> Vec<Session> {
+    let root = root(home);
+    let mut taken: std::collections::HashSet<u32> = known.iter().filter_map(|s| s.pid).collect();
+    let mut out = vec![];
+    let mut found: Vec<(String, u32)> = leases(&root).into_iter().collect();
+    found.sort();
+    for (id, pid) in found {
+        let dir = root.join("unified").join(&id);
+        if dir.join("meta.json").exists() || !is_alive(pid) || !taken.insert(pid) {
+            continue;
+        }
+        let lock = root.join("active").join(format!("{id}.lock.json"));
+        let started = json(&lock, 4096)
+            .and_then(|v| parse_rfc3339(v["acquired_at"].as_str()?))
+            .filter(|ms| *ms > 0);
+        out.push(Session {
+            id,
+            cwd: None,
+            started_ms: started,
+            activity_ms: mtime_ms(&lock),
+            dir,
+            title: None,
+            archived: false,
+            model: None,
+            pid: Some(pid),
+        });
+    }
+    out
+}
+
+pub fn watch_leases(home: &Path, poke: impl Fn()) {
+    use notify::{RecursiveMode, Watcher};
+    let root = root(home);
+    let active = root.join("active");
+    let (tx, rx) = std::sync::mpsc::channel::<notify::Result<notify::Event>>();
+    let Ok(mut w) = notify::recommended_watcher(tx) else {
+        return;
+    };
+    let mut armed = w.watch(&active, RecursiveMode::NonRecursive).is_ok();
+    if w.watch(&root, RecursiveMode::NonRecursive).is_err() && !armed {
+        return;
+    }
+    for ev in rx {
+        let Ok(ev) = ev else {
+            continue;
+        };
+        if !armed {
+            armed = w.watch(&active, RecursiveMode::NonRecursive).is_ok();
+        }
+        let lease = |p: &PathBuf| {
+            p == &active
+                || p.parent() == Some(active.as_path())
+                    && p.file_name()
+                        .is_some_and(|n| n.to_string_lossy().ends_with(".lock.json"))
+        };
+        if !ev.kind.is_access() && ev.paths.iter().any(lease) {
+            poke();
+        }
+    }
+}
+
 pub fn stamp(dir: &Path) -> u64 {
     let st = |p: &Path| {
         std::fs::metadata(p).ok().map_or(0u64, |m| {
@@ -721,6 +782,84 @@ mod tests {
 
     fn ids(v: &[Value]) -> Vec<String> {
         v.iter().map(id_of).collect()
+    }
+
+    fn lease(h: &Path, id: &str, pid: u32) {
+        let a = root(h).join("active");
+        std::fs::create_dir_all(&a).unwrap();
+        std::fs::write(
+            a.join(format!("{id}.lock.json")),
+            json!({"acquired_at": "2026-11-11T10:00:00.000Z", "lease_version": 1,
+                "process_id": pid, "session_id": id})
+            .to_string(),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn a_lease_without_a_store_yet_is_a_pending_session() {
+        let h = tmp("pending");
+        lease(&h, "p1", 4242);
+        let p = pending(&h, &sessions(&h), |pid| pid == 4242);
+        assert_eq!(p.len(), 1);
+        assert_eq!(p[0].id, "p1");
+        assert_eq!(p[0].pid, Some(4242));
+        assert!(p[0].cwd.is_none());
+        assert!(p[0].started_ms.is_some_and(|ms| ms > 0));
+    }
+
+    #[test]
+    fn pending_skips_stored_dead_and_shared_process_leases() {
+        let h = tmp("pending-skip");
+        session(&h, "s1", meta_json("s1", "/w", None), 1, &[], "");
+        lease(&h, "s1", 10);
+        lease(&h, "dead", 11);
+        lease(&h, "second", 10);
+        lease(&h, "ok", 12);
+        let known = sessions(&h);
+        let p = pending(&h, &known, |pid| pid != 11);
+        assert_eq!(p.iter().map(|s| s.id.as_str()).collect::<Vec<_>>(), ["ok"]);
+        assert!(pending(&h, &known, |_| false).is_empty());
+    }
+
+    #[test]
+    fn a_lease_appearing_or_going_wakes_the_scanner() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::sync::Arc;
+        let h = tmp("watch");
+        std::fs::create_dir_all(root(&h)).unwrap();
+        let hits = Arc::new(AtomicUsize::new(0));
+        let n = hits.clone();
+        let home = h.clone();
+        std::thread::spawn(move || {
+            watch_leases(&home, || {
+                n.fetch_add(1, Ordering::SeqCst);
+            })
+        });
+        let wait = |want: usize| {
+            let end = std::time::Instant::now() + std::time::Duration::from_secs(10);
+            while hits.load(Ordering::SeqCst) < want {
+                assert!(std::time::Instant::now() < end, "no wake-up");
+                std::thread::sleep(std::time::Duration::from_millis(20));
+            }
+        };
+        std::thread::sleep(std::time::Duration::from_millis(200));
+        let a = root(&h).join("active");
+        std::fs::create_dir_all(&a).unwrap();
+        wait(1);
+        std::thread::sleep(std::time::Duration::from_millis(300));
+        let before = hits.load(Ordering::SeqCst);
+        lease(&h, "w1", 1);
+        wait(before + 1);
+        let before = hits.load(Ordering::SeqCst);
+        std::thread::sleep(std::time::Duration::from_millis(300));
+        let before = before.max(hits.load(Ordering::SeqCst));
+        std::fs::write(a.join(".registry"), "x").unwrap();
+        std::fs::create_dir_all(root(&h).join("unified/x")).unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(300));
+        assert_eq!(hits.load(Ordering::SeqCst), before);
+        std::fs::remove_file(a.join("w1.lock.json")).unwrap();
+        wait(before + 1);
     }
 
     #[test]
