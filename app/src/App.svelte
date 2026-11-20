@@ -13,7 +13,7 @@
   import { startPorts } from './lib/ports/ports.svelte';
   import { startCenter } from './lib/notify/notifications.svelte';
   import { followReview, openReviewFromHash } from './lib/review/open';
-  import { liveOn } from './lib/git/live.svelte';
+  import { liveOn, setLiveExpanded } from './lib/git/live.svelte';
   import { api } from './lib/daemon/api';
   import { isTauri } from './lib/platform';
   import { blockStrayMiddlePaste } from './lib/middle-paste';
@@ -48,7 +48,7 @@
 
   function onLeftChange(w: number) {
     const next = leftBarDrag(barIsSidebar, w, sidebarW);
-    if (live) app.liveExpanded = next.open;
+    if (live) setLiveExpanded(next.open);
     if (next.open) sidebarW = next.width;
   }
 
