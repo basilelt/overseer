@@ -75,7 +75,15 @@
   const colors = $derived(new Map(app.allProjects.map((p) => [p.path, p.color])));
   const projectPaths = $derived([...new Set([...app.allProjects.map((p) => p.path), ...app.data.tasks.map((t) => t.project), ...(project ? [project] : [])])].sort());
   const dragTask = $derived(drag ? app.data.tasks.find((x) => x.id === drag!.id) : undefined);
+  const RAIL_DWELL = 350;
+  let railOpen = $state<TaskStatus | null>(null);
+  let railTimer: ReturnType<typeof setTimeout> | undefined;
   const dropOn = $derived(drag?.target ?? picked?.target ?? null);
+  function armRail(on: TaskStatus | null) {
+    clearTimeout(railTimer);
+    if (railOpen && railOpen !== on) railOpen = null;
+    if (on && collapsed[on] && railOpen !== on) railTimer = setTimeout(() => (railOpen = on), RAIL_DWELL);
+  }
   const movingId = $derived(drag?.id ?? picked?.id ?? null);
   const origin = $derived(app.data.tasks.find((x) => x.id === movingId)?.status);
   const dropAt = $derived(drag?.target ? { status: drag.target, index: drag.index } : picked ? { status: picked.target, index: picked.index } : null);
@@ -362,6 +370,7 @@
       scrolled ||= list.scrollTop !== top;
     }
     const at = locate(pointer.x, pointer.y);
+    armRail(at.target);
     if (at.target !== drag.target || at.index !== drag.index) drag = { ...drag, ...at };
     return scrolled;
   }
@@ -386,9 +395,13 @@
     press.cancel();
     pending = null;
     loop.cancel();
-    if (!drag) return;
+    if (!drag) {
+      armRail(null);
+      return;
+    }
     const { id, target, index } = { ...drag, ...locate(pointer.x, pointer.y) };
     drag = null;
+    armRail(null);
     suppressClick = true;
     setTimeout(() => (suppressClick = false));
     const task = app.data.tasks.find((x) => x.id === id);
@@ -664,7 +677,7 @@
         status={col.status}
         count={col.tasks.length}
         collapsible={isDone(col.status)}
-        collapsed={!!collapsed[col.status] && dropOn !== col.status}
+        collapsed={!!collapsed[col.status] && railOpen !== col.status && picked?.target !== col.status}
         target={dropOn === col.status && origin !== col.status}
         empty={!rest(col.status).length}
         bind:el={colEls[col.status]}
