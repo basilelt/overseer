@@ -44,6 +44,11 @@ describe('parseReply', () => {
     expect(parseReply('{"a.count": "{n} Dateien", "a.title": "Titel {x}"}', en, ['a.count', 'a.title'])).toEqual({});
   });
 
+  it('does not ask translators to keep the English plural suffix', () => {
+    const plural = { 'a.files': '{n} file{s}' };
+    expect(parseReply('{"a.files": "{n} Dateien"}', plural, ['a.files'])).toEqual({ 'a.files': '{n} Dateien' });
+  });
+
   it('ignores keys it did not ask for, empty strings and non-strings', () => {
     expect(parseReply('{"a.title": "  ", "a.quote": 3, "other": "x"}', en, ['a.title', 'a.quote'])).toEqual({});
   });

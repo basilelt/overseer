@@ -52,6 +52,35 @@ describe('t', () => {
     expect(t('common.close')).toBe('Close');
   });
 
+  it('drops the plural suffix when the count is 1', () => {
+    expect(t('review.filesChanged', { n: 1 })).toBe('1 file');
+    expect(t('review.filesChanged', { n: 2 })).toBe('2 files');
+    expect(t('review.filesChanged', { n: 0 })).toBe('0 files');
+    expect(t('review.fold.lines', { n: 1 })).toBe('1 line');
+    expect(t('git.commits', { n: 1 })).toBe('1 commit');
+  });
+
+  it('spells the plural with es where the word needs it', () => {
+    expect(t('system.procs', { n: 1 })).toBe('1 process');
+    expect(t('system.procs', { n: 3 })).toBe('3 processes');
+  });
+
+  it('leaves strings without a suffix placeholder alone', () => {
+    expect(t('review.pending', { n: 1 })).toBe('1 pending');
+  });
+
+  it('only uses suffix placeholders in strings that count with n', async () => {
+    const { en } = await import('./i18n/en');
+    const bad = Object.entries(en).filter(([, v]) => /\{e?s\}/.test(v) && !v.includes('{n}'));
+    expect(bad).toEqual([]);
+  });
+
+  it('keeps a locale own string when the count is 1', async () => {
+    setLocale('fr');
+    await loadLocale('fr');
+    expect(t('common.cancel', { n: 1 })).toBe('Annuler');
+  });
+
   it('switches to English for an unknown locale', () => {
     setLocale('xx');
     expect(getLocale()).toBe('en');
