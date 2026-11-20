@@ -91,11 +91,36 @@ describe('TaskDetail edit mode', () => {
     expect(h).toMatch(/<input[^>]*value="Bug: cli not interactable"/);
   });
 
+  it('keeps the agent, model, effort and profile of a running task out of the form', () => {
+    const h = html({ status: 'in_progress' }, { startEditing: true });
+    expect(h).toContain('class="edit');
+    expect(h).toMatch(/<input[^>]*value="PROJ-1"/);
+    expect(h).not.toContain(`${t('task.agent')}: Claude`);
+    expect(h).not.toContain(t('task.effort'));
+    expect(h).not.toContain(t('profile.label'));
+    expect(h).toContain('<option value="fix"');
+  });
+
+  it('offers them again once the task is no longer running', () => {
+    const h = html({ status: 'in_testing' }, { startEditing: true });
+    expect(h).toContain(`${t('task.agent')}: Claude`);
+    expect(h).toContain(t('task.effort'));
+  });
+
   it('hides the type and profile fields when the daemon has no profiles', () => {
     const h = html({}, { startEditing: true }, null);
     expect(h).not.toContain('<option value="fix"');
     expect(h).not.toContain(t('profile.label'));
     expect(h).toContain(`${t('task.agent')}: Claude`);
+  });
+});
+
+describe('TaskDetail edit keyboard', () => {
+  it('cancels the edit on Escape without letting the modal close', () => {
+    const h = html({}, { startEditing: true });
+    expect(h).toContain('class="edit');
+    expect(source).toMatch(/function onEditKey\(e: KeyboardEvent\) \{\s*if \(e\.key !== 'Escape' \|\| e\.defaultPrevented\) return;\s*e\.stopPropagation\(\);\s*edit = null;/);
+    expect(source).toContain('onkeydown={onEditKey}');
   });
 });
 

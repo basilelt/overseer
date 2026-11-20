@@ -16,6 +16,7 @@
   import { adaptChoice, agentName, efforts, findAgent, hasModel, taskAgents } from '../../agents';
   import { fromOverseer } from '../../kanban/quorum';
   import { TASK_TYPES } from '../../profiles/profiles';
+  import { isRunning } from '../../kanban/task-status';
   import { editPatch } from '../../kanban/task-edit';
   import type { Effort, Task, TaskMessage, TaskType } from '../../types';
   import { isSubmitChord } from '../../chord';
@@ -68,6 +69,7 @@
   const agents = $derived(taskAgents(app.agents));
   const info = $derived(findAgent(app.agents, edit?.agent ?? task?.agent ?? ''));
   const effortOptions = $derived(efforts(info));
+  const cliLocked = $derived(!!task && isRunning(task.status));
 
   async function load(id: string) {
     try {
@@ -117,6 +119,12 @@
     if (!task) return;
     edit = capture(task);
     eError = '';
+  }
+
+  function onEditKey(e: KeyboardEvent) {
+    if (e.key !== 'Escape' || e.defaultPrevented) return;
+    e.stopPropagation();
+    edit = null;
   }
 
   function setAgent(id: string) {
@@ -193,7 +201,7 @@
     <div class="body">
       {#if edit}
         {@const e = edit}
-        <div class="edit">
+        <div class="edit" role="presentation" onkeydown={onEditKey}>
           <label class="field">
             <span>{t('task.title')}</span>
             <input bind:value={e.title} aria-invalid={!!eError} oninput={() => (eError = '')} />
@@ -204,6 +212,7 @@
             <textarea rows="4" bind:value={e.description} placeholder={t('task.descriptionPlaceholder')} spellcheck="true"></textarea>
           </label>
           {#if !isSession(task)}
+            {#if !cliLocked}
             <div class="row">
               <div class="field">
                 <span>{t('task.agent')}</span>
@@ -216,6 +225,7 @@
                 </div>
               {/if}
             </div>
+            {/if}
             <div class="row">
               <label class="field">
                 <span>{t('task.ticketKey')}</span>
@@ -230,14 +240,14 @@
                   </select>
                 </label>
               {/if}
-              {#if app.profiles}
+              {#if app.profiles && !cliLocked}
                 <div class="field">
                   <span>{t('profile.label')}</span>
                   <ProfileSelect value={e.profile} cwd={task.project} taskType={e.taskType || undefined} agent={e.agent} onchange={(v) => (e.profile = v)} />
                 </div>
               {/if}
             </div>
-            {#if effortOptions.length}
+            {#if effortOptions.length && !cliLocked}
               <div class="field">
                 <span>{t('task.effort')}</span>
                 <Segmented
