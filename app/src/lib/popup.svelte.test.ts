@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { popup } from './popup.svelte';
+import { holdPopup, popup } from './popup.svelte';
 import { diag } from './diag/diag.svelte';
 import { feedback } from './feedback/feedback.svelte';
 import { ui } from './mobile/ui.svelte';
@@ -74,5 +74,41 @@ describe('popup.open', () => {
     expect(popup.open).toBe(true);
     feedback.close();
     expect(popup.open).toBe(false);
+  });
+});
+
+describe('holdPopup', () => {
+  it('keeps popup.open true until every holder released', () => {
+    const a = holdPopup();
+    const b = holdPopup();
+    expect(popup.open).toBe(true);
+    a();
+    expect(popup.open).toBe(true);
+    b();
+    expect(popup.open).toBe(false);
+  });
+});
+
+const sources = import.meta.glob('./**/*.svelte', { query: '?raw', import: 'default', eager: true }) as Record<string, string>;
+const SURFACE = /position:\s*fixed|role="(dialog|menu|alertdialog)"/;
+const COVERED_ELSEWHERE = new Set([
+  'CommandPalette',
+  'ConnectDialog',
+  'MobileConnect',
+  'MobileShell',
+  'PanelShell',
+  'SourceControl',
+  'Tour',
+]);
+const NOT_A_POPUP = new Set(['AuthPrompt', 'Boundary', 'KanbanView', 'RecordPill', 'Toast']);
+
+describe('floating surfaces', () => {
+  it('every component that floats above the page holds the native webviews hidden, or is listed with its reason', () => {
+    const missing = Object.entries(sources)
+      .filter(([, src]) => SURFACE.test(src))
+      .map(([path]) => ({ path, name: path.split('/').pop()!.replace('.svelte', '') }))
+      .filter(({ path, name }) => !/holdPopup\)|holdPopup\(\)/.test(sources[path]) && !COVERED_ELSEWHERE.has(name) && !NOT_A_POPUP.has(name))
+      .map(({ name }) => name);
+    expect(missing).toEqual([]);
   });
 });

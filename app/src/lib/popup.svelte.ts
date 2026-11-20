@@ -1,3 +1,4 @@
+import { untrack } from 'svelte';
 import { diag } from './diag/diag.svelte';
 import { feedback } from './feedback/feedback.svelte';
 import { ui } from './mobile/ui.svelte';
@@ -5,6 +6,13 @@ import { rec } from './record/record-state.svelte';
 import { app } from './state.svelte';
 import { tour } from './tour/tour.svelte';
 import { organizer } from './workspace/organize.svelte';
+
+let held = $state(0);
+
+export function holdPopup(): () => void {
+  untrack(() => held++);
+  return () => untrack(() => held--);
+}
 
 class Popup {
   /**
@@ -14,6 +22,7 @@ class Popup {
    */
   get open(): boolean {
     return (
+      held > 0 ||
       !!app.overlay ||
       !!app.menu ||
       feedback.open ||

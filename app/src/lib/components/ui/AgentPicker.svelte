@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { holdPopup } from '../../popup.svelte';
   import { dismiss } from '../../dismiss';
   import ChevronDown from '@lucide/svelte/icons/chevron-down';
   import Check from '@lucide/svelte/icons/check';
@@ -18,6 +19,7 @@
     open = $bindable(false),
   }: { agents: AgentInfo[]; value: string; label: string; onchange: (id: string) => void; open?: boolean } = $props();
 
+  $effect(() => (open ? holdPopup() : undefined));
   const uid = `ap-${Math.random().toString(36).slice(2, 8)}`;
   let active = $state(0);
   let root: HTMLDivElement;
