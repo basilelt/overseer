@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { holdPopup } from '../popup.svelte';
   import { onMount, untrack } from 'svelte';
   import ArrowDown from '@lucide/svelte/icons/arrow-down';
   import ArrowUp from '@lucide/svelte/icons/arrow-up';
@@ -31,6 +32,7 @@
   let newBranch = $state<string | null>(null);
   let confirmAll = $state(false);
   let filesOpen = $state(false);
+  $effect(() => (filesOpen ? holdPopup() : undefined));
   let related = $state.raw<Related | null>(null);
   let subs = $state.raw<Record<string, ScmSubmodule[]>>({});
   let input: HTMLInputElement | undefined = $state();
