@@ -148,9 +148,6 @@ fn load() -> &'static str {
     "fallback"
 }
 
-// The PATH detection and new terms use: the login shell's (or the inherited one) plus every
-// usual user bin dir that exists, so the result is the same whichever context started the
-// daemon — boot service, desktop app or SSH — and whether or not the login shell answered.
 #[cfg(unix)]
 fn with_fallback_dirs(base: &str, home: &Path) -> String {
     let extra: Vec<String> = fallback_dirs(home, base)
@@ -445,18 +442,15 @@ mod tests {
         ] {
             std::fs::create_dir_all(home.join(d)).unwrap();
         }
-        // A login PATH that does not mention any of them (an SSH-minimal one): they are all added.
         let p = with_fallback_dirs("/usr/bin:/bin", &home);
         let at = |suffix: &str| p.split(':').position(|x| x.ends_with(suffix)).unwrap();
         assert!(at(".local/bin") > 1, "{p}");
         assert!(at(".linuxbrew/bin") > 1, "{p}");
         assert!(at("v26.0.0/bin") < at("v24.0.0/bin"), "{p}");
-        // Dirs already on the base PATH are kept once, in place.
         let local = home.join(".local/bin").display().to_string();
         let p2 = with_fallback_dirs(&format!("/usr/bin:{local}"), &home);
         assert_eq!(p2.matches(&local).count(), 1, "{p2}");
         assert!(p2.starts_with("/usr/bin:"), "{p2}");
-        // No user dirs at all: nothing under the home is added.
         let empty = home.join("empty");
         std::fs::create_dir_all(&empty).unwrap();
         let p3 = with_fallback_dirs("/usr/bin:/bin", &empty);

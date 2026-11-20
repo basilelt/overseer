@@ -1130,7 +1130,14 @@ with `npm install -g` under an older version than the current default is still f
 `overseer doctor` and `GET /v1/env` show the `PATH` in use and where it came from. A running
 daemon keeps its environment: the new one applies from its next start (the next server update),
 it is never restarted for this since that would end its terms. **Rescan** in the agent picker
-runs the detection again (`POST /v1/agents/rescan`), for instance after installing an agent.
+runs the detection again (`POST /v1/agents/rescan`), for instance after installing an agent: it
+also picks up user bin directories created since the daemon started, but not a directory the
+daemon never lists. For that, restart the daemon (`overseer daemon --detach --replace`, which
+closes its terminals) so it reads the environment again.
+
+A machine runs one daemon: the app on that machine and an app connected over SSH
+(`overseer proxy`) share it, so detection depends on the environment of whichever start came
+first, and both see the same agents.
 
 The **+** menus (tab bar and title bar) list only the agents that are installed; the others are
 folded under one **Not installed (N)** row at the bottom, which unfolds in place. An agent with a

@@ -4088,7 +4088,6 @@ fn finds_an_agent_installed_under_an_older_nvm_node() {
 #[test]
 fn a_daemon_started_locally_and_one_started_over_ssh_detect_the_same_agents() {
     let stub = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/stubs/agent");
-    // A CLI in ~/.local/bin, off the fake login PATH, and one under an older nvm Node.
     let plant = |app: &App| {
         let local = app.fx.base.join("home/.local/bin");
         std::fs::create_dir_all(&local).unwrap();
@@ -4110,7 +4109,6 @@ fn a_daemon_started_locally_and_one_started_over_ssh_detect_the_same_agents() {
             })
             .collect()
     };
-    // Local boot or desktop app: the inherited PATH is minimal, the login shell answers.
     let mut local = App::with_env("cli-local-start", json!({}), &[("OVERSEER_LOGIN_ENV", "1")]);
     plant(&local);
     local.crash_and_restart();
@@ -4121,8 +4119,6 @@ fn a_daemon_started_locally_and_one_started_over_ssh_detect_the_same_agents() {
         "{env}"
     );
     let local_list = installed(&local);
-    // SSH: the daemon inherits the sshd-minimal PATH and the login shell may not answer;
-    // the fallback dirs must give the same detection, not a different one.
     let mut ssh = App::with_env(
         "cli-ssh-start",
         json!({}),
