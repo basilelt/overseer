@@ -58,6 +58,11 @@
     if (shown && host) pages.bounds(shown, boundsOf(host));
   }
 
+  $effect(() => {
+    void app.toast;
+    untrack(place);
+  });
+
   onMount(() => {
     if (!native || !host) return;
     const ro = new ResizeObserver(place);

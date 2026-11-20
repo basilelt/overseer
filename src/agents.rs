@@ -298,6 +298,7 @@ pub static AGENTS: &[Agent] = &[
     },
     Agent {
         id: "agy",
+        metered: true,
         subagent_models: Some(&["inherit", "flash", "pro"]),
         hook_note: Some("No stable hook file for the Antigravity CLI yet: finished turns come from terminal activity."),
         profile: ProfileKind::MarkdownSubagents,
@@ -316,6 +317,7 @@ pub static AGENTS: &[Agent] = &[
     },
     Agent {
         id: OPENCODE,
+        metered: true,
         hooks: Hooks::Plugin,
         profile: ProfileKind::Opencode,
         auto_approve: Some(&["--auto"]),
@@ -344,6 +346,7 @@ pub static AGENTS: &[Agent] = &[
     },
     Agent {
         id: COPILOT,
+        metered: true,
         hooks: Hooks::Native,
         auto_approve: Some(&["--allow-all"]),
         approval_overrides: &["--allow-all", "--allow-all-tools", "--yolo"],
@@ -1096,7 +1099,6 @@ mod tests {
         let ids = |f: fn(&Agent) -> bool| -> Vec<&str> {
             AGENTS.iter().filter(|a| f(a)).map(|a| a.id).collect()
         };
-        // every CLI Overseer supports can run a task, so any of them can orchestrate a quorum
         assert_eq!(
             ids(|a| a.coding()),
             ["claude", "codex", "gemini", "agy", "opencode", "amp", "copilot", "cursor", "vibe"]
@@ -1144,7 +1146,10 @@ mod tests {
             ]
         );
         let metered: Vec<_> = AGENTS.iter().filter(|a| a.metered).map(|a| a.id).collect();
-        assert_eq!(metered, ["claude", "codex", "gemini", "vibe"]);
+        assert_eq!(
+            metered,
+            ["claude", "codex", "gemini", "agy", "opencode", "copilot", "vibe"]
+        );
         assert_eq!(t("claude").mcp, Mcp::Claude);
         assert_eq!(t("codex").mcp, Mcp::Codex);
         assert_eq!(t("vibe").mcp, Mcp::VibeTrust);

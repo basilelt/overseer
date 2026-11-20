@@ -97,6 +97,11 @@
     (popup.open ? nativeBrowser.hide() : nativeBrowser.show()).catch(() => {});
   });
 
+  $effect(() => {
+    void app.toast;
+    if (opened) untrack(place);
+  });
+
   onMount(() => {
     if (url && !native) {
       history = [url];

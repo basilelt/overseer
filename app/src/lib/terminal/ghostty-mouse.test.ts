@@ -7,8 +7,6 @@ type Mod = typeof import('ghostty-web');
 type Wasm = ReturnType<InstanceType<Mod['Ghostty']>['createTerminal']>;
 type Terminal = InstanceType<Mod['Terminal']>;
 
-// The PATCHES in vite.config.ts change these members at runtime; the shipped .d.ts still
-// declares the old signatures, so the test uses the patched shape through this type.
 type PatchedSelectionManager = Omit<InstanceType<Mod['SelectionManager']>, 'clearSelection'> & {
   clearSelection: (data?: string) => void;
   copyToClipboard: (text: string) => void;
@@ -30,7 +28,6 @@ const ROWS = 5;
 const CELL_W = 10;
 const CELL_H = 20;
 
-// A minimal DOM: elements are event targets that bubble to their parent, then to document.
 interface FakeEl {
   tagName: string;
   style: Record<string, string>;
@@ -123,8 +120,6 @@ interface Rig {
   cleanup(): void;
 }
 
-// Wires a real Terminal's selection manager and input handler the way Terminal.open() does
-// (against a fake renderer and fake DOM), so the patched ghostty-web code runs for real.
 async function rig(): Promise<Rig> {
   const ghostty = new mod.Ghostty(await WebAssembly.instantiate(wasm, { env: { log: () => {} } }) as never);
   const wasmTerm = ghostty.createTerminal(COLS, ROWS, { scrollbackLimit: 1000 });
@@ -146,10 +141,10 @@ async function rig(): Promise<Rig> {
   const sent: string[] = [];
   const copied: string[] = [];
   const sm = new mod.SelectionManager(term as unknown as Terminal, renderer as never, wasmTerm, textarea as never) as unknown as PatchedSelectionManager;
-  sm.copyToClipboard = (text: string) => void copied.push(text); // what routeCopies() in the app does
-  (container as unknown as Record<string, unknown>).__overseerSel = sm; // what the open() patch adds
+  sm.copyToClipboard = (text: string) => void copied.push(text);
+  (container as unknown as Record<string, unknown>).__overseerSel = sm;
   const onData = (data: string) => {
-    sm.clearSelection(data); // what the patched input callback does
+    sm.clearSelection(data);
     sent.push(data);
   };
   const ih = new mod.InputHandler(
@@ -188,13 +183,11 @@ function mouse(el: FakeEl, type: string, x: number, y: number, extra: Record<str
   el.dispatch(type, { button: 0, clientX: x, clientY: y, offsetX: x, offsetY: y, detail: 1, shiftKey: false, ctrlKey: false, altKey: false, metaKey: false, ...extra });
 }
 
-// Drag from (x0,y) to (x1,y) on the canvas: press, move, release. Row 2 keeps clear of the
-// auto-scroll edge zones (30 px) of the fake canvas.
-function drag(canvas: FakeEl, x0: number, x1: number) {
+function drag(canvas: FakeEl, x0: number, x1: number, extra: Record<string, unknown> = {}) {
   const y = 2 * CELL_H + 5;
-  mouse(canvas, 'mousedown', x0, y);
-  mouse(canvas, 'mousemove', x1, y);
-  mouse(canvas, 'mouseup', x1, y);
+  mouse(canvas, 'mousedown', x0, y, extra);
+  mouse(canvas, 'mousemove', x1, y, extra);
+  mouse(canvas, 'mouseup', x1, y, extra);
 }
 
 describe('mouse tracking versus local selection', () => {
@@ -203,13 +196,13 @@ describe('mouse tracking versus local selection', () => {
     try {
       r.wasmTerm.write('hello world\r\n');
       r.wasmTerm.update();
-      r.sm.select(0, 0, 5); // "hello"
+      r.sm.select(0, 0, 5);
       expect(r.sm.hasSelection()).toBe(true);
-      r.sm.clearSelection('\x1b[<0;1;1M'); // SGR press report
+      r.sm.clearSelection('\x1b[<0;1;1M');
       expect(r.sm.hasSelection()).toBe(true);
-      r.sm.clearSelection('\x1b[M !!'); // X10 press report
+      r.sm.clearSelection('\x1b[M !!');
       expect(r.sm.hasSelection()).toBe(true);
-      r.sm.clearSelection('x'); // typed character
+      r.sm.clearSelection('x');
       expect(r.sm.hasSelection()).toBe(false);
     } finally {
       r.cleanup();
@@ -219,18 +212,18 @@ describe('mouse tracking versus local selection', () => {
   it('selects a drag locally in a program with mouse tracking on, sending only press and release', async () => {
     const r = await rig();
     try {
-      r.wasmTerm.write('\x1b[?1049h\x1b[?1000h\x1b[?1002h\x1b[?1006h'); // alt screen + the CLI asks for mouse reports
+      r.wasmTerm.write('\x1b[?1049h\x1b[?1000h\x1b[?1002h\x1b[?1006h');
       r.wasmTerm.write('first\r\nsecond\r\nlog in at https://example.com/x now\r\n');
       r.wasmTerm.update();
       expect(r.wasmTerm.hasMouseTracking()).toBe(true);
-      drag(r.canvas, 0, 350); // across row 2, the whole URL line
+      drag(r.canvas, 0, 350);
       expect(r.sm.hasSelection()).toBe(true);
       expect(r.sm.getSelection()).toBe('log in at https://example.com/x now');
       const reports = r.sent.join('');
-      expect(reports).toContain('\x1b[<0;1;3M'); // press at the drag start
-      expect(reports).toContain('\x1b[<0;36;3m'); // release at the drag end
-      expect(reports).not.toMatch(/\x1b\[<32;/); // no drag motion was sent to the program
-      expect(r.copied).toEqual(['log in at https://example.com/x now']); // released drag copies
+      expect(reports).toContain('\x1b[<0;1;3M');
+      expect(reports).toContain('\x1b[<0;36;3m');
+      expect(reports).not.toMatch(/\x1b\[<32;/);
+      expect(r.copied).toEqual(['log in at https://example.com/x now']);
     } finally {
       r.cleanup();
     }
@@ -265,6 +258,37 @@ describe('mouse tracking versus local selection', () => {
       expect(r.sm.getSelection()).toBe('third line here');
       expect(r.sent).toEqual([]);
       expect(r.copied).toEqual(['third line here']);
+    } finally {
+      r.cleanup();
+    }
+  });
+
+  it('forwards a Shift drag to a program with mouse tracking on, with no local selection and no shift bit', async () => {
+    const r = await rig();
+    try {
+      r.wasmTerm.write('\x1b[?1049h\x1b[?1000h\x1b[?1002h\x1b[?1006h');
+      r.wasmTerm.write('first\r\nsecond\r\nsome pane border here\r\n');
+      r.wasmTerm.update();
+      drag(r.canvas, 0, 350, { shiftKey: true });
+      expect(r.sm.hasSelection()).toBe(false);
+      expect(r.copied).toEqual([]);
+      const reports = r.sent.join('');
+      expect(reports).toContain('\x1b[<0;1;3M');
+      expect(reports).toContain('\x1b[<32;36;3M');
+      expect(reports).toContain('\x1b[<0;36;3m');
+    } finally {
+      r.cleanup();
+    }
+  });
+
+  it('still selects a Shift drag locally when the program does not read the mouse', async () => {
+    const r = await rig();
+    try {
+      r.wasmTerm.write('a\r\nb\r\nthird line here\r\n');
+      r.wasmTerm.update();
+      drag(r.canvas, 0, 150, { shiftKey: true });
+      expect(r.sm.getSelection()).toBe('third line here');
+      expect(r.sent).toEqual([]);
     } finally {
       r.cleanup();
     }

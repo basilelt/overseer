@@ -1,5 +1,6 @@
 #![cfg(target_os = "linux")]
 mod common;
+mod usage_fx;
 
 use common::{wait_for, App};
 use serde_json::{json, Value};
@@ -156,4 +157,95 @@ fn vibe_session_tokens_reach_the_usage_view() {
     assert_eq!(vibe["today"]["input"], 1200);
     assert_eq!(vibe["today"]["cacheRead"], 800);
     assert_eq!(vibe["today"]["output"], 90);
+}
+
+fn agent_today(app: &App, id: &str, minimum: u64) -> Value {
+    wait_for(|| {
+        let (code, v) = app.req(
+            "GET",
+            "/v1/usage?range=today&by=agent&tzOffset=0",
+            Value::Null,
+        );
+        if code != 200 {
+            return None;
+        }
+        v["agents"]
+            .as_array()?
+            .iter()
+            .find(|a| a["agent"] == id && a["today"]["total"].as_u64() > Some(minimum))
+            .cloned()
+    })
+}
+
+fn rfc_now() -> String {
+    overseer::util::format_rfc3339(overseer::util::now_ms() - 60_000)
+}
+
+#[test]
+fn copilot_session_tokens_reach_the_usage_view() {
+    let app = App::new("usage-copilot", json!({}));
+    let dir = app
+        .fx
+        .base
+        .join("home/.copilot/session-state/9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d");
+    std::fs::create_dir_all(&dir).unwrap();
+    let ts = rfc_now();
+    std::fs::write(
+        dir.join("events.jsonl"),
+        format!(
+            "{}{}{}",
+            usage_fx::copilot_start("/w/app"),
+            usage_fx::copilot_record(&ts, "gpt-5.6-luna", 20081, 247, 18972, 1106),
+            usage_fx::copilot_record(&ts, "gpt-5.6-luna", 18975, 193, 0, 18972)
+        ),
+    )
+    .unwrap();
+    let a = agent_today(&app, "copilot", 0);
+    assert_eq!(a["today"]["input"], 6);
+    assert_eq!(a["today"]["output"], 440);
+    assert_eq!(a["today"]["cacheRead"], 18972);
+    assert_eq!(a["today"]["cacheWrite"], 20078);
+}
+
+#[test]
+fn opencode_session_tokens_reach_the_usage_view() {
+    let app = App::new("usage-opencode", json!({}));
+    let (_, c) = usage_fx::opencode_db(&app.fx.base.join("home/.local/share/opencode"));
+    usage_fx::opencode_session(
+        &c,
+        "ses_1",
+        Some(r#"{"id":"claude-sonnet-4-5","providerID":"anthropic"}"#),
+        [1000, 200, 30, 400, 50],
+    );
+    let a = agent_today(&app, "opencode", 0);
+    assert_eq!(a["today"]["input"], 1000);
+    assert_eq!(a["today"]["output"], 230);
+    assert_eq!(a["today"]["cacheRead"], 400);
+    assert_eq!(a["today"]["cacheWrite"], 50);
+}
+
+#[test]
+fn antigravity_conversation_tokens_reach_the_usage_view() {
+    let app = App::new("usage-agy", json!({}));
+    let p = usage_fx::agy_db(
+        &app.fx
+            .base
+            .join("home/.gemini/antigravity-cli/conversations"),
+        "22bf082a-ff48-49bc-b772-a0fbee46ff3d",
+    );
+    let secs = overseer::util::now_ms() as u64 / 1000 - 30;
+    usage_fx::agy_add(
+        &p,
+        0,
+        &usage_fx::agy_blob("gemini-3-flash-a", 18193, 241, 0, secs),
+    );
+    usage_fx::agy_add(
+        &p,
+        1,
+        &usage_fx::agy_blob("gemini-3-flash-a", 2446, 112, 16277, secs),
+    );
+    let a = agent_today(&app, "agy", 0);
+    assert_eq!(a["today"]["input"], 20639);
+    assert_eq!(a["today"]["output"], 353);
+    assert_eq!(a["today"]["cacheRead"], 16277);
 }

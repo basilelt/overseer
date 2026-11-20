@@ -2043,7 +2043,7 @@ export const en = {
   'tour.feedback.title': 'Feedback',
   'tour.feedback.body': 'Report a bug or suggest an idea in a few seconds. That is all. Enjoy!',
   'tour.usageAgents.title': 'Every agent in Usage',
-  'tour.usageAgents.body': 'The Usage view now lists every CLI Overseer works with, not only the ones with plan limits: Mistral Vibe, Amp, Cursor and the others each get a card, with their tokens and cost when Overseer can read them (Claude Code, Codex, Gemini CLI and Mistral Vibe) or a note when they expose no limits locally. Use the Agents dropdown next to the range tabs to show or hide the CLIs you want; the choice is remembered.',
+  'tour.usageAgents.body': 'The Usage view now lists every CLI Overseer works with, not only the ones with plan limits: Amp, Cursor and the others each get a card, with their tokens and cost when Overseer can read them (Claude Code, Codex, Gemini CLI, Antigravity, opencode, Copilot CLI and Mistral Vibe) or a note when they expose no limits locally. Use the Agents dropdown next to the range tabs to show or hide the CLIs you want; the choice is remembered.',
   'tour.usageAgents.phone': 'The Usage view lists every supported CLI. The Agents dropdown next to the range tabs shows or hides the ones you want, and the choice is remembered.',
   'tour.feedbackCli.title': 'Pick the CLI that files your issues',
   'tour.feedbackCli.body': 'Send with opens the report with your default agent CLI. Send with… next to it files the same report with any other installed CLI, and Settings > Feedback > Send issues with changes the default.',

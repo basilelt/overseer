@@ -192,6 +192,7 @@ pub fn leases(root: &Path) -> HashMap<String, u32> {
         .collect()
 }
 
+// An unparsable lock file (torn read while Vibe acquires the lease) counts as open.
 pub fn open(home: &Path, id: &str, is_alive: impl Fn(u32) -> bool) -> bool {
     if !valid_id(id) {
         return false;
