@@ -122,6 +122,11 @@ describe('TaskDetail edit keyboard', () => {
     expect(source).toMatch(/function onEditKey\(e: KeyboardEvent\) \{\s*if \(e\.key !== 'Escape' \|\| e\.defaultPrevented\) return;\s*e\.stopPropagation\(\);\s*edit = null;/);
     expect(source).toContain('onkeydown={onEditKey}');
   });
+
+  it('puts the focus in the title when editing starts, so Escape reaches the form and not the modal', () => {
+    expect(source).toMatch(/function autofocus\(node: HTMLElement\) \{\s*node\.focus\(\);/);
+    expect(source).toMatch(/<input use:autofocus bind:value=\{e\.title\}/);
+  });
 });
 
 describe('TaskDetail text selection', () => {
