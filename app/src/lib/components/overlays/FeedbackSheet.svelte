@@ -406,7 +406,7 @@
       <button class="btn" onclick={close}>{ft('cancel')}</button>
       {#if canAgent && agent}
         {#if sendable.length > 1}
-          <button class="btn" onclick={sendWithMenu} disabled={busy || uploading > 0} data-tour="feedback-cli" title={ft('sendWithHint')}>{ft('sendWith')}</button>
+          <button class="btn" onclick={sendWithMenu} disabled={busy || uploading > 0 || (includeDiag && diagText === null)} data-tour="feedback-cli" title={ft('sendWithHint')}>{ft('sendWith')}</button>
         {/if}
         <button class="btn primary" onclick={() => void sendWithAgent()} disabled={busy || uploading > 0 || (includeDiag && diagText === null)}>{busy ? ft('sending') : ft('send', { agent: agent.name })}</button>
       {/if}
