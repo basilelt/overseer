@@ -77,7 +77,12 @@ export function rememberTerms(termOf: Map<string, string>, items: SidebarItem[],
 
 export function followTerm(key: string, items: SidebarItem[], termOf: Map<string, string>): string | null {
   const id = key.startsWith('line:') ? termOf.get(key) : undefined;
-  return (id && indexBy(items, 'shellTerm', (i) => (i.lineId ? null : i.termId)).get(id)?.key) || null;
+  if (!id) return null;
+  const shell = indexBy(items, 'shellTerm', (i) => (i.lineId ? null : i.termId)).get(id);
+  if (shell) return shell.key;
+  if (indexBy(items, 'key', (i) => i.key).get(key)?.termId === id) return null;
+  const next = indexBy(items, 'lineTerm', (i) => (i.lineId ? i.termId : null)).get(id);
+  return next && next.key !== key ? next.key : null;
 }
 
 export function newTabKey(kind: 'browser' | 'review' | 'graph' | 'worktrees' | 'system' | 'usage' | 'prs', arg: string): string {
