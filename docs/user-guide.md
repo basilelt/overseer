@@ -1716,16 +1716,34 @@ after the transcripts are gone. At the bottom of the Usage panel, **Cost per tas
 tasks by profile (and agent), by ticket or lists each task, with the average cost per finished
 task (in testing, merged or completed) for each profile: run the same kind of work under two
 profiles and compare. The numbers are real token counts from the transcripts (Claude Code,
-Codex, Gemini CLI) priced at API list prices dated in the hint; a model without a known price
+Codex, Gemini CLI, Antigravity, opencode, Copilot CLI, Mistral Vibe) priced at API list prices dated in the hint; a model without a known price
 keeps its tokens but adds nothing to the cost (marked "+"), and agents whose logs have no token
 counts show no cost at all rather than an estimate. Subscriptions are not billed per token, so
 read it as what the same work would cost on the API.
 
-Where the numbers come from (contract §7c): Claude Code transcripts, Codex rollouts and Gemini
-CLI sessions and Mistral Vibe session stores (when they record token counts) on the machine the app is connected to, read
-incrementally by the daemon. Settings → Usage lists each of these providers: Claude Code with its two
+Where the numbers come from (contract §7c), on the machine the app is connected to, read
+incrementally by the daemon:
+
+| CLI | Source | Read as |
+|---|---|---|
+| Claude Code | `~/.claude/projects/*/<session>.jsonl` and its `subagents/` | assistant `usage`, once per message id |
+| Codex | `~/.codex/sessions/**/rollout-*.jsonl` | `token_count` events, by delta |
+| Gemini CLI | `~/.gemini/tmp/*/chats/session-*` | per-message `tokens` |
+| Antigravity | `~/.gemini/antigravity-cli/conversations/<id>.db`, table `gen_metadata` | one row per model call (input, output, cache read); the day comes from the row, else from the file's last change |
+| opencode | `$XDG_DATA_HOME/opencode/opencode.db` (`~/.local/share/opencode`), table `session` | the session's running totals, by delta since the last look (reasoning counts as output) |
+| Copilot CLI | `$COPILOT_HOME/session-state/<id>/events.jsonl` (`~/.copilot`) | `session.usage_record` lines (the cached input is split from the fresh input) |
+| Mistral Vibe | `$VIBE_HOME/logs/session/unified/<id>/` (`~/.vibe`) | the session's running totals, by delta since the last look |
+| Amp, Cursor Agent | none | Amp keeps its threads on ampcode.com and Cursor Agent keeps no token counts on disk, so their cards stay at zero |
+
+Because opencode and Mistral Vibe store only running totals per session, the tokens of a session
+that Overseer sees for the first time (or that ran while no Overseer daemon was watching) are
+counted on the day the session last changed, not spread over the days it ran; once Overseer is
+watching, each change lands on its own day. Antigravity rows without a time stamp behave the same way
+within their conversation.
+
+Settings → Usage lists each of these providers: Claude Code with its two
 plan-limit switches below, Codex (tokens, cost and its plan limits, always read from its session
-logs) Gemini CLI and Mistral Vibe (tokens only, and cost when the model is priced; they record no plan limits). Claude Code does not store its 5-hour and weekly percentages on
+logs); the other CLIs show tokens only, and cost when the model is priced (they record no plan limits). Claude Code does not store its 5-hour and weekly percentages on
 disk, but it passes them to its status line command (`rate_limits` in the status line's JSON input,
 for Pro and Max plans). Settings → Usage → "Plan limits from the status line" (off until you turn it
 on, per host) wraps your status line command in `~/.claude/settings.json` (a backup is written

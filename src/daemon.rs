@@ -1481,10 +1481,7 @@ pub fn run(
     );
     crate::usage::init(
         &state_dir,
-        cd.clone(),
-        xd.clone(),
-        gd.clone(),
-        crate::vibe::home(),
+        crate::usage::Dirs::from_env(cd.clone(), xd.clone(), gd.clone()),
     );
     crate::github::resume_pending(&state_dir);
     crate::dlog::supervise("transcripts", move || {

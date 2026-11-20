@@ -1036,6 +1036,17 @@ per file, so a sweep only reads appended lines) into `<state>/usage.db`, kept 31
   agent's windows.
 - Gemini CLI: per-message `tokens` and `model` of `~/.gemini/tmp/*/chats/session-*.json(l)`,
   when present (recent `.jsonl` sessions may carry none).
+- Antigravity: one `gen_metadata` row per model call in
+  `~/.gemini/antigravity-cli/conversations/<id>.db` (a protobuf blob: field 1 holds the model
+  name in 19, the input, output and cache-read counts in 4.2, 4.3 and 4.5 and, when present,
+  the time in 9.4.1); the cursor is the next `idx`.
+- opencode: the running `tokens_*` columns of the `session` table of
+  `$XDG_DATA_HOME/opencode/opencode*.db`, counted by delta per session (reasoning as output); the
+  table is read again only when the database or its `-wal` changed.
+- Copilot CLI: `session.usage_record` lines of `$COPILOT_HOME/session-state/*/events.jsonl`;
+  `inputTokens` includes the cache read and write counts, which are split out.
+- Mistral Vibe: `tokenUsage` of the current generation's `projection-state.json`, by delta.
+- Amp (threads live on ampcode.com) and Cursor Agent (no token counts on disk) are not metered.
 
 Nothing is indexed until a client calls `GET /v1/usage`; the first call starts a background pass
 over files modified in the last 31 days (`indexing: true` until it ends, then `usage.updated`).
