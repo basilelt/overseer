@@ -766,9 +766,18 @@ describe('fault injection', () => {
       await expect(mk(a, quorum)).rejects.toMatchObject({ status: 400, message: msg });
     });
 
-    it('rejects an orchestrator that is not claude or codex', async () => {
+    it('lets every supported CLI orchestrate a quorum, but not the shell', async () => {
       const { a } = setup();
-      await expect(mk(a, ok, { agent: 'gemini' })).rejects.toMatchObject({ status: 400, message: 'the quorum orchestrator must be claude or codex' });
+      const clis = ['claude', 'codex', 'gemini', 'agy', 'opencode', 'amp', 'copilot', 'cursor', 'vibe'];
+      for (const agent of clis) {
+        const t = await mk(a, ok, { agent });
+        expect(t.agent).toBe(agent);
+        expect(t.quorum).toEqual(ok);
+      }
+      await expect(mk(a, ok, { agent: 'shell' })).rejects.toMatchObject({
+        status: 400,
+        message: 'agent must be one of claude, codex, gemini, agy, opencode, amp, copilot, cursor, vibe',
+      });
     });
 
     it('rejects a quorum on a subtask', async () => {
@@ -782,16 +791,18 @@ describe('fault injection', () => {
       expect((await a.patchTask(t.id, { quorum: ok })).quorum).toEqual(ok);
       expect((await a.patchTask(t.id, { quorum: null })).quorum).toBeUndefined();
       await expect(a.patchTask(t.id, { quorum: 3 as never })).rejects.toMatchObject({ status: 400 });
-      await expect(a.patchTask(t.id, { quorum: ok, agent: 'gemini' })).rejects.toMatchObject({ status: 400, message: 'the quorum orchestrator must be claude or codex' });
+      const switched = await a.patchTask(t.id, { quorum: ok, agent: 'gemini' });
+      expect(switched.agent).toBe('gemini');
+      expect(switched.quorum).toEqual(ok);
+      await expect(a.patchTask(t.id, { agent: 'shell' })).rejects.toMatchObject({ status: 400, message: 'agent must be one of claude, codex, gemini, agy, opencode, amp, copilot, cursor, vibe' });
       await a.startTask(t.id);
       await expect(a.patchTask(t.id, { quorum: ok })).rejects.toMatchObject({ status: 409, message: 'the quorum can only change before the task starts' });
     });
 
-    it('refuses switching a quorum task to an agent that cannot orchestrate, like the daemon', async () => {
+    it('lets a quorum task switch to any agent CLI, like the daemon', async () => {
       const { a } = setup();
       const t = await mk(a, ok);
-      await expect(a.patchTask(t.id, { agent: 'gemini' })).rejects.toMatchObject({ status: 400, message: 'the quorum orchestrator must be claude or codex' });
-      expect((await a.patchTask(t.id, { agent: 'codex' })).agent).toBe('codex');
+      expect((await a.patchTask(t.id, { agent: 'gemini' })).agent).toBe('gemini');
     });
 
     it('seeds a quorum root, a voted worker and reviewer tasks', async () => {

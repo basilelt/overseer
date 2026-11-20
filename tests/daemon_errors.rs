@@ -107,13 +107,6 @@ fn every_error_the_mock_copies_is_what_the_daemon_sends() {
         "/v1/tasks",
         quorum("claude", json!(["shell"])),
     );
-    check(
-        "quorumOrchestrator",
-        None,
-        "POST",
-        "/v1/tasks",
-        quorum("gemini", json!(["claude"])),
-    );
 
     let sid = "eeeeeeee-0000-4000-8000-000000000002";
     let ts = overseer::util::format_rfc3339(overseer::util::now_ms() - 60_000);

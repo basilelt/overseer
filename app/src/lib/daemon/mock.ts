@@ -91,7 +91,6 @@ export const DAEMON_ERRORS = {
   termSize: { text: 'cols and rows must be integers in 1..=1000' },
   termSizeRequired: { text: 'cols and rows required' },
   shellInQuorum: { text: 'shell cannot join a quorum' },
-  quorumOrchestrator: { text: 'the quorum orchestrator must be claude or codex' },
   sessionTaskStatus: { text: 'a session task follows its session: status must be one of in_progress, in_testing, merged, completed' },
   bodyTooLarge: { text: 'request body exceeds 1 MiB' },
 } as const;
@@ -1775,7 +1774,7 @@ export class MockDaemon implements DaemonClient {
     return { dryRun: false, files: files.filter((f) => body.files!.includes(f.path)).map((f) => ({ ...f, written: true, backup: `${f.path}.bak-202610291200` })) };
   }
 
-  private quorumOf(q: unknown, agent: string): Quorum | null {
+  private quorumOf(q: unknown): Quorum | null {
     if (q === null) return null;
     if (typeof q !== 'object' || Array.isArray(q)) throw new DaemonError(400, 'quorum must be an object or null');
     const { workers, reviewers } = q as Record<string, unknown>;
@@ -1790,13 +1789,21 @@ export class MockDaemon implements DaemonClient {
       const dup = list.find((id, i) => list.indexOf(id) !== i);
       if (dup) throw new DaemonError(400, `quorum.${name} lists ${dup} twice`);
     }
-    if (agent !== 'claude' && agent !== 'codex') throw new DaemonError(400, 'the quorum orchestrator must be claude or codex');
     return { workers: [...workers], reviewers: [...reviewers] };
+  }
+
+  // mirrors the daemon's agent_of: only the CLIs Overseer supports may run a task
+  private agentOf(v: unknown): string | undefined {
+    if (v == null) return undefined;
+    const ids = MOCK_AGENTS.filter((a) => !isShellId(a.id)).map((a) => a.id);
+    if (typeof v === 'string' && ids.includes(v)) return v;
+    throw new DaemonError(400, `agent must be one of ${ids.join(', ')}`);
   }
 
   private createTask(body: NewTask): Task {
     if (!body?.title?.trim()) throw new DaemonError(400, 'title required');
-    const quorum = body.quorum === undefined ? undefined : this.quorumOf(body.quorum, body.agent);
+    if (body.agent != null) this.agentOf(body.agent);
+    const quorum = body.quorum === undefined ? undefined : this.quorumOf(body.quorum);
     const taskType = this.taskTypeOf(body.taskType);
     if (quorum && (body as any).parentId) throw new DaemonError(400, 'a subtask cannot run a quorum');
     const now = new Date().toISOString();
@@ -2078,7 +2085,7 @@ export class MockDaemon implements DaemonClient {
         }
       }
       if ('quorum' in patch) {
-        const quorum = this.quorumOf(patch.quorum, patch.agent ?? t.agent);
+        const quorum = this.quorumOf(patch.quorum);
         if (!isUnstarted(t.status)) throw new DaemonError(409, 'the quorum can only change before the task starts');
         if (quorum) patch.quorum = quorum;
         else {
@@ -2086,13 +2093,16 @@ export class MockDaemon implements DaemonClient {
           delete t.quorum;
         }
       }
+      if ('agent' in patch) {
+        if (patch.agent == null) throw new DaemonError(400, 'agent must not be null');
+        patch.agent = this.agentOf(patch.agent);
+      }
       if ('taskType' in patch) {
         const ty = this.taskTypeOf(patch.taskType);
         delete patch.taskType;
         if (ty) t.taskType = ty;
         else delete t.taskType;
       }
-      if (typeof patch.agent === 'string' && (patch.quorum ?? t.quorum) && patch.agent !== 'claude' && patch.agent !== 'codex') throw new DaemonError(400, 'the quorum orchestrator must be claude or codex');
       Object.assign(t, patch);
       // the daemon omits cleared optionals from the JSON instead of sending null
       if ('ticketKey' in patch && t.ticketKey == null) delete t.ticketKey;
