@@ -1,4 +1,5 @@
 <script module lang="ts">
+  import '../../i18n/parts/settings.use';
   import Server from '@lucide/svelte/icons/server';
   import KeyRound from '@lucide/svelte/icons/key-round';
   import Unplug from '@lucide/svelte/icons/unplug';

@@ -1,3 +1,4 @@
+import '../i18n/parts/settings.use';
 import { BUILTIN_MODE, GRAPHITE_COLORS, SOLARIZED_COLORS, hexColors, type ColorPalette, type ColorToken, type CustomPreset, type Mode, type PresetColors, type ThemeState } from './theme';
 
 export const MIN_CONTRAST = 4.5;
