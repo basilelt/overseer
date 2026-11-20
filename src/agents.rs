@@ -132,7 +132,6 @@ pub struct Agent {
     pub repair: Repair,
     pub start_args: bool,
     pub tmux_snapshot: bool,
-    pub orchestrator: bool,
     pub positional_prompt: bool,
     pub verified: bool,
     pub turns: bool,
@@ -172,7 +171,6 @@ const NONE: Agent = Agent {
     repair: Repair::None,
     start_args: false,
     tmux_snapshot: false,
-    orchestrator: false,
     positional_prompt: false,
     verified: true,
     turns: false,
@@ -208,7 +206,6 @@ pub static AGENTS: &[Agent] = &[
         repair: Repair::Claude,
         start_args: true,
         tmux_snapshot: true,
-        orchestrator: true,
         positional_prompt: true,
         auto_approve: Some(&["--permission-mode", "auto"]),
         approval_overrides: &[
@@ -247,7 +244,6 @@ pub static AGENTS: &[Agent] = &[
         retrust_hooks: true,
         profile: ProfileKind::Codex,
         repair: Repair::Codex,
-        orchestrator: true,
         positional_prompt: true,
         auto_approve: Some(&["--ask-for-approval", "never"]),
         approval_overrides: &[
@@ -1099,7 +1095,11 @@ mod tests {
         let ids = |f: fn(&Agent) -> bool| -> Vec<&str> {
             AGENTS.iter().filter(|a| f(a)).map(|a| a.id).collect()
         };
-        assert_eq!(ids(|a| a.orchestrator), ["claude", "codex"]);
+        // every CLI Overseer supports can run a task, so any of them can orchestrate a quorum
+        assert_eq!(
+            ids(|a| a.coding()),
+            ["claude", "codex", "gemini", "agy", "opencode", "amp", "copilot", "cursor", "vibe"]
+        );
         assert_eq!(ids(|a| a.positional_prompt), ["claude", "codex"]);
         assert_eq!(
             ids(|a| a.auto_approve.is_some()),

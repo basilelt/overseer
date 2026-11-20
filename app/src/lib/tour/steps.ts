@@ -1,4 +1,4 @@
-export type StepId = 'host' | 'workspaces' | 'tabs' | 'view' | 'panel' | 'kanban' | 'review' | 'chips' | 'notify' | 'profiles' | 'palette' | 'paletteKey' | 'organize' | 'settings' | 'feedback' | 'demo' | 'gpuTerminal' | 'worktreeCleanup' | 'switchboard' | 'clickCursor' | 'palettes' | 'skills' | 'autoApprove' | 'merged' | 'uninstall' | 'autoUpdate' | 'subjects' | 'sourceControl' | 'reviewMap' | 'lidClosed' | 'recordBug' | 'quorum' | 'installAgent' | 'agentMessaging' | 'mistralVibe' | 'cost' | 'taskType' | 'agentTasks' | 'hosts' | 'stickyNotes' | 'panelGit' | 'reviewKeys' | 'feedbackCli';
+export type StepId = 'host' | 'workspaces' | 'tabs' | 'view' | 'panel' | 'kanban' | 'review' | 'chips' | 'notify' | 'profiles' | 'palette' | 'paletteKey' | 'organize' | 'settings' | 'feedback' | 'demo' | 'gpuTerminal' | 'worktreeCleanup' | 'switchboard' | 'clickCursor' | 'palettes' | 'skills' | 'autoApprove' | 'merged' | 'uninstall' | 'autoUpdate' | 'subjects' | 'sourceControl' | 'reviewMap' | 'lidClosed' | 'recordBug' | 'quorum' | 'installAgent' | 'agentMessaging' | 'mistralVibe' | 'cost' | 'taskType' | 'agentTasks' | 'hosts' | 'stickyNotes' | 'panelGit' | 'reviewKeys' | 'quorumAnyAgent' | 'feedbackCli' | 'taskEdit';
 
 export interface Step {
   id: StepId;
@@ -51,7 +51,9 @@ export const STEPS: Step[] = [
   { id: 'stickyNotes', targets: ['session-notes', 'workspaces'], since: '0.36' },
   { id: 'panelGit', targets: ['panel-git-tab', 'panel'], since: '0.37' },
   { id: 'reviewKeys', targets: ['review-map', 'review', 'palette', 'workspaces'], since: '0.37', desktopOnly: true },
+  { id: 'quorumAnyAgent', targets: ['quorum', 'kanban'], since: '0.38' },
   { id: 'feedbackCli', targets: ['feedback-cli', 'feedback'], since: '0.38' },
+  { id: 'taskEdit', targets: ['task-edit', 'kanban'], since: '0.38' },
 ];
 
 export type Mode = 'full' | 'whatsNew';
