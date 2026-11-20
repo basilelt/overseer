@@ -40,5 +40,7 @@ being replaced by 3 through its own update prompt.
   are built from the writers' models. A store format change in a later Vibe shows as no chat
   (409) rather than a wrong one.
 - An interrupted turn fires no Vibe hook: the line stays busy until the next turn ends (or the
-  session ends).
+  session ends). A session ends when its lease is gone — `logs/session/active/<id>.lock.json`
+  missing or naming a dead process — so the daemon then records the `session_end` the hook would
+  have sent and the line stops being mid-turn even without a hook.
 - Usage (tokens) is not read: the store keeps only per-session totals without timestamps.

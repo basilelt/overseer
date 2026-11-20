@@ -308,6 +308,61 @@ fn a_vibe_task_starts_trusted_and_moves_to_review_when_its_turn_ends() {
 }
 
 #[test]
+fn an_ended_vibe_session_stops_being_mid_turn_even_when_no_hook_fires() {
+    let app = App::new("vibe-ended", json!({}));
+    let wt = app.fx.wt.to_string_lossy().into_owned();
+    let sid = "9d2c3b4a-5e6f-4a7b-8c9d-0e1f2a3b4c5d";
+    let home = app.fx.base.join("home");
+    store(&home, sid, &wt, &[message("m1", "user", "hi")]);
+    // The term runs `vibe --resume <sid>`, so its process stays matched to the
+    // session by argv even after the session itself has ended.
+    let t = app.ok(
+        "POST",
+        "/v1/terms",
+        json!({"cwd": wt, "cmd": ["vibe", "--resume", sid]}),
+    );
+    let tid = t["id"].as_str().unwrap().to_string();
+    let pid = wait_for(|| {
+        app.ok("GET", &format!("/v1/terms/{tid}"), Value::Null)["pid"]
+            .as_u64()
+            .filter(|p| *p > 0)
+    });
+    let l = wait_for(|| vibe_line(&app, sid).filter(|l| l["local"]["termId"] == tid.as_str()));
+    let line = l["line"]["id"].as_str().unwrap().to_string();
+
+    // While the session is open (live lease) a turn runs: the line is mid-turn and
+    // the close plan refuses on atPrompt.
+    let active = home.join(".vibe/logs/session/active");
+    std::fs::create_dir_all(&active).unwrap();
+    let lock = active.join(format!("{sid}.lock.json"));
+    std::fs::write(
+        &lock,
+        json!({"lease_version": 1, "session_id": sid, "process_id": pid}).to_string(),
+    )
+    .unwrap();
+    hook(
+        &app,
+        "pre_agent",
+        pid,
+        json!({"session_id": sid, "parent_session_id": null, "cwd": wt, "transcript_path": "",
+            "hook_event_name": "pre_agent", "agent_name": "default", "turn_id": "t1", "prompt": "go"}),
+    );
+    wait(|| vibe_line(&app, sid).is_some_and(|l| l["local"]["busy"] == true));
+    let (code, plan) = app.req("POST", &format!("/v1/lines/{line}/close"), Value::Null);
+    assert_eq!(code, 409, "{plan}");
+    assert_eq!(plan["predicates"]["atPrompt"]["ok"], false, "{plan}");
+
+    // The session ends while its process lives on and no session_end hook fires
+    // (an interrupted turn fires none): Vibe releases the lease. The line must be
+    // detected as ended and stop being mid-turn.
+    std::fs::remove_file(&lock).unwrap();
+    wait(|| vibe_line(&app, sid).is_some_and(|l| l["local"]["busy"] == false));
+    let (_, plan) = app.req("POST", &format!("/v1/lines/{line}/close"), Value::Null);
+    assert_eq!(plan["predicates"]["alive"]["ok"], true, "{plan}");
+    assert_eq!(plan["predicates"]["atPrompt"]["ok"], true, "{plan}");
+}
+
+#[test]
 fn a_resumed_vibe_term_without_a_lease_keeps_its_line() {
     let app = App::new("vibe-resume", json!({}));
     let wt = app.fx.wt.to_string_lossy().into_owned();
