@@ -1,6 +1,6 @@
 mod common;
 
-use common::{bin, strs, wait, wait_for, App};
+use common::{bin, read_until, send, strs, wait, wait_for, App};
 use serde_json::{json, Value};
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -330,4 +330,57 @@ fn a_resumed_vibe_term_without_a_lease_keeps_its_line() {
         l["local"]["resumeCommand"].as_str().unwrap(),
         format!("cd {wt} && vibe --resume {sid}")
     );
+}
+
+#[test]
+fn chat_mode_reaches_an_idle_vibe_line_despite_its_terminal_redrawing() {
+    let app = App::new("vibe-bcast", json!({}));
+    let wt = app.fx.wt.to_string_lossy().into_owned();
+    let home = app.fx.base.join("home");
+    let sid = "7d2a1b0c-9e8f-4a7b-8c5d-1e2f3a4b5c6d";
+    let t = app.ok("POST", "/v1/terms", json!({"cwd": wt, "agent": "vibe"}));
+    let tid = t["id"].as_str().unwrap().to_string();
+    let pid = wait_for(|| {
+        app.ok("GET", &format!("/v1/terms/{tid}"), Value::Null)["pid"]
+            .as_u64()
+            .filter(|p| *p > 0)
+    });
+    store(&home, sid, &wt, &[message("m1", "user", "hi")]);
+    let active = home.join(".vibe/logs/session/active");
+    std::fs::create_dir_all(&active).unwrap();
+    std::fs::write(
+        active.join(format!("{sid}.lock.json")),
+        json!({"lease_version": 1, "session_id": sid, "process_id": pid}).to_string(),
+    )
+    .unwrap();
+    let l = wait_for(|| vibe_line(&app, sid).filter(|l| l["local"]["termId"] == tid.as_str()));
+    let line = l["line"]["id"].as_str().unwrap().to_string();
+
+    let base = json!({"session_id": sid, "parent_session_id": null, "cwd": wt,
+        "transcript_path": "", "agent_name": "default"});
+    let with = |name: &str| {
+        let mut v = base.clone();
+        v["hook_event_name"] = json!(name);
+        v
+    };
+    // Prove the line state is known, then leave it idle (a turn that ended).
+    hook(&app, "pre_agent", pid, with("pre_agent"));
+    wait(|| vibe_line(&app, sid).is_some_and(|l| l["local"]["busy"] == true));
+    hook(&app, "post_agent", pid, with("post_agent"));
+    wait(|| vibe_line(&app, sid).is_some_and(|l| l["local"]["busy"] == false));
+
+    // Fresh terminal output, like a TUI redrawing on a timer at its prompt.
+    let mut ws = app.ws(&tid);
+    read_until(&mut ws, "> ");
+    send(&mut ws, "x\r");
+    read_until(&mut ws, "got: x");
+
+    // The exact request the chat composer sends in idle mode.
+    let r = app.ok(
+        "POST",
+        "/v1/broadcast",
+        json!({"text": "hello from chat mode", "lineIds": [line], "onlyIdle": true, "queue": false}),
+    );
+    assert_eq!(r["results"][0]["result"], "sent", "{r}");
+    read_until(&mut ws, "got: hello from chat mode");
 }

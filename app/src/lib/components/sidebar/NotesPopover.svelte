@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { holdPopup } from '../../popup.svelte';
   import { dismiss } from '../../dismiss';
   import { captureFocus } from '../../focus';
   import { isNotesTrigger } from '../../notes-trigger';
@@ -8,17 +9,19 @@
   import { t } from '../../i18n.svelte';
   import { app } from '../../state.svelte';
   import { isPhone } from '../../mobile/ui.svelte';
-  import { addNote, editNote, notesOf, removeNote } from '../../notes';
+  import { addNote, editNote, noteEdits, notesOf, removeNote } from '../../notes';
   import { closeNotes, notesUi } from '../../notes.svelte';
   import { age } from '../../time';
   import { onDestroy, untrack } from 'svelte';
   import { isSubmitChord } from '../../chord';
 
   const restore = captureFocus();
+  $effect(holdPopup);
   let box: HTMLDivElement | undefined = $state();
   let pos = $state({ left: 0, top: 0 });
   let draft = $state('');
   let edits = $state<Record<string, string>>({});
+  const pending = noteEdits((next) => (edits = next));
   const lineId = $derived(notesUi.lineId!);
   const notes = $derived(notesOf(app.data, lineId));
   const title = $derived(app.items.find((i) => i.lineId === lineId)?.title ?? '');
@@ -45,16 +48,14 @@
   });
 
   function flush(line: string) {
-    const pending = Object.entries(edits);
     const text = draft;
-    edits = {};
     draft = '';
-    for (const [id, t] of pending) void saveText(line, id, t);
+    for (const [id, t] of Object.entries(pending.takeAll())) void saveText(line, id, t);
     if (line && text.trim()) void addNote(app, line, text);
   }
 
   async function saveText(line: string, id: string, text: string) {
-    if (!(await editNote(app, line, id, text)) && line === shown) edits = { ...edits, [id]: text };
+    if (!(await editNote(app, line, id, text)) && line === shown) pending.put(id, text);
   }
 
   async function add() {
@@ -65,10 +66,8 @@
   }
 
   function save(id: string) {
-    const text = edits[id];
+    const text = pending.take(id);
     if (text === undefined) return;
-    const { [id]: _, ...rest } = edits;
-    edits = rest;
     void saveText(shown, id, text);
   }
 
@@ -99,7 +98,7 @@
           rows={rowsFor(edits[n.id] ?? n.text)}
           aria-label={t('notes.edit')}
           value={edits[n.id] ?? n.text}
-          oninput={(e) => (edits = { ...edits, [n.id]: e.currentTarget.value })}
+          oninput={(e) => pending.put(n.id, e.currentTarget.value)}
           onblur={() => save(n.id)}
           onkeydown={(e) => onKey(e, () => e.currentTarget.blur())}
           disabled={n.id.startsWith('pending-')}

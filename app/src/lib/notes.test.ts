@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { DaemonError, type DaemonClient } from './daemon/client';
-import { addNote, cleanNote, editNote, NOTE_MAX, NOTES_MAX, notesApi, notesOf, removeNote, withNotes } from './notes';
+import { addNote, cleanNote, editNote, NOTE_MAX, NOTES_MAX, noteEdits, notesApi, notesOf, removeNote, withNotes } from './notes';
 import type { DaemonEvent, LocalLine, Note } from './types';
 import type { Snapshot } from './reduce';
 import { quietMock } from '../test/quiet-mock';
@@ -124,5 +124,27 @@ describe('note actions', () => {
     expect(next.lines[0]).toBe(snap.lines[0]);
     expect(next.lines[1].local).toMatchObject({ pinned: true, notes: [{ id: 'n' }] });
     expect(notesOf(snap, 'missing')).toEqual([]);
+  });
+});
+
+describe('noteEdits', () => {
+  it('hands out each pending edit once, whether taken alone or with the rest', () => {
+    const seen: Record<string, string>[] = [];
+    const edits = noteEdits((e) => seen.push(e));
+    edits.put('a', '');
+    edits.put('b', 'new text');
+    expect(edits.take('a')).toBe('');
+    expect(edits.take('a')).toBeUndefined();
+    expect(edits.takeAll()).toEqual({ b: 'new text' });
+    expect(edits.takeAll()).toEqual({});
+    expect(edits.take('b')).toBeUndefined();
+    expect(seen).toEqual([{ a: '' }, { a: '', b: 'new text' }, { b: 'new text' }, {}, {}]);
+  });
+
+  it('keeps the latest text of a note typed into twice', () => {
+    const edits = noteEdits(() => {});
+    edits.put('a', 'x');
+    edits.put('a', 'xy');
+    expect(edits.takeAll()).toEqual({ a: 'xy' });
   });
 });
