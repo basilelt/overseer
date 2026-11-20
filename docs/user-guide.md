@@ -2098,7 +2098,7 @@ A GitHub-style review of what an agent changed, while it works (ADR 0030, contra
   map keeping the file: the map selects the file on screen, the list opens the selected one. In
   the list, a heat band along the files shows the same colours top to bottom, marks the file on
   screen and names the hovered file with its score, and **Next hottest file** (or J and K) walks
-  the files hottest first across every worktree. A review remembers its view, selected file,
+  the files hottest first across every worktree the list shows (a submodule's files stay on the map and in its own review, so J and K never switch tabs). A review remembers its view, selected file,
   indicator, scroll and folded files while you visit other tabs (for the app's session, not
   across a reload). On a phone the ranking comes first and the map below it. The daemon serves it at `GET /v1/review/map?worktree=…` (or `line=`, `task=`),
   plus `with=` for each extra worktree the review already shows.

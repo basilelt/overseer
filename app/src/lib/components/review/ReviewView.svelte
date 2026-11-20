@@ -18,7 +18,7 @@
   import { totals, type Mode } from '../../review/rows';
   import { ReviewStore } from '../../review/store.svelte';
   import { LinkedReviews, fileLabel, parsePick, pickerGroups } from '../../review/linked.svelte';
-  import { ReviewMapStore, band, fid, ranking, step, type Indicator } from '../../review/map.svelte';
+  import { ReviewMapStore, band, fid, inList, ranking, step, type Indicator } from '../../review/map.svelte';
   import { reviewApi } from '../../review/api';
   import { app } from '../../state.svelte';
   import { countByFile } from '../../review/threads';
@@ -144,7 +144,8 @@
   );
   const bands = $derived(band(maps.scored, bandOrder, ind));
   const onScreen = $derived(seen ?? (diff && store.selected ? fid(regionOf(diff.worktree), store.selected) : hot));
-  const upNext = $derived(rank.length ? (step(rank, hot, 1) ?? null) : null);
+  const walkable = $derived(inList(rank, bandOrder));
+  const upNext = $derived(walkable.length ? (step(walkable, hot, 1) ?? null) : null);
   const nameOf = (id: string) => {
     const s = maps.scored.find((x) => x.id === id);
     return s ? `${s.region.name}/${s.file.path}` : id;
@@ -179,7 +180,7 @@
   }
 
   function walk(dir: 1 | -1) {
-    const n = step(rank, hot, dir);
+    const n = step(walkable, hot, dir);
     if (!n) return;
     holdFocus(root);
     openFile(n.w, n.file.path);
@@ -195,7 +196,7 @@
       setView(onMap ? 'list' : 'map');
     } else if (onMap) {
       if (!mapView?.act(a)) return;
-    } else if ((a === 'next' || a === 'prev') && rank.length) {
+    } else if ((a === 'next' || a === 'prev') && walkable.length) {
       walk(a === 'next' ? 1 : -1);
     } else return;
     e.preventDefault();
@@ -306,7 +307,7 @@
     <span class="spacer"></span>
     {#if store.live && !store.readOnly}<button class="live" class:paused={!store.autoRefresh} title={t(store.autoRefresh ? 'review.live' : 'review.livePaused')} aria-pressed={store.autoRefresh} onclick={() => { const on = !store.autoRefresh; store.setAutoRefresh(on); linked.setAutoRefresh(on); }}><span class="dot"></span>{store.autoRefresh ? 'Live' : t('review.liveOff')}</button>{/if}
     {#if upNext}
-      <button class="upnext" onclick={() => walk(1)} title={`${t('review.nextHot')}: ${upNext.region.name}/${upNext.file.path} · ${t('review.nextHotKeys')}`}><Flame size={12} /><span class="mono">{upNext.file.path.split('/').pop()}</span><span class="faint">{rank.indexOf(upNext) + 1}/{rank.length}</span><ChevronRight size={12} /></button>
+      <button class="upnext" onclick={() => walk(1)} title={`${t('review.nextHot')}: ${upNext.region.name}/${upNext.file.path} · ${t('review.nextHotKeys')}`}><Flame size={12} /><span class="mono">{upNext.file.path.split('/').pop()}</span><span class="faint">{walkable.indexOf(upNext) + 1}/{walkable.length}</span><ChevronRight size={12} /></button>
     {/if}
     {#if anyFiles}
       <span class="vseg" data-tour="review-map"><Segmented
