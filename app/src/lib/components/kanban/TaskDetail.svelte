@@ -121,6 +121,10 @@
     eError = '';
   }
 
+  function autofocus(node: HTMLElement) {
+    node.focus();
+  }
+
   function onEditKey(e: KeyboardEvent) {
     if (e.key !== 'Escape' || e.defaultPrevented) return;
     e.stopPropagation();
@@ -204,7 +208,7 @@
         <div class="edit" role="presentation" onkeydown={onEditKey}>
           <label class="field">
             <span>{t('task.title')}</span>
-            <input bind:value={e.title} aria-invalid={!!eError} oninput={() => (eError = '')} />
+            <input use:autofocus bind:value={e.title} aria-invalid={!!eError} oninput={() => (eError = '')} />
           </label>
           {#if eError}<em class="err">{eError}</em>{/if}
           <label class="field">

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import '../../i18n/parts/settings.use';
   import { lidAvailable } from '../../lifecycle/lid.svelte';
   import { untrack } from 'svelte';
   import X from '@lucide/svelte/icons/x';

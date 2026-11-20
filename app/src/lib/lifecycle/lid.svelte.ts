@@ -1,3 +1,4 @@
+import '../i18n/parts/settings.use';
 import { hostId } from '../hooks';
 import { t } from '../i18n.svelte';
 import { app } from '../state.svelte';

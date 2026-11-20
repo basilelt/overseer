@@ -1389,10 +1389,16 @@ fn watch_transcripts(claude_dir: PathBuf, codex_dir: PathBuf, gemini_dir: PathBu
     let mut paths: std::collections::HashMap<String, (Option<PathBuf>, i64)> = Default::default();
     let mut seen: std::collections::HashMap<String, (u64, i64, bool)> = Default::default();
     let mut quiet = false;
+    let state_dir = crate::default_state_dir();
+    let mut tap_seen = None;
     loop {
         std::thread::sleep(Duration::from_millis(if quiet { 1000 } else { 250 }));
         let lines = WATCH.lock().unwrap_or_else(|e| e.into_inner()).clone();
-        quiet = lines.is_empty() || crate::board::subscribers() == 0;
+        let watched = crate::board::subscribers() > 0;
+        quiet = lines.is_empty() || !watched;
+        if watched && crate::usage::tap_changed(&state_dir, &mut tap_seen) {
+            crate::usage::poke(false);
+        }
         let now = now_ms();
         paths.retain(|id, _| lines.iter().any(|l| l.0 == *id));
         seen.retain(|id, _| paths.contains_key(id));

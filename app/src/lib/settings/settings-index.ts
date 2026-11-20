@@ -1,3 +1,5 @@
+import '../i18n/parts/settings.use';
+import '../i18n/parts/tour.use';
 import type { Key } from '../i18n.svelte';
 
 export type CategoryId = 'general' | 'terminal' | 'agents' | 'usage' | 'notifications' | 'connection' | 'updates' | 'help';
