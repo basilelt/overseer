@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount, untrack } from 'svelte';
   import { t, type Key } from '../../i18n.svelte';
-  import { chipLabel } from '../../profiles/profiles';
+  import { chipBeside, chipLabel } from '../../profiles/profiles';
   import { app } from '../../state.svelte';
   import type { Diff, SessionCost as Cost } from '../../types';
   import AgentGlyph from '../ui/AgentGlyph.svelte';
@@ -40,7 +40,7 @@
   const line = $derived(lineId ? app.data.lines.find((l) => l.line.id === lineId) : undefined);
   const act = $derived(lineId ? app.data.activity[lineId] : undefined);
   const sessions = $derived(line ? sessionsAvailable(app.agents, line.line.agent) : true);
-  const chip = $derived(item?.termId ? app.data.terms.find((x) => x.id === item.termId)?.profile : undefined);
+  const chip = $derived(chipBeside(item?.termId ? app.data.terms.find((x) => x.id === item.termId)?.profile : undefined, act?.cost));
   const repo = $derived(inRepo(line?.line));
   const todosDone = $derived(act?.todos.filter((x) => x.state === 'completed').length ?? 0);
 

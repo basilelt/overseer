@@ -104,6 +104,8 @@ export async function moveToWorkspace(app: App, key: string, workspaceId: string
   try {
     if (it.lineId) await client(app).assignLineWorkspace(it.lineId, workspaceId);
     else await client(app).assignTermWorkspace(it.termId!, workspaceId);
+    const dest = app.ws.workspaces.find((w) => w.id === workspaceId);
+    if (dest && workspaceId !== app.workspaceId && !dest.tabs.includes(it.key)) void app.patchWorkspace(workspaceId, { tabs: [...dest.tabs, it.key] });
     return true;
   } catch (e) {
     app.data = assignWorkspace(app.data, it, prev);

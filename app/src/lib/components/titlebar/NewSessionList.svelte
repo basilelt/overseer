@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { holdPopup } from '../../popup.svelte';
   import { onMount } from 'svelte';
   import ChevronRight from '@lucide/svelte/icons/chevron-right';
   import { canInstall, splitInstalled } from '../../agents';
@@ -10,6 +11,7 @@
 
   let { onclose }: { onclose: (refocus: boolean) => void } = $props();
 
+  $effect(holdPopup);
   const profileSelect = preload(() => import('../ui/ProfileSelect.svelte'));
   let menu: HTMLDivElement | undefined = $state();
   const split = $derived(splitInstalled(app.agents));
