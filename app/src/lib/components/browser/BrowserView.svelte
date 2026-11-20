@@ -10,7 +10,7 @@
   import { app } from '../../state.svelte';
   import { isTauri } from '../../platform';
   import { boundsOf, nativeBrowser, normalizeUrl, type NavEvent } from '../../browser';
-  import { popup } from '../../popup.svelte';
+  import { holdWebview, popup } from '../../popup.svelte';
 
   let { initialUrl = null, onurl }: { initialUrl?: string | null; onurl?: (url: string) => void } = $props();
 
@@ -20,6 +20,7 @@
   let url = $state(normalizeUrl(start));
   let loading = $state(false);
   let opened = false;
+  let onScreen = $state(false);
   let host: HTMLDivElement | undefined = $state();
   let frame: HTMLIFrameElement | undefined = $state();
   let history: string[] = [];
@@ -42,6 +43,7 @@
     const b = boundsOf(host);
     if (!opened) {
       opened = true;
+      onScreen = true;
       loading = true;
       nativeBrowser.open(url, b, onNav).catch(err);
     } else nativeBrowser.bounds(b).catch(() => {});
@@ -97,6 +99,10 @@
     (popup.open ? nativeBrowser.hide() : nativeBrowser.show()).catch(() => {});
   });
 
+  $effect(() => {
+    if (onScreen && !popup.open) return holdWebview();
+  });
+
   onMount(() => {
     if (url && !native) {
       history = [url];
@@ -111,6 +117,7 @@
       ro.disconnect();
       window.removeEventListener('resize', place);
       if (opened) nativeBrowser.hide().catch(() => {});
+      onScreen = false;
     };
   });
 </script>

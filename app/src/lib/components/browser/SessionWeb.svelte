@@ -13,7 +13,7 @@
   import { app } from '../../state.svelte';
   import { isTauri } from '../../platform';
   import { boundsOf, nativeBrowser, normalizeUrl } from '../../browser';
-  import { popup } from '../../popup.svelte';
+  import { holdWebview, popup } from '../../popup.svelte';
   import { pages } from '../../session/session-pages.svelte';
   import type { Page } from '../../session/session-pages';
   import { openInFocused, update } from '../../workspace/workspace.svelte';
@@ -29,6 +29,7 @@
   let root: HTMLDivElement | undefined = $state();
   let host: HTMLDivElement | undefined = $state();
   let shown: string | null = null;
+  let onScreen = $state(false);
   let dragging = $state(false);
 
   const err = (e: unknown) => app.notify(String((e as Error)?.message ?? e), 'error');
@@ -46,12 +47,18 @@
       if (shown && (shown !== id || hidden)) {
         pages.hide(shown);
         shown = null;
+        onScreen = false;
       }
       if (id && !hidden && shown !== id) {
         shown = id;
+        onScreen = true;
         pages.show(id, boundsOf(el)).catch(err);
       }
     });
+  });
+
+  $effect(() => {
+    if (onScreen) return holdWebview();
   });
 
   function place() {
@@ -68,6 +75,7 @@
       window.removeEventListener('resize', place);
       if (shown) pages.hide(shown);
       shown = null;
+      onScreen = false;
     };
   });
 

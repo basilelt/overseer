@@ -14,7 +14,18 @@ export function holdPopup(): () => void {
   return () => untrack(() => held--);
 }
 
+let webviews = $state(0);
+
+export function holdWebview(): () => void {
+  untrack(() => webviews++);
+  return () => untrack(() => webviews--);
+}
+
 class Popup {
+  get webview(): boolean {
+    return webviews > 0;
+  }
+
   /**
    * True while any popup (modal, sheet, menu, drawer, tour) is open.
    * Native webviews (the browser tab, session pages) composite above the DOM,
