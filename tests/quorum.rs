@@ -66,8 +66,8 @@ fn a_quorum_is_created_validated_and_edited_before_start() {
             "quorum.workers lists codex twice",
         ),
         (
-            json!({"agent": "gemini", "quorum": {"workers": ["codex"], "reviewers": ["claude"]}}),
-            "the quorum orchestrator must be claude or codex",
+            json!({"agent": "shell", "quorum": {"workers": ["codex"], "reviewers": ["claude"]}}),
+            "agent must be one of claude, codex, gemini, agy, opencode, amp, copilot, cursor, vibe",
         ),
         (
             json!({"parentId": id(&root), "agent": "claude"}),
@@ -104,10 +104,20 @@ fn a_quorum_is_created_validated_and_edited_before_start() {
         p["quorum"],
         json!({"workers": ["gemini"], "reviewers": ["codex"]})
     );
-    let (code, v) = app.req("PATCH", &path, json!({"agent": "gemini"}));
+    let p = app.ok("PATCH", &path, json!({"agent": "gemini"}));
+    assert_eq!(p["agent"], "gemini");
     assert_eq!(
-        (code, v["error"].as_str().unwrap()),
-        (400, "the quorum orchestrator must be claude or codex")
+        p["quorum"],
+        json!({"workers": ["gemini"], "reviewers": ["codex"]})
+    );
+    let (code, v) = app.req("PATCH", &path, json!({"agent": "shell"}));
+    assert_eq!(code, 400);
+    assert!(
+        v["error"]
+            .as_str()
+            .unwrap()
+            .contains("agent must be one of"),
+        "{v}"
     );
     let p = app.ok("PATCH", &path, json!({"quorum": null}));
     assert!(p.get("quorum").is_none());
@@ -430,4 +440,41 @@ fn a_rejected_worker_goes_back_to_work_and_its_next_turn_starts_round_two() {
     wait_for(|| (get()["votes"]["round"] == 2).then_some(()));
     assert_eq!(get()["status"], "in_testing");
     wait_for(|| (children(&app, &wid).len() == 2).then_some(()));
+}
+
+#[test]
+fn every_cli_overseer_supports_can_orchestrate_a_quorum() {
+    let (app, wt) = quorum_app("quorum-all-clis");
+    let clis: Vec<&'static str> = overseer::agents::AGENTS
+        .iter()
+        .filter(|a| a.coding())
+        .map(|a| a.id)
+        .collect();
+    assert!(clis.len() >= 9, "{clis:?}");
+    assert!(!clis.contains(&"shell"));
+    for cli in &clis {
+        let q = json!({"workers": [cli], "reviewers": ["codex"]});
+        let root = app.ok(
+            "POST",
+            "/v1/tasks",
+            json!({"title": format!("Job for {cli}"), "project": wt, "agent": cli, "quorum": q}),
+        );
+        assert_eq!(root["agent"].as_str(), Some(*cli));
+        assert_eq!(root["quorum"], q, "{cli}");
+        let path = format!("/v1/tasks/{}", id(&root));
+        for other in &clis {
+            let p = app.ok("PATCH", &path, json!({"agent": other}));
+            assert_eq!(p["agent"].as_str(), Some(*other), "{cli} -> {other}");
+            assert_eq!(p["quorum"], q, "{cli} -> {other} keeps its quorum");
+        }
+        let (code, v) = app.req("PATCH", &path, json!({"agent": "shell"}));
+        assert_eq!(code, 400, "{v}");
+        assert!(
+            v["error"]
+                .as_str()
+                .unwrap()
+                .starts_with("agent must be one of"),
+            "{v}"
+        );
+    }
 }

@@ -34,7 +34,6 @@ const triggers: Record<string, (m: MockDaemon, a: ReturnType<typeof api>) => Pro
   termSize: (m) => m.request('POST', '/v1/terms/tm_shell1/resize', { cols: 0, rows: 20 }),
   termSizeRequired: (m) => m.request('POST', '/v1/terms/tm_shell1/resize', {}),
   shellInQuorum: (_m, a) => a.createTask({ ...quorumBase, agent: 'claude', quorum: { workers: ['shell'], reviewers: ['codex'] } } as never),
-  quorumOrchestrator: (_m, a) => a.createTask({ ...quorumBase, agent: 'gemini', quorum: { workers: ['claude'], reviewers: ['codex'] } } as never),
   sessionTaskStatus: async (_m, a) => a.patchTask((await sessionTask(a)).id, { status: 'pending' }),
   bodyTooLarge: (m) => m.request('POST', '/v1/tasks', { title: 'x'.repeat(1 << 20) }),
 };
@@ -93,11 +92,13 @@ describe('MockDaemon error strings', () => {
     await expect(m.request('POST', '/v1/terms/tm_shell1/resize', { cols: 100, rows: 30 })).rejects.toMatchObject({ status: 409, message: 'term has exited' });
   });
 
-  it('keeps shell out of a quorum and requires a claude or codex orchestrator', async () => {
+  it('keeps shell out of a quorum and refuses it as the orchestrator', async () => {
     const { a } = setup();
     const base = { title: 'Q', description: '', project: '/p', model: '' };
     await expect(a.createTask({ ...base, agent: 'claude', quorum: { workers: ['shell'], reviewers: ['codex'] } } as never)).rejects.toMatchObject({ status: 400, message: 'shell cannot join a quorum' });
-    await expect(a.createTask({ ...base, agent: 'gemini', quorum: { workers: ['claude'], reviewers: ['codex'] } } as never)).rejects.toMatchObject({ status: 400, message: 'the quorum orchestrator must be claude or codex' });
+    await expect(a.createTask({ ...base, agent: 'shell', quorum: { workers: ['claude'], reviewers: ['codex'] } } as never)).rejects.toMatchObject({ status: 400, message: 'agent must be one of claude, codex, gemini, agy, opencode, amp, copilot, cursor, vibe' });
+    const ok = await a.createTask({ ...base, agent: 'gemini', quorum: { workers: ['claude'], reviewers: ['codex'] } } as never);
+    expect(ok.quorum).toEqual({ workers: ['claude'], reviewers: ['codex'] });
   });
 
   it('limits the status of a session task', async () => {
