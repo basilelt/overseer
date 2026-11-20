@@ -143,6 +143,21 @@ describe('termLink', () => {
     expect(h.ups).toEqual([h.conns[1].io]);
   });
 
+  it('re-attaches at once when the connection returns while a retry is waiting', async () => {
+    const h = harness(30_000);
+    const done = h.link.attach();
+    h.opens[0].reject('terminal attach failed');
+    await done;
+    expect(h.conns).toHaveLength(1);
+    h.link.resume();
+    expect(h.conns).toHaveLength(2);
+    h.opens[1].resolve();
+    await flush();
+    expect(h.ups).toEqual([h.conns[1].io]);
+    vi.advanceTimersByTime(60_000);
+    expect(h.conns).toHaveLength(2);
+  });
+
   it('does not resume a live link, a pending attach or a finished terminal', async () => {
     const h = harness(null);
     const done = h.link.attach();
