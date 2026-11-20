@@ -131,7 +131,9 @@ pub fn orchestrator_prompt(q: &Value) -> String {
     let reviewers = list(q, "reviewers");
     let voters = reviewers.len() + 1;
     format!(
-        "Quorum mode: you are the orchestrator of this task.\n\
+        "Quorum mode: you are the orchestrator of this task. Every tool named below is an Overseer MCP tool; \
+if you do not have them, run it in a shell as overseer tool <name> '<json arguments>', for example \
+overseer tool create_task '{{\"title\": \"...\", \"agent\": \"codex\"}}'.\n\
 1. Split the task into subtasks. Create each with create_task and set its agent to one of the workers ({workers}), \
 spreading them across different workers so that different agents check each other. Use dependsOn where order matters. \
 Subtasks start on their own, each in its own worktree and branch.\n\
@@ -548,6 +550,7 @@ mod tests {
         assert!(p.contains("2 of 3 votes"));
         assert!(p.contains("instead of polling"));
         assert!(p.contains("overseer vote approve|reject"));
+        assert!(p.contains("overseer tool <name> '<json arguments>'"));
     }
 
     #[test]

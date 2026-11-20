@@ -478,3 +478,40 @@ fn every_cli_overseer_supports_can_orchestrate_a_quorum() {
         );
     }
 }
+
+#[test]
+fn an_orchestrator_without_mcp_drives_its_quorum_with_the_tool_command() {
+    let (app, wt) = quorum_app("quorum-tool-cli");
+    let root = app.ok(
+        "POST",
+        "/v1/tasks",
+        json!({"title": "Job", "project": wt, "agent": "gemini",
+               "quorum": {"workers": ["codex"], "reviewers": ["claude"]}}),
+    );
+    let rid = id(&root);
+    let run = |args: &[&str]| {
+        let mut c = Command::new(bin());
+        app.fx.env(&mut c);
+        c.env("OVERSEER_TASK_ID", &rid).arg("tool").args(args);
+        output(&mut c, None)
+    };
+    let o = run(&["create_task", r#"{"title": "Part one", "agent": "codex"}"#]);
+    assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stderr));
+    let kids = children(&app, &rid);
+    assert_eq!(kids.len(), 1);
+    assert_eq!(kids[0]["title"], "Part one");
+    assert_eq!(kids[0]["agent"], "codex");
+    let o = run(&[
+        "send_message",
+        &format!(r#"{{"to": "{}", "body": "go"}}"#, id(&kids[0])),
+    ]);
+    assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stderr));
+    assert_eq!(messages(&app, &id(&kids[0])), ["go"]);
+    let o = run(&["nope", "{}"]);
+    assert!(!o.status.success());
+    assert!(String::from_utf8_lossy(&o.stderr).contains("unknown tool: nope"));
+    let o = run(&["create_task", "{}"]);
+    assert!(String::from_utf8_lossy(&o.stderr).contains("title is required"));
+    let o = run(&["create_task", "not json"]);
+    assert!(String::from_utf8_lossy(&o.stderr).contains("JSON object"));
+}

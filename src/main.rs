@@ -23,6 +23,7 @@ const USAGE: &str = "usage:
   overseer version [--json]
   overseer mcp                                          (stdio MCP server for agents)
   overseer vote approve|reject <reason> [--task <id>]   (quorum vote from a task's terminal)
+  overseer tool <name> [<json arguments>]               (an MCP tool from a task's terminal)
   overseer proxy                                        (stdio multiplexer for the remote app)
   overseer uninstall [--apply]                          (remove everything Overseer added; dry run by default)
   overseer hooks install|uninstall [AGENT...] [--apply]
@@ -364,6 +365,7 @@ fn main() -> ExitCode {
         "sync" => return overseer::sync::cli_sync(rest),
         "mcp" => return overseer::mcp::run(),
         "vote" => return overseer::mcp::cli_vote(rest),
+        "tool" => return overseer::mcp::cli_tool(rest),
         "proxy" => return overseer::proxy::run(),
         "statusline-tap" => return overseer::statusline::tap(rest),
         "socket-path" => {
