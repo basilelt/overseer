@@ -125,7 +125,7 @@ describe('tour steps', () => {
 
   it('shows the subjects, source control and review map steps to users who saw 0.35, subjects on the open workspace or else the sidebar', () => {
     expect(modeFor('0.35')).toBe('whatsNew');
-    expect(stepsFor('whatsNew', '0.35').map((s) => s.id)).toEqual(['subjects', 'sourceControl', 'reviewMap', 'lidClosed', 'recordBug', 'quorum', 'installAgent', 'agentMessaging', 'mistralVibe', 'cost', 'taskType', 'agentTasks', 'hosts', 'stickyNotes', 'panelGit', 'reviewKeys', 'quorumAnyAgent', 'feedbackCli', 'taskEdit']);
+    expect(stepsFor('whatsNew', '0.35').map((s) => s.id)).toEqual(['subjects', 'sourceControl', 'reviewMap', 'lidClosed', 'recordBug', 'quorum', 'installAgent', 'agentMessaging', 'mistralVibe', 'cost', 'taskType', 'agentTasks', 'hosts', 'stickyNotes', 'panelGit', 'reviewKeys', 'quorumAnyAgent', 'usageAgents', 'feedbackCli', 'taskEdit']);
     const step = STEPS.find((s) => s.id === 'subjects')!;
     expect(targetOf(step, (n) => n === 'subjects' || n === 'workspaces')).toBe('subjects');
     expect(targetOf(step, (n) => n === 'workspaces')).toBe('workspaces');
@@ -135,12 +135,12 @@ describe('tour steps', () => {
   });
 
   it('shows the one-click update, subjects and source control and review map steps to users who saw 0.34', () => {
-    expect(stepsFor('whatsNew', '0.34').map((s) => s.id)).toEqual(['autoUpdate', 'subjects', 'sourceControl', 'reviewMap', 'lidClosed', 'recordBug', 'quorum', 'installAgent', 'agentMessaging', 'mistralVibe', 'cost', 'taskType', 'agentTasks', 'hosts', 'stickyNotes', 'panelGit', 'reviewKeys', 'quorumAnyAgent', 'feedbackCli', 'taskEdit']);
+    expect(stepsFor('whatsNew', '0.34').map((s) => s.id)).toEqual(['autoUpdate', 'subjects', 'sourceControl', 'reviewMap', 'lidClosed', 'recordBug', 'quorum', 'installAgent', 'agentMessaging', 'mistralVibe', 'cost', 'taskType', 'agentTasks', 'hosts', 'stickyNotes', 'panelGit', 'reviewKeys', 'quorumAnyAgent', 'usageAgents', 'feedbackCli', 'taskEdit']);
     expect(STEPS.find((s) => s.id === 'autoUpdate')?.targets).toContain('updates');
   });
 
   it('shows the three 0.34 steps to users who saw 0.33', () => {
-    expect(stepsFor('whatsNew', '0.33').map((s) => s.id)).toEqual(['autoApprove', 'merged', 'uninstall', 'autoUpdate', 'subjects', 'sourceControl', 'reviewMap', 'lidClosed', 'recordBug', 'quorum', 'installAgent', 'agentMessaging', 'mistralVibe', 'cost', 'taskType', 'agentTasks', 'hosts', 'stickyNotes', 'panelGit', 'reviewKeys', 'quorumAnyAgent', 'feedbackCli', 'taskEdit']);
+    expect(stepsFor('whatsNew', '0.33').map((s) => s.id)).toEqual(['autoApprove', 'merged', 'uninstall', 'autoUpdate', 'subjects', 'sourceControl', 'reviewMap', 'lidClosed', 'recordBug', 'quorum', 'installAgent', 'agentMessaging', 'mistralVibe', 'cost', 'taskType', 'agentTasks', 'hosts', 'stickyNotes', 'panelGit', 'reviewKeys', 'quorumAnyAgent', 'usageAgents', 'feedbackCli', 'taskEdit']);
     const step = STEPS.find((s) => s.id === 'autoApprove')!;
     expect(targetOf(step, (n) => n === 'auto-approve' || n === 'settings')).toBe('auto-approve');
     expect(targetOf(step, (n) => n === 'settings' || n === 'palette')).toBe('settings');
@@ -197,21 +197,21 @@ describe('tour versioning', () => {
 
   it('shows the organize step to users who saw the 0.15 tour', () => {
     expect(modeFor(1)).toBe('whatsNew');
-    expect(stepsFor('whatsNew', 1).map((s) => s.id)).toEqual(['organize', 'settings', 'paletteKey', 'demo', 'gpuTerminal', 'worktreeCleanup', 'switchboard', 'clickCursor', 'palettes', 'skills', 'autoApprove', 'merged', 'uninstall', 'autoUpdate', 'subjects', 'sourceControl', 'reviewMap', 'lidClosed', 'recordBug', 'quorum', 'installAgent', 'agentMessaging', 'mistralVibe', 'cost', 'taskType', 'agentTasks', 'hosts', 'stickyNotes', 'panelGit', 'reviewKeys', 'quorumAnyAgent', 'feedbackCli', 'taskEdit']);
+    expect(stepsFor('whatsNew', 1).map((s) => s.id)).toEqual(['organize', 'settings', 'paletteKey', 'demo', 'gpuTerminal', 'worktreeCleanup', 'switchboard', 'clickCursor', 'palettes', 'skills', 'autoApprove', 'merged', 'uninstall', 'autoUpdate', 'subjects', 'sourceControl', 'reviewMap', 'lidClosed', 'recordBug', 'quorum', 'installAgent', 'agentMessaging', 'mistralVibe', 'cost', 'taskType', 'agentTasks', 'hosts', 'stickyNotes', 'panelGit', 'reviewKeys', 'quorumAnyAgent', 'usageAgents', 'feedbackCli', 'taskEdit']);
     expect(stepsFor('full', undefined).map((s) => s.id)).toContain('organize');
     expect(targetOf(STEPS.find((s) => s.id === 'organize')!, (n) => n === 'workspaces')).toBe('workspaces');
   });
 
   it('shows the 0.25 to 0.29 steps to users who saw 0.24', () => {
     expect(modeFor('0.24')).toBe('whatsNew');
-    expect(stepsFor('whatsNew', '0.24').map((s) => s.id)).toEqual(['settings', 'paletteKey', 'demo', 'gpuTerminal', 'worktreeCleanup', 'switchboard', 'clickCursor', 'palettes', 'skills', 'autoApprove', 'merged', 'uninstall', 'autoUpdate', 'subjects', 'sourceControl', 'reviewMap', 'lidClosed', 'recordBug', 'quorum', 'installAgent', 'agentMessaging', 'mistralVibe', 'cost', 'taskType', 'agentTasks', 'hosts', 'stickyNotes', 'panelGit', 'reviewKeys', 'quorumAnyAgent', 'feedbackCli', 'taskEdit']);
+    expect(stepsFor('whatsNew', '0.24').map((s) => s.id)).toEqual(['settings', 'paletteKey', 'demo', 'gpuTerminal', 'worktreeCleanup', 'switchboard', 'clickCursor', 'palettes', 'skills', 'autoApprove', 'merged', 'uninstall', 'autoUpdate', 'subjects', 'sourceControl', 'reviewMap', 'lidClosed', 'recordBug', 'quorum', 'installAgent', 'agentMessaging', 'mistralVibe', 'cost', 'taskType', 'agentTasks', 'hosts', 'stickyNotes', 'panelGit', 'reviewKeys', 'quorumAnyAgent', 'usageAgents', 'feedbackCli', 'taskEdit']);
     expect(stepsFor('full', undefined).map((s) => s.id)).toContain('settings');
     expect(targetOf(STEPS.find((s) => s.id === 'settings')!, (n) => n === 'settings')).toBe('settings');
   });
 
   it('shows the GPU rendering, worktree cleanup and Switchboard steps to users who saw 0.27', () => {
     expect(modeFor('0.27')).toBe('whatsNew');
-    expect(stepsFor('whatsNew', '0.27').map((s) => s.id)).toEqual(['gpuTerminal', 'worktreeCleanup', 'switchboard', 'clickCursor', 'palettes', 'skills', 'autoApprove', 'merged', 'uninstall', 'autoUpdate', 'subjects', 'sourceControl', 'reviewMap', 'lidClosed', 'recordBug', 'quorum', 'installAgent', 'agentMessaging', 'mistralVibe', 'cost', 'taskType', 'agentTasks', 'hosts', 'stickyNotes', 'panelGit', 'reviewKeys', 'quorumAnyAgent', 'feedbackCli', 'taskEdit']);
+    expect(stepsFor('whatsNew', '0.27').map((s) => s.id)).toEqual(['gpuTerminal', 'worktreeCleanup', 'switchboard', 'clickCursor', 'palettes', 'skills', 'autoApprove', 'merged', 'uninstall', 'autoUpdate', 'subjects', 'sourceControl', 'reviewMap', 'lidClosed', 'recordBug', 'quorum', 'installAgent', 'agentMessaging', 'mistralVibe', 'cost', 'taskType', 'agentTasks', 'hosts', 'stickyNotes', 'panelGit', 'reviewKeys', 'quorumAnyAgent', 'usageAgents', 'feedbackCli', 'taskEdit']);
   });
 
   it('points the demo step at the Demo mode pill in the demo, else at the host chip', () => {
@@ -226,29 +226,29 @@ describe('tour versioning', () => {
 
   it('shows the steps added after 0.17 to users who saw the 0.17 tour', () => {
     expect(modeFor('0.17')).toBe('whatsNew');
-    expect(stepsFor('whatsNew', '0.17').map((s) => s.id)).toEqual(['settings', 'paletteKey', 'demo', 'gpuTerminal', 'worktreeCleanup', 'switchboard', 'clickCursor', 'palettes', 'skills', 'autoApprove', 'merged', 'uninstall', 'autoUpdate', 'subjects', 'sourceControl', 'reviewMap', 'lidClosed', 'recordBug', 'quorum', 'installAgent', 'agentMessaging', 'mistralVibe', 'cost', 'taskType', 'agentTasks', 'hosts', 'stickyNotes', 'panelGit', 'reviewKeys', 'quorumAnyAgent', 'feedbackCli', 'taskEdit']);
+    expect(stepsFor('whatsNew', '0.17').map((s) => s.id)).toEqual(['settings', 'paletteKey', 'demo', 'gpuTerminal', 'worktreeCleanup', 'switchboard', 'clickCursor', 'palettes', 'skills', 'autoApprove', 'merged', 'uninstall', 'autoUpdate', 'subjects', 'sourceControl', 'reviewMap', 'lidClosed', 'recordBug', 'quorum', 'installAgent', 'agentMessaging', 'mistralVibe', 'cost', 'taskType', 'agentTasks', 'hosts', 'stickyNotes', 'panelGit', 'reviewKeys', 'quorumAnyAgent', 'usageAgents', 'feedbackCli', 'taskEdit']);
     expect(STEPS.find((s) => s.id === 'paletteKey')?.since).toBe('0.25');
   });
 
   it('shows the 0.27, 0.28 and 0.29 steps to users who saw 0.26', () => {
     expect(modeFor('0.26')).toBe('whatsNew');
-    expect(stepsFor('whatsNew', '0.26').map((s) => s.id)).toEqual(['demo', 'gpuTerminal', 'worktreeCleanup', 'switchboard', 'clickCursor', 'palettes', 'skills', 'autoApprove', 'merged', 'uninstall', 'autoUpdate', 'subjects', 'sourceControl', 'reviewMap', 'lidClosed', 'recordBug', 'quorum', 'installAgent', 'agentMessaging', 'mistralVibe', 'cost', 'taskType', 'agentTasks', 'hosts', 'stickyNotes', 'panelGit', 'reviewKeys', 'quorumAnyAgent', 'feedbackCli', 'taskEdit']);
+    expect(stepsFor('whatsNew', '0.26').map((s) => s.id)).toEqual(['demo', 'gpuTerminal', 'worktreeCleanup', 'switchboard', 'clickCursor', 'palettes', 'skills', 'autoApprove', 'merged', 'uninstall', 'autoUpdate', 'subjects', 'sourceControl', 'reviewMap', 'lidClosed', 'recordBug', 'quorum', 'installAgent', 'agentMessaging', 'mistralVibe', 'cost', 'taskType', 'agentTasks', 'hosts', 'stickyNotes', 'panelGit', 'reviewKeys', 'quorumAnyAgent', 'usageAgents', 'feedbackCli', 'taskEdit']);
     expect(STEPS.find((s) => s.id === 'gpuTerminal')?.since).toBe('0.28');
   });
 
   it('shows the worktree cleanup and Switchboard steps to users who saw 0.28', () => {
     expect(TOUR_VERSION).toBe('0.38');
     expect(modeFor('0.28')).toBe('whatsNew');
-    expect(stepsFor('whatsNew', '0.28').map((s) => s.id)).toEqual(['worktreeCleanup', 'switchboard', 'clickCursor', 'palettes', 'skills', 'autoApprove', 'merged', 'uninstall', 'autoUpdate', 'subjects', 'sourceControl', 'reviewMap', 'lidClosed', 'recordBug', 'quorum', 'installAgent', 'agentMessaging', 'mistralVibe', 'cost', 'taskType', 'agentTasks', 'hosts', 'stickyNotes', 'panelGit', 'reviewKeys', 'quorumAnyAgent', 'feedbackCli', 'taskEdit']);
+    expect(stepsFor('whatsNew', '0.28').map((s) => s.id)).toEqual(['worktreeCleanup', 'switchboard', 'clickCursor', 'palettes', 'skills', 'autoApprove', 'merged', 'uninstall', 'autoUpdate', 'subjects', 'sourceControl', 'reviewMap', 'lidClosed', 'recordBug', 'quorum', 'installAgent', 'agentMessaging', 'mistralVibe', 'cost', 'taskType', 'agentTasks', 'hosts', 'stickyNotes', 'panelGit', 'reviewKeys', 'quorumAnyAgent', 'usageAgents', 'feedbackCli', 'taskEdit']);
     expect(targetOf(STEPS.find((s) => s.id === 'switchboard')!, (n) => n === 'switchboard')).toBe('switchboard');
     expect(modeFor('0.33')).toBe('whatsNew');
     expect(targetOf(STEPS.find((s) => s.id === 'worktreeCleanup')!, (n) => n === 'palette')).toBe('palette');
   });
 
   it('shows the palettes step to users who saw 0.29 or 0.30', () => {
-    expect(stepsFor('whatsNew', '0.29').map((s) => s.id)).toEqual(['clickCursor', 'palettes', 'skills', 'autoApprove', 'merged', 'uninstall', 'autoUpdate', 'subjects', 'sourceControl', 'reviewMap', 'lidClosed', 'recordBug', 'quorum', 'installAgent', 'agentMessaging', 'mistralVibe', 'cost', 'taskType', 'agentTasks', 'hosts', 'stickyNotes', 'panelGit', 'reviewKeys', 'quorumAnyAgent', 'feedbackCli', 'taskEdit']);
+    expect(stepsFor('whatsNew', '0.29').map((s) => s.id)).toEqual(['clickCursor', 'palettes', 'skills', 'autoApprove', 'merged', 'uninstall', 'autoUpdate', 'subjects', 'sourceControl', 'reviewMap', 'lidClosed', 'recordBug', 'quorum', 'installAgent', 'agentMessaging', 'mistralVibe', 'cost', 'taskType', 'agentTasks', 'hosts', 'stickyNotes', 'panelGit', 'reviewKeys', 'quorumAnyAgent', 'usageAgents', 'feedbackCli', 'taskEdit']);
     expect(modeFor('0.30')).toBe('whatsNew');
-    expect(stepsFor('whatsNew', '0.30').map((s) => s.id)).toEqual(['palettes', 'skills', 'autoApprove', 'merged', 'uninstall', 'autoUpdate', 'subjects', 'sourceControl', 'reviewMap', 'lidClosed', 'recordBug', 'quorum', 'installAgent', 'agentMessaging', 'mistralVibe', 'cost', 'taskType', 'agentTasks', 'hosts', 'stickyNotes', 'panelGit', 'reviewKeys', 'quorumAnyAgent', 'feedbackCli', 'taskEdit']);
+    expect(stepsFor('whatsNew', '0.30').map((s) => s.id)).toEqual(['palettes', 'skills', 'autoApprove', 'merged', 'uninstall', 'autoUpdate', 'subjects', 'sourceControl', 'reviewMap', 'lidClosed', 'recordBug', 'quorum', 'installAgent', 'agentMessaging', 'mistralVibe', 'cost', 'taskType', 'agentTasks', 'hosts', 'stickyNotes', 'panelGit', 'reviewKeys', 'quorumAnyAgent', 'usageAgents', 'feedbackCli', 'taskEdit']);
     const step = STEPS.find((s) => s.id === 'palettes')!;
     expect(step.since).toBe('0.31');
     expect(targetOf(step, (n) => n === 'settings')).toBe('settings');
@@ -257,7 +257,7 @@ describe('tour versioning', () => {
 
   it('shows the click-to-move-cursor step to users who saw 0.29', () => {
     expect(modeFor('0.29')).toBe('whatsNew');
-    expect(stepsFor('whatsNew', '0.29').map((s) => s.id)).toEqual(['clickCursor', 'palettes', 'skills', 'autoApprove', 'merged', 'uninstall', 'autoUpdate', 'subjects', 'sourceControl', 'reviewMap', 'lidClosed', 'recordBug', 'quorum', 'installAgent', 'agentMessaging', 'mistralVibe', 'cost', 'taskType', 'agentTasks', 'hosts', 'stickyNotes', 'panelGit', 'reviewKeys', 'quorumAnyAgent', 'feedbackCli', 'taskEdit']);
+    expect(stepsFor('whatsNew', '0.29').map((s) => s.id)).toEqual(['clickCursor', 'palettes', 'skills', 'autoApprove', 'merged', 'uninstall', 'autoUpdate', 'subjects', 'sourceControl', 'reviewMap', 'lidClosed', 'recordBug', 'quorum', 'installAgent', 'agentMessaging', 'mistralVibe', 'cost', 'taskType', 'agentTasks', 'hosts', 'stickyNotes', 'panelGit', 'reviewKeys', 'quorumAnyAgent', 'usageAgents', 'feedbackCli', 'taskEdit']);
     expect(targetOf(STEPS.find((s) => s.id === 'clickCursor')!, (n) => n === 'tabs')).toBe('tabs');
   });
 
@@ -277,8 +277,8 @@ describe('tour versioning', () => {
 
   it('shows skills and auto-approval to users who saw 0.31 or 0.32', () => {
     expect(modeFor('0.31')).toBe('whatsNew');
-    expect(stepsFor('whatsNew', '0.31').map((s) => s.id)).toEqual(['skills', 'autoApprove', 'merged', 'uninstall', 'autoUpdate', 'subjects', 'sourceControl', 'reviewMap', 'lidClosed', 'recordBug', 'quorum', 'installAgent', 'agentMessaging', 'mistralVibe', 'cost', 'taskType', 'agentTasks', 'hosts', 'stickyNotes', 'panelGit', 'reviewKeys', 'quorumAnyAgent', 'feedbackCli', 'taskEdit']);
-    expect(stepsFor('whatsNew', '0.32').map((s) => s.id)).toEqual(['skills', 'autoApprove', 'merged', 'uninstall', 'autoUpdate', 'subjects', 'sourceControl', 'reviewMap', 'lidClosed', 'recordBug', 'quorum', 'installAgent', 'agentMessaging', 'mistralVibe', 'cost', 'taskType', 'agentTasks', 'hosts', 'stickyNotes', 'panelGit', 'reviewKeys', 'quorumAnyAgent', 'feedbackCli', 'taskEdit']);
+    expect(stepsFor('whatsNew', '0.31').map((s) => s.id)).toEqual(['skills', 'autoApprove', 'merged', 'uninstall', 'autoUpdate', 'subjects', 'sourceControl', 'reviewMap', 'lidClosed', 'recordBug', 'quorum', 'installAgent', 'agentMessaging', 'mistralVibe', 'cost', 'taskType', 'agentTasks', 'hosts', 'stickyNotes', 'panelGit', 'reviewKeys', 'quorumAnyAgent', 'usageAgents', 'feedbackCli', 'taskEdit']);
+    expect(stepsFor('whatsNew', '0.32').map((s) => s.id)).toEqual(['skills', 'autoApprove', 'merged', 'uninstall', 'autoUpdate', 'subjects', 'sourceControl', 'reviewMap', 'lidClosed', 'recordBug', 'quorum', 'installAgent', 'agentMessaging', 'mistralVibe', 'cost', 'taskType', 'agentTasks', 'hosts', 'stickyNotes', 'panelGit', 'reviewKeys', 'quorumAnyAgent', 'usageAgents', 'feedbackCli', 'taskEdit']);
     const step = STEPS.find((s) => s.id === 'skills')!;
     expect(step.since).toBe('0.33');
     expect(targetOf(step, (n) => n === 'settings')).toBe('settings');
@@ -286,7 +286,7 @@ describe('tour versioning', () => {
 
   it('shows the Merged column step to users who saw 0.33', () => {
     expect(modeFor('0.33')).toBe('whatsNew');
-    expect(stepsFor('whatsNew', '0.33').map((s) => s.id)).toEqual(['autoApprove', 'merged', 'uninstall', 'autoUpdate', 'subjects', 'sourceControl', 'reviewMap', 'lidClosed', 'recordBug', 'quorum', 'installAgent', 'agentMessaging', 'mistralVibe', 'cost', 'taskType', 'agentTasks', 'hosts', 'stickyNotes', 'panelGit', 'reviewKeys', 'quorumAnyAgent', 'feedbackCli', 'taskEdit']);
+    expect(stepsFor('whatsNew', '0.33').map((s) => s.id)).toEqual(['autoApprove', 'merged', 'uninstall', 'autoUpdate', 'subjects', 'sourceControl', 'reviewMap', 'lidClosed', 'recordBug', 'quorum', 'installAgent', 'agentMessaging', 'mistralVibe', 'cost', 'taskType', 'agentTasks', 'hosts', 'stickyNotes', 'panelGit', 'reviewKeys', 'quorumAnyAgent', 'usageAgents', 'feedbackCli', 'taskEdit']);
     const step = STEPS.find((s) => s.id === 'merged')!;
     expect(step.since).toBe('0.34');
     expect(targetOf(step, (n) => n === 'merged' || n === 'kanban')).toBe('merged');
@@ -318,7 +318,7 @@ describe('tour keys', () => {
 
 describe('0.36 tour', () => {
   it('shows the shared-window step, then sticky notes, last of 0.36, to a user coming from 0.35', () => {
-    expect(stepsFor('whatsNew', '0.35').map((s) => s.id).slice(-6)).toEqual(['stickyNotes', 'panelGit', 'reviewKeys', 'quorumAnyAgent', 'feedbackCli', 'taskEdit']);
+    expect(stepsFor('whatsNew', '0.35').map((s) => s.id).slice(-7)).toEqual(['stickyNotes', 'panelGit', 'reviewKeys', 'quorumAnyAgent', 'usageAgents', 'feedbackCli', 'taskEdit']);
     const step = STEPS.find((s) => s.id === 'hosts')!;
     expect(targetOf(step, (n) => n === 'host-sections' || n === 'hosts')).toBe('host-sections');
     expect(targetOf(step, (n) => n === 'hosts')).toBe('hosts');
@@ -329,8 +329,8 @@ describe('0.36 tour', () => {
 describe('0.37 tour', () => {
   it('shows the side panel Git tab, the review map keys and the any-agent quorum to a user coming from 0.36, on the tab or else the panel', () => {
     expect(modeFor('0.36')).toBe('whatsNew');
-    expect(stepsFor('whatsNew', '0.36').map((s) => s.id)).toEqual(['panelGit', 'reviewKeys', 'quorumAnyAgent', 'feedbackCli', 'taskEdit']);
-    expect(stepsFor('whatsNew', '0.37').map((s) => s.id)).toEqual(['quorumAnyAgent', 'feedbackCli', 'taskEdit']);
+    expect(stepsFor('whatsNew', '0.36').map((s) => s.id)).toEqual(['panelGit', 'reviewKeys', 'quorumAnyAgent', 'usageAgents', 'feedbackCli', 'taskEdit']);
+    expect(stepsFor('whatsNew', '0.37').map((s) => s.id)).toEqual(['quorumAnyAgent', 'usageAgents', 'feedbackCli', 'taskEdit']);
     const qa = STEPS.find((s) => s.id === 'quorumAnyAgent')!;
     expect(qa.since).toBe('0.38');
     expect(targetOf(qa, (n) => n === 'quorum' || n === 'kanban')).toBe('quorum');
@@ -356,9 +356,9 @@ describe('0.37 tour', () => {
 });
 
 describe('0.38 tour', () => {
-  it('shows the any-agent quorum, choose-the-CLI and task edit steps to a user coming from 0.37, on the Send with… button or else the feedback button', () => {
+  it('shows the any-agent quorum, usage agents, choose-the-CLI and task edit steps to a user coming from 0.37, on the Send with… button or else the feedback button', () => {
     expect(modeFor('0.37')).toBe('whatsNew');
-    expect(stepsFor('whatsNew', '0.37').map((s) => s.id)).toEqual(['quorumAnyAgent', 'feedbackCli', 'taskEdit']);
+    expect(stepsFor('whatsNew', '0.37').map((s) => s.id)).toEqual(['quorumAnyAgent', 'usageAgents', 'feedbackCli', 'taskEdit']);
     const step = STEPS.find((s) => s.id === 'feedbackCli')!;
     expect(step.since).toBe('0.38');
     expect(targetOf(step, (n) => n === 'feedback-cli' || n === 'feedback')).toBe('feedback-cli');
@@ -371,5 +371,12 @@ describe('0.38 tour', () => {
     expect(step.since).toBe('0.38');
     expect(targetOf(step, (n) => n === 'task-edit' || n === 'kanban')).toBe('task-edit');
     expect(targetOf(step, (n) => n === 'kanban')).toBe('kanban');
+  });
+
+  it('shows the usage agents step to users who saw 0.37, on the usage agents dropdown else on the usage chip', () => {
+    const step = STEPS.find((s) => s.id === 'usageAgents')!;
+    expect(step.since).toBe('0.38');
+    expect(targetOf(step, (n) => n === 'usage-agents' || n === 'chips')).toBe('usage-agents');
+    expect(targetOf(step, (n) => n === 'chips')).toBe('chips');
   });
 });

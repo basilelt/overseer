@@ -263,6 +263,32 @@ pub fn sessions(home: &Path) -> Vec<Session> {
     out
 }
 
+pub struct Usage {
+    pub input: u64,
+    pub cached: u64,
+    pub output: u64,
+    pub at: i64,
+    pub model: Option<String>,
+}
+
+pub fn usage(dir: &Path) -> Option<Usage> {
+    let h = head(dir)?;
+    let v = json(&h.generation.join("projection-state.json"), MAX_DOC)?;
+    let s = &v["snapshot"]["session"];
+    let t = &s["tokenUsage"];
+    if !t.is_object() {
+        return None;
+    }
+    let n = |k: &str| t[k].as_u64().unwrap_or(0);
+    Some(Usage {
+        input: n("inputTokens"),
+        cached: n("cachedInputTokens"),
+        output: n("outputTokens"),
+        at: s["updatedAt"].as_i64().unwrap_or(0),
+        model: meta(&dir.join("meta.json")).and_then(|m| m.model),
+    })
+}
+
 pub fn find(home: &Path, session_id: &str) -> Option<PathBuf> {
     session_dir(home, session_id)
 }

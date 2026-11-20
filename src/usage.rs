@@ -466,6 +466,26 @@ fn codex_line(c: &mut Cursor, line: &[u8], b: &mut Batch) {
     }
 }
 
+fn vibe_session(c: &mut Cursor, dir: &Path, fallback_ts: i64, b: &mut Batch) {
+    let Some(u) = crate::vibe::usage(dir) else {
+        return;
+    };
+    let cur = Tokens {
+        input: u.input.saturating_sub(u.cached),
+        output: u.output,
+        cache_read: u.cached,
+        ..Tokens::default()
+    };
+    let delta = cur.minus(&c.last);
+    c.last = cur;
+    if delta.is_zero() {
+        return;
+    }
+    let ts = if u.at > 0 { u.at } else { fallback_ts };
+    let model = u.model.unwrap_or_else(|| "mistral".to_string());
+    b.add(ts, &model, &delta, false, 0);
+}
+
 fn gemini_msg(c: &mut Cursor, v: &Value, b: &mut Batch) {
     if v["type"] != "gemini" {
         return;
@@ -555,6 +575,7 @@ pub struct Dirs {
     pub claude: PathBuf,
     pub codex: PathBuf,
     pub gemini: PathBuf,
+    pub vibe: PathBuf,
 }
 
 struct Found {
@@ -645,6 +666,17 @@ fn discover(d: &Dirs, cutoff: i64) -> Vec<Found> {
             out.push(Found {
                 path: s.path,
                 agent: "gemini",
+                session: s.id,
+                cwd: s.cwd.unwrap_or_default(),
+                sub: false,
+            });
+        }
+    }
+    for s in crate::vibe::sessions(&d.vibe) {
+        if s.activity_ms >= cutoff {
+            out.push(Found {
+                path: s.dir.join("CURRENT"),
+                agent: crate::agents::VIBE,
                 session: s.id,
                 cwd: s.cwd.unwrap_or_default(),
                 sub: false,
@@ -865,6 +897,7 @@ impl Index {
         let Some(t) = self.files.get_mut(path) else {
             return Ok(false);
         };
+        let vibe = t.agent == crate::agents::VIBE;
         let whole = path.extension().is_some_and(|e| e == "json");
         let reset = whole || len < t.cursor.offset;
         let mut b = Batch {
@@ -876,7 +909,11 @@ impl Index {
             t.cursor = Cursor::default();
         }
         let mut c = std::mem::take(&mut t.cursor);
-        if whole {
+        if vibe {
+            if let Some(dir) = path.parent() {
+                vibe_session(&mut c, dir, mtime, &mut b);
+            }
+        } else if whole {
             if let Some(v) = std::fs::read(path)
                 .ok()
                 .and_then(|buf| serde_json::from_slice::<Value>(&buf).ok())
@@ -1253,15 +1290,12 @@ pub fn query(
         .map(|(d, s)| json!({"day": day_label(*d), "usage": s.json()}))
         .collect();
     let mut agent_names: Vec<String> = seen_agents.into_iter().collect();
-    for agent in crate::agents::AGENTS.iter().filter(|a| a.metered) {
-        let a = agent.id;
-        if !agent_names.iter().any(|x| x == a)
-            && (kv_get::<Limits>(conn, &format!("limits.{a}")).is_some()
-                || kv_get::<LimitHit>(conn, &format!("hit.{a}")).is_some()
-                || (q.oauth && kv_get::<Auth>(conn, &format!("oauth.{a}.auth")).is_some())
-                || (agent.transcript == Some(Transcript::Claude) && q.tap.is_some()))
-        {
-            agent_names.push(a.to_string());
+    for agent in crate::agents::AGENTS
+        .iter()
+        .filter(|a| !crate::agents::is_shell(a.id))
+    {
+        if !agent_names.iter().any(|x| x == agent.id) {
+            agent_names.push(agent.id.to_string());
         }
     }
     agent_names.sort();
@@ -1415,7 +1449,7 @@ struct Shared {
 static SHARED: Mutex<Option<Shared>> = Mutex::new(None);
 static WAKE: Condvar = Condvar::new();
 
-pub fn init(state_dir: &Path, claude: PathBuf, codex: PathBuf, gemini: PathBuf) {
+pub fn init(state_dir: &Path, claude: PathBuf, codex: PathBuf, gemini: PathBuf, vibe: PathBuf) {
     let mut g = SHARED.lock().unwrap_or_else(|e| e.into_inner());
     if g.is_none() {
         *g = Some(Shared {
@@ -1426,6 +1460,7 @@ pub fn init(state_dir: &Path, claude: PathBuf, codex: PathBuf, gemini: PathBuf) 
                 claude,
                 codex,
                 gemini,
+                vibe,
             }),
             db: state_dir.join(crate::paths::USAGE_DB),
             started: false,
@@ -1653,6 +1688,7 @@ mod tests {
             claude: d.join("claude"),
             codex: d.join("codex"),
             gemini: d.join("gemini"),
+            vibe: d.join("vibe"),
         };
         std::fs::create_dir_all(dirs.claude.join("projects/-w-app")).unwrap();
         std::fs::create_dir_all(dirs.codex.join("sessions/2026/10/29")).unwrap();
@@ -1717,6 +1753,15 @@ mod tests {
             .unwrap()
             .write_all(s.as_bytes())
             .unwrap();
+    }
+
+    fn agent_of<'a>(v: &'a Value, id: &str) -> &'a Value {
+        v["agents"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|a| a["agent"] == id)
+            .unwrap()
     }
 
     fn real_now() -> i64 {
@@ -1805,8 +1850,88 @@ mod tests {
         assert_eq!(s["groups"][0]["sessionId"], "s1");
         assert_eq!(s["groups"][0]["project"], "app");
 
-        let hit = &v["agents"][0]["limits"]["hit"];
+        let hit = &agent_of(&v, "claude")["limits"]["hit"];
         assert!(hit.is_null());
+        std::fs::remove_dir_all(&d).unwrap();
+    }
+
+    #[test]
+    fn response_lists_every_supported_agent() {
+        let (d, mut idx) = home("allagents");
+        let t = d.join("claude/projects/-w-app/s1.jsonl");
+        std::fs::copy(fixture("claude.jsonl"), &t).unwrap();
+        touch_now(&t);
+        idx.sweep(now(), true, None).unwrap();
+        let v = get(&idx, Range::Today, "agent", 0);
+        let ids: Vec<&str> = v["agents"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|a| a["agent"].as_str().unwrap())
+            .collect();
+        let mut expected: Vec<&str> = crate::agents::AGENTS
+            .iter()
+            .filter(|a| !crate::agents::is_shell(a.id))
+            .map(|a| a.id)
+            .collect();
+        expected.sort_unstable();
+        assert_eq!(ids, expected);
+        assert!(!ids.contains(&"shell"));
+        let vibe = agent_of(&v, "vibe");
+        assert_eq!(vibe["today"]["total"], 0);
+        assert!(vibe["limits"]["source"].is_null());
+        assert!(vibe["limits"]["windows"].as_array().unwrap().is_empty());
+        assert!(vibe["limits"]["hit"].is_null());
+        assert!(agent_of(&v, "claude")["today"]["total"].as_u64().unwrap() > 0);
+        std::fs::remove_dir_all(&d).unwrap();
+    }
+
+    fn vibe_usage(d: &Path, id: &str, generation: u64, input: u64, cached: u64, output: u64) {
+        use crate::vibe::fixture::*;
+        let dir = crate::vibe::fixture::session(
+            &d.join("vibe"),
+            id,
+            meta_json(id, "/w/app", None),
+            generation,
+            &[],
+            "",
+        );
+        std::fs::write(
+            dir.join("generations")
+                .join(format!("{generation:016}"))
+                .join("projection-state.json"),
+            json!({"projection_state_version": 1, "session_id": id, "snapshot_sequence": 1, "watermark": 0,
+                "snapshot": {"history": {"entries": []}, "session": {"id": id, "title": "t",
+                    "tokenUsage": {"cachedInputTokens": cached, "inputTokens": input, "outputTokens": output, "totalTokens": input + output},
+                    "updatedAt": now()}}})
+            .to_string(),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn vibe_sessions_are_metered_from_their_store_by_delta() {
+        let (d, mut idx) = home("vibe");
+        vibe_usage(&d, "v1", 5, 1000, 400, 50);
+        idx.sweep(now(), true, None).unwrap();
+        let v = get(&idx, Range::Today, "agent", 0);
+        assert_eq!(v["totals"]["input"], 600);
+        assert_eq!(v["totals"]["cacheRead"], 400);
+        assert_eq!(v["totals"]["output"], 50);
+        assert_eq!(agent_of(&v, "vibe")["today"]["total"], 1050);
+        let m = get(&idx, Range::Today, "model", 0);
+        assert_eq!(m["groups"][0]["model"], "mistral-medium-3.5");
+
+        vibe_usage(&d, "v1", 6, 1500, 700, 80);
+        idx.sweep(now(), true, None).unwrap();
+        let v = get(&idx, Range::Today, "agent", 0);
+        assert_eq!(v["totals"]["input"], 800);
+        assert_eq!(v["totals"]["cacheRead"], 700);
+        assert_eq!(v["totals"]["output"], 80);
+
+        assert!(!idx.sweep(now(), true, None).unwrap());
+        let v = get(&idx, Range::Today, "agent", 0);
+        assert_eq!(v["totals"]["output"], 80);
         std::fs::remove_dir_all(&d).unwrap();
     }
 
@@ -1842,6 +1967,7 @@ mod tests {
                 claude: d.join("claude"),
                 codex: d.join("codex"),
                 gemini: d.join("gemini"),
+                vibe: d.join("vibe"),
             },
         )
         .unwrap();
@@ -1879,7 +2005,7 @@ mod tests {
         let m = get(&idx, Range::Today, "model", 0);
         assert_eq!(m["groups"][0]["model"], "gpt-5.4");
 
-        let lim = &v["agents"][0]["limits"];
+        let lim = &agent_of(&v, "codex")["limits"];
         assert_eq!(lim["source"], "codex");
         assert_eq!(lim["plan"], "plus");
         let w = lim["windows"].as_array().unwrap();
@@ -2102,9 +2228,9 @@ mod tests {
             .unwrap()
         };
         let v = q(&idx);
-        let hit = &v["agents"][0]["limits"]["hit"];
+        let hit = &agent_of(&v, "claude")["limits"]["hit"];
         assert_eq!(hit["message"], "You've hit your session limit · resets 7pm");
-        assert!(v["agents"][0]["limits"]["windows"]
+        assert!(agent_of(&v, "claude")["limits"]["windows"]
             .as_array()
             .unwrap()
             .is_empty());
@@ -2116,7 +2242,7 @@ mod tests {
             ),
         );
         idx.sweep(real_now(), false, None).unwrap();
-        assert!(q(&idx)["agents"][0]["limits"]["hit"].is_null());
+        assert!(agent_of(&q(&idx), "claude")["limits"]["hit"].is_null());
         std::fs::remove_dir_all(&d).unwrap();
     }
 
@@ -2169,8 +2295,8 @@ mod tests {
                 },
                 &HashMap::new(),
             )
-            .unwrap()["agents"][0]["limits"]
-                .clone()
+            .map(|v| agent_of(&v, "claude")["limits"].clone())
+            .unwrap()
         };
         let lim = |idx: &Index, oauth: bool| {
             query(
@@ -2186,8 +2312,8 @@ mod tests {
                 },
                 &HashMap::new(),
             )
-            .unwrap()["agents"][0]["limits"]
-                .clone()
+            .map(|v| agent_of(&v, "claude")["limits"].clone())
+            .unwrap()
         };
 
         assert!(!refresh_claude(&idx.conn, &claude, now(), |_| unreachable!()).unwrap());
@@ -2266,7 +2392,13 @@ mod tests {
                 ),
             );
         }
-        init(&d, d.join("claude"), d.join("codex"), d.join("gemini"));
+        init(
+            &d,
+            d.join("claude"),
+            d.join("codex"),
+            d.join("gemini"),
+            d.join("vibe"),
+        );
         let req = |q: &[(&str, &str)]| crate::http::Request {
             method: "GET".into(),
             path: "/v1/usage".into(),

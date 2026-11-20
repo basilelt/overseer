@@ -60,3 +60,100 @@ fn codex_plan_spent_on_credits_reaches_the_app() {
     assert_eq!(limits["reached"], Value::Null);
     assert_eq!(limits["hit"], Value::Null);
 }
+
+#[test]
+fn usage_lists_every_supported_cli() {
+    let app = App::new("usage-all-agents", json!({}));
+    let v = wait_for(|| {
+        let (code, v) = app.req(
+            "GET",
+            "/v1/usage?range=today&by=agent&tzOffset=0",
+            Value::Null,
+        );
+        (code == 200).then_some(v)
+    });
+    let ids: Vec<&str> = v["agents"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|a| a["agent"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        ids,
+        ["agy", "amp", "claude", "codex", "copilot", "cursor", "gemini", "opencode", "vibe"]
+    );
+    for a in v["agents"].as_array().unwrap() {
+        assert!(a["today"].is_object(), "{a} has no today totals");
+        assert!(a["limits"].is_object(), "{a} has no limits");
+    }
+    let vibe = v["agents"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|a| a["agent"] == "vibe")
+        .unwrap();
+    assert_eq!(vibe["today"]["total"], 0);
+    assert!(vibe["limits"]["source"].is_null());
+}
+
+#[test]
+fn vibe_session_tokens_reach_the_usage_view() {
+    let app = App::new("usage-vibe", json!({}));
+    let id = "3c18efca-5498-dd2a-59cd-b0454a6d15f5";
+    let dir = app.fx.base.join("home/.vibe/logs/session/unified").join(id);
+    let gen = dir.join("generations/0000000000000012");
+    std::fs::create_dir_all(&gen).unwrap();
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_millis() as u64;
+    std::fs::write(
+        gen.join("manifest.json"),
+        json!({"manifest_version": 1, "session_id": id, "generation": "0000000000000012"})
+            .to_string(),
+    )
+    .unwrap();
+    std::fs::write(
+        gen.join("projection-state.json"),
+        json!({"projection_state_version": 1, "session_id": id, "snapshot_sequence": 12, "watermark": 0,
+            "snapshot": {"history": {"entries": []}, "session": {"id": id,
+                "tokenUsage": {"cachedInputTokens": 800, "inputTokens": 2000, "outputTokens": 90, "totalTokens": 2090},
+                "updatedAt": now}}})
+        .to_string(),
+    )
+    .unwrap();
+    std::fs::write(
+        dir.join("meta.json"),
+        json!({"session_id": id, "parent_session_id": null, "start_time": "2026-11-19T16:38:03.590000+00:00",
+            "environment": {"working_directory": "/w/app"}, "origin_directory": "/w/app", "title": "t",
+            "archived_at": null, "config": {"active_model": "mistral-large-4-0"}})
+        .to_string(),
+    )
+    .unwrap();
+    std::fs::write(
+        dir.join("CURRENT"),
+        json!({"generation": "0000000000000012", "session_id": id, "snapshot_sequence": 12,
+            "store_format": "mistral.vibe.unified-session-store/v1", "store_format_minor": 10})
+        .to_string(),
+    )
+    .unwrap();
+
+    let vibe = wait_for(|| {
+        let (code, v) = app.req(
+            "GET",
+            "/v1/usage?range=today&by=agent&tzOffset=0",
+            Value::Null,
+        );
+        if code != 200 {
+            return None;
+        }
+        v["agents"]
+            .as_array()?
+            .iter()
+            .find(|a| a["agent"] == "vibe" && a["today"]["total"].as_u64() > Some(0))
+            .cloned()
+    });
+    assert_eq!(vibe["today"]["input"], 1200);
+    assert_eq!(vibe["today"]["cacheRead"], 800);
+    assert_eq!(vibe["today"]["output"], 90);
+}

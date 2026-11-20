@@ -1479,7 +1479,13 @@ pub fn run(
         ctx.codex_dir.clone(),
         ctx.gemini_dir.clone(),
     );
-    crate::usage::init(&state_dir, cd.clone(), xd.clone(), gd.clone());
+    crate::usage::init(
+        &state_dir,
+        cd.clone(),
+        xd.clone(),
+        gd.clone(),
+        crate::vibe::home(),
+    );
     crate::github::resume_pending(&state_dir);
     crate::dlog::supervise("transcripts", move || {
         watch_transcripts(cd.clone(), xd.clone(), gd.clone())
