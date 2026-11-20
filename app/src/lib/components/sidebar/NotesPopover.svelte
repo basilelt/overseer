@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { holdPopup } from '../../popup.svelte';
   import { dismiss } from '../../dismiss';
   import { captureFocus } from '../../focus';
   import { isNotesTrigger } from '../../notes-trigger';
@@ -15,6 +16,7 @@
   import { isSubmitChord } from '../../chord';
 
   const restore = captureFocus();
+  $effect(holdPopup);
   let box: HTMLDivElement | undefined = $state();
   let pos = $state({ left: 0, top: 0 });
   let draft = $state('');
