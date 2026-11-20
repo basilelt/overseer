@@ -21,7 +21,7 @@
   import { colorPalette, customColors, resolvedTheme, saveSettings, setSystemDark, settings } from './lib/settings/settings.svelte';
   import Resizer from './lib/components/ui/Resizer.svelte';
   import Boundary from './lib/components/ui/Boundary.svelte';
-  import { PANEL, SIDEBAR, clampWidth, leftBarBounds, leftBarDrag, leftBarWidth } from './lib/resize';
+  import { PANEL, SIDEBAR, clampWidth, leftBarBounds, leftBarDrag, leftBarMode, leftBarWidth } from './lib/resize';
   import { t } from './lib/i18n.svelte';
   import { startUpdater } from './lib/updater.svelte';
   import { isMainWindow } from './lib/window';
@@ -47,13 +47,13 @@
   let panelW = $state(clampWidth(settings.panelWidth, PANEL));
 
   function onLeftChange(w: number) {
-    const next = leftBarDrag(app.sidebarOpen, w, sidebarW);
-    app.sidebarOpen = next.open;
+    const next = leftBarDrag(barIsSidebar, w, sidebarW);
+    if (live) app.liveExpanded = next.open;
     if (next.open) sidebarW = next.width;
   }
 
   function onLeftCommit(w: number) {
-    if (app.sidebarOpen) saveSettings({ sidebarWidth: w });
+    if (barIsSidebar) saveSettings({ sidebarWidth: w });
   }
 
   let shownAgents = $state(app.view !== 'kanban');
@@ -83,6 +83,8 @@
   const rail = () => import('./lib/components/sidebar/SessionRail.svelte');
   const sidePanel = preload(() => import('./lib/components/panel/SidePanel.svelte'));
   const live = $derived(liveOn());
+  const bar = $derived(leftBarMode(app.sidebarOpen, live, app.liveExpanded));
+  const barIsSidebar = $derived(bar === 'sidebar');
 
   $effect(() => {
     tour.setReady(!isPhone());
@@ -195,13 +197,13 @@
     {/if}
     {#if shownAgents}
     <div class="views" class:hidden={app.view === 'kanban'}>
-      {#if app.sidebarOpen || live}
-        {#if app.sidebarOpen}
+      {#if bar !== 'none'}
+        {#if barIsSidebar}
           <Boundary name="sidebar" width="var(--sidebar-w, 288px)"><Sidebar /></Boundary>
         {:else}
           <Boundary name="rail">{#await rail() then { default: SessionRail }}<SessionRail />{/await}</Boundary>
         {/if}
-        <Resizer width={leftBarWidth(app.sidebarOpen, sidebarW)} bounds={leftBarBounds(app.sidebarOpen)} side="left" label={t('layout.resizeSidebar')} onchange={onLeftChange} oncommit={onLeftCommit} />
+        <Resizer width={leftBarWidth(barIsSidebar, sidebarW)} bounds={leftBarBounds(barIsSidebar)} side="left" label={t('layout.resizeSidebar')} onchange={onLeftChange} oncommit={onLeftCommit} />
       {/if}
       <main>
         <Boundary name="workspace">

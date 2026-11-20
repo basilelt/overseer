@@ -4,7 +4,7 @@ import { ui } from '../mobile/ui.svelte';
 import { beside } from '../review/beside.svelte';
 import { app } from '../state.svelte';
 import { EMPTY_LAYOUT, allTabs, workspace } from '../workspace/workspace.svelte';
-import { live, liveOn, liveTarget, sessionTarget } from './live.svelte';
+import { live, liveOn, liveTarget, sessionTarget, toggleLeftBar } from './live.svelte';
 import { restoreLiveReview, toggleLiveReview } from './live-actions';
 import { primaryAction } from './scm.svelte';
 import type { ScmStatus } from './types';
@@ -25,6 +25,7 @@ beforeEach(() => {
   app.selectedKey = 'line:ln_03';
   app.liveReview = false;
   app.sidebarOpen = true;
+  app.liveExpanded = false;
   live.worktree = null;
 });
 
@@ -35,6 +36,7 @@ afterEach(() => {
   app.liveReview = false;
   app.selectedKey = null;
   app.sidebarOpen = true;
+  app.liveExpanded = false;
   workspace.layout = EMPTY_LAYOUT;
   beside.key = null;
   live.worktree = null;
@@ -96,35 +98,43 @@ describe('live review', () => {
     expect(liveOn()).toBe(false);
   });
 
-  it('collapses the left bar to the rail while on and restores it when off', () => {
-    expect(app.sidebarOpen).toBe(true);
-    toggleLiveReview();
-    expect(liveOn()).toBe(true);
-    expect(app.sidebarOpen).toBe(false);
-    app.sidebarOpen = true; // expanded again from the rail, e.g. with the sidebar toggle
-    toggleLiveReview();
-    expect(liveOn()).toBe(false);
-    expect(app.sidebarOpen).toBe(true);
-  });
-
-  it('keeps a hidden sidebar hidden after the live review ends', () => {
+  it('shows the rail while on and leaves the sidebar setting alone', () => {
     app.sidebarOpen = false;
     toggleLiveReview();
     expect(app.sidebarOpen).toBe(false);
+    expect(app.liveExpanded).toBe(false);
     toggleLiveReview();
     expect(app.sidebarOpen).toBe(false);
   });
 
-  it('collapses the left bar when the live review comes back after a reload', () => {
+  it('toggles the rail and the sidebar with the left bar toggle during a live review', () => {
     toggleLiveReview();
+    toggleLeftBar();
+    expect(app.liveExpanded).toBe(true);
+    expect(app.sidebarOpen).toBe(true);
+    toggleLeftBar();
+    expect(app.liveExpanded).toBe(false);
+    expect(app.sidebarOpen).toBe(true);
+  });
+
+  it('toggles the sidebar outside a live review, also while the flag is set but the review is off screen', () => {
+    toggleLiveReview();
+    app.view = 'browser';
+    toggleLeftBar();
+    expect(app.sidebarOpen).toBe(false);
+    expect(app.liveExpanded).toBe(false);
+  });
+
+  it('starts on the rail after a reload and when the review ends', () => {
+    toggleLiveReview();
+    app.liveExpanded = true;
     app.liveReview = false;
     beside.key = null;
-    app.sidebarOpen = true;
     expect(restoreLiveReview()).toBe(true);
-    expect(liveOn()).toBe(true);
-    expect(app.sidebarOpen).toBe(false);
+    expect(app.liveExpanded).toBe(false);
+    app.liveExpanded = true;
     toggleLiveReview();
-    expect(app.sidebarOpen).toBe(true);
+    expect(app.liveExpanded).toBe(false);
   });
 
   it('targets the picked worktree for git and the session for the review', () => {

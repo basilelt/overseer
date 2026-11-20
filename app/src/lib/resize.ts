@@ -41,3 +41,10 @@ export function leftBarDrag(open: boolean, w: number, sidebarW: number): LeftBar
   if (open) return { open: true, width: w };
   return w > RAIL_W ? { open: true, width: clampWidth(w, SIDEBAR) } : { open: false, width: RAIL_W };
 }
+
+export type LeftBarMode = 'sidebar' | 'rail' | 'none';
+
+export function leftBarMode(sidebarOpen: boolean, live: boolean, expanded: boolean): LeftBarMode {
+  if (live) return expanded ? 'sidebar' : 'rail';
+  return sidebarOpen ? 'sidebar' : 'none';
+}

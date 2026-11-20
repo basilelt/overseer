@@ -23,3 +23,8 @@ export function sessionTarget(): ScmTarget | null {
   if (t?.worktree) return { worktree: t.worktree };
   return null;
 }
+
+export function toggleLeftBar() {
+  if (liveOn()) app.liveExpanded = !app.liveExpanded;
+  else app.sidebarOpen = !app.sidebarOpen;
+}

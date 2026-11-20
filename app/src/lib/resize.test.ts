@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { PANEL, RAIL, RAIL_W, SIDEBAR, clampWidth, dragWidth, leftBarBounds, leftBarDrag, leftBarWidth } from './resize';
+import { PANEL, RAIL, RAIL_W, SIDEBAR, clampWidth, dragWidth, leftBarBounds, leftBarDrag, leftBarMode, leftBarWidth } from './resize';
 
 describe('pane widths', () => {
   it('falls back to the default for missing or broken values', () => {
@@ -42,5 +42,18 @@ describe('collapsed left bar (live review rail)', () => {
   it('keeps resizing the sidebar while it is open', () => {
     expect(leftBarDrag(true, 300, 300)).toEqual({ open: true, width: 300 });
     expect(leftBarDrag(true, 10, 300)).toEqual({ open: true, width: 10 });
+  });
+});
+
+describe('left bar mode', () => {
+  it('follows the sidebar setting outside a live review', () => {
+    expect(leftBarMode(true, false, false)).toBe('sidebar');
+    expect(leftBarMode(false, false, true)).toBe('none');
+  });
+
+  it('is the rail during a live review until it is expanded, whatever the sidebar setting', () => {
+    expect(leftBarMode(true, true, false)).toBe('rail');
+    expect(leftBarMode(false, true, false)).toBe('rail');
+    expect(leftBarMode(false, true, true)).toBe('sidebar');
   });
 });
