@@ -137,8 +137,34 @@ pub fn shorten(s: &str, max: usize) -> String {
     )
 }
 
+pub fn plain(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut rest = s;
+    while let Some(i) = rest.find('[') {
+        let (head, tail) = rest.split_at(i);
+        let link = tail.find("](").and_then(|m| {
+            let end = tail[m..].find(')')? + m;
+            (!tail[1..m].contains('\n')).then_some((m, end))
+        });
+        match link {
+            Some((m, end)) => {
+                out.push_str(head.strip_suffix('!').unwrap_or(head));
+                out.push_str(&tail[1..m]);
+                rest = &tail[end + 1..];
+            }
+            None => {
+                out.push_str(head);
+                out.push('[');
+                rest = &tail[1..];
+            }
+        }
+    }
+    out.push_str(rest);
+    out.replace("**", "").replace("__", "").replace('`', "")
+}
+
 pub fn title_from_prompt(s: &str) -> Option<String> {
-    let clean = clean_prompt(s)?;
+    let clean = plain(&clean_prompt(s)?);
     let line = clean
         .lines()
         .map(|l| {
@@ -163,6 +189,19 @@ pub fn title_from_prompt(s: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn plain_drops_markdown_links_emphasis_and_code() {
+        assert_eq!(
+            plain("Here: [docs](http://x.y/z) and **bold** `code`"),
+            "Here: docs and bold code"
+        );
+        assert_eq!(plain("![shot](a.png) [broken(link"), "shot [broken(link");
+        assert_eq!(
+            title_from_prompt("fix [the login](http://a.b/c) loop").as_deref(),
+            Some("Fix the login loop")
+        );
+    }
 
     #[test]
     fn strips_system_reminders_and_command_blocks() {

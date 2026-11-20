@@ -1,5 +1,5 @@
 import { tick } from 'svelte';
-import { activityDelay } from './activity';
+import { activityDelay, plainSnippet } from './activity';
 import { busy } from './diag/busy';
 import { FALLBACK_AGENTS, isAgentId, isShellId, isShellItem, sessionsAvailable } from './agents';
 import { parentOverlay } from './overlay-route';
@@ -979,7 +979,7 @@ function briefs(activity: Snapshot['activity']) {
 
 export function statusLine(a: Activity): string | undefined {
   const last = a.workLog.at(-1);
-  if (a.needsInput || !last) return a.lastAssistantText.split('\n')[0].replace(/`/g, '') || undefined;
+  if (a.needsInput || !last) return plainSnippet(a.lastAssistantText.split('\n')[0]) || undefined;
   return last.label;
 }
 

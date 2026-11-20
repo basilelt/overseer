@@ -132,6 +132,7 @@ describe('statusLine', () => {
     expect(statusLine(act({ needsInput: true, workLog: [{ label: 'x' }] as Activity['workLog'], lastAssistantText: 'Which file?\nmore' }))).toBe('Which file?');
     expect(statusLine(act({ lastAssistantText: 'Done.\nDetails' }))).toBe('Done.');
     expect(statusLine(act({ lastAssistantText: 'See `docs/a.md` and ``x``' }))).toBe('See docs/a.md and x');
+    expect(statusLine(act({ lastAssistantText: 'Here: [docs](http://a.b/c) now' }))).toBe('Here: docs now');
   });
 
   it('is empty when there is nothing to say', () => {

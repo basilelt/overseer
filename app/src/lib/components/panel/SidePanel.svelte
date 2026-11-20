@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount, untrack } from 'svelte';
+  import { plainSnippet } from '../../activity';
   import { t, type Key } from '../../i18n.svelte';
   import { chipBeside, chipLabel } from '../../profiles/profiles';
   import { app } from '../../state.svelte';
@@ -225,7 +226,7 @@
       {#if act}
         {#if act.lastAssistantText}
           <Section id="last" order={orderOf('last')} title={t('panel.lastMessage')}>
-            <p class="msg">{act.lastAssistantText.replace(/`/g, '')}</p>
+            <p class="msg">{plainSnippet(act.lastAssistantText)}</p>
           </Section>
         {/if}
         {#if act.workLog.length}
