@@ -4,7 +4,7 @@ import { ui } from '../mobile/ui.svelte';
 import { beside } from '../review/beside.svelte';
 import { app } from '../state.svelte';
 import { EMPTY_LAYOUT, allTabs, workspace } from '../workspace/workspace.svelte';
-import { live, liveOn, liveTarget, sessionTarget, toggleLeftBar } from './live.svelte';
+import { live, liveOn, liveTarget, sessionTarget, setLiveExpanded, toggleLeftBar } from './live.svelte';
 import { restoreLiveReview, toggleLiveReview } from './live-actions';
 import { primaryAction } from './scm.svelte';
 import type { ScmStatus } from './types';
@@ -125,14 +125,45 @@ describe('live review', () => {
     expect(app.liveExpanded).toBe(false);
   });
 
-  it('starts on the rail after a reload and when the review ends', () => {
+  it('keeps the expanded left bar after a reload', () => {
     toggleLiveReview();
-    app.liveExpanded = true;
+    toggleLeftBar();
+    expect(app.liveExpanded).toBe(true);
+    app.liveReview = false;
+    app.liveExpanded = false;
+    beside.key = null;
+    expect(restoreLiveReview()).toBe(true);
+    expect(app.liveExpanded).toBe(true);
+  });
+
+  it('keeps the collapsed rail after a reload', () => {
+    toggleLiveReview();
+    toggleLeftBar();
+    toggleLeftBar();
     app.liveReview = false;
     beside.key = null;
     expect(restoreLiveReview()).toBe(true);
     expect(app.liveExpanded).toBe(false);
-    app.liveExpanded = true;
+  });
+
+  it('stores the rail state of a drag too', () => {
+    toggleLiveReview();
+    setLiveExpanded(true);
+    app.liveExpanded = false;
+    expect(restoreLiveReview()).toBe(true);
+    expect(app.liveExpanded).toBe(true);
+  });
+
+  it('starts on the rail when a live review starts or ends', () => {
+    toggleLiveReview();
+    toggleLeftBar();
+    toggleLiveReview();
+    expect(app.liveExpanded).toBe(false);
+    expect(restoreLiveReview()).toBe(false);
+    toggleLiveReview();
+    expect(app.liveExpanded).toBe(false);
+    toggleLeftBar();
+    toggleLiveReview();
     toggleLiveReview();
     expect(app.liveExpanded).toBe(false);
   });

@@ -456,6 +456,59 @@ fn a_task_is_edited_through_patch_with_the_daemons_field_validations() {
 }
 
 #[test]
+fn a_task_in_testing_restarts_with_the_agent_it_was_edited_to_in_the_same_worktree() {
+    let app = App::new("editagent", json!({"autoConcurrency": 0}));
+    let wt = app.fx.wt.to_string_lossy().into_owned();
+    let t = app.ok(
+        "POST",
+        "/v1/tasks",
+        json!({"title": "swap", "description": "", "project": wt, "agent": "claude"}),
+    );
+    let id = t["id"].as_str().unwrap().to_string();
+    let s = app.ok("POST", &format!("/v1/tasks/{id}/start"), json!({}));
+    let term = s["termId"].as_str().unwrap().to_string();
+    let wtp = s["worktreePath"].as_str().unwrap().to_string();
+    let mut ws = app.ws(&term);
+    read_until(&mut ws, "❯");
+    send(&mut ws, "done\r");
+    wait_for(|| (app.task(&id)["status"] == "in_testing").then_some(()));
+    app.ok(
+        "POST",
+        &format!("/v1/terms/{term}/kill"),
+        json!({"confirm": true}),
+    );
+    wait_for(|| {
+        (app.task(&id)["termId"] != term.as_str())
+            .then_some(())
+            .or_else(|| {
+                let v = app.ok("GET", &format!("/v1/terms/{term}"), Value::Null);
+                (v["exited"] == true || v["alive"] == false).then_some(())
+            })
+    });
+    let before = stub_log(&app);
+    let sessions = before.matches("--session-id").count();
+    app.ok(
+        "PATCH",
+        &format!("/v1/tasks/{id}"),
+        json!({"agent": "codex", "model": "gpt-5.4", "effort": "high"}),
+    );
+    let r = app.ok("POST", &format!("/v1/tasks/{id}/start"), json!({}));
+    assert_eq!(r["agent"], "codex");
+    assert_eq!(r["branch"], "task/1-swap");
+    assert_eq!(r["worktreePath"], wtp.as_str());
+    assert!(r.get("lineId").is_none() || r["lineId"].is_null());
+    wait(|| stub_log(&app).contains("-m gpt-5.4"));
+    let log = stub_log(&app);
+    let last = log.lines().last().unwrap();
+    assert!(last.contains("--ask-for-approval never"), "{last}");
+    assert!(
+        !last.contains("--session-id") && !last.contains("--resume"),
+        "{last}"
+    );
+    assert_eq!(log.matches("--session-id").count(), sessions, "{log}");
+}
+
+#[test]
 fn a_websocket_head_that_arrives_late_still_attaches() {
     let app = App::new("latehead", json!({}));
     let wt = app.fx.wt.to_string_lossy().into_owned();

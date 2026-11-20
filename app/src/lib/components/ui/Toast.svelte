@@ -5,7 +5,7 @@
 {#if app.toast}
   {@const action = app.toast.action}
   {@const progress = app.toast.progress}
-  <div class="toast" class:error={app.toast.kind === 'error'} role="status">
+  <div class="toast" data-toast class:error={app.toast.kind === 'error'} role="status">
     <span class="text">{app.toast.text}</span>
     {#if progress !== undefined}
       <span class="pct">{Math.round(progress * 100)}%</span>

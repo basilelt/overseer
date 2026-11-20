@@ -1,6 +1,7 @@
 import { app } from '../state.svelte';
 import { beside } from '../review/beside.svelte';
 import { parseReviewKey } from '../review/keys';
+import { removeItem, writeItem, KEY_LIVE_EXPANDED } from '../storage';
 import type { ScmTarget } from './types';
 
 export const live = $state<{ worktree: string | null }>({ worktree: null });
@@ -24,7 +25,13 @@ export function sessionTarget(): ScmTarget | null {
   return null;
 }
 
+export function setLiveExpanded(open: boolean) {
+  app.liveExpanded = open;
+  if (open) writeItem(KEY_LIVE_EXPANDED, '1');
+  else removeItem(KEY_LIVE_EXPANDED);
+}
+
 export function toggleLeftBar() {
-  if (liveOn()) app.liveExpanded = !app.liveExpanded;
+  if (liveOn()) setLiveExpanded(!app.liveExpanded);
   else app.sidebarOpen = !app.sidebarOpen;
 }
