@@ -9,7 +9,7 @@ export interface PlanLine {
 }
 
 export function planLines(p: CleanupPlan): PlanLine[] {
-  if (p.refused) return [{ kind: 'refused', label: `${gt('refused')}: ${p.refused}` }];
+  if (p.refused) return [{ kind: 'refused', label: `${gt(p.failed ? 'previewFailed' : 'refused')}: ${p.refused}` }];
   const out: PlanLine[] = [];
   for (const r of p.remove) {
     if (r.kind === 'worktree') out.push({ kind: 'remove', label: gt('removeDir') });
@@ -36,7 +36,7 @@ export async function planAll(api: Pick<GitApi, 'cleanup'>, targets: { id: strin
       try {
         out[i] = await api.cleanup(id, true, project);
       } catch (e) {
-        out[i] = { dryRun: true, id, refused: String((e as Error)?.message ?? e), remove: [], keep: [] };
+        out[i] = { dryRun: true, id, refused: String((e as Error)?.message ?? e), remove: [], keep: [], failed: true };
       }
     }
   };

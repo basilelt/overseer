@@ -1330,6 +1330,7 @@ export const core = {
   'git.prune': 'Prune missing worktree',
   'git.keep': 'Keep',
   'git.refused': 'Refused',
+  'git.previewFailed': 'Could not check',
   'git.confirmCleanup': 'Clean up {n}',
   'git.cleanedOne': '1 worktree cleaned up',
   'git.cleaned':'{n} worktrees cleaned up',

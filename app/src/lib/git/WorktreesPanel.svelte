@@ -16,7 +16,7 @@
   import { gt, type GKey } from './strings';
   import { openReview } from '../review/open';
   import type { Worktree, WorktreeList } from './types';
-  import { cleanable, formatSize, listFor, sortWorktrees, unused } from './view';
+  import { cleanable, formatSize, listFor, needsReload, sortWorktrees, unused } from './view';
 
   let { projectPath }: { projectPath: string } = $props();
 
@@ -43,10 +43,14 @@
     }
   });
 
+  let shown: string | null = null;
   $effect(() => {
-    projectPath;
+    const path = projectPath;
+    const phase = app.conn.phase;
+    if (!app.client || !needsReload(path, shown, phase)) return;
     untrack(() => {
-      data = null;
+      if (path !== shown) data = null;
+      shown = path;
       load();
     });
   });

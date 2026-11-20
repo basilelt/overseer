@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { DaemonError } from '../daemon/client';
-import { PLAN_CONCURRENCY, cleanupTargets, planAll } from './cleanup';
+import { PLAN_CONCURRENCY, cleanupTargets, planAll, planLines } from './cleanup';
 import type { CleanupPlan } from './types';
 
 const ok = (id: string): CleanupPlan => ({ dryRun: true, id, refused: null, remove: [{ kind: 'worktree', path: id }], keep: [] });
@@ -49,6 +49,7 @@ describe('planAll', () => {
     const plans = await planAll(api, targets(3));
     expect(plans[1]).toMatchObject({ id: '/w/1', refused: expect.stringContaining('database is locked'), remove: [] });
     expect(cleanupTargets(plans)).toEqual(['/w/0', '/w/2']);
+    expect(planLines(plans[1])).toEqual([{ kind: 'refused', label: 'Could not check: database is locked' }]);
   });
 
   it('returns nothing for no worktree', async () => {
