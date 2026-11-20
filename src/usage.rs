@@ -1252,16 +1252,16 @@ pub fn query(
         .iter()
         .map(|(d, s)| json!({"day": day_label(*d), "usage": s.json()}))
         .collect();
+    // Every CLI Overseer supports gets an entry, so the app can list them all
+    // (and the user can hide the ones they do not use); seen_agents already
+    // covers the agents that have usage rows.
     let mut agent_names: Vec<String> = seen_agents.into_iter().collect();
-    for agent in crate::agents::AGENTS.iter().filter(|a| a.metered) {
-        let a = agent.id;
-        if !agent_names.iter().any(|x| x == a)
-            && (kv_get::<Limits>(conn, &format!("limits.{a}")).is_some()
-                || kv_get::<LimitHit>(conn, &format!("hit.{a}")).is_some()
-                || (q.oauth && kv_get::<Auth>(conn, &format!("oauth.{a}.auth")).is_some())
-                || (agent.transcript == Some(Transcript::Claude) && q.tap.is_some()))
-        {
-            agent_names.push(a.to_string());
+    for agent in crate::agents::AGENTS
+        .iter()
+        .filter(|a| !crate::agents::is_shell(a.id))
+    {
+        if !agent_names.iter().any(|x| x == agent.id) {
+            agent_names.push(agent.id.to_string());
         }
     }
     agent_names.sort();
@@ -1719,6 +1719,15 @@ mod tests {
             .unwrap();
     }
 
+    fn agent_of<'a>(v: &'a Value, id: &str) -> &'a Value {
+        v["agents"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|a| a["agent"] == id)
+            .unwrap()
+    }
+
     fn real_now() -> i64 {
         crate::util::now_ms()
     }
@@ -1805,8 +1814,41 @@ mod tests {
         assert_eq!(s["groups"][0]["sessionId"], "s1");
         assert_eq!(s["groups"][0]["project"], "app");
 
-        let hit = &v["agents"][0]["limits"]["hit"];
+        let hit = &agent_of(&v, "claude")["limits"]["hit"];
         assert!(hit.is_null());
+        std::fs::remove_dir_all(&d).unwrap();
+    }
+
+    #[test]
+    fn response_lists_every_supported_agent() {
+        let (d, mut idx) = home("allagents");
+        let t = d.join("claude/projects/-w-app/s1.jsonl");
+        std::fs::copy(fixture("claude.jsonl"), &t).unwrap();
+        touch_now(&t);
+        idx.sweep(now(), true, None).unwrap();
+        let v = get(&idx, Range::Today, "agent", 0);
+        let ids: Vec<&str> = v["agents"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|a| a["agent"].as_str().unwrap())
+            .collect();
+        let mut expected: Vec<&str> = crate::agents::AGENTS
+            .iter()
+            .filter(|a| !crate::agents::is_shell(a.id))
+            .map(|a| a.id)
+            .collect();
+        expected.sort_unstable();
+        assert_eq!(ids, expected);
+        assert!(!ids.contains(&"shell"));
+        // An agent with no usage and no stored limits still gets today and limits entries.
+        let vibe = agent_of(&v, "vibe");
+        assert_eq!(vibe["today"]["total"], 0);
+        assert!(vibe["limits"]["source"].is_null());
+        assert!(vibe["limits"]["windows"].as_array().unwrap().is_empty());
+        assert!(vibe["limits"]["hit"].is_null());
+        // The agent with usage still reports it.
+        assert!(agent_of(&v, "claude")["today"]["total"].as_u64().unwrap() > 0);
         std::fs::remove_dir_all(&d).unwrap();
     }
 
@@ -1879,7 +1921,7 @@ mod tests {
         let m = get(&idx, Range::Today, "model", 0);
         assert_eq!(m["groups"][0]["model"], "gpt-5.4");
 
-        let lim = &v["agents"][0]["limits"];
+        let lim = &agent_of(&v, "codex")["limits"];
         assert_eq!(lim["source"], "codex");
         assert_eq!(lim["plan"], "plus");
         let w = lim["windows"].as_array().unwrap();
@@ -2102,9 +2144,9 @@ mod tests {
             .unwrap()
         };
         let v = q(&idx);
-        let hit = &v["agents"][0]["limits"]["hit"];
+        let hit = &agent_of(&v, "claude")["limits"]["hit"];
         assert_eq!(hit["message"], "You've hit your session limit · resets 7pm");
-        assert!(v["agents"][0]["limits"]["windows"]
+        assert!(agent_of(&v, "claude")["limits"]["windows"]
             .as_array()
             .unwrap()
             .is_empty());
@@ -2116,7 +2158,7 @@ mod tests {
             ),
         );
         idx.sweep(real_now(), false, None).unwrap();
-        assert!(q(&idx)["agents"][0]["limits"]["hit"].is_null());
+        assert!(agent_of(&q(&idx), "claude")["limits"]["hit"].is_null());
         std::fs::remove_dir_all(&d).unwrap();
     }
 
@@ -2169,8 +2211,8 @@ mod tests {
                 },
                 &HashMap::new(),
             )
-            .unwrap()["agents"][0]["limits"]
-                .clone()
+            .map(|v| agent_of(&v, "claude")["limits"].clone())
+            .unwrap()
         };
         let lim = |idx: &Index, oauth: bool| {
             query(
@@ -2186,8 +2228,8 @@ mod tests {
                 },
                 &HashMap::new(),
             )
-            .unwrap()["agents"][0]["limits"]
-                .clone()
+            .map(|v| agent_of(&v, "claude")["limits"].clone())
+            .unwrap()
         };
 
         assert!(!refresh_claude(&idx.conn, &claude, now(), |_| unreachable!()).unwrap());

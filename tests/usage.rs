@@ -60,3 +60,39 @@ fn codex_plan_spent_on_credits_reaches_the_app() {
     assert_eq!(limits["reached"], Value::Null);
     assert_eq!(limits["hit"], Value::Null);
 }
+
+#[test]
+fn usage_lists_every_supported_cli() {
+    let app = App::new("usage-all-agents", json!({}));
+    let v = wait_for(|| {
+        let (code, v) = app.req(
+            "GET",
+            "/v1/usage?range=today&by=agent&tzOffset=0",
+            Value::Null,
+        );
+        (code == 200).then_some(v)
+    });
+    let ids: Vec<&str> = v["agents"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|a| a["agent"].as_str().unwrap())
+        .collect();
+    // Every CLI Overseer supports gets an entry, the shell does not, sorted by id.
+    assert_eq!(
+        ids,
+        ["agy", "amp", "claude", "codex", "copilot", "cursor", "gemini", "opencode", "vibe"]
+    );
+    for a in v["agents"].as_array().unwrap() {
+        assert!(a["today"].is_object(), "{a} has no today totals");
+        assert!(a["limits"].is_object(), "{a} has no limits");
+    }
+    let vibe = v["agents"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|a| a["agent"] == "vibe")
+        .unwrap();
+    assert_eq!(vibe["today"]["total"], 0);
+    assert!(vibe["limits"]["source"].is_null());
+}

@@ -22,6 +22,8 @@ function setup(visible = { v: true }) {
   return { feed, client, calls, subscribe, emit: (type: string) => emit({ id: '1', type: type as DaemonEvent['type'], at: '', data: {} }) };
 }
 
+const claudeOf = (r: UsageResponse) => r.agents.find((a) => a.agent === 'claude')!;
+
 describe('usage feed', () => {
   beforeEach(() => vi.useFakeTimers());
   afterEach(() => vi.useRealTimers());
@@ -31,7 +33,8 @@ describe('usage feed', () => {
     const stop = s.feed.use('local:', s.client, s.subscribe, { range: 'today', by: 'agent' });
     await vi.runOnlyPendingTimersAsync();
     expect(s.calls).toEqual(['/v1/usage?range=today&by=agent&tzOffset=60']);
-    expect(s.feed.data?.agents.length).toBe(2);
+    expect(s.feed.data?.agents.length).toBe(9);
+    expect(s.feed.data?.agents.map((a) => a.agent)).toEqual(['agy', 'amp', 'claude', 'codex', 'copilot', 'cursor', 'gemini', 'opencode', 'vibe']);
     s.emit('line.activity');
     s.emit('usage.updated');
     s.emit('usage.updated');
@@ -212,7 +215,7 @@ function limited(resetsAt: number): UsageResponse {
     indexing: false,
     agents: [
       {
-        ...base.agents[0],
+        ...claudeOf(base),
         limits: {
           source: 'claude',
           windows: [{ key: '5h', windowMinutes: 300, usedPercent: 40, resetsAt: new Date(resetsAt).toISOString(), stale: false }],

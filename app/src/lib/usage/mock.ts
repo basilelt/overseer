@@ -1,4 +1,5 @@
-import type { UsageLimits, UsageResponse, UsageTotals } from './types';
+import { AGENT_IDS, isAgentId } from '../agents';
+import type { UsageAgent, UsageLimits, UsageResponse, UsageTotals } from './types';
 
 const tot = (total: number, cost: number | null, messages: number): UsageTotals => ({
   input: Math.round(total * 0.01),
@@ -40,36 +41,45 @@ export function mockUsage(qs: string, now = Date.now()): UsageResponse {
     totals: tot(sum, sum / 1e6 * 0.3, 900),
     days,
     groups,
-    agents: [
-      { agent: 'claude', today: tot(days[n - 1].usage.total * 0.7, 6.1, 140), limits: claudeLimits(q.get('claudeLimits') === '1', now, reset) },
-      {
-        agent: 'codex',
-        today: tot(days[n - 1].usage.total * 0.3, 1.2, 60),
-        limits: codexCredits(q)
-          ? {
-              source: 'codex',
-              observedAt: new Date(now - 120_000).toISOString(),
-              plan: 'go',
-              windows: [{ key: 'mo', windowMinutes: 43200, usedPercent: 100, resetsAt: reset(500), stale: false }],
-              hit: null,
-              credits: { hasCredits: true, unlimited: false, balance: 1272.18 },
-              reached: null,
-              via: 'codex',
-            }
-          : {
-              source: 'codex',
-              observedAt: new Date(now - 120_000).toISOString(),
-              plan: 'plus',
-              windows: [
-                { key: '5h', windowMinutes: 300, usedPercent: 82, resetsAt: reset(2.2), stale: false },
-                { key: 'wk', windowMinutes: 10080, usedPercent: 38, resetsAt: reset(80), stale: false },
-              ],
-              hit: null,
-            },
-      },
-    ],
+    agents: allAgents(q, now, days[n - 1].usage.total, reset),
     indexing: false,
   };
+}
+
+// Mirrors the daemon: every supported CLI except the shell gets an entry, sorted
+// by id; agents without usage or limits get zeroed totals and empty limits.
+function allAgents(q: URLSearchParams, now: number, todayTotal: number, reset: (h: number) => string): UsageAgent[] {
+  const withData: Record<string, UsageAgent> = {
+    claude: { agent: 'claude', today: tot(todayTotal * 0.7, 6.1, 140), limits: claudeLimits(q.get('claudeLimits') === '1', now, reset) },
+    codex: {
+      agent: 'codex',
+      today: tot(todayTotal * 0.3, 1.2, 60),
+      limits: codexCredits(q)
+        ? {
+            source: 'codex',
+            observedAt: new Date(now - 120_000).toISOString(),
+            plan: 'go',
+            windows: [{ key: 'mo', windowMinutes: 43200, usedPercent: 100, resetsAt: reset(500), stale: false }],
+            hit: null,
+            credits: { hasCredits: true, unlimited: false, balance: 1272.18 },
+            reached: null,
+            via: 'codex',
+          }
+        : {
+            source: 'codex',
+            observedAt: new Date(now - 120_000).toISOString(),
+            plan: 'plus',
+            windows: [
+              { key: '5h', windowMinutes: 300, usedPercent: 82, resetsAt: reset(2.2), stale: false },
+              { key: 'wk', windowMinutes: 10080, usedPercent: 38, resetsAt: reset(80), stale: false },
+            ],
+            hit: null,
+          },
+    },
+  };
+  return AGENT_IDS.filter(isAgentId)
+    .sort()
+    .map((id) => withData[id] ?? { agent: id, today: tot(0, 0, 0), limits: { source: null, windows: [], hit: null } });
 }
 
 function codexCredits(q: URLSearchParams): boolean {

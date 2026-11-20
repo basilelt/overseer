@@ -1880,6 +1880,8 @@ export const en = {
   'usage.bySession': 'Session',
   'usage.byModel': 'Model',
   'usage.byAgent': 'Agent',
+  'usage.agents': 'Agents',
+  'usage.agentsFilter': 'Show or hide agents in Usage',
   'usage.empty': 'No agent usage in this period.',
   'usage.indexing': 'Reading session history…',
   'usage.unavailable': 'This server does not report agent usage. Update it to the latest version.',
@@ -2023,4 +2025,7 @@ export const en = {
   'tour.hosts.body': 'Pick Add to this window when you connect. Each host gets a live sidebar section; click a session to bring its host forward.',
   'tour.feedback.title': 'Feedback',
   'tour.feedback.body': 'Report a bug or suggest an idea in a few seconds. That is all. Enjoy!',
+  'tour.usageAgents.title': 'Every agent in Usage',
+  'tour.usageAgents.body': 'The Usage view now lists every CLI Overseer works with, not only the ones with plan limits: Mistral Vibe, Amp, Cursor and the others each get a card with their tokens and cost, or a note when they expose no limits locally. Use the Agents dropdown next to the range tabs to show or hide the CLIs you want; the choice is remembered.',
+  'tour.usageAgents.phone': 'The Usage view lists every supported CLI. The Agents dropdown next to the range tabs shows or hides the ones you want, and the choice is remembered.',
 };
