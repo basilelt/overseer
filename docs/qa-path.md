@@ -241,6 +241,7 @@ Each step is **Do → Expect**. Check every screenshot for overlaps, clipped tex
 - **M4** Idle: leave the app untouched for 70 s with a session open → the only DOM changes are the CPU/RAM chip (about every 15 s) and relative-age labels ("3m ago"); any other mutation or repaint is a bug (count `MutationObserver` records over 10 s and check each one's target).
 - **M6** With **Keep agents running with the lid closed** on (**I19**): `sandbox.sh crash` → the inhibitor pid in the stub log exits with the daemon; `start` → a new line appears with a live pid, and Settings still shows the switch on with no warning.
 - **M5** With the Codex sessions of **C7**–**C9** running: `sandbox.sh crash`, then `start` → `stub.log` shows one `codex resume <id>` per live session, each with its own thread id, and each comes back on its own line, active.
+- **M5b** With a Codex session of **C7** running: drop a sub-agent rollout next to its rollout under `$QA_DIR/home/.codex/sessions/…` (a `rollout-…-<sub-id>.jsonl` whose first `session_meta` payload has `thread_source: "subagent"` and `source.subagent.thread_spawn.parent_thread_id` set to the session's thread id, as Codex multi-agent v2 writes) → the sidebar still lists the session once, with its title, and no extra sub-agent session appears; `sandbox.sh crash`, then `start` → `stub.log` shows `codex resume <root thread id>` and never the sub-agent id, and the session comes back active on its own line with its title kept.
 
 ### N. Demo mode
 
