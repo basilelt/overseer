@@ -1206,3 +1206,40 @@ fn nested_workspaces_validate_their_parent_and_start_in_their_cwd() {
         );
     }
 }
+
+#[test]
+fn broadcast_never_types_into_a_prompt_the_user_is_typing_in() {
+    let app = App::new("bcast-typing", json!({"autoConcurrency": 0}));
+    let wt = app.fx.wt.to_string_lossy().into_owned();
+    let t = app.ok("POST", "/v1/terms", json!({"cwd": wt, "agent": "claude"}));
+    let term = id(&t);
+    let mut ws = app.ws(&term);
+    read_until(&mut ws, "❯");
+    let line = wait_for(|| line_of(&app, &term));
+    let lk = format!("line:{line}");
+    let body = json!({"text": "from the chat", "lineIds": [line]});
+    let r = wait_for(|| {
+        let r = app.ok(
+            "POST",
+            "/v1/broadcast",
+            json!({"text": "ping", "lineIds": [line]}),
+        );
+        (result(&r, &lk)["result"] == "sent").then_some(r)
+    });
+    assert!(r["id"].is_string());
+    read_until(&mut ws, "got: ping");
+    send(&mut ws, "half typed");
+    read_until(&mut ws, "half typed");
+    let r = app.ok("POST", "/v1/broadcast", body.clone());
+    assert_eq!(
+        result(&r, &lk),
+        json!({"target": lk, "result": "skipped", "reason": "busy"})
+    );
+    send(&mut ws, "\u{15}");
+    let r = wait_for(|| {
+        let r = app.ok("POST", "/v1/broadcast", body.clone());
+        (result(&r, &lk)["result"] == "sent").then_some(r)
+    });
+    assert!(r["id"].is_string());
+    read_until(&mut ws, "got: from the chat");
+}

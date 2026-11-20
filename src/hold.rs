@@ -5,8 +5,6 @@ pub struct Check {
     pub name: &'static str,
     pub ok: bool,
     pub detail: String,
-    /// The check failed because the state could not be determined (no screen, no prompt
-    /// recognised), not because it was observed to be unsafe. Closing may offer to force past it.
     pub unknown: bool,
 }
 

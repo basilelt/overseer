@@ -70,6 +70,10 @@ pub fn channel(l: &Line) -> Option<Channel> {
     }
 }
 
+fn typed_in_prompt(t: &Term) -> bool {
+    crate::hold::input_text(&t.grid().ansi()).is_some_and(|s| !s.is_empty())
+}
+
 static SCREENS: Mutex<Option<HashMap<String, u64>>> = Mutex::new(None);
 
 pub fn not_idle(
@@ -85,12 +89,11 @@ pub fn not_idle(
         if l.busy_known && l.busy {
             return Some(NotIdle::Busy);
         }
-        // A line with a known busy state (hooks, session store) is idle exactly when
-        // that state says so. The output-recency checks below are only for lines
-        // without a known state (shells, term-only agents): a TUI such as Vibe
-        // redraws on a timer, so its terminal looks busy by output recency forever.
         if l.busy_known {
-            return None;
+            return match ch {
+                Channel::Term(t) if typed_in_prompt(t) => Some(NotIdle::Busy),
+                _ => None,
+            };
         }
     }
     match ch {
@@ -526,8 +529,6 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn a_known_idle_state_wins_over_term_output_recency() {
-        // A TUI that redraws on a timer (Mistral Vibe) prints every second or so:
-        // with no known busy state that output recency alone would report busy forever.
         let t = agent("printf 'tick\\n'; sleep 30");
         let ch = Channel::Term(t.clone());
         wait_screen(&t, "tick");
@@ -558,6 +559,48 @@ mod tests {
         std::thread::sleep(Duration::from_millis(SILENCE_MS as u64 + 200));
         assert_eq!(not_idle(Some(&unknown), &ch, None, Rules::default()), None);
         assert_eq!(not_idle(None, &ch, None, Rules::default()), None);
+        t.kill().unwrap();
+        term::remove(&t.info().id);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_known_idle_line_with_typed_text_is_not_idle() {
+        let t = agent(&format!(
+            r#"{RULE}printf '%s\n❯ half typed\n%s\n' "$r" "$r"; sleep 30"#
+        ));
+        let ch = Channel::Term(t.clone());
+        wait_screen(&t, "half typed");
+        let known_idle = Line {
+            busy_known: true,
+            busy: false,
+            ..Default::default()
+        };
+        assert_eq!(
+            not_idle(Some(&known_idle), &ch, None, Rules::default()),
+            Some(NotIdle::Busy)
+        );
+        t.kill().unwrap();
+        term::remove(&t.info().id);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_known_idle_line_with_an_empty_prompt_is_idle() {
+        let t = agent(&format!(
+            r#"{RULE}printf '%s\n❯ \n%s\n' "$r" "$r"; sleep 30"#
+        ));
+        let ch = Channel::Term(t.clone());
+        wait_screen(&t, "❯");
+        let known_idle = Line {
+            busy_known: true,
+            busy: false,
+            ..Default::default()
+        };
+        assert_eq!(
+            not_idle(Some(&known_idle), &ch, None, Rules::default()),
+            None
+        );
         t.kill().unwrap();
         term::remove(&t.info().id);
     }

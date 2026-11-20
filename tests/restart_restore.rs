@@ -129,3 +129,112 @@ fn a_codex_sub_agent_thread_is_not_a_session_and_never_resumed() {
     );
     assert_eq!(codex[0]["line"]["agentSessionId"], root);
 }
+
+fn lines(app: &App) -> Vec<Value> {
+    app.ok("GET", "/v1/lines?all=true", Value::Null)
+        .as_array()
+        .unwrap()
+        .clone()
+}
+
+fn line_of(app: &App, term: &str) -> Option<Value> {
+    lines(app)
+        .into_iter()
+        .find(|l| l["local"]["termId"] == term)
+}
+
+#[test]
+fn every_agent_keeps_its_titles_and_resumes_across_a_daemon_restart() {
+    let mut app = App::new("titles-restart", json!({"autoConcurrency": 0}));
+    let wt = app.fx.wt.to_string_lossy().into_owned();
+    let agents = ["claude", "gemini", "opencode", "agy", "copilot"];
+    let mut terms = vec![];
+    for a in agents {
+        let t = app.ok(
+            "POST",
+            "/v1/terms",
+            json!({"agent": a, "cwd": wt, "cols": 100, "rows": 30}),
+        );
+        let term = t["id"].as_str().unwrap().to_string();
+        if a == "gemini" {
+            let cmd = t["cmd"].as_array().unwrap();
+            let at = cmd.iter().position(|c| c == "--session-id").unwrap();
+            let sid = cmd[at + 1].as_str().unwrap();
+            let chats = app.fx.base.join("home/.gemini/tmp/repo/chats");
+            std::fs::create_dir_all(&chats).unwrap();
+            std::fs::write(app.fx.base.join("home/.gemini/tmp/repo/.project_root"), &wt).unwrap();
+            std::fs::write(
+                chats.join("session-2026-11-19T10-00-aaaaaaaa.jsonl"),
+                format!(
+                    "{}\n",
+                    json!({"sessionId": sid, "startTime": "2026-11-19T10:00:00.000Z", "kind": "main"})
+                ),
+            )
+            .unwrap();
+        }
+        let l = wait_for(|| line_of(&app, &term).filter(|l| l["line"]["agent"] == a));
+        let line = l["line"]["id"].as_str().unwrap().to_string();
+        app.ok(
+            "PUT",
+            &format!("/v1/lines/{line}/title"),
+            json!({"title": format!("line {a}")}),
+        );
+        app.ok(
+            "PUT",
+            &format!("/v1/terms/{term}/title"),
+            json!({"title": format!("term {a}")}),
+        );
+        terms.push((a, term, line, l["line"]["agentSessionId"].clone()));
+    }
+    let claude_sid = terms[0].3.as_str().unwrap().to_string();
+    let proj = app.fx.base.join("home/.claude/projects");
+    let transcript = wait_for(|| {
+        std::fs::read_dir(&proj).ok()?.flatten().find_map(|d| {
+            d.path()
+                .join(format!("{claude_sid}.jsonl"))
+                .exists()
+                .then(|| d.path().join(format!("{claude_sid}.jsonl")))
+        })
+    });
+    let mut f = std::fs::OpenOptions::new()
+        .append(true)
+        .open(transcript)
+        .unwrap();
+    use std::io::Write;
+    writeln!(
+        f,
+        "{}",
+        json!({"type": "ai-title", "aiTitle": "Auto claude title", "sessionId": claude_sid})
+    )
+    .unwrap();
+    wait_for(|| line_of(&app, &terms[0].1).filter(|l| l["local"]["title"] == "Auto claude title"));
+
+    for _ in 0..2 {
+        app.crash_and_restart();
+
+        for (a, term, line, sid) in &terms {
+            let t = wait_for(|| {
+                let v = app.ok("GET", "/v1/terms", Value::Null);
+                v.as_array()
+                    .unwrap()
+                    .iter()
+                    .find(|t| t["id"] == term.as_str())
+                    .cloned()
+            });
+            assert_eq!(t["titleOverride"], format!("term {a}"), "{a}: {t}");
+            let l = wait_for(|| line_of(&app, term)).clone();
+            assert_eq!(l["line"]["id"], line.as_str(), "{a}: {l}");
+            assert_eq!(l["local"]["titleOverride"], format!("line {a}"), "{a}: {l}");
+            if sid.is_string() && *a != "opencode" && *a != "agy" && *a != "copilot" {
+                let cmd = t["cmd"].to_string();
+                assert!(
+                    cmd.contains(sid.as_str().unwrap()),
+                    "{a} resumes {sid}: {cmd}"
+                );
+            }
+        }
+        let l = wait_for(|| line_of(&app, &terms[0].1));
+        assert_eq!(l["local"]["title"], "Auto claude title", "{l}");
+        std::thread::sleep(std::time::Duration::from_millis(3500));
+    }
+}

@@ -383,7 +383,6 @@ fn a_task_is_edited_through_patch_with_the_daemons_field_validations() {
         .unwrap()
         .to_string();
     let url = format!("/v1/tasks/{id}");
-    // the whole edit form in one patch: text, CLI, model, effort, ticket, type, profile
     let v = app.ok(
         "PATCH",
         &url,
@@ -406,11 +405,9 @@ fn a_task_is_edited_through_patch_with_the_daemons_field_validations() {
     assert_eq!(v["ticketKey"], "PROJ-42");
     assert_eq!(v["taskType"], "fix");
     assert_eq!(v["profile"], "balanced");
-    // the stored task reads back the same
     let got = app.task(&id);
     assert_eq!(got["title"], "Renamed");
     assert_eq!(got["agent"], "codex");
-    // cleared fields come back absent, effort as an empty string
     let v = app.ok(
         "PATCH",
         &url,
@@ -421,7 +418,6 @@ fn a_task_is_edited_through_patch_with_the_daemons_field_validations() {
     assert!(v.get("profile").is_none());
     assert_eq!(v["effort"], "");
     assert_eq!(v["model"], "");
-    // the daemon refuses what the edit form must never send
     let (code, e) = app.req("PATCH", &url, json!({"title": "   "}));
     assert_eq!(
         (code, e["error"].as_str().unwrap()),
@@ -456,7 +452,6 @@ fn a_task_is_edited_through_patch_with_the_daemons_field_validations() {
             "taskType must be one of fix, feature, engineering, refactor, triage"
         )
     );
-    // none of the refused patches changed the task
     assert_eq!(app.task(&id)["title"], "Renamed");
 }
 
