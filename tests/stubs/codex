@@ -40,6 +40,8 @@ while IFS= read -r l; do
     busy) [ -n "$rollout" ] || { thread; hook SessionStart; }; echo '{}' >> "$rollout"; hook UserPromptSubmit ;;
     work) [ -n "$rollout" ] || { thread; hook SessionStart; }; echo '{}' >> "$rollout"; hook UserPromptSubmit
       i=0; while [ $i -lt 14 ]; do printf 'Working (%ss)\r\n' $i; sleep 0.5; i=$((i+1)); done; hook Stop ;;
+    mouse) printf '\033[?1049h\033[?1000h\033[?1002h\033[?1006h\r\n' ;;
+    nomouse) printf '\033[?1006l\033[?1002l\033[?1000l\033[?1049l' ;;
     ask) hook PermissionRequest ;;
     approved) hook PostToolUse ;;
     done) [ -n "$rollout" ] && { echo '{}' >> "$rollout"; hook Stop; } ;;

@@ -1,10 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-async function rendered(lastAssistantText: string, extra: { line?: object; activity?: object; git?: boolean; selected?: object | null } = {}) {
+async function rendered(lastAssistantText: string, extra: { line?: object; activity?: object; git?: boolean; selected?: object | null; terms?: object[] } = {}) {
   vi.resetModules();
   const activity = { l1: { workLog: [], todos: [], editedFiles: [], needsInput: false, lastAssistantText, ...extra.activity } };
   const { app } = await import('../../state.svelte');
   app.data.activity = activity as never;
+  app.data.terms = (extra.terms ?? []) as never;
   app.data.lines = [{ line: { id: 'l1', agent: 'claude', state: 'active', ...extra.line }, project: 'p' }] as never;
   app.selectedKey = 'line:l1';
   app.panelGit = extra.git ?? false;
@@ -67,6 +68,16 @@ describe('SidePanel cost', () => {
     expect(html).toContain('≈$1.23 · claude-opus-5-5 · effort high');
     expect(html).toContain('data-sec="cost"');
     expect(html).toContain('cache read 500k');
+  });
+
+  it('says the model and effort once when the profile line would repeat them', async () => {
+    const html = await rendered('hello', {
+      activity: { cost },
+      terms: [{ id: 't1', profile: { name: 'Max', model: 'opus', effort: 'high' } }],
+      selected: { key: 'line:l1', lineId: 'l1', title: 'x', termId: 't1' },
+    });
+    expect(html.match(/effort high/g)).toHaveLength(1);
+    expect(html).toMatch(/<p class="profile faint[^"]*" title="Profile">Max<\/p>/);
   });
 
   it('shows no cost when the transcript has no token counts', async () => {

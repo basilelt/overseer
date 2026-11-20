@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { MOCK_AGENTS, MOCK_PROFILES, MockDaemon } from '../daemon/mock';
-import { chipLabel, chipShort, costIndex, effectiveId, formatIndex, initialChoice, priceOf, resolveProfile, scoped, TASK_TYPES, typed } from './profiles';
+import { chipBeside, chipLabel, chipShort, costIndex, effectiveId, formatIndex, initialChoice, priceOf, resolveProfile, scoped, TASK_TYPES, typed } from './profiles';
 import type { Profile, ProfilesStore, Task, Term } from '../types';
 
 const store = (over: Partial<ProfilesStore> = {}): ProfilesStore => ({
@@ -167,5 +167,24 @@ describe('mock daemon applies profiles like the daemon', () => {
     ]);
     const yes = await d.request<{ files: { path: string; written: boolean }[] }>('POST', '/v1/profiles/apply-files', { profile: mine.id, dryRun: false, files: dry.files.map((f) => f.path) });
     expect(yes.files.map((f) => f.written)).toEqual([true, true]);
+  });
+});
+
+describe('chipBeside', () => {
+  it('drops the model and effort the cost line already shows', () => {
+    expect(chipBeside({ name: 'Max', model: 'opus', effort: 'high' }, { model: 'claude-opus-4-7', effort: 'high' })).toEqual({ name: 'Max', model: undefined, effort: undefined });
+  });
+
+  it('keeps what differs from the cost line', () => {
+    expect(chipBeside({ name: 'Max', model: 'opus', effort: 'max' }, { model: 'claude-sonnet-4-6', effort: 'high' })).toEqual({ name: 'Max', model: 'opus', effort: 'max' });
+  });
+
+  it('hides an unnamed chip that only repeats the cost line', () => {
+    expect(chipBeside({ model: 'opus', effort: 'high' }, { model: 'opus', effort: 'high' })).toBeUndefined();
+  });
+
+  it('leaves the chip as is without a cost', () => {
+    const chip = { name: 'Max', model: 'opus', effort: 'high' };
+    expect(chipBeside(chip, undefined)).toBe(chip);
   });
 });

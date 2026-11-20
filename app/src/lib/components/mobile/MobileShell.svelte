@@ -16,6 +16,7 @@
   import { MOBILE_TABS, type MobileTab } from '../../mobile/layout';
   import { nextTab, viewForTab, type NavState } from '../../mobile/nav';
   import { ui } from '../../mobile/ui.svelte';
+  import { drawerPick } from '../../mobile/drawer';
   import Sidebar from '../sidebar/Sidebar.svelte';
   import Workspace from '../workspace/Workspace.svelte';
   import SidePanel from '../panel/SidePanel.svelte';
@@ -191,7 +192,7 @@
 
 {#if ui.drawer}
   <div class="scrim" role="presentation" onclick={() => (ui.drawer = false)}></div>
-  <div class="drawer" role="dialog" aria-modal="true" aria-label={t('mobile.shell.menu')}>
+  <div class="drawer" role="dialog" aria-modal="true" aria-label={t('mobile.shell.menu')} use:drawerPick.watch>
     <div class="drawer-head">
       <span class="title">{t('mobile.shell.menu')}</span>
       <button class="icon-btn" aria-label={t('common.close')} onclick={() => (ui.drawer = false)}><X size={20} /></button>

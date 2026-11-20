@@ -23,6 +23,30 @@ const PATCHES: [string | RegExp, string][] = [
     /(\w) >= 0 \? (\w) = \2\.substring\(0, \1\) : \2 = "", (\w) \+= \2, (\w) < (\w) && \(\3 \+= `\n`\);/,
     'const sb = this.wasmTerm.getScrollbackLength(), wraps = $4 < $5 && $4 + 1 >= sb && this.wasmTerm.isRowWrapped($4 + 1 - sb); wraps || ($1 >= 0 ? $2 = $2.substring(0, $1) : $2 = ""), $3 += $2, $4 < $5 && !wraps && ($3 += `\n`);',
   ],
+  // A program that reads the mouse (vim with mouse=a, an agent TUI like the Mistral Vibe login)
+  // still gets click reports, but a drag must select locally and copy, never reach the program
+  // (docs/user-guide.md: "Drags always select text locally (they are not sent to the program)").
+  // Stock ghostty-web clears the selection on every input chunk — including mouse reports — and
+  // forwards drag motion, so with mouse tracking on a drag neither selects nor clicks. Pass the
+  // input chunk to clearSelection and let it ignore mouse reports (SGR \x1B[<… and X10 \x1B[M…):
+  [
+    'clearSelection() {\n    if (!this.hasSelection())\n      return;\n    const A = this.normalizeSelection();\n    if (A)\n      for (let Q = A.startRow; Q <= A.endRow; Q++)\n        this.dirtySelectionRows.add(Q);',
+    'clearSelection(A) {\n    if (typeof A == "string" && /^\\x1B\\[(?:<|M)/.test(A))\n      return;\n    if (!this.hasSelection())\n      return;\n    const B = this.normalizeSelection();\n    if (B)\n      for (let Q = B.startRow; Q <= B.endRow; Q++)\n        this.dirtySelectionRows.add(Q);',
+  ],
+  [
+    '(w = this.selectionManager) == null || w.clearSelection(), this.awaitingEcho = !0, this.dataEmitter.fire(o)',
+    '(w = this.selectionManager) == null || w.clearSelection(o), this.awaitingEcho = !0, this.dataEmitter.fire(o)',
+  ],
+  // Expose the selection manager on the terminal element so the input handler can see an active
+  // selection drag, and skip forwarding drag motion while one is in progress.
+  [
+    'this.renderer.setSelectionManager(this.selectionManager), this.selectionManager.onSelectionChange',
+    'this.renderer.setSelectionManager(this.selectionManager), A.__overseerSel = this.selectionManager, this.selectionManager.onSelectionChange',
+  ],
+  [
+    'const Q = ((D = this.getModeCallback) == null ? void 0 : D.call(this, 1002)) ?? !1, g = ((o = this.getModeCallback) == null ? void 0 : o.call(this, 1003)) ?? !1;',
+    'const S = this.container.__overseerSel;\n    if (S && S.isSelecting && S.dragThresholdMet)\n      return;\n    const Q = ((D = this.getModeCallback) == null ? void 0 : D.call(this, 1002)) ?? !1, g = ((o = this.getModeCallback) == null ? void 0 : o.call(this, 1003)) ?? !1;',
+  ],
 ];
 
 export function patchGhostty(code: string): string {

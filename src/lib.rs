@@ -630,8 +630,11 @@ fn claude_found_from(
 const CODEX_SLACK_MS: i64 = 2_000;
 const CODEX_TYPED_MS: i64 = 3_000;
 
-fn codex_found(ctx: &Ctx, hooks: &HashMap<String, HookState>) -> Vec<Found> {
-    let threads = codex::threads(&ctx.codex_dir, &ctx.state_dir);
+fn codex_found(
+    ctx: &Ctx,
+    threads: Vec<codex::Thread>,
+    hooks: &HashMap<String, HookState>,
+) -> Vec<Found> {
     let mut procs: Vec<(u32, Vec<String>, Option<i64>)> = codex::fold_wrappers(
         ctx.probe
             .list()
@@ -774,6 +777,7 @@ fn codex_found(ctx: &Ctx, hooks: &HashMap<String, HookState>) -> Vec<Found> {
             }
             f.cwd = t.cwd.unwrap_or_default();
             f.branch = t.branch;
+            f.title = t.title;
             f.activity_ms = t
                 .activity_ms
                 .max(t.started_ms.unwrap_or(0))
@@ -1213,9 +1217,19 @@ fn scan_now(ctx: &Ctx) -> Result<Vec<Line>, String> {
     let hook_map = |agent| -> Result<HashMap<String, HookState>, String> {
         Ok(reg.hook_sessions(agent)?.into_iter().collect())
     };
+    let (codex_threads, codex_parents) = codex::load(&ctx.codex_dir, &ctx.state_dir);
+    let mut codex_threads = Some(codex_threads);
     let mut session_hooks: HashMap<&'static str, HashMap<String, HookState>> = HashMap::new();
     for a in agents::AGENTS.iter().filter(|a| a.sessions()) {
-        session_hooks.insert(a.id, hook_map(a.id)?);
+        let m = hook_map(a.id)?;
+        session_hooks.insert(
+            a.id,
+            if a.id == agents::CODEX {
+                codex::root_hooks(&m, &codex_parents)
+            } else {
+                m
+            },
+        );
     }
     let no_hooks = HashMap::new();
     let hooks_of = |id: &str| session_hooks.get(id).unwrap_or(&no_hooks);
@@ -1238,7 +1252,11 @@ fn scan_now(ctx: &Ctx) -> Result<Vec<Line>, String> {
             Some(agents::Transcript::Claude) => {
                 found.extend(claude_found(ctx, hooks, &reg.divergent(a.id)?))
             }
-            Some(agents::Transcript::Codex) => found.extend(codex_found(ctx, hooks)),
+            Some(agents::Transcript::Codex) => found.extend(codex_found(
+                ctx,
+                codex_threads.take().unwrap_or_default(),
+                hooks,
+            )),
             Some(agents::Transcript::Gemini) => found.extend(gemini_found(ctx, hooks)),
             Some(agents::Transcript::Vibe) => found.extend(vibe_found(ctx, hooks)),
             None => {}
