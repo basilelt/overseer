@@ -17,20 +17,21 @@
   import { DaemonError } from '../../daemon/client';
   import { isTauri } from '../../platform';
   import { settings } from '../../settings/settings.svelte';
-  import { findAgent, pickAgent, isAgentId } from '../../agents';
+  import { findAgent, taskAgents, isAgentId } from '../../agents';
   import { MAX_UPLOAD } from '../../uploads';
   import { openExternal } from '../../ports/ports.svelte';
   import { diagBackend, fetchServerLog } from '../../diag/diag.svelte';
   import { feedback, ft, type Result } from '../../feedback/feedback.svelte';
   import { DRAFT_ID, feedbackDrafts, initialForm, ownsText } from '../../feedback/draft';
-  import { APP_LINES, attachProblem, ATTACH_ACCEPT, VIDEO_FREE_MAX, buildBody, clock, buildDiagnostics, buildPrompt, DEFAULT_REPO, findClone, issueTitle, labelsFor, newIssueUrl, SERVER_LINES, validate, wantsDiagnostics, type Kind } from '../../feedback/feedback';
+  import { APP_LINES, attachProblem, ATTACH_ACCEPT, VIDEO_FREE_MAX, buildBody, clock, buildDiagnostics, buildPrompt, DEFAULT_REPO, findClone, issueTitle, labelsFor, newIssueUrl, pickSender, SERVER_LINES, validate, wantsDiagnostics, type Kind } from '../../feedback/feedback';
   import type { Term } from '../../types';
   import { basename } from '../../paths';
 
   const prefill = feedback.prefill;
   const repo = $derived((settings.feedbackRepo ?? '').trim() || DEFAULT_REPO);
-  const agentId = $derived(pickAgent(app.agents, settings.defaultAgent));
+  const agentId = $derived(pickSender(app.agents, settings));
   const agent = $derived(findAgent(app.agents, agentId));
+  const sendable = $derived(taskAgents(app.agents).filter((a) => a.installed));
   const canAgent = $derived(app.connected && !!agent?.installed && isAgentId(agent.id));
   const host = $derived(app.conn.target.kind === 'local' ? 'local' : app.conn.target.label || app.conn.target.kind);
 
@@ -199,19 +200,20 @@
     feedback.announce(r, (text, kind, action) => app.notify(text, kind, action));
   }
 
-  async function sendWithAgent() {
+  async function sendWithAgent(id: string = agentId) {
     const p = problem();
     if (p) return app.notify(p, 'error');
     const client = app.client;
-    if (!client || !agent) return;
+    const chosen = findAgent(app.agents, id);
+    if (!client || !chosen) return;
     busy = true;
     try {
       const cwd = findClone(app.projects, repo);
-      const same = agentId === settings.defaultAgent;
+      const same = id === settings.defaultAgent;
       const res = await feedbackApi(client).startFeedback({
-        agent: agentId,
+        agent: id,
         model: same ? settings.defaultModel || undefined : undefined,
-        effort: same && agent.efforts?.includes(settings.defaultEffort) ? settings.defaultEffort : undefined,
+        effort: same && chosen.efforts?.includes(settings.defaultEffort) ? settings.defaultEffort : undefined,
         cwd,
         cols: 120,
         rows: 32,
@@ -224,12 +226,21 @@
       void feedback.watch(client, term.id, found);
       feedbackDrafts.delete(DRAFT_ID);
       feedback.close();
-      app.notify(ft('started', { agent: agent.name }));
+      app.notify(ft('started', { agent: chosen.name }));
     } catch (e) {
       app.notify(ft('failed', { error: unsupported(e) ?? msg(e) }), 'error');
     } finally {
       busy = false;
     }
+  }
+
+  function sendWithMenu(e: MouseEvent) {
+    if (sendable.length < 2) return;
+    app.openMenu(
+      e,
+      ft('sendWith'),
+      sendable.map((a) => ({ label: a.name, agent: a.id, default: a.id === agentId, run: () => void sendWithAgent(a.id) })),
+    );
   }
 
   async function sendDirect() {
@@ -394,7 +405,10 @@
       <span class="spacer"></span>
       <button class="btn" onclick={close}>{ft('cancel')}</button>
       {#if canAgent && agent}
-        <button class="btn primary" onclick={sendWithAgent} disabled={busy || uploading > 0 || (includeDiag && diagText === null)}>{busy ? ft('sending') : ft('send', { agent: agent.name })}</button>
+        {#if sendable.length > 1}
+          <button class="btn" onclick={sendWithMenu} disabled={busy || uploading > 0 || (includeDiag && diagText === null)} data-tour="feedback-cli" title={ft('sendWithHint')}>{ft('sendWith')}</button>
+        {/if}
+        <button class="btn primary" onclick={() => void sendWithAgent()} disabled={busy || uploading > 0 || (includeDiag && diagText === null)}>{busy ? ft('sending') : ft('send', { agent: agent.name })}</button>
       {/if}
     {/snippet}
   </Modal>
