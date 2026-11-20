@@ -19,6 +19,7 @@
   import { isTauri } from '../../platform';
   import { t } from '../../i18n.svelte';
   import { attachIme } from '../../terminal/ime';
+  import { keepInputFocus } from '../../terminal/termfocus';
   import { keyToInput } from '../../commands/keys';
   import { cellAt, clickMove, ModeTracker, WheelAccumulator, wheelAction } from '../../terminal/mouse';
   import { resetViewport, scrollbackBytes, writeAnchored } from '../../terminal/scroll';
@@ -142,7 +143,7 @@
   function focusSoon() {
     cancelAnimationFrame(focusFrame);
     focusFrame = requestAnimationFrame(() => {
-      if (term && el.isConnected && document.activeElement !== el) el.focus({ preventScroll: true });
+      if (term && el.isConnected && !el.contains(document.activeElement)) el.focus({ preventScroll: true });
     });
   }
 
@@ -160,6 +161,7 @@
     let ro: ResizeObserver | null = null;
     const resized = settle(() => refit?.(), 100);
     let stopIme: (() => void) | null = null;
+    let stopFocus: (() => void) | null = null;
     let stopShown: (() => void) | null = null;
     let disposed = false;
     const onVisibility = () => {
@@ -309,6 +311,7 @@
         quietInput(el);
         const area = el.querySelector('textarea');
         if (area) quietInput(area);
+        stopFocus = keepInputFocus(el, area);
         refit = () =>
           busy.run('term.fit', () => {
             const tm = term;
@@ -439,6 +442,7 @@
       ro?.disconnect();
       resized.cancel();
       stopIme?.();
+      stopFocus?.();
       stopShown?.();
       link?.dispose();
       replay.dispose();
