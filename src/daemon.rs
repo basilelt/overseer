@@ -1158,6 +1158,17 @@ fn upload(r: &mut BufReader<&mut impl Stream>, h: &Head) -> (u16, Value) {
         let _ = r.get_ref().set_read_timeout(Some(Duration::from_secs(30)));
         crate::uploads::receive(&crate::uploads::dir(), q(&h.req, "name"), len, &mut *r)
     });
+    if res.is_err() {
+        let _ = r.get_ref().set_read_timeout(Some(HEAD_TIMEOUT));
+        let _ = std::io::copy(
+            &mut (&mut *r).take(match h.len {
+                Some(n) if n <= crate::uploads::MAX => n,
+                Some(_) => MAX_DRAIN,
+                None => 0,
+            }),
+            &mut std::io::sink(),
+        );
+    }
     res.map(|v| (201, v)).unwrap_or_else(|(c, e)| err(c, e))
 }
 
