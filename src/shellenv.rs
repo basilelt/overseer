@@ -136,11 +136,7 @@ fn load() -> &'static str {
     if let Some(vars) = vars {
         for (k, v) in &vars {
             if k == "PATH" {
-                let nodes: Vec<String> = node_dirs(&crate::home())
-                    .iter()
-                    .map(|p| p.to_string_lossy().into_owned())
-                    .collect();
-                let path = merge_path(&merge_path(v, &original), &nodes.join(":"));
+                let path = with_fallback_dirs(&merge_path(v, &original), &crate::home());
                 std::env::set_var("PATH", path);
             } else if keep(k) && !session_bound(k, v) {
                 std::env::set_var(k, v);
@@ -148,12 +144,17 @@ fn load() -> &'static str {
         }
         return "login-shell";
     }
-    let extra: Vec<String> = fallback_dirs(&crate::home(), &original)
+    std::env::set_var("PATH", with_fallback_dirs(&original, &crate::home()));
+    "fallback"
+}
+
+#[cfg(unix)]
+fn with_fallback_dirs(base: &str, home: &Path) -> String {
+    let extra: Vec<String> = fallback_dirs(home, base)
         .iter()
         .map(|p| p.to_string_lossy().into_owned())
         .collect();
-    std::env::set_var("PATH", merge_path(&original, &extra.join(":")));
-    "fallback"
+    merge_path(base, &extra.join(":"))
 }
 
 #[cfg(unix)]
@@ -245,6 +246,7 @@ pub fn fallback_dirs(home: &Path, existing_path: &str) -> Vec<PathBuf> {
         home.join(".volta/bin"),
         home.join(".asdf/shims"),
         PathBuf::from("/opt/homebrew/bin"),
+        home.join(".linuxbrew/bin"),
         PathBuf::from("/usr/local/bin"),
     ]);
     let mut out: Vec<PathBuf> = vec![];
@@ -421,6 +423,39 @@ mod tests {
         assert_eq!(version("v24.10.0").unwrap(), vec![24, 10, 0]);
         assert!(version("v24.10.0") > version("v24.9.1"));
         assert!(version("v24.9.1") > version("v8.0.0"));
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn with_fallback_dirs_appends_every_existing_user_bin_to_any_base() {
+        let home = std::env::temp_dir().join(format!(
+            "sb-shellenv-wfd-{}-{}",
+            std::process::id(),
+            crate::util::now_ms()
+        ));
+        let _ = std::fs::remove_dir_all(&home);
+        for d in [
+            ".local/bin",
+            ".linuxbrew/bin",
+            ".nvm/versions/node/v26.0.0/bin",
+            ".nvm/versions/node/v24.0.0/bin",
+        ] {
+            std::fs::create_dir_all(home.join(d)).unwrap();
+        }
+        let p = with_fallback_dirs("/usr/bin:/bin", &home);
+        let at = |suffix: &str| p.split(':').position(|x| x.ends_with(suffix)).unwrap();
+        assert!(at(".local/bin") > 1, "{p}");
+        assert!(at(".linuxbrew/bin") > 1, "{p}");
+        assert!(at("v26.0.0/bin") < at("v24.0.0/bin"), "{p}");
+        let local = home.join(".local/bin").display().to_string();
+        let p2 = with_fallback_dirs(&format!("/usr/bin:{local}"), &home);
+        assert_eq!(p2.matches(&local).count(), 1, "{p2}");
+        assert!(p2.starts_with("/usr/bin:"), "{p2}");
+        let empty = home.join("empty");
+        std::fs::create_dir_all(&empty).unwrap();
+        let p3 = with_fallback_dirs("/usr/bin:/bin", &empty);
+        assert!(p3.starts_with("/usr/bin:/bin"), "{p3}");
+        assert!(!p3.contains(empty.to_string_lossy().as_ref()), "{p3}");
         let _ = std::fs::remove_dir_all(&home);
     }
 

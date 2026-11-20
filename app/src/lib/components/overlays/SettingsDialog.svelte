@@ -113,6 +113,10 @@
     saveSettings({ defaultAgent: id, defaultModel: next.model, ...(next.effort ? { defaultEffort: next.effort } : {}) });
   }
 
+  function setFeedbackAgent(id: string) {
+    saveSettings({ feedbackAgent: id === settings.defaultAgent ? undefined : id });
+  }
+
   const hookRows = $derived(hookable(hooks.status));
   let skillAgent = $state<Partial<Record<SkillId, string>>>({});
   let skillBusy = $state(false);
@@ -829,6 +833,12 @@
             <span>{ft('repo')}<small>{ft('repoHint')}</small></span>
             <input class="mono" value={settings.feedbackRepo ?? ''} placeholder={DEFAULT_REPO} spellcheck="false" onchange={(e) => saveSettings({ feedbackRepo: e.currentTarget.value.trim() || undefined })} />
           </label>
+          <div class="row" class:hit={hit('feedback', 'feedbackAgent')}>
+            <span>{ft('agent')}<small>{ft('agentHint')}</small></span>
+            <div class="ctl">
+              <AgentPicker {agents} value={settings.feedbackAgent ?? settings.defaultAgent} label={ft('agent')} onchange={setFeedbackAgent} />
+            </div>
+          </div>
           <div class="row" class:hit={hit('feedback', 'privacy')}>
             <span>{ft('privacy')}<small>{ft('privacyHint')}</small></span>
             <button class="btn" onclick={() => openExternal(PRIVACY_URL).catch((e) => app.notify(String(e?.message ?? e), 'error'))}>{ft('openLink')}</button>

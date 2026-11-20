@@ -205,7 +205,7 @@ connect.
   lists them and stops any one an agent left running in the background.
 - **Team mode**: a shared API merges every station's lines, relays commands between stations,
   and publishes events and signed webhooks for other tools.
-- **Updates** in the app, and a feedback button with optional diagnostics.
+- **Updates** in the app, and a feedback button with optional diagnostics, filed as a GitHub issue by the agent CLI of your choice.
 - **Record a bug**: show a problem while Overseer logs your clicks, shortcuts, views and errors next to a screen video, then send both in one report. Replay plays the video and the timeline in sync; what you type is never logged.
 
 ## Install

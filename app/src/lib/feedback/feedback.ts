@@ -1,4 +1,5 @@
-import type { Project } from '../types';
+import { pickAgent } from '../agents';
+import type { AgentInfo, Project } from '../types';
 
 export * from './feedback-watch';
 
@@ -179,6 +180,15 @@ export function repoSlug(remote: string | undefined): string | null {
 export function findClone(projects: Project[], repo: string): string | undefined {
   const want = repo.trim().toLowerCase();
   return projects.find((p) => !p.missing && repoSlug(p.repo) === want)?.path;
+}
+
+export interface SenderPrefs {
+  feedbackAgent?: string;
+  defaultAgent: string;
+}
+
+export function pickSender(agents: AgentInfo[], prefs: SenderPrefs): string {
+  return pickAgent(agents, prefs.feedbackAgent ?? prefs.defaultAgent);
 }
 
 export function newIssueUrl(repo: string, title: string, body: string): string {
