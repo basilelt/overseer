@@ -7,9 +7,10 @@
   import { dismiss } from '../../dismiss';
   import AgentGlyph from '../ui/AgentGlyph.svelte';
   import Bars from './Bars.svelte';
+  import LimitBar from './LimitBar.svelte';
   import TaskCosts from './TaskCosts.svelte';
   import { UsageFeed } from '../../usage/store.svelte';
-  import { agentLevel, authNote, countdown, formatCost, formatDuration, formatPct, formatTokens, liveWindows, onCredits, shortDay, windowLevel } from '../../usage/format';
+  import { agentLevel, authNote, countdown, formatCost, formatDuration, formatPct, formatTokens, gaugeLevel, liveWindows, onCredits, pacePercent, shortDay } from '../../usage/format';
   import { toggleUsageAgentHidden, usageAgentCards, visibleUsageGroups } from '../../usage/filter';
   import { creditsNote, ust } from '../../usage/strings';
   import type { UsageBy, UsageGroup, UsageRange } from '../../usage/types';
@@ -135,10 +136,11 @@
                 <p class="hit">{ust('limitHitLong')}{a.limits.hit.message ? ` · ${a.limits.hit.message}` : ''}</p>
               {/if}
               {#each windows as w (w.key)}
-                {@const tone = windowLevel(a, w)}
-                <div class="gauge" title={w.resetsAt ? ust('resetAt', { at: new Date(w.resetsAt).toLocaleString(locale) }) : ''}>
+                {@const tone = gaugeLevel(a, w, now)}
+                {@const pace = pacePercent(w, now)}
+                <div class="gauge" title={[w.resetsAt ? ust('resetAt', { at: new Date(w.resetsAt).toLocaleString(locale) }) : '', pace != null ? ust('pace', { p: formatPct(pace) }) : ''].filter(Boolean).join(' · ')}>
                   <span class="wkey mono">{w.key}</span>
-                  <span class="bar"><span class="fill {tone}" style:width="{Math.min(100, w.usedPercent)}%"></span></span>
+                  <LimitBar used={w.usedPercent} {pace} {tone} />
                   <span class="pct mono {tone}">{formatPct(w.usedPercent)}</span>
                   <span class="when faint small">{w.stale ? ust('wasReset') : w.resetsAt ? ust('resets', { t: countdown(w.resetsAt, now) ?? '' }) : ''}</span>
                 </div>
@@ -425,12 +427,6 @@
     display: block;
     height: 100%;
     background: var(--text-3);
-  }
-  .fill.warn {
-    background: var(--use-warn);
-  }
-  .fill.crit {
-    background: var(--st-failed);
   }
   .pct {
     text-align: right;

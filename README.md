@@ -191,7 +191,9 @@ connect.
   <img src="app/docs/screenshots/sticky-notes-dark.png" width="720" alt="Sticky notes on a session">
 
 - **Usage and system monitor**: agent quotas, token usage, CPU and RAM in the title bar. The usage
-  view lists every supported agent, with an **Agents** dropdown to show or hide each CLI.
+  view lists every supported agent, with an **Agents** dropdown to show or hide each CLI. Plan
+  limit bars (Claude Code, Codex) carry a tick at the even pace and turn amber when you spend a
+  window faster than it resets; the side panel shows them for the selected session's CLI.
 - **Real cost per session and task**: what each session cost, from the token counts in its
   transcript, per model with cache reads and writes apart and model switches shown as their own
   cost. Task cards carry the total, and the usage view compares the cost per finished

@@ -66,6 +66,21 @@ export function windowLevel(a: UsageAgent, w: UsageWindow): Level {
   return l === 'crit' && onCredits(a) ? 'warn' : l;
 }
 
+export const PACE_MARGIN = 5;
+
+export function pacePercent(w: UsageWindow, now: number): number | null {
+  if (w.stale || !w.resetsAt || !(w.windowMinutes > 0)) return null;
+  const end = Date.parse(w.resetsAt);
+  if (!Number.isFinite(end) || end <= now) return null;
+  return Math.min(100, Math.max(0, (1 - (end - now) / (w.windowMinutes * 60_000)) * 100));
+}
+
+export function gaugeLevel(a: UsageAgent, w: UsageWindow, now: number): Level {
+  const l = windowLevel(a, w);
+  const pace = pacePercent(w, now);
+  return l === 'ok' && pace != null && w.usedPercent > pace + PACE_MARGIN ? 'warn' : l;
+}
+
 export function agentLevel(a: UsageAgent): Level {
   if (a.limits?.hit) return 'crit';
   return worst(liveWindows(a).map((w) => windowLevel(a, w)));

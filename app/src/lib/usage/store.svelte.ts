@@ -177,3 +177,16 @@ export class UsageFeed {
 
 export const chipFeed = new UsageFeed();
 chipFeed.minInterval = CHIP_MIN_MS;
+
+let chipUsers = 0;
+
+export function useChipFeed(session: string, client: Client, subscribe: Subscribe, query: Query): () => void {
+  chipUsers++;
+  const off = chipFeed.use(session, client, subscribe, query);
+  let done = false;
+  return () => {
+    if (done) return;
+    done = true;
+    if (--chipUsers === 0) off();
+  };
+}

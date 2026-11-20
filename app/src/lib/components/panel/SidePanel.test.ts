@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-async function rendered(lastAssistantText: string, extra: { line?: object; activity?: object; git?: boolean; selected?: object | null; terms?: object[] } = {}) {
+async function rendered(lastAssistantText: string, extra: { line?: object; activity?: object; git?: boolean; selected?: object | null; terms?: object[]; usage?: object } = {}) {
   vi.resetModules();
+  if (extra.usage) (await import('../../usage/store.svelte')).chipFeed.data = extra.usage as never;
   const activity = { l1: { workLog: [], todos: [], editedFiles: [], needsInput: false, lastAssistantText, ...extra.activity } };
   const { app } = await import('../../state.svelte');
   app.data.activity = activity as never;
@@ -109,5 +110,16 @@ describe('SidePanel tabs', () => {
     const html = await rendered('hello', { selected: null });
     expect(html).toContain('No session selected');
     expect(tab(html, 'Git')).toBe('false');
+  });
+});
+
+describe('SidePanel plan limits', () => {
+  it('shows the plan limit rows of the session agent under the header', async () => {
+    const resetsAt = new Date(Date.now() + 3_600_000).toISOString();
+    const usage = { agents: [{ agent: 'claude', today: {}, limits: { source: 'claude', windows: [{ key: 'wk', windowMinutes: 10080, usedPercent: 12, resetsAt, stale: false }], hit: null } }] };
+    const html = await rendered('hello', { usage });
+    expect(html).toContain('data-tour="plan-limits"');
+    expect(html).toContain('Weekly');
+    expect(html.indexOf('plan-limits')).toBeLessThan(html.indexOf('Last message'));
   });
 });

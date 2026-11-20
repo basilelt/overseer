@@ -225,3 +225,33 @@ function limited(resetsAt: number): UsageResponse {
     ],
   };
 }
+
+describe('useChipFeed', () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.resetModules();
+  });
+
+  it('shares one chip feed between the title bar and the side panel, fetching once and stopping with the last user', async () => {
+    vi.resetModules();
+    const { chipFeed, useChipFeed } = await import('./store.svelte');
+    const s = setup();
+    const q = { range: 'today' as const, by: 'agent' as const };
+    const offChip = useChipFeed('local:', s.client, s.subscribe, q);
+    await vi.runOnlyPendingTimersAsync();
+    const offPanel = useChipFeed('local:', s.client, s.subscribe, q);
+    await vi.runOnlyPendingTimersAsync();
+    expect(s.calls.length).toBe(1);
+    expect(chipFeed.data?.agents.length).toBe(9);
+    offChip();
+    offChip();
+    s.emit('usage.updated');
+    await vi.advanceTimersByTimeAsync(CHIP_MIN_MS + 10);
+    expect(s.calls.length).toBe(2);
+    offPanel();
+    s.emit('usage.updated');
+    await vi.advanceTimersByTimeAsync(CHIP_MIN_MS + 10);
+    expect(s.calls.length).toBe(2);
+  });
+});
