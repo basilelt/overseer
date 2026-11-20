@@ -1,4 +1,5 @@
 <script lang="ts">
+  import '../../i18n/parts/settings.use';
   import { untrack } from 'svelte';
   import TriangleAlert from '@lucide/svelte/icons/triangle-alert';
   import { t } from '../../i18n.svelte';
