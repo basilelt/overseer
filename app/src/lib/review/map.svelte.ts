@@ -283,6 +283,11 @@ export function step(rank: Scored[], current: string | null, dir: 1 | -1): Score
   return rank[(i + dir + rank.length) % rank.length];
 }
 
+export function inList(rank: Scored[], ids: readonly string[]): Scored[] {
+  const on = new Set(ids);
+  return rank.filter((s) => on.has(s.id));
+}
+
 export type Point = readonly [number, number];
 
 export function nearest(points: Map<string, Point>, from: string, dir: Arrow): string | null {
