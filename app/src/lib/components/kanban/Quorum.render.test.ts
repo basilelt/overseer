@@ -72,11 +72,17 @@ describe('QuorumField', () => {
     expect(out).not.toContain('Amp');
   });
 
-  it('disables the toggle with a hint when the agent cannot orchestrate', async () => {
-    const out = await html('QuorumField', { ...props, agent: 'gemini', on: true });
+  it('enables the toggle for any CLI, like Gemini', async () => {
+    const out = await html('QuorumField', { ...props, agent: 'gemini', on: false });
+    expect(out).not.toMatch(/<input[^>]*disabled/);
+    expect(out).not.toContain('Shell cannot run a quorum.');
+  });
+
+  it('disables the toggle with a hint only for the shell', async () => {
+    const out = await html('QuorumField', { ...props, agent: 'shell', on: true });
     expect(out).toMatch(/<input[^>]*disabled/);
     expect(out).not.toMatch(/<input[^>]*checked/);
-    expect(out).toContain('Only Claude Code and Codex can run a quorum.');
+    expect(out).toContain('Shell cannot run a quorum.');
     expect(out).not.toContain('Workers');
   });
 });

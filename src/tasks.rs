@@ -674,7 +674,7 @@ pub fn create(ctx: &Ctx, b: &Value) -> Res<Task> {
         None => asked,
     }
     .unwrap_or(crate::agents::DEFAULT_ID);
-    let quorum = crate::quorum::parse(&b["quorum"], agent)?;
+    let quorum = crate::quorum::parse(&b["quorum"])?;
     if quorum.is_some() && parent.is_some() {
         return Err(bad("a subtask cannot run a quorum"));
     }
@@ -889,13 +889,10 @@ pub fn patch(ctx: &Ctx, id: &str, b: &Value) -> Res<Task> {
                         "the quorum can only change before the task starts".into(),
                     ));
                 }
-                t.quorum = crate::quorum::parse(v, &effort_agent)?;
+                t.quorum = crate::quorum::parse(v)?;
             }
             _ => {}
         }
-    }
-    if t.quorum.is_some() {
-        crate::quorum::check_orchestrator(&t.agent)?;
     }
     task_transition::enter(ctx, &reg, &mut t, &was, Origin::Patch)?;
     Ok(t)

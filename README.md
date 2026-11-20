@@ -79,11 +79,13 @@ Write a task, pick the agent, its model and reasoning effort, and start it: Over
 worktree on a new branch and types the task into the agent. Tasks in the **Auto** column start on
 their own, in order, within your concurrency limit. A new task can be filled from the project's
 GitHub or GitLab issues or Jira tickets, and agents can read and update tasks through the
-built-in MCP server. Finished work waits in **Review**; a task moves to **Merged** by itself once
+built-in MCP server. Open a card and press **Edit** to change the task afterwards — its text,
+the agent CLI, model, effort, ticket, type or profile — and select any of its text to copy it.
+Finished work waits in **Review**; a task moves to **Merged** by itself once
 its branch lands in the default branch, **Closed** keeps the rest, and an agent moves its task
-back to In progress when work resumes. Tick **Quorum** on a Claude or Codex task and its agent
-splits the work between several agent CLIs; one or two other agents review each result and vote
-with the orchestrator, and only results a majority accepts are merged.
+back to In progress when work resumes. Tick **Quorum** on a task — with any agent CLI — and its
+agent splits the work between several agent CLIs; one or two other agents review each result and
+vote with the orchestrator, and only results a majority accepts are merged.
 
 ![Tasks](app/docs/screenshots/kanban-dark.png)
 

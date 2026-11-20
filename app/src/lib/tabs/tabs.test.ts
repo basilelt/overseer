@@ -139,11 +139,25 @@ describe('followTerm', () => {
     expect(followTerm('line:a', [line, shell], termOf)).toBeNull();
   });
 
-  it('finds nothing when the term is gone or still bound to a line', () => {
+  it('moves a tab to the line that took over its term', () => {
+    const termOf = new Map<string, string>();
+    rememberTerms(termOf, [line], bound);
+    const lost = { ...line, group: 'stopped', state: 'closed', termId: undefined } as SidebarItem;
+    const next = { ...line, key: 'line:b', lineId: 'b' } as SidebarItem;
+    expect(followTerm('line:a', [lost, next], termOf)).toBe('line:b');
+    expect(followTerm('line:a', [next], termOf)).toBe('line:b');
+  });
+
+  it('keeps a tab whose line still holds its term', () => {
+    const termOf = new Map<string, string>();
+    rememberTerms(termOf, [line], bound);
+    expect(followTerm('line:a', [line, { ...line, key: 'line:b', lineId: 'b' }], termOf)).toBeNull();
+  });
+
+  it('finds nothing when the term is gone or still bound to the same line', () => {
     const termOf = new Map<string, string>();
     rememberTerms(termOf, [line], bound);
     expect(followTerm('line:a', [], termOf)).toBeNull();
-    expect(followTerm('line:a', [{ ...line, key: 'line:b', lineId: 'b' }], termOf)).toBeNull();
     expect(followTerm('line:z', [shell], termOf)).toBeNull();
     expect(followTerm('term:t1', [shell], termOf)).toBeNull();
   });

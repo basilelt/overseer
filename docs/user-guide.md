@@ -932,7 +932,7 @@ On first launch, once the app is connected (immediately in local mode, after the
 connection on a phone), a welcome card offers **Take the tour** or **Skip**. The tour dims the
 window and highlights the real controls one at a time: host chip, workspaces sidebar, tabs and the
 new-session menu, the Terminal/Chat toggle, the side panel, Tasks, Review, the usage, system and ports
-chips, notifications and hooks, the command palette and Feedback, in 0.25 the Cmd/Ctrl+P palette shortcut (not shown on a phone), and in 0.27 the demo mode (on the **Demo mode** pill while in the demo, else on the host chip), and in 0.28 the GPU rendering option for terminals, and in 0.29 the clean up of unused worktrees and the import from Switchboard (on its button in Settings, Help, or on the Settings button), and in 0.30 click to move the cursor in a terminal (on the tabs), and in 0.31 the Light and Dark palettes (on Settings, or More on a phone), and in 0.33 the one-click install of skills and plugins (on Settings), and in 0.34 the auto-approval defaults (on Settings, Agents), the Review, Merged and Closed columns (on the Merged column when the board is open, else on the Tasks tab) and the clean removal of everything Overseer added (on Settings, Connection, **Remove**), and in 0.35 one-click in-app updates for every install (on Settings, Updates, else on the Settings button), and in 0.36 subjects inside a workspace (on **+ New subject** in the open workspace, else on the sidebar), and the live review behind the git button (on the git button of a session's tab bar, else on the command palette), and the review map (on List | Map in a review, else on the Review tab), and keeping agents running with the lid closed (on its switch in Settings, Connection, else on the Settings button), and Record a bug (centred, on the command palette), and the Quorum option of a new task (on the Quorum control in the New task dialog, else on the Tasks tab), and installing a missing agent from the app (on the title bar **+**, else on the palette), and agents kept inside their project (on **Agents message each other** in Settings, Defaults, else on the Settings button), and Mistral Vibe as a new agent (on the title bar **+**, else on the palette), and the real cost of each session and task (on the cost line of the side panel, else on the side panel), and profiles by task type (on the **Type** field of the New task dialog, else on the Tasks tab), and the choice between agents filing what they find as tasks or fixing it themselves (on **Agents file what they find as tasks** in Settings, Defaults, else on the Settings button), and several hosts in one window (on the host sections of the sidebar when a window shows several hosts, else on the host chip), and sticky notes on sessions (on the note icon of a session that has notes, else on the sidebar), and in 0.37 source control in the side panel (on its **Git** tab, else on the side panel), and the keyboard controls of the review map (on List | Map in a review, else on the Review tab; not shown on a phone), and in 0.38 every supported CLI listed in the Usage view with an **Agents** dropdown to show or hide each (on the Agents dropdown of the Usage view, else on the usage chip), and in 0.38 the choice of the CLI that files feedback (on **Send with…** in the feedback sheet, else on the title-bar feedback button). Steps whose control is not on
+chips, notifications and hooks, the command palette and Feedback, in 0.25 the Cmd/Ctrl+P palette shortcut (not shown on a phone), and in 0.27 the demo mode (on the **Demo mode** pill while in the demo, else on the host chip), and in 0.28 the GPU rendering option for terminals, and in 0.29 the clean up of unused worktrees and the import from Switchboard (on its button in Settings, Help, or on the Settings button), and in 0.30 click to move the cursor in a terminal (on the tabs), and in 0.31 the Light and Dark palettes (on Settings, or More on a phone), and in 0.33 the one-click install of skills and plugins (on Settings), and in 0.34 the auto-approval defaults (on Settings, Agents), the Review, Merged and Closed columns (on the Merged column when the board is open, else on the Tasks tab) and the clean removal of everything Overseer added (on Settings, Connection, **Remove**), and in 0.35 one-click in-app updates for every install (on Settings, Updates, else on the Settings button), and in 0.36 subjects inside a workspace (on **+ New subject** in the open workspace, else on the sidebar), and the live review behind the git button (on the git button of a session's tab bar, else on the command palette), and the review map (on List | Map in a review, else on the Review tab), and keeping agents running with the lid closed (on its switch in Settings, Connection, else on the Settings button), and Record a bug (centred, on the command palette), and the Quorum option of a new task (on the Quorum control in the New task dialog, else on the Tasks tab), and installing a missing agent from the app (on the title bar **+**, else on the palette), and agents kept inside their project (on **Agents message each other** in Settings, Defaults, else on the Settings button), and Mistral Vibe as a new agent (on the title bar **+**, else on the palette), and the real cost of each session and task (on the cost line of the side panel, else on the side panel), and profiles by task type (on the **Type** field of the New task dialog, else on the Tasks tab), and the choice between agents filing what they find as tasks or fixing it themselves (on **Agents file what they find as tasks** in Settings, Defaults, else on the Settings button), and several hosts in one window (on the host sections of the sidebar when a window shows several hosts, else on the host chip), and sticky notes on sessions (on the note icon of a session that has notes, else on the sidebar), and in 0.37 source control in the side panel (on its **Git** tab, else on the side panel), and the keyboard controls of the review map (on List | Map in a review, else on the Review tab; not shown on a phone), and in 0.38 quorum with any agent CLI (on the Quorum control in the New task dialog, else on the Tasks tab), and every supported CLI listed in the Usage view with an **Agents** dropdown to show or hide each (on the Agents dropdown of the Usage view, else on the usage chip), and the choice of the CLI that files feedback (on **Send with…** in the feedback sheet, else on the title-bar feedback button), and editing a task in its details (on the **Edit** button of an open task, else on the Tasks tab). Steps whose control is not on
 screen (no session selected, a feature the server lacks, phone layout) are skipped. On a phone the
 card is a sheet at the bottom (or top, when the control sits low) and points at the bottom
 navigation, the session strip and the menu.
@@ -1300,6 +1300,14 @@ and `completed` (Closed). Merged and Closed are both done; they start collapsed 
   `repos`, existing tasks and added projects); `POST /v1/projects {"path": …}` adds one (it must
   be in a git repository).
 - `rank` orders the cards of a column; the app updates it when a card is dragged.
+- Editing: the details of a task have an **Edit** button (or the card title is renamed with a
+  double-click / F2). It opens the title, description, agent CLI, model, effort, ticket key, type
+  and profile in place (session tasks keep only their text); **Save** sends the changed fields to
+  `PATCH /v1/tasks/<id>` (`title` must not be empty; `agent` must be a coding agent; `effort` must
+  be one of the agent's levels or `""` to clear; `ticketKey` must look like `PROJ-1234` or be
+  `null`; `taskType` one of the known types or `null`; `profile` an existing profile, `"none"` or
+  `null`). The title, description, meta chips, messages and votes of the details are selectable
+  text, so they can be copied.
 - Dependencies: a task can depend on other tasks (`dependsOn`, a list of task ids). Set them in
   the "Depends on" picker of the new task dialog or the task details (search by number or title,
   same project unless "All projects" is ticked). A task stays blocked until every dependency is
@@ -1366,8 +1374,8 @@ curl --unix-socket "$S" 'http://unix/v1/tasks?status=in_progress,in_testing'
 #### 14.2c Quorum
 
 Tick **Quorum** in the New task dialog to have several agent CLIs share one task and check each
-other. It is only offered when the task's agent is Claude Code or Codex (the orchestrator, which
-needs the Overseer MCP); with another agent the switch is disabled with a hint.
+other. Any agent CLI can be the orchestrator — Claude Code, Codex, Gemini CLI, Antigravity,
+opencode, Amp, Copilot CLI, Cursor Agent or Mistral Vibe; only the shell cannot run a quorum.
 
 - **Workers** (one or more installed agents) get the subtasks the orchestrator cuts the task into.
   **Reviewers** (one or two installed agents) review each worker's result. Neither list can hold
@@ -1386,9 +1394,12 @@ needs the Overseer MCP); with another agent the switch is disabled with a hint.
   reviewer that ends without voting counts as a rejection.
 - While it waits for subtasks, the orchestrator's card can sit in Review between its turns; its
   messages still reach it.
-- Agents that have the Overseer MCP (Claude Code, Codex) vote with the `cast_vote` tool. Any other
-  reviewer votes from its task terminal with the CLI: `overseer vote approve "<reason>"` or
-  `overseer vote reject "<reason>"`.
+- Agents that have the Overseer MCP (Claude Code, Codex) create subtasks with `create_task`, vote
+  with `cast_vote` and move their own task with `set_task_status`. Any other agent — as orchestrator
+  or reviewer — runs the same tools from its task terminal with the CLI:
+  `overseer tool create_task '{"title":"…","agent":"codex"}'` (any tool name, JSON arguments), and
+  votes with `overseer vote approve "<reason>"` or `overseer vote reject "<reason>"` (the
+  orchestrator adds `--task <subtask id>`).
 - The quorum is set when the task is created and can only change while the task is Pending or Auto.
   A subtask cannot run its own quorum.
 
