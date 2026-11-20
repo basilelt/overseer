@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { agentLevel, authNote, onCredits, windowLevel, barHeights, chipSegments, chipText, countdown, formatCost, formatDuration, formatTokens, tzOffset } from './format';
+import { PACE_MARGIN, gaugeLevel, pacePercent, agentLevel, authNote, onCredits, windowLevel, barHeights, chipSegments, chipText, countdown, formatCost, formatDuration, formatTokens, tzOffset } from './format';
 import { level, worst } from '../severity';
 import type { UsageAgent, UsageTotals } from './types';
 import { mockUsage } from './mock';
-import { creditsNote } from './strings';
+import { creditsNote, windowLabel } from './strings';
 
 const zero: UsageTotals = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0, cost: 0, costPartial: false, messages: 0, activeMs: 0 };
 const agent = (id: string, total: number, windows: [string, number, boolean?][] = [], hit = false): UsageAgent => ({
@@ -164,5 +164,55 @@ describe('usage formatting', () => {
     expect(barHeights([0, 50, 100])).toEqual([0, 50, 100]);
     expect(barHeights([1, 1000])).toEqual([2, 100]);
     expect(barHeights([0, 0])).toEqual([0, 0]);
+  });
+});
+
+describe('plan limit pace', () => {
+  const now = Date.parse('2026-11-20T12:00:00Z');
+  const win = (usedPercent: number, minutes: number, resetInMin: number | null, stale = false) => ({
+    key: '5h',
+    windowMinutes: minutes,
+    usedPercent,
+    resetsAt: resetInMin == null ? null : new Date(now + resetInMin * 60_000).toISOString(),
+    stale,
+  });
+  const of = (w: ReturnType<typeof win>): UsageAgent => ({ agent: 'codex', today: zero, limits: { source: 'codex', windows: [w], hit: null } });
+
+  it('places the even pace at the share of the window already elapsed', () => {
+    expect(pacePercent(win(0, 300, 240), now)).toBeCloseTo(20);
+    expect(pacePercent(win(0, 10080, 10080), now)).toBe(0);
+    expect(pacePercent(win(0, 43200, 21600), now)).toBeCloseTo(50);
+  });
+
+  it('clamps the pace when the reset is further away than the window', () => {
+    expect(pacePercent(win(0, 300, 400), now)).toBe(0);
+  });
+
+  it('has no pace without a future reset, for a stale window or a window of no length', () => {
+    expect(pacePercent(win(10, 300, null), now)).toBeNull();
+    expect(pacePercent(win(10, 300, 0), now)).toBeNull();
+    expect(pacePercent(win(10, 300, -5), now)).toBeNull();
+    expect(pacePercent(win(10, 300, 60, true), now)).toBeNull();
+    expect(pacePercent(win(10, 0, 60), now)).toBeNull();
+    expect(pacePercent({ ...win(10, 300, 60), resetsAt: 'soon' }, now)).toBeNull();
+  });
+
+  it('turns a gauge amber when usage runs more than the margin ahead of the even pace', () => {
+    expect(gaugeLevel(of(win(40, 300, 240)), win(40, 300, 240), now)).toBe('warn');
+    expect(gaugeLevel(of(win(19 + PACE_MARGIN, 300, 240)), win(19 + PACE_MARGIN, 300, 240), now)).toBe('ok');
+    expect(gaugeLevel(of(win(10, 300, 240)), win(10, 300, 240), now)).toBe('ok');
+    expect(gaugeLevel(of(win(40, 300, null)), win(40, 300, null), now)).toBe('ok');
+  });
+
+  it('keeps the threshold level when it is already amber or red', () => {
+    expect(gaugeLevel(of(win(97, 300, 10)), win(97, 300, 10), now)).toBe('crit');
+    expect(gaugeLevel(of(win(85, 300, 10)), win(85, 300, 10), now)).toBe('warn');
+  });
+
+  it('names the known windows and keeps other keys as they are', () => {
+    expect(windowLabel('5h')).toBe('5-hour');
+    expect(windowLabel('wk')).toBe('Weekly');
+    expect(windowLabel('mo')).toBe('Monthly');
+    expect(windowLabel('3d')).toBe('3d');
   });
 });

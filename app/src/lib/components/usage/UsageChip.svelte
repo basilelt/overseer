@@ -3,7 +3,7 @@
   import { app } from '../../state.svelte';
   import { settings } from '../../settings/settings.svelte';
   import { agentName } from '../../agents';
-  import { chipFeed } from '../../usage/store.svelte';
+  import { chipFeed, useChipFeed } from '../../usage/store.svelte';
   import { authNote, chipSegments, countdown, onCredits } from '../../usage/format';
   import { worst } from '../../severity';
   import { creditsNote, ust } from '../../usage/strings';
@@ -27,7 +27,7 @@
 
   $effect(() => {
     if (!session || !app.client) return;
-    return chipFeed.use(session, app.client, (fn) => app.onChange((_p, _n, e) => fn(e)), { range: 'today', by: 'agent', claudeLimits: settings.fetchClaudeLimits });
+    return useChipFeed(session, app.client, (fn) => app.onChange((_p, _n, e) => fn(e)), { range: 'today', by: 'agent', claudeLimits: settings.fetchClaudeLimits });
   });
 </script>
 

@@ -16,6 +16,7 @@
   const workLogView = preload(() => import('./WorkLog.svelte'));
   const gitView = () => import('../../git/PanelGit.svelte');
   import SessionCost from './SessionCost.svelte';
+  import PlanLimits from './PlanLimits.svelte';
   import { formatCost } from '../../usage/format';
   import GitPullRequest from '@lucide/svelte/icons/git-pull-request';
   import GitBranch from '@lucide/svelte/icons/git-branch';
@@ -220,6 +221,7 @@
       </p>
       {#if act?.cost}<p class="profile faint mono" data-tour="session-cost" title={t('cost.hint', { date: act.cost.pricesAsOf })}>{costLine(act.cost)}</p>{/if}
       {#if chip}<p class="profile faint" title={t('profile.label')}>{chipLabel(chip, (e) => t('profile.effortOf', { effort: t(`effort.${e}` as Key).toLowerCase() }))}</p>{/if}
+      <PlanLimits agent={line.line.agent} />
     </header>
     <PanelActions {line} />
     <div class="scroll" role="presentation" onpointerdown={dragDown} onclickcapture={swallowClick}>
