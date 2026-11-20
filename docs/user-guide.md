@@ -1086,8 +1086,12 @@ In the app:
   events, so a Claude Code session inside tmux scrolls tmux's history; a full-screen program
   without mouse reports (less, man) gets Up/Down arrows unless it turned that off
   (`ESC [?1007l`); otherwise the wheel scrolls the terminal's own scrollback. Shift+wheel always
-  scrolls the local scrollback. Drags always select text locally (they are not sent to the
-  program).
+  scrolls the local scrollback. Drags select text locally and are not sent to the
+  program, except with Shift held: a Shift+drag in a program that reads the mouse is sent to it
+  (vim visual mode with `mouse=a`, tmux pane resize and copy-mode, TUI sliders). Shift is used
+  because Alt+drag moves windows in many Linux desktops, Ctrl+click is a right-click on macOS and
+  Cmd+click opens links; the program sees a plain drag (the shift bit is dropped, so tmux names it
+  `MouseDrag1Pane`). Without mouse reporting a Shift drag still selects.
 - **Click to move the cursor**: a single click in the line being typed (a shell prompt, the
   input of Claude Code, Codex or another agent) moves the cursor there by sending Left/Right
   arrows, like in a text editor. Only the cursor's own row is handled; clicks on other rows,
