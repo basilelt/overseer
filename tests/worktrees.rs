@@ -24,7 +24,27 @@ fn setup() {
         std::fs::create_dir_all(tmp().join("gh")).unwrap();
         let stubs = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/stubs");
         let path = std::env::var("PATH").unwrap_or_default();
-        std::env::set_var("PATH", format!("{}:{path}", stubs.display()));
+        let real = std::env::split_paths(&path)
+            .map(|d| d.join("git"))
+            .find(|g| g.is_file())
+            .unwrap();
+        let shim = tmp().join("shim");
+        std::fs::create_dir_all(&shim).unwrap();
+        std::fs::write(
+            shim.join("git"),
+            format!(
+                "#!/bin/sh\nd=$PWD\n[ \"$1\" = -C ] && d=$2\nprintf '%s\\n' \"$d\" >> '{}'\nexec '{}' \"$@\"\n",
+                tmp().join("git.log").display(),
+                real.display()
+            ),
+        )
+        .unwrap();
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(shim.join("git"), std::fs::Permissions::from_mode(0o755)).unwrap();
+        std::env::set_var(
+            "PATH",
+            format!("{}:{}:{path}", shim.display(), stubs.display()),
+        );
         std::env::set_var("HOME", tmp().join("home"));
         std::env::set_var("GIT_CONFIG_GLOBAL", "/dev/null");
         std::env::set_var("GIT_CONFIG_NOSYSTEM", "1");
@@ -381,6 +401,80 @@ fn set_task(fx: &Fx, path: &str, status: &str) {
             rusqlite::params![t.id, status, path],
         )
         .unwrap();
+}
+
+fn git_calls_under(dir: &Path, f: impl FnOnce()) -> usize {
+    let n = || {
+        std::fs::read_to_string(tmp().join("git.log"))
+            .unwrap_or_default()
+            .lines()
+            .filter(|l| Path::new(l).starts_with(dir))
+            .count()
+    };
+    let before = n();
+    f();
+    n() - before
+}
+
+fn add_worktrees(fx: &Fx, from: usize, to: usize) -> Vec<String> {
+    (from..to)
+        .map(|i| {
+            let p = fx.base.join(format!("wt{i}"));
+            run(
+                &fx.root,
+                &[
+                    "worktree",
+                    "add",
+                    "-q",
+                    "-b",
+                    &format!("b{i}"),
+                    p.to_str().unwrap(),
+                ],
+            );
+            p.to_string_lossy().into_owned()
+        })
+        .collect()
+}
+
+#[test]
+fn a_dry_run_cleanup_costs_the_same_git_work_with_ten_times_more_worktrees() {
+    let fx = Fx::new("drycost");
+    let first = add_worktrees(&fx, 0, 3);
+    fx.cleanup(&first[0], true).unwrap();
+    let small = git_calls_under(&fx.base, || {
+        fx.cleanup(&first[0], true).unwrap();
+    });
+    add_worktrees(&fx, 3, 30);
+    let big = git_calls_under(&fx.base, || {
+        fx.cleanup(&first[0], true).unwrap();
+    });
+    assert!(small > 0);
+    assert_eq!(
+        big, small,
+        "git calls for one dry run: {small} with 3 worktrees, {big} with 30"
+    );
+}
+
+#[test]
+fn describe_finds_one_worktree_by_its_raw_or_canonical_path_and_404s_otherwise() {
+    let fx = Fx::new("describe");
+    let p = add_worktrees(&fx, 0, 2);
+    let w = worktrees::describe(&fx.ctx(), fx.r(), &p[1]).unwrap();
+    assert_eq!(w["path"], p[1].as_str());
+    assert_eq!(w["branch"], "b1");
+    let mut listed = fx.wt(&p[1]);
+    let mut w2 = w.clone();
+    for v in [&mut listed, &mut w2] {
+        v.as_object_mut().unwrap().remove("sizeBytes");
+    }
+    assert_eq!(w2, listed);
+    let link = fx.base.join("link");
+    std::os::unix::fs::symlink(&p[1], &link).unwrap();
+    let w = worktrees::describe(&fx.ctx(), fx.r(), link.to_str().unwrap()).unwrap();
+    assert_eq!(w["path"], p[1].as_str());
+    let e =
+        worktrees::describe(&fx.ctx(), fx.r(), fx.base.join("nope").to_str().unwrap()).unwrap_err();
+    assert_eq!(e.0, 404);
 }
 
 #[test]

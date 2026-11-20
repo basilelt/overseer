@@ -24,6 +24,26 @@ export function cleanupTargets(plans: CleanupPlan[]): string[] {
   return plans.filter((p) => !p.refused && p.remove.length).map((p) => p.id);
 }
 
+export const PLAN_CONCURRENCY = 4;
+
+export async function planAll(api: Pick<GitApi, 'cleanup'>, targets: { id: string; project?: string }[], limit = PLAN_CONCURRENCY): Promise<CleanupPlan[]> {
+  const out: CleanupPlan[] = new Array(targets.length);
+  let next = 0;
+  const worker = async () => {
+    while (next < targets.length) {
+      const i = next++;
+      const { id, project } = targets[i];
+      try {
+        out[i] = await api.cleanup(id, true, project);
+      } catch (e) {
+        out[i] = { dryRun: true, id, refused: String((e as Error)?.message ?? e), remove: [], keep: [] };
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, targets.length) }, worker));
+  return out;
+}
+
 export async function runCleanup(api: GitApi, ids: string[], projectOf: (id: string) => string | undefined = () => undefined) {
   const done: CleanupPlan[] = [];
   const failed: { id: string; error: string }[] = [];
