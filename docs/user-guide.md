@@ -1701,10 +1701,10 @@ counts show no cost at all rather than an estimate. Subscriptions are not billed
 read it as what the same work would cost on the API.
 
 Where the numbers come from (contract §7c): Claude Code transcripts, Codex rollouts and Gemini
-CLI sessions (when they record token counts) on the machine the app is connected to, read
+CLI sessions and Mistral Vibe session stores (when they record token counts) on the machine the app is connected to, read
 incrementally by the daemon. Settings → Usage lists each of these providers: Claude Code with its two
 plan-limit switches below, Codex (tokens, cost and its plan limits, always read from its session
-logs) and Gemini CLI (tokens and cost only; it records no plan limits). Claude Code does not store its 5-hour and weekly percentages on
+logs) Gemini CLI and Mistral Vibe (tokens only, and cost when the model is priced; they record no plan limits). Claude Code does not store its 5-hour and weekly percentages on
 disk, but it passes them to its status line command (`rate_limits` in the status line's JSON input,
 for Pro and Max plans). Settings → Usage → "Plan limits from the status line" (off until you turn it
 on, per host) wraps your status line command in `~/.claude/settings.json` (a backup is written

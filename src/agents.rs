@@ -404,6 +404,7 @@ pub static AGENTS: &[Agent] = &[
             bins: &["vibe", "vibe.exe", "vibe-rs", "vibe-rs.exe"],
         }),
         mcp: Mcp::VibeTrust,
+        metered: true,
         hooks: Hooks::Native,
         hook_note: Some("Needs Mistral Vibe 3.0 or later. An interrupted turn fires no hook: the line stays busy until the next turn ends."),
         profile: ProfileKind::Vibe,
@@ -1143,7 +1144,7 @@ mod tests {
             ]
         );
         let metered: Vec<_> = AGENTS.iter().filter(|a| a.metered).map(|a| a.id).collect();
-        assert_eq!(metered, ["claude", "codex", "gemini"]);
+        assert_eq!(metered, ["claude", "codex", "gemini", "vibe"]);
         assert_eq!(t("claude").mcp, Mcp::Claude);
         assert_eq!(t("codex").mcp, Mcp::Codex);
         assert_eq!(t("vibe").mcp, Mcp::VibeTrust);
