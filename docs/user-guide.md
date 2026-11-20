@@ -1118,9 +1118,6 @@ the folder, title and model, the session store for the chat); a session is live 
 its lease in `logs/session/active/`. Forks (`/branch`) are lines of their own, subagents are not.
 Vibe has no launch flag for the model: a profile sets it with `VIBE_ACTIVE_MODEL`. A task started
 on Vibe gets `--trust`, since its new worktree would otherwise stop at Vibe's trust prompt.
-A Vibe session started by Overseer also gets `BROWSER=true`: its browser sign-in then prints the
-sign-in URL in the terminal instead of opening a window on the machine the terminal runs on —
-click the URL to open it in the app's browser, where the sign-in actually happens.
 
 Detection uses the daemon's `PATH`. A daemon started over SSH by the app gets a minimal
 environment, so at start it asks the login shell for the real one (`$SHELL -l -i -c`, 5 s
