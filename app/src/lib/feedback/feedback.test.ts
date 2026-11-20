@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { attachProblem, ATTACH_ACCEPT, buildBody, buildDiagnostics, buildPrompt, findClone, issueTitle, labelsFor, newIssueUrl, wantsDiagnostics, PRIVACY_URL, redact, REPORT, repoSlug, stripAnsi, UrlWatcher, isFeedbackTerm, validate, validRepo, type Form } from './feedback';
+import { FALLBACK_AGENTS } from '../agents';
+import type { AgentInfo } from '../types';
+import { attachProblem, ATTACH_ACCEPT, buildBody, buildDiagnostics, buildPrompt, findClone, issueTitle, labelsFor, newIssueUrl, pickSender, wantsDiagnostics, PRIVACY_URL, redact, REPORT, repoSlug, stripAnsi, UrlWatcher, isFeedbackTerm, validate, validRepo, type Form } from './feedback';
 
 const form = (over: Partial<Form> = {}): Form => ({ kind: 'bug', title: '', description: 'It crashes', attachments: [], diagnostics: null, ...over });
 const enc = new TextEncoder();
@@ -159,6 +161,28 @@ describe('clone lookup', () => {
     ];
     expect(findClone(projects, 'o/r')).toBe('/r');
     expect(findClone(projects, 'x/y')).toBeUndefined();
+  });
+});
+
+describe('sender pick', () => {
+  const agents: AgentInfo[] = [
+    ...FALLBACK_AGENTS.filter((a) => a.id !== 'codex'),
+    { id: 'codex', name: 'Codex', installed: false, efforts: [], resume: false, verified: false, sessions: true, turns: true },
+  ];
+
+  it('uses the feedback CLI when it is set and installed', () => {
+    expect(pickSender(FALLBACK_AGENTS, { feedbackAgent: 'codex', defaultAgent: 'claude' })).toBe('codex');
+  });
+
+  it('follows the default agent when no feedback CLI is set', () => {
+    expect(pickSender(FALLBACK_AGENTS, { defaultAgent: 'claude' })).toBe('claude');
+    expect(pickSender(FALLBACK_AGENTS, { feedbackAgent: undefined, defaultAgent: 'claude' })).toBe('claude');
+  });
+
+  it('falls back to an installed agent when the set CLI is missing or the shell', () => {
+    expect(pickSender(agents, { feedbackAgent: 'codex', defaultAgent: 'claude' })).toBe('claude');
+    expect(pickSender(FALLBACK_AGENTS, { feedbackAgent: 'shell', defaultAgent: 'claude' })).toBe('claude');
+    expect(pickSender(FALLBACK_AGENTS, { feedbackAgent: 'gemini', defaultAgent: 'claude' })).toBe('claude');
   });
 });
 
