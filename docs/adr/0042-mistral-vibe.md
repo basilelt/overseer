@@ -42,5 +42,8 @@ being replaced by 3 through its own update prompt.
 - An interrupted turn fires no Vibe hook: the line stays busy until the next turn ends (or the
   session ends). A session ends when its lease is gone — `logs/session/active/<id>.lock.json`
   missing or naming a dead process — so the daemon then records the `session_end` the hook would
-  have sent and the line stops being mid-turn even without a hook.
+  have sent and the line stops being mid-turn even without a hook. The store also says when a
+  turn is over: `latestTurn.status` in the last journal envelope (or in the snapshot once the
+  journal was rotated). A line the hooks or the terminal still show mid-turn after the store
+  reports its turn over, and no new prompt in the last few seconds, is shown idle.
 - Usage (tokens) is not read: the store keeps only per-session totals without timestamps.

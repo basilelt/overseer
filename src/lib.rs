@@ -922,6 +922,16 @@ fn vibe_found(
                         t.submit_ms(),
                         t.turn_busy(ctx.now_ms),
                     );
+                    if f.busy
+                        && vibe::idle(
+                            vibe::turn(&s.dir),
+                            (h.busy, h.at_ms),
+                            t.submit_ms(),
+                            ctx.now_ms,
+                        )
+                    {
+                        f.busy = false;
+                    }
                 }
             }
             f.cwd = s.cwd.unwrap_or_default();
@@ -1220,7 +1230,8 @@ fn scan_now(ctx: &Ctx) -> Result<Vec<Line>, String> {
     // A Vibe session whose lease is gone has ended, even when no hook says so: an
     // interrupted turn fires no post_agent, and a session closed while its process
     // still runs fires no session_end. Record the SessionEnd the hook would have
-    // sent, so the line stops being mid-turn (docs/adr/0042-mistral-vibe.md).
+    // sent, so the line stops being mid-turn (docs/adr/0042-mistral-vibe.md). A turn
+    // the store reports over while a busy hook is older than it lost its post_agent.
     let vibe_sessions = vibe::sessions(&ctx.vibe_dir);
     let mid_turn = |h: &HookState| h.busy || h.needs_input || h.subagents != 0 || h.tasks != 0;
     let stuck: Vec<(String, HookState)> = if vibe_sessions.is_empty() {
@@ -1232,18 +1243,28 @@ fn scan_now(ctx: &Ctx) -> Result<Vec<Line>, String> {
             .collect()
     };
     if !stuck.is_empty() && probe_ok() {
-        let known: HashSet<&str> = vibe_sessions.iter().map(|s| s.id.as_str()).collect();
+        let known: HashMap<&str, &vibe::Session> =
+            vibe_sessions.iter().map(|s| (s.id.as_str(), s)).collect();
         for (id, mut h) in stuck {
-            if !known.contains(id.as_str())
-                || vibe::open(&ctx.vibe_dir, &id, |p| ctx.probe.info(p).is_some())
-            {
+            let Some(s) = known.get(id.as_str()) else {
                 continue;
+            };
+            if vibe::open(&ctx.vibe_dir, &id, |p| ctx.probe.info(p).is_some()) {
+                let over = h.busy
+                    && vibe::turn(&s.dir).is_some_and(|t| !t.running && h.at_ms <= t.done_ms);
+                if !over {
+                    continue;
+                }
+                h.event = "Stop".to_string();
+                h.busy = false;
+                h.needs_input = false;
+            } else {
+                h.event = "SessionEnd".to_string();
+                h.busy = false;
+                h.needs_input = false;
+                h.subagents = 0;
+                h.tasks = 0;
             }
-            h.event = "SessionEnd".to_string();
-            h.busy = false;
-            h.needs_input = false;
-            h.subagents = 0;
-            h.tasks = 0;
             h.at_ms = h.at_ms.max(ctx.now_ms);
             let _ = reg.put_hook_state(agents::VIBE, &id, &h);
         }

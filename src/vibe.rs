@@ -282,6 +282,85 @@ pub fn stamp(dir: &Path) -> u64 {
     st(&dir.join("CURRENT")).wrapping_add(j)
 }
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Turn {
+    pub running: bool,
+    pub done_ms: i64,
+}
+
+const SUBMIT_GRACE_MS: i64 = 5_000;
+const TURN_TAIL: u64 = 512 << 10;
+const TURN_KEY: &[u8] = b"\"latestTurn\":{";
+
+type Turns = HashMap<PathBuf, (u64, Option<Turn>)>;
+
+static TURNS: Mutex<Option<Turns>> = Mutex::new(None);
+
+fn turn_of(v: &Value, fallback_ms: i64) -> Option<Turn> {
+    let status = v["status"].as_str()?;
+    Some(Turn {
+        running: matches!(status, "in_progress" | "running"),
+        done_ms: v["completedAt"].as_i64().unwrap_or(fallback_ms),
+    })
+}
+
+fn last_turn(bytes: &[u8], fallback_ms: i64) -> Option<Turn> {
+    let at = bytes.windows(TURN_KEY.len()).rposition(|w| w == TURN_KEY)? + TURN_KEY.len() - 1;
+    let end = at + bytes[at..].iter().position(|b| *b == b'}')? + 1;
+    turn_of(&serde_json::from_slice(&bytes[at..end]).ok()?, fallback_ms)
+}
+
+fn read_turn(dir: &Path) -> Option<Turn> {
+    let h = head(dir)?;
+    let journal = journal_path(dir, &h.manifest);
+    let fallback_ms = journal
+        .as_deref()
+        .map_or(0, mtime_ms)
+        .max(mtime_ms(&dir.join("CURRENT")));
+    if let Some(p) = &journal {
+        let mut f = std::fs::File::open(p).ok()?;
+        let len = f.metadata().ok()?.len();
+        let whole = len <= TURN_TAIL;
+        let mut buf = vec![];
+        f.seek(SeekFrom::Start(len.saturating_sub(TURN_TAIL)))
+            .ok()?;
+        f.take(TURN_TAIL).read_to_end(&mut buf).ok()?;
+        if let Some(t) = last_turn(&buf, fallback_ms) {
+            return Some(t);
+        }
+        if !whole {
+            return None;
+        }
+    }
+    let ps = file_name(&h.manifest["projection_state"]["path"])?;
+    let doc = json(&h.generation.join(ps), MAX_DOC)?;
+    turn_of(&doc["snapshot"]["latestTurn"], fallback_ms)
+}
+
+pub fn idle(turn: Option<Turn>, hook: (bool, i64), submit_ms: i64, now_ms: i64) -> bool {
+    let (hook_busy, hook_at) = hook;
+    turn.is_some_and(|t| {
+        !t.running && !(hook_busy && hook_at > t.done_ms) && now_ms - submit_ms > SUBMIT_GRACE_MS
+    })
+}
+
+pub fn turn(dir: &Path) -> Option<Turn> {
+    let key = stamp(dir);
+    let mut g = TURNS.lock().unwrap_or_else(|e| e.into_inner());
+    let m = g.get_or_insert_with(HashMap::new);
+    if let Some((k, t)) = m.get(dir) {
+        if *k == key {
+            return *t;
+        }
+    }
+    if m.len() > 4096 {
+        m.clear();
+    }
+    let t = read_turn(dir);
+    m.insert(dir.to_path_buf(), (key, t));
+    t
+}
+
 fn hash(v: &Value) -> u64 {
     let mut h = DefaultHasher::new();
     v.to_string().hash(&mut h);
@@ -832,5 +911,120 @@ mod tests {
         // A lock file without a process id counts as open too.
         std::fs::write(&lock, json!({"lease_version": 1}).to_string()).unwrap();
         assert!(open(&h, "s1", |_| false));
+    }
+
+    fn envelope(status: &str, completed: Option<i64>) -> String {
+        let done = completed.map_or(String::new(), |c| format!("\"completedAt\":{c},"));
+        format!(
+            "{{\"payload\":{{\"delta\":[{{\"op\":\"set_envelope\",\"state\":{{\"activeCallbacks\":[],\"history\":{{\"entries\":[]}},\"latestTurn\":{{{done}\"id\":\"turn-1\",\"queueItemId\":\"q\",\"startedAt\":1795077719099,\"status\":\"{status}\"}},\"session\":{{\"id\":\"s1\"}}}}}}]}},\"sequence\":7,\"type\":\"projection_delta\"}}\n"
+        )
+    }
+
+    fn journal_of(dir: &Path) -> PathBuf {
+        std::fs::read_dir(dir.join("journal"))
+            .unwrap()
+            .flatten()
+            .next()
+            .unwrap()
+            .path()
+    }
+
+    #[test]
+    fn turn_follows_the_last_envelope_of_the_journal() {
+        let h = tmp("turn");
+        let dir = session(&h, "s1", meta_json("s1", "/w", None), 1, &[], "");
+        assert_eq!(turn(&dir).map(|t| t.running), None);
+        let j = journal_of(&dir);
+        std::fs::write(&j, envelope("in_progress", None).repeat(3)).unwrap();
+        assert_eq!(turn(&dir).map(|t| t.running), Some(true));
+        let all = format!(
+            "{}{}",
+            envelope("in_progress", None),
+            envelope("completed", Some(1795084789346))
+        );
+        std::fs::write(&j, all).unwrap();
+        assert_eq!(
+            turn(&dir),
+            Some(Turn {
+                running: false,
+                done_ms: 1795084789346
+            })
+        );
+    }
+
+    #[test]
+    fn turn_reads_the_snapshot_when_the_journal_was_rotated_empty() {
+        let h = tmp("turn-snap");
+        let dir = session(&h, "s1", meta_json("s1", "/w", None), 1, &[], "");
+        let ps = dir.join("generations/0000000000000001/projection-state.json");
+        std::fs::write(
+            &ps,
+            json!({"snapshot": {"history": {"entries": []},
+                "latestTurn": {"completedAt": 42, "id": "t", "startedAt": 1, "status": "completed", "stopReason": null}}})
+            .to_string(),
+        )
+        .unwrap();
+        assert_eq!(
+            turn(&dir),
+            Some(Turn {
+                running: false,
+                done_ms: 42
+            })
+        );
+    }
+
+    #[test]
+    fn turn_without_a_completion_time_uses_the_store_mtime_and_a_cancelled_turn_is_over() {
+        let h = tmp("turn-cancel");
+        let dir = session(&h, "s1", meta_json("s1", "/w", None), 1, &[], "");
+        std::fs::write(journal_of(&dir), envelope("cancelled", None)).unwrap();
+        let t = turn(&dir).unwrap();
+        assert!(!t.running && t.done_ms > 0);
+    }
+
+    #[test]
+    fn turn_is_unknown_when_a_long_journal_hides_its_envelope() {
+        let h = tmp("turn-long");
+        let dir = session(&h, "s1", meta_json("s1", "/w", None), 1, &[], "");
+        let ps = dir.join("generations/0000000000000001/projection-state.json");
+        std::fs::write(
+            &ps,
+            json!({"snapshot": {"latestTurn": {"completedAt": 42, "status": "completed"}}})
+                .to_string(),
+        )
+        .unwrap();
+        let filler = format!("{{\"pad\":\"{}\"}}\n", "x".repeat(TURN_TAIL as usize));
+        std::fs::write(journal_of(&dir), filler).unwrap();
+        assert_eq!(turn(&dir), None);
+    }
+
+    #[test]
+    fn turn_is_cached_until_the_store_changes() {
+        let h = tmp("turn-cache");
+        let dir = session(&h, "s1", meta_json("s1", "/w", None), 1, &[], "");
+        let j = journal_of(&dir);
+        std::fs::write(&j, envelope("in_progress", None)).unwrap();
+        assert_eq!(turn(&dir).map(|t| t.running), Some(true));
+        std::fs::write(&j, envelope("completed", Some(5))).unwrap();
+        assert_eq!(turn(&dir).map(|t| t.running), Some(false));
+    }
+
+    #[test]
+    fn idle_needs_a_finished_turn_older_than_the_last_submit_grace_and_any_busy_hook() {
+        let over = Some(Turn {
+            running: false,
+            done_ms: 1_000,
+        });
+        let running = Some(Turn {
+            running: true,
+            done_ms: 0,
+        });
+        assert!(idle(over, (false, 1_100), 0, 100_000));
+        assert!(idle(over, (true, 900), 0, 100_000));
+        assert!(!idle(over, (true, 2_000), 0, 100_000));
+        assert!(!idle(running, (false, 1_100), 0, 100_000));
+        assert!(!idle(None, (false, 1_100), 0, 100_000));
+        assert!(!idle(over, (false, 1_100), 98_000, 100_000));
+        assert!(idle(over, (false, 1_100), 90_000, 100_000));
     }
 }
