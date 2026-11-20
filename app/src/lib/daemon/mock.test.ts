@@ -787,6 +787,13 @@ describe('fault injection', () => {
       await expect(a.patchTask(t.id, { quorum: ok })).rejects.toMatchObject({ status: 409, message: 'the quorum can only change before the task starts' });
     });
 
+    it('refuses switching a quorum task to an agent that cannot orchestrate, like the daemon', async () => {
+      const { a } = setup();
+      const t = await mk(a, ok);
+      await expect(a.patchTask(t.id, { agent: 'gemini' })).rejects.toMatchObject({ status: 400, message: 'the quorum orchestrator must be claude or codex' });
+      expect((await a.patchTask(t.id, { agent: 'codex' })).agent).toBe('codex');
+    });
+
     it('seeds a quorum root, a voted worker and reviewer tasks', async () => {
       const { a } = setup();
       const tasks = await a.tasks();

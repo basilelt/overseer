@@ -2092,6 +2092,7 @@ export class MockDaemon implements DaemonClient {
         if (ty) t.taskType = ty;
         else delete t.taskType;
       }
+      if (typeof patch.agent === 'string' && (patch.quorum ?? t.quorum) && patch.agent !== 'claude' && patch.agent !== 'codex') throw new DaemonError(400, 'the quorum orchestrator must be claude or codex');
       Object.assign(t, patch);
       // the daemon omits cleared optionals from the JSON instead of sending null
       if ('ticketKey' in patch && t.ticketKey == null) delete t.ticketKey;
