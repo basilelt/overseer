@@ -46,8 +46,6 @@ export function mockUsage(qs: string, now = Date.now()): UsageResponse {
   };
 }
 
-// Mirrors the daemon: every supported CLI except the shell gets an entry, sorted
-// by id; agents without usage or limits get zeroed totals and empty limits.
 function allAgents(q: URLSearchParams, now: number, todayTotal: number, reset: (h: number) => string): UsageAgent[] {
   const withData: Record<string, UsageAgent> = {
     claude: { agent: 'claude', today: tot(todayTotal * 0.7, 6.1, 140), limits: claudeLimits(q.get('claudeLimits') === '1', now, reset) },

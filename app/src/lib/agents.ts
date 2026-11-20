@@ -17,7 +17,6 @@ const NAMES: Record<string, string> = {
 
 export const SHORT_NAMES: Record<string, string> = { claude: 'Claude', codex: 'Codex', gemini: 'Gemini', vibe: 'Vibe', shell: 'Shell' };
 
-/** Every CLI id Overseer supports, in registry order (the shell last). */
 export const AGENT_IDS: string[] = Object.keys(NAMES);
 
 export const FALLBACK_AGENTS: AgentInfo[] = [

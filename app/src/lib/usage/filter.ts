@@ -27,11 +27,6 @@ function emptyUsage(id: string): UsageAgent {
   return { agent: id, today: EMPTY_TOTALS, limits: EMPTY_LIMITS };
 }
 
-/**
- * One card per CLI Overseer supports (in the order the daemon lists them), each
- * merged with its usage/limits from the daemon when present, minus the ids the
- * user hid in the Usage view. Usage entries for unknown ids are kept at the end.
- */
 export function usageAgentCards(
   agents: AgentInfo[],
   usage: UsageAgent[] | null | undefined,
@@ -53,13 +48,11 @@ export function usageAgentCards(
   return cards;
 }
 
-/** Breakdown rows whose agent is hidden are dropped; rows without an agent stay. */
 export function visibleUsageGroups(groups: UsageGroup[], hidden: string[] | null | undefined): UsageGroup[] {
   const hide = new Set(hidden ?? []);
   return groups.filter((g) => !g.agent || !hide.has(g.agent));
 }
 
-/** Toggles an id in the hidden list, returning a sorted copy for storage. */
 export function toggleUsageAgentHidden(hidden: string[] | null | undefined, id: string): string[] {
   const next = new Set(hidden ?? []);
   if (!next.delete(id)) next.add(id);
