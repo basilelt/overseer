@@ -192,10 +192,7 @@ pub fn leases(root: &Path) -> HashMap<String, u32> {
         .collect()
 }
 
-/// Whether the session still has an open lease, which Vibe holds from the moment a
-/// session opens until it closes. Only a missing lock file or a dead process means
-/// the session ended: a lock file that exists but does not parse yet (a torn read
-/// while Vibe acquires the lease) counts as open, not ended.
+// An unparsable lock file (torn read while Vibe acquires the lease) counts as open.
 pub fn open(home: &Path, id: &str, is_alive: impl Fn(u32) -> bool) -> bool {
     if !valid_id(id) {
         return false;
@@ -919,22 +916,17 @@ mod tests {
         let active = root(&h).join("active");
         std::fs::create_dir_all(&active).unwrap();
         let lock = active.join("s1.lock.json");
-        // No lock file: the session never opened or already ended.
         assert!(!open(&h, "s1", |_| true));
         assert!(!open(&h, "../s1", |_| true));
-        // A lock file naming a live process: the session is open.
         std::fs::write(
             &lock,
             json!({"lease_version": 1, "process_id": 42}).to_string(),
         )
         .unwrap();
         assert!(open(&h, "s1", |p| p == 42));
-        // The same lock with a dead process: the session ended.
         assert!(!open(&h, "s1", |_| false));
-        // A torn read while Vibe acquires the lease counts as open, not ended.
         std::fs::write(&lock, "{\"process_id\":").unwrap();
         assert!(open(&h, "s1", |_| false));
-        // A lock file without a process id counts as open too.
         std::fs::write(&lock, json!({"lease_version": 1}).to_string()).unwrap();
         assert!(open(&h, "s1", |_| false));
     }

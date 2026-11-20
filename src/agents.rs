@@ -1096,7 +1096,6 @@ mod tests {
         let ids = |f: fn(&Agent) -> bool| -> Vec<&str> {
             AGENTS.iter().filter(|a| f(a)).map(|a| a.id).collect()
         };
-        // every CLI Overseer supports can run a task, so any of them can orchestrate a quorum
         assert_eq!(
             ids(|a| a.coding()),
             ["claude", "codex", "gemini", "agy", "opencode", "amp", "copilot", "cursor", "vibe"]
