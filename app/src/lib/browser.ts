@@ -24,9 +24,12 @@ export function normalizeUrl(input: string): string {
   return `https://${s}`;
 }
 
-export function boundsOf(el: Element): Bounds {
+export function boundsOf(el: Element, doc: Pick<Document, 'querySelector'> = document): Bounds {
   const r = el.getBoundingClientRect();
-  return { x: Math.round(r.left), y: Math.round(r.top), width: Math.round(r.width), height: Math.round(r.height) };
+  const b = { x: Math.round(r.left), y: Math.round(r.top), width: Math.round(r.width), height: Math.round(r.height) };
+  const t = doc.querySelector('[data-toast]')?.getBoundingClientRect();
+  if (t && t.top > r.top && t.top < r.bottom && t.right > r.left && t.left < r.right) b.height = Math.max(0, Math.round(t.top - 8 - r.top));
+  return b;
 }
 
 export const nativeBrowser = {

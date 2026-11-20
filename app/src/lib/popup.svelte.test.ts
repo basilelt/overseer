@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { holdPopup, holdWebview, popup } from './popup.svelte';
+import { holdPopup, popup } from './popup.svelte';
 import { diag } from './diag/diag.svelte';
 import { feedback } from './feedback/feedback.svelte';
 import { ui } from './mobile/ui.svelte';
@@ -110,19 +110,5 @@ describe('floating surfaces', () => {
       .filter(({ path, name }) => !/holdPopup\)|holdPopup\(\)/.test(sources[path]) && !COVERED_ELSEWHERE.has(name) && !NOT_A_POPUP.has(name))
       .map(({ name }) => name);
     expect(missing).toEqual([]);
-  });
-});
-
-describe('popup.webview', () => {
-  it('counts native webviews on screen and does not count as a popup', () => {
-    expect(popup.webview).toBe(false);
-    const a = holdWebview();
-    const b = holdWebview();
-    expect(popup.webview).toBe(true);
-    expect(popup.open).toBe(false);
-    a();
-    expect(popup.webview).toBe(true);
-    b();
-    expect(popup.webview).toBe(false);
   });
 });

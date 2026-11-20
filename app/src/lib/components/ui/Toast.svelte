@@ -1,12 +1,11 @@
 <script lang="ts">
   import { app } from '../../state.svelte';
-  import { popup } from '../../popup.svelte';
 </script>
 
 {#if app.toast}
   {@const action = app.toast.action}
   {@const progress = app.toast.progress}
-  <div class="toast" class:top={popup.webview} class:error={app.toast.kind === 'error'} role="status">
+  <div class="toast" data-toast class:error={app.toast.kind === 'error'} role="status">
     <span class="text">{app.toast.text}</span>
     {#if progress !== undefined}
       <span class="pct">{Math.round(progress * 100)}%</span>
@@ -73,13 +72,6 @@
   :global(:root.phone:has([role='menu'])) .toast {
     bottom: auto;
     top: calc(8px + var(--safe-top));
-  }
-  .toast.top,
-  :global(:root.phone) .toast.top,
-  :global(:root:has([data-rec-pill])) .toast.top,
-  :global(:root.phone:has([data-rec-pill])) .toast.top {
-    bottom: auto;
-    top: calc(8px + var(--safe-top, 0px));
   }
   .error {
     color: var(--st-failed);
