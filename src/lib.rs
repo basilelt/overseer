@@ -630,11 +630,11 @@ fn claude_found_from(
 const CODEX_SLACK_MS: i64 = 2_000;
 const CODEX_TYPED_MS: i64 = 3_000;
 
-fn codex_found(ctx: &Ctx, hooks: &HashMap<String, HookState>) -> Vec<Found> {
-    let (threads, parents) = codex::load(&ctx.codex_dir, &ctx.state_dir);
-    // Hooks fire for sub-agent threads too; they belong to the root session.
-    let hooks = codex::root_hooks(hooks, &parents);
-    let hooks = &hooks;
+fn codex_found(
+    ctx: &Ctx,
+    threads: Vec<codex::Thread>,
+    hooks: &HashMap<String, HookState>,
+) -> Vec<Found> {
     let mut procs: Vec<(u32, Vec<String>, Option<i64>)> = codex::fold_wrappers(
         ctx.probe
             .list()
@@ -1217,9 +1217,9 @@ fn scan_now(ctx: &Ctx) -> Result<Vec<Line>, String> {
     let hook_map = |agent| -> Result<HashMap<String, HookState>, String> {
         Ok(reg.hook_sessions(agent)?.into_iter().collect())
     };
-    // Load the codex threads once here so sub-agent hook sessions can be keyed by their root
-    // session before any lookup below.
-    let (_, codex_parents) = codex::load(&ctx.codex_dir, &ctx.state_dir);
+    // Hooks fire for sub-agent threads too: key them by their root session once per scan.
+    let (codex_threads, codex_parents) = codex::load(&ctx.codex_dir, &ctx.state_dir);
+    let mut codex_threads = Some(codex_threads);
     let mut session_hooks: HashMap<&'static str, HashMap<String, HookState>> = HashMap::new();
     for a in agents::AGENTS.iter().filter(|a| a.sessions()) {
         let m = hook_map(a.id)?;
@@ -1253,7 +1253,11 @@ fn scan_now(ctx: &Ctx) -> Result<Vec<Line>, String> {
             Some(agents::Transcript::Claude) => {
                 found.extend(claude_found(ctx, hooks, &reg.divergent(a.id)?))
             }
-            Some(agents::Transcript::Codex) => found.extend(codex_found(ctx, hooks)),
+            Some(agents::Transcript::Codex) => found.extend(codex_found(
+                ctx,
+                codex_threads.take().unwrap_or_default(),
+                hooks,
+            )),
             Some(agents::Transcript::Gemini) => found.extend(gemini_found(ctx, hooks)),
             Some(agents::Transcript::Vibe) => found.extend(vibe_found(ctx, hooks)),
             None => {}

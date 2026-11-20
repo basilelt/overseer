@@ -97,12 +97,38 @@ pub fn subagent_parent(v: &Value) -> Option<String> {
     })
 }
 
-fn rollout_parent(path: &Path) -> Option<String> {
+static PARENTS: Mutex<Option<HashMap<PathBuf, Option<String>>>> = Mutex::new(None);
+
+#[cfg(test)]
+thread_local!(static HEADER_READS: std::cell::Cell<u64> = const { std::cell::Cell::new(0) });
+
+fn read_parent(path: &Path) -> Option<Option<String>> {
+    #[cfg(test)]
+    HEADER_READS.with(|c| c.set(c.get() + 1));
     let mut first = String::new();
     BufReader::new(std::fs::File::open(path).ok()?)
         .read_line(&mut first)
         .ok()?;
-    subagent_parent(&serde_json::from_str(&first).ok()?)
+    Some(subagent_parent(&serde_json::from_str(&first).ok()?))
+}
+
+// A thread's parent never changes: read each rollout header once, not on every database change.
+fn rollout_parent(path: &Path) -> Option<String> {
+    if let Some(p) = PARENTS
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .as_ref()
+        .and_then(|m| m.get(path))
+    {
+        return p.clone();
+    }
+    let p = read_parent(path)?;
+    PARENTS
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .get_or_insert_with(HashMap::new)
+        .insert(path.to_path_buf(), p.clone());
+    p
 }
 
 // Threads keyed by their root: a sub-agent and its root are one session, the root's own row wins,
@@ -596,6 +622,44 @@ mod tests {
         assert_eq!(root_in(&roots, "mid-1").as_deref(), Some("root-1"));
         assert_eq!(root_in(&roots, "root-1"), None);
         assert_eq!(root_in(&roots, "unknown"), None);
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn rollout_headers_are_read_once_per_thread_not_on_every_db_change() {
+        let d = tmp("header-reads");
+        let day = d.join("sessions/2026/11/19");
+        let db = rusqlite::Connection::open(d.join("state_5.sqlite")).unwrap();
+        db.execute_batch(
+            "CREATE TABLE threads (id TEXT, rollout_path TEXT, created_at INTEGER, updated_at INTEGER, cwd TEXT, title TEXT, archived INTEGER, git_branch TEXT);",
+        )
+        .unwrap();
+        let add = |i: usize| {
+            let id = format!("t-{i}");
+            write_rollout(&d, &id, &format!("1{i}-00-00"), None, None);
+            let path = day.join(format!("rollout-1{i}-00-00-{id}.jsonl"));
+            db.execute(
+                "INSERT INTO threads VALUES (?1, ?2, 1, 1, '/w', 'x', 0, NULL)",
+                rusqlite::params![id, path.to_string_lossy()],
+            )
+            .unwrap();
+        };
+        for i in 0..5 {
+            add(i);
+        }
+        let state = d.join("state");
+        let reads = || HEADER_READS.with(|c| c.get());
+        let (ts, _) = load(&d, &state);
+        assert_eq!(ts.len(), 5);
+        let after_first = reads();
+        add(5);
+        let (ts, _) = load(&d, &state);
+        assert_eq!(ts.len(), 6);
+        assert!(
+            reads() - after_first <= 1,
+            "only the new thread's rollout is read, got {} reads",
+            reads() - after_first
+        );
         let _ = std::fs::remove_dir_all(&d);
     }
 
