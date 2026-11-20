@@ -1231,12 +1231,11 @@ fn scan_now(ctx: &Ctx) -> Result<Vec<Line>, String> {
     reg.conn
         .execute_batch("COMMIT")
         .map_err(|e| e.to_string())?;
-    // A Vibe session whose lease is gone has ended, even when no hook says so: an
-    // interrupted turn fires no post_agent, and a session closed while its process
-    // still runs fires no session_end. Record the SessionEnd the hook would have
-    // sent, so the line stops being mid-turn (docs/adr/0042-mistral-vibe.md). A turn
-    // the store reports over while a busy hook is older than it lost its post_agent.
-    let vibe_sessions = vibe::sessions(&ctx.vibe_dir);
+    let mut vibe_sessions = vibe::sessions(&ctx.vibe_dir);
+    let pending = vibe::pending(&ctx.vibe_dir, &vibe_sessions, |p| {
+        ctx.probe.info(p).is_some()
+    });
+    vibe_sessions.extend(pending);
     let mid_turn = |h: &HookState| h.busy || h.needs_input || h.subagents != 0 || h.tasks != 0;
     let stuck: Vec<(String, HookState)> = if vibe_sessions.is_empty() {
         vec![]

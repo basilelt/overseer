@@ -85,10 +85,7 @@ pub fn not_idle(
         if l.busy_known && l.busy {
             return Some(NotIdle::Busy);
         }
-        // A line with a known busy state (hooks, session store) is idle exactly when
-        // that state says so. The output-recency checks below are only for lines
-        // without a known state (shells, term-only agents): a TUI such as Vibe
-        // redraws on a timer, so its terminal looks busy by output recency forever.
+        // A TUI that redraws on a timer never goes quiet, so output recency is for unknown state only.
         if l.busy_known {
             return None;
         }
@@ -526,8 +523,6 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn a_known_idle_state_wins_over_term_output_recency() {
-        // A TUI that redraws on a timer (Mistral Vibe) prints every second or so:
-        // with no known busy state that output recency alone would report busy forever.
         let t = agent("printf 'tick\\n'; sleep 30");
         let ch = Channel::Term(t.clone());
         wait_screen(&t, "tick");

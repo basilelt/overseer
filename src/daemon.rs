@@ -1496,6 +1496,9 @@ pub fn run(
         crate::review::watch::run(sd.clone())
     });
     crate::dlog::supervise("ports", crate::ports::watch);
+    crate::dlog::supervise("vibe-leases", || {
+        crate::vibe::watch_leases(&crate::vibe::home(), crate::scanner::poke)
+    });
     if !once {
         let ld = state_dir.clone();
         crate::dlog::supervise("log-rotate", move || {
