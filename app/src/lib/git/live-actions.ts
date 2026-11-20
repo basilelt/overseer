@@ -17,6 +17,7 @@ export function restoreLiveReview(): boolean {
   if (!key || !allTabs(workspace.layout).includes(key)) return false;
   beside.key = key;
   app.liveReview = true;
+  app.liveExpanded = false;
   return true;
 }
 
@@ -26,6 +27,7 @@ export function toggleLiveReview(fromKey: string | null = app.selectedKey): bool
     live.worktree = null;
     closeSideReview();
     remember(null);
+    app.liveExpanded = false;
     return false;
   }
   const target = itemTarget(fromKey);
@@ -34,5 +36,6 @@ export function toggleLiveReview(fromKey: string | null = app.selectedKey): bool
   setReviewMode(target, 'side');
   app.liveReview = true;
   remember(beside.key);
+  app.liveExpanded = false;
   return true;
 }

@@ -1,6 +1,7 @@
 import { isPhone } from '../mobile/ui.svelte';
 import { saveSettings, settings } from '../settings/settings.svelte';
-import { compareVersions, modeFor, seenVersion, STEPS, stepsFor, TOUR_VERSION, visibleSteps, type KeyAction, type Mode, type Step } from './steps';
+import { compareVersions, modeFor, seenVersion, TOUR_VERSION, type Mode } from './version';
+import type { KeyAction, Step } from './steps';
 
 export type Phase = null | 'welcome' | 'tour';
 
@@ -39,7 +40,8 @@ class Tour {
     } else this.start('whatsNew');
   }
 
-  start(mode: Mode = 'full', has: (name: string) => boolean = hasTarget) {
+  async start(mode: Mode = 'full', has: (name: string) => boolean = hasTarget) {
+    const { STEPS, stepsFor, visibleSteps } = await import('./steps');
     const steps = visibleSteps(stepsFor(mode, settings.tourSeen, STEPS), has, isPhone());
     if (!steps.length) return this.finish();
     this.mode = mode;

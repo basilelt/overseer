@@ -100,6 +100,7 @@ class AppState {
   }
   panelOpen = $state(true);
   liveReview = $state(false);
+  liveExpanded = $state(false);
   gitWorktree = $state<{ project: string; path: string } | null>(null);
   sidebarOpen = $state(true);
   browserUrl = $state('');

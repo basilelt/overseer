@@ -5,6 +5,7 @@ import { closedShells } from '../tabs/closed-tabs';
 import { DEFAULT_SETTINGS, saveSettings, settings } from '../settings/settings.svelte';
 import type { ShortcutId } from './shortcuts';
 import { app } from '../state.svelte';
+import { toggleLeftBar } from '../git/live.svelte';
 import { FONT_SIZE_MAX, FONT_SIZE_MIN } from '../terminal/terminal-font';
 import { applyShortcut, endsSession, tabInfo } from '../tabs/tabs';
 import { openWindow } from '../window';
@@ -149,7 +150,7 @@ const core = [
   { id: 'rescan-folders', available: connected, run: () => rescanFolders() },
   { id: 'shortcuts', shortcut: 'shortcuts', run: () => app.open('shortcuts'), toggle: () => app.open(app.overlay === 'shortcuts' ? null : 'shortcuts') },
   { id: 'new-window', shortcut: 'newWindow', run: () => newWindow() },
-  { id: 'sidebar', shortcut: 'toggleSidebar', run: () => (app.sidebarOpen = !app.sidebarOpen) },
+  { id: 'sidebar', shortcut: 'toggleSidebar', run: () => toggleLeftBar() },
   { id: 'tab-new', shortcut: 'newTab', run: () => newTab() },
   { id: 'tab-close', shortcut: 'closeTab', run: () => closeActive() },
   { id: 'tab-reopen', shortcut: 'reopenTab', run: () => reopenClosed() },
