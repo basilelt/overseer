@@ -1386,9 +1386,10 @@ opencode, Amp, Copilot CLI, Cursor Agent or Mistral Vibe; only the shell cannot 
   messages still reach it.
 - Agents that have the Overseer MCP (Claude Code, Codex) create subtasks with `create_task`, vote
   with `cast_vote` and move their own task with `set_task_status`. Any other agent — as orchestrator
-  or reviewer — drives the quorum without those tools: subtasks created in the app start on their
-  own, and it votes from its task terminal with the CLI: `overseer vote approve "<reason>"` or
-  `overseer vote reject "<reason>"` (the orchestrator adds `--task <subtask id>`).
+  or reviewer — runs the same tools from its task terminal with the CLI:
+  `overseer tool create_task '{"title":"…","agent":"codex"}'` (any tool name, JSON arguments), and
+  votes with `overseer vote approve "<reason>"` or `overseer vote reject "<reason>"` (the
+  orchestrator adds `--task <subtask id>`).
 - The quorum is set when the task is created and can only change while the task is Pending or Auto.
   A subtask cannot run its own quorum.
 
