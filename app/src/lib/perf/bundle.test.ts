@@ -61,7 +61,7 @@ describe('production bundle budget', () => {
     expect([...startup].map((f) => byFile.get(f)!.name).filter((n) => LAZY_ONLY.includes(n))).toEqual([]);
     const startupIds = [...startup].flatMap((f) => byFile.get(f)!.moduleIds);
     const allIds = all.flatMap((c) => c.moduleIds);
-    for (const lazyModule of [/\/i18n\/(?!en\.ts)[^/]+\.ts$/, /\/lib\/feedback\/feedback\.ts$/, /\/review\/threads\.ts$/]) {
+    for (const lazyModule of [/\/i18n\/(?!en\.ts)[^/]+\.ts$/, /\/lib\/feedback\/feedback\.ts$/, /\/review\/threads\.ts$/, /\/tour\/steps\.ts$/]) {
       expect(allIds.some((m) => lazyModule.test(m)), `${lazyModule} matches a module of the build`).toBe(true);
       expect(startupIds.filter((m) => lazyModule.test(m))).toEqual([]);
     }
