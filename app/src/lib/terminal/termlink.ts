@@ -53,7 +53,10 @@ export function termLink(deps: LinkDeps): TermLink {
       if (ended) deps.ended();
       return;
     }
-    timer = setTimeout(() => void attach(attempt + 1), wait);
+    timer = setTimeout(() => {
+      timer = undefined;
+      void attach(attempt + 1);
+    }, wait);
   };
 
   const detached = (attempt: number) => {
@@ -108,7 +111,7 @@ export function termLink(deps: LinkDeps): TermLink {
       void attach(0);
     },
     resume() {
-      if (disposed || !stalled) return;
+      if (disposed || (!stalled && timer === undefined)) return;
       void attach(0);
     },
     revive() {
