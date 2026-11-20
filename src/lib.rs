@@ -857,8 +857,12 @@ fn gemini_found(ctx: &Ctx, hooks: &HashMap<String, HookState>) -> Vec<Found> {
         .collect()
 }
 
-fn vibe_found(ctx: &Ctx, hooks: &HashMap<String, HookState>) -> Vec<Found> {
-    let mut sessions = vibe::sessions(&ctx.vibe_dir);
+fn vibe_found(
+    ctx: &Ctx,
+    hooks: &HashMap<String, HookState>,
+    sessions: &[vibe::Session],
+) -> Vec<Found> {
+    let mut sessions = sessions.to_vec();
     if sessions.is_empty() {
         return vec![];
     }
@@ -922,6 +926,16 @@ fn vibe_found(ctx: &Ctx, hooks: &HashMap<String, HookState>) -> Vec<Found> {
                         t.submit_ms(),
                         t.turn_busy(ctx.now_ms),
                     );
+                    if f.busy
+                        && vibe::idle(
+                            vibe::turn(&s.dir),
+                            (h.busy, h.at_ms),
+                            t.submit_ms(),
+                            ctx.now_ms,
+                        )
+                    {
+                        f.busy = false;
+                    }
                 }
             }
             f.cwd = s.cwd.unwrap_or_default();
@@ -1207,6 +1221,9 @@ fn scan_now(ctx: &Ctx) -> Result<Vec<Line>, String> {
     mkdir_private(&ctx.state_dir)
         .map_err(|e| format!("cannot create {}: {e}", ctx.state_dir.display()))?;
     let reg = registry::Registry::open(&ctx.state_dir)?;
+    // An empty process list is a failed probe (pid 1 always exists): it proves no loss.
+    let listed = std::cell::OnceCell::new();
+    let probe_ok = || *listed.get_or_init(|| !ctx.probe.list().is_empty());
     reg.conn
         .execute_batch("BEGIN IMMEDIATE")
         .map_err(|e| e.to_string())?;
@@ -1214,6 +1231,48 @@ fn scan_now(ctx: &Ctx) -> Result<Vec<Line>, String> {
     reg.conn
         .execute_batch("COMMIT")
         .map_err(|e| e.to_string())?;
+    // A Vibe session whose lease is gone has ended, even when no hook says so: an
+    // interrupted turn fires no post_agent, and a session closed while its process
+    // still runs fires no session_end. Record the SessionEnd the hook would have
+    // sent, so the line stops being mid-turn (docs/adr/0042-mistral-vibe.md). A turn
+    // the store reports over while a busy hook is older than it lost its post_agent.
+    let vibe_sessions = vibe::sessions(&ctx.vibe_dir);
+    let mid_turn = |h: &HookState| h.busy || h.needs_input || h.subagents != 0 || h.tasks != 0;
+    let stuck: Vec<(String, HookState)> = if vibe_sessions.is_empty() {
+        vec![]
+    } else {
+        reg.hook_sessions(agents::VIBE)?
+            .into_iter()
+            .filter(|(_, h)| mid_turn(h) || h.event != "SessionEnd")
+            .collect()
+    };
+    if !stuck.is_empty() && probe_ok() {
+        let known: HashMap<&str, &vibe::Session> =
+            vibe_sessions.iter().map(|s| (s.id.as_str(), s)).collect();
+        for (id, mut h) in stuck {
+            let Some(s) = known.get(id.as_str()) else {
+                continue;
+            };
+            if vibe::open(&ctx.vibe_dir, &id, |p| ctx.probe.info(p).is_some()) {
+                let over = h.busy
+                    && vibe::turn(&s.dir).is_some_and(|t| !t.running && h.at_ms <= t.done_ms);
+                if !over {
+                    continue;
+                }
+                h.event = "Stop".to_string();
+                h.busy = false;
+                h.needs_input = false;
+            } else {
+                h.event = "SessionEnd".to_string();
+                h.busy = false;
+                h.needs_input = false;
+                h.subagents = 0;
+                h.tasks = 0;
+            }
+            h.at_ms = h.at_ms.max(ctx.now_ms);
+            let _ = reg.put_hook_state(agents::VIBE, &id, &h);
+        }
+    }
     let hook_map = |agent| -> Result<HashMap<String, HookState>, String> {
         Ok(reg.hook_sessions(agent)?.into_iter().collect())
     };
@@ -1258,7 +1317,7 @@ fn scan_now(ctx: &Ctx) -> Result<Vec<Line>, String> {
                 hooks,
             )),
             Some(agents::Transcript::Gemini) => found.extend(gemini_found(ctx, hooks)),
-            Some(agents::Transcript::Vibe) => found.extend(vibe_found(ctx, hooks)),
+            Some(agents::Transcript::Vibe) => found.extend(vibe_found(ctx, hooks, &vibe_sessions)),
             None => {}
         }
     }
@@ -1312,9 +1371,6 @@ fn scan_now(ctx: &Ctx) -> Result<Vec<Line>, String> {
     let mut lines = vec![];
     let mut upserted = vec![];
     let db = db_id(&ctx.state_dir);
-    // An empty process list is a failed probe (pid 1 always exists): it proves no loss.
-    let listed = std::cell::OnceCell::new();
-    let probe_ok = || *listed.get_or_init(|| !ctx.probe.list().is_empty());
     for (f, pid, term_id, info, pane, rss) in probed {
         let branch = f
             .branch
