@@ -22,7 +22,12 @@ async function rendered(agent: string, hidden: string[] = []) {
   settings.usageAgentsHidden = hidden;
   const { render } = await import('svelte/server');
   const { default: PlanLimits } = await import('./PlanLimits.svelte');
-  return render(PlanLimits, { props: { agent } }).body.replace(/<!--[\s\S]*?-->/g, '');
+  let html = render(PlanLimits, { props: { agent } }).body;
+  for (let prev = ''; prev !== html; ) {
+    prev = html;
+    html = html.replace(/<!--[\s\S]*?-->/g, '');
+  }
+  return html;
 }
 
 beforeAll(async () => {
