@@ -145,6 +145,7 @@ class AppState {
   private wsRetry: ReturnType<typeof setTimeout> | undefined;
   private wsAttempt = 0;
   private refreshing = 0;
+  private epoch = 0;
   /** @internal */
   added = new Map<string, Term>();
   private eventSeq = 0;
@@ -228,6 +229,7 @@ class AppState {
     this.attachOnReady = false;
     this.unsubscribe?.();
     this.cancelWsRetry();
+    this.epoch++;
     this.connected = false;
     this.synced = false;
     this.localNet = null;
@@ -288,6 +290,7 @@ class AppState {
 
   /** @internal */
   resetHost() {
+    this.epoch++;
     this.data = EMPTY;
     this.agents = [];
     this.installing.clear();
@@ -333,6 +336,7 @@ class AppState {
     const a = this.api;
     this.loadProfiles();
     this.refreshing++;
+    const epoch = this.epoch;
     const since = this.eventSeq;
     let complete = true;
     const stale = <T>(v: T) => ((complete = false), v);
@@ -344,17 +348,21 @@ class AppState {
       a.agents().catch((e) => (e instanceof DaemonError && e.status === 404 ? FALLBACK_AGENTS : this.agents.length ? this.agents : FALLBACK_AGENTS)),
       this.loadWs(a),
     ]);
-    const cur = this.data;
-    this.data = {
-      ...cur,
-      lines: mergeFetched(lines, cur.lines, 'line', (l) => l.line.id, this.touched, since),
-      terms: withAdded(mergeFetched(terms, cur.terms, 'term', (t) => t.id, this.touched, since), this.added),
-      tasks: mergeFetched(tasks, cur.tasks, 'task', (t) => t.id, this.touched, since),
-    };
+    const fresh = epoch === this.epoch;
+    if (fresh) {
+      const cur = this.data;
+      this.data = {
+        ...cur,
+        lines: mergeFetched(lines, cur.lines, 'line', (l) => l.line.id, this.touched, since),
+        terms: withAdded(mergeFetched(terms, cur.terms, 'term', (t) => t.id, this.touched, since), this.added),
+        tasks: mergeFetched(tasks, cur.tasks, 'task', (t) => t.id, this.touched, since),
+      };
+    }
     if (--this.refreshing === 0) {
       this.touched.clear();
       this.added.clear();
     }
+    if (!fresh) return;
     this.settleFollow();
     if (complete) {
       this.synced = true;
@@ -729,8 +737,9 @@ class AppState {
     if (!this.connected) return null;
     const line = this.data.lines.find((l) => l.line.id === lineId);
     if (line && !sessionsAvailable(this.agents, line.line.agent)) return null;
+    const epoch = this.epoch;
     const act = await this.api.activity(lineId).catch(() => null);
-    if (!act || act.transcript === false) return null;
+    if (!act || epoch !== this.epoch || act.transcript === false) return null;
     const stale = (l: LocalLine) => l.line.id === lineId && (l.local?.needsInput !== act.needsInput || (act.busy !== undefined && l.local?.busy !== act.busy));
     const lines = this.data.lines.some(stale) ? this.data.lines.map((l) => (stale(l) ? { ...l, local: { ...l.local, needsInput: act.needsInput, busy: act.busy ?? l.local?.busy } } : l)) : this.data.lines;
     const prev = this.data.activity[lineId];
