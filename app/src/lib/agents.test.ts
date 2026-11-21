@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { adaptChoice, agentName, canInstall, efforts, hasModel, ordered, pickAgent, sessionsAvailable, splitInstalled, taskAgents } from './agents';
+import { adaptChoice, agentName, canInstall, efforts, hasModel, ordered, pickAgent, sessionsAvailable, shortVersion, splitInstalled, taskAgents } from './agents';
 import { MOCK_AGENTS } from './daemon/mock';
 
 const by = (id: string) => MOCK_AGENTS.find((a) => a.id === id)!;
@@ -60,5 +60,22 @@ describe('agents', () => {
     expect(sessionsAvailable(MOCK_AGENTS, 'gemini')).toBe(true);
     expect(sessionsAvailable(MOCK_AGENTS, 'agy')).toBe(false);
     expect(sessionsAvailable([], 'claude')).toBe(true);
+  });
+});
+
+describe('shortVersion', () => {
+  it('keeps only the version number of what each CLI prints for --version', () => {
+    expect(shortVersion('2.1.330 (Claude Code)')).toBe('2.1.330');
+    expect(shortVersion('codex-cli 0.167.0')).toBe('0.167.0');
+    expect(shortVersion('GitHub Copilot CLI 1.0.107.')).toBe('1.0.107');
+    expect(shortVersion('vibe 3.1.3')).toBe('3.1.3');
+    expect(shortVersion('0.0.1793868001-g0e9889 (released 2026-11-05T08:40:01.000Z, 16d ago)')).toBe('0.0.1793868001-g0e9889');
+    expect(shortVersion('2026.11.05-86047df')).toBe('2026.11.05-86047df');
+  });
+  it('falls back to the first word, and to nothing without a version', () => {
+    expect(shortVersion('nightly build')).toBe('nightly');
+    expect(shortVersion('')).toBeNull();
+    expect(shortVersion(null)).toBeNull();
+    expect(shortVersion(undefined)).toBeNull();
   });
 });
