@@ -51,14 +51,14 @@
   <div class="actions">
     {#if view.agent}
       <button class="btn primary" disabled={!view.canStart} onclick={() => start(view.agent!.id)}>
-        <AgentGlyph agent={view.agent.id} size={14} />{t('pane.start', { name: view.agent.name })}
+        <AgentGlyph agent={view.agent.id} size={14} /><span class="lbl">{t('pane.start', { name: view.agent.name })}</span>
       </button>
     {/if}
     <button class="btn" disabled={!view.canStart} onclick={() => start('shell')}>
-      <AgentGlyph agent="shell" size={14} />{t('tabs.shell')}
+      <AgentGlyph agent="shell" size={14} /><span class="lbl">{t('tabs.shell')}</span>
     </button>
     <button class="btn" onclick={() => window.dispatchEvent(new CustomEvent('sb:newtab'))}>
-      <Plus size={14} />{t('pane.more')}
+      <Plus size={14} /><span class="lbl">{t('pane.more')}</span>
     </button>
   </div>
 
@@ -126,6 +126,16 @@
     flex-wrap: wrap;
     justify-content: center;
     gap: 8px;
+    max-width: 100%;
+  }
+  .actions .btn {
+    min-width: 0;
+    max-width: 100%;
+  }
+  .lbl {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
   .keys {
     display: flex;
