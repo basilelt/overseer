@@ -64,6 +64,122 @@ pub fn parse_url(input: &str) -> Result<Url, String> {
     }
 }
 
+#[cfg(target_os = "linux")]
+fn place(wv: &Webview, r: Rect) -> Result<(), String> {
+    let scale = wv.window().scale_factor().map_err(|e| e.to_string())?;
+    let g = r.position.to_logical::<f64>(scale);
+    let z = r.size.to_logical::<f64>(scale);
+    linux::place(wv, px(g.x, g.y, z.width, z.height))
+}
+
+#[cfg(not(target_os = "linux"))]
+fn place(wv: &Webview, r: Rect) -> Result<(), String> {
+    wv.set_bounds(r).map_err(|e| e.to_string())
+}
+
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+fn px(x: f64, y: f64, width: f64, height: f64) -> (i32, i32, i32, i32) {
+    let c = |v: f64| v.round().clamp(-1e6, 1e6) as i32;
+    (c(x), c(y), c(width).max(1), c(height).max(1))
+}
+
+// wry packs Linux child webviews into the window's GtkBox, which ignores set_bounds and stacks the
+// page under the app; overlay each child at its own rect instead. Keep the overlay layer page-sized:
+// a window-sized one over the main webview stopped native file drops reaching the app.
+#[cfg(target_os = "linux")]
+mod linux {
+    use gtk::glib::WeakRef;
+    use gtk::prelude::*;
+    use std::cell::RefCell;
+    use tauri::Webview;
+
+    type Bounds = (i32, i32, i32, i32);
+
+    thread_local! {
+        static RECTS: RefCell<Vec<(WeakRef<gtk::Widget>, Bounds)>> = const { RefCell::new(Vec::new()) };
+    }
+
+    fn is_web(w: &gtk::Widget) -> bool {
+        w.type_().name() == "WebKitWebView"
+    }
+
+    fn rect_of(w: &gtk::Widget) -> Option<Bounds> {
+        RECTS.with(|r| {
+            let mut r = r.borrow_mut();
+            r.retain(|(k, _)| k.upgrade().is_some());
+            r.iter()
+                .find(|(k, _)| k.upgrade().as_ref() == Some(w))
+                .map(|(_, b)| *b)
+        })
+    }
+
+    fn set_rect(w: &gtk::Widget, b: Bounds) {
+        RECTS.with(|r| {
+            let mut r = r.borrow_mut();
+            match r.iter_mut().find(|(k, _)| k.upgrade().as_ref() == Some(w)) {
+                Some(e) => e.1 = b,
+                None => r.push((w.downgrade(), b)),
+            }
+        });
+    }
+
+    fn layer(vbox: &gtk::Box, child: &gtk::Widget) -> Option<gtk::Overlay> {
+        if let Some(o) = vbox
+            .children()
+            .into_iter()
+            .find_map(|c| c.downcast::<gtk::Overlay>().ok())
+        {
+            return Some(o);
+        }
+        let children = vbox.children();
+        let position = children.iter().position(|c| c != child && is_web(c))?;
+        let main = children[position].clone();
+        let overlay = gtk::Overlay::new();
+        overlay.connect_get_child_position(|_, w| {
+            rect_of(w).map(|b| gtk::Allocation::new(b.0, b.1, b.2, b.3))
+        });
+        vbox.remove(&main);
+        overlay.add(&main);
+        vbox.pack_start(&overlay, true, true, 0);
+        vbox.reorder_child(&overlay, position as i32);
+        overlay.show_all();
+        Some(overlay)
+    }
+
+    pub fn adopt(wv: &Webview, b: Bounds) -> Result<(), String> {
+        wv.with_webview(move |p| {
+            let child: gtk::Widget = p.inner().upcast();
+            let Some(parent) = child.parent() else { return };
+            let Ok(vbox) = parent.downcast::<gtk::Box>() else {
+                return;
+            };
+            let Some(overlay) = layer(&vbox, &child) else {
+                return;
+            };
+            vbox.remove(&child);
+            set_rect(&child, b);
+            overlay.add_overlay(&child);
+            child.show();
+        })
+        .map_err(|e| e.to_string())
+    }
+
+    pub fn place(wv: &Webview, b: Bounds) -> Result<(), String> {
+        wv.with_webview(move |p| {
+            let child: gtk::Widget = p.inner().upcast();
+            let Some(overlay) = child
+                .parent()
+                .and_then(|p| p.downcast::<gtk::Overlay>().ok())
+            else {
+                return;
+            };
+            set_rect(&child, b);
+            overlay.queue_resize();
+        })
+        .map_err(|e| e.to_string())
+    }
+}
+
 fn webview(window: &Window, id: Option<&str>) -> Result<Webview, String> {
     window
         .get_webview(&page_label(window.label(), id)?)
@@ -104,8 +220,7 @@ pub async fn browser_open(
         .unwrap()
         .insert(owner.clone(), (window.label().to_string(), on_nav));
     if let Ok(wv) = webview(&window, id.as_deref()) {
-        wv.set_bounds(rect(x, y, width, height))
-            .map_err(|e| e.to_string())?;
+        place(&wv, rect(x, y, width, height))?;
         wv.show().map_err(|e| e.to_string())?;
         return wv.navigate(url).map_err(|e| e.to_string());
     }
@@ -129,13 +244,17 @@ pub async fn browser_open(
                 json!({"url": url, "title": t, "loading": false}),
             );
         });
-    window
+    let wv = window
         .add_child(
             builder,
             LogicalPosition::new(x, y),
             LogicalSize::new(width.max(1.0), height.max(1.0)),
         )
         .map_err(|e| e.to_string())?;
+    #[cfg(target_os = "linux")]
+    linux::adopt(&wv, px(x, y, width, height))?;
+    #[cfg(not(target_os = "linux"))]
+    let _ = wv;
     Ok(())
 }
 
@@ -148,9 +267,7 @@ pub async fn browser_bounds(
     height: f64,
     id: Option<String>,
 ) -> Result<(), String> {
-    webview(&window, id.as_deref())?
-        .set_bounds(rect(x, y, width, height))
-        .map_err(|e| e.to_string())
+    place(&webview(&window, id.as_deref())?, rect(x, y, width, height))
 }
 
 #[tauri::command]
@@ -253,7 +370,7 @@ pub async fn open_external(app: AppHandle, url: String) -> Result<(), String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{label, page_label, parse_url};
+    use super::{label, page_label, parse_url, px};
 
     #[test]
     fn each_window_has_its_own_browser_webview() {
@@ -279,6 +396,13 @@ mod tests {
         assert!(page_label("main", Some("a:b")).is_err());
         assert!(page_label("main", Some("a/b")).is_err());
         assert!(page_label("main", Some(&"x".repeat(33))).is_err());
+    }
+
+    #[test]
+    fn bounds_become_whole_pixels_with_a_visible_size() {
+        assert_eq!(px(288.4, 80.6, 1151.5, 819.2), (288, 81, 1152, 819));
+        assert_eq!(px(-3.0, 0.0, 0.0, -5.0), (-3, 0, 1, 1));
+        assert_eq!(px(f64::NAN, 1e12, 10.0, 10.0), (0, 1_000_000, 10, 10));
     }
 
     #[test]
