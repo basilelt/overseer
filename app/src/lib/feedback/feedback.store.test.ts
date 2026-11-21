@@ -175,3 +175,23 @@ describe('feedback store', () => {
     expect(ft('sendWith')).toBe('Send with…');
   });
 });
+
+describe('feedback sheet errors', () => {
+  afterEach(() => {
+    feedback.close();
+  });
+
+  it('clears the inline errors when the sheet is shown or closed', () => {
+    feedback.show();
+    feedback.descError = 'x';
+    feedback.refused = ['y'];
+    feedback.close();
+    expect(feedback.descError).toBeNull();
+    expect(feedback.refused).toEqual([]);
+    feedback.descError = 'x';
+    feedback.refused = ['y'];
+    feedback.show();
+    expect(feedback.descError).toBeNull();
+    expect(feedback.refused).toEqual([]);
+  });
+});

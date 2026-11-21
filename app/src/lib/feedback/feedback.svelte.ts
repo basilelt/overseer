@@ -47,11 +47,15 @@ class Feedback {
   prefill = $state.raw<Prefill | null>(null);
   result = $state.raw<Result | null>(null);
   watching = $state.raw<string[]>([]);
+  descError = $state<string | null>(null);
+  refused = $state.raw<string[]>([]);
   private stops = new Map<string, () => void>();
 
   show(prefill: Prefill | null = null) {
     this.prefill = prefill;
     this.result = null;
+    this.descError = null;
+    this.refused = [];
     this.open = true;
   }
 
@@ -64,6 +68,8 @@ class Feedback {
   close() {
     this.open = false;
     this.prefill = null;
+    this.descError = null;
+    this.refused = [];
   }
 
   announce(r: Result, notify: Notify) {
