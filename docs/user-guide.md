@@ -1869,7 +1869,7 @@ browser and review tab that belongs to it. The sidebar shows **Workspaces** (def
 **By status** (the session list grouped by Needs input, Needs testing, Working, Pushed, Idle,
 Stopped: no live agent process, resumable); the toggle is at the top of the sidebar.
 
-- **Sticky notes**: hover an agent session in the sidebar (on a phone or a touch screen the icon is always there)
+- **Sticky notes**: hover an agent session in the sidebar (on a phone or a touch screen the icon is always there; a Codex session gets it with its first prompt, when its session starts)
   and click the note icon to open its sticky notes. Write in the box and press **Add note** (or
   Ctrl/Cmd+Enter); click a note to change it (saved when you leave it, or with Ctrl/Cmd+Enter;
   clearing its text deletes it) and the bin deletes it. Escape or a click outside closes them,
