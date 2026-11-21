@@ -18,12 +18,12 @@
   import { isTauri } from '../../platform';
   import { settings } from '../../settings/settings.svelte';
   import { findAgent, taskAgents, isAgentId } from '../../agents';
-  import { MAX_UPLOAD } from '../../uploads';
   import { openExternal } from '../../ports/ports.svelte';
   import { diagBackend, fetchServerLog } from '../../diag/diag.svelte';
   import { feedback, ft, type Result } from '../../feedback/feedback.svelte';
+  import { triage } from '../../feedback/attach';
   import { DRAFT_ID, feedbackDrafts, initialForm, ownsText } from '../../feedback/draft';
-  import { APP_LINES, attachProblem, ATTACH_ACCEPT, VIDEO_FREE_MAX, buildBody, clock, buildDiagnostics, buildPrompt, DEFAULT_REPO, findClone, issueTitle, labelsFor, newIssueUrl, pickSender, SERVER_LINES, validate, wantsDiagnostics, type Kind } from '../../feedback/feedback';
+  import { APP_LINES, ATTACH_ACCEPT, VIDEO_FREE_MAX, buildBody, clock, buildDiagnostics, buildPrompt, DEFAULT_REPO, findClone, issueTitle, labelsFor, newIssueUrl, pickSender, SERVER_LINES, validate, wantsDiagnostics, type Kind } from '../../feedback/feedback';
   import type { Term } from '../../types';
   import { basename } from '../../paths';
 
@@ -49,6 +49,7 @@
   let dropping = $state(false);
   let zone = $state<HTMLElement | null>(null);
   let picker = $state<HTMLInputElement | null>(null);
+  let descField = $state<HTMLTextAreaElement | null>(null);
   let recording = $state.raw(prefill?.recording ?? null);
   let recordingPath = $state<string | null>(null);
   let replaying = $state(false);
@@ -99,23 +100,23 @@
     return null;
   }
 
-  function admit(name: string, size: number): boolean {
-    const p = attachProblem(name, size);
-    if (p) app.notify(ft(p === 'type' ? 'attachType' : p === 'image' ? 'attachImageBig' : 'attachVideoBig', { name }), 'error');
-    else if (size > VIDEO_FREE_MAX && attachProblem(name) === null && !/\.(png|jpe?g|gif|webp|svg)$/i.test(name)) app.notify(ft('attachVideoPlan', { name }));
-    return !p;
+  function notePlan(name: string, size: number) {
+    if (size > VIDEO_FREE_MAX && !/\.(png|jpe?g|gif|webp|svg)$/i.test(name)) app.notify(ft('attachVideoPlan', { name }));
+  }
+
+  function reject(message: string) {
+    feedback.descError = message;
+    descField?.focus();
   }
 
   async function addFiles(files: File[]) {
     const client = app.client;
     if (!client || !app.connected) return app.notify(ft('offline'), 'error');
-    for (const f of files) {
-      if (f.size > MAX_UPLOAD) {
-        app.notify(ft('failed', { error: `${f.name}: > 50 MB` }), 'error');
-        continue;
-      }
-      const name = f.name || 'screenshot.png';
-      if (!admit(name, f.size)) continue;
+    const named = files.map((f) => ({ f, name: f.name || 'screenshot.png', size: f.size }));
+    const { ok, refused } = triage(named);
+    feedback.refused = refused;
+    for (const { f, name } of ok) {
+      notePlan(name, f.size);
       uploading++;
       try {
         const local = await client.savePaste(name, new Uint8Array(await f.arrayBuffer()));
@@ -132,8 +133,9 @@
   async function addPaths(paths: string[]) {
     const client = app.client;
     if (!client || !app.connected) return app.notify(ft('offline'), 'error');
-    for (const p of paths) {
-      if (!admit(basename(p), 0)) continue;
+    const { ok, refused } = triage(paths.map((p) => ({ p, name: basename(p), size: 0 })));
+    feedback.refused = refused;
+    for (const { p } of ok) {
       uploading++;
       try {
         const up = await client.uploadFile(p);
@@ -151,7 +153,10 @@
     const client = app.client;
     if (!client || !app.connected) return app.notify(rt('offlineVideo'), 'error');
     const name = fileName(new Date(), r.mime);
-    if (!admit(name, r.video.size)) return;
+    const { ok, refused } = triage([{ name, size: r.video.size }]);
+    feedback.refused = refused;
+    if (!ok.length) return;
+    notePlan(name, r.video.size);
     uploading++;
     recUploading = true;
     try {
@@ -202,7 +207,7 @@
 
   async function sendWithAgent(id: string = agentId) {
     const p = problem();
-    if (p) return app.notify(p, 'error');
+    if (p) return reject(p);
     const client = app.client;
     const chosen = findAgent(app.agents, id);
     if (!client || !chosen) return;
@@ -245,7 +250,7 @@
 
   async function sendDirect() {
     const p = problem();
-    if (p) return app.notify(p, 'error');
+    if (p) return reject(p);
     const client = app.client;
     if (!client) return;
     busy = true;
@@ -267,7 +272,7 @@
 
   async function openGithub() {
     const p = validate(form, repo);
-    if (p === 'description' || p === 'repo') return app.notify(problem() ?? '', 'error');
+    if (p === 'description' || p === 'repo') return reject(problem() ?? '');
     try {
       await app.client?.copyText(body);
       app.notify(ft('copiedForGithub'));
@@ -333,7 +338,8 @@
 
       <label class="field">
         <span>{ft('description')}</span>
-        <textarea bind:value={description} rows="6" {placeholder} spellcheck="true"></textarea>
+        <textarea bind:this={descField} bind:value={description} oninput={() => (feedback.descError = null)} rows="6" {placeholder} spellcheck="true" aria-invalid={feedback.descError ? 'true' : undefined} aria-describedby={feedback.descError ? 'fb-desc-error' : undefined}></textarea>
+        {#if feedback.descError}<span class="err" id="fb-desc-error" role="alert">{feedback.descError}</span>{/if}
       </label>
 
       <div class="field">
@@ -345,6 +351,11 @@
           {#if uploading}<span class="faint">· {uploading}…</span>{/if}
           <input bind:this={picker} type="file" multiple hidden accept={ATTACH_ACCEPT} onchange={(e) => (void addFiles(Array.from(e.currentTarget.files ?? [])), (e.currentTarget.value = ''))} />
         </div>
+        {#if feedback.refused.length}
+          <ul class="err refused" role="alert">
+            {#each feedback.refused as m (m)}<li>{m}</li>{/each}
+          </ul>
+        {/if}
         {#if attachments.length}
           <ul class="files">
             {#each attachments as a, i (a.path)}
@@ -433,6 +444,15 @@
   }
   .field > span {
     color: var(--text-2);
+  }
+  .field > .err,
+  .err {
+    color: var(--st-failed);
+  }
+  .refused {
+    margin: 0;
+    padding: 0 0 0 16px;
+    font-size: 11px;
   }
   textarea {
     resize: vertical;

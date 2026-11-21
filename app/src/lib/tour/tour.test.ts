@@ -16,6 +16,7 @@ describe('tour store', () => {
     vi.useRealTimers();
     vi.unstubAllGlobals();
     tour.setReady(false);
+    tour.setBlocked(false);
   });
 
   it('does not offer the tour before the shell is ready, then offers it without any timer', () => {
@@ -83,6 +84,28 @@ describe('tour store', () => {
     expect(tour.mode).toBe('whatsNew');
     expect(tour.steps.length).toBeGreaterThan(0);
     expect(tour.steps.every((s) => s.since === TOUR_VERSION)).toBe(true);
+  });
+
+  it('does not offer the new steps while an overlay is open, then offers them once it closes', async () => {
+    saveSettings({ tourSeen: '0.35' });
+    tour.setBlocked(true);
+    tour.offer();
+    await Promise.resolve();
+    expect(tour.phase).toBeNull();
+    tour.setBlocked(false);
+    tour.offer();
+    await vi.waitFor(() => expect(tour.phase).toBe('tour'));
+    expect(tour.mode).toBe('whatsNew');
+  });
+
+  it('drops the new steps when an overlay opens while they load, leaving the update unseen', async () => {
+    saveSettings({ tourSeen: '0.35' });
+    const started = tour.start('whatsNew', all);
+    tour.setBlocked(true);
+    await started;
+    expect(tour.phase).toBeNull();
+    expect(settings.tourSeen).toBe('0.35');
+    expect(tour.pending()).toBe('whatsNew');
   });
 
   it('only keeps steps whose target is on screen', async () => {
