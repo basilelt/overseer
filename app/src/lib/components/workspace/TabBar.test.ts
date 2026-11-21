@@ -126,3 +126,11 @@ describe('CSS guard: tab strip', () => {
     expect(actions.some((r) => r.decls['flex-wrap'] === 'wrap' && r.decls['min-height'] === '34px')).toBe(true);
   });
 });
+
+describe('tab window size', () => {
+  it('reads the screen size when the window is used, not once at mount', () => {
+    expect(bar).not.toMatch(/const span = windowSpan\(/);
+    expect(bar).toContain('currentSpan()');
+    expect(bar).not.toMatch(/fitWindow\([^)]*,\s*span,/);
+  });
+});

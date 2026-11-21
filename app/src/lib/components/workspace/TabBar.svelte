@@ -35,7 +35,7 @@
   import { STATE_COLOR } from '../../workspace/ws-color';
   import { indexBy } from '../../index-by';
   import { tick } from 'svelte';
-  import { fitWindow, MIN_TAB_PX, TAB_PX, visibleRange, windowSpan, type TabWindow } from '../../tabs/tab-window';
+  import { currentSpan, fitWindow, MIN_TAB_PX, TAB_PX, visibleRange, type TabWindow } from '../../tabs/tab-window';
 
   let { pane, index, focused, canClose }: { pane: Pane; index: number; focused: boolean; canClose: boolean } = $props();
 
@@ -49,7 +49,6 @@
   let dropAt = $state<number | null>(null);
   let strip: HTMLDivElement | undefined = $state();
 
-  const span = windowSpan(typeof window === 'undefined' ? 1440 : Math.max(window.innerWidth || 0, window.screen?.width || 0));
   let scrolledTo = $state.raw<{ first: number; last: number; active: string | null } | null>(null);
   let tabPx = $state(TAB_PX);
   let mounted: TabWindow = { from: 0, to: 0 };
@@ -58,7 +57,7 @@
     if (settings.wrapTabs) return (mounted = fitWindow(mounted, n, n, 0));
     const seen = scrolledTo?.active === pane.active ? scrolledTo : null;
     const at = seen ? seen.first : Math.max(0, tabs.findIndex((x) => x.key === pane.active));
-    return (mounted = fitWindow(mounted, n, span, at, seen ? seen.last : at));
+    return (mounted = fitWindow(mounted, n, currentSpan(), at, seen ? seen.last : at));
   });
   const shown = $derived(win.from === 0 && win.to >= tabs.length ? tabs : tabs.slice(win.from, win.to));
 
@@ -72,12 +71,12 @@
   function scrolled() {
     scrollFrame = 0;
     const el = strip;
-    if (!el || tabs.length <= span || settings.wrapTabs || drag?.active || editing) return;
+    if (!el || tabs.length <= currentSpan() || settings.wrapTabs || drag?.active || editing) return;
     const els = [...el.querySelectorAll<HTMLElement>('[data-tab]')];
     const rects = els.map((x) => x.getBoundingClientRect());
     const box = el.getBoundingClientRect();
     const seen = visibleRange(win, rects, box, el.scrollLeft, tabPx, tabs.length);
-    const next = fitWindow(win, tabs.length, span, seen.first, seen.last);
+    const next = fitWindow(win, tabs.length, currentSpan(), seen.first, seen.last);
     if (next === win) return;
     const j = seen.first - win.from;
     const anchor = j >= 0 && j < els.length ? { key: els[j]!.dataset.tab!, left: rects[j]!.left } : null;
@@ -91,7 +90,7 @@
   }
 
   function onScroll() {
-    if (!scrollFrame && tabs.length > span) scrollFrame = requestAnimationFrame(scrolled);
+    if (!scrollFrame && tabs.length > currentSpan()) scrollFrame = requestAnimationFrame(scrolled);
   }
 
   $effect(() => {
