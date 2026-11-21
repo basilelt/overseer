@@ -199,3 +199,99 @@ fn opens_a_submodule_as_its_own_map() {
     assert_eq!(r["name"], "lib");
     assert!(changed(r, "src/arch.rs")["logic"].as_u64().unwrap() > 0);
 }
+
+fn review_files(fx: &Fx, wt: &Path) -> Vec<(String, String)> {
+    let (code, body) = fx.req(
+        "GET",
+        &format!(
+            "/v1/review?worktree={}",
+            enc_uri_component(&wt.to_string_lossy())
+        ),
+        "",
+    );
+    assert_eq!(code, 200, "{body}");
+    let v: Value = serde_json::from_str(&body).unwrap();
+    v["files"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|f| {
+            (
+                f["path"].as_str().unwrap().to_string(),
+                f["status"].as_str().unwrap().to_string(),
+            )
+        })
+        .collect()
+}
+
+#[test]
+fn a_task_worktree_lists_a_submodule_moved_to_another_commit_as_one_entry() {
+    let fx = Fx::new("rev-sub-detached", 0);
+    let lib = repo(&fx.base, "lib-src");
+    write(&lib, "a.txt", "1\n");
+    commit_all(&lib, "one");
+    let old = git(&lib, &["rev-parse", "HEAD"]).trim().to_string();
+    write(&lib, "b.txt", "2\n");
+    commit_all(&lib, "two");
+    let new = git(&lib, &["rev-parse", "HEAD"]).trim().to_string();
+    git(&lib, &["checkout", "-q", &old]);
+    git(&fx.wt, &["checkout", "-q", "-b", "main"]);
+    git(
+        &fx.wt,
+        &[
+            "-c",
+            "protocol.file.allow=always",
+            "submodule",
+            "add",
+            "-q",
+            lib.to_str().unwrap(),
+            "40_lib",
+        ],
+    );
+    commit_all(&fx.wt, "submodule");
+    let task = fx.base.join("task-wt");
+    git(
+        &fx.wt,
+        &[
+            "worktree",
+            "add",
+            "-q",
+            "-b",
+            "task/x",
+            task.to_str().unwrap(),
+        ],
+    );
+    git(
+        &task,
+        &[
+            "-c",
+            "protocol.file.allow=always",
+            "submodule",
+            "update",
+            "--init",
+            "-q",
+        ],
+    );
+    let _d = fx.daemon(false);
+    let sub = task.join("40_lib");
+    git(&sub, &["fetch", "-q", "origin"]);
+    git(&sub, &["checkout", "-q", &new]);
+    write(&task, "x.txt", "x\n");
+
+    let files = review_files(&fx, &task);
+    assert!(
+        files.contains(&("40_lib".into(), "submodule".into())),
+        "{files:?}"
+    );
+    assert!(
+        files.iter().all(|(p, _)| !p.starts_with("40_lib/")),
+        "{files:?}"
+    );
+
+    commit_all(&task, "move pointer");
+    let files = review_files(&fx, &task);
+    assert!(
+        files.contains(&("40_lib".into(), "submodule".into())),
+        "{files:?}"
+    );
+}

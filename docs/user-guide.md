@@ -2014,8 +2014,9 @@ A GitHub-style review of what an agent changed, while it works (ADR 0030, contra
   worktree of a submodule, reviews that submodule only (the header shows which superproject it
   belongs to). Reviewing a superproject lists each submodule whose commit changed as one
   collapsed entry (`old → new` commits) with **Review this submodule**, which opens its own
-  review from the old commit; files inside submodules are never listed, and a submodule with
-  only uncommitted changes is skipped, so large submodules cost nothing. File tree, unified or split diff, syntax highlighting, unchanged lines folded
+  review from the old commit. When the submodule is on a branch the agent created, its changed
+  files are listed under that entry too; a submodule left on a detached commit or the default
+  branch only shows the entry, and one with only uncommitted changes is skipped. File tree, unified or split diff, syntax highlighting, unchanged lines folded
   (click to expand), a Viewed box per file (unticked again when the file changes). J and K walk
   the files after a click anywhere in the review pane, its toolbar included, except on a text field. The view
   follows the agent's edits live: the daemon watches the worktree (file system events, polling as a fallback) and sends
