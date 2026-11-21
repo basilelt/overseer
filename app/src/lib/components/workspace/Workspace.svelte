@@ -11,7 +11,7 @@
   import { aggregate, resolveTab, workspaceTabs } from '../../workspace/workspaces';
   import { rememberTerms } from '../../tabs/tabs';
   import { releaseCapturedPointer } from '../../pointer-drag';
-  import { arrangePanes, layoutShape, reconcileLayout, restoreLayout, savedActive, staleAfterReset } from '../../tabs/layout-sync';
+  import { arrangePanes, layoutLoaded, layoutShape, reconcileLayout, restoreLayout, savedActive, staleAfterReset } from '../../tabs/layout-sync';
   import PaneView from './PaneView.svelte';
 
   let root: HTMLDivElement;
@@ -22,7 +22,7 @@
   const members = $derived(
     app.sidebarMode === 'status' ? [] : app.workspaceId.startsWith('group:') ? app.groupItems(app.workspaceId.slice(6)) : app.membersOf(app.workspaceId),
   );
-  const loaded = $derived(app.connected && app.synced && app.data.lines.length + app.data.terms.length > 0);
+  const loaded = $derived(layoutLoaded(app));
   let current = '#status';
   let seenEpoch = workspace.epoch;
   const stale = new Set<string>(['#status']);

@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { SidebarItem } from '../session/grouping';
 import { loadKnown, saveKnown } from './known-tabs';
-import { arrangePanes, layoutShape, reconcileLayout, restoreLayout, savedActive, staleAfterReset } from './layout-sync';
+import { arrangePanes, layoutLoaded, layoutShape, reconcileLayout, restoreLayout, savedActive, staleAfterReset } from './layout-sync';
 import { rememberTerms } from './tabs';
 import type { Term } from '../types';
 import { layoutFromTabs } from '../workspace/workspace.svelte';
@@ -173,5 +173,16 @@ describe('staleAfterReset', () => {
     stale.delete('ws1');
     expect(staleAfterReset(stale, seen, 1, 'ws1')).toBe(1);
     expect(stale.size).toBe(0);
+  });
+});
+
+describe('layoutLoaded', () => {
+  it('counts a synced daemon with no session as loaded so its tabs restore and persist', () => {
+    expect(layoutLoaded({ connected: true, synced: true })).toBe(true);
+  });
+
+  it('waits until the first full refresh and the connection', () => {
+    expect(layoutLoaded({ connected: true, synced: false })).toBe(false);
+    expect(layoutLoaded({ connected: false, synced: true })).toBe(false);
   });
 });

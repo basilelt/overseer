@@ -33,6 +33,10 @@ export function restoreLayout(rec: KnownTabs | null, items: SidebarItem[], fallb
   return arrangePanes(layoutFromTabs(tabs, active && tabs.includes(active) ? active : fallback), rec, items);
 }
 
+export function layoutLoaded(s: { connected: boolean; synced: boolean }): boolean {
+  return s.connected && s.synced;
+}
+
 export function staleAfterReset(stale: Set<string>, seen: number, epoch: number, current: string): number {
   if (epoch !== seen) stale.add(current);
   return epoch;
