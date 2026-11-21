@@ -6,6 +6,9 @@ fn tag_name(s: &str) -> Option<&str> {
         .find(|c: char| !(c.is_ascii_alphanumeric() || c == '-' || c == '_'))
         .unwrap_or(rest.len());
     let name = &rest[..end];
+    if is_html_tag(name) {
+        return None;
+    }
     let next = rest[end..].chars().next();
     (name.chars().next().is_some_and(|c| c.is_ascii_alphabetic())
         && matches!(next, Some('>' | ' ' | '\n' | '/')))
@@ -137,7 +140,97 @@ pub fn shorten(s: &str, max: usize) -> String {
     )
 }
 
-pub fn plain(s: &str) -> String {
+const HTML_TAGS: &[&str] = &[
+    "a",
+    "b",
+    "i",
+    "u",
+    "s",
+    "p",
+    "br",
+    "hr",
+    "em",
+    "strong",
+    "code",
+    "pre",
+    "span",
+    "div",
+    "kbd",
+    "sub",
+    "sup",
+    "small",
+    "mark",
+    "del",
+    "ins",
+    "li",
+    "ul",
+    "ol",
+    "h1",
+    "h2",
+    "h3",
+    "h4",
+    "h5",
+    "h6",
+    "img",
+    "blockquote",
+];
+
+fn is_html_tag(name: &str) -> bool {
+    HTML_TAGS.iter().any(|t| t.eq_ignore_ascii_case(name))
+}
+
+fn strip_html(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut rest = s;
+    while let Some(i) = rest.find('<') {
+        out.push_str(&rest[..i]);
+        rest = &rest[i..];
+        let body = rest.strip_prefix("</").unwrap_or(&rest[1..]);
+        let name_end = body
+            .find(|c: char| !c.is_ascii_alphanumeric())
+            .unwrap_or(body.len());
+        let end = rest.find('>');
+        match end {
+            Some(e) if is_html_tag(&body[..name_end]) => {
+                rest = &rest[e + 1..];
+            }
+            _ => {
+                out.push('<');
+                rest = &rest[1..];
+            }
+        }
+    }
+    out.push_str(rest);
+    out
+}
+
+fn strip_heading(line: &str) -> &str {
+    let t = line.trim_start_matches('#');
+    match t.strip_prefix(' ') {
+        Some(r) if t.len() < line.len() => r,
+        _ => line,
+    }
+}
+
+fn backtick_run(s: &str) -> usize {
+    s.bytes().take_while(|b| *b == b'`').count()
+}
+
+fn code_span(rest: &str) -> Option<(usize, usize)> {
+    let n = backtick_run(rest);
+    let mut at = n;
+    while let Some(i) = rest[at..].find('`') {
+        let start = at + i;
+        let run = backtick_run(&rest[start..]);
+        if run == n {
+            return Some((n, start));
+        }
+        at = start + run;
+    }
+    None
+}
+
+fn unmark(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     let mut rest = s;
     while let Some(i) = rest.find('[') {
@@ -160,7 +253,26 @@ pub fn plain(s: &str) -> String {
         }
     }
     out.push_str(rest);
-    out.replace("**", "").replace("__", "").replace('`', "")
+    out.replace("**", "").replace("__", "")
+}
+
+pub fn plain(s: &str) -> String {
+    let s = s.lines().map(strip_heading).collect::<Vec<_>>().join("\n");
+    let mut out = String::with_capacity(s.len());
+    let mut rest = s.as_str();
+    while let Some(i) = rest.find('`') {
+        out.push_str(&unmark(&strip_html(&rest[..i])));
+        rest = &rest[i..];
+        match code_span(rest) {
+            Some((n, end)) => {
+                out.push_str(&rest[n..end]);
+                rest = &rest[end + n..];
+            }
+            None => rest = &rest[backtick_run(rest)..],
+        }
+    }
+    out.push_str(&unmark(&strip_html(rest)));
+    out
 }
 
 pub fn title_from_prompt(s: &str) -> Option<String> {
@@ -200,6 +312,41 @@ mod tests {
         assert_eq!(
             title_from_prompt("fix [the login](http://a.b/c) loop").as_deref(),
             Some("Fix the login loop")
+        );
+    }
+
+    #[test]
+    fn plain_drops_heading_markers_and_html_tags_keeping_inner_text() {
+        let p = "## Fix **bold** `code` [link](http://x.y) <b>tag</b> now";
+        assert_eq!(plain(p), "Fix bold code link tag now");
+        assert_eq!(plain("# One\n### Two\n#nospace"), "One\nTwo\n#nospace");
+        assert_eq!(plain("a < b and <br/> c"), "a < b and  c");
+        assert_eq!(
+            title_from_prompt(p).as_deref(),
+            Some("Fix bold code link tag now")
+        );
+        assert_eq!(
+            clean_prompt("<system-reminder>x</system-reminder>\nhi <em>there</em>").as_deref(),
+            Some("hi <em>there</em>")
+        );
+    }
+
+    #[test]
+    fn plain_keeps_html_tags_inside_code_spans() {
+        assert_eq!(
+            plain("Fix the `<div>` alignment"),
+            "Fix the <div> alignment"
+        );
+        assert_eq!(
+            plain("wrap it in `<code>` <b>now</b>"),
+            "wrap it in <code> now"
+        );
+        assert_eq!(plain("a ``<b>x</b>`` b"), "a <b>x</b> b");
+        assert_eq!(plain("```\n<p>hi</p>\n```\n<i>z</i>"), "\n<p>hi</p>\n\nz");
+        assert_eq!(plain("open `<b> tick"), "open  tick");
+        assert_eq!(
+            title_from_prompt("Fix the `<div>` alignment").as_deref(),
+            Some("Fix the <div> alignment")
         );
     }
 
