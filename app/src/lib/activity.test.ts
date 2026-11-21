@@ -16,4 +16,9 @@ describe('plainSnippet', () => {
     expect(plainSnippet('![shot](a.png) plain')).toBe('shot plain');
     expect(plainSnippet('[unclosed](x')).toBe('[unclosed](x');
   });
+  it('drops heading markers and html tags but keeps their text', () => {
+    expect(plainSnippet('## Fix **bold** `code` [link](http://x.y) <b>tag</b> now')).toBe('Fix bold code link tag now');
+    expect(plainSnippet('# One\n### Two\n#nospace')).toBe('One\nTwo\n#nospace');
+    expect(plainSnippet('a < b and <br/> c')).toBe('a < b and  c');
+  });
 });

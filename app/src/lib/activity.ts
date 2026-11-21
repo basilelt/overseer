@@ -7,6 +7,8 @@ export function activityDelay(selected: boolean, visible: boolean): number {
 
 export function plainSnippet(text: string): string {
   return text
+    .replace(/<\/?(?:a|b|i|u|s|p|br|hr|em|strong|code|pre|span|div|kbd|sub|sup|small|mark|del|ins|li|ul|ol|h[1-6]|img|blockquote)\b[^>]*>/gi, '')
+    .replace(/^#+ /gm, '')
     .replace(/!?\[([^\]\n]*)\]\([^)\s]*\)/g, '$1')
     .replace(/(\*\*|__|`)/g, '');
 }

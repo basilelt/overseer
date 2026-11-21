@@ -1294,6 +1294,17 @@ mod tests {
     }
 
     #[test]
+    fn title_from_a_heading_prompt_drops_markers_and_keeps_html_text() {
+        let dir = tmp_dir("naming-heading");
+        let path = dir.join("t.jsonl");
+        let p = "## Fix **bold** `code` [link](http://x.y) <b>tag</b> now";
+        let line = json!({"type": "user", "message": {"content": p}});
+        std::fs::write(&path, format!("{line}\n")).unwrap();
+        let v = activity("claude", &path, None).unwrap();
+        assert_eq!(v["title"], "Fix bold code link tag now");
+    }
+
+    #[test]
     fn claude_titles_prompts_and_model() {
         let dir = tmp_dir("naming");
         let path = dir.join("t.jsonl");
