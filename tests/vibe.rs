@@ -555,11 +555,8 @@ fn a_busy_terminal_detector_is_cleared_once_the_store_says_the_turn_is_over() {
     let home = app.fx.base.join("home");
     let sid = "8e3b2c1d-0f9a-4b8c-9d7e-2f3a4b5c6d7e";
     let dir = store(&home, sid, &wt, &[message("m1", "user", "hi")]);
-    std::fs::write(
-        dir.join("journal/0000000000000001.jsonl"),
-        envelope("completed", Some(now_ms() - 60_000)),
-    )
-    .unwrap();
+    let journal = dir.join("journal/0000000000000001.jsonl");
+    std::fs::write(&journal, envelope("running", None)).unwrap();
     let t = app.ok("POST", "/v1/terms", json!({"cwd": wt, "agent": "vibe"}));
     let tid = t["id"].as_str().unwrap().to_string();
     let pid = wait_for(|| {
@@ -586,5 +583,11 @@ fn a_busy_terminal_detector_is_cleared_once_the_store_says_the_turn_is_over() {
     read_until(&mut ws, "> ");
     send(&mut ws, "spin\r");
     wait(|| vibe_line(&app, sid).is_some_and(|l| l["local"]["busy"] == true));
+    std::fs::OpenOptions::new()
+        .append(true)
+        .open(&journal)
+        .unwrap()
+        .write_all(envelope("completed", Some(now_ms())).as_bytes())
+        .unwrap();
     wait(|| vibe_line(&app, sid).is_some_and(|l| l["local"]["busy"] == false));
 }
