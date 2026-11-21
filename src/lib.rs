@@ -686,7 +686,10 @@ fn codex_found(
             owner[i] = Some(j);
         }
     }
-    let open = |i: usize| !threads[i].archived && threads[i].cwd.is_some();
+    let bound: HashSet<String> = term::all().iter().filter_map(|x| x.thread()).collect();
+    let open = |i: usize| {
+        !threads[i].archived && threads[i].cwd.is_some() && !bound.contains(&threads[i].id)
+    };
     let names_other =
         |argv: &[String], id: &str| argv.iter().any(|a| a != id && ids.contains(a.as_str()));
     let mut newest: Vec<usize> = (0..threads.len()).filter(|i| open(*i)).collect();

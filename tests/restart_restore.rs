@@ -238,3 +238,64 @@ fn every_agent_keeps_its_titles_and_resumes_across_a_daemon_restart() {
         std::thread::sleep(std::time::Duration::from_millis(3500));
     }
 }
+
+fn codex_lines(app: &App) -> Vec<Value> {
+    app.ok("GET", "/v1/lines?all=true", Value::Null)
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|l| l["line"]["agent"] == "codex")
+        .cloned()
+        .collect()
+}
+
+#[test]
+fn an_exited_codex_session_is_not_rebound_to_a_sibling_that_never_typed() {
+    let app = App::new("codex-exit-sibling", json!({"autoConcurrency": 0}));
+    let wt = app.fx.wt.to_string_lossy().into_owned();
+    let mut ids = vec![];
+    for _ in 0..2 {
+        let t = app.ok(
+            "POST",
+            "/v1/terms",
+            json!({"agent": "codex", "cwd": wt, "cols": 120, "rows": 32}),
+        );
+        ids.push(t["id"].as_str().unwrap().to_string());
+    }
+    let (a, b) = (ids[0].clone(), ids[1].clone());
+    let mut wa = app.ws(&a);
+    common::send(&mut wa, "busy\r");
+    let line_a = wait_for(|| {
+        codex_lines(&app)
+            .into_iter()
+            .find(|l| l["local"]["termId"] == a.as_str())
+            .map(|l| l["line"]["id"].as_str().unwrap().to_string())
+    });
+    common::send(&mut wa, "exit\r");
+    wait_for(|| {
+        codex_lines(&app)
+            .into_iter()
+            .find(|l| l["line"]["id"] == line_a.as_str())
+            .filter(|l| l["local"]["pid"].is_null())
+    });
+    std::thread::sleep(std::time::Duration::from_secs(3));
+    let after = codex_lines(&app)
+        .into_iter()
+        .find(|l| l["line"]["id"] == line_a.as_str())
+        .unwrap();
+    assert!(
+        after["local"]["pid"].is_null(),
+        "A stays unbound: {after:?}"
+    );
+    assert_ne!(after["local"]["termId"], b.as_str(), "{after:?}");
+    drop(wa);
+    let mut wb = app.ws(&b);
+    common::send(&mut wb, "busy\r");
+    let line_b = wait_for(|| {
+        codex_lines(&app)
+            .into_iter()
+            .find(|l| l["local"]["termId"] == b.as_str())
+    });
+    assert_ne!(line_b["line"]["id"], line_a.as_str());
+    assert!(line_b["local"]["pid"].is_u64(), "{line_b:?}");
+}
