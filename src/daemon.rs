@@ -1238,6 +1238,9 @@ pub fn conn(mut s: impl Stream, token: Option<&str>) {
     }
     take_effect();
     let (code, v) = handle(&ctx, &req);
+    if let Some(m) = server_error(&req, code, &v) {
+        crate::dlog::line("warn", &m);
+    }
     let effect = take_effect();
     if req.method != "GET" && (200..300).contains(&code) && effect != Effect::None {
         crate::scanner::poke();
@@ -1267,6 +1270,13 @@ pub fn conn(mut s: impl Stream, token: Option<&str>) {
         }
         std::process::exit(0);
     }
+}
+
+fn server_error(req: &Request, code: u16, v: &Value) -> Option<String> {
+    (code >= 500).then(|| {
+        let e = v["error"].as_str().unwrap_or("no error text");
+        format!("{} {}: HTTP {code}: {e}", req.method, req.path)
+    })
 }
 
 pub(crate) fn accept<S: Stream + 'static>(s: S, token: Option<String>) {
@@ -1846,6 +1856,42 @@ pub fn call(method: &str, target: &str, body: Option<&Value>) -> Result<(u16, Va
         target,
         body,
     )
+}
+
+#[cfg(test)]
+mod server_error_tests {
+    use super::*;
+
+    fn req(method: &str, path: &str) -> Request {
+        Request {
+            method: method.into(),
+            path: path.into(),
+            query: vec![],
+            headers: vec![],
+            body: vec![],
+        }
+    }
+
+    #[test]
+    fn server_errors_are_logged_with_their_route_and_text() {
+        let r = req("GET", "/v1/folders");
+        assert_eq!(
+            server_error(&r, 500, &json!({"error": "unable to open database file"})).as_deref(),
+            Some("GET /v1/folders: HTTP 500: unable to open database file")
+        );
+        assert_eq!(
+            server_error(&r, 503, &json!({})).as_deref(),
+            Some("GET /v1/folders: HTTP 503: no error text")
+        );
+    }
+
+    #[test]
+    fn client_errors_and_successes_are_not_logged() {
+        let r = req("POST", "/v1/worktrees/x/cleanup");
+        for code in [200, 404, 409] {
+            assert_eq!(server_error(&r, code, &json!({"error": "x"})), None);
+        }
+    }
 }
 
 #[cfg(test)]

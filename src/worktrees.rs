@@ -853,63 +853,86 @@ fn json_of(s: &Shared, e: &Entry) -> Value {
     v
 }
 
-pub fn list(ctx: &Ctx, path: &str) -> Res<Value> {
+const LIST_WORKERS: usize = 8;
+
+fn with_shared<R>(ctx: &Ctx, path: &str, f: impl FnOnce(&Shared, &[Entry]) -> R) -> Res<R> {
     let (root, repo) = project(path)?;
-    crate::gitgraph::touch(&root);
     let known = Known::load(ctx, &root);
     let all = entries(&root);
     let base_name = default_branch(&root);
     let base = start_point(&root, &base_name);
-    let store = store(ctx, &root);
-    let managed_root = crate::layout::ManagedRoot::new(&ctx.config.worktree_dir);
     let shared = Shared {
         root: &root,
         repo: &repo,
         base_name: &base_name,
         base: &base,
-        store: store.to_string_lossy().into_owned(),
-        managed_root,
+        store: store(ctx, &root).to_string_lossy().into_owned(),
+        managed_root: crate::layout::ManagedRoot::new(&ctx.config.worktree_dir),
         stale_ms: ctx.config.worktree_stale_days.max(0) * DAY_MS,
         now_ms: crate::util::now_ms(),
         known: &known,
         paths: all.iter().map(|e| e.path.clone()).collect(),
     };
-    let items: Vec<Value> = std::thread::scope(|sc| {
-        let hs: Vec<_> = all
-            .iter()
-            .filter(|e| !e.bare)
-            .map(|e| sc.spawn(|| json_of(&shared, e)))
-            .collect();
-        hs.into_iter().filter_map(|h| h.join().ok()).collect()
-    });
-    let (mut mine, orphans): (Vec<Value>, Vec<Value>) =
-        items.into_iter().partition(|v| v["kind"] != "orphan");
-    mine.sort_by(|a, b| {
-        (b["kind"] == "main")
-            .cmp(&(a["kind"] == "main"))
-            .then_with(|| {
-                b["lastActivityAt"]
-                    .as_str()
-                    .cmp(&a["lastActivityAt"].as_str())
+    Ok(f(&shared, &all))
+}
+
+fn json_all(s: &Shared, all: &[&Entry]) -> Vec<Value> {
+    let next = std::sync::atomic::AtomicUsize::new(0);
+    let workers = LIST_WORKERS.min(all.len());
+    let mut out: Vec<(usize, Value)> = std::thread::scope(|sc| {
+        let hs: Vec<_> = (0..workers)
+            .map(|_| {
+                sc.spawn(|| {
+                    let mut got = vec![];
+                    loop {
+                        let i = next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                        let Some(e) = all.get(i) else { break got };
+                        got.push((i, json_of(s, e)));
+                    }
+                })
             })
+            .collect();
+        hs.into_iter()
+            .filter_map(|h| h.join().ok())
+            .flatten()
+            .collect()
     });
-    Ok(json!({
-        "project": root, "store": shared.store, "base": base_name,
-        "worktrees": mine, "orphans": orphans,
-    }))
+    out.sort_by_key(|(i, _)| *i);
+    out.into_iter().map(|(_, v)| v).collect()
+}
+
+pub fn list(ctx: &Ctx, path: &str) -> Res<Value> {
+    with_shared(ctx, path, |shared, all| {
+        crate::gitgraph::touch(shared.root);
+        let live: Vec<&Entry> = all.iter().filter(|e| !e.bare).collect();
+        let (mut mine, orphans): (Vec<Value>, Vec<Value>) = json_all(shared, &live)
+            .into_iter()
+            .partition(|v| v["kind"] != "orphan");
+        mine.sort_by(|a, b| {
+            (b["kind"] == "main")
+                .cmp(&(a["kind"] == "main"))
+                .then_with(|| {
+                    b["lastActivityAt"]
+                        .as_str()
+                        .cmp(&a["lastActivityAt"].as_str())
+                })
+        });
+        json!({
+            "project": shared.root, "store": shared.store, "base": shared.base_name,
+            "worktrees": mine, "orphans": orphans,
+        })
+    })
 }
 
 pub fn describe(ctx: &Ctx, root: &str, path: &str) -> Res<Value> {
-    let l = list(ctx, root)?;
     let c = canon(Path::new(path));
-    l["worktrees"]
-        .as_array()
-        .into_iter()
-        .chain(l["orphans"].as_array())
-        .flatten()
-        .find(|w| w["path"] == path || w["path"] == c.as_str())
-        .cloned()
-        .ok_or_else(|| (404, format!("{path} is not a worktree of {root}")))
+    with_shared(ctx, root, |shared, all| {
+        all.iter()
+            .filter(|e| !e.bare)
+            .find(|e| e.path == path || e.path == c)
+            .map(|e| json_of(shared, e))
+    })?
+    .ok_or_else(|| (404, format!("{path} is not a worktree of {root}")))
 }
 
 fn locate(ctx: &Ctx, id: &str, hint: Option<&str>) -> Res<(String, Value)> {

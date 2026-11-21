@@ -1,6 +1,6 @@
 <script lang="ts">
   import { gesture } from '../links';
-  import { onMount } from 'svelte';
+  import { onMount, untrack } from 'svelte';
   import BrushCleaning from '@lucide/svelte/icons/brush-cleaning';
   import Eye from '@lucide/svelte/icons/eye';
   import GitMerge from '@lucide/svelte/icons/git-merge';
@@ -9,13 +9,14 @@
   import SquareTerminal from '@lucide/svelte/icons/square-terminal';
   import AgentGlyph from '../components/ui/AgentGlyph.svelte';
   import { app } from '../state.svelte';
+  import { coalesce } from '../coalesce';
   import { age } from '../time';
   import { gitApi } from './api';
   import CleanupDialog from './CleanupDialog.svelte';
   import { gt, type GKey } from './strings';
   import { openReview } from '../review/open';
   import type { Worktree, WorktreeList } from './types';
-  import { cleanable, formatSize, listFor, sortWorktrees, unused } from './view';
+  import { cleanable, formatSize, listFor, needsReload, sortWorktrees, unused } from './view';
 
   let { projectPath }: { projectPath: string } = $props();
 
@@ -29,21 +30,29 @@
   const idle = $derived(list.filter(unused));
   const err = (e: unknown) => String((e as Error)?.message ?? e);
 
-  async function load() {
-    if (!app.client) return;
+  const load = coalesce(async () => {
+    const client = app.client;
+    if (!client) return;
+    const path = projectPath;
     try {
-      const d = await gitApi(app.client).worktrees(projectPath);
-      if (listFor(d.project, projectPath)) data = d;
+      const d = await gitApi(client).worktrees(path);
+      if (path === projectPath && listFor(d.project, projectPath)) data = d;
       error = null;
     } catch (e) {
       error = err(e);
     }
-  }
+  });
 
+  let shown: string | null = null;
   $effect(() => {
-    projectPath;
-    data = null;
-    load();
+    const path = projectPath;
+    const phase = app.conn.phase;
+    if (!app.client || !needsReload(path, shown, phase)) return;
+    untrack(() => {
+      if (path !== shown) data = null;
+      shown = path;
+      load();
+    });
   });
 
   onMount(() => {

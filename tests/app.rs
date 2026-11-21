@@ -2555,6 +2555,47 @@ fn task_rank_and_added_projects() {
 }
 
 #[test]
+fn parallel_cleanup_dry_runs_all_answer_with_a_plan() {
+    let app = App::new("wt-parallel", json!({"autoConcurrency": 0}));
+    let wt = app.fx.wt.to_string_lossy().into_owned();
+    let paths: Vec<String> = (0..16)
+        .map(|i| {
+            let (code, w) = app.req(
+                "POST",
+                "/v1/worktrees",
+                json!({"project": wt, "agent": "claude", "slug": format!("old {i}")}),
+            );
+            assert_eq!(code, 201, "{w}");
+            w["path"].as_str().unwrap().to_string()
+        })
+        .collect();
+    let plans: Vec<(u16, Value)> = std::thread::scope(|sc| {
+        let hs: Vec<_> = paths
+            .iter()
+            .map(|p| {
+                let (app, wt) = (&app, &wt);
+                sc.spawn(move || {
+                    app.req(
+                        "POST",
+                        &format!("/v1/worktrees/{}/cleanup", enc(p)),
+                        json!({"dryRun": true, "project": wt}),
+                    )
+                })
+            })
+            .collect();
+        hs.into_iter().map(|h| h.join().unwrap()).collect()
+    });
+    for ((code, plan), p) in plans.iter().zip(&paths) {
+        assert_eq!(*code, 200, "{p}: {plan}");
+        assert_eq!(plan["id"], p.as_str());
+        assert_eq!(plan["dryRun"], true);
+        assert_eq!(plan["refused"], Value::Null, "{plan}");
+        assert_eq!(plan["remove"][0]["kind"], "worktree");
+    }
+    assert!(paths.iter().all(|p| Path::new(p).exists()));
+}
+
+#[test]
 fn worktrees_graph_and_events_through_the_daemon() {
     let app = App::new("worktrees", json!({"autoConcurrency": 0}));
     let wt = app.fx.wt.to_string_lossy().into_owned();
