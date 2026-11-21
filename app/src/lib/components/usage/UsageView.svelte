@@ -408,7 +408,7 @@
   }
   .gauge {
     display: grid;
-    grid-template-columns: 28px minmax(60px, 1fr) 40px 8.5em;
+    grid-template-columns: 28px minmax(0, 1fr) 40px minmax(0, 7.5rem);
     align-items: center;
     gap: 8px;
   }
@@ -439,6 +439,9 @@
   }
   .when {
     white-space: nowrap;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
     text-align: right;
   }
   .stats {

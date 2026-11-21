@@ -677,7 +677,7 @@ class AppState {
       const k = touchedKey(e);
       if (k) this.touched.set(k, ++this.eventSeq);
     }
-    if (next === prev && e.type !== 'line.activity' && !/^(review|worktree)\./.test(e.type) && e.type !== 'git.changed') return null;
+    if (next === prev && e.type !== 'line.activity' && !/^(review|worktree)\./.test(e.type) && e.type !== 'git.changed' && e.type !== 'usage.updated') return null;
     return next;
   }
 
