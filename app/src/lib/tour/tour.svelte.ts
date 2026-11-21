@@ -20,6 +20,7 @@ class Tour {
   steps = $state.raw<Step[]>([]);
   index = $state(0);
   ready = $state(false);
+  blocked = $state(false);
   step = $derived<Step | null>(this.phase === 'tour' ? (this.steps[this.index] ?? null) : null);
 
   pending(): Mode | null {
@@ -30,8 +31,12 @@ class Tour {
     this.ready = ready;
   }
 
+  setBlocked(blocked: boolean) {
+    this.blocked = blocked;
+  }
+
   offer() {
-    if (this.phase || !this.ready) return;
+    if (this.phase || !this.ready || this.blocked) return;
     const mode = this.pending();
     if (!mode) return;
     if (mode === 'full') {
@@ -42,6 +47,7 @@ class Tour {
 
   async start(mode: Mode = 'full', has: (name: string) => boolean = hasTarget) {
     const { STEPS, stepsFor, visibleSteps } = await import('./steps');
+    if (mode === 'whatsNew' && this.blocked) return;
     const steps = visibleSteps(stepsFor(mode, settings.tourSeen, STEPS), has, isPhone());
     if (!steps.length) return this.finish();
     this.mode = mode;
