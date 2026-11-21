@@ -9,9 +9,17 @@ const HTML_TAG =
   /<\/?(?:a|b|i|u|s|p|br|hr|em|strong|code|pre|span|div|kbd|sub|sup|small|mark|del|ins|li|ul|ol|h[1-6]|img|blockquote)\b[^>]*>/gi;
 const CODE_OR_TEXT = /(`+)([\s\S]*?)(?<!`)\1(?!`)|([^`]+)|`+/g;
 
+function stripTags(text: string): string {
+  let prev: string;
+  do {
+    prev = text;
+    text = text.replace(HTML_TAG, '');
+  } while (text !== prev);
+  return text;
+}
+
 function unmark(text: string): string {
-  return text
-    .replace(HTML_TAG, '')
+  return stripTags(text)
     .replace(/!?\[([^\]\n]*)\]\([^)\s]*\)/g, '$1')
     .replace(/(\*\*|__)/g, '');
 }

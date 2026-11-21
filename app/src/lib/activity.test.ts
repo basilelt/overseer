@@ -27,4 +27,7 @@ describe('plainSnippet', () => {
     expect(plainSnippet('a ``<b>x</b>`` b')).toBe('a <b>x</b> b');
     expect(plainSnippet('open `<b> tick')).toBe('open  tick');
   });
+  it('leaves no tag behind when tags are nested inside each other', () => {
+    expect(plainSnippet('<<b>b>x<</b>/b>')).toBe('x');
+  });
 });
