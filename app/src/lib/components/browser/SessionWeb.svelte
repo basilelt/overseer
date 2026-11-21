@@ -13,6 +13,7 @@
   import { app } from '../../state.svelte';
   import { isTauri } from '../../platform';
   import { boundsOf, nativeBrowser, normalizeUrl } from '../../browser';
+  import { popup } from '../../popup.svelte';
   import { pages } from '../../session/session-pages.svelte';
   import type { Page } from '../../session/session-pages';
   import { openInFocused, update } from '../../workspace/workspace.svelte';
@@ -38,7 +39,7 @@
 
   $effect(() => {
     const id = page?.id ?? null;
-    const hidden = !!app.overlay;
+    const hidden = popup.open;
     const el = host;
     if (!native || !el) return;
     untrack(() => {
@@ -56,6 +57,11 @@
   function place() {
     if (shown && host) pages.bounds(shown, boundsOf(host));
   }
+
+  $effect(() => {
+    void app.toast;
+    untrack(place);
+  });
 
   onMount(() => {
     if (!native || !host) return;

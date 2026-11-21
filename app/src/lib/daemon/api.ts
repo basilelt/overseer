@@ -117,6 +117,6 @@ export interface HoldPlan {
   lineId?: string;
   action?: string;
   steps?: string[];
-  predicates?: Record<string, { ok: boolean; detail?: string }>;
+  predicates?: Record<string, { ok: boolean; detail?: string; unknown?: boolean }>;
   error?: string;
 }

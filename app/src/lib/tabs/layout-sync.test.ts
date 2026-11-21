@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { SidebarItem } from '../session/grouping';
 import { loadKnown, saveKnown } from './known-tabs';
-import { arrangePanes, layoutShape, reconcileLayout, restoreLayout, savedActive, staleAfterReset } from './layout-sync';
+import { arrangePanes, layoutLoaded, layoutShape, reconcileLayout, restoreLayout, savedActive, staleAfterReset } from './layout-sync';
 import { rememberTerms } from './tabs';
 import type { Term } from '../types';
 import { layoutFromTabs } from '../workspace/workspace.svelte';
@@ -38,6 +38,30 @@ describe('closing a session opened from the status list', () => {
     expect(out.layout).toBe(l);
     expect(out.selected).toBe('browser:x');
     expect(out.forget).toEqual([]);
+  });
+});
+
+describe('quitting an agent and starting it again in the same terminal', () => {
+  const before = item('line:a', { lineId: 'a', termId: 't1' });
+  const lost = item('line:a', { lineId: 'a', group: 'stopped', state: 'closed' });
+  const next = item('line:b', { lineId: 'b', termId: 't1' });
+  const bound = [{ id: 't1', lineId: 'a' } as Term];
+
+  it('moves the tab and the selection to the new line instead of leaving a dead tab', () => {
+    const termOf = new Map<string, string>();
+    rememberTerms(termOf, [before], bound);
+    const out = reconcileLayout(layoutFromTabs(['line:a'], 'line:a'), [lost, next], termOf, 'line:a');
+    expect(out.layout.panes[0]).toEqual({ tabs: ['line:b'], active: 'line:b' });
+    expect(out.selected).toBe('line:b');
+    expect(out.forget).toEqual(['line:a']);
+  });
+
+  it('keeps the new line on its own tab when it already has one', () => {
+    const termOf = new Map<string, string>();
+    rememberTerms(termOf, [before], bound);
+    const out = reconcileLayout(layoutFromTabs(['line:a', 'line:b'], 'line:a'), [lost, next], termOf, 'line:a');
+    expect(out.layout.panes[0].tabs).toEqual(['line:b']);
+    expect(out.selected).toBe('line:b');
   });
 });
 
@@ -149,5 +173,16 @@ describe('staleAfterReset', () => {
     stale.delete('ws1');
     expect(staleAfterReset(stale, seen, 1, 'ws1')).toBe(1);
     expect(stale.size).toBe(0);
+  });
+});
+
+describe('layoutLoaded', () => {
+  it('counts a synced daemon with no session as loaded so its tabs restore and persist', () => {
+    expect(layoutLoaded({ connected: true, synced: true })).toBe(true);
+  });
+
+  it('waits until the first full refresh and the connection', () => {
+    expect(layoutLoaded({ connected: true, synced: false })).toBe(false);
+    expect(layoutLoaded({ connected: false, synced: true })).toBe(false);
   });
 });

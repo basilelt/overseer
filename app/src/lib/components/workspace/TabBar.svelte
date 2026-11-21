@@ -1,5 +1,6 @@
 <script lang="ts" module>
   import { ensureSprite } from '../../icons/sprite';
+  import { lockSelection } from '../../selection-lock';
 
   ensureSprite();
 </script>
@@ -44,6 +45,7 @@
   const inWorkspace = $derived(app.sidebarMode === 'workspaces' && !app.workspaceId.startsWith('group:') && !!app.currentWorkspace);
   let plus: HTMLButtonElement | undefined = $state();
   let drag: { key: string; x: number; active: boolean } | null = null;
+  let unlock: (() => void) | null = null;
   let dropAt = $state<number | null>(null);
   let strip: HTMLDivElement | undefined = $state();
 
@@ -146,6 +148,7 @@
   function tabMove(e: PointerEvent) {
     if (!drag || !strip) return;
     if (!drag.active && Math.abs(e.clientX - drag.x) < 6) return;
+    if (!drag.active) unlock = lockSelection();
     drag.active = true;
     const ws = app.canMoveToWorkspace(drag.key) ? wsDropTarget(document.elementFromPoint(e.clientX, e.clientY)) : null;
     app.tabDrop = ws && ws !== app.itemWs.get(drag.key) ? ws : null;
@@ -169,6 +172,8 @@
     const d = drag;
     if (!d) return;
     drag = null;
+    unlock?.();
+    unlock = null;
     const at = dropAt;
     dropAt = null;
     const ws = app.tabDrop;

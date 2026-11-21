@@ -3,15 +3,15 @@
   import { t } from '../i18n.svelte';
   import { app } from '../state.svelte';
   import { gitApi } from './api';
+  import { onMount } from 'svelte';
   import { SvelteSet } from 'svelte/reactivity';
-  import { chosen, cleanedMessage, cleanupTargets, planLines, runCleanup } from './cleanup';
+  import { chosen, cleanedMessage, cleanupTargets, planAll, planLines, runCleanup } from './cleanup';
   import { gt } from './strings';
   import type { CleanupPlan, Worktree } from './types';
 
   let { worktrees, onclose, ondone }: { worktrees: Worktree[]; onclose: () => void; ondone?: () => void } = $props();
 
   let plans = $state<CleanupPlan[] | null>(null);
-  let error = $state<string | null>(null);
   let busy = $state(false);
 
   const skipped = new SvelteSet<string>();
@@ -20,11 +20,15 @@
   const toggle = (id: string) => (skipped.has(id) ? skipped.delete(id) : skipped.add(id));
   const byId = $derived(new Map(worktrees.map((w) => [w.id, w])));
 
-  $effect(() => {
-    const api = gitApi(app.requireClient());
-    Promise.all(worktrees.map((w) => api.cleanup(w.id, true, w.project)))
-      .then((p) => (plans = p))
-      .catch((e) => (error = String((e as Error)?.message ?? e)));
+  onMount(() => {
+    let live = true;
+    const targets = worktrees.map((w) => ({ id: w.id, project: w.project }));
+    planAll(gitApi(app.requireClient()), targets).then((p) => {
+      if (live) plans = p;
+    });
+    return () => {
+      live = false;
+    };
   });
 
   async function confirm() {
@@ -40,9 +44,7 @@
 
 <Modal title={gt('cleanupTitle')} {onclose} width={620}>
   <p class="intro faint">{gt('cleanupIntro')}</p>
-  {#if error}
-    <p class="err">{error}</p>
-  {:else if !plans}
+  {#if !plans}
     <p class="faint">{t('common.loading')}</p>
   {:else}
     <ul class="plans">
@@ -135,9 +137,6 @@
     color: var(--text-2);
   }
   .line.refused .tag {
-    color: var(--st-failed);
-  }
-  .err {
     color: var(--st-failed);
   }
 </style>

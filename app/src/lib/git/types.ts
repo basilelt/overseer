@@ -145,6 +145,7 @@ export interface CleanupPlan {
   refused: string | null;
   remove: PlanItem[];
   keep: PlanItem[];
+  failed?: boolean;
 }
 
 export type FileState = 'M' | 'A' | 'D' | 'R' | 'T' | 'U' | '?';

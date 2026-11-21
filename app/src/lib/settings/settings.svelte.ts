@@ -70,9 +70,11 @@ export interface Settings {
   phoneFontSize?: number;
   hideSessionTasks?: boolean;
   feedbackRepo?: string;
+  feedbackAgent?: Agent;
   tourSeen?: number | string;
   organizeNudgeAt?: number;
   fetchClaudeLimits: boolean;
+  usageAgentsHidden: string[];
   linkTarget: LinkTarget;
   linkBrowser: string;
   linkAsk: boolean;
@@ -130,6 +132,7 @@ export const DEFAULT_SETTINGS: Settings = {
   portsLocalhostOnly: true,
   localNetworkAsked: false,
   fetchClaudeLimits: false,
+  usageAgentsHidden: [],
   linkTarget: 'overseer',
   linkBrowser: '',
   linkAsk: false,
@@ -150,7 +153,7 @@ function load(): Settings {
     if (!raw) return { ...DEFAULT_SETTINGS };
     const parsed = JSON.parse(raw);
     delete parsed.colors;
-    return { ...DEFAULT_SETTINGS, ...parsed, ...migrateTheme(JSON.parse(raw)), locale: isLocale(parsed.locale) ? parsed.locale : DEFAULT_SETTINGS.locale, gpuTerminal: parsed.gpuTerminal === true, notifyKinds: migrateKinds(parsed), notifyQuiet: { ...DEFAULT_QUIET, ...parsed.notifyQuiet } };
+    return { ...DEFAULT_SETTINGS, ...parsed, ...migrateTheme(JSON.parse(raw)), locale: isLocale(parsed.locale) ? parsed.locale : DEFAULT_SETTINGS.locale, gpuTerminal: parsed.gpuTerminal === true, notifyKinds: migrateKinds(parsed), notifyQuiet: { ...DEFAULT_QUIET, ...parsed.notifyQuiet }, usageAgentsHidden: Array.isArray(parsed.usageAgentsHidden) ? parsed.usageAgentsHidden.filter((x: unknown) => typeof x === 'string') : DEFAULT_SETTINGS.usageAgentsHidden };
   } catch {
     return { ...DEFAULT_SETTINGS };
   }

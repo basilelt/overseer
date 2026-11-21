@@ -1,6 +1,6 @@
 mod common;
 
-use common::{bin, strs, wait, wait_for, App};
+use common::{bin, read_until, send, strs, wait, wait_for, App};
 use serde_json::{json, Value};
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -308,6 +308,54 @@ fn a_vibe_task_starts_trusted_and_moves_to_review_when_its_turn_ends() {
 }
 
 #[test]
+fn an_ended_vibe_session_stops_being_mid_turn_even_when_no_hook_fires() {
+    let app = App::new("vibe-ended", json!({}));
+    let wt = app.fx.wt.to_string_lossy().into_owned();
+    let sid = "9d2c3b4a-5e6f-4a7b-8c9d-0e1f2a3b4c5d";
+    let home = app.fx.base.join("home");
+    store(&home, sid, &wt, &[message("m1", "user", "hi")]);
+    let t = app.ok(
+        "POST",
+        "/v1/terms",
+        json!({"cwd": wt, "cmd": ["vibe", "--resume", sid]}),
+    );
+    let tid = t["id"].as_str().unwrap().to_string();
+    let pid = wait_for(|| {
+        app.ok("GET", &format!("/v1/terms/{tid}"), Value::Null)["pid"]
+            .as_u64()
+            .filter(|p| *p > 0)
+    });
+    let l = wait_for(|| vibe_line(&app, sid).filter(|l| l["local"]["termId"] == tid.as_str()));
+    let line = l["line"]["id"].as_str().unwrap().to_string();
+
+    let active = home.join(".vibe/logs/session/active");
+    std::fs::create_dir_all(&active).unwrap();
+    let lock = active.join(format!("{sid}.lock.json"));
+    std::fs::write(
+        &lock,
+        json!({"lease_version": 1, "session_id": sid, "process_id": pid}).to_string(),
+    )
+    .unwrap();
+    hook(
+        &app,
+        "pre_agent",
+        pid,
+        json!({"session_id": sid, "parent_session_id": null, "cwd": wt, "transcript_path": "",
+            "hook_event_name": "pre_agent", "agent_name": "default", "turn_id": "t1", "prompt": "go"}),
+    );
+    wait(|| vibe_line(&app, sid).is_some_and(|l| l["local"]["busy"] == true));
+    let (code, plan) = app.req("POST", &format!("/v1/lines/{line}/close"), Value::Null);
+    assert_eq!(code, 409, "{plan}");
+    assert_eq!(plan["predicates"]["atPrompt"]["ok"], false, "{plan}");
+
+    std::fs::remove_file(&lock).unwrap();
+    wait(|| vibe_line(&app, sid).is_some_and(|l| l["local"]["busy"] == false));
+    let (_, plan) = app.req("POST", &format!("/v1/lines/{line}/close"), Value::Null);
+    assert_eq!(plan["predicates"]["alive"]["ok"], true, "{plan}");
+    assert_eq!(plan["predicates"]["atPrompt"]["ok"], true, "{plan}");
+}
+
+#[test]
 fn a_resumed_vibe_term_without_a_lease_keeps_its_line() {
     let app = App::new("vibe-resume", json!({}));
     let wt = app.fx.wt.to_string_lossy().into_owned();
@@ -330,4 +378,213 @@ fn a_resumed_vibe_term_without_a_lease_keeps_its_line() {
         l["local"]["resumeCommand"].as_str().unwrap(),
         format!("cd {wt} && vibe --resume {sid}")
     );
+}
+
+fn envelope(status: &str, completed: Option<i64>) -> String {
+    let mut turn = json!({"id": "turn-1", "queueItemId": "q1", "startedAt": 1_795_077_719_099i64,
+        "status": status});
+    if let Some(c) = completed {
+        turn["completedAt"] = json!(c);
+    }
+    format!(
+        "{}\n",
+        json!({"payload": {"delta": [{"op": "set_envelope", "state": {"activeCallbacks": [],
+            "history": {"entries": []}, "latestTurn": turn, "session": {"id": "s"}}}]},
+            "sequence": 7, "type": "projection_delta"})
+    )
+}
+
+fn now_ms() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_millis() as i64
+}
+
+#[test]
+fn a_vibe_turn_the_store_says_is_over_stops_being_mid_turn_while_the_session_stays_open() {
+    let app = App::new("vibe-turn-over", json!({}));
+    let wt = app.fx.wt.to_string_lossy().into_owned();
+    let sid = "6b1f0c2e-3d4a-4b5c-8d6e-7f8091a2b3c4";
+    let home = app.fx.base.join("home");
+    let dir = store(&home, sid, &wt, &[message("m1", "user", "hi")]);
+    let journal = dir.join("journal/0000000000000001.jsonl");
+    let t = app.ok(
+        "POST",
+        "/v1/terms",
+        json!({"cwd": wt, "cmd": ["vibe", "--resume", sid]}),
+    );
+    let tid = t["id"].as_str().unwrap().to_string();
+    let pid = wait_for(|| {
+        app.ok("GET", &format!("/v1/terms/{tid}"), Value::Null)["pid"]
+            .as_u64()
+            .filter(|p| *p > 0)
+    });
+    let active = home.join(".vibe/logs/session/active");
+    std::fs::create_dir_all(&active).unwrap();
+    std::fs::write(
+        active.join(format!("{sid}.lock.json")),
+        json!({"lease_version": 1, "session_id": sid, "process_id": pid}).to_string(),
+    )
+    .unwrap();
+    let l = wait_for(|| vibe_line(&app, sid).filter(|l| l["local"]["termId"] == tid.as_str()));
+    let line = l["line"]["id"].as_str().unwrap().to_string();
+    let pre_agent = || {
+        hook(
+            &app,
+            "pre_agent",
+            pid,
+            json!({"session_id": sid, "parent_session_id": null, "cwd": wt, "transcript_path": "",
+                "hook_event_name": "pre_agent", "agent_name": "default", "turn_id": "t1", "prompt": "go"}),
+        )
+    };
+
+    std::fs::write(&journal, envelope("in_progress", None)).unwrap();
+    pre_agent();
+    wait(|| vibe_line(&app, sid).is_some_and(|l| l["local"]["busy"] == true));
+    let (code, _) = app.req("POST", &format!("/v1/lines/{line}/close"), Value::Null);
+    assert_eq!(code, 409);
+
+    std::thread::sleep(std::time::Duration::from_millis(50));
+    std::fs::write(&journal, envelope("completed", Some(now_ms()))).unwrap();
+    wait(|| vibe_line(&app, sid).is_some_and(|l| l["local"]["busy"] == false));
+    let (_, plan) = app.req("POST", &format!("/v1/lines/{line}/close"), Value::Null);
+    assert_eq!(plan["predicates"]["alive"]["ok"], true, "{plan}");
+    assert_eq!(plan["predicates"]["atPrompt"]["ok"], true, "{plan}");
+
+    std::thread::sleep(std::time::Duration::from_millis(50));
+    pre_agent();
+    wait(|| vibe_line(&app, sid).is_some_and(|l| l["local"]["busy"] == true));
+}
+
+#[test]
+fn chat_mode_reaches_an_idle_vibe_line_despite_its_terminal_redrawing() {
+    let app = App::new("vibe-bcast", json!({}));
+    let wt = app.fx.wt.to_string_lossy().into_owned();
+    let home = app.fx.base.join("home");
+    let sid = "7d2a1b0c-9e8f-4a7b-8c5d-1e2f3a4b5c6d";
+    let t = app.ok("POST", "/v1/terms", json!({"cwd": wt, "agent": "vibe"}));
+    let tid = t["id"].as_str().unwrap().to_string();
+    let pid = wait_for(|| {
+        app.ok("GET", &format!("/v1/terms/{tid}"), Value::Null)["pid"]
+            .as_u64()
+            .filter(|p| *p > 0)
+    });
+    store(&home, sid, &wt, &[message("m1", "user", "hi")]);
+    let active = home.join(".vibe/logs/session/active");
+    std::fs::create_dir_all(&active).unwrap();
+    std::fs::write(
+        active.join(format!("{sid}.lock.json")),
+        json!({"lease_version": 1, "session_id": sid, "process_id": pid}).to_string(),
+    )
+    .unwrap();
+    let l = wait_for(|| vibe_line(&app, sid).filter(|l| l["local"]["termId"] == tid.as_str()));
+    let line = l["line"]["id"].as_str().unwrap().to_string();
+
+    let base = json!({"session_id": sid, "parent_session_id": null, "cwd": wt,
+        "transcript_path": "", "agent_name": "default"});
+    let with = |name: &str| {
+        let mut v = base.clone();
+        v["hook_event_name"] = json!(name);
+        v
+    };
+    hook(&app, "pre_agent", pid, with("pre_agent"));
+    wait(|| vibe_line(&app, sid).is_some_and(|l| l["local"]["busy"] == true));
+    hook(&app, "post_agent", pid, with("post_agent"));
+    wait(|| vibe_line(&app, sid).is_some_and(|l| l["local"]["busy"] == false));
+
+    let mut ws = app.ws(&tid);
+    read_until(&mut ws, "> ");
+    send(&mut ws, "x\r");
+    read_until(&mut ws, "got: x");
+
+    let r = app.ok(
+        "POST",
+        "/v1/broadcast",
+        json!({"text": "hello from chat mode", "lineIds": [line], "onlyIdle": true, "queue": false}),
+    );
+    assert_eq!(r["results"][0]["result"], "sent", "{r}");
+    read_until(&mut ws, "got: hello from chat mode");
+}
+
+#[test]
+fn a_vibe_session_is_a_line_from_its_lease_before_its_first_prompt_saves_a_store() {
+    let app = App::new("vibe-pending", json!({}));
+    let wt = app.fx.wt.to_string_lossy().into_owned();
+    let home = app.fx.base.join("home");
+    let sid = "3c4d5e6f-7a8b-4c9d-8e0f-1a2b3c4d5e6f";
+    let t = app.ok("POST", "/v1/terms", json!({"cwd": wt, "agent": "vibe"}));
+    let tid = t["id"].as_str().unwrap().to_string();
+    let pid = wait_for(|| {
+        app.ok("GET", &format!("/v1/terms/{tid}"), Value::Null)["pid"]
+            .as_u64()
+            .filter(|p| *p > 0)
+    });
+    let active = home.join(".vibe/logs/session/active");
+    std::fs::create_dir_all(&active).unwrap();
+    let lock = active.join(format!("{sid}.lock.json"));
+    std::fs::write(
+        &lock,
+        json!({"acquired_at": "2026-11-11T10:00:00.000Z", "lease_version": 1,
+            "process_id": pid, "session_id": sid})
+        .to_string(),
+    )
+    .unwrap();
+
+    let l = wait_for(|| vibe_line(&app, sid).filter(|l| l["local"]["termId"] == tid.as_str()));
+    let line = l["line"]["id"].as_str().unwrap().to_string();
+    assert_eq!(l["local"]["pid"], pid, "{l}");
+    assert_eq!(l["local"]["cwd"], wt, "{l}");
+
+    store(
+        &home,
+        sid,
+        &wt,
+        &[message("m1", "user", "Fix the login bug")],
+    );
+    let l =
+        wait_for(|| vibe_line(&app, sid).filter(|l| l["local"]["title"] == "Fix the login bug"));
+    assert_eq!(l["line"]["id"], line.as_str());
+    assert_eq!(l["local"]["termId"], tid.as_str());
+}
+
+#[test]
+fn a_busy_terminal_detector_is_cleared_once_the_store_says_the_turn_is_over() {
+    let app = App::new("vibe-detector", json!({}));
+    let wt = app.fx.wt.to_string_lossy().into_owned();
+    let home = app.fx.base.join("home");
+    let sid = "8e3b2c1d-0f9a-4b8c-9d7e-2f3a4b5c6d7e";
+    let dir = store(&home, sid, &wt, &[message("m1", "user", "hi")]);
+    std::fs::write(
+        dir.join("journal/0000000000000001.jsonl"),
+        envelope("completed", Some(now_ms() - 60_000)),
+    )
+    .unwrap();
+    let t = app.ok("POST", "/v1/terms", json!({"cwd": wt, "agent": "vibe"}));
+    let tid = t["id"].as_str().unwrap().to_string();
+    let pid = wait_for(|| {
+        app.ok("GET", &format!("/v1/terms/{tid}"), Value::Null)["pid"]
+            .as_u64()
+            .filter(|p| *p > 0)
+    });
+    let active = home.join(".vibe/logs/session/active");
+    std::fs::create_dir_all(&active).unwrap();
+    std::fs::write(
+        active.join(format!("{sid}.lock.json")),
+        json!({"lease_version": 1, "session_id": sid, "process_id": pid}).to_string(),
+    )
+    .unwrap();
+    wait_for(|| vibe_line(&app, sid).filter(|l| l["local"]["termId"] == tid.as_str()));
+    hook(
+        &app,
+        "session_start",
+        pid,
+        json!({"session_id": sid, "parent_session_id": null, "cwd": wt, "transcript_path": "",
+            "hook_event_name": "session_start"}),
+    );
+    let mut ws = app.ws(&tid);
+    read_until(&mut ws, "> ");
+    send(&mut ws, "spin\r");
+    wait(|| vibe_line(&app, sid).is_some_and(|l| l["local"]["busy"] == true));
+    wait(|| vibe_line(&app, sid).is_some_and(|l| l["local"]["busy"] == false));
 }

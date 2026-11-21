@@ -454,19 +454,7 @@ impl ConnManager {
                 let Some(conn) = self.current() else { return };
                 let reason = match &*conn {
                     DaemonConn::Tunnel(t) => t.mux.dead().await,
-                    _ => loop {
-                        tokio::time::sleep(Duration::from_secs(5)).await;
-                        if tokio::time::timeout(
-                            Duration::from_secs(5),
-                            conn.request("GET", "/v1/version", None),
-                        )
-                        .await
-                        .is_ok_and(|r| r.is_ok())
-                        {
-                            continue;
-                        }
-                        break "the daemon stopped answering".to_string();
-                    },
+                    _ => watch_daemon(&conn, Duration::from_secs(5)).await,
                 };
                 drop(conn);
                 reason
@@ -725,6 +713,34 @@ async fn live_terms(conn: &DaemonConn) -> Option<usize> {
     (res.head.status == 200)
         .then(|| install::live_terms(&http::json_body(&res.body)))
         .flatten()
+}
+
+async fn probe_pid(conn: &DaemonConn, within: Duration) -> Option<Option<u64>> {
+    let res = tokio::time::timeout(within, conn.request("GET", "/v1/version", None))
+        .await
+        .ok()?
+        .ok()?;
+    Some(
+        http::json_body(&res.body)
+            .get("pid")
+            .and_then(|v| v.as_u64()),
+    )
+}
+
+async fn watch_daemon(conn: &DaemonConn, every: Duration) -> String {
+    let mut pid = probe_pid(conn, every).await.flatten();
+    loop {
+        tokio::time::sleep(every).await;
+        match probe_pid(conn, every).await {
+            None => return "the daemon stopped answering".into(),
+            Some(now) => {
+                if pid.is_some() && now.is_some() && now != pid {
+                    return "the daemon restarted".into();
+                }
+                pid = pid.or(now);
+            }
+        }
+    }
 }
 
 async fn wait_version(conn: &DaemonConn, tries: u32) -> Result<String, String> {
@@ -1022,6 +1038,65 @@ mod tests {
     async fn current_within_gives_up_after_the_bound() {
         let m = ConnManager::default();
         assert!(m.current_within(Duration::from_millis(20)).await.is_none());
+    }
+
+    async fn serve_pids(path: &Path, pids: Vec<u32>) {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let l = tokio::net::UnixListener::bind(path).unwrap();
+        let mut n = 0;
+        loop {
+            let (mut s, _) = l.accept().await.unwrap();
+            let pid = pids[n.min(pids.len() - 1)];
+            n += 1;
+            let mut buf = [0u8; 1024];
+            let _ = s.read(&mut buf).await;
+            let body = format!("{{\"version\":\"{SERVER_VERSION}\",\"pid\":{pid}}}");
+            let head = format!(
+                "HTTP/1.1 200 OK\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
+                body.len()
+            );
+            let _ = s.write_all(head.as_bytes()).await;
+        }
+    }
+
+    #[tokio::test]
+    async fn a_daemon_that_restarted_between_probes_counts_as_lost() {
+        let path = std::env::temp_dir().join(format!("ov-pid-{}.sock", std::process::id()));
+        let _ = std::fs::remove_file(&path);
+        let at = path.clone();
+        let srv = tokio::spawn(async move { serve_pids(&at, vec![10, 10, 11]).await });
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        let c = DaemonConn::Local(path.clone());
+        let why = tokio::time::timeout(
+            Duration::from_secs(5),
+            watch_daemon(&c, Duration::from_millis(20)),
+        )
+        .await
+        .unwrap();
+        assert_eq!(why, "the daemon restarted");
+        srv.abort();
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[tokio::test]
+    async fn a_daemon_with_a_stable_pid_stays_watched_until_it_stops_answering() {
+        let path = std::env::temp_dir().join(format!("ov-pid2-{}.sock", std::process::id()));
+        let _ = std::fs::remove_file(&path);
+        let at = path.clone();
+        let srv = tokio::spawn(async move { serve_pids(&at, vec![10]).await });
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        let c = DaemonConn::Local(path.clone());
+        let w = watch_daemon(&c, Duration::from_millis(20));
+        tokio::pin!(w);
+        assert!(tokio::time::timeout(Duration::from_millis(300), &mut w)
+            .await
+            .is_err());
+        srv.abort();
+        let why = tokio::time::timeout(Duration::from_secs(5), w)
+            .await
+            .unwrap();
+        assert_eq!(why, "the daemon stopped answering");
+        let _ = std::fs::remove_file(path);
     }
 
     async fn serve_version(path: &Path) {

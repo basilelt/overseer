@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Condvar, Mutex};
 use std::time::Duration;
 
@@ -466,6 +467,257 @@ fn codex_line(c: &mut Cursor, line: &[u8], b: &mut Batch) {
     }
 }
 
+fn vibe_session(c: &mut Cursor, dir: &Path, fallback_ts: i64, b: &mut Batch) {
+    let Some(u) = crate::vibe::usage(dir) else {
+        return;
+    };
+    let cur = Tokens {
+        input: u.input.saturating_sub(u.cached),
+        output: u.output,
+        cache_read: u.cached,
+        ..Tokens::default()
+    };
+    let delta = cur.minus(&c.last);
+    c.last = cur;
+    if delta.is_zero() {
+        return;
+    }
+    let ts = if u.at > 0 { u.at } else { fallback_ts };
+    let model = u.model.unwrap_or_else(|| "mistral".to_string());
+    b.add(ts, &model, &delta, false, 0);
+}
+
+fn copilot_line(c: &mut Cursor, line: &[u8], b: &mut Batch) {
+    let wants_cwd = b.cwd.is_none() && contains(line, "\"session.start\"");
+    if !(wants_cwd || contains(line, "\"session.usage_record\"")) {
+        return;
+    }
+    let Ok(v) = serde_json::from_slice::<Value>(line) else {
+        return;
+    };
+    DECODED.fetch_add(1, Ordering::Relaxed);
+    match v["type"].as_str() {
+        Some("session.start") => {
+            if let Some(cwd) = v["data"]["context"]["cwd"]
+                .as_str()
+                .filter(|c| !c.is_empty())
+            {
+                b.cwd.get_or_insert_with(|| cwd.to_string());
+            }
+        }
+        Some("session.usage_record") => {
+            let u = &v["data"]["usage"];
+            let Some(ts) = ts_of(&v) else { return };
+            let n = |k: &str| u[k].as_u64().unwrap_or(0);
+            let (read, write) = (n("cacheReadTokens"), n("cacheWriteTokens"));
+            let t = Tokens {
+                input: n("inputTokens").saturating_sub(read + write),
+                output: n("outputTokens"),
+                cache_read: read,
+                cache_write: write,
+                ..Tokens::default()
+            };
+            if t.is_zero() {
+                return;
+            }
+            let model = u["model"].as_str().unwrap_or("copilot");
+            let a = active(c, ts, false);
+            b.add(ts, model, &t, true, a);
+        }
+        _ => {}
+    }
+}
+
+static DECODED: AtomicU64 = AtomicU64::new(0);
+
+pub fn decoded() -> u64 {
+    DECODED.load(Ordering::Relaxed)
+}
+
+enum Pb<'a> {
+    Int(u64),
+    Msg(&'a [u8]),
+}
+
+fn pb_varint(b: &[u8], i: &mut usize) -> Option<u64> {
+    let mut v = 0u64;
+    for shift in (0..64).step_by(7) {
+        let x = *b.get(*i)?;
+        *i += 1;
+        v |= u64::from(x & 0x7f) << shift;
+        if x < 0x80 {
+            return Some(v);
+        }
+    }
+    None
+}
+
+fn pb_fields(b: &[u8]) -> Vec<(u64, Pb<'_>)> {
+    let mut out = vec![];
+    let mut i = 0;
+    while i < b.len() {
+        let Some(k) = pb_varint(b, &mut i) else { break };
+        match k & 7 {
+            0 => {
+                let Some(v) = pb_varint(b, &mut i) else { break };
+                out.push((k >> 3, Pb::Int(v)));
+            }
+            2 => {
+                let Some(l) = pb_varint(b, &mut i) else { break };
+                let Some(d) = i.checked_add(l as usize).and_then(|e| b.get(i..e)) else {
+                    break;
+                };
+                i += l as usize;
+                out.push((k >> 3, Pb::Msg(d)));
+            }
+            1 => i += 8,
+            5 => i += 4,
+            _ => break,
+        }
+    }
+    out
+}
+
+fn pb_msg(b: &[u8], field: u64) -> Option<&[u8]> {
+    pb_fields(b).into_iter().find_map(|(f, v)| match v {
+        Pb::Msg(m) if f == field => Some(m),
+        _ => None,
+    })
+}
+
+fn pb_int(b: &[u8], field: u64) -> u64 {
+    pb_fields(b)
+        .into_iter()
+        .find_map(|(f, v)| match v {
+            Pb::Int(n) if f == field => Some(n),
+            _ => None,
+        })
+        .unwrap_or(0)
+}
+
+fn agy_row(c: &mut Cursor, blob: &[u8], fallback_ts: i64, b: &mut Batch) {
+    DECODED.fetch_add(1, Ordering::Relaxed);
+    let Some(head) = pb_msg(blob, 1) else { return };
+    let Some(stats) = pb_msg(head, 4) else { return };
+    let t = Tokens {
+        input: pb_int(stats, 2),
+        output: pb_int(stats, 3),
+        cache_read: pb_int(stats, 5),
+        ..Tokens::default()
+    };
+    if t.is_zero() {
+        return;
+    }
+    let secs = pb_msg(head, 9)
+        .and_then(|m| pb_msg(m, 4))
+        .map_or(0, |m| pb_int(m, 1));
+    let ts = if secs > 0 {
+        secs as i64 * 1000
+    } else {
+        fallback_ts
+    };
+    let model = pb_msg(head, 19)
+        .and_then(|m| std::str::from_utf8(m).ok())
+        .filter(|m| !m.is_empty())
+        .unwrap_or("antigravity");
+    let a = active(c, ts, false);
+    b.add(ts, model, &t, true, a);
+}
+
+fn agy_conversation(c: &mut Cursor, path: &Path, fallback_ts: i64, b: &mut Batch) {
+    let Ok(conn) = Connection::open_with_flags(
+        path,
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
+    ) else {
+        return;
+    };
+    let _ = conn.busy_timeout(Duration::from_millis(500));
+    let Ok(mut st) =
+        conn.prepare("SELECT idx, data FROM gen_metadata WHERE idx >= ?1 ORDER BY idx")
+    else {
+        return;
+    };
+    let Ok(rows) = st.query_map([c.offset as i64], |r| {
+        Ok((r.get::<_, i64>(0)?, r.get::<_, Vec<u8>>(1)?))
+    }) else {
+        return;
+    };
+    for (idx, blob) in rows.flatten() {
+        agy_row(c, &blob, fallback_ts, b);
+        c.offset = c.offset.max(idx as u64 + 1);
+    }
+}
+
+struct OcSession {
+    id: String,
+    cwd: String,
+    model: String,
+    sub: bool,
+    tokens: Tokens,
+    updated: i64,
+}
+
+fn opencode_model(raw: Option<String>) -> String {
+    let Some(raw) = raw.filter(|m| !m.is_empty()) else {
+        return "opencode".to_string();
+    };
+    match serde_json::from_str::<Value>(&raw) {
+        Ok(Value::Object(o)) => o
+            .get("id")
+            .and_then(Value::as_str)
+            .map_or_else(|| "opencode".to_string(), str::to_string),
+        Ok(Value::String(s)) => s,
+        _ => raw,
+    }
+}
+
+fn opencode_sessions(db: &Path) -> Vec<OcSession> {
+    let Ok(conn) = Connection::open_with_flags(
+        db,
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
+    ) else {
+        return vec![];
+    };
+    let _ = conn.busy_timeout(Duration::from_millis(500));
+    let Ok(mut st) = conn.prepare(
+        "SELECT id, directory, model, parent_id IS NOT NULL, tokens_input, tokens_output,
+                tokens_reasoning, tokens_cache_read, tokens_cache_write, time_updated
+         FROM session",
+    ) else {
+        return vec![];
+    };
+    let Ok(rows) = st.query_map([], |r| {
+        let n = |i: usize| r.get::<_, i64>(i).unwrap_or(0).max(0) as u64;
+        Ok(OcSession {
+            id: r.get(0)?,
+            cwd: r.get::<_, Option<String>>(1)?.unwrap_or_default(),
+            model: opencode_model(r.get::<_, Option<String>>(2).ok().flatten()),
+            sub: r.get::<_, i64>(3)? != 0,
+            tokens: Tokens {
+                input: n(4),
+                output: n(5) + n(6),
+                cache_read: n(7),
+                cache_write: n(8),
+                ..Tokens::default()
+            },
+            updated: r.get(9)?,
+        })
+    }) else {
+        return vec![];
+    };
+    rows.flatten().collect()
+}
+
+fn opencode_session(c: &mut Cursor, s: &OcSession, ts: i64, b: &mut Batch) {
+    let delta = s.tokens.minus(&c.last);
+    c.last = s.tokens;
+    if delta.is_zero() {
+        return;
+    }
+    DECODED.fetch_add(1, Ordering::Relaxed);
+    b.add(ts, &s.model, &delta, false, 0);
+}
+
 fn gemini_msg(c: &mut Cursor, v: &Value, b: &mut Batch) {
     if v["type"] != "gemini" {
         return;
@@ -539,6 +791,19 @@ impl Meter {
     }
 }
 
+fn stamp(p: &Path) -> Option<(i64, u64)> {
+    let (m, l) = mtime_len(p)?;
+    if p.extension().is_none_or(|e| e != "db") {
+        return Some((m, l));
+    }
+    let mut wal = p.as_os_str().to_os_string();
+    wal.push("-wal");
+    Some(match mtime_len(Path::new(&wal)) {
+        Some((wm, wl)) => (m.max(wm), l + wl),
+        None => (m, l),
+    })
+}
+
 fn mtime_len(p: &Path) -> Option<(i64, u64)> {
     let m = std::fs::metadata(p).ok()?;
     let t = m
@@ -555,6 +820,28 @@ pub struct Dirs {
     pub claude: PathBuf,
     pub codex: PathBuf,
     pub gemini: PathBuf,
+    pub vibe: PathBuf,
+    pub copilot: PathBuf,
+    pub opencode: PathBuf,
+    pub agy: PathBuf,
+}
+
+impl Dirs {
+    pub fn from_env(claude: PathBuf, codex: PathBuf, gemini: PathBuf) -> Dirs {
+        let data = std::env::var_os("XDG_DATA_HOME")
+            .filter(|v| !v.is_empty())
+            .map(PathBuf::from)
+            .unwrap_or_else(|| crate::home().join(".local/share"));
+        Dirs {
+            claude,
+            codex,
+            gemini,
+            vibe: crate::vibe::home(),
+            copilot: crate::agents::config_dir(crate::agents::COPILOT),
+            opencode: data.join("opencode"),
+            agy: crate::home().join(".gemini/antigravity-cli"),
+        }
+    }
 }
 
 struct Found {
@@ -651,7 +938,65 @@ fn discover(d: &Dirs, cutoff: i64) -> Vec<Found> {
             });
         }
     }
+    for s in crate::vibe::sessions(&d.vibe) {
+        if s.activity_ms >= cutoff {
+            out.push(Found {
+                path: s.dir.join("CURRENT"),
+                agent: crate::agents::VIBE,
+                session: s.id,
+                cwd: s.cwd.unwrap_or_default(),
+                sub: false,
+            });
+        }
+    }
+    if let Ok(rd) = std::fs::read_dir(d.copilot.join("session-state")) {
+        for e in rd.flatten() {
+            let p = e.path().join("events.jsonl");
+            if fresh(&p) {
+                out.push(Found {
+                    path: p,
+                    agent: crate::agents::COPILOT,
+                    session: e.file_name().to_string_lossy().to_string(),
+                    cwd: String::new(),
+                    sub: false,
+                });
+            }
+        }
+    }
+    if let Ok(rd) = std::fs::read_dir(d.agy.join("conversations")) {
+        for e in rd.flatten() {
+            let p = e.path();
+            if p.extension().is_some_and(|x| x == "db")
+                && stamp(&p).is_some_and(|(m, _)| m >= cutoff)
+            {
+                out.push(Found {
+                    session: p
+                        .file_stem()
+                        .map(|s| s.to_string_lossy().to_string())
+                        .unwrap_or_default(),
+                    path: p,
+                    agent: "agy",
+                    cwd: String::new(),
+                    sub: false,
+                });
+            }
+        }
+    }
     out
+}
+
+fn opencode_dbs(dir: &Path) -> Vec<PathBuf> {
+    let Ok(rd) = std::fs::read_dir(dir) else {
+        return vec![];
+    };
+    rd.flatten()
+        .map(|e| e.path())
+        .filter(|p| {
+            p.extension().is_some_and(|x| x == "db")
+                && p.file_name()
+                    .is_some_and(|n| n.to_string_lossy().starts_with("opencode"))
+        })
+        .collect()
 }
 
 const SCHEMA: &str = "
@@ -722,6 +1067,7 @@ pub struct Index {
     conn: Connection,
     dirs: Dirs,
     files: HashMap<PathBuf, Tracked>,
+    db_stamps: HashMap<PathBuf, (i64, u64)>,
     last_full: i64,
     last_prune: i64,
     pub indexed: bool,
@@ -772,6 +1118,7 @@ impl Index {
             conn,
             dirs,
             files,
+            db_stamps: HashMap::new(),
             last_full: 0,
             last_prune: 0,
             indexed,
@@ -796,7 +1143,7 @@ impl Index {
                     .collect()
             };
         for (path, agent, session, cwd, sub) in candidates {
-            let Some((mtime, len)) = mtime_len(&path) else {
+            let Some((mtime, len)) = stamp(&path) else {
                 continue;
             };
             let known = self.files.get(&path);
@@ -815,11 +1162,12 @@ impl Index {
                     },
                 );
             }
-            changed |= self.ingest(&path, mtime, len)?;
+            changed |= self.ingest(&path, mtime, len, None)?;
             if let Some(d) = pace {
                 std::thread::sleep(d);
             }
         }
+        changed |= self.sweep_opencode(now, cutoff, pace)?;
         if full && now - self.last_prune > 3_600_000 {
             self.last_prune = now;
             self.prune(cutoff)?;
@@ -831,11 +1179,65 @@ impl Index {
         Ok(changed)
     }
 
+    fn sweep_opencode(
+        &mut self,
+        now: i64,
+        cutoff: i64,
+        pace: Option<Duration>,
+    ) -> Result<bool, String> {
+        let mut changed = false;
+        for db in opencode_dbs(&self.dirs.opencode) {
+            let Some(st) = stamp(&db) else { continue };
+            if self.db_stamps.get(&db) == Some(&st) {
+                continue;
+            }
+            for s in opencode_sessions(&db) {
+                let path = db.join(format!("#{}", s.id));
+                let known = self.files.get(&path);
+                if known.is_some_and(|t| t.cursor.last == s.tokens)
+                    || (known.is_none() && s.updated < cutoff)
+                {
+                    continue;
+                }
+                let ts = if known.is_some() {
+                    now
+                } else {
+                    s.updated.min(now)
+                };
+                if known.is_none() {
+                    self.files.insert(
+                        path.clone(),
+                        Tracked {
+                            agent: crate::agents::OPENCODE,
+                            session: s.id.clone(),
+                            cwd: s.cwd.clone(),
+                            sub: s.sub,
+                            cursor: Cursor::default(),
+                        },
+                    );
+                }
+                changed |= self.ingest(&path, ts, s.tokens.total(), Some((&s, ts)))?;
+                if let Some(d) = pace {
+                    std::thread::sleep(d);
+                }
+            }
+            self.db_stamps.insert(db, st);
+        }
+        Ok(changed)
+    }
+
     fn prune(&mut self, cutoff: i64) -> Result<(), String> {
         let gone: Vec<PathBuf> = self
             .files
             .iter()
-            .filter(|(p, t)| t.cursor.mtime < cutoff || !p.exists())
+            .filter(|(p, t)| {
+                let real = if t.agent == crate::agents::OPENCODE {
+                    p.parent()
+                } else {
+                    Some(p.as_path())
+                };
+                t.cursor.mtime < cutoff || !real.is_some_and(Path::exists)
+            })
             .map(|(p, _)| p.clone())
             .collect();
         let tx = self
@@ -861,12 +1263,19 @@ impl Index {
         tx.commit().map_err(|e| e.to_string())
     }
 
-    fn ingest(&mut self, path: &Path, mtime: i64, len: u64) -> Result<bool, String> {
+    fn ingest(
+        &mut self,
+        path: &Path,
+        mtime: i64,
+        len: u64,
+        oc: Option<(&OcSession, i64)>,
+    ) -> Result<bool, String> {
         let Some(t) = self.files.get_mut(path) else {
             return Ok(false);
         };
+        let vibe = t.agent == crate::agents::VIBE;
         let whole = path.extension().is_some_and(|e| e == "json");
-        let reset = whole || len < t.cursor.offset;
+        let reset = whole || (t.agent != "agy" && len < t.cursor.offset);
         let mut b = Batch {
             cwd: (!t.cwd.is_empty()).then(|| t.cwd.clone()),
             ..Batch::default()
@@ -876,7 +1285,15 @@ impl Index {
             t.cursor = Cursor::default();
         }
         let mut c = std::mem::take(&mut t.cursor);
-        if whole {
+        if let Some((s, ts)) = oc {
+            opencode_session(&mut c, s, ts, &mut b);
+        } else if vibe {
+            if let Some(dir) = path.parent() {
+                vibe_session(&mut c, dir, mtime, &mut b);
+            }
+        } else if t.agent == "agy" {
+            agy_conversation(&mut c, path, mtime, &mut b);
+        } else if whole {
             if let Some(v) = std::fs::read(path)
                 .ok()
                 .and_then(|buf| serde_json::from_slice::<Value>(&buf).ok())
@@ -893,7 +1310,9 @@ impl Index {
             };
             let (agent, sub) = (t.agent, t.sub);
             let kind = crate::agents::transcript_of(agent);
+            let copilot = agent == crate::agents::COPILOT;
             let end = read_lines(&mut f, c.offset, len, |line| match kind {
+                _ if copilot => copilot_line(&mut c, line, &mut b),
                 Some(Transcript::Codex) => codex_line(&mut c, line, &mut b),
                 Some(Transcript::Gemini) => {
                     if let Ok(v) = serde_json::from_slice::<Value>(line) {
@@ -1253,15 +1672,12 @@ pub fn query(
         .map(|(d, s)| json!({"day": day_label(*d), "usage": s.json()}))
         .collect();
     let mut agent_names: Vec<String> = seen_agents.into_iter().collect();
-    for agent in crate::agents::AGENTS.iter().filter(|a| a.metered) {
-        let a = agent.id;
-        if !agent_names.iter().any(|x| x == a)
-            && (kv_get::<Limits>(conn, &format!("limits.{a}")).is_some()
-                || kv_get::<LimitHit>(conn, &format!("hit.{a}")).is_some()
-                || (q.oauth && kv_get::<Auth>(conn, &format!("oauth.{a}.auth")).is_some())
-                || (agent.transcript == Some(Transcript::Claude) && q.tap.is_some()))
-        {
-            agent_names.push(a.to_string());
+    for agent in crate::agents::AGENTS
+        .iter()
+        .filter(|a| !crate::agents::is_shell(a.id))
+    {
+        if !agent_names.iter().any(|x| x == agent.id) {
+            agent_names.push(agent.id.to_string());
         }
     }
     agent_names.sort();
@@ -1415,18 +1831,14 @@ struct Shared {
 static SHARED: Mutex<Option<Shared>> = Mutex::new(None);
 static WAKE: Condvar = Condvar::new();
 
-pub fn init(state_dir: &Path, claude: PathBuf, codex: PathBuf, gemini: PathBuf) {
+pub fn init(state_dir: &Path, dirs: Dirs) {
     let mut g = SHARED.lock().unwrap_or_else(|e| e.into_inner());
     if g.is_none() {
         *g = Some(Shared {
-            claude_dir: claude.clone(),
+            claude_dir: dirs.claude.clone(),
             oauth_wanted_at: 0,
             oauth_attempt_at: 0,
-            dirs: Some(Dirs {
-                claude,
-                codex,
-                gemini,
-            }),
+            dirs: Some(dirs),
             db: state_dir.join(crate::paths::USAGE_DB),
             started: false,
             poked: false,
@@ -1439,6 +1851,17 @@ pub fn init(state_dir: &Path, claude: PathBuf, codex: PathBuf, gemini: PathBuf) 
 
 fn demanded(s: &Shared, now: i64) -> bool {
     s.demand_at > 0 && (now - s.demand_at < DEMAND_MS || crate::board::subscribers() > 0)
+}
+
+pub fn tap_changed(state_dir: &Path, seen: &mut Option<std::time::SystemTime>) -> bool {
+    let now = std::fs::metadata(crate::statusline::path(state_dir))
+        .and_then(|m| m.modified())
+        .ok();
+    if now == *seen {
+        return false;
+    }
+    *seen = now;
+    true
 }
 
 pub fn poke(full: bool) {
@@ -1647,12 +2070,37 @@ mod tests {
         d
     }
 
+    #[test]
+    fn a_new_or_rewritten_statusline_file_asks_for_one_refresh() {
+        let d = tmp("tap-poke");
+        let mut seen = None;
+        assert!(!tap_changed(&d, &mut seen));
+        std::fs::write(crate::statusline::path(&d), "{}").unwrap();
+        assert!(tap_changed(&d, &mut seen));
+        assert!(!tap_changed(&d, &mut seen));
+        let later = std::time::SystemTime::now() + Duration::from_secs(5);
+        std::fs::File::options()
+            .write(true)
+            .open(crate::statusline::path(&d))
+            .unwrap()
+            .set_modified(later)
+            .unwrap();
+        assert!(tap_changed(&d, &mut seen));
+        std::fs::remove_file(crate::statusline::path(&d)).unwrap();
+        assert!(tap_changed(&d, &mut seen));
+        assert!(!tap_changed(&d, &mut seen));
+    }
+
     fn home(tag: &str) -> (PathBuf, Index) {
         let d = tmp(tag);
         let dirs = Dirs {
             claude: d.join("claude"),
             codex: d.join("codex"),
             gemini: d.join("gemini"),
+            vibe: d.join("vibe"),
+            copilot: d.join("copilot"),
+            opencode: d.join("opencode"),
+            agy: d.join("agy"),
         };
         std::fs::create_dir_all(dirs.claude.join("projects/-w-app")).unwrap();
         std::fs::create_dir_all(dirs.codex.join("sessions/2026/10/29")).unwrap();
@@ -1717,6 +2165,15 @@ mod tests {
             .unwrap()
             .write_all(s.as_bytes())
             .unwrap();
+    }
+
+    fn agent_of<'a>(v: &'a Value, id: &str) -> &'a Value {
+        v["agents"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|a| a["agent"] == id)
+            .unwrap()
     }
 
     fn real_now() -> i64 {
@@ -1805,8 +2262,408 @@ mod tests {
         assert_eq!(s["groups"][0]["sessionId"], "s1");
         assert_eq!(s["groups"][0]["project"], "app");
 
-        let hit = &v["agents"][0]["limits"]["hit"];
+        let hit = &agent_of(&v, "claude")["limits"]["hit"];
         assert!(hit.is_null());
+        std::fs::remove_dir_all(&d).unwrap();
+    }
+
+    #[test]
+    fn response_lists_every_supported_agent() {
+        let (d, mut idx) = home("allagents");
+        let t = d.join("claude/projects/-w-app/s1.jsonl");
+        std::fs::copy(fixture("claude.jsonl"), &t).unwrap();
+        touch_now(&t);
+        idx.sweep(now(), true, None).unwrap();
+        let v = get(&idx, Range::Today, "agent", 0);
+        let ids: Vec<&str> = v["agents"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|a| a["agent"].as_str().unwrap())
+            .collect();
+        let mut expected: Vec<&str> = crate::agents::AGENTS
+            .iter()
+            .filter(|a| !crate::agents::is_shell(a.id))
+            .map(|a| a.id)
+            .collect();
+        expected.sort_unstable();
+        assert_eq!(ids, expected);
+        assert!(!ids.contains(&"shell"));
+        let vibe = agent_of(&v, "vibe");
+        assert_eq!(vibe["today"]["total"], 0);
+        assert!(vibe["limits"]["source"].is_null());
+        assert!(vibe["limits"]["windows"].as_array().unwrap().is_empty());
+        assert!(vibe["limits"]["hit"].is_null());
+        assert!(agent_of(&v, "claude")["today"]["total"].as_u64().unwrap() > 0);
+        std::fs::remove_dir_all(&d).unwrap();
+    }
+
+    fn vibe_usage(d: &Path, id: &str, generation: u64, input: u64, cached: u64, output: u64) {
+        use crate::vibe::fixture::*;
+        let dir = crate::vibe::fixture::session(
+            &d.join("vibe"),
+            id,
+            meta_json(id, "/w/app", None),
+            generation,
+            &[],
+            "",
+        );
+        std::fs::write(
+            dir.join("generations")
+                .join(format!("{generation:016}"))
+                .join("projection-state.json"),
+            json!({"projection_state_version": 1, "session_id": id, "snapshot_sequence": 1, "watermark": 0,
+                "snapshot": {"history": {"entries": []}, "session": {"id": id, "title": "t",
+                    "tokenUsage": {"cachedInputTokens": cached, "inputTokens": input, "outputTokens": output, "totalTokens": input + output},
+                    "updatedAt": now()}}})
+            .to_string(),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn vibe_sessions_are_metered_from_their_store_by_delta() {
+        let (d, mut idx) = home("vibe");
+        vibe_usage(&d, "v1", 5, 1000, 400, 50);
+        idx.sweep(now(), true, None).unwrap();
+        let v = get(&idx, Range::Today, "agent", 0);
+        assert_eq!(v["totals"]["input"], 600);
+        assert_eq!(v["totals"]["cacheRead"], 400);
+        assert_eq!(v["totals"]["output"], 50);
+        assert_eq!(agent_of(&v, "vibe")["today"]["total"], 1050);
+        let m = get(&idx, Range::Today, "model", 0);
+        assert_eq!(m["groups"][0]["model"], "mistral-medium-3.5");
+
+        vibe_usage(&d, "v1", 6, 1500, 700, 80);
+        idx.sweep(now(), true, None).unwrap();
+        let v = get(&idx, Range::Today, "agent", 0);
+        assert_eq!(v["totals"]["input"], 800);
+        assert_eq!(v["totals"]["cacheRead"], 700);
+        assert_eq!(v["totals"]["output"], 80);
+
+        assert!(!idx.sweep(now(), true, None).unwrap());
+        let v = get(&idx, Range::Today, "agent", 0);
+        assert_eq!(v["totals"]["output"], 80);
+        std::fs::remove_dir_all(&d).unwrap();
+    }
+
+    fn later(p: &Path, secs: u64) {
+        let f = std::fs::File::options().append(true).open(p).unwrap();
+        f.set_modified(std::time::SystemTime::now() + Duration::from_secs(secs))
+            .unwrap();
+    }
+
+    fn copilot_events(d: &Path) -> PathBuf {
+        let dir = d.join("copilot/session-state/11111111-2222-3333-4444-555555555555");
+        std::fs::create_dir_all(&dir).unwrap();
+        let p = dir.join("events.jsonl");
+        std::fs::copy(fixture("copilot-events.jsonl"), &p).unwrap();
+        touch_now(&p);
+        p
+    }
+
+    fn copilot_record(model: &str, input: u64, output: u64, read: u64, write: u64) -> String {
+        format!(
+            "{}\n",
+            json!({"type": "session.usage_record", "timestamp": "2026-10-29T17:00:00.000Z",
+                "data": {"usage": {"model": model, "inputTokens": input, "outputTokens": output,
+                    "cacheReadTokens": read, "cacheWriteTokens": write}}})
+        )
+    }
+
+    #[test]
+    fn copilot_usage_records_split_fresh_input_from_cache() {
+        let (d, mut idx) = home("copilot");
+        copilot_events(&d);
+        assert!(idx.sweep(now(), true, None).unwrap());
+        let v = get(&idx, Range::Today, "agent", 0);
+        assert_eq!(v["totals"]["input"], 6);
+        assert_eq!(v["totals"]["output"], 440);
+        assert_eq!(v["totals"]["cacheRead"], 18972);
+        assert_eq!(v["totals"]["cacheWrite"], 20078);
+        assert_eq!(v["totals"]["messages"], 2);
+        assert_eq!(
+            agent_of(&v, "copilot")["today"]["total"],
+            6 + 440 + 18972 + 20078
+        );
+        let s = get(&idx, Range::Today, "session", 0);
+        assert_eq!(s["groups"][0]["project"], "app");
+        assert_eq!(
+            s["groups"][0]["sessionId"],
+            "11111111-2222-3333-4444-555555555555"
+        );
+        let m = get(&idx, Range::Today, "model", 0);
+        assert_eq!(m["groups"][0]["model"], "gpt-5.6-luna");
+        std::fs::remove_dir_all(&d).unwrap();
+    }
+
+    #[test]
+    fn copilot_appends_are_read_once_and_unchanged_files_are_skipped() {
+        let (d, mut idx) = home("copilot-inc");
+        let p = copilot_events(&d);
+        idx.sweep(now(), true, None).unwrap();
+        assert!(!idx.sweep(now(), true, None).unwrap());
+        append(&p, &copilot_record("gpt-5.6-luna", 1000, 10, 400, 100));
+        later(&p, 5);
+        assert!(idx.sweep(now(), true, None).unwrap());
+        let v = get(&idx, Range::Today, "agent", 0);
+        assert_eq!(v["totals"]["input"], 6 + 500);
+        assert_eq!(v["totals"]["output"], 450);
+        assert_eq!(v["totals"]["cacheRead"], 18972 + 400);
+        assert_eq!(v["totals"]["cacheWrite"], 20078 + 100);
+        assert!(!idx.sweep(now(), true, None).unwrap());
+        append(
+            &p,
+            "{\"type\":\"session.usage_record\",\"timestamp\":\"2026-10-29T17:\n",
+        );
+        assert!(!idx.sweep(now(), true, None).unwrap());
+        std::fs::remove_dir_all(&d).unwrap();
+    }
+
+    fn varint(mut v: u64, out: &mut Vec<u8>) {
+        while v >= 0x80 {
+            out.push((v as u8 & 0x7f) | 0x80);
+            v >>= 7;
+        }
+        out.push(v as u8);
+    }
+
+    fn pb_int_field(f: u64, v: u64, out: &mut Vec<u8>) {
+        varint(f << 3, out);
+        varint(v, out);
+    }
+
+    fn pb_bytes_field(f: u64, b: &[u8], out: &mut Vec<u8>) {
+        varint(f << 3 | 2, out);
+        varint(b.len() as u64, out);
+        out.extend_from_slice(b);
+    }
+
+    fn agy_blob(model: &str, input: u64, output: u64, read: u64, secs: u64) -> Vec<u8> {
+        let mut stats = vec![];
+        pb_int_field(1, 1132, &mut stats);
+        pb_int_field(2, input, &mut stats);
+        pb_int_field(3, output, &mut stats);
+        if read > 0 {
+            pb_int_field(5, read, &mut stats);
+        }
+        pb_int_field(6, 24, &mut stats);
+        pb_int_field(10, 49, &mut stats);
+        pb_bytes_field(11, b"anon", &mut stats);
+        let mut ts = vec![];
+        pb_int_field(1, secs, &mut ts);
+        pb_int_field(2, 956_181_649, &mut ts);
+        let mut at = vec![];
+        pb_int_field(2, u64::MAX, &mut at);
+        pb_bytes_field(4, &ts, &mut at);
+        let mut head = vec![];
+        pb_int_field(3, 1132, &mut head);
+        pb_bytes_field(4, &stats, &mut head);
+        pb_bytes_field(9, &at, &mut head);
+        pb_bytes_field(19, model.as_bytes(), &mut head);
+        let mut blob = vec![];
+        pb_bytes_field(2, &[2, 3], &mut blob);
+        pb_bytes_field(1, &head, &mut blob);
+        blob
+    }
+
+    fn agy_db(d: &Path, id: &str) -> PathBuf {
+        let dir = d.join("agy/conversations");
+        std::fs::create_dir_all(&dir).unwrap();
+        let p = dir.join(format!("{id}.db"));
+        let c = Connection::open(&p).unwrap();
+        c.execute_batch(
+            "CREATE TABLE gen_metadata (idx integer, data blob, size integer NOT NULL DEFAULT 0, PRIMARY KEY (idx));
+             CREATE TABLE steps (idx integer, step_type integer NOT NULL DEFAULT 0);",
+        )
+        .unwrap();
+        p
+    }
+
+    fn agy_add(p: &Path, idx: i64, blob: &[u8]) {
+        let c = Connection::open(p).unwrap();
+        c.execute(
+            "INSERT INTO gen_metadata (idx, data, size) VALUES (?1, ?2, ?3)",
+            params![idx, blob, blob.len() as i64],
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn antigravity_conversation_rows_are_metered_incrementally() {
+        let (d, mut idx) = home("agy");
+        let p = agy_db(&d, "c1");
+        let t = now().div_euclid(1000) as u64 - 3600;
+        agy_add(&p, 0, &agy_blob("gemini-3-flash-a", 18193, 241, 0, t));
+        agy_add(
+            &p,
+            1,
+            &agy_blob("gemini-3-flash-a", 2446, 112, 16277, t + 2),
+        );
+        agy_add(&p, 2, &[0xff, 0xff]);
+        assert!(idx.sweep(now(), true, None).unwrap());
+        let v = get(&idx, Range::Today, "agent", 0);
+        assert_eq!(v["totals"]["input"], 18193 + 2446);
+        assert_eq!(v["totals"]["output"], 241 + 112);
+        assert_eq!(v["totals"]["cacheRead"], 16277);
+        assert_eq!(v["totals"]["messages"], 2);
+        assert_eq!(
+            agent_of(&v, "agy")["today"]["total"],
+            18193 + 2446 + 353 + 16277
+        );
+        let m = get(&idx, Range::Today, "model", 0);
+        assert_eq!(m["groups"][0]["model"], "gemini-3-flash-a");
+        let s = get(&idx, Range::Today, "session", 0);
+        assert_eq!(s["groups"][0]["sessionId"], "c1");
+
+        assert!(!idx.sweep(now(), true, None).unwrap());
+        agy_add(&p, 3, &agy_blob("gemini-3-flash-a", 100, 10, 50, t + 9));
+        later(&p, 5);
+        assert!(idx.sweep(now(), true, None).unwrap());
+        let v = get(&idx, Range::Today, "agent", 0);
+        assert_eq!(v["totals"]["input"], 18193 + 2446 + 100);
+        assert_eq!(v["totals"]["cacheRead"], 16277 + 50);
+        std::fs::remove_dir_all(&d).unwrap();
+    }
+
+    #[test]
+    fn antigravity_rows_land_on_their_own_day() {
+        let (d, mut idx) = home("agy-days");
+        let p = agy_db(&d, "c2");
+        let t = now().div_euclid(1000) as u64;
+        agy_add(
+            &p,
+            0,
+            &agy_blob("gemini-3-flash-a", 700, 7, 0, t - 3 * 86_400),
+        );
+        agy_add(&p, 1, &agy_blob("gemini-3-flash-a", 300, 3, 0, t - 60));
+        idx.sweep(now(), true, None).unwrap();
+        let today = get(&idx, Range::Today, "agent", 0);
+        assert_eq!(today["totals"]["input"], 300);
+        let week = get(&idx, Range::Days(7), "agent", 0);
+        assert_eq!(week["totals"]["input"], 1000);
+        std::fs::remove_dir_all(&d).unwrap();
+    }
+
+    fn opencode_db(d: &Path) -> (PathBuf, Connection) {
+        let dir = d.join("opencode");
+        std::fs::create_dir_all(&dir).unwrap();
+        let p = dir.join("opencode.db");
+        let c = Connection::open(&p).unwrap();
+        c.execute_batch(
+            "CREATE TABLE session (id text PRIMARY KEY, project_id text NOT NULL, parent_id text,
+               directory text NOT NULL, title text NOT NULL, time_created integer NOT NULL,
+               time_updated integer NOT NULL, model text, cost real DEFAULT 0 NOT NULL,
+               tokens_input integer DEFAULT 0 NOT NULL, tokens_output integer DEFAULT 0 NOT NULL,
+               tokens_reasoning integer DEFAULT 0 NOT NULL, tokens_cache_read integer DEFAULT 0 NOT NULL,
+               tokens_cache_write integer DEFAULT 0 NOT NULL);",
+        )
+        .unwrap();
+        (p, c)
+    }
+
+    fn oc_session(
+        c: &Connection,
+        id: &str,
+        parent: Option<&str>,
+        model: Option<&str>,
+        t: [i64; 5],
+    ) {
+        c.execute(
+            "INSERT OR REPLACE INTO session (id, project_id, parent_id, directory, title, time_created,
+               time_updated, model, tokens_input, tokens_output, tokens_reasoning, tokens_cache_read,
+               tokens_cache_write)
+             VALUES (?1, 'p', ?2, '/w/app', 't', ?3, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+            params![id, parent, now() - 1000, model, t[0], t[1], t[2], t[3], t[4]],
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn opencode_sessions_are_metered_by_delta_without_touching_unchanged_ones() {
+        let (d, mut idx) = home("opencode");
+        let (p, c) = opencode_db(&d);
+        let model = r#"{"id":"claude-sonnet-4-5","providerID":"anthropic"}"#;
+        oc_session(&c, "ses_a", None, Some(model), [1000, 200, 30, 400, 50]);
+        oc_session(&c, "ses_b", Some("ses_a"), None, [10, 5, 0, 0, 0]);
+        assert!(idx.sweep(now(), true, None).unwrap());
+        let v = get(&idx, Range::Today, "agent", 0);
+        assert_eq!(v["totals"]["input"], 1010);
+        assert_eq!(v["totals"]["output"], 235);
+        assert_eq!(v["totals"]["cacheRead"], 400);
+        assert_eq!(v["totals"]["cacheWrite"], 50);
+        assert_eq!(
+            agent_of(&v, "opencode")["today"]["total"],
+            1010 + 235 + 400 + 50
+        );
+        let m = get(&idx, Range::Today, "model", 0);
+        let models: Vec<&str> = m["groups"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|g| g["model"].as_str().unwrap())
+            .collect();
+        assert_eq!(models, ["claude-sonnet-4-5", "opencode"]);
+        let s = get(&idx, Range::Today, "session", 0);
+        assert_eq!(s["groups"].as_array().unwrap().len(), 2);
+        assert_eq!(s["groups"][0]["project"], "app");
+
+        assert!(!idx.sweep(now(), true, None).unwrap());
+        c.execute(
+            "UPDATE session SET tokens_input = tokens_input + 500, tokens_output = tokens_output + 20 WHERE id = 'ses_a'",
+            [],
+        )
+        .unwrap();
+        later(&p, 5);
+        assert!(idx.sweep(now(), true, None).unwrap());
+        let v = get(&idx, Range::Today, "agent", 0);
+        assert_eq!(v["totals"]["input"], 1510);
+        assert_eq!(v["totals"]["output"], 255);
+        assert!(!idx.sweep(now(), true, None).unwrap());
+
+        drop(idx);
+        let dirs = Dirs {
+            claude: d.join("claude"),
+            codex: d.join("codex"),
+            gemini: d.join("gemini"),
+            vibe: d.join("vibe"),
+            copilot: d.join("copilot"),
+            opencode: d.join("opencode"),
+            agy: d.join("agy"),
+        };
+        let mut idx = Index::open(&d.join("usage.db"), dirs).unwrap();
+        assert!(!idx.sweep(now(), true, None).unwrap());
+        let v = get(&idx, Range::Today, "agent", 0);
+        assert_eq!(v["totals"]["input"], 1510);
+        std::fs::remove_dir_all(&d).unwrap();
+    }
+
+    #[test]
+    fn opencode_sessions_idle_for_a_month_are_not_indexed() {
+        let (d, mut idx) = home("opencode-old");
+        let (_, c) = opencode_db(&d);
+        oc_session(&c, "ses_old", None, None, [10, 1, 0, 0, 0]);
+        c.execute(
+            "UPDATE session SET time_updated = ?1",
+            [now() - 40 * DAY_MS],
+        )
+        .unwrap();
+        assert!(!idx.sweep(now(), true, None).unwrap());
+        let v = get(&idx, Range::Days(30), "agent", 0);
+        assert_eq!(v["totals"]["input"], 0);
+        std::fs::remove_dir_all(&d).unwrap();
+    }
+
+    #[test]
+    fn missing_opencode_database_or_session_table_is_not_an_error() {
+        let (d, mut idx) = home("opencode-missing");
+        assert!(!idx.sweep(now(), true, None).unwrap());
+        std::fs::create_dir_all(d.join("opencode")).unwrap();
+        Connection::open(d.join("opencode/opencode.db"))
+            .unwrap()
+            .execute_batch("CREATE TABLE other (x integer)")
+            .unwrap();
+        assert!(!idx.sweep(now(), true, None).unwrap());
         std::fs::remove_dir_all(&d).unwrap();
     }
 
@@ -1842,6 +2699,10 @@ mod tests {
                 claude: d.join("claude"),
                 codex: d.join("codex"),
                 gemini: d.join("gemini"),
+                vibe: d.join("vibe"),
+                copilot: d.join("copilot"),
+                opencode: d.join("opencode"),
+                agy: d.join("agy"),
             },
         )
         .unwrap();
@@ -1879,7 +2740,7 @@ mod tests {
         let m = get(&idx, Range::Today, "model", 0);
         assert_eq!(m["groups"][0]["model"], "gpt-5.4");
 
-        let lim = &v["agents"][0]["limits"];
+        let lim = &agent_of(&v, "codex")["limits"];
         assert_eq!(lim["source"], "codex");
         assert_eq!(lim["plan"], "plus");
         let w = lim["windows"].as_array().unwrap();
@@ -2102,9 +2963,9 @@ mod tests {
             .unwrap()
         };
         let v = q(&idx);
-        let hit = &v["agents"][0]["limits"]["hit"];
+        let hit = &agent_of(&v, "claude")["limits"]["hit"];
         assert_eq!(hit["message"], "You've hit your session limit · resets 7pm");
-        assert!(v["agents"][0]["limits"]["windows"]
+        assert!(agent_of(&v, "claude")["limits"]["windows"]
             .as_array()
             .unwrap()
             .is_empty());
@@ -2116,7 +2977,7 @@ mod tests {
             ),
         );
         idx.sweep(real_now(), false, None).unwrap();
-        assert!(q(&idx)["agents"][0]["limits"]["hit"].is_null());
+        assert!(agent_of(&q(&idx), "claude")["limits"]["hit"].is_null());
         std::fs::remove_dir_all(&d).unwrap();
     }
 
@@ -2169,8 +3030,8 @@ mod tests {
                 },
                 &HashMap::new(),
             )
-            .unwrap()["agents"][0]["limits"]
-                .clone()
+            .map(|v| agent_of(&v, "claude")["limits"].clone())
+            .unwrap()
         };
         let lim = |idx: &Index, oauth: bool| {
             query(
@@ -2186,8 +3047,8 @@ mod tests {
                 },
                 &HashMap::new(),
             )
-            .unwrap()["agents"][0]["limits"]
-                .clone()
+            .map(|v| agent_of(&v, "claude")["limits"].clone())
+            .unwrap()
         };
 
         assert!(!refresh_claude(&idx.conn, &claude, now(), |_| unreachable!()).unwrap());
@@ -2266,7 +3127,18 @@ mod tests {
                 ),
             );
         }
-        init(&d, d.join("claude"), d.join("codex"), d.join("gemini"));
+        init(
+            &d,
+            Dirs {
+                claude: d.join("claude"),
+                codex: d.join("codex"),
+                gemini: d.join("gemini"),
+                vibe: d.join("vibe"),
+                copilot: d.join("copilot"),
+                opencode: d.join("opencode"),
+                agy: d.join("agy"),
+            },
+        );
         let req = |q: &[(&str, &str)]| crate::http::Request {
             method: "GET".into(),
             path: "/v1/usage".into(),

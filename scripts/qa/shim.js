@@ -22,21 +22,23 @@
   const watches = new Map();
   window.__qaWindows = [];
   async function alive(slot) {
-    try { const r = await fetch(H(slot).base + '/v1/version', { signal: AbortSignal.timeout(5000) }); return r.ok ? ((await r.json()).version ?? '') : null; } catch { return null; }
+    try { const r = await fetch(H(slot).base + '/v1/version', { signal: AbortSignal.timeout(5000) }); if (!r.ok) return null; const j = await r.json(); return { version: j.version ?? '', pid: j.pid ?? null }; } catch { return null; }
   }
   function monitor(ch, target, slot) {
     const me = { stop: false }; watches.set(slot ?? '', me);
     (async () => {
+      let pid = (await alive(slot))?.pid ?? null;
       for (;;) {
         await new Promise((r) => setTimeout(r, 5000));
         if (me.stop) return;
-        if ((await alive(slot)) !== null) continue;
+        const now = await alive(slot);
+        if (now !== null && !(pid !== null && now.pid !== null && now.pid !== pid)) { pid = pid ?? now.pid; continue; }
         const h = H(slot); h.up = new Promise((r) => (h.wake = r));
         for (let attempt = 0; !me.stop; attempt++) {
           send(ch, { phase: 'reconnecting', target, attempt, detail: 'the daemon stopped answering' });
           await new Promise((r) => setTimeout(r, 1000));
-          const version = await alive(slot);
-          if (version !== null) { send(ch, { phase: 'connected', target, version, server: serverUpdate() }); break; }
+          const back = await alive(slot);
+          if (back !== null) { pid = back.pid; send(ch, { phase: 'connected', target, version: back.version, server: serverUpdate() }); break; }
         }
         h.wake?.(); h.wake = null;
       }
@@ -145,7 +147,7 @@
     'plugin:notification|register_listener': () => null,
     save_download: (a, o) => { const bytes = bytesOf(a); if (!bytes) throw 'expected bytes'; window.__qaDownload = { name: pasteName(pctDecode(o?.headers?.['x-name'] ?? '')), size: bytes.length }; return '/home/qa/Downloads/' + window.__qaDownload.name; },
     conn_restart_server: (a) => { log('conn_restart_server', a.slot ?? ''); return null; },
-    conn_connect: async (a) => { const w = watches.get(a.slot ?? ''); if (w) w.stop = true; log('conn_connect', a.slot ?? '', JSON.stringify(a.target)); send(a.onState, { phase: 'connected', target: a.target, version: (await alive(a.slot)) ?? '0.2.0', server: serverUpdate() }); monitor(a.onState, a.target, a.slot); },
+    conn_connect: async (a) => { const w = watches.get(a.slot ?? ''); if (w) w.stop = true; if (new URLSearchParams(location.search).has('qafail') && a.target?.kind !== 'local') { log('conn_connect', a.slot ?? '', JSON.stringify(a.target), 'failed'); send(a.onState, { phase: 'error', target: a.target, error: 'qa: connection refused' }); return; } log('conn_connect', a.slot ?? '', JSON.stringify(a.target)); send(a.onState, { phase: 'connected', target: a.target, version: (await alive(a.slot))?.version ?? '0.2.0', server: serverUpdate() }); monitor(a.onState, a.target, a.slot); },
     conn_disconnect: (a) => { const slot = a?.slot ?? ''; log('conn_disconnect', slot); const w = watches.get(slot); if (w) w.stop = true; watches.delete(slot); const h = H(slot); h.wake?.(); h.wake = null; h.up = Promise.resolve(); return null; },
     window_new: (a) => { window.__qaWindows.push(a?.connect ?? null); return 'w-' + (window.__qaWindows.length + 1); },
     window_handoff: () => null,

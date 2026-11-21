@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { holdPopup } from '../../popup.svelte';
   import type { Snippet } from 'svelte';
   import X from '@lucide/svelte/icons/x';
   import { t } from '../../i18n.svelte';
@@ -7,6 +8,7 @@
   let { title, onclose, width = 520, fill = false, children, footer }: { title: string; onclose: () => void; width?: number; fill?: boolean; children: Snippet; footer?: Snippet } = $props();
 
   $effect(() => onBack(() => onclose()));
+  $effect(holdPopup);
 
   let modal: HTMLElement;
   const FOCUSABLE = 'a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])';

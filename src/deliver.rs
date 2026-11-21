@@ -70,6 +70,10 @@ pub fn channel(l: &Line) -> Option<Channel> {
     }
 }
 
+fn typed_in_prompt(t: &Term) -> bool {
+    crate::hold::input_text(&t.grid().ansi()).is_some_and(|s| !s.is_empty())
+}
+
 static SCREENS: Mutex<Option<HashMap<String, u64>>> = Mutex::new(None);
 
 pub fn not_idle(
@@ -85,17 +89,22 @@ pub fn not_idle(
         if l.busy_known && l.busy {
             return Some(NotIdle::Busy);
         }
+        if l.busy_known {
+            return match ch {
+                Channel::Term(t) if typed_in_prompt(t) => Some(NotIdle::Busy),
+                _ => None,
+            };
+        }
     }
-    let known = l.is_some_and(|l| l.busy_known);
     match ch {
         Channel::Term(t) => {
             let last = t.last_output_ms();
-            if last == 0 && rules.require_output && !known {
+            if last == 0 && rules.require_output {
                 return Some(NotIdle::Settling);
             }
             (last > 0 && now_ms() - last < SILENCE_MS).then_some(NotIdle::Busy)
         }
-        Channel::Pane(p) if rules.settle_panes && !known => {
+        Channel::Pane(p) if rules.settle_panes => {
             let h = tmux
                 .and_then(|t| t.capture(p))
                 .map(|s| crate::review::diff::fnv(s.as_bytes()));
@@ -515,6 +524,85 @@ mod tests {
             ),
             Some(NotIdle::Settling)
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_known_idle_state_wins_over_term_output_recency() {
+        let t = agent("printf 'tick\\n'; sleep 30");
+        let ch = Channel::Term(t.clone());
+        wait_screen(&t, "tick");
+        let known_idle = Line {
+            busy_known: true,
+            busy: false,
+            ..Default::default()
+        };
+        assert_eq!(
+            not_idle(Some(&known_idle), &ch, None, Rules::default()),
+            None
+        );
+        let mut known_busy = known_idle.clone();
+        known_busy.busy = true;
+        assert_eq!(
+            not_idle(Some(&known_busy), &ch, None, Rules::default()),
+            Some(NotIdle::Busy)
+        );
+        let unknown = Line::default();
+        assert_eq!(
+            not_idle(Some(&unknown), &ch, None, Rules::default()),
+            Some(NotIdle::Busy)
+        );
+        assert_eq!(
+            not_idle(None, &ch, None, Rules::default()),
+            Some(NotIdle::Busy)
+        );
+        std::thread::sleep(Duration::from_millis(SILENCE_MS as u64 + 200));
+        assert_eq!(not_idle(Some(&unknown), &ch, None, Rules::default()), None);
+        assert_eq!(not_idle(None, &ch, None, Rules::default()), None);
+        t.kill().unwrap();
+        term::remove(&t.info().id);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_known_idle_line_with_typed_text_is_not_idle() {
+        let t = agent(&format!(
+            r#"{RULE}printf '%s\n❯ half typed\n%s\n' "$r" "$r"; sleep 30"#
+        ));
+        let ch = Channel::Term(t.clone());
+        wait_screen(&t, "half typed");
+        let known_idle = Line {
+            busy_known: true,
+            busy: false,
+            ..Default::default()
+        };
+        assert_eq!(
+            not_idle(Some(&known_idle), &ch, None, Rules::default()),
+            Some(NotIdle::Busy)
+        );
+        t.kill().unwrap();
+        term::remove(&t.info().id);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_known_idle_line_with_an_empty_prompt_is_idle() {
+        let t = agent(&format!(
+            r#"{RULE}printf '%s\n❯ \n%s\n' "$r" "$r"; sleep 30"#
+        ));
+        let ch = Channel::Term(t.clone());
+        wait_screen(&t, "❯");
+        let known_idle = Line {
+            busy_known: true,
+            busy: false,
+            ..Default::default()
+        };
+        assert_eq!(
+            not_idle(Some(&known_idle), &ch, None, Rules::default()),
+            None
+        );
+        t.kill().unwrap();
+        term::remove(&t.info().id);
     }
 
     #[test]

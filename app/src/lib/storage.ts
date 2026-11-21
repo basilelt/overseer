@@ -2,6 +2,7 @@ export const KEY_SETTINGS = 'overseer.settings';
 export const KEY_KNOWN_TABS = 'overseer.knownTabs';
 export const KEY_SESSION_PAGES = 'overseer.sessionPages';
 export const KEY_LIVE_REVIEW = 'overseer.liveReview';
+export const KEY_LIVE_EXPANDED = 'overseer.liveExpanded';
 export const KEY_SWITCHBOARD_IMPORT = 'overseer.switchboardImport';
 export const KEY_NOTIFY_ASKED = 'overseer.notifyAsked';
 export const KEY_NOTIFIED = 'overseer.notified';

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { KEY_SETTINGS, KEY_KNOWN_TABS, KEY_SESSION_PAGES, KEY_LIVE_REVIEW, KEY_SWITCHBOARD_IMPORT, KEY_NOTIFY_ASKED, KEY_NOTIFIED, KEY_NOTIFICATIONS_PREFIX, KEY_RENDERER, KEY_REVIEW_MODE, KEY_REVIEW_AUTO_REFRESH, KEY_REVIEW_VIEW, KEY_REVIEW_BASE, KEY_CHAT_MODES, KEY_FEEDBACK_REPORTED, KEY_DRAFTS_CHAT, KEY_DRAFTS_REVIEW, KEY_DRAFTS_TASK, KEY_DRAFTS_FEEDBACK, KEY_DEMO, KEY_DEMO_PREFIX, KEY_MOCK_IMPORTED, localStore, readItem, readJson, removeItem, writeItem, writeJson } from './storage';
+import { KEY_SETTINGS, KEY_KNOWN_TABS, KEY_SESSION_PAGES, KEY_LIVE_REVIEW, KEY_LIVE_EXPANDED, KEY_SWITCHBOARD_IMPORT, KEY_NOTIFY_ASKED, KEY_NOTIFIED, KEY_NOTIFICATIONS_PREFIX, KEY_RENDERER, KEY_REVIEW_MODE, KEY_REVIEW_AUTO_REFRESH, KEY_REVIEW_VIEW, KEY_REVIEW_BASE, KEY_CHAT_MODES, KEY_FEEDBACK_REPORTED, KEY_DRAFTS_CHAT, KEY_DRAFTS_REVIEW, KEY_DRAFTS_TASK, KEY_DRAFTS_FEEDBACK, KEY_DEMO, KEY_DEMO_PREFIX, KEY_MOCK_IMPORTED, localStore, readItem, readJson, removeItem, writeItem, writeJson } from './storage';
 
 function memoryStorage() {
   const m = new Map<string, string>();
@@ -30,6 +30,7 @@ describe('storage helper', () => {
       knownTabs: KEY_KNOWN_TABS,
       sessionPages: KEY_SESSION_PAGES,
       liveReview: KEY_LIVE_REVIEW,
+      liveExpanded: KEY_LIVE_EXPANDED,
       switchboardImport: KEY_SWITCHBOARD_IMPORT,
       notifyAsked: KEY_NOTIFY_ASKED,
       notified: KEY_NOTIFIED,
@@ -53,6 +54,7 @@ describe('storage helper', () => {
       knownTabs: 'overseer.knownTabs',
       sessionPages: 'overseer.sessionPages',
       liveReview: 'overseer.liveReview',
+      liveExpanded: 'overseer.liveExpanded',
       switchboardImport: 'overseer.switchboardImport',
       notifyAsked: 'overseer.notifyAsked',
       notified: 'overseer.notified',

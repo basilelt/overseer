@@ -2,8 +2,8 @@ import { app } from '../state.svelte';
 import { beside } from '../review/beside.svelte';
 import { closeSideReview, itemTarget, setReviewMode } from '../review/open';
 import { allTabs, workspace } from '../workspace/workspace.svelte';
-import { live, liveOn } from './live.svelte';
-import { readItem, removeItem, writeItem, KEY_LIVE_REVIEW } from '../storage';
+import { live, liveOn, setLiveExpanded } from './live.svelte';
+import { readItem, removeItem, writeItem, KEY_LIVE_EXPANDED, KEY_LIVE_REVIEW } from '../storage';
 
 const STORE = KEY_LIVE_REVIEW;
 
@@ -17,6 +17,7 @@ export function restoreLiveReview(): boolean {
   if (!key || !allTabs(workspace.layout).includes(key)) return false;
   beside.key = key;
   app.liveReview = true;
+  app.liveExpanded = readItem(KEY_LIVE_EXPANDED) === '1';
   return true;
 }
 
@@ -26,6 +27,7 @@ export function toggleLiveReview(fromKey: string | null = app.selectedKey): bool
     live.worktree = null;
     closeSideReview();
     remember(null);
+    setLiveExpanded(false);
     return false;
   }
   const target = itemTarget(fromKey);
@@ -34,5 +36,6 @@ export function toggleLiveReview(fromKey: string | null = app.selectedKey): bool
   setReviewMode(target, 'side');
   app.liveReview = true;
   remember(beside.key);
+  setLiveExpanded(false);
   return true;
 }

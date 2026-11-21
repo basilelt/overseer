@@ -371,6 +371,144 @@ fn tasks_crud_numbers_and_projects() {
 }
 
 #[test]
+fn a_task_is_edited_through_patch_with_the_daemons_field_validations() {
+    let app = App::new("taskedit", json!({}));
+    let wt = app.fx.wt.to_string_lossy().into_owned();
+    let id = app.ok(
+        "POST",
+        "/v1/tasks",
+        json!({"title": "Original", "description": "first body", "project": wt}),
+    )["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let url = format!("/v1/tasks/{id}");
+    let v = app.ok(
+        "PATCH",
+        &url,
+        json!({
+            "title": "  Renamed  ",
+            "description": "second body",
+            "agent": "codex",
+            "model": "gpt-5.4",
+            "effort": "max",
+            "ticketKey": "proj-42",
+            "taskType": "fix",
+            "profile": "balanced",
+        }),
+    );
+    assert_eq!(v["title"], "Renamed");
+    assert_eq!(v["description"], "second body");
+    assert_eq!(v["agent"], "codex");
+    assert_eq!(v["model"], "gpt-5.4");
+    assert_eq!(v["effort"], "max");
+    assert_eq!(v["ticketKey"], "PROJ-42");
+    assert_eq!(v["taskType"], "fix");
+    assert_eq!(v["profile"], "balanced");
+    let got = app.task(&id);
+    assert_eq!(got["title"], "Renamed");
+    assert_eq!(got["agent"], "codex");
+    let v = app.ok(
+        "PATCH",
+        &url,
+        json!({"ticketKey": null, "taskType": null, "profile": null, "effort": "", "model": ""}),
+    );
+    assert!(v.get("ticketKey").is_none());
+    assert!(v.get("taskType").is_none());
+    assert!(v.get("profile").is_none());
+    assert_eq!(v["effort"], "");
+    assert_eq!(v["model"], "");
+    let (code, e) = app.req("PATCH", &url, json!({"title": "   "}));
+    assert_eq!(
+        (code, e["error"].as_str().unwrap()),
+        (400, "title must not be empty")
+    );
+    let (code, e) = app.req("PATCH", &url, json!({"agent": "shell"}));
+    assert_eq!(code, 400);
+    assert!(e["error"]
+        .as_str()
+        .unwrap()
+        .starts_with("agent must be one of "));
+    let (code, e) = app.req("PATCH", &url, json!({"agent": "codex", "effort": "huge"}));
+    assert_eq!(
+        (code, e["error"].as_str().unwrap()),
+        (400, "effort must be one of low, medium, high, max")
+    );
+    let (code, e) = app.req("PATCH", &url, json!({"ticketKey": "nope"}));
+    assert_eq!(
+        (code, e["error"].as_str().unwrap()),
+        (400, "ticketKey must look like PROJ-1234")
+    );
+    let (code, e) = app.req("PATCH", &url, json!({"profile": "ghost"}));
+    assert_eq!(
+        (code, e["error"].as_str().unwrap()),
+        (400, "unknown profile ghost")
+    );
+    let (code, e) = app.req("PATCH", &url, json!({"taskType": "chore"}));
+    assert_eq!(
+        (code, e["error"].as_str().unwrap()),
+        (
+            400,
+            "taskType must be one of fix, feature, engineering, refactor, triage"
+        )
+    );
+    assert_eq!(app.task(&id)["title"], "Renamed");
+}
+
+#[test]
+fn a_task_in_testing_restarts_with_the_agent_it_was_edited_to_in_the_same_worktree() {
+    let app = App::new("editagent", json!({"autoConcurrency": 0}));
+    let wt = app.fx.wt.to_string_lossy().into_owned();
+    let t = app.ok(
+        "POST",
+        "/v1/tasks",
+        json!({"title": "swap", "description": "", "project": wt, "agent": "claude"}),
+    );
+    let id = t["id"].as_str().unwrap().to_string();
+    let s = app.ok("POST", &format!("/v1/tasks/{id}/start"), json!({}));
+    let term = s["termId"].as_str().unwrap().to_string();
+    let wtp = s["worktreePath"].as_str().unwrap().to_string();
+    let mut ws = app.ws(&term);
+    read_until(&mut ws, "❯");
+    send(&mut ws, "done\r");
+    wait_for(|| (app.task(&id)["status"] == "in_testing").then_some(()));
+    app.ok(
+        "POST",
+        &format!("/v1/terms/{term}/kill"),
+        json!({"confirm": true}),
+    );
+    wait_for(|| {
+        (app.task(&id)["termId"] != term.as_str())
+            .then_some(())
+            .or_else(|| {
+                let v = app.ok("GET", &format!("/v1/terms/{term}"), Value::Null);
+                (v["exited"] == true || v["alive"] == false).then_some(())
+            })
+    });
+    let before = stub_log(&app);
+    let sessions = before.matches("--session-id").count();
+    app.ok(
+        "PATCH",
+        &format!("/v1/tasks/{id}"),
+        json!({"agent": "codex", "model": "gpt-5.4", "effort": "high"}),
+    );
+    let r = app.ok("POST", &format!("/v1/tasks/{id}/start"), json!({}));
+    assert_eq!(r["agent"], "codex");
+    assert_eq!(r["branch"], "task/1-swap");
+    assert_eq!(r["worktreePath"], wtp.as_str());
+    assert!(r.get("lineId").is_none() || r["lineId"].is_null());
+    wait(|| stub_log(&app).contains("-m gpt-5.4"));
+    let log = stub_log(&app);
+    let last = log.lines().last().unwrap();
+    assert!(last.contains("--ask-for-approval never"), "{last}");
+    assert!(
+        !last.contains("--session-id") && !last.contains("--resume"),
+        "{last}"
+    );
+    assert_eq!(log.matches("--session-id").count(), sessions, "{log}");
+}
+
+#[test]
 fn a_websocket_head_that_arrives_late_still_attaches() {
     let app = App::new("latehead", json!({}));
     let wt = app.fx.wt.to_string_lossy().into_owned();
@@ -2417,6 +2555,47 @@ fn task_rank_and_added_projects() {
 }
 
 #[test]
+fn parallel_cleanup_dry_runs_all_answer_with_a_plan() {
+    let app = App::new("wt-parallel", json!({"autoConcurrency": 0}));
+    let wt = app.fx.wt.to_string_lossy().into_owned();
+    let paths: Vec<String> = (0..16)
+        .map(|i| {
+            let (code, w) = app.req(
+                "POST",
+                "/v1/worktrees",
+                json!({"project": wt, "agent": "claude", "slug": format!("old {i}")}),
+            );
+            assert_eq!(code, 201, "{w}");
+            w["path"].as_str().unwrap().to_string()
+        })
+        .collect();
+    let plans: Vec<(u16, Value)> = std::thread::scope(|sc| {
+        let hs: Vec<_> = paths
+            .iter()
+            .map(|p| {
+                let (app, wt) = (&app, &wt);
+                sc.spawn(move || {
+                    app.req(
+                        "POST",
+                        &format!("/v1/worktrees/{}/cleanup", enc(p)),
+                        json!({"dryRun": true, "project": wt}),
+                    )
+                })
+            })
+            .collect();
+        hs.into_iter().map(|h| h.join().unwrap()).collect()
+    });
+    for ((code, plan), p) in plans.iter().zip(&paths) {
+        assert_eq!(*code, 200, "{p}: {plan}");
+        assert_eq!(plan["id"], p.as_str());
+        assert_eq!(plan["dryRun"], true);
+        assert_eq!(plan["refused"], Value::Null, "{plan}");
+        assert_eq!(plan["remove"][0]["kind"], "worktree");
+    }
+    assert!(paths.iter().all(|p| Path::new(p).exists()));
+}
+
+#[test]
 fn worktrees_graph_and_events_through_the_daemon() {
     let app = App::new("worktrees", json!({"autoConcurrency": 0}));
     let wt = app.fx.wt.to_string_lossy().into_owned();
@@ -2647,6 +2826,37 @@ fn uploads_stream_to_a_short_home_path_and_report_env() {
     assert!(env["path"].as_str().unwrap().contains("/usr/bin"), "{env}");
     let agents = app.ok("POST", "/v1/agents/rescan", Value::Null);
     assert_eq!(agents, app.ok("GET", "/v1/agents", Value::Null));
+}
+
+#[test]
+fn a_refused_upload_still_reads_the_whole_body_so_the_client_sees_the_error() {
+    use std::io::{Read, Write};
+    let app = App::new("upload-refused", json!({}));
+    let u = app.fx.base.join("home/.overseer/u");
+    std::fs::create_dir_all(u.parent().unwrap()).unwrap();
+    std::fs::write(&u, "not a directory").unwrap();
+    let body = vec![b'x'; 8 << 20];
+    let mut w = UnixStream::connect(&app.fx.sock).unwrap();
+    let mut r = w.try_clone().unwrap();
+    let head = format!(
+        "POST /v1/uploads?name=a.png HTTP/1.1\r\nHost: unix\r\nContent-Length: {}\r\n\r\n",
+        body.len()
+    );
+    let sender = std::thread::spawn(move || {
+        w.write_all(head.as_bytes())?;
+        w.write_all(&body)
+    });
+    let mut out = String::new();
+    let _ = r.read_to_string(&mut out);
+    sender
+        .join()
+        .unwrap()
+        .expect("the daemon closed before the body was read");
+    assert!(out.starts_with("HTTP/1.1 500 "), "{out}");
+    assert!(
+        out.contains("File exists") || out.contains("Not a directory"),
+        "{out}"
+    );
 }
 
 #[test]
@@ -3611,6 +3821,37 @@ fn ending_a_busy_agent_session_needs_force_and_then_ends_its_term() {
 }
 
 #[test]
+fn close_plan_reports_typed_input_without_the_unknown_flag_and_force_closes_past_it() {
+    let sid = "eeeeeeee-0000-4000-8000-0000000000aa";
+    let app = App::new("closeunknown", json!({}));
+    let (tid, line) = claude_term(&app, json!(["claude", "--session-id", sid]), sid);
+    let mut ws = app.ws(&tid);
+    read_until(&mut ws, "❯");
+
+    send(&mut ws, "half typed");
+    std::thread::sleep(Duration::from_millis(500));
+    let (code, plan) = app.req("POST", &format!("/v1/lines/{line}/close"), Value::Null);
+    assert_eq!(code, 409, "{plan}");
+    assert_eq!(plan["predicates"]["inputEmpty"]["ok"], false, "{plan}");
+    assert_eq!(
+        plan["predicates"]["inputEmpty"]["detail"],
+        "input box is not empty"
+    );
+    assert!(
+        plan["predicates"]["inputEmpty"]["unknown"].is_null(),
+        "{plan}"
+    );
+
+    let closed = app.ok(
+        "POST",
+        &format!("/v1/lines/{line}/close?dryRun=false&force=true"),
+        Value::Null,
+    );
+    assert_eq!(closed["action"], "closed", "{closed}");
+    wait(|| line_json(&app, &line)["line"]["state"] == "hung-up");
+}
+
+#[test]
 fn killing_an_agent_term_closes_it_without_a_shell() {
     let app = App::new("agentkill", json!({}));
     let wt = app.fx.wt.to_string_lossy().into_owned();
@@ -4083,6 +4324,59 @@ fn finds_an_agent_installed_under_an_older_nvm_node() {
     let at = |d: &Path| dirs.iter().position(|x| *x == d.to_str().unwrap());
     assert!(at(&nvm.join("v26.0.0/bin")) < at(&old), "{env}");
     assert!(at(&old).is_some(), "{env}");
+}
+
+#[test]
+fn a_daemon_started_locally_and_one_started_over_ssh_detect_the_same_agents() {
+    let stub = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/stubs/agent");
+    let plant = |app: &App| {
+        let local = app.fx.base.join("home/.local/bin");
+        std::fs::create_dir_all(&local).unwrap();
+        std::fs::copy(&stub, local.join("amp")).unwrap();
+        let old = app.fx.base.join("home/.nvm/versions/node/v24.0.0/bin");
+        std::fs::create_dir_all(&old).unwrap();
+        std::fs::copy(&stub, old.join("codex")).unwrap();
+    };
+    let installed = |app: &App| -> Vec<(String, bool)> {
+        app.ok("GET", "/v1/agents", Value::Null)
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|a| {
+                (
+                    a["id"].as_str().unwrap().to_string(),
+                    a["installed"].as_bool().unwrap(),
+                )
+            })
+            .collect()
+    };
+    let mut local = App::with_env("cli-local-start", json!({}), &[("OVERSEER_LOGIN_ENV", "1")]);
+    plant(&local);
+    local.crash_and_restart();
+    let env = local.ok("GET", "/v1/env", Value::Null);
+    assert_eq!(env["source"], "login-shell", "{env}");
+    assert!(
+        env["path"].as_str().unwrap().contains(".local/bin"),
+        "{env}"
+    );
+    let local_list = installed(&local);
+    let mut ssh = App::with_env(
+        "cli-ssh-start",
+        json!({}),
+        &[("OVERSEER_LOGIN_ENV", "1"), ("SHELL", "/nonexistent-shell")],
+    );
+    plant(&ssh);
+    ssh.crash_and_restart();
+    let env = ssh.ok("GET", "/v1/env", Value::Null);
+    assert_eq!(env["source"], "fallback", "{env}");
+    assert!(
+        env["path"].as_str().unwrap().contains(".local/bin"),
+        "{env}"
+    );
+    assert_eq!(installed(&ssh), local_list);
+    let find = |l: &[(String, bool)], id: &str| l.iter().find(|(i, _)| i == id).unwrap().1;
+    assert!(find(&local_list, "amp"), "{local_list:?}");
+    assert!(find(&local_list, "codex"), "{local_list:?}");
 }
 
 #[test]

@@ -1158,6 +1158,17 @@ fn upload(r: &mut BufReader<&mut impl Stream>, h: &Head) -> (u16, Value) {
         let _ = r.get_ref().set_read_timeout(Some(Duration::from_secs(30)));
         crate::uploads::receive(&crate::uploads::dir(), q(&h.req, "name"), len, &mut *r)
     });
+    if res.is_err() {
+        let _ = r.get_ref().set_read_timeout(Some(HEAD_TIMEOUT));
+        let _ = std::io::copy(
+            &mut (&mut *r).take(match h.len {
+                Some(n) if n <= crate::uploads::MAX => n,
+                Some(_) => MAX_DRAIN,
+                None => 0,
+            }),
+            &mut std::io::sink(),
+        );
+    }
     res.map(|v| (201, v)).unwrap_or_else(|(c, e)| err(c, e))
 }
 
@@ -1227,6 +1238,9 @@ pub fn conn(mut s: impl Stream, token: Option<&str>) {
     }
     take_effect();
     let (code, v) = handle(&ctx, &req);
+    if let Some(m) = server_error(&req, code, &v) {
+        crate::dlog::line("warn", &m);
+    }
     let effect = take_effect();
     if req.method != "GET" && (200..300).contains(&code) && effect != Effect::None {
         crate::scanner::poke();
@@ -1256,6 +1270,13 @@ pub fn conn(mut s: impl Stream, token: Option<&str>) {
         }
         std::process::exit(0);
     }
+}
+
+fn server_error(req: &Request, code: u16, v: &Value) -> Option<String> {
+    (code >= 500).then(|| {
+        let e = v["error"].as_str().unwrap_or("no error text");
+        format!("{} {}: HTTP {code}: {e}", req.method, req.path)
+    })
 }
 
 pub(crate) fn accept<S: Stream + 'static>(s: S, token: Option<String>) {
@@ -1378,10 +1399,16 @@ fn watch_transcripts(claude_dir: PathBuf, codex_dir: PathBuf, gemini_dir: PathBu
     let mut paths: std::collections::HashMap<String, (Option<PathBuf>, i64)> = Default::default();
     let mut seen: std::collections::HashMap<String, (u64, i64, bool)> = Default::default();
     let mut quiet = false;
+    let state_dir = crate::default_state_dir();
+    let mut tap_seen = None;
     loop {
         std::thread::sleep(Duration::from_millis(if quiet { 1000 } else { 250 }));
         let lines = WATCH.lock().unwrap_or_else(|e| e.into_inner()).clone();
-        quiet = lines.is_empty() || crate::board::subscribers() == 0;
+        let watched = crate::board::subscribers() > 0;
+        quiet = lines.is_empty() || !watched;
+        if watched && crate::usage::tap_changed(&state_dir, &mut tap_seen) {
+            crate::usage::poke(false);
+        }
         let now = now_ms();
         paths.retain(|id, _| lines.iter().any(|l| l.0 == *id));
         seen.retain(|id, _| paths.contains_key(id));
@@ -1479,7 +1506,10 @@ pub fn run(
         ctx.codex_dir.clone(),
         ctx.gemini_dir.clone(),
     );
-    crate::usage::init(&state_dir, cd.clone(), xd.clone(), gd.clone());
+    crate::usage::init(
+        &state_dir,
+        crate::usage::Dirs::from_env(cd.clone(), xd.clone(), gd.clone()),
+    );
     crate::github::resume_pending(&state_dir);
     crate::dlog::supervise("transcripts", move || {
         watch_transcripts(cd.clone(), xd.clone(), gd.clone())
@@ -1490,6 +1520,9 @@ pub fn run(
         crate::review::watch::run(sd.clone())
     });
     crate::dlog::supervise("ports", crate::ports::watch);
+    crate::dlog::supervise("vibe-leases", || {
+        crate::vibe::watch_leases(&crate::vibe::home(), crate::scanner::poke)
+    });
     if !once {
         let ld = state_dir.clone();
         crate::dlog::supervise("log-rotate", move || {
@@ -1823,6 +1856,42 @@ pub fn call(method: &str, target: &str, body: Option<&Value>) -> Result<(u16, Va
         target,
         body,
     )
+}
+
+#[cfg(test)]
+mod server_error_tests {
+    use super::*;
+
+    fn req(method: &str, path: &str) -> Request {
+        Request {
+            method: method.into(),
+            path: path.into(),
+            query: vec![],
+            headers: vec![],
+            body: vec![],
+        }
+    }
+
+    #[test]
+    fn server_errors_are_logged_with_their_route_and_text() {
+        let r = req("GET", "/v1/folders");
+        assert_eq!(
+            server_error(&r, 500, &json!({"error": "unable to open database file"})).as_deref(),
+            Some("GET /v1/folders: HTTP 500: unable to open database file")
+        );
+        assert_eq!(
+            server_error(&r, 503, &json!({})).as_deref(),
+            Some("GET /v1/folders: HTTP 503: no error text")
+        );
+    }
+
+    #[test]
+    fn client_errors_and_successes_are_not_logged() {
+        let r = req("POST", "/v1/worktrees/x/cleanup");
+        for code in [200, 404, 409] {
+            assert_eq!(server_error(&r, code, &json!({"error": "x"})), None);
+        }
+    }
 }
 
 #[cfg(test)]

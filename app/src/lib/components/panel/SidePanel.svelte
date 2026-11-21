@@ -1,7 +1,8 @@
 <script lang="ts">
   import { onMount, untrack } from 'svelte';
+  import { plainSnippet } from '../../activity';
   import { t, type Key } from '../../i18n.svelte';
-  import { chipLabel } from '../../profiles/profiles';
+  import { chipBeside, chipLabel } from '../../profiles/profiles';
   import { app } from '../../state.svelte';
   import type { Diff, SessionCost as Cost } from '../../types';
   import AgentGlyph from '../ui/AgentGlyph.svelte';
@@ -15,6 +16,7 @@
   const workLogView = preload(() => import('./WorkLog.svelte'));
   const gitView = () => import('../../git/PanelGit.svelte');
   import SessionCost from './SessionCost.svelte';
+  import PlanLimits from './PlanLimits.svelte';
   import { formatCost } from '../../usage/format';
   import GitPullRequest from '@lucide/svelte/icons/git-pull-request';
   import GitBranch from '@lucide/svelte/icons/git-branch';
@@ -40,7 +42,7 @@
   const line = $derived(lineId ? app.data.lines.find((l) => l.line.id === lineId) : undefined);
   const act = $derived(lineId ? app.data.activity[lineId] : undefined);
   const sessions = $derived(line ? sessionsAvailable(app.agents, line.line.agent) : true);
-  const chip = $derived(item?.termId ? app.data.terms.find((x) => x.id === item.termId)?.profile : undefined);
+  const chip = $derived(chipBeside(item?.termId ? app.data.terms.find((x) => x.id === item.termId)?.profile : undefined, act?.cost));
   const repo = $derived(inRepo(line?.line));
   const todosDone = $derived(act?.todos.filter((x) => x.state === 'completed').length ?? 0);
 
@@ -219,13 +221,14 @@
       </p>
       {#if act?.cost}<p class="profile faint mono" data-tour="session-cost" title={t('cost.hint', { date: act.cost.pricesAsOf })}>{costLine(act.cost)}</p>{/if}
       {#if chip}<p class="profile faint" title={t('profile.label')}>{chipLabel(chip, (e) => t('profile.effortOf', { effort: t(`effort.${e}` as Key).toLowerCase() }))}</p>{/if}
+      <PlanLimits agent={line.line.agent} />
     </header>
     <PanelActions {line} />
     <div class="scroll" role="presentation" onpointerdown={dragDown} onclickcapture={swallowClick}>
       {#if act}
         {#if act.lastAssistantText}
           <Section id="last" order={orderOf('last')} title={t('panel.lastMessage')}>
-            <p class="msg">{act.lastAssistantText.replace(/`/g, '')}</p>
+            <p class="msg">{plainSnippet(act.lastAssistantText)}</p>
           </Section>
         {/if}
         {#if act.workLog.length}

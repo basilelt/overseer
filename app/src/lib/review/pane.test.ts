@@ -6,6 +6,23 @@ const one = (tabs: string[], active = tabs[0] ?? null): Layout => ({ ...EMPTY_LA
 const two = (a: string[], b: string[], split: Layout['split'] = 'horizontal'): Layout => ({ split, panes: [{ tabs: a, active: a[0] ?? null }, { tabs: b, active: b[0] ?? null }], focused: 0, ratio: 0.5 });
 
 describe('openBeside', () => {
+  it('moves a review open as a tab of the only pane beside instead of duplicating it', () => {
+    const l = openBeside(one(['line:a', 'review:line:a'], 'line:a'), 0, 'review:line:a');
+    expect(l.panes).toEqual([
+      { tabs: ['line:a'], active: 'line:a' },
+      { tabs: ['review:line:a'], active: 'review:line:a' },
+    ]);
+    expect(l.focused).toBe(0);
+  });
+
+  it('moves the active review tab of the only pane beside and activates its neighbour', () => {
+    const l = openBeside(one(['line:a', 'review:line:a'], 'review:line:a'), 0, 'review:line:a');
+    expect(l.panes).toEqual([
+      { tabs: ['line:a'], active: 'line:a' },
+      { tabs: ['review:line:a'], active: 'review:line:a' },
+    ]);
+  });
+
   it('splits right and keeps the agent pane focused', () => {
     const l = openBeside(one(['line:a', 'line:b'], 'line:a'), 0, 'review:line:a');
     expect(l.split).toBe('horizontal');

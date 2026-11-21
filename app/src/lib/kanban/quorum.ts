@@ -1,10 +1,10 @@
 import type { AgentInfo, Quorum, Task, TaskVotes } from '../types';
 import { isAgentId } from '../agents';
 
-export const ORCHESTRATORS = ['claude', 'codex'];
 export const MAX_REVIEWERS = 2;
 
-export const canOrchestrate = (agent: string): boolean => ORCHESTRATORS.includes(agent);
+// every CLI Overseer supports can orchestrate a quorum; only the shell cannot
+export const canOrchestrate = (agent: string): boolean => isAgentId(agent);
 
 const installed = (agents: AgentInfo[]) => agents.filter((a) => a.installed && isAgentId(a.id)).map((a) => a.id);
 

@@ -79,6 +79,7 @@ enum St {
 }
 
 struct Vt {
+    st: St,
     cols: usize,
     rows: usize,
     screen: Vec<Vec<Cell>>,
@@ -100,6 +101,7 @@ fn blank_screen(cols: usize, rows: usize) -> Vec<Vec<Cell>> {
 impl Vt {
     fn new(cols: usize, rows: usize) -> Vt {
         Vt {
+            st: St::Ground,
             cols,
             rows,
             screen: blank_screen(cols, rows),
@@ -283,7 +285,7 @@ impl Vt {
     }
 
     fn feed(&mut self, text: &str) {
-        let mut st = St::Ground;
+        let mut st = std::mem::replace(&mut self.st, St::Ground);
         for c in text.chars() {
             st = match st {
                 St::Ground => match c {
@@ -370,6 +372,68 @@ impl Vt {
                     _ => St::Str,
                 },
             };
+        }
+        self.st = st;
+    }
+}
+
+pub struct Screen {
+    vt: Vt,
+    pending: Vec<u8>,
+    fed: u64,
+}
+
+impl Screen {
+    pub fn new(cols: u16, rows: u16, at: u64) -> Screen {
+        let cols = cols.clamp(1, 1000) as usize;
+        let rows = rows.clamp(1, 1000) as usize;
+        Screen {
+            vt: Vt::new(cols, rows),
+            pending: vec![],
+            fed: at,
+        }
+    }
+
+    pub fn size(&self) -> (u16, u16) {
+        (self.vt.cols as u16, self.vt.rows as u16)
+    }
+
+    pub fn fed(&self) -> u64 {
+        self.fed
+    }
+
+    pub fn advance(&mut self, bytes: &[u8]) {
+        self.fed += bytes.len() as u64;
+        self.pending.extend_from_slice(bytes);
+        let buf = std::mem::take(&mut self.pending);
+        let mut rest = &buf[..];
+        loop {
+            match std::str::from_utf8(rest) {
+                Ok(t) => {
+                    self.vt.feed(t);
+                    break;
+                }
+                Err(e) => {
+                    let (ok, tail) = rest.split_at(e.valid_up_to());
+                    self.vt.feed(&String::from_utf8_lossy(ok));
+                    match e.error_len() {
+                        None => {
+                            self.pending = tail.to_vec();
+                            break;
+                        }
+                        Some(n) => {
+                            self.vt.feed("\u{fffd}");
+                            rest = &tail[n..];
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    pub fn grid(&self) -> Grid {
+        Grid {
+            rows: self.vt.screen.clone(),
         }
     }
 }
@@ -537,6 +601,21 @@ pub fn keys_route(ctx: &Ctx, id: &str, body: &Value) -> (u16, Value) {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_screen_fed_in_chunks_matches_one_render_even_split_inside_a_character_or_escape() {
+        let bytes = "\x1b[2J\x1b[2;3H\x1b[2mdim\x1b[0m \u{2500}\u{2500} \u{1f600}\x1b[5;1H> typed"
+            .as_bytes();
+        let whole = render(bytes, 30, 6).ansi();
+        for step in [1, 2, 3, 7] {
+            let mut s = Screen::new(30, 6, 0);
+            for c in bytes.chunks(step) {
+                s.advance(c);
+            }
+            assert_eq!(s.grid().ansi(), whole, "step {step}");
+            assert_eq!(s.fed(), bytes.len() as u64);
+        }
+    }
+
     use super::*;
 
     fn text(b: &str, cols: u16, rows: u16) -> String {

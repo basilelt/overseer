@@ -192,6 +192,21 @@ pub fn leases(root: &Path) -> HashMap<String, u32> {
         .collect()
 }
 
+// An unparsable lock file (torn read while Vibe acquires the lease) counts as open.
+pub fn open(home: &Path, id: &str, is_alive: impl Fn(u32) -> bool) -> bool {
+    if !valid_id(id) {
+        return false;
+    }
+    let lock = root(home).join("active").join(format!("{id}.lock.json"));
+    if !lock.is_file() {
+        return false;
+    }
+    match json(&lock, 4096).and_then(|v| v["process_id"].as_u64()) {
+        Some(p) => p > 0 && p <= u32::MAX as u64 && is_alive(p as u32),
+        None => true,
+    }
+}
+
 fn newest_journal(dir: &Path) -> Option<PathBuf> {
     std::fs::read_dir(dir.join("journal"))
         .ok()?
@@ -245,8 +260,95 @@ pub fn sessions(home: &Path) -> Vec<Session> {
     out
 }
 
+pub struct Usage {
+    pub input: u64,
+    pub cached: u64,
+    pub output: u64,
+    pub at: i64,
+    pub model: Option<String>,
+}
+
+pub fn usage(dir: &Path) -> Option<Usage> {
+    let h = head(dir)?;
+    let v = json(&h.generation.join("projection-state.json"), MAX_DOC)?;
+    let s = &v["snapshot"]["session"];
+    let t = &s["tokenUsage"];
+    if !t.is_object() {
+        return None;
+    }
+    let n = |k: &str| t[k].as_u64().unwrap_or(0);
+    Some(Usage {
+        input: n("inputTokens"),
+        cached: n("cachedInputTokens"),
+        output: n("outputTokens"),
+        at: s["updatedAt"].as_i64().unwrap_or(0),
+        model: meta(&dir.join("meta.json")).and_then(|m| m.model),
+    })
+}
+
 pub fn find(home: &Path, session_id: &str) -> Option<PathBuf> {
     session_dir(home, session_id)
+}
+
+pub fn pending(home: &Path, known: &[Session], is_alive: impl Fn(u32) -> bool) -> Vec<Session> {
+    let root = root(home);
+    let mut taken: std::collections::HashSet<u32> = known.iter().filter_map(|s| s.pid).collect();
+    let mut out = vec![];
+    let mut found: Vec<(String, u32)> = leases(&root).into_iter().collect();
+    found.sort();
+    for (id, pid) in found {
+        let dir = root.join("unified").join(&id);
+        if dir.join("meta.json").exists() || !is_alive(pid) || !taken.insert(pid) {
+            continue;
+        }
+        let lock = root.join("active").join(format!("{id}.lock.json"));
+        let started = json(&lock, 4096)
+            .and_then(|v| parse_rfc3339(v["acquired_at"].as_str()?))
+            .filter(|ms| *ms > 0);
+        out.push(Session {
+            id,
+            cwd: None,
+            started_ms: started,
+            activity_ms: mtime_ms(&lock),
+            dir,
+            title: None,
+            archived: false,
+            model: None,
+            pid: Some(pid),
+        });
+    }
+    out
+}
+
+pub fn watch_leases(home: &Path, poke: impl Fn()) {
+    use notify::{RecursiveMode, Watcher};
+    let root = root(home);
+    let active = root.join("active");
+    let (tx, rx) = std::sync::mpsc::channel::<notify::Result<notify::Event>>();
+    let Ok(mut w) = notify::recommended_watcher(tx) else {
+        return;
+    };
+    let mut armed = w.watch(&active, RecursiveMode::NonRecursive).is_ok();
+    if w.watch(&root, RecursiveMode::NonRecursive).is_err() && !armed {
+        return;
+    }
+    for ev in rx {
+        let Ok(ev) = ev else {
+            continue;
+        };
+        if !armed {
+            armed = w.watch(&active, RecursiveMode::NonRecursive).is_ok();
+        }
+        let lease = |p: &PathBuf| {
+            p == &active
+                || p.parent() == Some(active.as_path())
+                    && p.file_name()
+                        .is_some_and(|n| n.to_string_lossy().ends_with(".lock.json"))
+        };
+        if !ev.kind.is_access() && ev.paths.iter().any(lease) {
+            poke();
+        }
+    }
 }
 
 pub fn stamp(dir: &Path) -> u64 {
@@ -262,6 +364,85 @@ pub fn stamp(dir: &Path) -> u64 {
     };
     let j = newest_journal(dir).map_or(0, |p| st(&p));
     st(&dir.join("CURRENT")).wrapping_add(j)
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Turn {
+    pub running: bool,
+    pub done_ms: i64,
+}
+
+const SUBMIT_GRACE_MS: i64 = 5_000;
+const TURN_TAIL: u64 = 512 << 10;
+const TURN_KEY: &[u8] = b"\"latestTurn\":{";
+
+type Turns = HashMap<PathBuf, (u64, Option<Turn>)>;
+
+static TURNS: Mutex<Option<Turns>> = Mutex::new(None);
+
+fn turn_of(v: &Value, fallback_ms: i64) -> Option<Turn> {
+    let status = v["status"].as_str()?;
+    Some(Turn {
+        running: matches!(status, "in_progress" | "running"),
+        done_ms: v["completedAt"].as_i64().unwrap_or(fallback_ms),
+    })
+}
+
+fn last_turn(bytes: &[u8], fallback_ms: i64) -> Option<Turn> {
+    let at = bytes.windows(TURN_KEY.len()).rposition(|w| w == TURN_KEY)? + TURN_KEY.len() - 1;
+    let end = at + bytes[at..].iter().position(|b| *b == b'}')? + 1;
+    turn_of(&serde_json::from_slice(&bytes[at..end]).ok()?, fallback_ms)
+}
+
+fn read_turn(dir: &Path) -> Option<Turn> {
+    let h = head(dir)?;
+    let journal = journal_path(dir, &h.manifest);
+    let fallback_ms = journal
+        .as_deref()
+        .map_or(0, mtime_ms)
+        .max(mtime_ms(&dir.join("CURRENT")));
+    if let Some(p) = &journal {
+        let mut f = std::fs::File::open(p).ok()?;
+        let len = f.metadata().ok()?.len();
+        let whole = len <= TURN_TAIL;
+        let mut buf = vec![];
+        f.seek(SeekFrom::Start(len.saturating_sub(TURN_TAIL)))
+            .ok()?;
+        f.take(TURN_TAIL).read_to_end(&mut buf).ok()?;
+        if let Some(t) = last_turn(&buf, fallback_ms) {
+            return Some(t);
+        }
+        if !whole {
+            return None;
+        }
+    }
+    let ps = file_name(&h.manifest["projection_state"]["path"])?;
+    let doc = json(&h.generation.join(ps), MAX_DOC)?;
+    turn_of(&doc["snapshot"]["latestTurn"], fallback_ms)
+}
+
+pub fn idle(turn: Option<Turn>, hook: (bool, i64), submit_ms: i64, now_ms: i64) -> bool {
+    let (hook_busy, hook_at) = hook;
+    turn.is_some_and(|t| {
+        !t.running && !(hook_busy && hook_at > t.done_ms) && now_ms - submit_ms > SUBMIT_GRACE_MS
+    })
+}
+
+pub fn turn(dir: &Path) -> Option<Turn> {
+    let key = stamp(dir);
+    let mut g = TURNS.lock().unwrap_or_else(|e| e.into_inner());
+    let m = g.get_or_insert_with(HashMap::new);
+    if let Some((k, t)) = m.get(dir) {
+        if *k == key {
+            return *t;
+        }
+    }
+    if m.len() > 4096 {
+        m.clear();
+    }
+    let t = read_turn(dir);
+    m.insert(dir.to_path_buf(), (key, t));
+    t
 }
 
 fn hash(v: &Value) -> u64 {
@@ -603,6 +784,84 @@ mod tests {
         v.iter().map(id_of).collect()
     }
 
+    fn lease(h: &Path, id: &str, pid: u32) {
+        let a = root(h).join("active");
+        std::fs::create_dir_all(&a).unwrap();
+        std::fs::write(
+            a.join(format!("{id}.lock.json")),
+            json!({"acquired_at": "2026-11-11T10:00:00.000Z", "lease_version": 1,
+                "process_id": pid, "session_id": id})
+            .to_string(),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn a_lease_without_a_store_yet_is_a_pending_session() {
+        let h = tmp("pending");
+        lease(&h, "p1", 4242);
+        let p = pending(&h, &sessions(&h), |pid| pid == 4242);
+        assert_eq!(p.len(), 1);
+        assert_eq!(p[0].id, "p1");
+        assert_eq!(p[0].pid, Some(4242));
+        assert!(p[0].cwd.is_none());
+        assert!(p[0].started_ms.is_some_and(|ms| ms > 0));
+    }
+
+    #[test]
+    fn pending_skips_stored_dead_and_shared_process_leases() {
+        let h = tmp("pending-skip");
+        session(&h, "s1", meta_json("s1", "/w", None), 1, &[], "");
+        lease(&h, "s1", 10);
+        lease(&h, "dead", 11);
+        lease(&h, "second", 10);
+        lease(&h, "ok", 12);
+        let known = sessions(&h);
+        let p = pending(&h, &known, |pid| pid != 11);
+        assert_eq!(p.iter().map(|s| s.id.as_str()).collect::<Vec<_>>(), ["ok"]);
+        assert!(pending(&h, &known, |_| false).is_empty());
+    }
+
+    #[test]
+    fn a_lease_appearing_or_going_wakes_the_scanner() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::sync::Arc;
+        let h = tmp("watch");
+        std::fs::create_dir_all(root(&h)).unwrap();
+        let hits = Arc::new(AtomicUsize::new(0));
+        let n = hits.clone();
+        let home = h.clone();
+        std::thread::spawn(move || {
+            watch_leases(&home, || {
+                n.fetch_add(1, Ordering::SeqCst);
+            })
+        });
+        let wait = |want: usize| {
+            let end = std::time::Instant::now() + std::time::Duration::from_secs(10);
+            while hits.load(Ordering::SeqCst) < want {
+                assert!(std::time::Instant::now() < end, "no wake-up");
+                std::thread::sleep(std::time::Duration::from_millis(20));
+            }
+        };
+        std::thread::sleep(std::time::Duration::from_millis(200));
+        let a = root(&h).join("active");
+        std::fs::create_dir_all(&a).unwrap();
+        wait(1);
+        std::thread::sleep(std::time::Duration::from_millis(300));
+        let before = hits.load(Ordering::SeqCst);
+        lease(&h, "w1", 1);
+        wait(before + 1);
+        let before = hits.load(Ordering::SeqCst);
+        std::thread::sleep(std::time::Duration::from_millis(300));
+        let before = before.max(hits.load(Ordering::SeqCst));
+        std::fs::write(a.join(".registry"), "x").unwrap();
+        std::fs::create_dir_all(root(&h).join("unified/x")).unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(300));
+        assert_eq!(hits.load(Ordering::SeqCst), before);
+        std::fs::remove_file(a.join("w1.lock.json")).unwrap();
+        wait(before + 1);
+    }
+
     #[test]
     fn rejects_unsafe_session_ids() {
         assert!(valid_id("2aea6685-2327-ee7a-3ac1-0a194fdd8de9"));
@@ -787,5 +1046,142 @@ mod tests {
         let seg = dir.join("journal").join(format!("{:016}.jsonl", 101));
         std::fs::write(&seg, delta(1, json!([]))).unwrap();
         assert_ne!(stamp(&dir), a);
+    }
+
+    #[test]
+    fn open_follows_the_lease_lock_file() {
+        let h = tmp("open");
+        session(&h, "s1", meta_json("s1", "/w", None), 1, &[], "");
+        let active = root(&h).join("active");
+        std::fs::create_dir_all(&active).unwrap();
+        let lock = active.join("s1.lock.json");
+        assert!(!open(&h, "s1", |_| true));
+        assert!(!open(&h, "../s1", |_| true));
+        std::fs::write(
+            &lock,
+            json!({"lease_version": 1, "process_id": 42}).to_string(),
+        )
+        .unwrap();
+        assert!(open(&h, "s1", |p| p == 42));
+        assert!(!open(&h, "s1", |_| false));
+        std::fs::write(&lock, "{\"process_id\":").unwrap();
+        assert!(open(&h, "s1", |_| false));
+        std::fs::write(&lock, json!({"lease_version": 1}).to_string()).unwrap();
+        assert!(open(&h, "s1", |_| false));
+    }
+
+    fn envelope(status: &str, completed: Option<i64>) -> String {
+        let done = completed.map_or(String::new(), |c| format!("\"completedAt\":{c},"));
+        format!(
+            "{{\"payload\":{{\"delta\":[{{\"op\":\"set_envelope\",\"state\":{{\"activeCallbacks\":[],\"history\":{{\"entries\":[]}},\"latestTurn\":{{{done}\"id\":\"turn-1\",\"queueItemId\":\"q\",\"startedAt\":1795077719099,\"status\":\"{status}\"}},\"session\":{{\"id\":\"s1\"}}}}}}]}},\"sequence\":7,\"type\":\"projection_delta\"}}\n"
+        )
+    }
+
+    fn journal_of(dir: &Path) -> PathBuf {
+        std::fs::read_dir(dir.join("journal"))
+            .unwrap()
+            .flatten()
+            .next()
+            .unwrap()
+            .path()
+    }
+
+    #[test]
+    fn turn_follows_the_last_envelope_of_the_journal() {
+        let h = tmp("turn");
+        let dir = session(&h, "s1", meta_json("s1", "/w", None), 1, &[], "");
+        assert_eq!(turn(&dir).map(|t| t.running), None);
+        let j = journal_of(&dir);
+        std::fs::write(&j, envelope("in_progress", None).repeat(3)).unwrap();
+        assert_eq!(turn(&dir).map(|t| t.running), Some(true));
+        let all = format!(
+            "{}{}",
+            envelope("in_progress", None),
+            envelope("completed", Some(1795084789346))
+        );
+        std::fs::write(&j, all).unwrap();
+        assert_eq!(
+            turn(&dir),
+            Some(Turn {
+                running: false,
+                done_ms: 1795084789346
+            })
+        );
+    }
+
+    #[test]
+    fn turn_reads_the_snapshot_when_the_journal_was_rotated_empty() {
+        let h = tmp("turn-snap");
+        let dir = session(&h, "s1", meta_json("s1", "/w", None), 1, &[], "");
+        let ps = dir.join("generations/0000000000000001/projection-state.json");
+        std::fs::write(
+            &ps,
+            json!({"snapshot": {"history": {"entries": []},
+                "latestTurn": {"completedAt": 42, "id": "t", "startedAt": 1, "status": "completed", "stopReason": null}}})
+            .to_string(),
+        )
+        .unwrap();
+        assert_eq!(
+            turn(&dir),
+            Some(Turn {
+                running: false,
+                done_ms: 42
+            })
+        );
+    }
+
+    #[test]
+    fn turn_without_a_completion_time_uses_the_store_mtime_and_a_cancelled_turn_is_over() {
+        let h = tmp("turn-cancel");
+        let dir = session(&h, "s1", meta_json("s1", "/w", None), 1, &[], "");
+        std::fs::write(journal_of(&dir), envelope("cancelled", None)).unwrap();
+        let t = turn(&dir).unwrap();
+        assert!(!t.running && t.done_ms > 0);
+    }
+
+    #[test]
+    fn turn_is_unknown_when_a_long_journal_hides_its_envelope() {
+        let h = tmp("turn-long");
+        let dir = session(&h, "s1", meta_json("s1", "/w", None), 1, &[], "");
+        let ps = dir.join("generations/0000000000000001/projection-state.json");
+        std::fs::write(
+            &ps,
+            json!({"snapshot": {"latestTurn": {"completedAt": 42, "status": "completed"}}})
+                .to_string(),
+        )
+        .unwrap();
+        let filler = format!("{{\"pad\":\"{}\"}}\n", "x".repeat(TURN_TAIL as usize));
+        std::fs::write(journal_of(&dir), filler).unwrap();
+        assert_eq!(turn(&dir), None);
+    }
+
+    #[test]
+    fn turn_is_cached_until_the_store_changes() {
+        let h = tmp("turn-cache");
+        let dir = session(&h, "s1", meta_json("s1", "/w", None), 1, &[], "");
+        let j = journal_of(&dir);
+        std::fs::write(&j, envelope("in_progress", None)).unwrap();
+        assert_eq!(turn(&dir).map(|t| t.running), Some(true));
+        std::fs::write(&j, envelope("completed", Some(5))).unwrap();
+        assert_eq!(turn(&dir).map(|t| t.running), Some(false));
+    }
+
+    #[test]
+    fn idle_needs_a_finished_turn_older_than_the_last_submit_grace_and_any_busy_hook() {
+        let over = Some(Turn {
+            running: false,
+            done_ms: 1_000,
+        });
+        let running = Some(Turn {
+            running: true,
+            done_ms: 0,
+        });
+        assert!(idle(over, (false, 1_100), 0, 100_000));
+        assert!(idle(over, (true, 900), 0, 100_000));
+        assert!(!idle(over, (true, 2_000), 0, 100_000));
+        assert!(!idle(running, (false, 1_100), 0, 100_000));
+        assert!(!idle(None, (false, 1_100), 0, 100_000));
+        assert!(!idle(over, (false, 1_100), 98_000, 100_000));
+        assert!(idle(over, (false, 1_100), 90_000, 100_000));
     }
 }

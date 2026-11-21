@@ -88,4 +88,15 @@ await test('answers the phone device key with a key, a fingerprint and an instal
   assert.ok(!sandbox.__qaLog.includes('unhandled direct_device_key'));
 });
 
+await test('reports a failed connection to a host that is not local when asked with ?qafail', async () => {
+  const seen = [];
+  const id = sandbox.__TAURI_INTERNALS__.transformCallback((m) => seen.push(m));
+  sandbox.location.search = '?qafail=1';
+  await invoke('conn_connect', { target: { kind: 'direct', host: 'h', label: 'h' }, onState: { id } });
+  sandbox.location.search = '';
+  assert.equal(seen.length, 1);
+  assert.equal(seen[0].message.phase, 'error');
+  assert.match(seen[0].message.error, /connection refused/);
+});
+
 process.exit(failed);
