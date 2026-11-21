@@ -125,6 +125,31 @@ describe('several hosts in one window', () => {
     expect(m.subCount).toBe(1);
   });
 
+  it('ignores a refresh of the previous host that resolves after the switch', async () => {
+    await app.connect(prod, 'add');
+    const prodClient = made[0] as Made;
+    const real = prodClient.request.bind(prodClient);
+    const lines = await real<{ line: { id: string } }[]>('GET', '/v1/lines');
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    let seen = false;
+    vi.spyOn(prodClient, 'request').mockImplementation(async (method: string, path: string, body?: unknown) => {
+      if (method === 'GET' && path.startsWith('/v1/lines') && !path.includes('/activity')) {
+        seen = true;
+        await gate;
+        return [{ ...lines[0], line: { ...lines[0].line, id: 'ln_from_prod' } }] as never;
+      }
+      return real(method, path, body);
+    });
+    const pending = app.refresh();
+    await vi.waitFor(() => expect(seen).toBe(true));
+    await app.switchHost('local');
+    release();
+    await pending;
+    expect(app.client).toBe(m);
+    expect(app.data.lines.some((l) => l.line.id === 'ln_from_prod')).toBe(false);
+  });
+
   it('lists the sessions of a background host from its own daemon, apart from the main area', async () => {
     await app.connect(prod, 'add');
     await app.switchHost('local');
