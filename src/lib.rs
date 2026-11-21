@@ -630,8 +630,11 @@ fn claude_found_from(
 const CODEX_SLACK_MS: i64 = 2_000;
 const CODEX_TYPED_MS: i64 = 3_000;
 
-fn codex_found(ctx: &Ctx, hooks: &HashMap<String, HookState>) -> Vec<Found> {
-    let threads = codex::threads(&ctx.codex_dir, &ctx.state_dir);
+fn codex_found(
+    ctx: &Ctx,
+    threads: Vec<codex::Thread>,
+    hooks: &HashMap<String, HookState>,
+) -> Vec<Found> {
     let mut procs: Vec<(u32, Vec<String>, Option<i64>)> = codex::fold_wrappers(
         ctx.probe
             .list()
@@ -683,7 +686,10 @@ fn codex_found(ctx: &Ctx, hooks: &HashMap<String, HookState>) -> Vec<Found> {
             owner[i] = Some(j);
         }
     }
-    let open = |i: usize| !threads[i].archived && threads[i].cwd.is_some();
+    let bound: HashSet<String> = term::all().iter().filter_map(|x| x.thread()).collect();
+    let open = |i: usize| {
+        !threads[i].archived && threads[i].cwd.is_some() && !bound.contains(&threads[i].id)
+    };
     let names_other =
         |argv: &[String], id: &str| argv.iter().any(|a| a != id && ids.contains(a.as_str()));
     let mut newest: Vec<usize> = (0..threads.len()).filter(|i| open(*i)).collect();
@@ -774,6 +780,7 @@ fn codex_found(ctx: &Ctx, hooks: &HashMap<String, HookState>) -> Vec<Found> {
             }
             f.cwd = t.cwd.unwrap_or_default();
             f.branch = t.branch;
+            f.title = t.title;
             f.activity_ms = t
                 .activity_ms
                 .max(t.started_ms.unwrap_or(0))
@@ -853,8 +860,12 @@ fn gemini_found(ctx: &Ctx, hooks: &HashMap<String, HookState>) -> Vec<Found> {
         .collect()
 }
 
-fn vibe_found(ctx: &Ctx, hooks: &HashMap<String, HookState>) -> Vec<Found> {
-    let mut sessions = vibe::sessions(&ctx.vibe_dir);
+fn vibe_found(
+    ctx: &Ctx,
+    hooks: &HashMap<String, HookState>,
+    sessions: &[vibe::Session],
+) -> Vec<Found> {
+    let mut sessions = sessions.to_vec();
     if sessions.is_empty() {
         return vec![];
     }
@@ -918,6 +929,16 @@ fn vibe_found(ctx: &Ctx, hooks: &HashMap<String, HookState>) -> Vec<Found> {
                         t.submit_ms(),
                         t.turn_busy(ctx.now_ms),
                     );
+                    if f.busy
+                        && vibe::idle(
+                            vibe::turn(&s.dir),
+                            (h.busy, h.at_ms),
+                            t.submit_ms(),
+                            ctx.now_ms,
+                        )
+                    {
+                        f.busy = false;
+                    }
                 }
             }
             f.cwd = s.cwd.unwrap_or_default();
@@ -1203,6 +1224,9 @@ fn scan_now(ctx: &Ctx) -> Result<Vec<Line>, String> {
     mkdir_private(&ctx.state_dir)
         .map_err(|e| format!("cannot create {}: {e}", ctx.state_dir.display()))?;
     let reg = registry::Registry::open(&ctx.state_dir)?;
+    // An empty process list is a failed probe (pid 1 always exists): it proves no loss.
+    let listed = std::cell::OnceCell::new();
+    let probe_ok = || *listed.get_or_init(|| !ctx.probe.list().is_empty());
     reg.conn
         .execute_batch("BEGIN IMMEDIATE")
         .map_err(|e| e.to_string())?;
@@ -1210,12 +1234,63 @@ fn scan_now(ctx: &Ctx) -> Result<Vec<Line>, String> {
     reg.conn
         .execute_batch("COMMIT")
         .map_err(|e| e.to_string())?;
+    let mut vibe_sessions = vibe::sessions(&ctx.vibe_dir);
+    let pending = vibe::pending(&ctx.vibe_dir, &vibe_sessions, |p| {
+        ctx.probe.info(p).is_some()
+    });
+    vibe_sessions.extend(pending);
+    let mid_turn = |h: &HookState| h.busy || h.needs_input || h.subagents != 0 || h.tasks != 0;
+    let stuck: Vec<(String, HookState)> = if vibe_sessions.is_empty() {
+        vec![]
+    } else {
+        reg.hook_sessions(agents::VIBE)?
+            .into_iter()
+            .filter(|(_, h)| mid_turn(h) || h.event != "SessionEnd")
+            .collect()
+    };
+    if !stuck.is_empty() && probe_ok() {
+        let known: HashMap<&str, &vibe::Session> =
+            vibe_sessions.iter().map(|s| (s.id.as_str(), s)).collect();
+        for (id, mut h) in stuck {
+            let Some(s) = known.get(id.as_str()) else {
+                continue;
+            };
+            if vibe::open(&ctx.vibe_dir, &id, |p| ctx.probe.info(p).is_some()) {
+                let over = h.busy
+                    && vibe::turn(&s.dir).is_some_and(|t| !t.running && h.at_ms <= t.done_ms);
+                if !over {
+                    continue;
+                }
+                h.event = "Stop".to_string();
+                h.busy = false;
+                h.needs_input = false;
+            } else {
+                h.event = "SessionEnd".to_string();
+                h.busy = false;
+                h.needs_input = false;
+                h.subagents = 0;
+                h.tasks = 0;
+            }
+            h.at_ms = h.at_ms.max(ctx.now_ms);
+            let _ = reg.put_hook_state(agents::VIBE, &id, &h);
+        }
+    }
     let hook_map = |agent| -> Result<HashMap<String, HookState>, String> {
         Ok(reg.hook_sessions(agent)?.into_iter().collect())
     };
+    let (codex_threads, codex_parents) = codex::load(&ctx.codex_dir, &ctx.state_dir);
+    let mut codex_threads = Some(codex_threads);
     let mut session_hooks: HashMap<&'static str, HashMap<String, HookState>> = HashMap::new();
     for a in agents::AGENTS.iter().filter(|a| a.sessions()) {
-        session_hooks.insert(a.id, hook_map(a.id)?);
+        let m = hook_map(a.id)?;
+        session_hooks.insert(
+            a.id,
+            if a.id == agents::CODEX {
+                codex::root_hooks(&m, &codex_parents)
+            } else {
+                m
+            },
+        );
     }
     let no_hooks = HashMap::new();
     let hooks_of = |id: &str| session_hooks.get(id).unwrap_or(&no_hooks);
@@ -1238,9 +1313,13 @@ fn scan_now(ctx: &Ctx) -> Result<Vec<Line>, String> {
             Some(agents::Transcript::Claude) => {
                 found.extend(claude_found(ctx, hooks, &reg.divergent(a.id)?))
             }
-            Some(agents::Transcript::Codex) => found.extend(codex_found(ctx, hooks)),
+            Some(agents::Transcript::Codex) => found.extend(codex_found(
+                ctx,
+                codex_threads.take().unwrap_or_default(),
+                hooks,
+            )),
             Some(agents::Transcript::Gemini) => found.extend(gemini_found(ctx, hooks)),
-            Some(agents::Transcript::Vibe) => found.extend(vibe_found(ctx, hooks)),
+            Some(agents::Transcript::Vibe) => found.extend(vibe_found(ctx, hooks, &vibe_sessions)),
             None => {}
         }
     }
@@ -1294,9 +1373,6 @@ fn scan_now(ctx: &Ctx) -> Result<Vec<Line>, String> {
     let mut lines = vec![];
     let mut upserted = vec![];
     let db = db_id(&ctx.state_dir);
-    // An empty process list is a failed probe (pid 1 always exists): it proves no loss.
-    let listed = std::cell::OnceCell::new();
-    let probe_ok = || *listed.get_or_init(|| !ctx.probe.list().is_empty());
     for (f, pid, term_id, info, pane, rss) in probed {
         let branch = f
             .branch

@@ -33,7 +33,7 @@ fn ids(q: &Value, key: &str, max: usize, err: &str) -> Res<Vec<&'static str>> {
     Ok(out)
 }
 
-pub fn parse(v: &Value, orchestrator: &str) -> Res<Option<Value>> {
+pub fn parse(v: &Value) -> Res<Option<Value>> {
     match v {
         Value::Null => return Ok(None),
         Value::Object(_) => {}
@@ -51,16 +51,7 @@ pub fn parse(v: &Value, orchestrator: &str) -> Res<Option<Value>> {
         2,
         "quorum.reviewers must list 1 or 2 agent ids",
     )?;
-    check_orchestrator(orchestrator)?;
     Ok(Some(json!({"workers": workers, "reviewers": reviewers})))
-}
-
-pub fn check_orchestrator(agent: &str) -> Res<()> {
-    if crate::agents::get(agent).is_some_and(|a| a.orchestrator) {
-        Ok(())
-    } else {
-        Err(bad("the quorum orchestrator must be claude or codex"))
-    }
 }
 
 fn list(q: &Value, key: &str) -> Vec<String> {
@@ -140,12 +131,16 @@ pub fn orchestrator_prompt(q: &Value) -> String {
     let reviewers = list(q, "reviewers");
     let voters = reviewers.len() + 1;
     format!(
-        "Quorum mode: you are the orchestrator of this task.\n\
+        "Quorum mode: you are the orchestrator of this task. Every tool named below is an Overseer MCP tool; \
+if you do not have them, run it in a shell as overseer tool <name> '<json arguments>', for example \
+overseer tool create_task '{{\"title\": \"...\", \"agent\": \"codex\"}}'.\n\
 1. Split the task into subtasks. Create each with create_task and set its agent to one of the workers ({workers}), \
 spreading them across different workers so that different agents check each other. Use dependsOn where order matters. \
 Subtasks start on their own, each in its own worktree and branch.\n\
 2. When a subtask is ready, Overseer messages you and starts its reviewers ({}). Inspect the subtask's worktree too \
-and vote with cast_vote (taskId, approve, reason). The result is accepted on {} of {voters} votes (the reviewers and you).\n\
+and vote with cast_vote (taskId, approve, reason), or without that tool run \
+overseer vote approve|reject \"<reason>\" --task <subtask id> in a shell. \
+The result is accepted on {} of {voters} votes (the reviewers and you).\n\
 3. Overseer messages you the outcome. Accepted: merge the subtask's branch into your own branch in your worktree. \
 Rejected: send_message the subtask with the reasons to fix; it is reviewed again when it is ready.\n\
 4. Wait for Overseer's messages instead of polling list_tasks. When every subtask is accepted and merged into your \
@@ -455,80 +450,67 @@ mod tests {
 
     #[test]
     fn parse_accepts_a_quorum_and_normalizes_it() {
-        let q = parse(
-            &json!({"workers": ["claude", "codex"], "reviewers": ["gemini"]}),
-            "claude",
-        )
-        .unwrap()
-        .unwrap();
+        let q = parse(&json!({"workers": ["claude", "codex"], "reviewers": ["gemini"]}))
+            .unwrap()
+            .unwrap();
         assert_eq!(
             q,
             json!({"workers": ["claude", "codex"], "reviewers": ["gemini"]})
         );
-        assert_eq!(parse(&Value::Null, "gemini").unwrap(), None);
+        assert_eq!(parse(&Value::Null).unwrap(), None);
     }
 
     #[test]
     fn parse_refuses_bad_shapes_with_the_contract_messages() {
-        let err = |v: Value, o: &str| parse(&v, o).unwrap_err().1;
+        let err = |v: Value| parse(&v).unwrap_err().1;
+        assert_eq!(err(json!("x")), "quorum must be an object or null");
         assert_eq!(
-            err(json!("x"), "claude"),
-            "quorum must be an object or null"
-        );
-        assert_eq!(
-            err(json!({"workers": [], "reviewers": ["codex"]}), "claude"),
+            err(json!({"workers": [], "reviewers": ["codex"]})),
             "quorum.workers must be a non-empty array of agent ids"
         );
         assert_eq!(
-            err(json!({"workers": [1], "reviewers": ["codex"]}), "claude"),
+            err(json!({"workers": [1], "reviewers": ["codex"]})),
             "quorum.workers must be a non-empty array of agent ids"
         );
         assert_eq!(
-            err(json!({"workers": ["codex"]}), "claude"),
+            err(json!({"workers": ["codex"]})),
             "quorum.reviewers must list 1 or 2 agent ids"
         );
         assert_eq!(
-            err(
-                json!({"workers": ["codex"], "reviewers": ["a", "b", "c"]}),
-                "claude"
-            ),
+            err(json!({"workers": ["codex"], "reviewers": ["a", "b", "c"]})),
             "quorum.reviewers must list 1 or 2 agent ids"
         );
         assert_eq!(
-            err(
-                json!({"workers": ["nope"], "reviewers": ["codex"]}),
-                "claude"
-            ),
+            err(json!({"workers": ["nope"], "reviewers": ["codex"]})),
             "unknown agent nope"
         );
         assert_eq!(
-            err(
-                json!({"workers": ["shell"], "reviewers": ["codex"]}),
-                "claude"
-            ),
+            err(json!({"workers": ["shell"], "reviewers": ["codex"]})),
             "shell cannot join a quorum"
         );
         assert_eq!(
-            err(
-                json!({"workers": ["codex", "codex"], "reviewers": ["codex"]}),
-                "claude"
-            ),
+            err(json!({"workers": ["codex", "codex"], "reviewers": ["codex"]})),
             "quorum.workers lists codex twice"
         );
         assert_eq!(
-            err(
-                json!({"workers": ["codex"], "reviewers": ["gemini", "gemini"]}),
-                "claude"
-            ),
+            err(json!({"workers": ["codex"], "reviewers": ["gemini", "gemini"]})),
             "quorum.reviewers lists gemini twice"
         );
-        assert_eq!(
-            err(
-                json!({"workers": ["codex"], "reviewers": ["claude"]}),
-                "gemini"
-            ),
-            "the quorum orchestrator must be claude or codex"
-        );
+    }
+
+    #[test]
+    fn every_cli_overseer_supports_can_join_a_quorum() {
+        let coding: Vec<&str> = crate::agents::AGENTS
+            .iter()
+            .filter(|a| a.coding())
+            .map(|a| a.id)
+            .collect();
+        assert!(coding.len() > 2, "{coding:?}");
+        for id in &coding {
+            let q = parse(&json!({"workers": [id], "reviewers": [coding[0]]})).unwrap();
+            assert!(q.is_some(), "{id} cannot be a quorum member");
+        }
+        assert!(!coding.contains(&"shell"));
     }
 
     #[test]
@@ -567,6 +549,8 @@ mod tests {
         assert!(p.contains("reviewers (claude, codex)"));
         assert!(p.contains("2 of 3 votes"));
         assert!(p.contains("instead of polling"));
+        assert!(p.contains("overseer vote approve|reject"));
+        assert!(p.contains("overseer tool <name> '<json arguments>'"));
     }
 
     #[test]

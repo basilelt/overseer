@@ -79,11 +79,13 @@ Write a task, pick the agent, its model and reasoning effort, and start it: Over
 worktree on a new branch and types the task into the agent. Tasks in the **Auto** column start on
 their own, in order, within your concurrency limit. A new task can be filled from the project's
 GitHub or GitLab issues or Jira tickets, and agents can read and update tasks through the
-built-in MCP server. Finished work waits in **Review**; a task moves to **Merged** by itself once
+built-in MCP server. Open a card and press **Edit** to change the task afterwards — its text,
+the agent CLI, model, effort, ticket, type or profile — and select any of its text to copy it.
+Finished work waits in **Review**; a task moves to **Merged** by itself once
 its branch lands in the default branch, **Closed** keeps the rest, and an agent moves its task
-back to In progress when work resumes. Tick **Quorum** on a Claude or Codex task and its agent
-splits the work between several agent CLIs; one or two other agents review each result and vote
-with the orchestrator, and only results a majority accepts are merged.
+back to In progress when work resumes. Tick **Quorum** on a task — with any agent CLI — and its
+agent splits the work between several agent CLIs; one or two other agents review each result and
+vote with the orchestrator, and only results a majority accepts are merged.
 
 ![Tasks](app/docs/screenshots/kanban-dark.png)
 
@@ -188,7 +190,10 @@ connect.
 
   <img src="app/docs/screenshots/sticky-notes-dark.png" width="720" alt="Sticky notes on a session">
 
-- **Usage and system monitor**: agent quotas, token usage, CPU and RAM in the title bar.
+- **Usage and system monitor**: agent quotas, token usage, CPU and RAM in the title bar. The usage
+  view lists every supported agent, with an **Agents** dropdown to show or hide each CLI. Plan
+  limit bars (Claude Code, Codex) carry a tick at the even pace and turn amber when you spend a
+  window faster than it resets; the side panel shows them for the selected session's CLI.
 - **Real cost per session and task**: what each session cost, from the token counts in its
   transcript, per model with cache reads and writes apart and model switches shown as their own
   cost. Task cards carry the total, and the usage view compares the cost per finished
@@ -204,7 +209,7 @@ connect.
   lists them and stops any one an agent left running in the background.
 - **Team mode**: a shared API merges every station's lines, relays commands between stations,
   and publishes events and signed webhooks for other tools.
-- **Updates** in the app, and a feedback button with optional diagnostics.
+- **Updates** in the app, and a feedback button with optional diagnostics, filed as a GitHub issue by the agent CLI of your choice.
 - **Record a bug**: show a problem while Overseer logs your clicks, shortcuts, views and errors next to a screen video, then send both in one report. Replay plays the video and the timeline in sync; what you type is never logged.
 
 ## Install

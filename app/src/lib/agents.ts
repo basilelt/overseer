@@ -17,6 +17,8 @@ const NAMES: Record<string, string> = {
 
 export const SHORT_NAMES: Record<string, string> = { claude: 'Claude', codex: 'Codex', gemini: 'Gemini', vibe: 'Vibe', shell: 'Shell' };
 
+export const AGENT_IDS: string[] = Object.keys(NAMES);
+
 export const FALLBACK_AGENTS: AgentInfo[] = [
   { id: 'claude', name: NAMES.claude, installed: true, models: ['opus', 'sonnet', 'haiku'], efforts: ALL_EFFORTS, resume: true, verified: true, sessions: true, turns: true },
   { id: 'codex', name: NAMES.codex, installed: true, efforts: ALL_EFFORTS, resume: true, verified: false, sessions: true, turns: true },

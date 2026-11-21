@@ -91,7 +91,6 @@ export const DAEMON_ERRORS = {
   termSize: { text: 'cols and rows must be integers in 1..=1000' },
   termSizeRequired: { text: 'cols and rows required' },
   shellInQuorum: { text: 'shell cannot join a quorum' },
-  quorumOrchestrator: { text: 'the quorum orchestrator must be claude or codex' },
   sessionTaskStatus: { text: 'a session task follows its session: status must be one of in_progress, in_testing, merged, completed' },
   bodyTooLarge: { text: 'request body exceeds 1 MiB' },
 } as const;
@@ -1775,7 +1774,7 @@ export class MockDaemon implements DaemonClient {
     return { dryRun: false, files: files.filter((f) => body.files!.includes(f.path)).map((f) => ({ ...f, written: true, backup: `${f.path}.bak-202610291200` })) };
   }
 
-  private quorumOf(q: unknown, agent: string): Quorum | null {
+  private quorumOf(q: unknown): Quorum | null {
     if (q === null) return null;
     if (typeof q !== 'object' || Array.isArray(q)) throw new DaemonError(400, 'quorum must be an object or null');
     const { workers, reviewers } = q as Record<string, unknown>;
@@ -1790,13 +1789,21 @@ export class MockDaemon implements DaemonClient {
       const dup = list.find((id, i) => list.indexOf(id) !== i);
       if (dup) throw new DaemonError(400, `quorum.${name} lists ${dup} twice`);
     }
-    if (agent !== 'claude' && agent !== 'codex') throw new DaemonError(400, 'the quorum orchestrator must be claude or codex');
     return { workers: [...workers], reviewers: [...reviewers] };
+  }
+
+  // mirrors the daemon's agent_of: only the CLIs Overseer supports may run a task
+  private agentOf(v: unknown): string | undefined {
+    if (v == null) return undefined;
+    const ids = MOCK_AGENTS.filter((a) => !isShellId(a.id)).map((a) => a.id);
+    if (typeof v === 'string' && ids.includes(v)) return v;
+    throw new DaemonError(400, `agent must be one of ${ids.join(', ')}`);
   }
 
   private createTask(body: NewTask): Task {
     if (!body?.title?.trim()) throw new DaemonError(400, 'title required');
-    const quorum = body.quorum === undefined ? undefined : this.quorumOf(body.quorum, body.agent);
+    if (body.agent != null) this.agentOf(body.agent);
+    const quorum = body.quorum === undefined ? undefined : this.quorumOf(body.quorum);
     const taskType = this.taskTypeOf(body.taskType);
     if (quorum && (body as any).parentId) throw new DaemonError(400, 'a subtask cannot run a quorum');
     const now = new Date().toISOString();
@@ -1837,6 +1844,38 @@ export class MockDaemon implements DaemonClient {
     if (v == null || v === '') return undefined;
     if (typeof v === 'string' && TASK_TYPES.includes(v as TaskType)) return v as TaskType;
     throw new DaemonError(400, `taskType must be one of ${TASK_TYPES.join(', ')}`);
+  }
+
+  /** The same field checks the daemon's PATCH does, so the mock never accepts what the daemon refuses. */
+  private validateTaskPatch(patch: Record<string, any>, t: Task) {
+    if ('title' in patch) {
+      if (typeof patch.title !== 'string') throw new DaemonError(400, 'title must be a string');
+      if (!patch.title.trim()) throw new DaemonError(400, 'title must not be empty');
+      patch.title = patch.title.trim();
+    }
+    if ('description' in patch && typeof patch.description !== 'string') throw new DaemonError(400, 'description must be a string');
+    if ('model' in patch) {
+      if (typeof patch.model !== 'string') throw new DaemonError(400, 'model must be a string');
+      patch.model = patch.model.trim();
+    }
+    if ('agent' in patch) {
+      const ids = MOCK_AGENTS.filter((a) => a.id !== 'shell').map((a) => a.id);
+      if (patch.agent == null) throw new DaemonError(400, 'agent must not be null');
+      if (typeof patch.agent !== 'string' || !ids.includes(patch.agent)) throw new DaemonError(400, `agent must be one of ${ids.join(', ')}`);
+    }
+    if ('effort' in patch && patch.effort !== '') {
+      const levels = agentInfo(typeof patch.agent === 'string' ? patch.agent : t.agent)?.efforts ?? [...ALL_EFFORTS];
+      if (typeof patch.effort !== 'string' || !levels.includes(patch.effort as Effort)) throw new DaemonError(400, `effort must be one of ${levels.join(', ')}`);
+    }
+    if ('ticketKey' in patch && patch.ticketKey != null) {
+      if (typeof patch.ticketKey !== 'string') throw new DaemonError(400, 'ticketKey must be a string or null');
+      const m = /(?:^|[^A-Za-z0-9_])([A-Za-z][A-Za-z0-9_]{1,})-(\d+)/.exec(patch.ticketKey.toUpperCase());
+      if (!m) throw new DaemonError(400, 'ticketKey must look like PROJ-1234');
+    }
+    if ('profile' in patch && patch.profile != null && patch.profile !== '') {
+      if (typeof patch.profile !== 'string') throw new DaemonError(400, 'profile must be a string or null');
+      if (patch.profile !== 'none' && !this.profileStore.profiles.some((p) => p.id === patch.profile)) throw new DaemonError(400, `unknown profile ${patch.profile}`);
+    }
   }
 
   private messagesRoute(method: string, id: string, body: any): unknown {
@@ -2035,6 +2074,7 @@ export class MockDaemon implements DaemonClient {
     if (!action && method === 'PATCH') {
       const { id: _id, number: _n, ...patch } = body ?? {};
       if (Array.isArray(patch.dependsOn) && patch.dependsOn.includes(id)) throw new DaemonError(400, 'a task cannot depend on itself');
+      this.validateTaskPatch(patch, t);
       if (typeof patch.status === 'string') {
         if (t.origin === 'session') {
           if (!SESSION_STATUSES.includes(patch.status)) throw new DaemonError(400, 'a session task follows its session: status must be one of in_progress, in_testing, merged, completed');
@@ -2045,13 +2085,17 @@ export class MockDaemon implements DaemonClient {
         }
       }
       if ('quorum' in patch) {
-        const quorum = this.quorumOf(patch.quorum, patch.agent ?? t.agent);
+        const quorum = this.quorumOf(patch.quorum);
         if (!isUnstarted(t.status)) throw new DaemonError(409, 'the quorum can only change before the task starts');
         if (quorum) patch.quorum = quorum;
         else {
           delete patch.quorum;
           delete t.quorum;
         }
+      }
+      if ('agent' in patch) {
+        if (patch.agent == null) throw new DaemonError(400, 'agent must not be null');
+        patch.agent = this.agentOf(patch.agent);
       }
       if ('taskType' in patch) {
         const ty = this.taskTypeOf(patch.taskType);
@@ -2060,6 +2104,9 @@ export class MockDaemon implements DaemonClient {
         else delete t.taskType;
       }
       Object.assign(t, patch);
+      // the daemon omits cleared optionals from the JSON instead of sending null
+      if ('ticketKey' in patch && t.ticketKey == null) delete t.ticketKey;
+      if ('profile' in patch && (t.profile == null || t.profile === '')) delete t.profile;
       if (t.origin === 'session' && patch.status) t.manualStatus = patch.status;
       return this.touch(t);
     }

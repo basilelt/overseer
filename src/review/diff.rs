@@ -595,7 +595,7 @@ fn tracked(wt: &str, range: &[&str]) -> Result<Vec<File>, String> {
                 (Some(f), true, Some(t)) => expand(wt, &new, f, Some(t)),
                 _ => (vec![], None),
             };
-            if from.is_some() && to.is_some() && inner.is_empty() {
+            if from.is_some() && from == to {
                 continue;
             }
             files.extend(inner);

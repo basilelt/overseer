@@ -13,5 +13,5 @@ export async function replayTour() {
   if (isPhone()) ui.tab = 'agents';
   if (isPhone() || app.view === 'browser') app.view = 'agents';
   await tick();
-  tour.start('full');
+  await tour.start('full');
 }

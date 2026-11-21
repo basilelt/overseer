@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { DaemonError } from '../daemon/client';
 import { MockDaemon } from '../daemon/mock';
 import { reviewApi, type ReviewApi } from './api';
-import { ReviewMapStore, WEIGHTS, band, fid, heat, heatInk, heatLevel, layout, moveSelection, nearest, ranking, reasons, saveView, savedView, score, squarify, step } from './map.svelte';
+import { ReviewMapStore, WEIGHTS, band, fid, heat, heatInk, heatLevel, layout, moveSelection, nearest, inList, ranking, reasons, saveView, savedView, score, squarify, step } from './map.svelte';
 import { MOCK_LINKED, MOCK_MISSING, MOCK_SUBMODULE, MOCK_WORKTREE } from './mock';
 import type { MapFile, ReviewMap } from './types';
 
@@ -150,6 +150,16 @@ describe('list band and walk', () => {
     expect(step(r, r[0].id, 1)).toBe(r[1]);
     expect(step(r, r[0].id, -1)).toBe(r[r.length - 1]);
     expect(step([], null, 1)).toBeUndefined();
+  });
+
+  it('walks only the files the list shows, so J and K never open another review tab', () => {
+    const r = ranking(score(review()), 'priority');
+    const listed = [r[0].id, r[2].id];
+    const w = inList(r, listed);
+    expect(w.map((x) => x.id)).toEqual(listed);
+    expect(step(w, r[0].id, 1)).toBe(r[2]);
+    expect(step(w, r[2].id, 1)).toBe(r[0]);
+    expect(inList(r, [])).toEqual([]);
   });
 });
 

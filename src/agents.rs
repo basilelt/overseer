@@ -132,7 +132,6 @@ pub struct Agent {
     pub repair: Repair,
     pub start_args: bool,
     pub tmux_snapshot: bool,
-    pub orchestrator: bool,
     pub positional_prompt: bool,
     pub verified: bool,
     pub turns: bool,
@@ -172,7 +171,6 @@ const NONE: Agent = Agent {
     repair: Repair::None,
     start_args: false,
     tmux_snapshot: false,
-    orchestrator: false,
     positional_prompt: false,
     verified: true,
     turns: false,
@@ -208,7 +206,6 @@ pub static AGENTS: &[Agent] = &[
         repair: Repair::Claude,
         start_args: true,
         tmux_snapshot: true,
-        orchestrator: true,
         positional_prompt: true,
         auto_approve: Some(&["--permission-mode", "auto"]),
         approval_overrides: &[
@@ -247,7 +244,6 @@ pub static AGENTS: &[Agent] = &[
         retrust_hooks: true,
         profile: ProfileKind::Codex,
         repair: Repair::Codex,
-        orchestrator: true,
         positional_prompt: true,
         auto_approve: Some(&["--ask-for-approval", "never"]),
         approval_overrides: &[
@@ -302,6 +298,7 @@ pub static AGENTS: &[Agent] = &[
     },
     Agent {
         id: "agy",
+        metered: true,
         subagent_models: Some(&["inherit", "flash", "pro"]),
         hook_note: Some("No stable hook file for the Antigravity CLI yet: finished turns come from terminal activity."),
         profile: ProfileKind::MarkdownSubagents,
@@ -320,6 +317,7 @@ pub static AGENTS: &[Agent] = &[
     },
     Agent {
         id: OPENCODE,
+        metered: true,
         hooks: Hooks::Plugin,
         profile: ProfileKind::Opencode,
         auto_approve: Some(&["--auto"]),
@@ -348,6 +346,7 @@ pub static AGENTS: &[Agent] = &[
     },
     Agent {
         id: COPILOT,
+        metered: true,
         hooks: Hooks::Native,
         auto_approve: Some(&["--allow-all"]),
         approval_overrides: &["--allow-all", "--allow-all-tools", "--yolo"],
@@ -404,6 +403,7 @@ pub static AGENTS: &[Agent] = &[
             bins: &["vibe", "vibe.exe", "vibe-rs", "vibe-rs.exe"],
         }),
         mcp: Mcp::VibeTrust,
+        metered: true,
         hooks: Hooks::Native,
         hook_note: Some("Needs Mistral Vibe 3.0 or later. An interrupted turn fires no hook: the line stays busy until the next turn ends."),
         profile: ProfileKind::Vibe,
@@ -1099,7 +1099,10 @@ mod tests {
         let ids = |f: fn(&Agent) -> bool| -> Vec<&str> {
             AGENTS.iter().filter(|a| f(a)).map(|a| a.id).collect()
         };
-        assert_eq!(ids(|a| a.orchestrator), ["claude", "codex"]);
+        assert_eq!(
+            ids(|a| a.coding()),
+            ["claude", "codex", "gemini", "agy", "opencode", "amp", "copilot", "cursor", "vibe"]
+        );
         assert_eq!(ids(|a| a.positional_prompt), ["claude", "codex"]);
         assert_eq!(
             ids(|a| a.auto_approve.is_some()),
@@ -1143,7 +1146,10 @@ mod tests {
             ]
         );
         let metered: Vec<_> = AGENTS.iter().filter(|a| a.metered).map(|a| a.id).collect();
-        assert_eq!(metered, ["claude", "codex", "gemini"]);
+        assert_eq!(
+            metered,
+            ["claude", "codex", "gemini", "agy", "opencode", "copilot", "vibe"]
+        );
         assert_eq!(t("claude").mcp, Mcp::Claude);
         assert_eq!(t("codex").mcp, Mcp::Codex);
         assert_eq!(t("vibe").mcp, Mcp::VibeTrust);

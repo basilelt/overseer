@@ -1,4 +1,8 @@
-export type StepId = 'host' | 'workspaces' | 'tabs' | 'view' | 'panel' | 'kanban' | 'review' | 'chips' | 'notify' | 'profiles' | 'palette' | 'paletteKey' | 'organize' | 'settings' | 'feedback' | 'demo' | 'gpuTerminal' | 'worktreeCleanup' | 'switchboard' | 'clickCursor' | 'palettes' | 'skills' | 'autoApprove' | 'merged' | 'uninstall' | 'autoUpdate' | 'subjects' | 'sourceControl' | 'reviewMap' | 'lidClosed' | 'recordBug' | 'quorum' | 'installAgent' | 'agentMessaging' | 'mistralVibe' | 'cost' | 'taskType' | 'agentTasks' | 'hosts' | 'stickyNotes' | 'panelGit' | 'reviewKeys';
+import { compareVersions, seenVersion, type Mode } from './version';
+
+export { compareVersions, modeFor, seenVersion, TOUR_VERSION, type Mode } from './version';
+
+export type StepId = 'host' | 'workspaces' | 'tabs' | 'view' | 'panel' | 'kanban' | 'review' | 'chips' | 'notify' | 'profiles' | 'palette' | 'paletteKey' | 'organize' | 'settings' | 'feedback' | 'demo' | 'gpuTerminal' | 'worktreeCleanup' | 'switchboard' | 'clickCursor' | 'palettes' | 'skills' | 'autoApprove' | 'merged' | 'uninstall' | 'autoUpdate' | 'subjects' | 'sourceControl' | 'reviewMap' | 'lidClosed' | 'recordBug' | 'quorum' | 'installAgent' | 'agentMessaging' | 'mistralVibe' | 'cost' | 'taskType' | 'agentTasks' | 'hosts' | 'stickyNotes' | 'panelGit' | 'reviewKeys' | 'quorumAnyAgent' | 'usageAgents' | 'feedbackCli' | 'taskEdit' | 'limitPace';
 
 export interface Step {
   id: StepId;
@@ -51,34 +55,12 @@ export const STEPS: Step[] = [
   { id: 'stickyNotes', targets: ['session-notes', 'workspaces'], since: '0.36' },
   { id: 'panelGit', targets: ['panel-git-tab', 'panel'], since: '0.37' },
   { id: 'reviewKeys', targets: ['review-map', 'review', 'palette', 'workspaces'], since: '0.37', desktopOnly: true },
+  { id: 'quorumAnyAgent', targets: ['quorum', 'kanban'], since: '0.38' },
+  { id: 'usageAgents', targets: ['usage-agents', 'chips'], since: '0.38' },
+  { id: 'feedbackCli', targets: ['feedback-cli', 'feedback'], since: '0.38' },
+  { id: 'taskEdit', targets: ['task-edit', 'kanban'], since: '0.38' },
+  { id: 'limitPace', targets: ['plan-limits', 'panel'], since: '0.38' },
 ];
-
-export type Mode = 'full' | 'whatsNew';
-
-const LEGACY: Record<number, string> = { 1: '0.15', 2: '0.17' };
-
-export function compareVersions(a: string, b: string): number {
-  const x = a.split('.').map(Number);
-  const y = b.split('.').map(Number);
-  for (let i = 0; i < Math.max(x.length, y.length); i++) {
-    const d = (x[i] ?? 0) - (y[i] ?? 0);
-    if (d) return d;
-  }
-  return 0;
-}
-
-export const TOUR_VERSION = STEPS.reduce((v, s) => (compareVersions(s.since, v) > 0 ? s.since : v), '0');
-
-export function seenVersion(seen: number | string | undefined): string | undefined {
-  if (typeof seen === 'string') return seen;
-  return seen ? (LEGACY[seen] ?? LEGACY[2]) : undefined;
-}
-
-export function modeFor(seen: number | string | undefined, version = TOUR_VERSION): Mode | null {
-  const s = seenVersion(seen);
-  if (!s) return 'full';
-  return compareVersions(s, version) >= 0 ? null : 'whatsNew';
-}
 
 export function stepsFor(mode: Mode, seen: number | string | undefined, steps: Step[] = STEPS): Step[] {
   if (mode === 'full') return steps;

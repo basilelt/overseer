@@ -141,4 +141,8 @@ export function unused(w: Worktree): boolean {
   return w.kind === 'managed' && !w.lines.length && !w.termIds.length && !w.dirty && (w.state === 'missing' || (w.merged && w.state !== 'in_use'));
 }
 
+export function needsReload(path: string, shown: string | null, phase: string): boolean {
+  return path !== shown || phase === 'connected';
+}
+
 export const listFor = (listProject: string, panelProject: string): boolean => within(panelProject, listProject);

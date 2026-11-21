@@ -132,6 +132,7 @@ describe('statusLine', () => {
     expect(statusLine(act({ needsInput: true, workLog: [{ label: 'x' }] as Activity['workLog'], lastAssistantText: 'Which file?\nmore' }))).toBe('Which file?');
     expect(statusLine(act({ lastAssistantText: 'Done.\nDetails' }))).toBe('Done.');
     expect(statusLine(act({ lastAssistantText: 'See `docs/a.md` and ``x``' }))).toBe('See docs/a.md and x');
+    expect(statusLine(act({ lastAssistantText: 'Here: [docs](http://a.b/c) now' }))).toBe('Here: docs now');
   });
 
   it('is empty when there is nothing to say', () => {
@@ -651,6 +652,38 @@ describe('daemon events', () => {
     app.onEvent(event('worktree.created', {}));
     expect(changed).toHaveBeenCalledTimes(3);
     expect(app.data).toBe(data);
+  });
+
+  it('tells listeners about usage.updated even though it changes no data', () => {
+    const changed = vi.fn();
+    const off = app.onChange(changed);
+    app.onEvent(event('usage.updated', {}));
+    off();
+    expect(changed).toHaveBeenCalledTimes(1);
+    expect(changed.mock.calls[0]![2].type).toBe('usage.updated');
+  });
+
+  it('refetches usage within the chip interval when a usage.updated event reaches the app', async () => {
+    vi.useFakeTimers();
+    try {
+      const { UsageFeed, CHIP_MIN_MS } = await import('./usage/store.svelte');
+      const { mockUsage } = await import('./usage/mock');
+      const calls: string[] = [];
+      const client = { request: vi.fn(async (_m: string, path: string) => (calls.push(path), mockUsage(path.split('?')[1] ?? '') as never)) };
+      const feed = new UsageFeed(() => true, Date.now, () => 0, () => true);
+      feed.minInterval = CHIP_MIN_MS;
+      const stop = feed.use('local:', client, (fn) => app.onChange((_p, _n, e) => fn(e)), { range: 'today', by: 'agent' });
+      await vi.advanceTimersByTimeAsync(0);
+      expect(calls.length).toBe(1);
+      await vi.advanceTimersByTimeAsync(60_000);
+      const base = calls.length;
+      app.onEvent(event('usage.updated', {}));
+      await vi.advanceTimersByTimeAsync(CHIP_MIN_MS + 1_000);
+      expect(calls.length).toBe(base + 1);
+      stop();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('publishes a burst of events once and tells listeners about each event in order', () => {

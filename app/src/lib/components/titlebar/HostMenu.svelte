@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { holdPopup } from '../../popup.svelte';
   import Monitor from '@lucide/svelte/icons/monitor';
   import Server from '@lucide/svelte/icons/server';
   import { t } from '../../i18n.svelte';
@@ -10,6 +11,7 @@
   import { hostKey, openWindow } from '../../window';
 
   let { tip, onclose }: { tip: string; onclose: () => void } = $props();
+  $effect(holdPopup);
   const conn = $derived(app.conn);
   const many = $derived(app.hosts.length > 1);
   const here = $derived(new Set(app.hosts.map((l) => l.key)));

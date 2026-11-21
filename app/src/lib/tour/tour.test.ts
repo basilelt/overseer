@@ -14,6 +14,7 @@ describe('tour store', () => {
 
   afterEach(() => {
     vi.useRealTimers();
+    vi.unstubAllGlobals();
     tour.setReady(false);
   });
 
@@ -47,8 +48,8 @@ describe('tour store', () => {
     expect(settings.tourSeen).toBe(TOUR_VERSION);
   });
 
-  it('navigates with the keyboard and finishes on the last step', () => {
-    tour.start('full', all);
+  it('navigates with the keyboard and finishes on the last step', async () => {
+    await tour.start('full', all);
     const n = tour.steps.length;
     expect(tour.step?.id).toBe('host');
     tour.key('back');
@@ -67,15 +68,26 @@ describe('tour store', () => {
     expect(settings.tourSeen).toBe(TOUR_VERSION);
   });
 
-  it('starts the tour from the welcome screen with the right arrow', () => {
+  it('starts the tour from the welcome screen with the right arrow', async () => {
     tour.offer();
     tour.key('next');
-    expect(tour.phase).toBe('tour');
+    await vi.waitFor(() => expect(tour.phase).toBe('tour'));
   });
 
-  it('only keeps steps whose target is on screen', () => {
-    tour.start('full', (n) => n === 'host' || n === 'kanban');
-    expect(tour.steps.map((s) => s.id)).toEqual(['host', 'demo', 'kanban', 'palette', 'paletteKey', 'worktreeCleanup', 'merged', 'recordBug', 'quorum', 'taskType']);
+  it('offers only the new steps to a user who saw an older release', async () => {
+    saveSettings({ tourSeen: '0.37' });
+    vi.stubGlobal('document', { querySelectorAll: () => [{ getBoundingClientRect: () => ({ width: 10, height: 10 }) }] });
+    tour.setReady(true);
+    tour.offer();
+    await vi.waitFor(() => expect(tour.phase).toBe('tour'));
+    expect(tour.mode).toBe('whatsNew');
+    expect(tour.steps.length).toBeGreaterThan(0);
+    expect(tour.steps.every((s) => s.since === TOUR_VERSION)).toBe(true);
+  });
+
+  it('only keeps steps whose target is on screen', async () => {
+    await tour.start('full', (n) => n === 'host' || n === 'kanban');
+    expect(tour.steps.map((s) => s.id)).toEqual(['host', 'demo', 'kanban', 'palette', 'paletteKey', 'worktreeCleanup', 'merged', 'recordBug', 'quorum', 'taskType', 'quorumAnyAgent', 'taskEdit']);
   });
 
   it('upgrades an old numeric version to the current release when finished', () => {
@@ -92,9 +104,9 @@ describe('tour store', () => {
     expect(settings.tourSeen).toBe('99.0');
   });
 
-  it('can be replayed after being seen', () => {
+  it('can be replayed after being seen', async () => {
     saveSettings({ tourSeen: TOUR_VERSION });
-    tour.start('full', all);
+    await tour.start('full', all);
     expect(tour.phase).toBe('tour');
     expect(tour.mode).toBe('full');
   });

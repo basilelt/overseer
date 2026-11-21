@@ -1,4 +1,5 @@
 <script lang="ts">
+  import '../../i18n/parts/settings.use';
   import Users from '@lucide/svelte/icons/users';
   import X from '@lucide/svelte/icons/x';
   import { isTauri } from '../../platform';

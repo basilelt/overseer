@@ -1,13 +1,17 @@
 <script lang="ts">
+  import ChevronDown from '@lucide/svelte/icons/chevron-down';
   import { app } from '../../state.svelte';
-  import { settings } from '../../settings/settings.svelte';
+  import { saveSettings, settings } from '../../settings/settings.svelte';
   import { t, getLocale } from '../../i18n.svelte';
-  import { agentName } from '../../agents';
+  import { agentName, isAgentId } from '../../agents';
+  import { dismiss } from '../../dismiss';
   import AgentGlyph from '../ui/AgentGlyph.svelte';
   import Bars from './Bars.svelte';
+  import LimitBar from './LimitBar.svelte';
   import TaskCosts from './TaskCosts.svelte';
   import { UsageFeed } from '../../usage/store.svelte';
-  import { agentLevel, authNote, countdown, formatCost, formatDuration, formatPct, formatTokens, liveWindows, onCredits, shortDay, windowLevel } from '../../usage/format';
+  import { agentLevel, authNote, countdown, formatCost, formatDuration, formatPct, formatTokens, gaugeLevel, liveWindows, onCredits, pacePercent, shortDay } from '../../usage/format';
+  import { toggleUsageAgentHidden, usageAgentCards, visibleUsageGroups } from '../../usage/filter';
   import { creditsNote, ust } from '../../usage/strings';
   import type { UsageBy, UsageGroup, UsageRange } from '../../usage/types';
 
@@ -17,13 +21,18 @@
   let range = $state<UsageRange>('today');
   let by = $state<UsageBy>('project');
   let now = $state(Date.now());
+  let agentsOpen = $state(false);
 
   const session = $derived(app.connected && app.conn.phase === 'connected' && app.client ? `${app.conn.target.kind}:${app.conn.target.host ?? ''}` : null);
   const host = $derived(app.conn.target.kind === 'local' ? t('host.local') : app.conn.target.label);
   const data = $derived(feed.data);
   const totals = $derived(data?.totals);
   const groups = $derived(data?.groups ?? []);
-  const maxGroup = $derived(Math.max(1, ...groups.map((g) => g.usage.total)));
+  const allAgents = $derived(app.agents.filter((a) => isAgentId(a.id)));
+  const hidden = $derived(settings.usageAgentsHidden ?? []);
+  const cards = $derived(usageAgentCards(app.agents, data?.agents, hidden));
+  const shownGroups = $derived(visibleUsageGroups(groups, hidden));
+  const maxGroup = $derived(Math.max(1, ...shownGroups.map((g) => g.usage.total)));
   const locale = $derived(getLocale());
   const ranges: { id: UsageRange; label: () => string }[] = [
     { id: 'today', label: () => ust('today') },
@@ -68,6 +77,10 @@
     const t0 = at ? Date.parse(at) : NaN;
     return Number.isFinite(t0) ? formatDuration(now - t0) : '';
   }
+
+  function toggleAgent(id: string) {
+    saveSettings({ usageAgentsHidden: toggleUsageAgentHidden(settings.usageAgentsHidden, id) });
+  }
 </script>
 
 <div class="use" class:compact>
@@ -77,6 +90,24 @@
       {#each ranges as r (r.id)}
         <button role="tab" aria-selected={range === r.id} class:on={range === r.id} onclick={() => (range = r.id)}>{r.label()}</button>
       {/each}
+    </div>
+    <div class="dd">
+      <button class="ddbtn" data-tour="usage-agents" aria-haspopup="true" aria-expanded={agentsOpen} title={ust('agentsFilter')} onclick={() => (agentsOpen = !agentsOpen)}>
+        {ust('agents')}{#if cards.length < allAgents.length}<span class="faint mono"> {cards.length}/{allAgents.length}</span>{/if}
+        <span class="chev" class:open={agentsOpen}><ChevronDown size={12} /></span>
+      </button>
+      {#if agentsOpen}
+        <div class="ddmenu" role="group" aria-label={ust('agentsFilter')} use:dismiss={{ onclose: () => (agentsOpen = false), escape: 'stop', keep: (el) => !!el?.closest('.dd') }}>
+          {#each allAgents as a (a.id)}
+            <label class="ddrow">
+              <input type="checkbox" checked={!hidden.includes(a.id)} onchange={() => toggleAgent(a.id)} />
+              <AgentGlyph agent={a.id} size={13} />
+              <span class="lbl">{a.name}</span>
+              {#if !a.installed}<span class="faint small">{t('agents.notInstalled')}</span>{/if}
+            </label>
+          {/each}
+        </div>
+      {/if}
     </div>
     {#if data?.indexing}<span class="faint small">{ust('indexing')}</span>{/if}
     {#if !feed.visible}<span class="faint small paused">{ust('paused')}</span>{/if}
@@ -89,25 +120,27 @@
   {:else if !data}
     <p class="empty">{ust('indexing')}</p>
   {:else}
-    {#if data.agents.length}
+    {#if cards.length}
       <section class="block">
         <h3>{ust('limits')}</h3>
         <div class="limits">
-          {#each data.agents as a (a.agent)}
+          {#each cards as c (c.id)}
+            {@const a = c.usage}
             {@const windows = a.limits.windows}
             <div class="agent card {agentLevel(a)}">
               <header>
-                <span class="who"><AgentGlyph agent={a.agent} size={13} />{agentName(app.agents, a.agent)}</span>
+                <span class="who"><AgentGlyph agent={c.id} size={13} />{c.name}</span>
                 <span class="faint mono small">{formatTokens(a.today.total)} · {formatCost(a.today.cost, a.today.costPartial)}</span>
               </header>
               {#if a.limits.hit}
                 <p class="hit">{ust('limitHitLong')}{a.limits.hit.message ? ` · ${a.limits.hit.message}` : ''}</p>
               {/if}
               {#each windows as w (w.key)}
-                {@const tone = windowLevel(a, w)}
-                <div class="gauge" title={w.resetsAt ? ust('resetAt', { at: new Date(w.resetsAt).toLocaleString(locale) }) : ''}>
+                {@const tone = gaugeLevel(a, w, now)}
+                {@const pace = pacePercent(w, now)}
+                <div class="gauge" title={[w.resetsAt ? ust('resetAt', { at: new Date(w.resetsAt).toLocaleString(locale) }) : '', pace != null ? ust('pace', { p: formatPct(pace) }) : ''].filter(Boolean).join(' · ')}>
                   <span class="wkey mono">{w.key}</span>
-                  <span class="bar"><span class="fill {tone}" style:width="{Math.min(100, w.usedPercent)}%"></span></span>
+                  <LimitBar used={w.usedPercent} {pace} {tone} />
                   <span class="pct mono {tone}">{formatPct(w.usedPercent)}</span>
                   <span class="when faint small">{w.stale ? ust('wasReset') : w.resetsAt ? ust('resets', { t: countdown(w.resetsAt, now) ?? '' }) : ''}</span>
                 </div>
@@ -119,7 +152,7 @@
                 <p class="auth small">{ust(authNote(a.limits)!)}</p>
               {/if}
               {#if !a.limits.source && !a.limits.hit && !authNote(a.limits)}
-                <p class="faint small">{a.agent === 'claude' ? ust('noClaudeLimits') : ust('noLimits', { agent: agentName(app.agents, a.agent) })}</p>
+                <p class="faint small">{a.agent === 'claude' ? ust('noClaudeLimits') : !c.installed ? t('agents.notInstalled') : ust('noLimits', { agent: c.name })}</p>
               {:else if a.limits.observedAt}
                 <p class="faint tiny">{a.limits.plan ? `${a.limits.plan} · ` : ''}{ust('observed', { t: ago(a.limits.observedAt) })}{a.limits.via === 'statusline' ? ` · ${ust('viaStatusline')}` : ''}</p>
               {/if}
@@ -173,12 +206,12 @@
           {/each}
         </div>
       </div>
-      {#if !groups.length}
+      {#if !shownGroups.length}
         <p class="faint small">{ust('empty')}</p>
       {:else}
         <table>
           <tbody>
-            {#each groups as g (g.key)}
+            {#each shownGroups as g (g.key)}
               <tr class:click={!!g.lineId} onclick={() => openSession(g)}>
                 <td class="name">
                   {#if g.agent && by !== 'agent'}<AgentGlyph agent={g.agent} size={11} />{/if}
@@ -250,6 +283,70 @@
     background: var(--surface-active);
     color: var(--text);
   }
+  .dd {
+    position: relative;
+  }
+  .ddbtn {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 8px;
+    font-size: 11px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text-2);
+  }
+  .ddbtn:hover {
+    background: var(--surface-hover);
+    color: var(--text);
+  }
+  .ddbtn .chev {
+    display: inline-flex;
+    transition: transform 120ms;
+  }
+  .ddbtn .chev.open {
+    transform: rotate(180deg);
+  }
+  .ddmenu {
+    position: absolute;
+    top: calc(100% + 4px);
+    right: 0;
+    z-index: var(--z-popover);
+    min-width: 200px;
+    max-width: 300px;
+    max-height: 320px;
+    overflow-y: auto;
+    padding: 4px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    display: flex;
+    flex-direction: column;
+  }
+  .ddrow {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 12px;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .ddrow:hover {
+    background: var(--surface-hover);
+  }
+  .ddrow .lbl {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .ddrow :global(svg) {
+    flex: none;
+    color: var(--text-2);
+  }
   .block h3 {
     margin: 0 0 6px;
     font-size: 12px;
@@ -311,7 +408,7 @@
   }
   .gauge {
     display: grid;
-    grid-template-columns: 28px minmax(60px, 1fr) 40px 8.5em;
+    grid-template-columns: 28px minmax(0, 1fr) 40px minmax(0, 7.5rem);
     align-items: center;
     gap: 8px;
   }
@@ -331,12 +428,6 @@
     height: 100%;
     background: var(--text-3);
   }
-  .fill.warn {
-    background: var(--use-warn);
-  }
-  .fill.crit {
-    background: var(--st-failed);
-  }
   .pct {
     text-align: right;
   }
@@ -348,6 +439,9 @@
   }
   .when {
     white-space: nowrap;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
     text-align: right;
   }
   .stats {

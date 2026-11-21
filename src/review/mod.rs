@@ -1564,7 +1564,7 @@ mod tests {
     }
 
     #[test]
-    fn submodule_changes_are_reviewed_only_on_a_branch_the_agent_created() {
+    fn submodule_files_are_listed_only_on_a_branch_the_agent_created_else_one_entry() {
         let d = tmp("sub");
         let init = |name: &str, file: &str| {
             let p = d.join(name);
@@ -1628,6 +1628,8 @@ mod tests {
                 ("vendor/lib/b.txt", "added"),
                 ("vendor/lib/loose.txt", "untracked"),
                 ("vendor/lib/x.rs", "modified"),
+                ("vendor/other", "submodule"),
+                ("vendor/pinned", "submodule"),
                 ("x.txt", "modified")
             ]
         );

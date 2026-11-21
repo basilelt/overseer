@@ -3,30 +3,31 @@
   import { app } from '../../state.svelte';
   import { settings } from '../../settings/settings.svelte';
   import { agentName } from '../../agents';
-  import { chipFeed } from '../../usage/store.svelte';
+  import { chipFeed, useChipFeed } from '../../usage/store.svelte';
   import { authNote, chipSegments, countdown, onCredits } from '../../usage/format';
   import { worst } from '../../severity';
   import { creditsNote, ust } from '../../usage/strings';
 
   const session = $derived(app.connected && app.conn.phase === 'connected' && app.client ? `${app.conn.target.kind}:${app.conn.target.host ?? ''}` : null);
-  const segs = $derived(chipFeed.data && !chipFeed.unavailable ? chipSegments(chipFeed.data.agents, (id) => agentName(app.agents, id), ust('limitHit'), ust('credits')) : []);
+  const agents = $derived((chipFeed.data?.agents ?? []).filter((a) => !(settings.usageAgentsHidden ?? []).includes(a.agent)));
+  const segs = $derived(chipFeed.data && !chipFeed.unavailable ? chipSegments(agents, (id) => agentName(app.agents, id), ust('limitHit'), ust('credits')) : []);
   const tone = $derived(worst(segs.map((s) => s.level)));
   const tip = $derived.by(() => {
     const now = Date.now();
-    const lines = (chipFeed.data?.agents ?? []).flatMap((a) =>
+    const lines = agents.flatMap((a) =>
       a.limits.windows
         .filter((w) => !w.stale && w.resetsAt)
         .map((w) => `${agentName(app.agents, a.agent)} ${w.key} ${Math.round(w.usedPercent)}% · ${ust('resets', { t: countdown(w.resetsAt, now) ?? '' })}`),
     );
-    const hits = (chipFeed.data?.agents ?? []).filter((a) => a.limits.hit).map((a) => `${agentName(app.agents, a.agent)}: ${a.limits.hit!.message || ust('limitHitLong')}`);
-    const auth = (chipFeed.data?.agents ?? []).filter((a) => authNote(a.limits)).map((a) => `${agentName(app.agents, a.agent)}: ${ust(authNote(a.limits)!)}`);
-    const credits = (chipFeed.data?.agents ?? []).filter(onCredits).map((a) => `${agentName(app.agents, a.agent)}: ${creditsNote(a)}`);
+    const hits = agents.filter((a) => a.limits.hit).map((a) => `${agentName(app.agents, a.agent)}: ${a.limits.hit!.message || ust('limitHitLong')}`);
+    const auth = agents.filter((a) => authNote(a.limits)).map((a) => `${agentName(app.agents, a.agent)}: ${ust(authNote(a.limits)!)}`);
+    const credits = agents.filter(onCredits).map((a) => `${agentName(app.agents, a.agent)}: ${creditsNote(a)}`);
     return [ust('chip'), ...hits, ...lines, ...credits, ...auth].join('\n');
   });
 
   $effect(() => {
     if (!session || !app.client) return;
-    return chipFeed.use(session, app.client, (fn) => app.onChange((_p, _n, e) => fn(e)), { range: 'today', by: 'agent', claudeLimits: settings.fetchClaudeLimits });
+    return useChipFeed(session, app.client, (fn) => app.onChange((_p, _n, e) => fn(e)), { range: 'today', by: 'agent', claudeLimits: settings.fetchClaudeLimits });
   });
 </script>
 

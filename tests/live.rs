@@ -139,6 +139,77 @@ fn hold_refuses_each_unsafe_case() {
 }
 
 #[test]
+fn close_plan_marks_an_unreadable_prompt_unknown_so_the_app_can_offer_to_force() {
+    let t = T::new();
+    let fakebin = t.base.join("fakebin");
+    std::fs::create_dir_all(&fakebin).unwrap();
+    let fake = fakebin.join("claude");
+    std::fs::write(
+        &fake,
+        r##"#!/bin/sh
+dir=${CLAUDE_CONFIG_DIR:?}
+proj="$dir/projects/$(printf '%s' "$PWD" | sed 's/[^A-Za-z0-9]/-/g')"
+mkdir -p "$proj" "$dir/sessions"
+printf '{"type":"user","sessionId":"%s","cwd":"%s","timestamp":"%s"}\n' "$1" "$PWD" "$(date -u +%FT%TZ)" > "$proj/$1.jsonl"
+start=$(cut -d' ' -f22 /proc/$$/stat 2>/dev/null || true)
+started=$(date +%s)000
+printf '{"pid":%s,"sessionId":"%s","cwd":"%s","startedAt":%s,"procStart":"%s","status":"idle","updatedAt":%s,"statusUpdatedAt":%s,"kind":"interactive"}\n' $$ "$1" "$PWD" "$started" "$start" "$started" "$started" > "$dir/sessions/$$.json"
+printf '{"session_id":"%s","cwd":"%s","hook_event_name":"SessionStart"}' "$1" "$PWD" | "${SB_BIN:?}" hook claude SessionStart $$
+printf 'thinking hard...\r\n~ $ '
+trap 'rm -f "$dir/sessions/$$.json"; exit 0' TERM HUP
+sleep 600
+"##,
+    )
+    .unwrap();
+    let sid = "ffffffff-0000-4000-8000-0000000000cc";
+    let pane = t
+        .tmux(&[
+            "new-window",
+            "-P",
+            "-F",
+            "#{pane_id}",
+            "-t",
+            "main",
+            "-n",
+            "fake",
+            "-c",
+            &t.wt.to_string_lossy(),
+            "sh",
+            fake.to_string_lossy().as_ref(),
+            sid,
+        ])
+        .trim()
+        .to_string();
+    let id = common::wait_for(|| {
+        let l = t.line(sid);
+        (l["local"]["pid"].is_u64() && l["local"]["tmuxPane"].is_string())
+            .then(|| l["line"]["id"].as_str().unwrap().to_string())
+    });
+    let screen = t.screen(&pane);
+    let last_nonempty = screen
+        .lines()
+        .rev()
+        .find(|l| !l.trim().is_empty())
+        .unwrap_or("");
+    assert_eq!(
+        last_nonempty, "~ $",
+        "pane should end with the unrecognised prompt"
+    );
+
+    let out = t.sb(&["close", &id, "--json"]);
+    let v: Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(out.status.code(), Some(3), "{v}");
+    assert_eq!(v["predicates"]["alive"]["ok"], true, "{v}");
+    assert_eq!(v["predicates"]["atPrompt"]["ok"], true, "{v}");
+    assert_eq!(v["predicates"]["inputEmpty"]["ok"], false, "{v}");
+    assert_eq!(
+        v["predicates"]["inputEmpty"]["detail"], "prompt not found on screen",
+        "{v}"
+    );
+    assert_eq!(v["predicates"]["inputEmpty"]["unknown"], true, "{v}");
+}
+
+#[test]
 fn hold_stub_reboot_and_resume() {
     let t = T::new();
     let pane = t.start_agent("a", SID, "claude --model opus");

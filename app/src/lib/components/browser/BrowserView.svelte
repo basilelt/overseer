@@ -10,6 +10,7 @@
   import { app } from '../../state.svelte';
   import { isTauri } from '../../platform';
   import { boundsOf, nativeBrowser, normalizeUrl, type NavEvent } from '../../browser';
+  import { popup } from '../../popup.svelte';
 
   let { initialUrl = null, onurl }: { initialUrl?: string | null; onurl?: (url: string) => void } = $props();
 
@@ -93,7 +94,12 @@
 
   $effect(() => {
     if (!native || !opened) return;
-    (app.overlay ? nativeBrowser.hide() : nativeBrowser.show()).catch(() => {});
+    (popup.open ? nativeBrowser.hide() : nativeBrowser.show()).catch(() => {});
+  });
+
+  $effect(() => {
+    void app.toast;
+    if (opened) untrack(place);
   });
 
   onMount(() => {

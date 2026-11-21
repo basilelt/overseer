@@ -411,7 +411,7 @@ logged to `<state>/actions.log`. Exit code 3 = refused; `--json` prints the repo
 | alive | no live process, or two processes on the same session |
 | inTmux | the agent is neither in a tmux pane nor in an Overseer (daemon) terminal |
 | atPrompt | a turn is running (hook `UserPromptSubmit` without `Stop`, or `status: busy`) |
-| inputEmpty | text is typed in the prompt, or the prompt cannot be recognised on screen |
+| inputEmpty | text is typed in the prompt, or the prompt cannot be recognised on screen (reported with `unknown: true`; the app's Close dialog then offers "Tick to close" to force past it) |
 | noToolRunning | a Bash tool, a subagent, a background task or an unknown child process runs |
 | notPinned | the line is pinned |
 | notNeedsInput | the agent waits for a permission / answer |
@@ -816,9 +816,11 @@ connection mode, the last 200 app and 100 server log lines, secrets masked; **Pr
 be sent** shows the exact text. **Let the agent investigate first** asks the agent to read the
 logs and code, read-only, and add a likely cause.
 
-**Send with <agent>** opens a new tab on the active host running your default agent CLI, in a
+**Send with <agent>** opens a new tab on the active host running the CLI you chose for feedback
+(Settings > Feedback > **Send issues with**; your default agent unless you pick another one), in a
 local clone of the feedback repository when one is a known project (else in
-`~/.overseer/feedback/work`). The agent searches existing issues with `gh issue list`, comments
+`~/.overseer/feedback/work`). **Send with…** next to it files the same report with any other
+installed CLI, for this report only. The agent searches existing issues with `gh issue list`, comments
 on a matching one or creates one issue with `gh issue create`, as you (your own `gh` login), with
 labels `bug`, `enhancement` or `feedback` when it may. Once it prints `ISSUE_URL=…`, the app shows
 "Issue created" with the link. The tab stays open so you can follow and answer the agent. Claude
@@ -930,7 +932,7 @@ On first launch, once the app is connected (immediately in local mode, after the
 connection on a phone), a welcome card offers **Take the tour** or **Skip**. The tour dims the
 window and highlights the real controls one at a time: host chip, workspaces sidebar, tabs and the
 new-session menu, the Terminal/Chat toggle, the side panel, Tasks, Review, the usage, system and ports
-chips, notifications and hooks, the command palette and Feedback, in 0.25 the Cmd/Ctrl+P palette shortcut (not shown on a phone), and in 0.27 the demo mode (on the **Demo mode** pill while in the demo, else on the host chip), and in 0.28 the GPU rendering option for terminals, and in 0.29 the clean up of unused worktrees and the import from Switchboard (on its button in Settings, Help, or on the Settings button), and in 0.30 click to move the cursor in a terminal (on the tabs), and in 0.31 the Light and Dark palettes (on Settings, or More on a phone), and in 0.33 the one-click install of skills and plugins (on Settings), and in 0.34 the auto-approval defaults (on Settings, Agents), the Review, Merged and Closed columns (on the Merged column when the board is open, else on the Tasks tab) and the clean removal of everything Overseer added (on Settings, Connection, **Remove**), and in 0.35 one-click in-app updates for every install (on Settings, Updates, else on the Settings button), and in 0.36 subjects inside a workspace (on **+ New subject** in the open workspace, else on the sidebar), and the live review behind the git button (on the git button of a session's tab bar, else on the command palette), and the review map (on List | Map in a review, else on the Review tab), and keeping agents running with the lid closed (on its switch in Settings, Connection, else on the Settings button), and Record a bug (centred, on the command palette), and the Quorum option of a new task (on the Quorum control in the New task dialog, else on the Tasks tab), and installing a missing agent from the app (on the title bar **+**, else on the palette), and agents kept inside their project (on **Agents message each other** in Settings, Defaults, else on the Settings button), and Mistral Vibe as a new agent (on the title bar **+**, else on the palette), and the real cost of each session and task (on the cost line of the side panel, else on the side panel), and profiles by task type (on the **Type** field of the New task dialog, else on the Tasks tab), and the choice between agents filing what they find as tasks or fixing it themselves (on **Agents file what they find as tasks** in Settings, Defaults, else on the Settings button), and several hosts in one window (on the host sections of the sidebar when a window shows several hosts, else on the host chip), and sticky notes on sessions (on the note icon of a session that has notes, else on the sidebar), and in 0.37 source control in the side panel (on its **Git** tab, else on the side panel), and the keyboard controls of the review map (on List | Map in a review, else on the Review tab; not shown on a phone). Steps whose control is not on
+chips, notifications and hooks, the command palette and Feedback, in 0.25 the Cmd/Ctrl+P palette shortcut (not shown on a phone), and in 0.27 the demo mode (on the **Demo mode** pill while in the demo, else on the host chip), and in 0.28 the GPU rendering option for terminals, and in 0.29 the clean up of unused worktrees and the import from Switchboard (on its button in Settings, Help, or on the Settings button), and in 0.30 click to move the cursor in a terminal (on the tabs), and in 0.31 the Light and Dark palettes (on Settings, or More on a phone), and in 0.33 the one-click install of skills and plugins (on Settings), and in 0.34 the auto-approval defaults (on Settings, Agents), the Review, Merged and Closed columns (on the Merged column when the board is open, else on the Tasks tab) and the clean removal of everything Overseer added (on Settings, Connection, **Remove**), and in 0.35 one-click in-app updates for every install (on Settings, Updates, else on the Settings button), and in 0.36 subjects inside a workspace (on **+ New subject** in the open workspace, else on the sidebar), and the live review behind the git button (on the git button of a session's tab bar, else on the command palette), and the review map (on List | Map in a review, else on the Review tab), and keeping agents running with the lid closed (on its switch in Settings, Connection, else on the Settings button), and Record a bug (centred, on the command palette), and the Quorum option of a new task (on the Quorum control in the New task dialog, else on the Tasks tab), and installing a missing agent from the app (on the title bar **+**, else on the palette), and agents kept inside their project (on **Agents message each other** in Settings, Defaults, else on the Settings button), and Mistral Vibe as a new agent (on the title bar **+**, else on the palette), and the real cost of each session and task (on the cost line of the side panel, else on the side panel), and profiles by task type (on the **Type** field of the New task dialog, else on the Tasks tab), and the choice between agents filing what they find as tasks or fixing it themselves (on **Agents file what they find as tasks** in Settings, Defaults, else on the Settings button), and several hosts in one window (on the host sections of the sidebar when a window shows several hosts, else on the host chip), and sticky notes on sessions (on the note icon of a session that has notes, else on the sidebar), and in 0.37 source control in the side panel (on its **Git** tab, else on the side panel), and the keyboard controls of the review map (on List | Map in a review, else on the Review tab; not shown on a phone), and in 0.38 quorum with any agent CLI (on the Quorum control in the New task dialog, else on the Tasks tab), and every supported CLI listed in the Usage view with an **Agents** dropdown to show or hide each (on the Agents dropdown of the Usage view, else on the usage chip), and the choice of the CLI that files feedback (on **Send with…** in the feedback sheet, else on the title-bar feedback button), and editing a task in its details (on the **Edit** button of an open task, else on the Tasks tab), and the plan limits with their pace tick in the side panel (on the limit rows of the side panel, else on the side panel). Steps whose control is not on
 screen (no session selected, a feature the server lacks, phone layout) are skipped. On a phone the
 card is a sheet at the bottom (or top, when the control sits low) and points at the bottom
 navigation, the session strip and the menu.
@@ -1084,8 +1086,12 @@ In the app:
   events, so a Claude Code session inside tmux scrolls tmux's history; a full-screen program
   without mouse reports (less, man) gets Up/Down arrows unless it turned that off
   (`ESC [?1007l`); otherwise the wheel scrolls the terminal's own scrollback. Shift+wheel always
-  scrolls the local scrollback. Drags always select text locally (they are not sent to the
-  program).
+  scrolls the local scrollback. Drags select text locally and are not sent to the
+  program, except with Shift held: a Shift+drag in a program that reads the mouse is sent to it
+  (vim visual mode with `mouse=a`, tmux pane resize and copy-mode, TUI sliders). Shift is used
+  because Alt+drag moves windows in many Linux desktops, Ctrl+click is a right-click on macOS and
+  Cmd+click opens links; the program sees a plain drag (the shift bit is dropped, so tmux names it
+  `MouseDrag1Pane`). Without mouse reporting a Shift drag still selects.
 - **Click to move the cursor**: a single click in the line being typed (a shell prompt, the
   input of Claude Code, Codex or another agent) moves the cursor there by sending Left/Right
   arrows, like in a text editor. Only the cursor's own row is handled; clicks on other rows,
@@ -1122,14 +1128,22 @@ on Vibe gets `--trust`, since its new worktree would otherwise stop at Vibe's tr
 Detection uses the daemon's `PATH`. A daemon started over SSH by the app gets a minimal
 environment, so at start it asks the login shell for the real one (`$SHELL -l -i -c`, 5 s
 timeout), the way VS Code Remote-SSH does: agents in `~/.local/bin`, `~/.nvm/…/bin`,
-`~/.bun/bin` and so on are found, and every term it starts gets the same environment. If the
-shell does not answer, the usual user directories that exist are added to `PATH` instead.
+`~/.bun/bin` and so on are found, and every term it starts gets the same environment. Whether
+the shell answers or not, the same usual user directories that exist are then appended to
+`PATH`, so a daemon started at boot, by the desktop app or over SSH detects the same agents.
 The `bin` of every nvm Node version is appended after the active one, so an agent installed
 with `npm install -g` under an older version than the current default is still found.
 `overseer doctor` and `GET /v1/env` show the `PATH` in use and where it came from. A running
 daemon keeps its environment: the new one applies from its next start (the next server update),
 it is never restarted for this since that would end its terms. **Rescan** in the agent picker
-runs the detection again (`POST /v1/agents/rescan`), for instance after installing an agent.
+runs the detection again (`POST /v1/agents/rescan`), for instance after installing an agent: it
+also picks up user bin directories created since the daemon started, but not a directory the
+daemon never lists. For that, restart the daemon (`overseer daemon --detach --replace`, which
+closes its terminals) so it reads the environment again.
+
+A machine runs one daemon: the app on that machine and an app connected over SSH
+(`overseer proxy`) share it, so detection depends on the environment of whichever start came
+first, and both see the same agents.
 
 The **+** menus (tab bar and title bar) list only the agents that are installed; the others are
 folded under one **Not installed (N)** row at the bottom, which unfolds in place. An agent with a
@@ -1290,6 +1304,14 @@ and `completed` (Closed). Merged and Closed are both done; they start collapsed 
   `repos`, existing tasks and added projects); `POST /v1/projects {"path": …}` adds one (it must
   be in a git repository).
 - `rank` orders the cards of a column; the app updates it when a card is dragged.
+- Editing: the details of a task have an **Edit** button (or the card title is renamed with a
+  double-click / F2). It opens the title, description, agent CLI, model, effort, ticket key, type
+  and profile in place (session tasks keep only their text); **Save** sends the changed fields to
+  `PATCH /v1/tasks/<id>` (`title` must not be empty; `agent` must be a coding agent; `effort` must
+  be one of the agent's levels or `""` to clear; `ticketKey` must look like `PROJ-1234` or be
+  `null`; `taskType` one of the known types or `null`; `profile` an existing profile, `"none"` or
+  `null`). The title, description, meta chips, messages and votes of the details are selectable
+  text, so they can be copied.
 - Dependencies: a task can depend on other tasks (`dependsOn`, a list of task ids). Set them in
   the "Depends on" picker of the new task dialog or the task details (search by number or title,
   same project unless "All projects" is ticked). A task stays blocked until every dependency is
@@ -1356,8 +1378,8 @@ curl --unix-socket "$S" 'http://unix/v1/tasks?status=in_progress,in_testing'
 #### 14.2c Quorum
 
 Tick **Quorum** in the New task dialog to have several agent CLIs share one task and check each
-other. It is only offered when the task's agent is Claude Code or Codex (the orchestrator, which
-needs the Overseer MCP); with another agent the switch is disabled with a hint.
+other. Any agent CLI can be the orchestrator — Claude Code, Codex, Gemini CLI, Antigravity,
+opencode, Amp, Copilot CLI, Cursor Agent or Mistral Vibe; only the shell cannot run a quorum.
 
 - **Workers** (one or more installed agents) get the subtasks the orchestrator cuts the task into.
   **Reviewers** (one or two installed agents) review each worker's result. Neither list can hold
@@ -1376,9 +1398,12 @@ needs the Overseer MCP); with another agent the switch is disabled with a hint.
   reviewer that ends without voting counts as a rejection.
 - While it waits for subtasks, the orchestrator's card can sit in Review between its turns; its
   messages still reach it.
-- Agents that have the Overseer MCP (Claude Code, Codex) vote with the `cast_vote` tool. Any other
-  reviewer votes from its task terminal with the CLI: `overseer vote approve "<reason>"` or
-  `overseer vote reject "<reason>"`.
+- Agents that have the Overseer MCP (Claude Code, Codex) create subtasks with `create_task`, vote
+  with `cast_vote` and move their own task with `set_task_status`. Any other agent — as orchestrator
+  or reviewer — runs the same tools from its task terminal with the CLI:
+  `overseer tool create_task '{"title":"…","agent":"codex"}'` (any tool name, JSON arguments), and
+  votes with `overseer vote approve "<reason>"` or `overseer vote reject "<reason>"` (the
+  orchestrator adds `--task <subtask id>`).
 - The quorum is set when the task is created and can only change while the task is Pending or Auto.
   A subtask cannot run its own quorum.
 
@@ -1679,7 +1704,19 @@ Clicking it (or "Agent usage" in the palette, or Usage in the phone's More tab) 
 panel: plan gauges per agent with a reset countdown, totals for today, 7 or 30 days (tokens with
 input / output / cache, estimated cost marked ≈, requests, active time), tokens per day, and a
 breakdown by project, session, model or agent; a session row opens that session. "Open in a tab"
-keeps it as a workspace tab.
+keeps it as a workspace tab. The panel lists every CLI Overseer supports, not only the ones with
+plan limits: each gets a card with its tokens and cost today, or a note when it exposes no limits
+locally (or "Not installed"). The **Agents** dropdown next to the range tabs shows or hides each
+CLI — in the cards, in the agent and session breakdowns and in the title bar chip — and the choice
+is remembered.
+
+Each plan gauge carries a tick at the even pace: where usage would be now if the window were spent
+evenly until it resets. A bar more than 5 points past the tick turns amber, even under 80 %, so a
+window burned too fast shows before it runs out. The side panel shows the same bars for the
+selected session's CLI (for example **5-hour** and **Weekly** for Claude Code or Codex, **Monthly**
+for a Codex plan by the month), under the session's cost line; the tooltip gives the percentage,
+the even pace and the reset countdown, and clicking a row opens Usage. CLIs that expose no plan
+limits show no rows.
 
 **Cost per session and task.** The side panel shows what the selected session cost, with its
 main model and effort ("≈$1.23 · claude-opus-5-5 · effort high"), and a **Cost** section that
@@ -1691,16 +1728,34 @@ after the transcripts are gone. At the bottom of the Usage panel, **Cost per tas
 tasks by profile (and agent), by ticket or lists each task, with the average cost per finished
 task (in testing, merged or completed) for each profile: run the same kind of work under two
 profiles and compare. The numbers are real token counts from the transcripts (Claude Code,
-Codex, Gemini CLI) priced at API list prices dated in the hint; a model without a known price
+Codex, Gemini CLI, Antigravity, opencode, Copilot CLI, Mistral Vibe) priced at API list prices dated in the hint; a model without a known price
 keeps its tokens but adds nothing to the cost (marked "+"), and agents whose logs have no token
 counts show no cost at all rather than an estimate. Subscriptions are not billed per token, so
 read it as what the same work would cost on the API.
 
-Where the numbers come from (contract §7c): Claude Code transcripts, Codex rollouts and Gemini
-CLI sessions (when they record token counts) on the machine the app is connected to, read
-incrementally by the daemon. Settings → Usage lists each of these providers: Claude Code with its two
+Where the numbers come from (contract §7c), on the machine the app is connected to, read
+incrementally by the daemon:
+
+| CLI | Source | Read as |
+|---|---|---|
+| Claude Code | `~/.claude/projects/*/<session>.jsonl` and its `subagents/` | assistant `usage`, once per message id |
+| Codex | `~/.codex/sessions/**/rollout-*.jsonl` | `token_count` events, by delta |
+| Gemini CLI | `~/.gemini/tmp/*/chats/session-*` | per-message `tokens` |
+| Antigravity | `~/.gemini/antigravity-cli/conversations/<id>.db`, table `gen_metadata` | one row per model call (input, output, cache read); the day comes from the row, else from the file's last change |
+| opencode | `$XDG_DATA_HOME/opencode/opencode.db` (`~/.local/share/opencode`), table `session` | the session's running totals, by delta since the last look (reasoning counts as output) |
+| Copilot CLI | `$COPILOT_HOME/session-state/<id>/events.jsonl` (`~/.copilot`) | `session.usage_record` lines (the cached input is split from the fresh input) |
+| Mistral Vibe | `$VIBE_HOME/logs/session/unified/<id>/` (`~/.vibe`) | the session's running totals, by delta since the last look |
+| Amp, Cursor Agent | none | Amp keeps its threads on ampcode.com and Cursor Agent keeps no token counts on disk, so their cards stay at zero |
+
+Because opencode and Mistral Vibe store only running totals per session, the tokens of a session
+that Overseer sees for the first time (or that ran while no Overseer daemon was watching) are
+counted on the day the session last changed, not spread over the days it ran; once Overseer is
+watching, each change lands on its own day. Antigravity rows without a time stamp behave the same way
+within their conversation.
+
+Settings → Usage lists each of these providers: Claude Code with its two
 plan-limit switches below, Codex (tokens, cost and its plan limits, always read from its session
-logs) and Gemini CLI (tokens and cost only; it records no plan limits). Claude Code does not store its 5-hour and weekly percentages on
+logs); the other CLIs show tokens only, and cost when the model is priced (they record no plan limits). Claude Code does not store its 5-hour and weekly percentages on
 disk, but it passes them to its status line command (`rate_limits` in the status line's JSON input,
 for Pro and Max plans). Settings → Usage → "Plan limits from the status line" (off until you turn it
 on, per host) wraps your status line command in `~/.claude/settings.json` (a backup is written
@@ -1814,7 +1869,7 @@ browser and review tab that belongs to it. The sidebar shows **Workspaces** (def
 **By status** (the session list grouped by Needs input, Needs testing, Working, Pushed, Idle,
 Stopped: no live agent process, resumable); the toggle is at the top of the sidebar.
 
-- **Sticky notes**: hover an agent session in the sidebar (on a phone or a touch screen the icon is always there)
+- **Sticky notes**: hover an agent session in the sidebar (on a phone or a touch screen the icon is always there; a Codex session gets it with its first prompt, when its session starts)
   and click the note icon to open its sticky notes. Write in the box and press **Add note** (or
   Ctrl/Cmd+Enter); click a note to change it (saved when you leave it, or with Ctrl/Cmd+Enter;
   clearing its text deletes it) and the bin deletes it. Escape or a click outside closes them,
@@ -2014,8 +2069,9 @@ A GitHub-style review of what an agent changed, while it works (ADR 0030, contra
   worktree of a submodule, reviews that submodule only (the header shows which superproject it
   belongs to). Reviewing a superproject lists each submodule whose commit changed as one
   collapsed entry (`old → new` commits) with **Review this submodule**, which opens its own
-  review from the old commit; files inside submodules are never listed, and a submodule with
-  only uncommitted changes is skipped, so large submodules cost nothing. File tree, unified or split diff, syntax highlighting, unchanged lines folded
+  review from the old commit. When the submodule is on a branch the agent created, its changed
+  files are listed under that entry too; a submodule left on a detached commit or the default
+  branch only shows the entry, and one with only uncommitted changes is skipped. File tree, unified or split diff, syntax highlighting, unchanged lines folded
   (click to expand), a Viewed box per file (unticked again when the file changes). J and K walk
   the files after a click anywhere in the review pane, its toolbar included, except on a text field. The view
   follows the agent's edits live: the daemon watches the worktree (file system events, polling as a fallback) and sends
@@ -2051,7 +2107,7 @@ A GitHub-style review of what an agent changed, while it works (ADR 0030, contra
   map keeping the file: the map selects the file on screen, the list opens the selected one. In
   the list, a heat band along the files shows the same colours top to bottom, marks the file on
   screen and names the hovered file with its score, and **Next hottest file** (or J and K) walks
-  the files hottest first across every worktree. A review remembers its view, selected file,
+  the files hottest first across every worktree the list shows (a submodule's files stay on the map and in its own review, so J and K never switch tabs). A review remembers its view, selected file,
   indicator, scroll and folded files while you visit other tabs (for the app's session, not
   across a reload). On a phone the ranking comes first and the map below it. The daemon serves it at `GET /v1/review/map?worktree=…` (or `line=`, `task=`),
   plus `with=` for each extra worktree the review already shows.
@@ -2151,7 +2207,7 @@ changes and abort on conflicts (the error names the files).
 
 The git button in a session's tab bar (or the palette's "Open or close the live review") turns the
 window into a live review of that session: the agent stays where it is, its review opens beside it,
-the sidebar becomes a rail of the workspace's sessions (click one to switch; the review follows),
+the sidebar becomes a rail of the workspace's sessions (click one to switch; the review follows) — drag the rail's right edge, double-click it or use the Show or hide the sidebar shortcut (Cmd+B, Ctrl+Shift+B in a terminal; the palette's "Toggle sidebar") to bring the full sidebar back while the review stays open (a reload keeps the rail or the full sidebar as you left it),
 the side panel steps aside, and a bar at the bottom runs git. Press the button again to go back.
 
 The bar acts on one repository only: the worktree named on its left. Its menu lists every worktree

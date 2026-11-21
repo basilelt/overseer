@@ -1,10 +1,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-async function rendered(lastAssistantText: string, extra: { line?: object; activity?: object; git?: boolean; selected?: object | null } = {}) {
+async function rendered(lastAssistantText: string, extra: { line?: object; activity?: object; git?: boolean; selected?: object | null; terms?: object[]; usage?: object } = {}) {
   vi.resetModules();
+  if (extra.usage) (await import('../../usage/store.svelte')).chipFeed.data = extra.usage as never;
   const activity = { l1: { workLog: [], todos: [], editedFiles: [], needsInput: false, lastAssistantText, ...extra.activity } };
   const { app } = await import('../../state.svelte');
   app.data.activity = activity as never;
+  app.data.terms = (extra.terms ?? []) as never;
   app.data.lines = [{ line: { id: 'l1', agent: 'claude', state: 'active', ...extra.line }, project: 'p' }] as never;
   app.selectedKey = 'line:l1';
   app.panelGit = extra.git ?? false;
@@ -69,6 +71,16 @@ describe('SidePanel cost', () => {
     expect(html).toContain('cache read 500k');
   });
 
+  it('says the model and effort once when the profile line would repeat them', async () => {
+    const html = await rendered('hello', {
+      activity: { cost },
+      terms: [{ id: 't1', profile: { name: 'Max', model: 'opus', effort: 'high' } }],
+      selected: { key: 'line:l1', lineId: 'l1', title: 'x', termId: 't1' },
+    });
+    expect(html.match(/effort high/g)).toHaveLength(1);
+    expect(html).toMatch(/<p class="profile faint[^"]*" title="Profile">Max<\/p>/);
+  });
+
   it('shows no cost when the transcript has no token counts', async () => {
     const html = await rendered('hello');
     expect(html).not.toContain('data-sec="cost"');
@@ -98,5 +110,16 @@ describe('SidePanel tabs', () => {
     const html = await rendered('hello', { selected: null });
     expect(html).toContain('No session selected');
     expect(tab(html, 'Git')).toBe('false');
+  });
+});
+
+describe('SidePanel plan limits', () => {
+  it('shows the plan limit rows of the session agent under the header', async () => {
+    const resetsAt = new Date(Date.now() + 3_600_000).toISOString();
+    const usage = { agents: [{ agent: 'claude', today: {}, limits: { source: 'claude', windows: [{ key: 'wk', windowMinutes: 10080, usedPercent: 12, resetsAt, stale: false }], hit: null } }] };
+    const html = await rendered('hello', { usage });
+    expect(html).toContain('data-tour="plan-limits"');
+    expect(html).toContain('Weekly');
+    expect(html.indexOf('plan-limits')).toBeLessThan(html.indexOf('Last message'));
   });
 });

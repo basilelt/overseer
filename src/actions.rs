@@ -1378,6 +1378,7 @@ mod tests {
                 name: "idle",
                 ok,
                 detail: "busy".into(),
+                unknown: false,
             }],
             action: "hold",
             steps: vec![],
@@ -1442,6 +1443,7 @@ mod tests {
 
     fn failing(name: &'static str) -> Check {
         Check {
+            unknown: false,
             name,
             ok: false,
             detail: "x".into(),

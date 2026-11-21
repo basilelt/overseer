@@ -16,7 +16,7 @@
     <span>{t('quorum.label')}</span>
   </label>
   {#if !allowed}
-    <p class="hint faint">{t('quorum.needsOrchestrator')}</p>
+    <p class="hint faint">{t('quorum.shellCannot')}</p>
   {:else if !on}
     <p class="hint faint">{t('quorum.toggle')}</p>
   {:else}

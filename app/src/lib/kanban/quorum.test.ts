@@ -15,8 +15,10 @@ const votes = (approve: boolean[], outcome: TaskVotes['outcome'] = null): TaskVo
 });
 
 describe('quorum orchestrator', () => {
-  it('only lets claude and codex orchestrate', () => {
-    expect(['claude', 'codex', 'gemini', 'shell'].map(canOrchestrate)).toEqual([true, true, false, false]);
+  it('lets every CLI Overseer supports orchestrate, but not the shell', () => {
+    const clis = ['claude', 'codex', 'gemini', 'agy', 'opencode', 'amp', 'copilot', 'cursor', 'vibe'];
+    expect(clis.map(canOrchestrate)).toEqual(clis.map(() => true));
+    expect(canOrchestrate('shell')).toBe(false);
   });
 });
 
@@ -62,11 +64,13 @@ describe('toggles', () => {
 describe('quorumBody', () => {
   const q = { workers: ['claude'], reviewers: ['codex'] };
 
-  it('sends a copy of the quorum only when on and the agent can orchestrate', () => {
+  it('sends a copy of the quorum when on and the agent is any CLI, but not for the shell', () => {
     expect(quorumBody(true, 'claude', q)).toEqual({ quorum: q });
     expect(quorumBody(true, 'claude', q).quorum).not.toBe(q);
+    expect(quorumBody(true, 'gemini', q)).toEqual({ quorum: q });
+    expect(quorumBody(true, 'vibe', q)).toEqual({ quorum: q });
     expect(quorumBody(false, 'claude', q)).toEqual({});
-    expect(quorumBody(true, 'gemini', q)).toEqual({});
+    expect(quorumBody(true, 'shell', q)).toEqual({});
   });
 });
 

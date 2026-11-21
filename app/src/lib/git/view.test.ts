@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { GraphCommit, Worktree } from './types';
-import { authors, cleanable, commitUrl, dimmed, formatSize, labelsBySha, listFor, needsMore, ROW_H, scrollToRow, searchMatches, sortWorktrees, stepMatch, unused, visibleRange } from './view';
+import { authors, cleanable, commitUrl, dimmed, formatSize, labelsBySha, listFor, needsMore, needsReload, ROW_H, scrollToRow, searchMatches, sortWorktrees, stepMatch, unused, visibleRange } from './view';
 
 const commit = (sha: string, subject: string, author = 'Ada'): GraphCommit => ({ sha, parents: [], author, email: '', at: '2026-10-29T09:00:00Z', subject });
 
@@ -146,5 +146,18 @@ describe('listFor', () => {
     expect(listFor('/w/atk', '/w/atk/sub')).toBe(true);
     expect(listFor('/w/atk', '/w/atk2')).toBe(false);
     expect(listFor('/w/atk2', '/w/atk')).toBe(false);
+  });
+});
+
+describe('needsReload', () => {
+  it('reloads when the project changes, whatever the connection', () => {
+    expect(needsReload('/a', null, 'connecting')).toBe(true);
+    expect(needsReload('/b', '/a', 'reconnecting')).toBe(true);
+  });
+
+  it('reloads the same project only once the connection is back', () => {
+    expect(needsReload('/a', '/a', 'reconnecting')).toBe(false);
+    expect(needsReload('/a', '/a', 'error')).toBe(false);
+    expect(needsReload('/a', '/a', 'connected')).toBe(true);
   });
 });

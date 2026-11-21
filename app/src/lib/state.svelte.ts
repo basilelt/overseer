@@ -1,5 +1,5 @@
 import { tick } from 'svelte';
-import { activityDelay } from './activity';
+import { activityDelay, plainSnippet } from './activity';
 import { busy } from './diag/busy';
 import { FALLBACK_AGENTS, isAgentId, isShellId, isShellItem, sessionsAvailable } from './agents';
 import { parentOverlay } from './overlay-route';
@@ -100,6 +100,7 @@ class AppState {
   }
   panelOpen = $state(true);
   liveReview = $state(false);
+  liveExpanded = $state(false);
   gitWorktree = $state<{ project: string; path: string } | null>(null);
   sidebarOpen = $state(true);
   browserUrl = $state('');
@@ -116,6 +117,7 @@ class AppState {
   sidebarMode = $state<SidebarMode>(settings.sidebarMode ?? 'workspaces');
   panelGit = $state(settings.panelGit ?? false);
   workspaceId = $state<string>(NO_WORKSPACE);
+  picks = 0;
   /** @internal */
   following: { id: string; goToWorkspace: boolean } | null = null;
   private pendingTab: 'graph' | 'worktrees' | null = initialTab();
@@ -479,6 +481,7 @@ class AppState {
   }
 
   selectWorkspace(id: string) {
+    this.picks++;
     void tick().then(busy.since('workspace.switch'));
     this.following = null;
     this.workspaceId = id;
@@ -674,7 +677,7 @@ class AppState {
       const k = touchedKey(e);
       if (k) this.touched.set(k, ++this.eventSeq);
     }
-    if (next === prev && e.type !== 'line.activity' && !/^(review|worktree)\./.test(e.type) && e.type !== 'git.changed') return null;
+    if (next === prev && e.type !== 'line.activity' && !/^(review|worktree)\./.test(e.type) && e.type !== 'git.changed' && e.type !== 'usage.updated') return null;
     return next;
   }
 
@@ -845,6 +848,7 @@ class AppState {
   }
 
   select(key: string | null) {
+    this.picks++;
     if (key && this.sidebarMode === 'workspaces' && !allTabs(workspace.layout).includes(key)) {
       const ws = this.itemWs.get(key) ?? (key.includes(':') && this.items.some((i) => i.key === key) ? NO_WORKSPACE : this.workspaceId);
       if (ws !== this.workspaceId) this.workspaceId = ws;
@@ -975,7 +979,7 @@ function briefs(activity: Snapshot['activity']) {
 
 export function statusLine(a: Activity): string | undefined {
   const last = a.workLog.at(-1);
-  if (a.needsInput || !last) return a.lastAssistantText.split('\n')[0].replace(/`/g, '') || undefined;
+  if (a.needsInput || !last) return plainSnippet(a.lastAssistantText.split('\n')[0]) || undefined;
   return last.label;
 }
 

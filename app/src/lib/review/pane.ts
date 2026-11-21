@@ -11,7 +11,7 @@ export function sideIndex(l: Layout, from: number): number {
 export function openBeside(l: Layout, from: number, key: string, side: string | null = null): Layout {
   const at = Math.min(Math.max(from, 0), l.panes.length - 1);
   if (l.panes.length < 2) {
-    const s = split(l, 'horizontal');
+    const s = split(dropKey(l, key), 'horizontal');
     return { ...setPane(s, 1, { tabs: [key], active: key }), focused: at };
   }
   const has = l.panes.findIndex((p) => p.tabs.includes(key));

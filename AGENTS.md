@@ -78,8 +78,8 @@ Keep Docker, the full `make test` and release builds in CI.
 
 Every minor or major release (`x.y.0` or `x.0.0`) ships a tour of what it adds; patch releases (`x.y.z`) do not touch the tour. Any `feat` (or `!`) PR to `next` with a user-visible feature carries its own tour of the update:
 
-- Add one step per new feature to `STEPS` in `app/src/lib/tour/steps.ts`, with `since` set to the release it ships in as `'x.y'`: the latest `v*` tag with the minor bumped (or the major for a `!` change), which every `feat` batched on `next` for the same release shares. Check it again on the release PR from `next` to `main`, since a `!` in the batch or a release cut meanwhile changes that number. Put its `data-tour` target on the real control. `TOUR_VERSION` follows from the newest `since`.
-- Write its `tour.<id>.title` and `tour.<id>.body` (plus `tour.<id>.phone` when the phone layout differs) in `app/src/lib/i18n/en.ts`, as in "UI strings" below.
+- Add one step per new feature to `STEPS` in `app/src/lib/tour/steps.ts`, with `since` set to the release it ships in as `'x.y'`: the latest `v*` tag with the minor bumped (or the major for a `!` change), which every `feat` batched on `next` for the same release shares. Check it again on the release PR from `next` to `main`, since a `!` in the batch or a release cut meanwhile changes that number. Put its `data-tour` target on the real control. `TOUR_VERSION` in `app/src/lib/tour/version.ts` is set to the newest `since` (a test pins it).
+- Write its `tour.<id>.title` and `tour.<id>.body` (plus `tour.<id>.phone` when the phone layout differs) in `app/src/lib/i18n/parts/tour.ts`, as in "UI strings" below.
 - The app records the newest release whose tour the user saw (`tourSeen`). After an update it shows every step newer than that under **What's new**, oldest release first, each labelled "New in x.y": a user going from 0.22 to 0.26 sees the steps of 0.23 to 0.26 in one tour. New users get every step in the full tour.
 - Extend `app/src/lib/tour/steps.test.ts` to pin that `stepsFor('whatsNew', '<previous release>')` returns exactly the new steps, and screenshot the step (desktop and phone) as in the visual check below.
 - Keep `docs/user-guide.md` (14.0) in line with the step list.
@@ -106,7 +106,7 @@ Clutter is not a feature: every extra chip, badge or number makes the UI uglier 
 
 ## UI strings
 
-- Write every user-visible string in English only, in `app/src/lib/i18n/en.ts` (or the module's namespace there, such as `usage.*`), and read it with `t()` or the module helper. Never hand-write other languages.
+- Write every user-visible string in English only, in `app/src/lib/i18n/parts/core.ts` (or the module's namespace there, such as `usage.*`), and read it with `t()` or the module helper. Never hand-write other languages. `settings.*` and `tour.*` live in `parts/settings.ts` and `parts/tour.ts` and load with their views: a file that reads them imports `parts/settings.use` or `parts/tour.use` (`parts.test.ts` fails otherwise). `en.ts` only aggregates the parts for the i18n scripts and tests.
 - Other languages live in `app/src/lib/i18n/<locale>.ts` and may lag behind: a missing key shows in English. `pnpm i18n` (in `app/`) translates the missing keys of every locale with `claude -p`; `pnpm i18n --dry` only counts them; `pnpm i18n <locale>` adds a new language, which then appears in Settings without code changes.
 
 ## Keep the README current

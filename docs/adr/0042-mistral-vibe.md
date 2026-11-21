@@ -40,5 +40,17 @@ being replaced by 3 through its own update prompt.
   are built from the writers' models. A store format change in a later Vibe shows as no chat
   (409) rather than a wrong one.
 - An interrupted turn fires no Vibe hook: the line stays busy until the next turn ends (or the
-  session ends).
+  session ends). A session ends when its lease is gone — `logs/session/active/<id>.lock.json`
+  missing or naming a dead process — so the daemon then records the `session_end` the hook would
+  have sent and the line stops being mid-turn even without a hook. The store also says when a
+  turn is over: `latestTurn.status` in the last journal envelope (or in the snapshot once the
+  journal was rotated). A line the hooks or the terminal still show mid-turn after the store
+  reports its turn over, and no new prompt in the last few seconds, is shown idle.
 - Usage (tokens) is not read: the store keeps only per-session totals without timestamps.
+- Vibe writes a session to the store only when the first message is sent, but holds its lease from the
+  start. A lease with no store, on a live process no other session of the line list uses, is listed
+  as a session without title or chat, so the tab is a Vibe line at once; a lease file appearing or
+  going wakes the scanner (no polling). Its folder comes from the process.
+- Vibe's TUI repaints only what changed, so the terminal screen the close dialog reads is the
+  accumulated state of every byte since the terminal started (the last 2 MiB), advanced only when
+  read, not the last 256 KiB. Its `vibe-app-server` child is the harness, not a tool.

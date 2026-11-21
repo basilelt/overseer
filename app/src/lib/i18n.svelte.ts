@@ -1,4 +1,5 @@
-import { en } from './i18n/en';
+import { core } from './i18n/parts/core';
+import type { en } from './i18n/en';
 
 export type Key = keyof typeof en;
 export type Dict = Record<Key, string>;
@@ -29,7 +30,7 @@ export function systemLocale(): Locale {
 }
 
 let locale = $state<Locale>('en');
-let loaded = $state.raw<Record<Locale, Partial<Dict>>>({ en });
+let loaded = $state.raw<Record<Locale, Partial<Dict>>>({ en: core });
 const pending = new Map<Locale, Promise<void>>();
 
 export function loadLocale(l: Locale): Promise<void> {
@@ -49,6 +50,10 @@ export function loadLocale(l: Locale): Promise<void> {
   return p;
 }
 
+export function registerEn(d: Partial<Dict>) {
+  if (!Object.keys(d).every((k) => k in loaded.en)) loaded = { ...loaded, en: { ...loaded.en, ...d } };
+}
+
 export function setLocale(l: Locale) {
   locale = isLocale(l) ? l : 'en';
   void loadLocale(locale);
@@ -59,6 +64,8 @@ export function getLocale(): Locale {
 }
 
 export function t(key: Key, params?: Record<string, string | number>): string {
-  const s = loaded[locale]?.[key] ?? en[key] ?? key;
-  return params ? s.replace(/\{(\w+)\}/g, (_, k) => String(params[k] ?? `{${k}}`)) : s;
+  const s = loaded[locale]?.[key] ?? loaded.en[key] ?? key;
+  if (!params) return s;
+  const one = params.n === 1;
+  return s.replace(/\{(\w+)\}/g, (m, k) => k === 's' || k === 'es' ? (one ? '' : k) : String(params[k] ?? m));
 }

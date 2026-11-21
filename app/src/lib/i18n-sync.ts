@@ -4,7 +4,7 @@ export function missing(en: Strings, dict: Strings): string[] {
   return Object.keys(en).filter((k) => typeof dict[k] !== 'string');
 }
 
-const holes = (s: string) => [...s.matchAll(/\{(\w+)\}/g)].map((m) => m[1]).sort().join(',');
+const holes = (s: string) => [...s.matchAll(/\{(\w+)\}/g)].map((m) => m[1]).filter((k) => k !== 's' && k !== 'es').sort().join(',');
 
 function quote(s: string): string {
   return s.includes("'") ? JSON.stringify(s) : `'${JSON.stringify(s).slice(1, -1).replace(/\\"/g, '"')}'`;

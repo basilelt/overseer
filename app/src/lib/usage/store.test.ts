@@ -22,6 +22,8 @@ function setup(visible = { v: true }) {
   return { feed, client, calls, subscribe, emit: (type: string) => emit({ id: '1', type: type as DaemonEvent['type'], at: '', data: {} }) };
 }
 
+const claudeOf = (r: UsageResponse) => r.agents.find((a) => a.agent === 'claude')!;
+
 describe('usage feed', () => {
   beforeEach(() => vi.useFakeTimers());
   afterEach(() => vi.useRealTimers());
@@ -31,7 +33,8 @@ describe('usage feed', () => {
     const stop = s.feed.use('local:', s.client, s.subscribe, { range: 'today', by: 'agent' });
     await vi.runOnlyPendingTimersAsync();
     expect(s.calls).toEqual(['/v1/usage?range=today&by=agent&tzOffset=60']);
-    expect(s.feed.data?.agents.length).toBe(2);
+    expect(s.feed.data?.agents.length).toBe(9);
+    expect(s.feed.data?.agents.map((a) => a.agent)).toEqual(['agy', 'amp', 'claude', 'codex', 'copilot', 'cursor', 'gemini', 'opencode', 'vibe']);
     s.emit('line.activity');
     s.emit('usage.updated');
     s.emit('usage.updated');
@@ -212,7 +215,7 @@ function limited(resetsAt: number): UsageResponse {
     indexing: false,
     agents: [
       {
-        ...base.agents[0],
+        ...claudeOf(base),
         limits: {
           source: 'claude',
           windows: [{ key: '5h', windowMinutes: 300, usedPercent: 40, resetsAt: new Date(resetsAt).toISOString(), stale: false }],
@@ -222,3 +225,47 @@ function limited(resetsAt: number): UsageResponse {
     ],
   };
 }
+
+describe('useChipFeed', () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.resetModules();
+  });
+
+  it('shares one chip feed between the title bar and the side panel, fetching once and stopping with the last user', async () => {
+    vi.resetModules();
+    const { chipFeed, useChipFeed } = await import('./store.svelte');
+    const s = setup();
+    const q = { range: 'today' as const, by: 'agent' as const };
+    const offChip = useChipFeed('local:', s.client, s.subscribe, q);
+    await vi.runOnlyPendingTimersAsync();
+    const offPanel = useChipFeed('local:', s.client, s.subscribe, q);
+    await vi.advanceTimersByTimeAsync(DEBOUNCE_MS);
+    expect(s.calls.length).toBe(1);
+    expect(chipFeed.data?.agents.length).toBe(9);
+    offChip();
+    offChip();
+    s.emit('usage.updated');
+    await vi.advanceTimersByTimeAsync(CHIP_MIN_MS + 10);
+    expect(s.calls.length).toBe(2);
+    offPanel();
+    s.emit('usage.updated');
+    await vi.advanceTimersByTimeAsync(CHIP_MIN_MS + 10);
+    expect(s.calls.length).toBe(2);
+  });
+
+  it('keeps the timed limits refresh when a second user mounts on the same query', async () => {
+    vi.resetModules();
+    const { useChipFeed } = await import('./store.svelte');
+    const s = setup();
+    const q = { range: 'today' as const, by: 'agent' as const };
+    const offChip = useChipFeed('local:', s.client, s.subscribe, q);
+    await vi.runOnlyPendingTimersAsync();
+    const offPanel = useChipFeed('local:', s.client, s.subscribe, q);
+    await vi.advanceTimersByTimeAsync(STALE_MS + 10);
+    expect(s.calls.length).toBe(2);
+    offPanel();
+    offChip();
+  });
+});

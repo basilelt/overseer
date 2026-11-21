@@ -1,4 +1,5 @@
 <script lang="ts">
+  import '../../i18n/parts/settings.use';
   import { lidAvailable } from '../../lifecycle/lid.svelte';
   import { untrack } from 'svelte';
   import X from '@lucide/svelte/icons/x';
@@ -111,6 +112,10 @@
   function setAgent(id: string) {
     const next = adaptChoice(findAgent(app.agents, id), { model: settings.defaultModel, effort: settings.defaultEffort });
     saveSettings({ defaultAgent: id, defaultModel: next.model, ...(next.effort ? { defaultEffort: next.effort } : {}) });
+  }
+
+  function setFeedbackAgent(id: string) {
+    saveSettings({ feedbackAgent: id === settings.defaultAgent ? undefined : id });
   }
 
   const hookRows = $derived(hookable(hooks.status));
@@ -821,18 +826,30 @@
       {#if vis('feedback')}
         <section>
           <h3>{ft('section')}</h3>
-          <div class="row" class:hit={hit('feedback', 'feedback')}>
-            <span>{ft('title')}<small>{ft('sectionHint')}</small></span>
-            <button class="btn" onclick={() => feedback.show()}>{ft('button')}</button>
-          </div>
-          <label class="row stacked" class:hit={hit('feedback', 'feedback')}>
-            <span>{ft('repo')}<small>{ft('repoHint')}</small></span>
-            <input class="mono" value={settings.feedbackRepo ?? ''} placeholder={DEFAULT_REPO} spellcheck="false" onchange={(e) => saveSettings({ feedbackRepo: e.currentTarget.value.trim() || undefined })} />
-          </label>
-          <div class="row" class:hit={hit('feedback', 'privacy')}>
-            <span>{ft('privacy')}<small>{ft('privacyHint')}</small></span>
-            <button class="btn" onclick={() => openExternal(PRIVACY_URL).catch((e) => app.notify(String(e?.message ?? e), 'error'))}>{ft('openLink')}</button>
-          </div>
+          {#if row('feedback', 'feedback')}
+            <div class="row" class:hit={hit('feedback', 'feedback')}>
+              <span>{ft('title')}<small>{ft('sectionHint')}</small></span>
+              <button class="btn" onclick={() => feedback.show()}>{ft('button')}</button>
+            </div>
+            <label class="row stacked" class:hit={hit('feedback', 'feedback')}>
+              <span>{ft('repo')}<small>{ft('repoHint')}</small></span>
+              <input class="mono" value={settings.feedbackRepo ?? ''} placeholder={DEFAULT_REPO} spellcheck="false" onchange={(e) => saveSettings({ feedbackRepo: e.currentTarget.value.trim() || undefined })} />
+            </label>
+          {/if}
+          {#if row('feedback', 'feedbackAgent')}
+            <div class="row" class:hit={hit('feedback', 'feedbackAgent')}>
+              <span>{ft('agent')}<small>{ft('agentHint')}</small></span>
+              <div class="ctl">
+                <AgentPicker {agents} value={settings.feedbackAgent ?? settings.defaultAgent} label={ft('agent')} onchange={setFeedbackAgent} />
+              </div>
+            </div>
+          {/if}
+          {#if row('feedback', 'privacy')}
+            <div class="row" class:hit={hit('feedback', 'privacy')}>
+              <span>{ft('privacy')}<small>{ft('privacyHint')}</small></span>
+              <button class="btn" onclick={() => openExternal(PRIVACY_URL).catch((e) => app.notify(String(e?.message ?? e), 'error'))}>{ft('openLink')}</button>
+            </div>
+          {/if}
         </section>
       {/if}
     </div>

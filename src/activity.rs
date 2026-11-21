@@ -975,7 +975,7 @@ impl State {
             .max()
             .or((self.last_ts > 0).then_some(self.last_ts));
         json!({
-            "title": self.ai_title.clone().or_else(|| self.summary.clone()).or_else(|| self.first_prompt.as_deref().map(|p| trunc(p, 80))),
+            "title": self.ai_title.clone().or_else(|| self.summary.clone()).or_else(|| self.first_prompt.as_deref().map(|p| trunc(&crate::naming::plain(p), 80))),
             "aiTitle": self.ai_title,
             "summary": self.summary,
             "goal": self.first_prompt.as_deref().map(|p| trunc(p, 500)),
@@ -1280,6 +1280,28 @@ mod tests {
         std::fs::rename(&old, &new).unwrap();
         assert_eq!(find(), Some(new.join("s9.jsonl")));
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn title_from_the_first_prompt_is_plain_text() {
+        let dir = tmp_dir("naming-plain");
+        let path = dir.join("t.jsonl");
+        let line =
+            json!({"type": "user", "message": {"content": "see [the docs](http://a.b/c) now"}});
+        std::fs::write(&path, format!("{line}\n")).unwrap();
+        let v = activity("claude", &path, None).unwrap();
+        assert_eq!(v["title"], "see the docs now");
+    }
+
+    #[test]
+    fn title_from_a_heading_prompt_drops_markers_and_keeps_html_text() {
+        let dir = tmp_dir("naming-heading");
+        let path = dir.join("t.jsonl");
+        let p = "## Fix **bold** `code` [link](http://x.y) <b>tag</b> now";
+        let line = json!({"type": "user", "message": {"content": p}});
+        std::fs::write(&path, format!("{line}\n")).unwrap();
+        let v = activity("claude", &path, None).unwrap();
+        assert_eq!(v["title"], "Fix bold code link tag now");
     }
 
     #[test]
