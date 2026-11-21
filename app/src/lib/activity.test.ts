@@ -21,4 +21,10 @@ describe('plainSnippet', () => {
     expect(plainSnippet('# One\n### Two\n#nospace')).toBe('One\nTwo\n#nospace');
     expect(plainSnippet('a < b and <br/> c')).toBe('a < b and  c');
   });
+  it('keeps html tags written inside code spans', () => {
+    expect(plainSnippet('Fix the `<div>` alignment')).toBe('Fix the <div> alignment');
+    expect(plainSnippet('wrap it in `<code>` <b>now</b>')).toBe('wrap it in <code> now');
+    expect(plainSnippet('a ``<b>x</b>`` b')).toBe('a <b>x</b> b');
+    expect(plainSnippet('open `<b> tick')).toBe('open  tick');
+  });
 });

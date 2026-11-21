@@ -212,10 +212,25 @@ fn strip_heading(line: &str) -> &str {
     }
 }
 
-pub fn plain(s: &str) -> String {
-    let s = strip_html(s);
-    let s = s.lines().map(strip_heading).collect::<Vec<_>>().join("\n");
-    let s = s.as_str();
+fn backtick_run(s: &str) -> usize {
+    s.bytes().take_while(|b| *b == b'`').count()
+}
+
+fn code_span(rest: &str) -> Option<(usize, usize)> {
+    let n = backtick_run(rest);
+    let mut at = n;
+    while let Some(i) = rest[at..].find('`') {
+        let start = at + i;
+        let run = backtick_run(&rest[start..]);
+        if run == n {
+            return Some((n, start));
+        }
+        at = start + run;
+    }
+    None
+}
+
+fn unmark(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     let mut rest = s;
     while let Some(i) = rest.find('[') {
@@ -238,7 +253,26 @@ pub fn plain(s: &str) -> String {
         }
     }
     out.push_str(rest);
-    out.replace("**", "").replace("__", "").replace('`', "")
+    out.replace("**", "").replace("__", "")
+}
+
+pub fn plain(s: &str) -> String {
+    let s = s.lines().map(strip_heading).collect::<Vec<_>>().join("\n");
+    let mut out = String::with_capacity(s.len());
+    let mut rest = s.as_str();
+    while let Some(i) = rest.find('`') {
+        out.push_str(&unmark(&strip_html(&rest[..i])));
+        rest = &rest[i..];
+        match code_span(rest) {
+            Some((n, end)) => {
+                out.push_str(&rest[n..end]);
+                rest = &rest[end + n..];
+            }
+            None => rest = &rest[backtick_run(rest)..],
+        }
+    }
+    out.push_str(&unmark(&strip_html(rest)));
+    out
 }
 
 pub fn title_from_prompt(s: &str) -> Option<String> {
@@ -294,6 +328,25 @@ mod tests {
         assert_eq!(
             clean_prompt("<system-reminder>x</system-reminder>\nhi <em>there</em>").as_deref(),
             Some("hi <em>there</em>")
+        );
+    }
+
+    #[test]
+    fn plain_keeps_html_tags_inside_code_spans() {
+        assert_eq!(
+            plain("Fix the `<div>` alignment"),
+            "Fix the <div> alignment"
+        );
+        assert_eq!(
+            plain("wrap it in `<code>` <b>now</b>"),
+            "wrap it in <code> now"
+        );
+        assert_eq!(plain("a ``<b>x</b>`` b"), "a <b>x</b> b");
+        assert_eq!(plain("```\n<p>hi</p>\n```\n<i>z</i>"), "\n<p>hi</p>\n\nz");
+        assert_eq!(plain("open `<b> tick"), "open  tick");
+        assert_eq!(
+            title_from_prompt("Fix the `<div>` alignment").as_deref(),
+            Some("Fix the <div> alignment")
         );
     }
 
