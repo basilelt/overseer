@@ -757,6 +757,14 @@ describe('nested workspaces', () => {
     expect(pick(items, t('ws.sub.startsIn', { path: '/home/u/endurance' })).disabled).toBe(true);
   });
 
+  it('switches the checkout of the workspace whose start button was clicked, not the open one', () => {
+    app.currentWorkspace = workspace({ id: 'open', name: 'Open' });
+    startIn({ clientX: 0, clientY: 0 }, nested);
+    const items = app.openMenu.mock.calls[0][2] as MenuItem[];
+    pick(items, t('tabs.inCheckoutHere', { name: 'Onboarding' })).run!();
+    expect(app.patchWorkspace).toHaveBeenCalledWith('n', { worktrees: false });
+  });
+
   it('lists installed agents in the new-session menu and folds the missing ones under one row', () => {
     app.agents = [
       { id: 'claude', name: 'Claude Code', installed: true },

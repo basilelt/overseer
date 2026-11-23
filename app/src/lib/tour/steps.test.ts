@@ -389,12 +389,14 @@ describe('0.38 tour', () => {
 });
 
 describe('0.39 tour', () => {
-  it('shows the per-workspace checkout step to a desktop user coming from 0.38, on the tab bar', () => {
+  it('shows the per-workspace checkout step to a desktop user coming from 0.38, on the tab bar + else on the tabs', () => {
     expect(modeFor('0.38')).toBe('whatsNew');
     expect(stepsFor('whatsNew', '0.38').map((s) => s.id)).toEqual(['workspaceCheckout']);
     const step = STEPS.find((s) => s.id === 'workspaceCheckout')!;
     expect(step.desktopOnly).toBe(true);
+    expect(targetOf(step, (n) => n === 'new-tab' || n === 'tabs')).toBe('new-tab');
     expect(targetOf(step, (n) => n === 'tabs')).toBe('tabs');
+    expect(visibleSteps([step], () => true, true)).toEqual([]);
     expect(modeFor('0.39')).toBeNull();
   });
 });

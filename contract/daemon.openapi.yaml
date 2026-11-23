@@ -1421,6 +1421,7 @@ paths:
                 rank: { type: number }
                 tabs: { type: array, items: { type: string } }
                 notifyIdle: { type: boolean }
+                worktrees: { type: [boolean, "null"], description: "new agent sessions start in a worktree; null follows the app setting" }
       responses:
         "200":
           description: Workspace
@@ -2774,7 +2775,7 @@ components:
       pattern: "^(line|term):.+$"
     Workspace:
       type: object
-      required: [id, name, path, kind, cwd, station, folderId, pinned, archived, auto, rank, tabs, notifyIdle, createdAt, updatedAt]
+      required: [id, name, path, kind, cwd, station, folderId, pinned, archived, auto, rank, tabs, notifyIdle, worktrees, createdAt, updatedAt]
       properties:
         id: { type: string }
         name: { type: string }
@@ -2789,6 +2790,7 @@ components:
         rank: { type: number }
         tabs: { type: array, items: { type: string }, description: Opaque to the daemon }
         notifyIdle: { type: boolean, description: Stored only; the app notifies }
+        worktrees: { type: [boolean, "null"], description: Stored only; the app starts agent sessions in a worktree when true, in the workspace folder when false, and follows its own setting when null }
         missing: { type: boolean, description: The directory no longer exists }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }

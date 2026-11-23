@@ -334,7 +334,7 @@
         ><Globe size={14} />{#if activeWeb.pages.length > 1}<span>{activeWeb.pages.length}</span>{/if}</button
       >
     {/if}
-    <button class="icon-btn" bind:this={plus} title={t('tabs.new')} aria-label={t('tabs.new')} aria-haspopup="menu" disabled={!app.connected} onclick={() => openAdd()}
+    <button class="icon-btn" bind:this={plus} title={t('tabs.new')} aria-label={t('tabs.new')} data-tour="new-tab" aria-haspopup="menu" disabled={!app.connected} onclick={() => openAdd()}
       ><Plus size={14} /></button
     >
     {#if inWorkspace && app.currentWorkspace}

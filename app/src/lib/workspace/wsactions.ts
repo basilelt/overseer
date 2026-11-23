@@ -111,14 +111,13 @@ export function groupPicker(keys: string[]): MenuItem[] {
   ];
 }
 
-function checkoutItem(): MenuItem {
-  const w = app.sidebarMode === 'workspaces' ? app.currentWorkspace : null;
+function checkoutItem(w: Workspace | null): MenuItem {
   const inCheckout = !app.worktreesIn(w);
   if (!w) return { label: t('tabs.inCheckout'), checked: inCheckout, run: () => saveSettings({ sessionsInCheckout: !inCheckout }) };
   return { label: t('tabs.inCheckoutHere', { name: w.name }), checked: inCheckout, run: () => app.patchWorkspace(w.id, { worktrees: inCheckout }) };
 }
 
-export function newSessionItems(): MenuItem[] {
+export function newSessionItems(w: Workspace | null = app.sidebarMode === 'workspaces' ? app.currentWorkspace : null): MenuItem[] {
   const start = (id: string) => () => app.newSession(id).catch(fail);
   const install = (id: string) => () => app.installAgent(id).catch(fail);
   const { installed, missing } = splitInstalled(app.agents.filter((a) => isAgentId(a.id)));
@@ -128,7 +127,7 @@ export function newSessionItems(): MenuItem[] {
     ...(missing.length
       ? [{ label: t('agents.notInstalledCount', { n: missing.length }), more: missing.map((a) => ({ label: canInstall(a) ? t('palette.installAgent', { name: a.name }) : a.name, agent: a.id, disabled: !canInstall(a), hint: a.install ?? t('agents.notInstalled'), run: install(a.id) })) }]
       : []),
-    checkoutItem(),
+    checkoutItem(w),
     { label: '', separator: true },
     { label: shell?.name ?? t('tabs.shell'), agent: 'shell', run: start('shell') },
   ];
@@ -137,7 +136,7 @@ export function newSessionItems(): MenuItem[] {
 export function startIn(e: { clientX: number; clientY: number }, w: Workspace) {
   app.selectWorkspace(w.id);
   const dir = w.cwd ?? w.path;
-  app.openMenu(e, t('ws.sub.startHere', { name: w.name }), [...newSessionItems(), ...(dir ? [{ label: '', separator: true }, { label: t('ws.sub.startsIn', { path: dir }), disabled: true }] : [])]);
+  app.openMenu(e, t('ws.sub.startHere', { name: w.name }), [...newSessionItems(w), ...(dir ? [{ label: '', separator: true }, { label: t('ws.sub.startsIn', { path: dir }), disabled: true }] : [])]);
 }
 
 export function workspaceMenu(w: Workspace): MenuItem[] {

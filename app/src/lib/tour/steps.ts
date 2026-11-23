@@ -60,7 +60,7 @@ export const STEPS: Step[] = [
   { id: 'feedbackCli', targets: ['feedback-cli', 'feedback'], since: '0.38' },
   { id: 'taskEdit', targets: ['task-edit', 'kanban'], since: '0.38' },
   { id: 'limitPace', targets: ['plan-limits', 'panel'], since: '0.38' },
-  { id: 'workspaceCheckout', targets: ['tabs'], since: '0.39', desktopOnly: true },
+  { id: 'workspaceCheckout', targets: ['new-tab', 'tabs'], since: '0.39', desktopOnly: true },
 ];
 
 export function stepsFor(mode: Mode, seen: number | string | undefined, steps: Step[] = STEPS): Step[] {
