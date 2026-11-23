@@ -1146,6 +1146,7 @@ export const core = {
   'tabs.graphOf': 'Git · {name}',
   'tabs.worktreesOf': 'Worktrees · {name}',
   'tabs.inCheckout': 'Run in current checkout',
+  'tabs.inCheckoutHere': 'Run in the checkout of {name}',
   'tabs.reviewSoon': 'The review view is not available in this build',
   'broadcast.title': 'Broadcast…',
   'broadcast.to': 'Broadcast to {name}',

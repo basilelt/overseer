@@ -92,6 +92,9 @@ function freshApp() {
     selectWorkspace: vi.fn(),
     openMenu: vi.fn(),
     newSession: vi.fn(async () => ({})),
+    worktreesIn: vi.fn((w: Workspace | null) => w?.worktrees ?? !settings.sessionsInCheckout),
+    sidebarMode: 'workspaces',
+    currentWorkspace: null as Workspace | null,
     agents: [] as any[],
   };
 }
@@ -754,6 +757,14 @@ describe('nested workspaces', () => {
     expect(pick(items, t('ws.sub.startsIn', { path: '/home/u/endurance' })).disabled).toBe(true);
   });
 
+  it('switches the checkout of the workspace whose start button was clicked, not the open one', () => {
+    app.currentWorkspace = workspace({ id: 'open', name: 'Open' });
+    startIn({ clientX: 0, clientY: 0 }, nested);
+    const items = app.openMenu.mock.calls[0][2] as MenuItem[];
+    pick(items, t('tabs.inCheckoutHere', { name: 'Onboarding' })).run!();
+    expect(app.patchWorkspace).toHaveBeenCalledWith('n', { worktrees: false });
+  });
+
   it('lists installed agents in the new-session menu and folds the missing ones under one row', () => {
     app.agents = [
       { id: 'claude', name: 'Claude Code', installed: true },
@@ -771,6 +782,30 @@ describe('nested workspaces', () => {
     ]);
     more.more![0].run!();
     expect(app.installAgent).toHaveBeenCalledWith('amp');
+  });
+
+  it('switches the app-wide checkout setting from the new-session menu outside a workspace', () => {
+    const saved = settings.sessionsInCheckout;
+    settings.sessionsInCheckout = false;
+    const item = pick(newSessionItems(), t('tabs.inCheckout'));
+    expect(item.checked).toBe(false);
+    item.run!();
+    expect(settings.sessionsInCheckout).toBe(true);
+    expect(app.patchWorkspace).not.toHaveBeenCalled();
+    settings.sessionsInCheckout = saved;
+  });
+
+  it('switches only the current workspace between worktrees and its checkout from the new-session menu', () => {
+    app.currentWorkspace = workspace({ worktrees: null });
+    const item = pick(newSessionItems(), t('tabs.inCheckoutHere', { name: 'Alpha' }));
+    expect(item.checked).toBe(false);
+    item.run!();
+    expect(app.patchWorkspace).toHaveBeenCalledWith('w1', { worktrees: false });
+    app.currentWorkspace = workspace({ worktrees: false });
+    const back = pick(newSessionItems(), t('tabs.inCheckoutHere', { name: 'Alpha' }));
+    expect(back.checked).toBe(true);
+    back.run!();
+    expect(app.patchWorkspace).toHaveBeenLastCalledWith('w1', { worktrees: true });
   });
 
   it('shows no not-installed row when every agent is installed', () => {

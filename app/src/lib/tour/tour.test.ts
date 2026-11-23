@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { tour } from './tour.svelte';
 import { saveSettings, settings } from '../settings/settings.svelte';
 import { TOUR_VERSION } from './steps';
+import { ui } from '../mobile/ui.svelte';
 
 const all = () => true;
 
@@ -76,7 +77,7 @@ describe('tour store', () => {
   });
 
   it('offers only the new steps to a user who saw an older release', async () => {
-    saveSettings({ tourSeen: '0.37' });
+    saveSettings({ tourSeen: '0.38' });
     vi.stubGlobal('document', { querySelectorAll: () => [{ getBoundingClientRect: () => ({ width: 10, height: 10 }) }] });
     tour.setReady(true);
     tour.offer();
@@ -84,6 +85,16 @@ describe('tour store', () => {
     expect(tour.mode).toBe('whatsNew');
     expect(tour.steps.length).toBeGreaterThan(0);
     expect(tour.steps.every((s) => s.since === TOUR_VERSION)).toBe(true);
+  });
+
+  it('marks the release seen without opening a tour when every new step is desktop only and the user is on a phone', async () => {
+    const layout = ui.layout;
+    ui.layout = 'phone';
+    saveSettings({ tourSeen: '0.38' });
+    await tour.start('whatsNew', all);
+    expect(tour.phase).toBeNull();
+    expect(settings.tourSeen).toBe(TOUR_VERSION);
+    ui.layout = layout;
   });
 
   it('does not offer the new steps while an overlay is open, then offers them once it closes', async () => {

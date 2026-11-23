@@ -1287,6 +1287,7 @@ mod tests {
             subject: false,
             cwd: None,
             parent_id: None,
+            worktrees: None,
         }
     }
 
