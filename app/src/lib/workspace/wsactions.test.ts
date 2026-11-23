@@ -92,6 +92,9 @@ function freshApp() {
     selectWorkspace: vi.fn(),
     openMenu: vi.fn(),
     newSession: vi.fn(async () => ({})),
+    worktreesIn: vi.fn((w: Workspace | null) => w?.worktrees ?? !settings.sessionsInCheckout),
+    sidebarMode: 'workspaces',
+    currentWorkspace: null as Workspace | null,
     agents: [] as any[],
   };
 }
@@ -771,6 +774,30 @@ describe('nested workspaces', () => {
     ]);
     more.more![0].run!();
     expect(app.installAgent).toHaveBeenCalledWith('amp');
+  });
+
+  it('switches the app-wide checkout setting from the new-session menu outside a workspace', () => {
+    const saved = settings.sessionsInCheckout;
+    settings.sessionsInCheckout = false;
+    const item = pick(newSessionItems(), t('tabs.inCheckout'));
+    expect([item.checked, item.hint]).toEqual([false, undefined]);
+    item.run!();
+    expect(settings.sessionsInCheckout).toBe(true);
+    expect(app.patchWorkspace).not.toHaveBeenCalled();
+    settings.sessionsInCheckout = saved;
+  });
+
+  it('switches only the current workspace between worktrees and its checkout from the new-session menu', () => {
+    app.currentWorkspace = workspace({ worktrees: null });
+    const item = pick(newSessionItems(), t('tabs.inCheckout'));
+    expect([item.checked, item.hint]).toEqual([false, t('tabs.inCheckoutHere', { name: 'Alpha' })]);
+    item.run!();
+    expect(app.patchWorkspace).toHaveBeenCalledWith('w1', { worktrees: false });
+    app.currentWorkspace = workspace({ worktrees: false });
+    const back = pick(newSessionItems(), t('tabs.inCheckout'));
+    expect(back.checked).toBe(true);
+    back.run!();
+    expect(app.patchWorkspace).toHaveBeenLastCalledWith('w1', { worktrees: true });
   });
 
   it('shows no not-installed row when every agent is installed', () => {

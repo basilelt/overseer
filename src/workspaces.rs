@@ -27,7 +27,8 @@ columns!(
     updated_ms,
     kind,
     cwd,
-    parent_id
+    parent_id,
+    worktrees
 );
 columns!(
     FOLDER_COLUMNS,
@@ -71,6 +72,8 @@ pub struct Workspace {
     pub cwd: Option<String>,
     /// The top-level dir workspace this one is nested in (one level only).
     pub parent_id: Option<String>,
+    /// Whether new agent sessions start in a worktree; none follows the app setting.
+    pub worktrees: Option<bool>,
 }
 
 #[derive(Clone, Debug)]
@@ -117,6 +120,7 @@ fn ws_row(r: &Row) -> rusqlite::Result<Workspace> {
         subject,
         cwd: r.get(col_at!(WS_COLUMNS, "cwd"))?,
         parent_id: r.get(col_at!(WS_COLUMNS, "parent_id"))?,
+        worktrees: r.get(col_at!(WS_COLUMNS, "worktrees"))?,
         folder_id: r.get(col_at!(WS_COLUMNS, "folder_id"))?,
         pinned: r.get(col_at!(WS_COLUMNS, "pinned"))?,
         archived: r.get(col_at!(WS_COLUMNS, "archived"))?,
@@ -174,7 +178,7 @@ impl Workspace {
             "kind": if self.subject { "subject" } else { "dir" }, "cwd": self.cwd,
             "parentId": self.parent_id, "folderId": self.folder_id, "pinned": self.pinned, "archived": self.archived,
             "auto": self.auto, "rank": self.rank, "tabs": self.tabs, "notifyIdle": self.notify_idle,
-            "missing": self.missing(),
+            "worktrees": self.worktrees, "missing": self.missing(),
             "createdAt": format_rfc3339(self.created_ms), "updatedAt": format_rfc3339(self.updated_ms),
         })
     }
@@ -288,6 +292,7 @@ fn save(ctx: &Ctx, reg: &Registry, w: &mut Workspace, kind: &str) -> Res<()> {
         notify_idle = w.notify_idle,
         updated_ms = w.updated_ms,
         cwd = w.cwd,
+        worktrees = w.worktrees,
     ))?;
     publish(
         kind,
@@ -612,6 +617,8 @@ pub fn patch(ctx: &Ctx, id: &str, b: &Value) -> Res<Workspace> {
             "pinned" => w.pinned = bool_of(v, k)?,
             "archived" => w.archived = bool_of(v, k)?,
             "notifyIdle" => w.notify_idle = bool_of(v, k)?,
+            "worktrees" if v.is_null() => w.worktrees = None,
+            "worktrees" => w.worktrees = Some(bool_of(v, k)?),
             "rank" => w.rank = rank_of(v)?,
             "tabs" => w.tabs = strs_of(v, k)?,
             "cwd" if w.subject => {
@@ -1146,6 +1153,7 @@ mod tests {
             subject: false,
             cwd: None,
             parent_id: None,
+            worktrees: None,
         }
     }
 

@@ -1243,3 +1243,34 @@ fn broadcast_never_types_into_a_prompt_the_user_is_typing_in() {
     assert!(r["id"].is_string());
     read_until(&mut ws, "got: from the chat");
 }
+
+#[test]
+fn workspace_worktrees_override_round_trips_and_survives_a_restart() {
+    let mut app = App::new("ws-worktrees", json!({"autoConcurrency": 0}));
+    let wt = app.fx.wt.to_string_lossy().into_owned();
+    app.ok("POST", "/v1/projects", json!({"path": wt}));
+    let wid = id(&find(&app.ok("GET", "/v1/workspaces", Value::Null), "path", &wt).unwrap());
+    let path = format!("/v1/workspaces/{wid}");
+    assert_eq!(
+        find(&app.ok("GET", "/v1/workspaces", Value::Null), "path", &wt).unwrap()["worktrees"],
+        Value::Null
+    );
+    for v in [json!(false), json!(true), Value::Null, json!(false)] {
+        let p = app.ok("PATCH", &path, json!({ "worktrees": v }));
+        assert_eq!(p["worktrees"], v);
+        let got = find(&app.ok("GET", "/v1/workspaces", Value::Null), "path", &wt).unwrap();
+        assert_eq!(got["worktrees"], v);
+    }
+    for bad in [json!("no"), json!(0)] {
+        let (code, v) = app.req("PATCH", &path, json!({ "worktrees": bad }));
+        assert_eq!(
+            (code, v["error"].clone()),
+            (400, json!("worktrees must be a boolean"))
+        );
+    }
+    let p = app.ok("PATCH", &path, json!({"name": "Renamed"}));
+    assert_eq!(p["worktrees"], false);
+    app.crash_and_restart();
+    let got = find(&app.ok("GET", "/v1/workspaces", Value::Null), "path", &wt).unwrap();
+    assert_eq!(got["worktrees"], false);
+}

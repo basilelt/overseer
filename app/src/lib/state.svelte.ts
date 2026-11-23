@@ -795,13 +795,18 @@ class AppState {
     // A repo workspace is assigned too: the term runs in a worktree outside its path until it reports a line.
     const subject = scoped && (!opts.cwd || (scoped.kind !== 'subject' && !!scoped.path && within(opts.cwd, scoped.path))) ? scoped.id : undefined;
     const cwd = opts.cwd ?? (scoped?.kind === 'subject' ? undefined : (scoped?.cwd ?? scoped?.path)) ?? undefined;
-    const worktree = (opts.worktree ?? (isAgentId(agent) && !settings.sessionsInCheckout)) && this.inProject(cwd ?? (subject ? (scoped?.cwd ?? undefined) : undefined));
+    const worktree = (opts.worktree ?? (isAgentId(agent) && this.worktreesIn(subject ? scoped : null))) && this.inProject(cwd ?? (subject ? (scoped?.cwd ?? undefined) : undefined));
     const size = { cols: 120, rows: 32, ...(worktree ? { worktree: true } : {}) };
     const profile = isShellId(agent) ? undefined : (opts.profile ?? this.nextProfile ?? undefined);
     const term = await this.api.createTerm(isShellId(agent) ? { cwd, ...(opts.install ? { install: opts.install } : {}), ...(subject ? { workspaceId: subject } : {}), ...size } : { agent, cwd, ...(subject ? { workspaceId: subject } : {}), model: opts.model || undefined, effort: opts.effort, ...(profile ? { profile } : {}), ...size });
     if (profile && !opts.profile) this.nextProfile = null;
     this.followSession(term, false);
     return term;
+  }
+
+  worktreesIn(w: Workspace | null | undefined): boolean {
+    const parent = w?.parentId ? this.ws.workspaces.find((p) => p.id === w.parentId) : undefined;
+    return w?.worktrees ?? parent?.worktrees ?? !settings.sessionsInCheckout;
   }
 
   followSession(term: Term, goToWorkspace = true) {

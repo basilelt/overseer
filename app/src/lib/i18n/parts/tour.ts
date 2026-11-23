@@ -130,6 +130,8 @@ export const tourEn = {
   'tour.limitPace.title': 'Plan limits at a glance',
   'tour.limitPace.body': 'The side panel shows the plan limits of the selected session\'s CLI, such as the 5-hour and weekly windows of Claude Code and Codex. The tick on each bar marks an even pace: a bar past it turns amber, so you know you are burning the window faster than it resets. Click a row to open Usage.',
   'tour.limitPace.phone': 'The session panel shows the plan limits of its CLI. The tick on each bar marks an even pace; a bar past it turns amber. Tap a row to open Usage.',
+  'tour.workspaceCheckout.title': 'Worktree or checkout, per workspace',
+  'tour.workspaceCheckout.body': 'Agent sessions start in their own worktree by default. In a workspace, open the + of the tab bar and tick Run in current checkout to start that workspace\'s sessions in its folder instead; other workspaces keep their own choice.',
   'tour.usageAgents.title': 'Every agent in Usage',
   'tour.usageAgents.body': 'The Usage view now lists every CLI Overseer works with, not only the ones with plan limits: Amp, Cursor and the others each get a card, with their tokens and cost when Overseer can read them (Claude Code, Codex, Gemini CLI, Antigravity, opencode, Copilot CLI and Mistral Vibe) or a note when they expose no limits locally. Use the Agents dropdown next to the range tabs to show or hide the CLIs you want; the choice is remembered.',
   'tour.usageAgents.phone': 'The Usage view lists every supported CLI. The Agents dropdown next to the range tabs shows or hides the ones you want, and the choice is remembered.',

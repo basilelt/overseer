@@ -76,7 +76,7 @@ describe('tour store', () => {
   });
 
   it('offers only the new steps to a user who saw an older release', async () => {
-    saveSettings({ tourSeen: '0.37' });
+    saveSettings({ tourSeen: '0.38' });
     vi.stubGlobal('document', { querySelectorAll: () => [{ getBoundingClientRect: () => ({ width: 10, height: 10 }) }] });
     tour.setReady(true);
     tour.offer();

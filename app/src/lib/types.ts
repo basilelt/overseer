@@ -744,6 +744,8 @@ export interface Workspace {
   rank: number;
   tabs: string[];
   notifyIdle: boolean;
+  /** Whether new agent sessions start in a worktree; null follows the app setting, and a nested workspace its parent. */
+  worktrees?: boolean | null;
   missing?: boolean;
   createdAt: string;
   updatedAt: string;

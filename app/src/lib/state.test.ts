@@ -1246,6 +1246,61 @@ describe('sessions', () => {
     expect(m.bodies['POST /v1/terms'].map((b) => (b as { worktree?: boolean }).worktree)).toEqual([undefined, undefined, undefined]);
   });
 
+  describe('worktree choice per workspace', () => {
+    const sent = () => m.bodies['POST /v1/terms'].map((b) => (b as { worktree?: boolean }).worktree);
+    afterEach(() => {
+      settings.sessionsInCheckout = false;
+    });
+
+    it('starts agents in the workspace checkout when the workspace turns worktrees off', async () => {
+      app.selectWorkspace('ws_webshop');
+      await app.patchWorkspace('ws_webshop', { worktrees: false });
+      const term = await app.newSession('claude');
+      expect(sent()).toEqual([undefined]);
+      expect(term.cwd).toBe(app.currentWorkspace!.path);
+    });
+
+    it('starts agents in a worktree when the workspace forces it over the app setting', async () => {
+      settings.sessionsInCheckout = true;
+      app.selectWorkspace('ws_webshop');
+      await app.patchWorkspace('ws_webshop', { worktrees: true });
+      await app.newSession('claude');
+      expect(sent()).toEqual([true]);
+    });
+
+    it('follows the app setting when the workspace has no choice of its own', async () => {
+      app.selectWorkspace('ws_webshop');
+      await app.patchWorkspace('ws_webshop', { worktrees: null });
+      await app.newSession('claude');
+      settings.sessionsInCheckout = true;
+      await app.newSession('claude');
+      expect(sent()).toEqual([true, undefined]);
+    });
+
+    it('keeps an explicit choice and shells out of the workspace setting', async () => {
+      app.selectWorkspace('ws_webshop');
+      await app.patchWorkspace('ws_webshop', { worktrees: true });
+      await app.newSession('claude', { worktree: false });
+      await app.newSession('shell');
+      expect(sent()).toEqual([undefined, undefined]);
+    });
+
+    it('ignores the workspace setting for a session started outside it', async () => {
+      app.selectWorkspace('ws_webshop');
+      await app.patchWorkspace('ws_webshop', { worktrees: false });
+      await app.newSession('claude', { cwd: app.ws.workspaces.find((w) => w.id === 'ws_overseer')!.path! });
+      expect(sent()).toEqual([true]);
+    });
+
+    it('lets a nested workspace inherit the choice of its parent unless it has its own', () => {
+      const parent = { id: 'p', worktrees: false } as Workspace;
+      app.ws = { ...app.ws, workspaces: [...app.ws.workspaces, parent] };
+      expect(app.worktreesIn({ id: 'c', parentId: 'p' } as Workspace)).toBe(false);
+      expect(app.worktreesIn({ id: 'c', parentId: 'p', worktrees: true } as Workspace)).toBe(true);
+      expect(app.worktreesIn(null)).toBe(true);
+    });
+  });
+
   describe('in a subject', () => {
     const repo = '/home/alice/Documents/Github/work/webshop';
     const subject = async () => {

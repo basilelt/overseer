@@ -111,6 +111,13 @@ export function groupPicker(keys: string[]): MenuItem[] {
   ];
 }
 
+function checkoutItem(): MenuItem {
+  const w = app.sidebarMode === 'workspaces' ? app.currentWorkspace : null;
+  const inCheckout = !app.worktreesIn(w);
+  if (!w) return { label: t('tabs.inCheckout'), checked: inCheckout, run: () => saveSettings({ sessionsInCheckout: !inCheckout }) };
+  return { label: t('tabs.inCheckout'), hint: t('tabs.inCheckoutHere', { name: w.name }), checked: inCheckout, run: () => app.patchWorkspace(w.id, { worktrees: inCheckout }) };
+}
+
 export function newSessionItems(): MenuItem[] {
   const start = (id: string) => () => app.newSession(id).catch(fail);
   const install = (id: string) => () => app.installAgent(id).catch(fail);
@@ -121,7 +128,7 @@ export function newSessionItems(): MenuItem[] {
     ...(missing.length
       ? [{ label: t('agents.notInstalledCount', { n: missing.length }), more: missing.map((a) => ({ label: canInstall(a) ? t('palette.installAgent', { name: a.name }) : a.name, agent: a.id, disabled: !canInstall(a), hint: a.install ?? t('agents.notInstalled'), run: install(a.id) })) }]
       : []),
-    { label: t('tabs.inCheckout'), checked: settings.sessionsInCheckout, run: () => saveSettings({ sessionsInCheckout: !settings.sessionsInCheckout }) },
+    checkoutItem(),
     { label: '', separator: true },
     { label: shell?.name ?? t('tabs.shell'), agent: 'shell', run: start('shell') },
   ];
