@@ -2,7 +2,7 @@
   import { holdPopup } from '../../popup.svelte';
   import { onMount } from 'svelte';
   import ChevronRight from '@lucide/svelte/icons/chevron-right';
-  import { canInstall, splitInstalled } from '../../agents';
+  import { canInstall, shortVersion, splitInstalled } from '../../agents';
   import { t } from '../../i18n.svelte';
   import { app } from '../../state.svelte';
   import type { AgentInfo } from '../../types';
@@ -47,7 +47,7 @@
     <button role="menuitem" title={a.version ?? a.name} onclick={() => start(a)}>
       <span class="glyph"><AgentGlyph agent={a.id} size={14} /></span>
       <span class="text"><span>{a.name}</span></span>
-      {#if a.version}<span class="ver mono">{a.version}</span>{/if}
+      {#if a.version}<span class="ver mono">{shortVersion(a.version)}</span>{/if}
     </button>
   {/each}
   {#if split.missing.length}
@@ -157,6 +157,10 @@
   .ver {
     font-size: 10.5px;
     color: var(--text-3);
+    max-width: 12em;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   .act {
     font-size: 10.5px;

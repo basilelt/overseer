@@ -539,6 +539,16 @@ describe('MockDaemon', () => {
     expect((await a.terms()).find((x) => x.id === t.id)?.workspaceId ?? null).toBeNull();
   });
 
+  it('sets and clears the worktree choice of a workspace like the daemon, with its error message', async () => {
+    const { m } = setup();
+    const w = await m.request<any>('POST', '/v1/workspaces', { path: '/home/u/wt-choice' });
+    const patch = (worktrees: unknown) => m.request<any>('PATCH', `/v1/workspaces/${w.id}`, { worktrees });
+    expect((await patch(false)).worktrees).toBe(false);
+    expect((await patch(true)).worktrees).toBe(true);
+    expect((await patch(null)).worktrees).toBeNull();
+    for (const bad of ['no', 0]) await expect(patch(bad)).rejects.toMatchObject({ status: 400, message: 'worktrees must be a boolean' });
+  });
+
   it('nests workspaces like the daemon: parent checks, start dir, adoption, the same error messages and cascading delete', async () => {
     const { m } = setup();
     const post = (b: object) => m.request<any>('POST', '/v1/workspaces', b);

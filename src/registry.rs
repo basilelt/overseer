@@ -205,6 +205,7 @@ const ADDED_COLUMNS: &[(&str, &str, &str)] = &[
     ("tasks", "quorum", "TEXT"),
     ("tasks", "votes", "TEXT"),
     ("tasks", "task_type", "TEXT"),
+    ("workspaces", "worktrees", "INTEGER"),
 ];
 
 pub const fn col(cols: &[&str], name: &str) -> usize {

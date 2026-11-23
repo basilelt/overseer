@@ -2,7 +2,7 @@ import { compareVersions, seenVersion, type Mode } from './version';
 
 export { compareVersions, modeFor, seenVersion, TOUR_VERSION, type Mode } from './version';
 
-export type StepId = 'host' | 'workspaces' | 'tabs' | 'view' | 'panel' | 'kanban' | 'review' | 'chips' | 'notify' | 'profiles' | 'palette' | 'paletteKey' | 'organize' | 'settings' | 'feedback' | 'demo' | 'gpuTerminal' | 'worktreeCleanup' | 'switchboard' | 'clickCursor' | 'palettes' | 'skills' | 'autoApprove' | 'merged' | 'uninstall' | 'autoUpdate' | 'subjects' | 'sourceControl' | 'reviewMap' | 'lidClosed' | 'recordBug' | 'quorum' | 'installAgent' | 'agentMessaging' | 'mistralVibe' | 'cost' | 'taskType' | 'agentTasks' | 'hosts' | 'stickyNotes' | 'panelGit' | 'reviewKeys' | 'quorumAnyAgent' | 'usageAgents' | 'feedbackCli' | 'taskEdit' | 'limitPace';
+export type StepId = 'host' | 'workspaces' | 'tabs' | 'view' | 'panel' | 'kanban' | 'review' | 'chips' | 'notify' | 'profiles' | 'palette' | 'paletteKey' | 'organize' | 'settings' | 'feedback' | 'demo' | 'gpuTerminal' | 'worktreeCleanup' | 'switchboard' | 'clickCursor' | 'palettes' | 'skills' | 'autoApprove' | 'merged' | 'uninstall' | 'autoUpdate' | 'subjects' | 'sourceControl' | 'reviewMap' | 'lidClosed' | 'recordBug' | 'quorum' | 'installAgent' | 'agentMessaging' | 'mistralVibe' | 'cost' | 'taskType' | 'agentTasks' | 'hosts' | 'stickyNotes' | 'panelGit' | 'reviewKeys' | 'quorumAnyAgent' | 'usageAgents' | 'feedbackCli' | 'taskEdit' | 'limitPace' | 'workspaceCheckout';
 
 export interface Step {
   id: StepId;
@@ -60,6 +60,7 @@ export const STEPS: Step[] = [
   { id: 'feedbackCli', targets: ['feedback-cli', 'feedback'], since: '0.38' },
   { id: 'taskEdit', targets: ['task-edit', 'kanban'], since: '0.38' },
   { id: 'limitPace', targets: ['plan-limits', 'panel'], since: '0.38' },
+  { id: 'workspaceCheckout', targets: ['new-tab', 'tabs'], since: '0.39', desktopOnly: true },
 ];
 
 export function stepsFor(mode: Mode, seen: number | string | undefined, steps: Step[] = STEPS): Step[] {

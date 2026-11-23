@@ -389,6 +389,59 @@ describe('refresh', () => {
     expect(app.data.lines.length).toBe(before.length);
   });
 
+  it('drops a refresh that resolves after the app disconnected', async () => {
+    await connect();
+    const before = await m.request<unknown[]>('GET', '/v1/lines');
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    m.override['GET /v1/lines'] = () => gate.then(() => before);
+    const pending = app.refresh();
+    await vi.waitFor(() => expect(m.hits(/\/v1\/lines$/).length).toBe(2));
+    await app.disconnect();
+    release();
+    await pending;
+    expect(app.data.lines).toEqual([]);
+    expect(app.data.terms).toEqual([]);
+    expect(app.synced).toBe(false);
+    expect(app.touched.size).toBe(0);
+    expect(app.added.size).toBe(0);
+    expect((app as unknown as { refreshing: number }).refreshing).toBe(0);
+  });
+
+  it('drops the activity of a line fetched before the app disconnected', async () => {
+    await connect();
+    const before = await m.request<{ line: { id: string; state: string } }[]>('GET', '/v1/lines');
+    const id = before.find((l) => l.line.state === 'active')!.line.id;
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    const real = await m.request<unknown>('GET', `/v1/lines/${id}/activity`);
+    m.override[`GET /v1/lines/${id}/activity`] = () => gate.then(() => real);
+    const pending = app.loadActivity(id);
+    await vi.waitFor(() => expect(m.hits(/\/activity/).length).toBeGreaterThan(1));
+    await app.disconnect();
+    release();
+    expect(await pending).toBeNull();
+    expect(id in app.data.activity).toBe(false);
+  });
+
+  it('drops a refresh of the previous host that resolves after the window connected to another host', async () => {
+    await connect();
+    const before = await m.request<{ line: { id: string } }[]>('GET', '/v1/lines');
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    let calls = 0;
+    m.override['GET /v1/lines'] = () => {
+      if (calls++ > 0) return before;
+      return gate.then(() => [{ ...before[0], line: { ...before[0].line, id: 'ln_stale' } }]);
+    };
+    const pending = app.refresh();
+    await vi.waitFor(() => expect(calls).toBe(1));
+    await app.connect({ kind: 'ssh', host: 'prod', label: 'prod' });
+    release();
+    await pending;
+    expect(app.data.lines.some((l) => l.line.id === 'ln_stale')).toBe(false);
+  });
+
   it('takes the fetched lines once no refresh is in flight, so a later refresh is not held back by old events', async () => {
     await connect();
     const before = await m.request<{ line: { id: string; state: string } }[]>('GET', '/v1/lines');
@@ -1191,6 +1244,61 @@ describe('sessions', () => {
     await app.newSession('claude', { cwd: '/tmp' });
     await app.newSession('claude', { cwd: '/home/alice/Documents/Github/work/webshop', worktree: false });
     expect(m.bodies['POST /v1/terms'].map((b) => (b as { worktree?: boolean }).worktree)).toEqual([undefined, undefined, undefined]);
+  });
+
+  describe('worktree choice per workspace', () => {
+    const sent = () => m.bodies['POST /v1/terms'].map((b) => (b as { worktree?: boolean }).worktree);
+    afterEach(() => {
+      settings.sessionsInCheckout = false;
+    });
+
+    it('starts agents in the workspace checkout when the workspace turns worktrees off', async () => {
+      app.selectWorkspace('ws_webshop');
+      await app.patchWorkspace('ws_webshop', { worktrees: false });
+      const term = await app.newSession('claude');
+      expect(sent()).toEqual([undefined]);
+      expect(term.cwd).toBe(app.currentWorkspace!.path);
+    });
+
+    it('starts agents in a worktree when the workspace forces it over the app setting', async () => {
+      settings.sessionsInCheckout = true;
+      app.selectWorkspace('ws_webshop');
+      await app.patchWorkspace('ws_webshop', { worktrees: true });
+      await app.newSession('claude');
+      expect(sent()).toEqual([true]);
+    });
+
+    it('follows the app setting when the workspace has no choice of its own', async () => {
+      app.selectWorkspace('ws_webshop');
+      await app.patchWorkspace('ws_webshop', { worktrees: null });
+      await app.newSession('claude');
+      settings.sessionsInCheckout = true;
+      await app.newSession('claude');
+      expect(sent()).toEqual([true, undefined]);
+    });
+
+    it('keeps an explicit choice and shells out of the workspace setting', async () => {
+      app.selectWorkspace('ws_webshop');
+      await app.patchWorkspace('ws_webshop', { worktrees: true });
+      await app.newSession('claude', { worktree: false });
+      await app.newSession('shell');
+      expect(sent()).toEqual([undefined, undefined]);
+    });
+
+    it('ignores the workspace setting for a session started outside it', async () => {
+      app.selectWorkspace('ws_webshop');
+      await app.patchWorkspace('ws_webshop', { worktrees: false });
+      await app.newSession('claude', { cwd: app.ws.workspaces.find((w) => w.id === 'ws_overseer')!.path! });
+      expect(sent()).toEqual([true]);
+    });
+
+    it('lets a nested workspace inherit the choice of its parent unless it has its own', () => {
+      const parent = { id: 'p', worktrees: false } as Workspace;
+      app.ws = { ...app.ws, workspaces: [...app.ws.workspaces, parent] };
+      expect(app.worktreesIn({ id: 'c', parentId: 'p' } as Workspace)).toBe(false);
+      expect(app.worktreesIn({ id: 'c', parentId: 'p', worktrees: true } as Workspace)).toBe(true);
+      expect(app.worktreesIn(null)).toBe(true);
+    });
   });
 
   describe('in a subject', () => {

@@ -90,7 +90,10 @@
     tour.setReady(!isPhone());
   });
   $effect(() => {
-    if (tour.ready && app.connected && switchboard.checked && !app.overlay && !feedback.open && !diag.mode && !ui.drawer && tour.pending()) tour.offer();
+    tour.setBlocked(!!app.overlay || feedback.open || !!diag.mode || ui.drawer);
+  });
+  $effect(() => {
+    if (tour.ready && app.connected && switchboard.checked && !tour.blocked && tour.pending()) tour.offer();
   });
   $effect(() => {
     if (app.connected && app.conn.phase === 'connected') untrack(() => void offerSwitchboard());

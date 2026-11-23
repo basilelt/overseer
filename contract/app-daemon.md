@@ -709,13 +709,16 @@ is 400.
 ```json
 {"id":"01J…","name":"overseer","path":"/home/u/src/overseer","station":"vm-dev","folderId":null,
  "pinned":false,"archived":false,"auto":true,"rank":1730000000000,
- "tabs":["line:…","term:…","browser:https://…"],"notifyIdle":false,"createdAt":"…","updatedAt":"…"}
+ "tabs":["line:…","term:…","browser:https://…"],"notifyIdle":false,"worktrees":null,"createdAt":"…","updatedAt":"…"}
 ```
 
 - `path` is unique, absolute and canonical (symlinks resolved, no trailing slash); any directory
   works, not only a repository root. `station` is the daemon's station id (read-only).
 - `auto`: created by the daemon from a project of `GET /v1/projects`.
 - `missing`: the directory no longer exists (renamed, deleted, unmounted). Read-only.
+- `worktrees`: `true`, `false` or `null` (the default), stored only. The app starts new agent
+  sessions of the workspace in a worktree when `true` and in its folder when `false`; `null`
+  follows the parent workspace, then the app setting. Any other value is a 400.
 - `tabs` and `notifyIdle` are opaque to the daemon: it stores them and never acts on them (the
   app prunes tab keys it cannot resolve and raises the idle notification). The app writes
   `line:<id>`, `term:<id>`, `browser:<url>` and `review:<lineId>`; other clients must keep keys

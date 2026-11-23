@@ -4,7 +4,7 @@
   import ChevronDown from '@lucide/svelte/icons/chevron-down';
   import Check from '@lucide/svelte/icons/check';
   import RefreshCw from '@lucide/svelte/icons/refresh-cw';
-  import { agentName, canInstall } from '../../agents';
+  import { agentName, canInstall, shortVersion } from '../../agents';
   import { nextPickable } from './agent-pick';
   import { t } from '../../i18n.svelte';
   import { app } from '../../state.svelte';
@@ -115,7 +115,7 @@
   >
     <AgentGlyph agent={value} size={14} />
     <span class="name">{agentName(agents, value)}</span>
-    {#if current?.version}<span class="ver mono">{current.version}</span>{/if}
+    {#if current?.version}<span class="ver mono">{shortVersion(current.version)}</span>{/if}
     <ChevronDown size={13} />
   </button>
   {#if open}
@@ -152,7 +152,7 @@
               {#if !a.installed}
                 <span class="sub mono">{a.install ?? t('agents.notInstalled')}</span>
               {:else if a.version}
-                <span class="sub">{a.version}</span>
+                <span class="sub">{shortVersion(a.version)}</span>
               {/if}
             </span>
             {#if a.id === value}<Check size={13} />{:else if canInstall(a)}<span class="act">{t('agents.install')}</span>{/if}
@@ -210,6 +210,10 @@
   .ver {
     font-size: 10.5px;
     color: var(--text-3);
+    max-width: 12em;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   .pop {
     position: fixed;

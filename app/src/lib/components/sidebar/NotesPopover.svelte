@@ -35,11 +35,13 @@
 
   let shown = '';
 
+  const focusNew = () => box?.querySelector<HTMLTextAreaElement>('textarea.new')?.focus();
+
   $effect(() => {
     const id = lineId;
     untrack(() => flush(shown));
     shown = id;
-    box?.querySelector<HTMLTextAreaElement>('textarea.new')?.focus();
+    focusNew();
   });
 
   onDestroy(() => {
@@ -62,6 +64,7 @@
     const text = draft;
     if (!text.trim()) return;
     draft = '';
+    focusNew();
     if (!(await addNote(app, shown, text)) && !draft) draft = text;
   }
 

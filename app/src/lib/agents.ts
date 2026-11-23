@@ -84,3 +84,9 @@ export function sessionsAvailable(agents: AgentInfo[], id: string): boolean {
 }
 
 export const canInstall = (a: AgentInfo): boolean => !a.installed && !!a.installable && !!a.install;
+
+export function shortVersion(raw: string | null | undefined): string | null {
+  if (!raw) return null;
+  const m = raw.match(/\d+(?:\.\d+)+(?:[-+][0-9A-Za-z.-]*[0-9A-Za-z])?/);
+  return m ? m[0] : raw.trim().split(/\s+/)[0] || null;
+}

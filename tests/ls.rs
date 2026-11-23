@@ -971,6 +971,7 @@ fn ws(path: &str) -> overseer::workspaces::Workspace {
         subject: false,
         cwd: None,
         parent_id: None,
+        worktrees: None,
     }
 }
 

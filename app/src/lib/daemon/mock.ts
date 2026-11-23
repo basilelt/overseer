@@ -1269,6 +1269,7 @@ export class MockDaemon implements DaemonClient {
       const { add, remove, id: _i, ...patch } = body ?? {};
       const nested = kind === 'workspaces' && !!(item as Workspace).parentId;
       if (nested && ((patch.folderId != null) || (patch.pinned != null && patch.pinned !== false))) throw new DaemonError(400, 'a nested workspace has no folder and cannot be pinned');
+      if (kind === 'workspaces' && 'worktrees' in patch && patch.worktrees !== null && typeof patch.worktrees !== 'boolean') throw new DaemonError(400, 'worktrees must be a boolean');
       if (kind === 'workspaces' && 'cwd' in patch) {
         if ((item as any).kind === 'subject') patch.cwd = this.subjectCwd(patch.cwd);
         else if (nested) patch.cwd = patch.cwd == null ? null : this.subjectCwd(patch.cwd);

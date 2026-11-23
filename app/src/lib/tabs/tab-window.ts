@@ -12,6 +12,11 @@ export function windowSpan(viewPx: number): number {
   return Math.ceil(Math.max(viewPx, MIN_TAB_PX) / MIN_TAB_PX) + 2 * OVERSCAN;
 }
 
+export function currentSpan(): number {
+  if (typeof window === 'undefined') return windowSpan(1440);
+  return windowSpan(Math.max(window.innerWidth || 0, window.screen?.width || 0));
+}
+
 function keep(prev: TabWindow, from: number, to: number): TabWindow {
   return prev.from === from && prev.to === to ? prev : { from, to };
 }

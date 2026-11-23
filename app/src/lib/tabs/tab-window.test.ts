@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest';
-import { fitWindow, MIN_TAB_PX, OVERSCAN, visibleRange, windowSpan, type TabWindow } from './tab-window';
+import { describe, expect, it, vi } from 'vitest';
+import { currentSpan, fitWindow, MIN_TAB_PX, OVERSCAN, visibleRange, windowSpan, type TabWindow } from './tab-window';
 
 const NONE: TabWindow = { from: 0, to: 0 };
 
@@ -8,6 +8,35 @@ describe('windowSpan', () => {
     expect(windowSpan(1440)).toBe(1440 / MIN_TAB_PX + 2 * OVERSCAN);
     expect(windowSpan(3840)).toBe(3840 / MIN_TAB_PX + 2 * OVERSCAN);
     expect(windowSpan(0)).toBe(1 + 2 * OVERSCAN);
+  });
+});
+
+describe('currentSpan', () => {
+  it('reads the widest of the viewport and the screen each time it is called', () => {
+    const win = { innerWidth: 1000, screen: { width: 1440 } };
+    vi.stubGlobal('window', win);
+    expect(currentSpan()).toBe(windowSpan(1440));
+    win.screen.width = 3840;
+    expect(currentSpan()).toBe(windowSpan(3840));
+    win.innerWidth = 5000;
+    expect(currentSpan()).toBe(windowSpan(5000));
+  });
+
+  it('costs a constant number of property reads per call, so scroll handlers can call it', () => {
+    const reads = { inner: 0, screen: 0 };
+    vi.stubGlobal('window', {
+      get innerWidth() { reads.inner++; return 1000; },
+      get screen() { reads.screen++; return { width: 1440 }; },
+    });
+    for (let i = 0; i < 1000; i++) currentSpan();
+    expect(reads).toEqual({ inner: 1000, screen: 1000 });
+  });
+
+  it('falls back to a desktop width without a window or a screen size', () => {
+    vi.stubGlobal('window', undefined);
+    expect(currentSpan()).toBe(windowSpan(1440));
+    vi.stubGlobal('window', { innerWidth: 0 });
+    expect(currentSpan()).toBe(windowSpan(0));
   });
 });
 

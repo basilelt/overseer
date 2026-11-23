@@ -58,3 +58,34 @@ describe('feedback sheet send buttons', () => {
     expect(button(h, 'Send with Claude Code')).toMatch(/\bdisabled\b/);
   });
 });
+
+describe('feedback sheet inline errors', () => {
+  beforeEach(() => {
+    app.connected = true;
+    feedback.show({ kind: 'bug' });
+  });
+
+  afterEach(() => {
+    feedback.close();
+    app.connected = false;
+    vi.restoreAllMocks();
+  });
+
+  it('shows no alert on a fresh sheet', () => {
+    expect(html()).not.toContain('role="alert"');
+  });
+
+  it('shows the description error next to the description field and links it', () => {
+    feedback.descError = 'Describe the bug or idea first';
+    const h = html();
+    expect(h).toMatch(/<span[^>]*id="fb-desc-error"[^>]*role="alert"[^>]*>Describe the bug or idea first<\/span>/);
+    expect(h).toMatch(/<textarea[^>]*aria-invalid="true"[^>]*aria-describedby="fb-desc-error"/);
+  });
+
+  it('lists every refused file in the attachments field', () => {
+    feedback.refused = ['notes.txt: only some types.', 'big.png: images can be 10 MB at most.'];
+    const h = html();
+    expect(h).toContain('<li>notes.txt: only some types.</li>');
+    expect(h).toContain('<li>big.png: images can be 10 MB at most.</li>');
+  });
+});

@@ -12,7 +12,7 @@ export function compareVersions(a: string, b: string): number {
   return 0;
 }
 
-export const TOUR_VERSION = '0.38';
+export const TOUR_VERSION = '0.39';
 
 export function seenVersion(seen: number | string | undefined): string | undefined {
   if (typeof seen === 'string') return seen;

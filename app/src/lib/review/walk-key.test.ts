@@ -89,6 +89,20 @@ describe('claimFocus', () => {
     expect(st.got).toBe(true);
   });
 
+  it('takes it from the tab that was just clicked, so J and K walk after leaving a terminal', () => {
+    const st = { got: false };
+    vi.stubGlobal('document', doc({ tagName: 'DIV', closest: (s: string) => (s === '[role=tab]' ? {} : null) } as El));
+    claimFocus(review(st));
+    expect(st.got).toBe(true);
+  });
+
+  it('leaves another focused element that is not a tab alone', () => {
+    const st = { got: false };
+    vi.stubGlobal('document', doc({ tagName: 'DIV', closest: () => null } as El));
+    claimFocus(review(st));
+    expect(st.got).toBe(false);
+  });
+
   it('never takes it from a terminal or a text field', () => {
     const st = { got: false };
     vi.stubGlobal('document', doc({ tagName: 'TEXTAREA', closest: (s: string) => (s === 'button' ? null : s.includes('textarea') ? {} : null) } as El));

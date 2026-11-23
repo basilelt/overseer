@@ -25,6 +25,6 @@ export function holdFocus(root: HTMLElement | null | undefined): boolean {
 
 export function claimFocus(root: HTMLElement | null | undefined): void {
   const a = document.activeElement as { tagName?: string; closest?: (s: string) => unknown } | null;
-  if (a && a !== (document.body as unknown) && (a.closest?.(TEXT_FIELD) || !a.closest?.('button'))) return;
+  if (a && a !== (document.body as unknown) && (a.closest?.(TEXT_FIELD) || !(a.closest?.('button') || a.closest?.('[role=tab]')))) return;
   holdFocus(root);
 }
