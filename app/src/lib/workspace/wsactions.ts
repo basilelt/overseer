@@ -115,7 +115,7 @@ function checkoutItem(): MenuItem {
   const w = app.sidebarMode === 'workspaces' ? app.currentWorkspace : null;
   const inCheckout = !app.worktreesIn(w);
   if (!w) return { label: t('tabs.inCheckout'), checked: inCheckout, run: () => saveSettings({ sessionsInCheckout: !inCheckout }) };
-  return { label: t('tabs.inCheckout'), hint: t('tabs.inCheckoutHere', { name: w.name }), checked: inCheckout, run: () => app.patchWorkspace(w.id, { worktrees: inCheckout }) };
+  return { label: t('tabs.inCheckoutHere', { name: w.name }), checked: inCheckout, run: () => app.patchWorkspace(w.id, { worktrees: inCheckout }) };
 }
 
 export function newSessionItems(): MenuItem[] {

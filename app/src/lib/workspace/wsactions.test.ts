@@ -780,7 +780,7 @@ describe('nested workspaces', () => {
     const saved = settings.sessionsInCheckout;
     settings.sessionsInCheckout = false;
     const item = pick(newSessionItems(), t('tabs.inCheckout'));
-    expect([item.checked, item.hint]).toEqual([false, undefined]);
+    expect(item.checked).toBe(false);
     item.run!();
     expect(settings.sessionsInCheckout).toBe(true);
     expect(app.patchWorkspace).not.toHaveBeenCalled();
@@ -789,12 +789,12 @@ describe('nested workspaces', () => {
 
   it('switches only the current workspace between worktrees and its checkout from the new-session menu', () => {
     app.currentWorkspace = workspace({ worktrees: null });
-    const item = pick(newSessionItems(), t('tabs.inCheckout'));
-    expect([item.checked, item.hint]).toEqual([false, t('tabs.inCheckoutHere', { name: 'Alpha' })]);
+    const item = pick(newSessionItems(), t('tabs.inCheckoutHere', { name: 'Alpha' }));
+    expect(item.checked).toBe(false);
     item.run!();
     expect(app.patchWorkspace).toHaveBeenCalledWith('w1', { worktrees: false });
     app.currentWorkspace = workspace({ worktrees: false });
-    const back = pick(newSessionItems(), t('tabs.inCheckout'));
+    const back = pick(newSessionItems(), t('tabs.inCheckoutHere', { name: 'Alpha' }));
     expect(back.checked).toBe(true);
     back.run!();
     expect(app.patchWorkspace).toHaveBeenLastCalledWith('w1', { worktrees: true });

@@ -2159,9 +2159,9 @@ PR reviews") or, on the phone, More → PR reviews.
 ### 14.9 Worktrees
 
 Every agent session or task started from the app runs in its own git worktree. To start agent
-sessions in the folder itself, tick "Run in current checkout" in the tab bar `+` menu: inside a
-workspace it applies to that workspace only (a nested workspace follows its parent unless set on
-its own), outside one it changes the default for every workspace that has no choice of its own.
+sessions in the folder itself, tick "Run in the checkout of <workspace>" in the tab bar `+` menu:
+it applies to that workspace only (a nested workspace follows its parent unless set on
+its own). Outside a workspace the item reads "Run in current checkout" and changes the default for every workspace that has no choice of its own.
 Pick "Start in the current checkout" on a task to opt a task out. One place, outside your
 repositories:
 

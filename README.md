@@ -130,7 +130,7 @@ hand like VS Code: the selected session's worktree, its branch, fetch, pull and 
 staged and changed files, and merge and stash. The Git graph tab keeps a per-project history that stays fast on large histories, with agent
 branches, tasks and PRs on it; from a commit you can merge it into a worktree or revert it.
 Each workspace chooses whether its agent sessions start in a new worktree (the default) or in its
-own folder: tick **Run in current checkout** in the tab bar **+** menu.
+own folder: tick **Run in the checkout of …** in the tab bar **+** menu.
 Worktrees live in one store outside your repositories, show whether they are in use, idle
 or stale, and are cleaned up safely: **Clean up merged** picks the merged ones with no agent left,
 and you untick the ones to keep.
