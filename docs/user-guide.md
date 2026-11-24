@@ -1919,7 +1919,8 @@ Stopped: no live agent process, resumable); the toggle is at the top of the side
   whose folder contains its worktree, unless the line's repository has its own workspace that
   does not contain that folder (so a workspace on your home folder does not take every
   worktree). Shells follow their working directory. Sessions that match nothing are under
-  **Other sessions**.
+  **Other sessions**; once it holds none, it stays as a chip on the "No session" line, so you can
+  select it and start sessions outside every workspace again.
 - **Tabs**: selecting a workspace shows its own tab strip (agents, shells, browser, review), with
   the agent glyph and a status dot per tab. Tabs keep a compact width with long titles cut, and
   the selected tab shows its full title; when they do not fit, the strip scrolls with the mouse

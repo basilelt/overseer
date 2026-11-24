@@ -47,6 +47,27 @@ describe('SpacesView empty workspaces', () => {
   });
 });
 
+describe('SpacesView Other sessions chip', () => {
+  it('keeps Other sessions as a chip once it holds no session, so sessions can be started there again', () => {
+    const h = view([ws('a')]);
+    const c = chip(h, '')!;
+    expect(c).toBeDefined();
+    expect(h).toContain(`${c}${t('ws.other')}</button>`);
+    expect(c).not.toContain('data-drop');
+  });
+
+  it('marks the Other sessions chip as selected when it is the active space', () => {
+    app.workspaceId = '';
+    expect(chip(view([ws('a')]), '')).toMatch(/class="[^"]*\bselected\b/);
+    app.workspaceId = 'a';
+    expect(chip(view([ws('a')]), '')).not.toMatch(/class="[^"]*\bselected\b/);
+  });
+
+  it('shows no Other sessions chip while filtering', () => {
+    expect(chip(view([ws('a')], [], 'Space'), '')).toBeUndefined();
+  });
+});
+
 describe('SpacesView folders and empty state', () => {
   it('tells an empty filter result from an empty list', () => {
     expect(view([])).toContain(t('ws.empty'));

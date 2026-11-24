@@ -82,7 +82,7 @@ describe('spaces', () => {
   });
 
   it('returns nothing for no workspaces and no items', () => {
-    expect(spaces([], [], new Map(), '')).toEqual({ rows: [], empty: [] });
+    expect(spaces([], [], new Map(), '')).toEqual({ rows: [], empty: [], otherEmpty: false });
   });
 
   it('breaks a rank tie by name', () => {
@@ -124,7 +124,7 @@ describe('spaces', () => {
 
 const fo = (id: string, name: string, parentId: string | null = null, over: Partial<Folder> = {}) => ({ id, name, parentId, rank: 1, collapsed: false, ...over }) as Folder;
 const shape = (nodes: SpaceNode[]) =>
-  nodes.map((n) => (n.type === 'folder' ? `F${n.depth}:${n.folder?.name ?? '*'}` : n.type === 'space' ? `W${n.depth}:${n.row.id}` : `E${n.depth}:${n.workspaces.map((w) => w.id).join(',')}`));
+  nodes.map((n) => (n.type === 'folder' ? `F${n.depth}:${n.folder?.name ?? '*'}` : n.type === 'space' ? `W${n.depth}:${n.row.id}` : `E${n.depth}:${n.workspaces.map((w) => w.id).join(',')}${n.other ? '+other' : ''}`));
 const tree = (workspaces: Workspace[], folders: Folder[], keys: [string, string, SidebarItem['state']?][], filter = '') => {
   const items = keys.map(([k, , s]) => it_(k, s ?? 'open'));
   return folderSpaces(spaces(workspaces, items, new Map(keys.map(([k, w]) => [k, w])), filter), folders, filter);
@@ -133,25 +133,25 @@ const tree = (workspaces: Workspace[], folders: Folder[], keys: [string, string,
 describe('folderSpaces', () => {
   it('puts a top-level folder as a section and its workspaces one level in, root workspaces after', () => {
     const r = tree([ws('a', 'A', { folderId: 'e' }), ws('b', 'B', { rank: 2, folderId: null })], [fo('e', 'E')], [['k1', 'a'], ['k2', 'b']]);
-    expect(shape(r)).toEqual(['F0:E', 'W1:a', 'W0:b']);
+    expect(shape(r)).toEqual(['F0:E', 'W1:a', 'W0:b', 'E0:+other']);
   });
 
   it('nests folders without a depth limit, one level per parent', () => {
     const folders = [fo('e', 'E'), fo('c', 'core', 'e'), fo('t', 'tenants', 'c'), fo('x', 'archives', 't')];
     const r = tree([ws('a', 'A', { folderId: 'x' })], folders, [['k1', 'a']]);
-    expect(shape(r)).toEqual(['F0:E', 'F1:core', 'F2:tenants', 'F3:archives', 'W4:a']);
+    expect(shape(r)).toEqual(['F0:E', 'F1:core', 'F2:tenants', 'F3:archives', 'W4:a', 'E0:+other']);
   });
 
   it('lists a folder\'s workspaces with sessions, then its subfolders, then its empty workspaces', () => {
     const folders = [fo('e', 'E'), fo('c', 'core', 'e')];
     const r = tree([ws('a', 'A', { folderId: 'e' }), ws('b', 'B', { folderId: 'e' }), ws('d', 'D', { folderId: 'c' })], folders, [['k1', 'a'], ['k2', 'd']]);
-    expect(shape(r)).toEqual(['F0:E', 'W1:a', 'F1:core', 'W2:d', 'E1:b']);
+    expect(shape(r)).toEqual(['F0:E', 'W1:a', 'F1:core', 'W2:d', 'E1:b', 'E0:+other']);
   });
 
   it('hides the subtree of a collapsed folder and sums the states of all of it', () => {
     const folders = [fo('e', 'E'), fo('f', 'fleet', 'e', { collapsed: true }), fo('g', 'deep', 'f')];
     const r = tree([ws('a', 'A', { folderId: 'f' }), ws('b', 'B', { folderId: 'g' })], folders, [['k1', 'a', 'attention'], ['k2', 'a', 'running'], ['k3', 'b', 'paused'], ['k4', 'b', 'closed']]);
-    expect(shape(r)).toEqual(['F0:E', 'F1:fleet']);
+    expect(shape(r)).toEqual(['F0:E', 'F1:fleet', 'E0:+other']);
     const fleet = r[1] as Extract<SpaceNode, { type: 'folder' }>;
     expect(fleet.open).toBe(false);
     expect(fleet.summary.counts).toMatchObject({ attention: 1, running: 1, paused: 1, closed: 1 });
@@ -174,7 +174,7 @@ describe('folderSpaces', () => {
 
   it('moves pinned workspaces to a pinned section out of their folder', () => {
     const r = tree([ws('a', 'A', { folderId: 'e' }), ws('p', 'P', { folderId: 'e', pinned: true }), ws('q', 'Q', { pinned: true })], [fo('e', 'E')], [['k1', 'a'], ['k2', 'p']]);
-    expect(shape(r)).toEqual(['F0:*', 'W0:p', 'E0:q', 'F0:E', 'W1:a']);
+    expect(shape(r)).toEqual(['F0:*', 'W0:p', 'E0:q', 'F0:E', 'W1:a', 'E0:+other']);
   });
 
   it('keeps the sessions outside any workspace last, after the root empty workspaces line', () => {
@@ -191,7 +191,7 @@ describe('folderSpaces', () => {
 
   it('treats a folder with an unknown parent as a section and a workspace in an unknown folder as root', () => {
     const r = tree([ws('a', 'A', { folderId: 'gone' }), ws('b', 'B', { folderId: 'c' })], [fo('c', 'core', 'missing')], [['k1', 'a'], ['k2', 'b']]);
-    expect(shape(r)).toEqual(['F0:core', 'W1:b', 'W0:a']);
+    expect(shape(r)).toEqual(['F0:core', 'W1:b', 'W0:a', 'E0:+other']);
   });
 
   it('survives a parent cycle without looping', () => {
@@ -254,6 +254,26 @@ describe('spaces filter on paths', () => {
     const r = spaces(list, items, new Map([['k1', 'a'], ['k2', 'b']]), 'billing');
     expect(r.rows.map((x) => [x.id, x.items.length])).toEqual([['a', 1], ['b', 1]]);
     expect(r.empty.map((x) => x.id)).toEqual(['c']);
+  });
+
+  it('flags Other sessions as empty once its last session is gone, so it can still be picked', () => {
+    const r = spaces([ws('a', 'A'), ws('b', 'B', { rank: 2 })], [it_('k1', 'open')], new Map([['k1', 'a']]), '');
+    expect(r.rows.map((x) => x.id)).toEqual(['a']);
+    expect(r.otherEmpty).toBe(true);
+    expect(shape(folderSpaces(r, [], ''))).toEqual(['W0:a', 'E0:b+other']);
+  });
+
+  it('flags Other sessions as empty when only exited shells were left there', () => {
+    const r = spaces([ws('a', 'A')], [it_('s', 'closed', { kind: 'shell' })], new Map(), '');
+    expect(r.rows).toEqual([]);
+    expect(r.otherEmpty).toBe(true);
+    expect(shape(folderSpaces(r, [], ''))).toEqual(['E0:a+other']);
+  });
+
+  it('does not flag Other sessions while it has sessions, while filtering, or with no workspace at all', () => {
+    expect(spaces([ws('a', 'A')], [it_('k1', 'open')], new Map(), '').otherEmpty).toBe(false);
+    expect(spaces([ws('a', 'A')], [], new Map(), 'a').otherEmpty).toBe(false);
+    expect(spaces([], [], new Map(), '').otherEmpty).toBe(false);
   });
 
   it('numbers the unassigned row like NO_WORKSPACE so picking it selects that space', () => {
