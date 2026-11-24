@@ -162,6 +162,9 @@
                 onpointerdown={(e) => drag.start(e, 'workspace', w.id)}>{w.name}</button
               >
             {/each}
+            {#if n.other}
+              <button class="chip" class:selected={app.workspaceId === NO_WORKSPACE} type="button" data-workspace-id={NO_WORKSPACE} onclick={() => pick(NO_WORKSPACE)}>{t('ws.other')}</button>
+            {/if}
           </div>
         </div>
       {/if}

@@ -18,6 +18,8 @@ export interface SpaceRow {
 export interface Spaces {
   rows: SpaceRow[];
   empty: Workspace[];
+  /** No session sits outside the workspaces: Other sessions shows as an empty chip so it can still be picked. */
+  otherEmpty: boolean;
 }
 
 const isVisible = (w: Workspace, showArchived = false) => !isGhost(w) && (showArchived || !w.archived);
@@ -72,14 +74,14 @@ export function spaces(workspaces: Workspace[], items: SidebarItem[], wsOf: Read
   }
   const others = narrow(null, by.get('') ?? []);
   if (others.length) rows.push({ id: '', name: null, workspace: null, items: others, summary: workspaceSummary(others) });
-  return { rows, empty };
+  return { rows, empty, otherEmpty: !q && !others.length && (rows.length > 0 || empty.length > 0) };
 }
 
 export type SpaceNode =
   /** folder null is the pinned section; depth 0 is a section title. */
   | { type: 'folder'; key: string; folder: Folder | null; depth: number; open: boolean; folders: number; spaces: number; summary: WorkspaceSummary }
   | { type: 'space'; key: string; row: SpaceRow; depth: number }
-  | { type: 'empty'; key: string; workspaces: Workspace[]; depth: number };
+  | { type: 'empty'; key: string; workspaces: Workspace[]; depth: number; other?: boolean };
 
 interface Agg {
   summary: WorkspaceSummary;
@@ -141,10 +143,10 @@ export function folderSpaces(view: Spaces, folders: Folder[], filter: string): S
     return a;
   };
   const out: SpaceNode[] = [];
-  const level = (rows: SpaceRow[] | undefined, empty: Workspace[] | undefined, depth: number, key: string, between?: () => void) => {
+  const level = (rows: SpaceRow[] | undefined, empty: Workspace[] | undefined, depth: number, key: string, between?: () => void, other = false) => {
     for (const row of rows ?? []) out.push({ type: 'space', key: `w:${row.id}`, row, depth });
     between?.();
-    if (empty?.length) out.push({ type: 'empty', key: `e:${key}`, workspaces: empty, depth });
+    if (empty?.length || other) out.push({ type: 'empty', key: `e:${key}`, workspaces: empty ?? [], depth, ...(other ? { other } : {}) });
   };
   const emit = (f: Folder, depth: number) => {
     const a = agg(f);
@@ -159,7 +161,7 @@ export function folderSpaces(view: Spaces, folders: Folder[], filter: string): S
     level(pinnedRows, pinnedEmpty, 0, '*');
   }
   for (const f of kids.get(null) ?? []) emit(f, 0);
-  level(rowsIn.get(null), emptyIn.get(null), 0, '');
+  level(rowsIn.get(null), emptyIn.get(null), 0, '', undefined, view.otherEmpty);
   return out;
 }
 
