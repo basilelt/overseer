@@ -658,7 +658,7 @@ dependencies = [
  "notify",
  "overseer-api",
  "portable-pty",
- "rusqlite 0.43.0",
+ "rusqlite",
  "serde",
  "serde_json",
  "sha2",
@@ -673,7 +673,7 @@ dependencies = [
  "axum",
  "futures-util",
  "hmac",
- "rusqlite 0.42.0",
+ "rusqlite",
  "serde_json",
  "sha2",
  "tokio",
@@ -810,21 +810,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "353b74f9810d5b085b6c42c9d86a5f0fdb795553235cdd48753b32e3809d18a7"
 dependencies = [
  "thiserror 2.0.21",
-]
-
-[[package]]
-name = "rusqlite"
-version = "0.42.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a4edff0039f148731aee2fd80f76dbfeb12d204ab3d1c544838d34e02151049b"
-dependencies = [
- "bitflags 2.13.2",
- "fallible-iterator",
- "fallible-streaming-iterator",
- "hashlink",
- "libsqlite3-sys",
- "smallvec",
- "sqlite-wasm-rs",
 ]
 
 [[package]]
